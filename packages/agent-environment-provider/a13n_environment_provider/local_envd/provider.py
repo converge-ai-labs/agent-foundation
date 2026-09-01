@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import os
 import re
 import signal
 import stat
 import subprocess
-from collections.abc import AsyncGenerator
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from a13n_envd_client import __version__ as envd_client_version
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, JsonValue, ValidationError
 
-from ..attachments import EIPEnvironmentAttachment, EnvironmentRuntimeAttachment, StdioEIPCarrier
+from ..attachments import StdioEIPCarrier
+from ..eip import EIPEnvironmentSession, open_eip_environment
 from ..errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
@@ -24,31 +24,22 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..factories import EnvironmentProviderFactory
-from ..management import EnvironmentProvider, EnvironmentProviderRuntime, EnvironmentResource
+from ..management import Environment, EnvironmentProvider
 from ..models import (
-    EnvironmentAttachmentConcurrency,
-    EnvironmentLifecycleCapabilities,
-    EnvironmentManagementAction,
-    EnvironmentOperationContext,
-    EnvironmentPauseMode,
-    EnvironmentProviderResourceState,
-    EnvironmentReconciliationPhase,
-    EnvironmentReconciliationResult,
-    EnvironmentResourceAllocation,
+    EnvironmentAvailability,
+    EnvironmentDescriptor,
+    EnvironmentOperationFamily,
+    EnvironmentState,
 )
-from .configuration import (
-    LocalEnvdProviderConfiguration,
-    LocalEnvdProviderStateData,
-    LocalEnvdResourcePhase,
-)
+from ..operations import EnvironmentOperations
+from .configuration import LocalEnvdProviderConfiguration
 from .runtime import LocalEnvdProviderRuntime
 
 if TYPE_CHECKING:
     from ._windows_job import WindowsJob
 
 _PROVIDER_KEY = "a13n.local-envd"
-_STATE_VERSION = "1"
+_CONFIGURATION_VERSION = "1"
 _STARTUP_TIMEOUT_SECONDS = 10.0
 _PROCESS_POLL_SECONDS = 0.01
 _SUBPROCESS_TIMEOUT_SECONDS = 30.0
@@ -59,465 +50,232 @@ _DAEMON_MAX_TRANSFER_FRAME_BYTES = 4 * 1024 * 1024
 _READ_OPERATIONS = ("stat", "read_text", "open_reader", "list", "find", "search")
 _WRITE_OPERATIONS = ("write_text", "open_writer", "remove", "move")
 _PYTHON_RELEASE_VERSION = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?:rc(?P<rc>[1-9][0-9]*))?$")
-_CAPABILITIES = EnvironmentLifecycleCapabilities(
-    pause_modes=frozenset({EnvironmentPauseMode.FILESYSTEM}),
-    resource_allocation=EnvironmentResourceAllocation.MULTIPLE_FROM_SPEC,
-    attachment_concurrency=EnvironmentAttachmentConcurrency.SINGLE,
-)
-
-
-class LocalEnvdEnvironmentProviderFactory(EnvironmentProviderFactory):
-    @classmethod
-    def provider_key(cls) -> str:
-        return _PROVIDER_KEY
-
-    @classmethod
-    def supported_schema_versions(cls) -> frozenset[str]:
-        return frozenset({_STATE_VERSION})
-
-    @classmethod
-    def configuration_model(cls, schema_version: str) -> type[BaseModel]:
-        if schema_version != _STATE_VERSION:
-            raise EnvironmentProviderError(
-                f"Local Envd does not support schema version {schema_version!r}.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-                context=EnvironmentProviderErrorContext(
-                    provider_key=_PROVIDER_KEY,
-                    schema_version=schema_version,
-                ),
-            )
-        return LocalEnvdProviderConfiguration
-
-    def lifecycle_capabilities(self, configuration: BaseModel) -> EnvironmentLifecycleCapabilities:
-        _require_configuration(configuration)
-        return _CAPABILITIES
-
-    def create_provider(
-        self,
-        configuration: BaseModel,
-        *,
-        runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentProvider:
-        actual_configuration = _require_configuration(configuration)
-        if not isinstance(runtime, LocalEnvdProviderRuntime):
-            raise EnvironmentProviderError(
-                "Local Envd requires LocalEnvdProviderRuntime.",
-                code="provider_runtime_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                recovery_hint=EnvironmentProviderRecoveryHint.REFRESH_RUNTIME,
-                context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-            )
-        return LocalEnvdEnvironmentProvider(actual_configuration, runtime)
 
 
 class LocalEnvdEnvironmentProvider(EnvironmentProvider):
-    def __init__(
-        self,
-        configuration: LocalEnvdProviderConfiguration,
-        runtime: LocalEnvdProviderRuntime,
-    ) -> None:
-        super().__init__()
-        self._configuration = configuration.model_copy(deep=True)
-        self._runtime = runtime
-        self._identity = object()
+    """Inert singleton-style Provider for fresh private Local Envd generations."""
 
     @property
-    def lifecycle_capabilities(self) -> EnvironmentLifecycleCapabilities:
-        return _CAPABILITIES
+    def key(self) -> str:
+        return _PROVIDER_KEY
 
-    async def create(self, *, operation: EnvironmentOperationContext) -> EnvironmentResource:
-        self._require_operation(operation, EnvironmentManagementAction.CREATE, provider_key=_PROVIDER_KEY)
-        configuration = await _validated_configuration(self._configuration)
-        await _validate_runtime(self._runtime.executable, configuration)
-        state = _build_state(
-            configuration,
-            resource_correlation=operation.resource_correlation,
-            phase=LocalEnvdResourcePhase.RUNNING,
-        )
-        return LocalEnvdEnvironmentResource(
-            configuration,
-            state,
-            runtime=self._runtime,
-            provider_identity=self._identity,
-        )
+    @property
+    def configuration_versions(self) -> frozenset[str]:
+        return frozenset({_CONFIGURATION_VERSION})
 
-    async def resume(
-        self,
-        state: EnvironmentProviderResourceState,
-        *,
-        operation: EnvironmentOperationContext,
-    ) -> EnvironmentResource:
-        self._require_operation(operation, EnvironmentManagementAction.RESUME, provider_key=_PROVIDER_KEY)
-        configuration = await _validated_configuration(self._configuration)
-        _validate_state_for_phases(
-            state,
-            configuration=configuration,
-            resource_correlation=operation.resource_correlation,
-            phases=(LocalEnvdResourcePhase.RUNNING, LocalEnvdResourcePhase.PAUSED),
-        )
-        await _validate_runtime(self._runtime.executable, configuration)
-        running = _build_state(
-            configuration,
-            resource_correlation=operation.resource_correlation,
-            phase=LocalEnvdResourcePhase.RUNNING,
-        )
-        return LocalEnvdEnvironmentResource(
-            configuration,
-            running,
-            runtime=self._runtime,
-            provider_identity=self._identity,
-        )
-
-    async def pause(
-        self,
-        environment: EnvironmentResource,
-        *,
-        operation: EnvironmentOperationContext,
-        mode: EnvironmentPauseMode = EnvironmentPauseMode.FULL,
-    ) -> EnvironmentProviderResourceState:
-        self._require_operation(operation, EnvironmentManagementAction.PAUSE, provider_key=_PROVIDER_KEY)
-        if mode is not EnvironmentPauseMode.FILESYSTEM:
-            raise EnvironmentProviderError(
-                "Local Envd supports only filesystem pause.",
-                code="provider_action_unsupported",
+    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
+        if schema_version != _CONFIGURATION_VERSION:
+            raise _provider_error(
+                "Local Envd configuration version is unsupported.",
+                code="provider_schema_unsupported",
                 category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                context=_operation_context(operation),
+                schema_version=schema_version,
             )
-        if (
-            not isinstance(environment, LocalEnvdEnvironmentResource)
-            or environment._provider_identity is not self._identity
-        ):
-            raise _state_error("Local Envd pause requires a Resource created by this Provider instance.", operation)
-        environment._require_entered()
-        state_data = _validate_state_for_phases(
-            environment.state,
-            configuration=environment._configuration,
-            resource_correlation=operation.resource_correlation,
-            phases=(LocalEnvdResourcePhase.RUNNING, LocalEnvdResourcePhase.PAUSED),
-        )
-        if state_data.phase is LocalEnvdResourcePhase.PAUSED:
-            return environment.state
-        paused = _build_state(
-            environment._configuration,
-            resource_correlation=operation.resource_correlation,
-            phase=LocalEnvdResourcePhase.PAUSED,
-        )
-        await environment._pause(paused)
-        return paused
-
-    async def destroy(
-        self,
-        state: EnvironmentProviderResourceState,
-        *,
-        operation: EnvironmentOperationContext,
-    ) -> None:
-        self._require_operation(operation, EnvironmentManagementAction.DESTROY, provider_key=_PROVIDER_KEY)
-        configuration = await _validated_configuration(self._configuration)
-        _validate_state_for_phases(
-            state,
-            configuration=configuration,
-            resource_correlation=operation.resource_correlation,
-            phases=(LocalEnvdResourcePhase.RUNNING, LocalEnvdResourcePhase.PAUSED),
-        )
-
-    async def reconcile(
-        self,
-        operation: EnvironmentOperationContext,
-        *,
-        last_known_state: EnvironmentProviderResourceState | None,
-    ) -> EnvironmentReconciliationResult:
-        self._require_reconciliation_operation(operation, provider_key=_PROVIDER_KEY)
-        if operation.action is EnvironmentManagementAction.DESTROY:
-            if last_known_state is None:
-                return _unknown_reconciliation(operation, "destroy_state_missing")
-            configuration = await _validated_configuration(self._configuration)
-            _validate_state_for_phases(
-                last_known_state,
-                configuration=configuration,
-                resource_correlation=operation.resource_correlation,
-                phases=(LocalEnvdResourcePhase.RUNNING, LocalEnvdResourcePhase.PAUSED),
-            )
-            return EnvironmentReconciliationResult(
-                operation_id=operation.operation_id,
-                phase=EnvironmentReconciliationPhase.ABSENT,
-                evidence={"logical_resource": "detached"},
-            )
-
         try:
-            configuration = await _validated_configuration(self._configuration)
-            if operation.action is EnvironmentManagementAction.PAUSE:
-                if last_known_state is None:
-                    return _unknown_reconciliation(operation, "paused_state_missing")
-                state_data = _validate_state_for_phases(
-                    last_known_state,
-                    configuration=configuration,
-                    resource_correlation=operation.resource_correlation,
-                    phases=(LocalEnvdResourcePhase.RUNNING, LocalEnvdResourcePhase.PAUSED),
-                )
-                if state_data.phase is LocalEnvdResourcePhase.RUNNING:
-                    return _unknown_reconciliation(operation, "pause_completion_unconfirmed")
-                return EnvironmentReconciliationResult(
-                    operation_id=operation.operation_id,
-                    phase=EnvironmentReconciliationPhase.PAUSED,
-                    state=last_known_state,
-                    evidence={"logical_resource": "paused"},
-                )
-            await asyncio.to_thread(_validate_runtime_executable, self._runtime.executable)
-        except EnvironmentProviderError as error:
-            if error.category in {
-                EnvironmentProviderErrorCategory.MISSING,
-                EnvironmentProviderErrorCategory.DENIED,
-                EnvironmentProviderErrorCategory.UNAVAILABLE,
-                EnvironmentProviderErrorCategory.TIMEOUT,
-            }:
-                return _unknown_reconciliation(operation, error.code)
-            raise
+            return LocalEnvdProviderConfiguration.model_validate(value)
+        except ValidationError as error:
+            raise _provider_error(
+                "Local Envd configuration is invalid.",
+                code="provider_spec_invalid",
+                category=EnvironmentProviderErrorCategory.INVALID,
+                schema_version=schema_version,
+            ) from error
 
-        running = _build_state(
-            configuration,
-            resource_correlation=operation.resource_correlation,
-            phase=LocalEnvdResourcePhase.RUNNING,
-        )
-        if last_known_state is not None:
-            if operation.action is EnvironmentManagementAction.RESUME:
-                _validate_state_for_phases(
-                    last_known_state,
-                    configuration=configuration,
-                    resource_correlation=operation.resource_correlation,
-                    phases=(LocalEnvdResourcePhase.PAUSED, LocalEnvdResourcePhase.RUNNING),
-                )
-            else:
-                _validate_state(last_known_state, expected=running)
-        return _unknown_reconciliation(operation, "runtime_compatibility_unconfirmed")
+    def create_environment(
+        self,
+        *,
+        configuration: BaseModel,
+        state: EnvironmentState | None,
+        runtime: object | None = None,
+    ) -> Environment:
+        if not isinstance(configuration, LocalEnvdProviderConfiguration):
+            raise TypeError("Local Envd requires LocalEnvdProviderConfiguration")
+        if state is not None:
+            raise _provider_error(
+                "Local Envd is stateless and does not accept Environment state.",
+                code="provider_state_invalid",
+                category=EnvironmentProviderErrorCategory.INVALID,
+            )
+        if not isinstance(runtime, LocalEnvdProviderRuntime):
+            raise TypeError("Local Envd requires LocalEnvdProviderRuntime")
+        return LocalEnvdEnvironment(configuration, runtime)
 
 
-class LocalEnvdEnvironmentResource(EnvironmentResource):
+class LocalEnvdEnvironment(Environment):
     def __init__(
         self,
         configuration: LocalEnvdProviderConfiguration,
-        state: EnvironmentProviderResourceState,
-        *,
         runtime: LocalEnvdProviderRuntime,
-        provider_identity: object,
     ) -> None:
-        super().__init__()
-        self._configuration = configuration
-        self._state = state
+        super().__init__(None)
+        self._configuration = configuration.model_copy(deep=True)
         self._runtime = runtime
-        self._provider_identity = provider_identity
-        self._attachment_sequence = 0
-        self._active_attachments = 0
-        self._admitting = False
-        self._lock = asyncio.Lock()
+        self._descriptor: EnvironmentDescriptor | None = None
+        self._availability = EnvironmentAvailability(status="preparing")
+        self._operations = EnvironmentOperations()
         self._allocation: AbstractAsyncContextManager[Path] | None = None
         self._allocation_entered = False
-        self._allocation_root: Path | None = None
         self._process: asyncio.subprocess.Process | None = None
         self._windows_job: WindowsJob | None = None
         self._carrier: StdioEIPCarrier | None = None
         self._stderr_file: Any | None = None
+        self._eip_scope: AbstractAsyncContextManager[EIPEnvironmentSession] | None = None
+        self._bound_eip: EIPEnvironmentSession | None = None
         self._cleanup_task: asyncio.Task[BaseException | None] | None = None
 
     @property
-    def state(self) -> EnvironmentProviderResourceState:
-        return self._state
+    def provider_key(self) -> str:
+        return _PROVIDER_KEY
 
-    async def _enter_scope(self) -> None:
-        allocation = self._runtime.allocate_private_runtime()
-        if not isinstance(allocation, AbstractAsyncContextManager):
-            raise _runtime_failure("Local Envd private runtime allocator returned an invalid context manager.")
-        self._allocation = allocation
+    @property
+    def environment_id(self) -> str:
+        return self._configuration.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        if self._descriptor is None:
+            raise RuntimeError("Environment descriptor is unavailable before entry")
+        return self._descriptor
+
+    @property
+    def availability(self) -> EnvironmentAvailability:
+        return self._availability
+
+    @property
+    def operations(self) -> EnvironmentOperations:
+        return self._operations
+
+    async def _enter(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        agent_instance_id: str,
+        mount_id: str,
+        host_refs: Mapping[str, str],
+    ) -> None:
+        del thread_id, run_id, agent_instance_id, host_refs
         try:
-            root = await allocation.__aenter__()
-            self._allocation_entered = True
-            self._allocation_root = await asyncio.to_thread(_prepare_allocation_root, root)
-            runtime_dir, config_path, stderr_path = await asyncio.to_thread(
-                _write_private_bootstrap,
-                self._allocation_root,
-                self._configuration,
-            )
-            self._stderr_file = await asyncio.to_thread(open, stderr_path, "wb")
-            process_environment = _daemon_environment(
-                environment_id=self._configuration.environment_id,
-                runtime_dir=runtime_dir,
-            )
-            subprocess_options: dict[str, Any] = {}
-            if os.name == "posix":
-                subprocess_options["start_new_session"] = True
-            elif os.name == "nt":  # pragma: no cover - exercised on Windows
-                from ._windows_job import WindowsJob
+            configuration = await asyncio.to_thread(_canonical_configuration, self._configuration)
+            await _validate_runtime(self._runtime.executable, configuration)
+            self._configuration = configuration
+            await self._launch_private_generation()
 
-                # Preserve native-handle ownership across task cancellation.
-                self._windows_job = WindowsJob.create()
-                subprocess_options["creationflags"] = (
-                    subprocess.CREATE_NEW_PROCESS_GROUP | self._windows_job.creation_flags
-                )
-            self._process = await asyncio.create_subprocess_exec(
-                str(self._runtime.executable),
-                "--config",
-                str(config_path),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=self._stderr_file,
-                env=process_environment,
-                **subprocess_options,
+            carrier = self._carrier
+            if carrier is None:
+                raise _runtime_failure("Local Envd did not create an EIP carrier.")
+            source = carrier.lease(
+                initialization_timeout=_STARTUP_TIMEOUT_SECONDS,
+                request_timeout=_STARTUP_TIMEOUT_SECONDS,
             )
-            if self._windows_job is not None:
-                # Keep assignment and resume atomic relative to Resource cleanup.
-                self._windows_job.assign_and_resume(self._process.pid)
-            self._carrier = StdioEIPCarrier(
-                self._process,
-                max_request_bytes=_DAEMON_MAX_REQUEST_BYTES,
-                max_response_bytes=_DAEMON_MAX_RESPONSE_BYTES,
-                max_transfer_frame_bytes=_DAEMON_MAX_TRANSFER_FRAME_BYTES,
+            scope = open_eip_environment(
+                provider_key=_PROVIDER_KEY,
+                environment_id=self.environment_id,
+                session_source=source,
+                mount_id=mount_id,
             )
-            await _establish_daemon_readiness(
-                self._carrier,
-                expected_environment_id=self._configuration.environment_id,
-                stderr_path=stderr_path,
+            self._eip_scope = scope
+            bound = await scope.__aenter__()
+            self._bound_eip = bound
+            await bound.ensure_ready(bound.descriptor.operation_families)
+            facets = bound.operations
+            self._descriptor = bound.descriptor
+            self._operations = EnvironmentOperations(
+                files=facets.files,
+                shell=facets.shell,
+                processes=facets.processes,
+                ports=facets.ports,
+                outputs=facets.outputs,
             )
-            async with self._lock:
-                self._admitting = True
+            self._availability = bound.availability
         except BaseException as entry_error:
             cleanup_error = await self._cleanup_local_runtime()
             if isinstance(entry_error, asyncio.CancelledError):
                 if cleanup_error is not None:
                     entry_error.add_note(f"Local Envd entry cleanup also failed: {cleanup_error!r}")
                 raise
-            primary_error = _normalize_resource_entry_error(entry_error)
+            primary_error = _normalize_entry_error(entry_error)
             if cleanup_error is not None:
                 raise BaseExceptionGroup(
-                    "Local Envd Resource entry and cleanup failed",
+                    "Local Envd entry and cleanup failed",
                     [primary_error, cleanup_error],
                 ) from None
             if primary_error is entry_error:
                 raise
             raise primary_error from entry_error
 
-    @asynccontextmanager
-    async def acquire_attachment(self) -> AsyncGenerator[EnvironmentRuntimeAttachment]:
-        self._require_entered()
-        async with self._lock:
-            carrier = self._carrier
-            if self._active_attachments:
-                raise EnvironmentProviderError(
-                    "Local Envd Resource already has an active attachment.",
-                    code="provider_attachment_conflict",
-                    category=EnvironmentProviderErrorCategory.CONFLICT,
-                    certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                    context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-                )
-            if carrier is None or not carrier.is_available:
-                self._admitting = False
-                state_data = _decode_state(self._state)
-                if state_data.phase is LocalEnvdResourcePhase.RUNNING:
-                    raise _runtime_failure("Local Envd Resource carrier is unavailable.")
-                raise EnvironmentProviderError(
-                    "Local Envd Resource is paused and cannot admit attachments.",
-                    code="provider_attachment_conflict",
-                    category=EnvironmentProviderErrorCategory.CONFLICT,
-                    certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                    context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-                )
-            if not self._admitting:
-                raise EnvironmentProviderError(
-                    "Local Envd Resource attachment admission is closed.",
-                    code="provider_attachment_conflict",
-                    category=EnvironmentProviderErrorCategory.CONFLICT,
-                    certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                    context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-                )
-            self._attachment_sequence += 1
-            self._active_attachments = 1
-            source = carrier.lease()
-            attachment = EIPEnvironmentAttachment(
-                attachment_id=f"attachment-{self._attachment_sequence}",
-                environment_id=self._configuration.environment_id,
-                session_source=source,
-            )
-        primary_error: BaseException | None = None
-        try:
-            yield attachment
-        except BaseException as error:
-            primary_error = error
-            raise
-        finally:
-            release_error: BaseException | None = None
-            try:
-                await source.discard()
-            except BaseException as error:
-                release_error = _normalize_attachment_release_error(error)
-            finally:
-                async with self._lock:
-                    self._active_attachments = 0
-                    if self._carrier is None or not self._carrier.is_available:
-                        self._admitting = False
-            if release_error is not None:
-                if isinstance(primary_error, asyncio.CancelledError):
-                    primary_error.add_note(f"Local Envd attachment release also failed: {release_error!r}")
-                elif primary_error is not None:
-                    raise BaseExceptionGroup(
-                        "Local Envd attachment use and release failed",
-                        [primary_error, release_error],
-                    ) from None
-                else:
-                    raise release_error
+    async def _launch_private_generation(self) -> None:
+        allocation = self._runtime.allocate_private_runtime()
+        if not isinstance(allocation, AbstractAsyncContextManager):
+            raise _runtime_failure("Local Envd private runtime allocator returned an invalid context manager.")
+        self._allocation = allocation
+        root = await allocation.__aenter__()
+        self._allocation_entered = True
+        allocation_root = await asyncio.to_thread(_prepare_allocation_root, root)
+        runtime_dir, config_path, stderr_path = await asyncio.to_thread(
+            _write_private_bootstrap,
+            allocation_root,
+            self._configuration,
+        )
+        self._stderr_file = await asyncio.to_thread(open, stderr_path, "wb")
+        subprocess_options: dict[str, Any] = {}
+        if os.name == "posix":
+            subprocess_options["start_new_session"] = True
+        elif os.name == "nt":  # pragma: no cover - exercised on Windows
+            from ._windows_job import WindowsJob
 
-    async def _pause(self, paused: EnvironmentProviderResourceState) -> None:
-        self._require_entered()
-        async with self._lock:
-            if self._active_attachments:
-                raise EnvironmentProviderError(
-                    "Local Envd cannot pause with an active attachment scope.",
-                    code="provider_conflict",
-                    category=EnvironmentProviderErrorCategory.CONFLICT,
-                    certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                    context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-                )
-            self._admitting = False
+            self._windows_job = WindowsJob.create()
+            subprocess_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | self._windows_job.creation_flags
+        self._process = await asyncio.create_subprocess_exec(
+            str(self._runtime.executable),
+            "--config",
+            str(config_path),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=self._stderr_file,
+            env=_daemon_environment(environment_id=self.environment_id, runtime_dir=runtime_dir),
+            **subprocess_options,
+        )
+        if self._windows_job is not None:
+            self._windows_job.assign_and_resume(self._process.pid)
+        self._carrier = StdioEIPCarrier(
+            self._process,
+            max_request_bytes=_DAEMON_MAX_REQUEST_BYTES,
+            max_response_bytes=_DAEMON_MAX_RESPONSE_BYTES,
+            max_transfer_frame_bytes=_DAEMON_MAX_TRANSFER_FRAME_BYTES,
+        )
+
+    async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+        bound = self._bound_eip
+        if bound is None:
+            raise _operation_error("Local Envd EIP session is unavailable.", "environment_unavailable")
+        await bound.ensure_ready(operations)
+        self._availability = bound.availability
+
+    async def _close(self) -> None:
+        self._availability = EnvironmentAvailability(status="unavailable")
+        self._operations = EnvironmentOperations()
         cleanup_error = await self._cleanup_local_runtime()
         if cleanup_error is not None:
             raise cleanup_error
-        self._state = paused
 
-    async def _exit_scope(self) -> None:
-        async with self._lock:
-            self._admitting = False
-            active = self._active_attachments
-        cleanup_error = await self._cleanup_local_runtime()
-        if active:
-            active_error = EnvironmentProviderError(
-                "Local Envd EnvironmentResource closed with active attachment scopes.",
-                code="provider_cleanup_failed",
-                category=EnvironmentProviderErrorCategory.CLEANUP,
-                certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-                context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-                details={"active_attachment_count": active},
-            )
-            if cleanup_error is not None:
-                raise BaseExceptionGroup(
-                    "Local Envd attachment and runtime cleanup failed",
-                    [active_error, cleanup_error],
-                )
-            raise active_error
-        if cleanup_error is not None:
-            raise cleanup_error
+    async def _destroy(self) -> None:
+        return None
 
     async def _cleanup_local_runtime(self) -> BaseException | None:
         if self._cleanup_task is None:
-            self._cleanup_task = asyncio.create_task(
-                self._perform_cleanup(),
-                name="local-envd-resource-cleanup",
-            )
-        return await _await_resource_cleanup(self._cleanup_task)
+            self._cleanup_task = asyncio.create_task(self._perform_cleanup(), name="local-envd-environment-cleanup")
+        return await _await_cleanup(self._cleanup_task)
 
     async def _perform_cleanup(self) -> BaseException | None:
         errors: list[BaseException] = []
+        if self._eip_scope is not None:
+            try:
+                await self._eip_scope.__aexit__(None, None, None)
+            except BaseException as error:
+                errors.append(error)
+            self._eip_scope = None
+            self._bound_eip = None
         carrier, process, windows_job = self._carrier, self._process, self._windows_job
         if carrier is not None:
             try:
@@ -538,7 +296,6 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
                 )
             except BaseException as error:
                 errors.append(error)
-        if windows_job is not None:
             try:
                 await asyncio.to_thread(windows_job.close)
             except BaseException as error:
@@ -560,7 +317,7 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
         if not errors:
             return None
         wrapped = EnvironmentProviderError(
-            "Local Envd could not prove complete process/private-runtime cleanup.",
+            "Local Envd could not prove complete EIP/process/private-runtime cleanup.",
             code="provider_cleanup_failed",
             category=EnvironmentProviderErrorCategory.CLEANUP,
             certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
@@ -572,28 +329,7 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
         return wrapped
 
 
-def _require_configuration(configuration: BaseModel) -> LocalEnvdProviderConfiguration:
-    if not isinstance(configuration, LocalEnvdProviderConfiguration):
-        raise EnvironmentProviderError(
-            "Local Envd requires LocalEnvdProviderConfiguration.",
-            code="provider_spec_invalid",
-            category=EnvironmentProviderErrorCategory.INVALID,
-            certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-            recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-            context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-        )
-    return configuration
-
-
-async def _validated_configuration(
-    configuration: LocalEnvdProviderConfiguration,
-) -> LocalEnvdProviderConfiguration:
-    return await asyncio.to_thread(_canonical_configuration, configuration)
-
-
-def _canonical_configuration(
-    configuration: LocalEnvdProviderConfiguration,
-) -> LocalEnvdProviderConfiguration:
+def _canonical_configuration(configuration: LocalEnvdProviderConfiguration) -> LocalEnvdProviderConfiguration:
     workspace = _canonical_directory(configuration.workspace.path, "Local Envd workspace")
     roots = tuple(
         sorted(
@@ -680,10 +416,9 @@ def _canonical_file(path: Path, label: str, *, executable: bool) -> Path:
 async def _validate_runtime(executable: Path, configuration: LocalEnvdProviderConfiguration) -> None:
     await asyncio.to_thread(_validate_runtime_executable, executable)
     expected_version = f"agent-envd {_client_release_identity()}\n".encode()
-    version = await _run_checked_subprocess(executable, "--version", environment=None)
-    if version[0] != expected_version or version[1]:
+    stdout, stderr = await _run_checked_subprocess(executable, "--version", environment=None)
+    if stdout != expected_version or stderr:
         raise _runtime_failure(f"Local Envd agent-envd release does not match a13n-envd-client {envd_client_version}.")
-
     probe_environment = {name: value for name, value in os.environ.items() if not name.startswith("AGENT_ENVD_")}
     probe_environment["AGENT_ENVD_EXECUTION_ISOLATION"] = "required"
     probe_environment["AGENT_ENVD_EXECUTION_NETWORK"] = configuration.execution_network.value
@@ -772,62 +507,6 @@ async def _stop_validation_process(process: asyncio.subprocess.Process) -> None:
     await asyncio.shield(process.wait())
 
 
-def _build_state(
-    configuration: LocalEnvdProviderConfiguration,
-    *,
-    resource_correlation: str,
-    phase: LocalEnvdResourcePhase,
-) -> EnvironmentProviderResourceState:
-    payload = configuration.model_dump(mode="json")
-    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
-    data = LocalEnvdProviderStateData(
-        environment_id=configuration.environment_id,
-        resource_correlation=resource_correlation,
-        configuration_fingerprint=f"sha256:{hashlib.sha256(encoded).hexdigest()}",
-        phase=phase,
-    )
-    return EnvironmentProviderResourceState(
-        provider_key=_PROVIDER_KEY,
-        state_version=_STATE_VERSION,
-        data=data.model_dump(mode="json"),
-    )
-
-
-def _validate_state(
-    state: EnvironmentProviderResourceState,
-    *,
-    expected: EnvironmentProviderResourceState,
-) -> None:
-    _decode_state(state)
-    if state != expected:
-        raise _state_error("Local Envd state does not match this Provider configuration and resource.")
-
-
-def _validate_state_for_phases(
-    state: EnvironmentProviderResourceState,
-    *,
-    configuration: LocalEnvdProviderConfiguration,
-    resource_correlation: str,
-    phases: tuple[LocalEnvdResourcePhase, ...],
-) -> LocalEnvdProviderStateData:
-    data = _decode_state(state)
-    expected_states = tuple(
-        _build_state(configuration, resource_correlation=resource_correlation, phase=phase) for phase in phases
-    )
-    if state not in expected_states:
-        raise _state_error("Local Envd state does not match this Provider configuration and resource.")
-    return data
-
-
-def _decode_state(state: EnvironmentProviderResourceState) -> LocalEnvdProviderStateData:
-    if state.provider_key != _PROVIDER_KEY or state.state_version != _STATE_VERSION:
-        raise _state_error("Local Envd state envelope is incompatible.")
-    try:
-        return LocalEnvdProviderStateData.model_validate(state.data)
-    except ValidationError as error:
-        raise _state_error("Local Envd state data is invalid.") from error
-
-
 def _write_private_bootstrap(
     allocation_root: Path,
     configuration: LocalEnvdProviderConfiguration,
@@ -882,8 +561,7 @@ def _write_private_bootstrap(
             "extra_read_only_paths": [],
         },
     }
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    descriptor = os.open(config_path, flags, 0o600)
+    descriptor = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "wb") as stream:
         stream.write(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
         stream.flush()
@@ -928,9 +606,7 @@ def _daemon_environment(*, environment_id: str, runtime_dir: Path) -> dict[str, 
     return environment
 
 
-async def _await_resource_cleanup(
-    cleanup_task: asyncio.Task[BaseException | None],
-) -> BaseException | None:
+async def _await_cleanup(cleanup_task: asyncio.Task[BaseException | None]) -> BaseException | None:
     cancellation: asyncio.CancelledError | None = None
     while True:
         try:
@@ -953,68 +629,6 @@ async def _await_resource_cleanup(
         return cleanup_error
 
 
-async def _establish_daemon_readiness(
-    carrier: StdioEIPCarrier,
-    *,
-    expected_environment_id: str,
-    stderr_path: Path,
-) -> None:
-    try:
-        source = carrier.lease(
-            initialization_timeout=_STARTUP_TIMEOUT_SECONDS,
-            request_timeout=_STARTUP_TIMEOUT_SECONDS,
-        )
-    except BaseException as error:
-        detail = await asyncio.to_thread(_read_startup_error, stderr_path)
-        failure = _runtime_failure(f"Local Envd daemon could not start EIP readiness validation: {detail}")
-        failure.add_note(repr(error))
-        raise failure from error
-
-    async def validate() -> None:
-        async with source.open_session(
-            expected_environment_id=expected_environment_id,
-            required_methods=frozenset({"environment.readiness", "session.close"}),
-        ):
-            pass
-
-    readiness_task = asyncio.create_task(validate(), name="local-envd-readiness-session")
-    exit_task = asyncio.create_task(carrier.process.wait(), name="local-envd-readiness-process-exit")
-    try:
-        completed, _pending = await asyncio.wait(
-            {readiness_task, exit_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        if exit_task in completed:
-            return_code = exit_task.result()
-            detail = await asyncio.to_thread(_read_startup_error, stderr_path)
-            raise _runtime_failure(
-                f"Local Envd daemon exited during EIP readiness validation with code {return_code}: {detail}"
-            )
-        await readiness_task
-        if exit_task.done():
-            return_code = exit_task.result()
-            detail = await asyncio.to_thread(_read_startup_error, stderr_path)
-            raise _runtime_failure(
-                f"Local Envd daemon exited after EIP readiness validation with code {return_code}: {detail}"
-            )
-    except asyncio.CancelledError:
-        raise
-    except EnvironmentProviderError:
-        raise
-    except BaseException as error:
-        detail = await asyncio.to_thread(_read_startup_error, stderr_path)
-        failure = _runtime_failure(
-            f"Local Envd daemon did not establish EIP readiness before attachment admission: {detail}"
-        )
-        failure.add_note(repr(error))
-        raise failure from error
-    finally:
-        for task in (readiness_task, exit_task):
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(readiness_task, exit_task, return_exceptions=True)
-
-
 async def _terminate_process_tree(process: asyncio.subprocess.Process) -> None:
     if process.returncode is None:
         try:
@@ -1022,12 +636,10 @@ async def _terminate_process_tree(process: asyncio.subprocess.Process) -> None:
                 await process.wait()
         except TimeoutError:
             pass
-
     if os.name == "posix":
         await _terminate_posix_process_group(process.pid)
         await process.wait()
         return
-
     if process.returncode is None:  # pragma: no cover - exercised on Windows
         process.terminate()
         try:
@@ -1069,73 +681,37 @@ def _posix_process_group_exists(process_group: int) -> bool:
         return True
 
 
-def _read_startup_error(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")[-1024:].strip() or "no diagnostic output"
-    except OSError:
-        return "diagnostic output unavailable"
-
-
-def _normalize_resource_entry_error(error: BaseException) -> BaseException:
+def _normalize_entry_error(error: BaseException) -> BaseException:
     if isinstance(error, EnvironmentProviderError):
         return error
-    wrapped = _runtime_failure("Local Envd Resource entry failed before attachment admission.")
+    wrapped = _runtime_failure("Local Envd entry failed before EIP operation admission.")
     wrapped.add_note(repr(error))
     return wrapped
 
 
-def _normalize_attachment_release_error(error: BaseException) -> BaseException:
-    if isinstance(error, (asyncio.CancelledError, EnvironmentProviderError)):
-        return error
-    wrapped = _runtime_failure("Local Envd attachment release found an unavailable carrier.")
-    wrapped.add_note(repr(error))
-    return wrapped
-
-
-def _unknown_reconciliation(
-    operation: EnvironmentOperationContext,
-    reason: str,
-) -> EnvironmentReconciliationResult:
-    return EnvironmentReconciliationResult(
-        operation_id=operation.operation_id,
-        phase=EnvironmentReconciliationPhase.UNKNOWN,
-        evidence={"reason": reason},
-    )
-
-
-def _operation_context(operation: EnvironmentOperationContext) -> EnvironmentProviderErrorContext:
-    return EnvironmentProviderErrorContext(
-        provider_key=_PROVIDER_KEY,
-        action=operation.action,
-        operation_id=operation.operation_id,
-        resource_correlation=operation.resource_correlation,
-    )
-
-
-def _state_error(
+def _provider_error(
     description: str,
-    operation: EnvironmentOperationContext | None = None,
+    *,
+    code: str,
+    category: EnvironmentProviderErrorCategory,
+    schema_version: str | None = None,
 ) -> EnvironmentProviderError:
     return EnvironmentProviderError(
         description,
-        code="provider_state_invalid",
-        category=EnvironmentProviderErrorCategory.INVALID,
+        code=code,
+        category=category,
         certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
         recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-        context=_operation_context(operation)
-        if operation is not None
-        else EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY, state_version=_STATE_VERSION),
+        context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY, schema_version=schema_version),
     )
 
 
 def _spec_error(description: str) -> EnvironmentProviderError:
-    return EnvironmentProviderError(
+    return _provider_error(
         description,
         code="provider_spec_invalid",
         category=EnvironmentProviderErrorCategory.INVALID,
-        certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-        recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-        context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY, schema_version=_STATE_VERSION),
+        schema_version=_CONFIGURATION_VERSION,
     )
 
 
@@ -1148,3 +724,9 @@ def _runtime_failure(description: str) -> EnvironmentProviderError:
         recovery_hint=EnvironmentProviderRecoveryHint.REFRESH_RUNTIME,
         context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
     )
+
+
+def _operation_error(message: str, code: str):
+    from ..models import EnvironmentError
+
+    return EnvironmentError(message, code=code)

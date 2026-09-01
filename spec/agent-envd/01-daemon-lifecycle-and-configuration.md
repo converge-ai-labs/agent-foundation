@@ -12,13 +12,13 @@ Bootstrap configuration is operator or provider-adapter input. EIP requests can 
 
 | Concern                                                                                                     | Owner                                                    | Relationship                                  |
 | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------- |
-| Provider resource lifecycle, current credential use, endpoint routing, and envd attachment-token issuance   | Environment Provider package and Host                    | Completes trusted bootstrap                   |
+| Current state, lifecycle policy, credentials, endpoint routing, and attachment-token issuance               | Host and fresh Provider-specific Environment adapter     | Completes trusted bootstrap                   |
 | Envd executable, configuration, protected bootstrap inputs, and process lifecycle                           | Operator or provider adapter                             | Launches envd inside the selected Environment |
 | Configuration validation, generation, resource owners, isolation probe, carrier startup, drain, and cleanup | `agent-envd`                                             | One daemon lifecycle                          |
 | Carrier framing, HTTP listener, reverse-WebSocket handshake/reconnect, EIP Session, and readiness operation | [Transports and Sessions](03-transports-and-sessions.md) | Begins only after daemon bootstrap            |
 | Harness run and durable execution lifecycle                                                                 | Harness and Host                                         | Independent of daemon process lifetime        |
 
-One ready daemon admits at most one active initialized EIP session and can then serve fresh sequential sessions over its selected carrier while retaining generation-owned resources. A session is a protocol carrier, not a tenant, principal, or run. Another user, mutually untrusted workload, or concurrent independent session requires another daemon instance, runtime root, bootstrap binding, and provider resource boundary.
+One ready daemon admits at most one active initialized EIP session and can then serve fresh sequential sessions over its selected carrier while retaining generation-owned resources. A session is a protocol carrier, not a tenant, principal, or run. Another user, mutually untrusted workload, or concurrent independent session requires another daemon instance, runtime root, bootstrap binding, and backing-target boundary.
 
 ## Trusted Configuration
 

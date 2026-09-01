@@ -47,10 +47,11 @@ from a13n_harness.environment import (
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeMount,
     create_environment_runtime,
 )
-from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.environment.providers import (
+    EnvironmentRuntimeMount,
+)
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.toolsets.documents import DocumentsToolset
 from a13n_harness.toolsets.media import MediaToolset
@@ -64,6 +65,8 @@ from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+
+from .environment_helpers import DirectLocalEnvironmentProviderBinding
 
 pytestmark = pytest.mark.anyio
 
@@ -265,7 +268,12 @@ async def test_content_toolsets_compose_directly_over_natural_provider_ports(tmp
     )
     binding = _binding(tmp_path)
     run_bindings = RunBindings.embedded(environment=binding)
-    async with binding.bind(run_id="direct-content-toolsets", instance=run_bindings.instance) as environment:
+    async with binding.bind(
+        thread_id="thread-content-toolsets",
+        run_id="direct-content-toolsets",
+        instance=run_bindings.instance,
+        host_refs={},
+    ) as environment:
         documents = DocumentsToolset(
             _DocumentConverter(DocumentConversionResult(markdown="# Document")),
             files=environment.files,

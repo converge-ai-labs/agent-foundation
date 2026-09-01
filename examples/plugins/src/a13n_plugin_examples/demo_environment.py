@@ -1,36 +1,29 @@
-"""Run packaged and explicit Environment provider factories through a real runtime."""
+"""Run packaged and explicit Environment Providers through a real Harness Run."""
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
 from a13n_environment_provider import (
-    EnvironmentManagementAction,
-    EnvironmentOperationContext,
-    EnvironmentProviderFactoryCatalog,
-    EnvironmentProviderSpec,
-    EnvironmentReconciliationPhase,
-    build_environment_provider_factory_catalog,
-    discover_environment_provider_factory_references,
+    EnvironmentProvider,
+    EnvironmentProviderCatalog,
+    build_environment_provider_catalog,
 )
-from a13n_harness import RunBindings
-from a13n_harness.environment import (
-    EnvironmentAction,
-    EnvironmentPermissionSet,
+from a13n_harness import (
+    AgentSpec,
+    EnvironmentAccess,
+    EnvironmentMount,
+    HarnessBuilder,
+    RunPreparationContext,
 )
-from a13n_harness.environment.advanced import (
-    EnvironmentProviderBinding,
-    EnvironmentRuntimeMount,
-    create_environment_provider_binding,
-    create_environment_runtime,
-)
-from pydantic import JsonValue
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-# Host configuration selects this metadata key without importing its target.
 PROVIDER_KEY = "example.workspace"
 type EnvironmentSelectionMode = Literal["entrypoint", "code"]
 
@@ -42,121 +35,83 @@ class EnvironmentDemoResult:
     aliases: tuple[str, ...]
     default_text: str
     docs_text: str
-    durable_lifecycle_phases: tuple[str, ...]
-    pause_supported: bool
+    exported_state_aliases: tuple[str, ...]
+    roots_preserved: bool
 
 
-def _provider_spec(root: Path, environment_id: str) -> EnvironmentProviderSpec:
-    parameters: dict[str, JsonValue] = {
-        "root": str(root),
-        "environment_id": environment_id,
-        "read_only": True,
-    }
-    return EnvironmentProviderSpec(
-        provider_key=PROVIDER_KEY,
+def _configuration(provider: EnvironmentProvider, root: Path, environment_id: str):
+    return provider.validate_configuration(
         schema_version="1",
-        parameters=parameters,
-    )
-
-
-def _operation(action: EnvironmentManagementAction, environment_id: str) -> EnvironmentOperationContext:
-    return EnvironmentOperationContext(
-        operation_id=f"operation-{action.value}-{environment_id}",
-        action=action,
-        resource_correlation=f"resource-{environment_id}",
-        attempt=1,
-    )
-
-
-def _runtime_mount(provider_binding: EnvironmentProviderBinding) -> EnvironmentRuntimeMount:
-    return EnvironmentRuntimeMount(
-        binding=provider_binding,
-        permission_ceiling=EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.FILE_READ_TEXT})),
-        working_directory="/",
+        value={
+            "root": str(root),
+            "environment_id": environment_id,
+            "read_only": True,
+        },
     )
 
 
 async def _run_environment_demo(
     *,
     selection_mode: EnvironmentSelectionMode,
-    catalog: EnvironmentProviderFactoryCatalog,
+    catalog: EnvironmentProviderCatalog,
     source_root: Path,
     docs_root: Path,
 ) -> EnvironmentDemoResult:
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
-
-    source_provider = catalog.create_provider(
-        _provider_spec(source_root, "workspace-source"),
-        runtime=WorkspaceEnvironmentRuntime(),
+    provider = catalog.resolve(PROVIDER_KEY)
+    source = provider.create_environment(
+        configuration=_configuration(provider, source_root, "workspace-source"),
+        state=None,
+        runtime=None,
     )
-    docs_provider = catalog.create_provider(
-        _provider_spec(docs_root, "workspace-docs"),
-        runtime=WorkspaceEnvironmentRuntime(),
+    docs = provider.create_environment(
+        configuration=_configuration(provider, docs_root, "workspace-docs"),
+        state=None,
+        runtime=None,
     )
-    source_create = _operation(EnvironmentManagementAction.CREATE, "workspace-source")
-    docs_create = _operation(EnvironmentManagementAction.CREATE, "workspace-docs")
-    source_resource = await source_provider.create(operation=source_create)
-    docs_resource = await docs_provider.create(operation=docs_create)
-    source_state = source_resource.state
-    docs_destroy = _operation(EnvironmentManagementAction.DESTROY, "workspace-docs")
+    default_text = ""
+    docs_text = ""
+    aliases: tuple[str, ...] = ()
 
-    # Default Resource exit closes only this process-local scope. The Host can
-    # reopen `source_resource` later and decide when to destroy it.
-    async with (
-        source_resource,
-        docs_provider.resource_scope(
-            docs_resource,
-            destroy_on_exit=True,
-            destroy_operation=docs_destroy,
-        ),
-    ):
-        async with (
-            source_resource.acquire_attachment() as source_attachment,
-            docs_resource.acquire_attachment() as docs_attachment,
-        ):
-            source = create_environment_provider_binding(source_attachment)
-            docs = create_environment_provider_binding(docs_attachment)
-            environment_runtime = create_environment_runtime(
-                mounts={
-                    "source": _runtime_mount(source),
-                    "docs": _runtime_mount(docs),
-                },
-                default_mount="source",
-            )
-            run_bindings = RunBindings.embedded(environment=environment_runtime)
+    async def read_workspaces(context: RunPreparationContext) -> str:
+        nonlocal aliases, default_text, docs_text
+        default_text = (await context.environment.files.read_text("/workspace/message.txt")).text
+        docs_text = (await context.environment.files.read_text("/environment/docs/message.txt")).text
+        aliases = tuple(mount.name for mount in context.environment.snapshot.mounts)
+        return "Confirm that both workspaces were read."
 
-            # HarnessRunStream performs this same runtime bind/activate lifecycle.
-            async with environment_runtime.bind(
-                run_id="run-example",
-                instance=run_bindings.instance,
-            ) as environment:
-                await environment_runtime._activate()
-                default_page = await environment.files.read_text("/workspace/message.txt")
-                docs_page = await environment.files.read_text("/environment/docs/message.txt")
-                aliases = tuple(mount.name for mount in environment.snapshot.mounts)
+    async def stream_model(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str]:
+        del messages, info
+        yield "workspaces observed"
 
-    created = await source_provider.reconcile(source_create, last_known_state=source_state)
-    source_resume = _operation(EnvironmentManagementAction.RESUME, "workspace-source")
-    resumed_resource = await source_provider.resume(source_state, operation=source_resume)
-    async with resumed_resource:
-        async with resumed_resource.acquire_attachment():
-            resumed_state = resumed_resource.state
-    resumed = await source_provider.reconcile(source_resume, last_known_state=resumed_state)
-
-    source_destroy = _operation(EnvironmentManagementAction.DESTROY, "workspace-source")
-    await source_provider.destroy(resumed_state, operation=source_destroy)
-    destroyed = await source_provider.reconcile(source_destroy, last_known_state=resumed_state)
-    docs_destroyed = await docs_provider.reconcile(docs_destroy, last_known_state=docs_resource.state)
-    assert docs_destroyed.phase is EnvironmentReconciliationPhase.ABSENT
+    executable = HarnessBuilder(configured_plugins_enabled=False).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream_model),
+    )
+    result = await executable.run(
+        input_factory=read_workspaces,
+        environments={
+            "source": EnvironmentMount(source, access=EnvironmentAccess.READ_ONLY),
+            "docs": EnvironmentMount(docs, access=EnvironmentAccess.READ_ONLY),
+        },
+        default_environment="source",
+    )
+    if result.output_or_raise() != "workspaces observed":
+        raise RuntimeError("The offline Agent returned an unexpected result")
+    if result.state is None:
+        raise RuntimeError("The Harness Run did not export continuation state")
 
     return EnvironmentDemoResult(
         selection_mode=selection_mode,
-        provider_key=catalog.registrations[0].provider_key,
+        provider_key=provider.key,
         aliases=aliases,
-        default_text=default_page.text,
-        docs_text=docs_page.text,
-        durable_lifecycle_phases=(created.phase.value, resumed.phase.value, destroyed.phase.value),
-        pause_supported=bool(source_provider.lifecycle_capabilities.pause_modes),
+        default_text=default_text,
+        docs_text=docs_text,
+        exported_state_aliases=tuple(sorted(result.state.environment_states)),
+        roots_preserved=source_root.is_dir() and docs_root.is_dir(),
     )
 
 
@@ -165,12 +120,9 @@ async def run_environment_entrypoint_demo(
     source_root: Path,
     docs_root: Path,
 ) -> EnvironmentDemoResult:
-    """Discover and explicitly select the installed package factory."""
+    """Load only the explicitly enabled installed Provider entry point."""
 
-    references = discover_environment_provider_factory_references()
-    if PROVIDER_KEY not in {reference.provider_key for reference in references}:
-        raise RuntimeError(f"Installed Environment provider factory {PROVIDER_KEY!r} was not discovered")
-    catalog = build_environment_provider_factory_catalog(extension_keys=(PROVIDER_KEY,))
+    catalog = build_environment_provider_catalog(extension_keys=(PROVIDER_KEY,))
     return await _run_environment_demo(
         selection_mode="entrypoint",
         catalog=catalog,
@@ -184,11 +136,11 @@ async def run_environment_code_demo(
     source_root: Path,
     docs_root: Path,
 ) -> EnvironmentDemoResult:
-    """Supply the factory object directly while retaining its factory method."""
+    """Register the Provider object directly without scanning package metadata."""
 
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentProviderFactory
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
 
-    catalog = build_environment_provider_factory_catalog(explicit_factories=(WorkspaceEnvironmentProviderFactory(),))
+    catalog = EnvironmentProviderCatalog((WorkspaceEnvironmentProvider(),))
     return await _run_environment_demo(
         selection_mode="code",
         catalog=catalog,
@@ -215,8 +167,8 @@ def _run_main(selection_mode: EnvironmentSelectionMode) -> None:
     print(f"active aliases: {', '.join(result.aliases)}")
     print(f"default route: {result.default_text.strip()}")
     print(f"docs route: {result.docs_text.strip()}")
-    print(f"durable lifecycle: {' -> '.join(result.durable_lifecycle_phases)}")
-    print(f"pause supported: {result.pause_supported}")
+    print(f"exported state aliases: {', '.join(result.exported_state_aliases) or 'none'}")
+    print(f"roots preserved: {result.roots_preserved}")
 
 
 def main_entrypoint() -> None:
@@ -226,7 +178,7 @@ def main_entrypoint() -> None:
 
 
 def main_code() -> None:
-    """Run the explicit factory-object path without model credentials."""
+    """Run the explicit Provider-object path without model credentials."""
 
     _run_main("code")
 

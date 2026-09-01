@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Literal, NotRequired, TypedDict
 
-from pydantic import JsonValue
-
 from ._results import ToolFailure
 from .output import ToolOutputDisclosure
 
@@ -18,115 +16,72 @@ class ProcessStatusProjection(TypedDict):
     cleanup: str
 
 
-class OutputCaptureProjection(TypedDict):
-    kind: str
-    producer_complete: bool
-    content_complete: bool
-    produced_bytes: int
-    captured_bytes: int
-    dropped_bytes: int
-    text: str
+class OutputPageProjection(TypedDict):
+    requested_offset: int
+    start_offset: int
+    next_offset: int
     available_start: int
     available_end: int
+    produced_bytes: int
+    producer_complete: bool
+    content_complete: bool
+    omitted_before_bytes: int
+    text: str
 
 
-class ProcessProjection(TypedDict):
+class ProcessObservationSuccess(TypedDict):
+    ok: Literal[True]
     process_id: str
     status: ProcessStatusProjection
     stdin_open: bool
-    stdout: OutputCaptureProjection
-    stderr: OutputCaptureProjection
+    stdout: OutputPageProjection
+    stderr: OutputPageProjection
     disclosure: NotRequired[ToolOutputDisclosure]
 
 
-class ProcessSuccess(ProcessProjection):
-    ok: Literal[True]
-
-
-type ProcessToolResult = ProcessSuccess | ToolFailure
+type ProcessObservationResult = ProcessObservationSuccess | ToolFailure
 
 
 class ShellExecSuccess(TypedDict):
     ok: Literal[True]
-    background: bool
-    status: ProcessStatusProjection
-    stdout: OutputCaptureProjection
-    stderr: OutputCaptureProjection
     process_id: NotRequired[str]
-    stdin_open: NotRequired[bool]
+    status: ProcessStatusProjection
+    stdin_open: bool
+    stdout: OutputPageProjection
+    stderr: OutputPageProjection
     disclosure: NotRequired[ToolOutputDisclosure]
 
 
 type ShellExecToolResult = ShellExecSuccess | ToolFailure
 
 
-class ProcessProducedBytes(TypedDict):
-    stdout: int
-    stderr: int
-
-
-class ProcessStatusItemSuccess(TypedDict):
-    process_id: str
-    ok: Literal[True]
-    status: ProcessStatusProjection
-    stdin_open: bool
-    produced_bytes: ProcessProducedBytes
-
-
-class ProcessStatusItemFailure(TypedDict):
-    process_id: str
-    ok: Literal[False]
-    error: dict[str, JsonValue]
-
-
-type ProcessStatusItem = ProcessStatusItemSuccess | ProcessStatusItemFailure
-
-
-class ProcessStatusListSuccess(TypedDict):
-    ok: Literal[True]
-    processes: list[ProcessStatusItem]
-    showing: int
-    next_cursor: int | None
-    truncated: bool
-    disclosure: NotRequired[ToolOutputDisclosure]
-
-
-type ProcessStatusListResult = ProcessStatusListSuccess | ToolFailure
-
-
-class ProcessReadOutputSuccess(ProcessSuccess):
-    pass
-
-
-type ProcessReadOutputResult = ProcessReadOutputSuccess | ToolFailure
-
-
 class ProcessInputSuccess(TypedDict):
     ok: Literal[True]
+    process_id: str
     accepted_bytes: int
     stdin_open: bool
+    status: ProcessStatusProjection
 
 
 type ProcessInputResult = ProcessInputSuccess | ToolFailure
 
 
-class ProcessSignalSuccess(ProcessProjection):
+class ProcessSignalSuccess(TypedDict):
     ok: Literal[True]
+    process_id: str
     accepted: bool
+    stdin_open: bool
+    status: ProcessStatusProjection
 
 
 type ProcessSignalResult = ProcessSignalSuccess | ToolFailure
 
 
 __all__ = [
-    "OutputCaptureProjection",
+    "OutputPageProjection",
     "ProcessInputResult",
-    "ProcessProjection",
-    "ProcessReadOutputResult",
+    "ProcessObservationResult",
     "ProcessSignalResult",
-    "ProcessStatusItem",
-    "ProcessStatusListResult",
     "ProcessStatusProjection",
-    "ProcessToolResult",
     "ShellExecToolResult",
 ]

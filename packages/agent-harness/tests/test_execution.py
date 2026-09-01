@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
+from a13n_environment_provider import EnvironmentState
 from a13n_harness import (
     AgentDefinition,
     DefinitionError,
@@ -23,7 +24,6 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness import AgentSpec as HarnessAgentSpec
-from a13n_harness.environment import EnvironmentState
 from a13n_harness.events import _RunEventEmitter
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
@@ -238,15 +238,24 @@ async def test_stream_is_lazy_and_delivers_one_terminal_result_after_events() ->
     assert result.usage.requests == 1
 
 
-async def test_environment_state_restores_before_input_factory_and_exports_fresh_state() -> None:
+async def test_previous_environment_states_are_host_owned_and_current_states_are_exported() -> None:
     calls: list[tuple[ModelMessage, ...]] = []
     executable = _build(_turn_model(calls))
-    previous = HarnessState.new(environment_state=EnvironmentState())
+    previous = HarnessState.new(
+        environment_states={
+            "workspace": EnvironmentState(
+                provider_key="test.provider",
+                state_version="state-1",
+                state={"target": "previous"},
+            )
+        }
+    )
 
     async def input_factory(preparation) -> str:
         assert preparation.environment.snapshot.mounts == ()
         assert preparation.environment.snapshot.default_mount is None
-        return "restored"
+        assert preparation.environment.dump_states() == {}
+        return "current"
 
     result = await executable.run(
         input_factory=input_factory,
@@ -256,8 +265,7 @@ async def test_environment_state_restores_before_input_factory_and_exports_fresh
 
     assert result.output_or_raise() == "turn-1"
     assert result.state is not None
-    assert result.state.environment_state is not None
-    assert result.state.environment_state == EnvironmentState()
+    assert result.state.environment_states == {}
 
 
 async def test_enter_and_exit_without_iteration_does_not_start_the_agent() -> None:

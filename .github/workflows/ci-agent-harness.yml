@@ -45,14 +45,12 @@ jobs:
           - name: Windows
             runner: windows-2025
             test_targets: >-
-              packages/agent-harness/tests/test_environment_local.py
-              packages/agent-harness/tests/test_environment_processes.py
+              packages/agent-harness/tests/test_environment_core.py
               packages/agent-harness/tests/test_monitored_process.py
           - name: macOS
             runner: macos-15
             test_targets: >-
-              packages/agent-harness/tests/test_environment_local.py
-              packages/agent-harness/tests/test_environment_processes.py
+              packages/agent-harness/tests/test_environment_core.py
               packages/agent-harness/tests/test_monitored_process.py
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10

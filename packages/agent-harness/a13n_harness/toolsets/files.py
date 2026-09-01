@@ -1304,14 +1304,10 @@ def _environment_error_result(exc: EnvironmentError) -> ToolFailure:
         value = exc.details.get(key)
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
             safe_details[key] = value
-    return {
-        "ok": False,
-        "error": {
-            "code": exc.code,
-            "retry_hint": exc.retry_hint,
-            "details": safe_details,
-        },
-    }
+    error = ToolError(code=exc.code, details=safe_details)
+    if exc.retry_hint is not None:
+        error["retry_hint"] = exc.retry_hint
+    return {"ok": False, "error": error}
 
 
 def _apply_text_edits(

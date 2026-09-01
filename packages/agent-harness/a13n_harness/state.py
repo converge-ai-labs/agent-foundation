@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, cast
 from uuid import uuid4
 
+from a13n_environment_provider import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, computed_field, field_validator
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
 from a13n_harness._json import dump_json_bytes
-from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.errors import StateError
 
 _JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
-_ENVIRONMENT_STATE_ADAPTER = TypeAdapter(EnvironmentState)
+_ENVIRONMENT_STATES_ADAPTER = TypeAdapter(dict[str, EnvironmentState])
 _EMPTY_MESSAGES_JSON = ModelMessagesTypeAdapter.dump_json([])
 
 
@@ -65,6 +65,7 @@ class CapabilityState(BaseModel):
 
 _CAPABILITY_ENTRIES_ADAPTER = TypeAdapter(dict[str, CapabilityState])
 _EMPTY_ENTRIES_JSON = _CAPABILITY_ENTRIES_ADAPTER.dump_json({})
+_REMOVED_CAPABILITY_STATE_IDS = frozenset({"a13n.dynamic-environment.processes"})
 
 
 class AgentContextStateSnapshot(BaseModel):
@@ -86,6 +87,8 @@ class AgentContextStateSnapshot(BaseModel):
         for capability_id in entries:
             if not capability_id.strip():
                 raise ValueError("Capability state IDs must not be blank.")
+            if capability_id in _REMOVED_CAPABILITY_STATE_IDS:
+                raise ValueError(f"Capability state namespace {capability_id!r} is no longer supported.")
         return _CAPABILITY_ENTRIES_ADAPTER.dump_json(entries)
 
     @computed_field
@@ -112,9 +115,9 @@ class HarnessState(BaseModel):
         repr=False,
     )
     agent_context_state: AgentContextStateSnapshot = Field(default_factory=AgentContextStateSnapshot)
-    environment_state_json: bytes | EnvironmentState | None = Field(
-        default=None,
-        alias="environment_state",
+    environment_states_json: bytes | Mapping[str, EnvironmentState] = Field(
+        default=b"{}",
+        alias="environment_states",
         exclude=True,
         repr=False,
     )
@@ -125,7 +128,7 @@ class HarnessState(BaseModel):
         *,
         message_history: Sequence[ModelMessage] = (),
         agent_context_state: AgentContextStateSnapshot | None = None,
-        environment_state: EnvironmentState | None = None,
+        environment_states: Mapping[str, EnvironmentState] | None = None,
     ) -> HarnessState:
         """Create the initial continuation envelope for a new Thread."""
         return cls(
@@ -135,19 +138,17 @@ class HarnessState(BaseModel):
             agent_context_state=(
                 agent_context_state if agent_context_state is not None else AgentContextStateSnapshot()
             ),
-            environment_state=environment_state,
+            environment_states=environment_states or {},
         )
 
-    @field_validator("environment_state_json", mode="before")
+    @field_validator("environment_states_json", mode="before")
     @classmethod
-    def _encode_environment_state(cls, value: Any) -> bytes | None:
-        if value is None:
-            return None
-        validated = _ENVIRONMENT_STATE_ADAPTER.validate_python(value)
+    def _encode_environment_states(cls, value: Any) -> bytes:
+        validated = _ENVIRONMENT_STATES_ADAPTER.validate_python(value)
         try:
-            return dump_json_bytes(validated.model_dump(mode="json"), sort_keys=True)
+            return _ENVIRONMENT_STATES_ADAPTER.dump_json(validated)
         except (TypeError, ValueError) as exc:
-            raise ValueError("Environment state must be finite canonical JSON.") from exc
+            raise ValueError("Environment states must be finite canonical JSON.") from exc
 
     @field_validator("message_history_json", mode="before")
     @classmethod
@@ -165,18 +166,16 @@ class HarnessState(BaseModel):
 
     @computed_field
     @property
-    def environment_state(self) -> EnvironmentState | None:
-        """Return a detached aggregate Environment continuation value."""
-        if self.environment_state_json is None:
-            return None
-        return _ENVIRONMENT_STATE_ADAPTER.validate_json(cast(bytes, self.environment_state_json))
+    def environment_states(self) -> dict[str, EnvironmentState]:
+        """Return detached portable state for each stateful Environment mount."""
+        return _ENVIRONMENT_STATES_ADAPTER.validate_json(cast(bytes, self.environment_states_json))
 
     def fork(self) -> HarnessState:
         """Copy portable continuation data into a distinct Thread."""
         return HarnessState.new(
             message_history=self.message_history,
             agent_context_state=self.agent_context_state,
-            environment_state=self.environment_state,
+            environment_states={},
         )
 
 

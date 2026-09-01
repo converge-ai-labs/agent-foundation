@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -12,6 +11,7 @@ from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
+from a13n_environment_provider.direct_local.files import LocalFileOperator
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -32,7 +32,6 @@ from a13n_harness.capabilities import (
     SkillsCapability,
     SkillSelectionRunCapability,
     SubagentCapability,
-    SubagentManager,
 )
 from a13n_harness.context import SkillPath
 from a13n_harness.environment import (
@@ -43,14 +42,11 @@ from a13n_harness.environment import (
 )
 from a13n_harness.environment.advanced import (
     EnvironmentRuntime,
-    EnvironmentRuntimeMount,
     create_environment_runtime,
 )
-from a13n_harness.environment.local.binding import (
-    DirectLocalEnvironmentProviderBinding,
-    _DirectLocalFilePolicy,
+from a13n_harness.environment.providers import (
+    EnvironmentRuntimeMount,
 )
-from a13n_harness.environment.local.files import LocalFileOperator
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.toolsets import (
     FILE_VIEW_RULES,
@@ -61,6 +57,11 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+
+from .environment_helpers import (
+    DirectLocalEnvironmentProviderBinding,
+    DirectLocalFilePolicy,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -336,7 +337,12 @@ async def test_host_can_scan_skills_through_entered_environment_file_operator(tm
         agent_instance_id="skill-manager-host",
     )
 
-    async with _binding(tmp_path).bind(run_id="host-skill-scan", instance=instance) as environment:
+    async with _binding(tmp_path).bind(
+        thread_id="thread-skill-scan",
+        run_id="host-skill-scan",
+        instance=instance,
+        host_refs={},
+    ) as environment:
         catalog = await _DirectScanOverrideManager.default().scan_environment(environment=environment)
         catalog.require_current(environment)
         expected_mount_id = environment.resolve_path("/workspace").mount_id
@@ -373,7 +379,7 @@ async def test_host_can_scan_non_virtual_local_file_operator(tmp_path: Path) -> 
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="cli-files",
         generation="generation-1",
     )
@@ -413,7 +419,12 @@ async def test_environment_scan_pins_roots_across_bindings(tmp_path: Path) -> No
         agent_instance_id="skill-manager-multi-binding",
     )
 
-    async with binding.bind(run_id="host-multi-scan", instance=instance) as environment:
+    async with binding.bind(
+        thread_id="thread-multi-scan",
+        run_id="host-multi-scan",
+        instance=instance,
+        host_refs={},
+    ) as environment:
         catalog = await manager.scan_environment(environment=environment)
         expected_mounts = {
             "project": environment.resolve_path("/workspace").mount_id,
@@ -444,7 +455,12 @@ async def test_bound_catalog_ignores_unrelated_mount_replacement(tmp_path: Path)
         identity=AgentIdentityRef(issuer="test", subject="skill-manager"),
         agent_instance_id="skill-manager-unrelated-refresh",
     )
-    async with binding.bind(run_id="host-unrelated-refresh", instance=instance) as environment:
+    async with binding.bind(
+        thread_id="thread-unrelated-refresh",
+        run_id="host-unrelated-refresh",
+        instance=instance,
+        host_refs={},
+    ) as environment:
         await binding._activate()
         catalog = await SkillManager.default().scan_environment(environment=environment)
         await binding.replace(
@@ -846,7 +862,7 @@ async def test_child_run_uses_its_own_skill_selection(tmp_path: Path) -> None:
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "worker", "task": {"request": "inspect"}}),
+                    json_args=json.dumps({"subagent": "worker", "prompt": "inspect"}),
                     tool_call_id="delegate-skill-selection",
                 )
             }
@@ -861,28 +877,12 @@ async def test_child_run_uses_its_own_skill_selection(tmp_path: Path) -> None:
         capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
     )
 
-    @asynccontextmanager
-    async def bind_child(context, child, input, child_instance_id, continuation, usage_limits):
-        del child, input, continuation, usage_limits
-        yield RunBindings(
-            instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="test", subject="child"),
-                agent_instance_id=f"internal-{child_instance_id}",
-                parent_agent_instance_id=context.instance.agent_instance_id,
-                delegation_id=child_instance_id,
-            ),
-            environment=_binding(tmp_path),
-        )
-
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=parent_stream),
         capabilities=(
-            SubagentCapability(
-                execution="inline",
-                operator=SubagentManager(bind_child),
-            ),
+            SubagentCapability(),
             SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),
         ),
         subagents=(

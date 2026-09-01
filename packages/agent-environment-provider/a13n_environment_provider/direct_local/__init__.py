@@ -1,13 +1,15 @@
 from .configuration import (
     DirectLocalProviderConfiguration,
-    DirectLocalProviderStateData,
     DirectLocalRootConfiguration,
     DirectLocalShellProfile,
 )
+from .provider import DirectLocalEnvironment, DirectLocalEnvironmentProvider, DirectLocalProviderRuntime
 
 __all__ = [
+    "DirectLocalEnvironment",
+    "DirectLocalEnvironmentProvider",
     "DirectLocalProviderConfiguration",
-    "DirectLocalProviderStateData",
+    "DirectLocalProviderRuntime",
     "DirectLocalRootConfiguration",
     "DirectLocalShellProfile",
 ]

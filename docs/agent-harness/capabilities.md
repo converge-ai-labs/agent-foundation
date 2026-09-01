@@ -200,9 +200,9 @@ agent_spec = AgentSpec(
 )
 ```
 
-The review applies only to `environment.shell_exec`; process wait, status, input, signal, and kill calls are not sent to the reviewer. It runs after typed argument validation, resource resolution, and the fresh invocation policy. A policy denial therefore avoids the review model call. Review happens before credentials, grants, or Environment dispatch and can only add an approval or denial; it never grants permission that policy withheld.
+The review applies only to `environment.shell_exec`; process wait, input, and signal calls are not sent to the reviewer. It runs after typed argument validation, resource resolution, and the fresh invocation policy. A policy denial therefore avoids the review model call. Review happens before credentials, grants, or Environment dispatch and can only add an approval or denial; it never grants permission that policy withheld.
 
-The default reviewer receives the command, working directory, background flag, timeout, Environment alias, and sorted environment variable names. Environment values are never included. Risk order is `low < medium < high < extra_high`; a result at or above `risk_threshold` applies `on_flagged`, while a timeout, invalid result, or reviewer failure applies `on_error`. Both policy and review run again after native approval resume, so a fresh denial still wins. Without an explicit `InvocationPolicyCapability`, managed Environment calls use the Harness default allow decision with no dispatch retries; an explicit policy can only narrow or condition dispatch.
+The default reviewer receives the command, working directory, yield window, total timeout, Environment alias, and sorted environment variable names. Environment values are never included. Risk order is `low < medium < high < extra_high`; a result at or above `risk_threshold` applies `on_flagged`, while a timeout, invalid result, or reviewer failure applies `on_error`. Both policy and review run again after native approval resume, so a fresh denial still wins. Without an explicit `InvocationPolicyCapability`, managed Environment calls use the Harness default allow decision with no dispatch retries; an explicit policy can only narrow or condition dispatch.
 
 Code-first definitions can supply a custom `ShellCommandReviewer` to `ShellReviewCapability` when review is implemented by a trusted in-process service rather than the default model-backed reviewer.
 
@@ -330,50 +330,15 @@ When `WebCapability()` is constructed without an explicit configuration, these e
 
 An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and disables fallback. Environment variables select only modes and backend IDs; provider objects and credentials still come from the fresh `WebRunCapability`. Passing `WebCapability(WebConfiguration(...))` is authoritative and does not merge environment defaults, which keeps loaded presets deterministic.
 
-## Background Processes
+## Run-owned Shell Processes
 
-`DynamicEnvironmentCapability` exposes background process control through the same six-tool shell surface as foreground execution when configured with a background-capable `ShellOperator`. `shell_exec(background=True)` returns a portable `process-N` reference; `shell_wait`, `shell_status`, `shell_input`, `shell_signal`, and `shell_kill` operate on that reference. The standard `ProcessManager` owns the real detached process and retained output access. The Harness stores only one opaque operator backend ID, unread output offsets, monotonic reference sequence, and bounded observations in `AgentContextState`; it does not emulate background execution with a local task or turn processes into a durable scheduler.
+`DynamicEnvironmentCapability` derives shell behavior from the entered Environment actions. A shell-only Environment exposes completion-only `shell_exec`. A process-capable Environment exposes exactly `shell_exec`, `shell_wait`, `shell_input`, and `shell_signal`; there is no operator configuration, background flag, process listing tool, or separate kill tool.
 
-During every entered root or child Turn, `ProcessManager` waits on the real provider process and can enqueue a bounded completion hint through native Pydantic AI input. A Host can configure reusable non-authoritative completion and observation-gap hooks directly with the definition-selected Capability when it builds the Agent. In the example, `launch_process` is a Host callback implementing the public `ProcessLauncher` contract:
+A process-capable `shell_exec` starts through the current `BoundEnvironment`, waits for `yield_time_seconds`, and returns terminal output directly when the command finishes quickly. Otherwise it returns a concise `process-*` reference owned by the current logical Run. `shell_wait` takes independent stdout and stderr byte offsets and reads non-consumingly. `shell_input` owns stdin writes and EOF, while `shell_signal` owns `interrupt`, `terminate`, and `kill`; mutation tools never read output.
 
-```python
-from a13n_harness.environment import (
-    DynamicEnvironmentCapability,
-    DynamicEnvironmentConfiguration,
-)
-from a13n_harness.capabilities import ProcessEvent, ProcessManager
+Each published live process has one non-consuming completion watcher while the Run is active. The watcher can enqueue a bounded best-effort instruction to call `shell_wait`, but explicit polling remains authoritative. It does not create a Host event hook, durable completion record, or continuation scheduler.
 
-
-async def on_process_event(event: ProcessEvent) -> None:
-    await process_events.publish(
-        thread_id=event.thread_id,
-        run_id=event.run_id,
-        agent_instance_id=event.agent_instance_id,
-        process_id=event.process_id,
-        backend_id=event.backend_id,
-        kind=event.kind,
-        status=event.status,
-    )
-
-
-process_manager = ProcessManager(
-    launch_process,
-    event_hooks=(on_process_event,),
-)
-environment_capability = DynamicEnvironmentCapability(
-    DynamicEnvironmentConfiguration(),
-    operator=process_manager,
-)
-
-executable = HarnessBuilder().build(
-    agent_spec,
-    output_type=str,
-    model=model,
-    capabilities=(environment_capability,),
-)
-```
-
-`ProcessEvent` includes Thread, Run, Agent-instance, and immutable Host-reference correlation so one definition-level hook can serve many Runs. Definition-level hooks are shared async callbacks and must be concurrency-safe; hook failures are isolated from process state. Ending the Turn cancels only Harness observation and never kills Manager-owned work. Persisting `HarnessState` preserves `process-N` across a compatible Thread continuation only while the same operator can resolve its backend ID. The default Manager is process-local; a Host that requires restart survival supplies a custom operator with independently retained canonical state.
+The Run cleanup boundary kills and releases every owned process before Environment adapters close. Process references and observations do not enter `AgentContextState` or `HarnessState`, and a later continuation Run receives a fresh empty controller with a new reference incarnation. Cross-Run process lifetime, hosted process operators, and post-Run wake are outside this Capability contract.
 
 ## Filters
 

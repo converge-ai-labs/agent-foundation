@@ -65,8 +65,8 @@ class ShellReviewRequest(BaseModel):
     command: str = Field(min_length=1, max_length=1024 * 1024)
     cwd: str | None = Field(default=None, max_length=16 * 1024)
     environment_keys: tuple[str, ...] = Field(default=(), max_length=4_096)
+    yield_time_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     timeout_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
-    background: bool = False
     alias: str | None = Field(default=None, max_length=2_048)
 
     @field_validator("command", "cwd", "alias")

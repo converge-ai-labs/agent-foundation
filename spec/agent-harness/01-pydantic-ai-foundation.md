@@ -36,7 +36,7 @@ The Harness adds:
 - one synchronous `HarnessBuilder` that calls `Agent.from_spec()` and captures optional gateway Provider construction;
 - trusted code-first plugins around the outer semantic-input-to-result boundary;
 - fresh `RunBindings` and one `AgentContext` per logical run;
-- an `EnvironmentRuntime` entered before input and Pydantic work, retained by the Host for mount mutation across the logical run;
+- fresh Environment adapters entered before input and Pydantic work, exposed through one stable Run-local bound facade;
 - portable messages, Capability state, and optional portable Environment state in `HarnessState`;
 - normalized process-local events and result combinations;
 - optional independently selected [Harness Observation](19-observation-model.md) traces and metrics around native Pydantic instrumentation;
@@ -112,18 +112,17 @@ The same context is supplied to every `ModelAttempt` inside one logical Harness 
 
 ## Run Flow
 
-01. Enter the fresh `EnvironmentRuntime` and atomically publish its initial mount set while it remains non-active.
-02. Restore compatible portable Environment data into already selected mounts.
-03. Enter ordered Environment run extensions and activate the runtime.
-04. Invoke an optional input factory once and normalize input.
-05. Create `AgentContext` from fresh bindings and copied Capability state.
-06. Bind run plugins and freeze `BoundPluginContext`.
-07. Start the plugin chain lazily on first iteration.
-08. Run one `ModelAttempt` with a unique model-attempt ID.
-09. On a recoverable model interruption, normalize public history and repeat within the total attempt budget while the Environment runtime remains active.
-10. On output, deferred work, cancellation, failure, or hard stop, build one terminal candidate.
-11. Unwind trusted result middleware.
-12. Establish the terminal fence and close all run resources before terminal delivery.
+01. Enter the fresh Environment adapters and atomically publish the initial mount set before input production.
+02. Validate imported portable Environment data as observation only; do not restore it into adapters.
+03. Invoke an optional input factory once and normalize input.
+04. Create `AgentContext` from fresh bindings and copied Capability state.
+05. Bind run plugins and freeze `BoundPluginContext`.
+06. Start the plugin chain lazily on first iteration.
+07. Run one `ModelAttempt` with a unique model-attempt ID.
+08. On a recoverable model interruption, normalize public history and repeat within the total attempt budget while the Environment facade remains active.
+09. On output, deferred work, cancellation, failure, or hard stop, build one terminal candidate.
+10. Unwind trusted result middleware.
+11. Establish the terminal fence and close all run resources before terminal delivery.
 
 Provider-suspended continuation and deferred/HITL values are native Pydantic boundaries and never trigger the Harness `ModelAttempt` recovery loop.
 

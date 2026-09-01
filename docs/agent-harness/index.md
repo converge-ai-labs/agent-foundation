@@ -126,19 +126,19 @@ Use Pydantic AI directly when its native `Agent` surface already satisfies the a
 
 ## Ownership at a glance
 
-| Concern                                                               | Owner                |
-| --------------------------------------------------------------------- | -------------------- |
-| Agent loop, models, messages, native tools, output validation         | Pydantic AI          |
-| Process-local definition, run, events, result, and continuation state | Agent Harness        |
-| Provider resource lifecycle and runtime attachments                   | Environment Provider |
-| Credentials, current authorization, durable records, and delivery     | Application or Host  |
-| Product experience and business policy                                | Product              |
+| Concern                                                                | Owner                |
+| ---------------------------------------------------------------------- | -------------------- |
+| Agent loop, models, messages, native tools, output validation          | Pydantic AI          |
+| Process-local definition, run, events, result, and continuation state  | Agent Harness        |
+| Target creation or re-entry, operations, cached state, and destruction | Environment Provider |
+| Credentials, current authorization, durable records, and delivery      | Application or Host  |
+| Product experience and business policy                                 | Product              |
 
-Passing an `EnvironmentProvider` to a run gives the Harness one temporary resource lifecycle. Passing an entered `EnvironmentResource` keeps the outer lifecycle with the Host and gives the Harness one fresh attachment per run. `HarnessState` can preserve continuation data, but it never restores credentials or current authority.
+A Host constructs one fresh Provider `Environment` per independent Run and passes that adapter, or an `EnvironmentMount`, to Harness. Harness enters and closes each adapter non-destructively; it never discovers Providers or chooses target destruction. `HarnessState` can preserve provider state evidence, but it never restores an adapter, credentials, runtime collaborators, or current authority.
 
 ## Runnable examples
 
-- [Agent Application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) demonstrates repeated offline streaming turns, successful-turn state persistence, restart recovery, and one temporary local Environment per turn.
+- [Agent Application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) demonstrates repeated offline streaming turns, successful-turn state persistence, restart recovery, and one fresh local Environment per turn.
 - [Plugin Integration](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates packaged Harness middleware and Environment extensions.
 
 Both examples use deterministic `FunctionModel` implementations and are tested without model credentials.

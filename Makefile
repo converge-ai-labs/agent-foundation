@@ -215,7 +215,7 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 .PHONY: eip-integration-test
 eip-integration-test: sync ## Run EIP generation, runtime, cross-language, and wire-model integration tests
 	@cargo build --locked --package agent-envd
-	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" A13N_AGENT_ENVD_EXECUTABLE="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-environment-provider/tests/test_local_envd.py packages/agent-harness/tests/test_environment_eip_e2e.py
+	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" A13N_AGENT_ENVD_EXECUTABLE="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-environment-provider/tests/test_local_envd.py
 	@uv run --locked pyright packages/agent-envd-client/a13n_envd_client packages/agent-environment-provider/a13n_environment_provider
 
 .PHONY: eip-test
@@ -233,10 +233,8 @@ local-envd-test: sync ## Build agent-envd and run Local Envd provider tests
 	uv run --locked python -m pytest packages/agent-environment-provider/tests/test_local_envd.py
 
 .PHONY: docker-provider-test
-docker-provider-test: sync image-sandbox ## Run Docker Provider unit and real Harness EIP tests
-	@A13N_DOCKER_E2E_IMAGE="$(SANDBOX_IMAGE)" uv run --locked python -m pytest \
-		packages/agent-environment-provider/tests/test_docker.py \
-		packages/agent-harness/tests/test_environment_docker_e2e.py
+docker-provider-test: sync ## Run Docker Provider tests
+	@uv run --locked python -m pytest packages/agent-environment-provider/tests/test_docker.py
 
 .PHONY: eip-check
 eip-check: eip-verify eip-test ## Run the complete EIP protocol gate

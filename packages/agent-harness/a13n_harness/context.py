@@ -347,15 +347,16 @@ class AgentContext:
         """Close owner-bound collaborators in reverse registration order."""
         callbacks = tuple(reversed(tuple(self._run_cleanup_callbacks.values())))
         self._run_cleanup_callbacks.clear()
-        first_error: BaseException | None = None
+        failures: list[BaseException] = []
         for cleanup in callbacks:
             try:
                 await cleanup()
             except BaseException as exc:
-                if first_error is None:
-                    first_error = exc
-        if first_error is not None:
-            raise first_error
+                failures.append(exc)
+        if len(failures) == 1:
+            raise failures[0]
+        if failures:
+            raise BaseExceptionGroup("Run cleanup callbacks failed", failures)
 
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str | None:
         """Write one bounded managed result through the current Environment when possible."""
@@ -440,7 +441,7 @@ class AgentContext:
             thread_id=self.thread_id,
             message_history=tuple(message_history),
             agent_context_state=await self.state.snapshot(),
-            environment_state=await self.environment.export_state(),
+            environment_states=self.environment.dump_states(),
         )
 
 

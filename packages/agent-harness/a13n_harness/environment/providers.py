@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
+
+from a13n_environment_provider import EnvironmentState
+from a13n_environment_provider.operations import EnvironmentOperations
 
 from .commands import (
     BoundProcessHandle,
@@ -20,48 +23,32 @@ from .commands import (
     ProcessSignalResult,
     ProcessStartResult,
     ProcessWriteStdinResult,
-    ProviderPortOperations,
-    ProviderProcessOperations,
-    ProviderShellOperations,
     ShellExecResult,
 )
 from .files import FileOperator
 from .models import (
+    EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentChange,
     EnvironmentDescriptor,
     EnvironmentMountObservation,
-    EnvironmentMountState,
     EnvironmentOperationFamily,
     EnvironmentOperationReceipt,
     EnvironmentPath,
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
-    EnvironmentState,
 )
 from .retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputPolicy,
     EnvironmentOutputReadResult,
-    ProviderOutputOperations,
 )
 
 if TYPE_CHECKING:
     from a13n_harness.identity import AgentInstanceContext
     from a13n_harness.model_context import ModelContextProjection, ModelContextProjectionRequest
-
-
-@dataclass(frozen=True, slots=True)
-class EnvironmentProviderOperations:
-    """Provider-local semantic operation facets captured at entry."""
-
-    files: FileOperator | None = None
-    shell: ProviderShellOperations | None = None
-    processes: ProviderProcessOperations | None = None
-    ports: ProviderPortOperations | None = None
-    outputs: ProviderOutputOperations | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +73,13 @@ class BoundShellOperations(Protocol):
 
     async def exec(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult: ...
 
-    async def exec_captured(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult:
+    async def exec_captured(
+        self,
+        request: CommandRequest,
+        *,
+        alias: str | None = None,
+        expected_mount_id: str | None = None,
+    ) -> ShellExecResult:
         """Execute and materialize output under one exact mount-incarnation lease."""
         ...
 
@@ -94,7 +87,14 @@ class BoundShellOperations(Protocol):
 class BoundProcessOperations(Protocol):
     """Revision-fenced process operations routed by one BoundEnvironment."""
 
-    async def start(self, request: CommandRequest, *, alias: str | None = None) -> ProcessStartResult: ...
+    async def start(
+        self,
+        request: CommandRequest,
+        *,
+        alias: str | None = None,
+        required_actions: frozenset[EnvironmentAction] = frozenset({EnvironmentAction.PROCESS_START}),
+        expected_mount_id: str | None = None,
+    ) -> ProcessStartResult: ...
 
     async def rebind(
         self,
@@ -181,10 +181,10 @@ class BoundOutputOperations(Protocol):
 
 
 class BoundEnvironmentProvider(Protocol):
-    """One entered provider resource with a stable observed generation."""
+    """One entered Environment adapter with a stable observed generation."""
 
     @property
-    def provider_type(self) -> str: ...
+    def provider_key(self) -> str: ...
 
     @property
     def environment_id(self) -> str: ...
@@ -196,13 +196,11 @@ class BoundEnvironmentProvider(Protocol):
     def availability(self) -> EnvironmentAvailability: ...
 
     @property
-    def operations(self) -> EnvironmentProviderOperations: ...
+    def operations(self) -> EnvironmentOperations: ...
 
     async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None: ...
 
-    async def export_state(self) -> EnvironmentMountState | None: ...
-
-    async def restore_state(self, state: EnvironmentMountState) -> None: ...
+    def dump_state(self) -> EnvironmentState | None: ...
 
 
 class EnvironmentProviderBinding(ABC):
@@ -232,9 +230,11 @@ class EnvironmentProviderBinding(ABC):
     def bind(
         self,
         *,
+        thread_id: str,
         run_id: str,
         instance: AgentInstanceContext,
         mount_id: str,
+        host_refs: Mapping[str, str],
     ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
         """Enter this candidate exactly once under a Harness-generated mount identity."""
 
@@ -304,6 +304,16 @@ class BoundEnvironment(ABC):
     def outputs(self) -> BoundOutputOperations: ...
 
     @abstractmethod
+    def _select_command_actions(
+        self,
+        request: CommandRequest,
+        *,
+        alias: str | None,
+        actions: frozenset[EnvironmentAction],
+    ) -> tuple[str, bool]:
+        """Select one exact command mount and report its effective actions."""
+
+    @abstractmethod
     def resolve_path(self, path: str, *, alias: str | None = None) -> EnvironmentPath:
         """Resolve a model-facing selector into one captured internal mount path."""
 
@@ -321,10 +331,7 @@ class BoundEnvironment(ABC):
     async def ensure_ready(self, requirement: EnvironmentReadinessRequirement) -> None: ...
 
     @abstractmethod
-    async def export_state(self) -> EnvironmentState: ...
-
-    @abstractmethod
-    async def restore_state(self, state: EnvironmentState) -> None: ...
+    def dump_states(self) -> Mapping[str, EnvironmentState]: ...
 
     @property
     @abstractmethod
@@ -352,8 +359,10 @@ class EnvironmentRuntime(ABC):
     def bind(
         self,
         *,
+        thread_id: str,
         run_id: str,
         instance: AgentInstanceContext,
+        host_refs: Mapping[str, str],
     ) -> AbstractAsyncContextManager[BoundEnvironment]:
         """Bind and enter the aggregate for exactly one run."""
 

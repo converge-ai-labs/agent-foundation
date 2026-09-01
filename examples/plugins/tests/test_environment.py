@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 from a13n_environment_provider import (
+    EnvironmentProviderCatalog,
     EnvironmentProviderError,
-    EnvironmentProviderSpec,
-    build_environment_provider_factory_catalog,
-    discover_environment_provider_factory_references,
+    build_environment_provider_catalog,
 )
 
 from a13n_plugin_examples.demo_environment import (
@@ -31,85 +30,65 @@ def _workspace_roots(tmp_path: Path) -> tuple[Path, Path]:
     return source, docs
 
 
-def test_environment_entrypoint_metadata_is_lazy_and_selection_is_explicit(tmp_path: Path) -> None:
+def test_environment_entrypoint_loading_is_explicit_and_construction_is_inert(tmp_path: Path) -> None:
     assert PLUGIN_MODULE not in sys.modules
 
-    references = discover_environment_provider_factory_references()
-    assert PROVIDER_KEY in {reference.provider_key for reference in references}
-    assert PLUGIN_MODULE not in sys.modules
+    catalog = build_environment_provider_catalog(extension_keys=(PROVIDER_KEY,))
 
-    catalog = build_environment_provider_factory_catalog(extension_keys=(PROVIDER_KEY,))
     assert PLUGIN_MODULE in sys.modules
-    registration = catalog.registrations[0]
-    assert registration.provider_key == PROVIDER_KEY
-    assert registration.import_target == ("a13n_plugin_examples.environment:WorkspaceEnvironmentProviderFactory")
-
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
-
-    provider = catalog.create_provider(
-        EnvironmentProviderSpec(
-            provider_key=PROVIDER_KEY,
-            schema_version="1",
-            parameters={
-                "root": str(tmp_path / "not-created-by-the-factory"),
-                "environment_id": "workspace-inert",
-            },
-        ),
-        runtime=WorkspaceEnvironmentRuntime(),
+    assert catalog.keys == (PROVIDER_KEY,)
+    provider = catalog.resolve(PROVIDER_KEY)
+    assert provider.configuration_versions == frozenset({"1"})
+    root = tmp_path / "not-created-by-the-provider"
+    configuration = provider.validate_configuration(
+        schema_version="1",
+        value={"root": str(root), "environment_id": "workspace-inert"},
     )
-    assert provider.lifecycle_capabilities.resource_allocation.value == "single_from_spec"
-    assert not (tmp_path / "not-created-by-the-factory").exists()
+    environment = provider.create_environment(
+        configuration=configuration,
+        state=None,
+    )
+    assert environment.provider_key == PROVIDER_KEY
+    assert not root.exists()
 
 
-def test_environment_explicit_factory_needs_no_metadata_scan(
+def test_environment_explicit_provider_needs_no_metadata_scan(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentProviderFactory
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
 
     monkeypatch.setattr(
-        "a13n_environment_provider.factories._entry_points",
-        lambda: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
+        "a13n_environment_provider.catalog.entry_points",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
-    catalog = build_environment_provider_factory_catalog(explicit_factories=(WorkspaceEnvironmentProviderFactory(),))
-
-    assert catalog.registrations[0].import_target is None
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
-
-    provider = catalog.create_provider(
-        EnvironmentProviderSpec(
-            provider_key=PROVIDER_KEY,
-            schema_version="1",
-            parameters={
-                "root": str(tmp_path / "still-inert"),
-                "environment_id": "workspace-code",
-            },
-        ),
-        runtime=WorkspaceEnvironmentRuntime(),
+    catalog = EnvironmentProviderCatalog((WorkspaceEnvironmentProvider(),))
+    provider = catalog.resolve(PROVIDER_KEY)
+    root = tmp_path / "still-inert"
+    configuration = provider.validate_configuration(
+        schema_version="1",
+        value={"root": str(root), "environment_id": "workspace-code"},
     )
-    assert provider.lifecycle_capabilities.attachment_concurrency.value == "shared"
-    assert not (tmp_path / "still-inert").exists()
+    provider.create_environment(configuration=configuration, state=None)
+
+    assert catalog.keys == (PROVIDER_KEY,)
+    assert not root.exists()
 
 
-def test_environment_provider_factory_rejects_invalid_json_configuration() -> None:
-    catalog = build_environment_provider_factory_catalog(extension_keys=(PROVIDER_KEY,))
-
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
+def test_environment_provider_rejects_invalid_json_configuration() -> None:
+    catalog = build_environment_provider_catalog(extension_keys=(PROVIDER_KEY,))
+    provider = catalog.resolve(PROVIDER_KEY)
 
     with pytest.raises(EnvironmentProviderError) as exc_info:
-        catalog.create_provider(
-            EnvironmentProviderSpec(
-                provider_key=PROVIDER_KEY,
-                schema_version="1",
-                parameters={"environment_id": "missing-root"},
-            ),
-            runtime=WorkspaceEnvironmentRuntime(),
+        provider.validate_configuration(
+            schema_version="1",
+            value={"environment_id": "missing-root"},
         )
 
     assert exc_info.value.code == "provider_spec_invalid"
 
 
-def test_environment_entrypoint_demo_routes_two_bindings(tmp_path: Path) -> None:
+def test_environment_entrypoint_demo_routes_two_fresh_environments(tmp_path: Path) -> None:
     source, docs = _workspace_roots(tmp_path)
 
     result = asyncio.run(run_environment_entrypoint_demo(source_root=source, docs_root=docs))
@@ -119,11 +98,11 @@ def test_environment_entrypoint_demo_routes_two_bindings(tmp_path: Path) -> None
     assert result.default_text == "source workspace\n"
     assert result.docs_text == "documentation workspace\n"
     assert result.aliases == ("source", "docs")
-    assert result.durable_lifecycle_phases == ("running", "running", "absent")
-    assert not result.pause_supported
+    assert result.exported_state_aliases == ()
+    assert result.roots_preserved
 
 
-def test_environment_code_demo_routes_two_bindings(tmp_path: Path) -> None:
+def test_environment_code_demo_routes_two_fresh_environments(tmp_path: Path) -> None:
     source, docs = _workspace_roots(tmp_path)
 
     result = asyncio.run(run_environment_code_demo(source_root=source, docs_root=docs))
@@ -133,5 +112,5 @@ def test_environment_code_demo_routes_two_bindings(tmp_path: Path) -> None:
     assert result.default_text == "source workspace\n"
     assert result.docs_text == "documentation workspace\n"
     assert result.aliases == ("source", "docs")
-    assert result.durable_lifecycle_phases == ("running", "running", "absent")
-    assert not result.pause_supported
+    assert result.exported_state_aliases == ()
+    assert result.roots_preserved

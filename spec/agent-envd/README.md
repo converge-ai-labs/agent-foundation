@@ -4,7 +4,7 @@
 
 This directory defines `agent-envd`, the client-neutral Environment host and data-plane daemon for daemon-governed local, sandboxed, and remote resources. One daemon serves one user and one Environment for one process generation. It implements EIP with JSON-RPC control, correlated raw file transfer, bounded file/search/port operations, command/process ownership, command output, and side-effect evidence.
 
-The Harness is one requester through its provider-neutral [`Environment`](../agent-harness/08-environment-integration.md) abstraction. The shared [Environment Provider package](../agent-environment-provider/README.md) manages Direct Local, Local Envd, Docker, and E2B resources and supplies fresh Direct Local or EIP attachments. Direct Local does not require envd; Local Envd is the required-isolation local sandbox over one exact Host-resolved executable. Other trusted consumers can use the generated low-level client independently, but that client never discovers, downloads, installs, or launches a daemon.
+The Harness is one requester through its provider-neutral [`Environment`](../agent-harness/08-environment-integration.md) abstraction. The shared [Environment Provider package](../agent-environment-provider/README.md) supplies trusted Providers that construct fresh Direct Local or EIP-backed Environment adapters from desired configuration and Host-authoritative state. Direct Local does not require envd; Local Envd is the required-isolation local sandbox over one exact Host-resolved executable. Other trusted consumers can use the generated low-level client independently, but that client never discovers, downloads, installs, or launches a daemon.
 
 EIP uses trusted stdio, Host-dialed HTTP, or outbound reverse WebSocket. In every profile the low-level client/control service remains the requester and envd remains the responder. Only HTTP binds an inbound EIP listener, and it exposes dedicated authenticated control and streaming-transfer resources rather than a generic HTTP, browser, health, file-download, or upload API. Browser users remain behind product authentication and gateway policy and never receive envd credentials, session selectors, or raw transfer handles.
 
@@ -34,7 +34,7 @@ Read `00`, `01`, and `02`, then `03` for carriers, `04` through `07` for resourc
 
 ### Integrate an Environment provider
 
-Read `00`, `01`, `02`, `03`, and `08`, then [Harness Environment Integration](../agent-harness/08-environment-integration.md). A provider owns provisioning, envd bootstrap, short-lived attachment-token issuance and protected-file delivery, and outer teardown. Every daemon-backed operation uses the same generated client and EIP contract.
+Read `00`, `01`, `02`, `03`, and `08`, then [Harness Environment Integration](../agent-harness/08-environment-integration.md). A provider-specific Environment adapter owns target entry, envd bootstrap, short-lived attachment-token issuance, protected-file delivery, and explicit destroy behavior; the Host owns current state and decides when lifecycle operations run. Every daemon-backed operation uses the same generated client and EIP contract.
 
 ### Integrate another trusted EIP requester
 
@@ -50,8 +50,8 @@ Read `01`, `02`, `03`, `04`, `06`, and `07` together with [Harness Security, Com
 
 ## Authority Rules
 
-- The Host owns provider selection, lifecycle policy, current credentials, control-service routing, attachment-token issuance/protected-file delivery, and optional resource-state persistence; the Environment Provider package performs selected lifecycle operations and issues fresh runtime attachments.
-- The Harness exhaustively adapts fresh runtime attachments and owns multi-Environment routing and provider-neutral operations. It does not own native resources, provider lifecycle, EIP session sources, command records, or native process targets.
+- The Host owns Provider selection, lifecycle policy, current credentials, control-service routing, attachment-token issuance/protected-file delivery, and current `EnvironmentState`; the Environment Provider package constructs fresh process-local `Environment` adapters and performs selected lifecycle operations.
+- The Harness receives fresh Environment adapters and owns Run-local multi-Environment routing and provider-neutral operations. It does not own backing targets, Provider selection, EIP session sources, command records, or native process targets.
 - EIP owns method payloads, operation-ID replay/cancellation/receipt identity, relative timeout semantics, transfers, exact method availability, selectors, errors, and command-output reference/offset/completion semantics.
 - The carrier authenticates or establishes the trusted peer. Transport identity never comes from ordinary EIP params.
 - Envd owns configured mounts, path enforcement, file transfers, operation evidence, command records, backend-managed native targets, command-output spool, finite capacity, and required native isolation.

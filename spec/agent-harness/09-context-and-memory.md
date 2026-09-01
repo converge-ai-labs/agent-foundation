@@ -6,7 +6,7 @@ Pydantic AI assembles the stable model prefix from Agent, Capability, and Toolse
 
 The mandatory `ModelContextCoordinatorCapability` is the only Harness Capability that commits a `ModelContextProjection` to `ModelRequestContext` as a request overlay. Before ordinary history hooks run, it removes prior Harness-owned overlays from the active view. At the final model-request wrapper boundary, after those hooks and content filters, it recognizes an eligible request kind, evaluates one middleware chain, validates the result, and places the resulting blocks. The terminal source is `AgentContext.project_model_context()`, which combines the default Agent runtime/conversation projection with `BoundEnvironment.project_model_context()`. A fresh Host binding is semantically outermost; selected or plugin-contributed `AbstractModelContextCapability` instances compose between the Host and terminal source in Pydantic's already-finalized Capability order.
 
-Working state, file context, skills, memory, and other Agent-loop behavior remain ordinary `AbstractCapability[AgentContext]` implementations. A feature that augments dynamic context implements the narrow model-context subtype rather than independently appending `UserPromptPart` values. `DynamicEnvironmentCapability` owns optional Toolset composition, feature lifecycle, and mount-change enqueue behavior; `FileToolset` and `ShellToolset` own the stable usage guidance for the tools they actually contribute. The Environment runtime owns its provider-neutral current-mount projection, and no Capability owns Environment lifecycle or mutation authority. Query-dependent retrieval that must transform the complete semantic run input remains a Harness plugin concern, and that plugin may also contribute an ordinary model-context Capability.
+Working state, file context, skills, memory, and other Agent-loop behavior remain ordinary `AbstractCapability[AgentContext]` implementations. A feature that augments dynamic context implements the narrow model-context subtype rather than independently appending `UserPromptPart` values. `DynamicEnvironmentCapability` owns optional Toolset composition, feature lifecycle, and mount-change enqueue behavior; `FileToolset` and `ShellToolset` own the stable usage guidance for the tools they actually contribute. The Harness-internal Environment facade owns its provider-neutral current-mount projection, and no Capability owns Environment lifecycle or mutation authority. Query-dependent retrieval that must transform the complete semantic run input remains a Harness plugin concern, and that plugin may also contribute an ordinary model-context Capability.
 
 ## Context Layers
 
@@ -222,21 +222,21 @@ Structured questions use the native client-side deferred-tool boundary owned by 
 
 Small operational behaviors remain separate when their state and lifecycle differ:
 
-| Capability          | Behavior                                                                                      | State                                                                                                                              |
-| ------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Enqueue/messaging   | Uses Pydantic enqueue to deliver accepted steering or follow-up input                         | Native enqueue owns active-run delivery; the Harness retains user steering only after delivery into native history is observed     |
-| Background process  | Starts through a background-capable `ShellOperator` and can deliver a bounded active-run hint | Operator owns canonical process/output truth; Agent state preserves only compact references and unread offsets                     |
-| File reference      | Tells the Agent which explicit files require inspection                                       | Bounded pending logical paths only                                                                                                 |
-| Workspace outline   | Projects a bounded metadata-only view of one Environment file root                            | Recomputed from one mount-incarnation-pinned `BoundEnvironment` scan; no continuation state                                        |
-| Dynamic Environment | Composes File/Shell tools with current mount context and live notices                         | Owns one portable process-projection namespace; current mounts remain in the Environment and process truth remains in the operator |
-| Skill               | Supplies selected skill instructions and resources                                            | Loaded skill IDs only when needed for continuation                                                                                 |
-| Media               | Normalizes media count, size, format, and provider representation                             | No raw provider URL credential state                                                                                               |
+| Capability          | Behavior                                                                       | State                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Enqueue/messaging   | Uses Pydantic enqueue to deliver accepted steering or follow-up input          | Native enqueue owns active-run delivery; user steering is retained only after observation |
+| Shell process       | Uses the current Run Environment and emits bounded final-completion readiness  | No Harness continuation state; process/output truth expires at Run cleanup                |
+| File reference      | Tells the Agent which explicit files require inspection                        | Bounded pending logical paths only                                                        |
+| Workspace outline   | Projects a bounded metadata-only view of one Environment file root             | Recomputed from one mount-incarnation-pinned `BoundEnvironment` scan                      |
+| Dynamic Environment | Composes standard File/Shell tools with current mount context and live notices | No process namespace; current mounts remain in the Environment                            |
+| Skill               | Supplies selected skill instructions and resources                             | Loaded skill IDs only when needed for continuation                                        |
+| Media               | Normalizes media count, size, format, and provider representation              | No raw provider URL credential state                                                      |
 
 These Capabilities use native instructions, history/request hooks, native enqueue, Model Context Projection, or Toolsets. A global projection switch is unnecessary; a Host enables, disables, or configures the owning Capability without rewriting other instruction sources.
 
-`DynamicEnvironmentCapability` composes shell through its configured `ShellOperator`. A foreground-only operator produces only foreground `shell_exec`; a background-capable operator also produces background `shell_exec` and the five standard process tools. The run projection stores only `process-N`, one exact opaque backend ID, independent unread stdout/stderr offsets, sequence, and last observation in `AgentContextState`. On a compatible continuation it rebinds that selector through the same operator and never substitutes a fresh Environment process.
+`DynamicEnvironmentCapability` derives one fixed standard File/Shell surface from effective Environment actions. A process-capable surface exposes `shell_exec`, `shell_wait`, `shell_input`, and `shell_signal`; `shell_exec` automatically returns a Run-scoped process reference only when the command outlives its bounded yield. The private controller stores no process reference, backend ID, output offset, sequence, status, or loss marker in `AgentContextState`.
 
-While a Toolset Turn is entered, the projection may receive bounded non-authoritative snapshots and coalesce completion or observation-gap hints by `process-N`. Native enqueue delivers a bounded instruction to call `shell_wait` or `shell_status` only while the current Agent Turn can accept it. Independently, the operator always dispatches stable Host hooks. Ending the Turn releases Harness observation without killing operator-owned work; a Host may no-op the hook while the parent is active and use it to wake the parent Thread afterward. Exact operator rebind remains the reconciliation surface.
+For every published live process, Harness attaches one non-consuming final-completion watcher while the exact Run remains active. Native enqueue can deliver one bounded instruction to call `shell_wait` with the last returned stdout and stderr offsets; the hint is readiness only, contains no output, and is not persisted. Ending the Run cancels observation, kills and releases remaining processes, and closes the controller before Environment adapters close. Polling is authoritative, and no post-Run process wake or lookup exists.
 
 ## Skills and Discovery
 
@@ -396,23 +396,23 @@ Mem0 records and SDK-side extraction remain provider-owned durable state. The Ca
 
 ## State Ownership
 
-| State                                        | Owner                                                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Active Pydantic messages                     | `HarnessState.message_history`                                                                    |
-| Embedded task snapshot and notes             | Working State Capability; inline children can receive an explicit task view                       |
-| Provider-backed task data and scope          | Host task provider; Working State exports only an optional observed cursor                        |
-| Pending handoff and logical file references  | Owning context Capabilities                                                                       |
-| Loaded skills or discovered tools            | Owning discovery Capability                                                                       |
-| Retained semantic inputs and user steering   | Mandatory steering bridge namespace when automatic compaction is enabled                          |
-| Monitored-process tasks and completion route | Host collaborator; Capability state can retain only incorporated completion IDs                   |
-| Temporary media/document/web content         | Owning Capability or selected provider until bounded projection and cleanup                       |
-| Long-term memory records                     | Mem0; `Mem0Capability` owns no portable or durable namespace                                      |
-| Portable multi-Environment backend state     | Explicit `HarnessState.environment_state`; launch and native resources remain Host/provider-owned |
-| Host delivery, counters, and scheduler work  | Host                                                                                              |
+| State                                        | Owner                                                                                   |
+| -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Active Pydantic messages                     | `HarnessState.message_history`                                                          |
+| Embedded task snapshot and notes             | Working State Capability; inline children can receive an explicit task view             |
+| Provider-backed task data and scope          | Host task provider; Working State exports only an optional observed cursor              |
+| Pending handoff and logical file references  | Owning context Capabilities                                                             |
+| Loaded skills or discovered tools            | Owning discovery Capability                                                             |
+| Retained semantic inputs and user steering   | Mandatory steering bridge namespace when automatic compaction is enabled                |
+| Monitored-process tasks and completion route | Host collaborator; Capability state can retain only incorporated completion IDs         |
+| Temporary media/document/web content         | Owning Capability or selected provider until bounded projection and cleanup             |
+| Long-term memory records                     | Mem0; `Mem0Capability` owns no portable or durable namespace                            |
+| Portable multi-Environment backend state     | Explicit `HarnessState.environment_states`; backing-target authority remains Host-owned |
+| Host delivery, counters, and scheduler work  | Host                                                                                    |
 
 ## Resume and Delegation
 
-A resumed run enters fresh Host-selected Environment mounts, restores only compatible portable Environment data, imports messages and Capability state, and then resolves working-state, skill, memory, and model-facing Environment content through fresh run-bound behavior. Rendered mount context is not restored as authority. The first eligible ordinary model boundary receives a fresh request-hook snapshot without consulting any prior run's mount identity; if execution begins without ordinary input, one trusted startup boundary can carry it. A provider-suspended tail remains untouched until a later ordinary boundary. Fresh policy can remove access that existed in an earlier run.
+A resumed run enters fresh Host-constructed Environment adapters selected from current state, imports messages and Capability state, and then resolves working-state, skill, memory, and model-facing Environment content through fresh run-bound behavior. Portable `environment_states` can be a fallback only in an explicit unmanaged/import flow; managed Host state wins. Rendered mount context is not restored as authority. The first eligible ordinary model boundary receives a fresh request-hook snapshot without consulting any prior run's mount identity; if execution begins without ordinary input, one trusted startup boundary can carry it. A provider-suspended tail remains untouched until a later ordinary boundary. Fresh policy can remove access that existed in an earlier run.
 
 A child run receives an explicit context seed and a fresh `AgentContext`. Parent messages or summaries transfer only when delegation policy selects them. Inline `SubagentCapability` stores each child's private `HarnessState`, including its independent message history, for later inline continuation. Async mode stores only the operator backend selector and bounded portable projection; any real child Thread state remains operator- or Host-owned. Parent and child never share mutable message lists, a whole `AgentContextState`, or a whole `AgentContext`; only the Working State task cell can cross the inline state boundary.
 

@@ -114,10 +114,17 @@ class EnvironmentSelection:
     environment_revision_id: EnvironmentRevisionId
 
 
+class ChildEnvironmentPolicy:
+    mode: Literal["none", "shared_root", "dedicated"]
+
+
 class SubagentSelection:
     agent_preset_id: AgentPresetId
     revision: int | None
     description: str | None
+    context: DelegationContextPolicy
+    usage_limits: UsageLimits | None
+    environment: ChildEnvironmentPolicy
 
 
 class OutputVariant:
@@ -180,11 +187,11 @@ class AgentPresetConfig:
     protocol: ProtocolConfig
 ```
 
-The deployment's fixed Plugin Runtime profile determines which Plugin selection variant is legal. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. `skills` selects exact Skill Revisions rather than a mutable catalog plus defaults. `environment` selects at most one primary exact EnvironmentRevision. Connector and subagent map keys are stable local names within the Agent. `client_tools` stores only serializable declarations; executable handlers and callbacks remain SDK-local.
+The deployment's fixed Plugin Runtime profile determines which Plugin selection variant is legal. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. `skills` selects exact Skill Revisions rather than a mutable catalog plus defaults. `environment` selects at most one primary exact EnvironmentRevision. Connector and subagent map keys are stable local names within the Agent. Each child edge freezes Harness delegation context, usage ceilings, and its Host Environment association policy. `client_tools` stores only serializable declarations; executable handlers and callbacks remain SDK-local.
 
 `OutputSpec` permits either one top-level `schema` with optional local `resources`, or at least two mutually exclusive `variants`; it never permits nested variants or runtime retrieval of schema resources. `None` means free-text output. `RetryConfig` contains bounded non-negative tool-argument and structured-output model-correction budgets. It does not configure provider transport retry, Worker recovery, whole-Run retry, or business-workflow retry.
 
-The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, Plugin object, client, credential value, plaintext Secret, provider attachment, live controller, arbitrary artifact URL, or process-local value. Python extension code is selected only through `plugins`; Harness Capabilities, Hooks, and Toolsets are constructed internally after importing the selected Wheel and are not Agent Management resources or generic fields. `asset_publication` is the one dedicated platform Capability selection required by the [Asset publication contract](37-asset-management.md#agent-publication-capability), not an extensible Capability list.
+The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, Plugin object, client, credential value, plaintext Secret, Environment adapter, current Environment state, entered facade, live controller, arbitrary artifact URL, or process-local value. Python extension code is selected only through `plugins`; Harness Capabilities, Hooks, and Toolsets are constructed internally after importing the selected Wheel and are not Agent Management resources or generic fields. `asset_publication` is the one dedicated platform Capability selection required by the [Asset publication contract](37-asset-management.md#agent-publication-capability), not an extensible Capability list.
 
 Saving config performs only request-schema structure, type, size, and bounds validation. Foundation exposes no independent Validate resource, preview state, warning collection, or partially valid config lifecycle. Publish is the sole authoritative resolve-and-build validation path.
 
@@ -210,7 +217,7 @@ One Run request may carry a finite typed `config_override`. It is request data, 
 
 ```python
 class InlineEnvironmentSelection:
-    connection_spec: EnvironmentConnectionSpec
+    provider: EnvironmentProviderSpec
     credential_bindings: tuple[EnvironmentCredentialBinding, ...]
     access: EnvironmentAccess = "full"
 
@@ -235,6 +242,9 @@ class SubagentOverride:
     agent_preset_id: AgentPresetId | None
     revision: int | None
     description: str | None
+    context: DelegationContextPolicy | None
+    usage_limits: UsageLimits | None
+    environment: ChildEnvironmentPolicy | None
 
 
 class RetryOverride:
@@ -304,6 +314,9 @@ class ResolvedSubagentEdge:
     child_agent_preset_id: AgentPresetId
     child_agent_preset_revision_id: AgentPresetRevisionId
     description: str | None
+    context: DelegationContextPolicy
+    usage_limits: UsageLimits | None
+    environment: ChildEnvironmentPolicy
 
 
 class ResolvedAgentModelConfig:
@@ -415,11 +428,11 @@ Only a disabled custom Preset can be archived. Unarchive changes it to `disabled
 
 ## Subagent Composition
 
-A parent config declares each named child edge with a stable child `agent_preset_id` and optional child-local `revision` number. Parent Publish resolves an omitted selector to the child's active Revision and stores one exact `child_agent_preset_revision_id`. It rejects a missing, unpublished, disabled, archived, unauthorized, unretained, or unexecutable child, duplicate sibling name, excessive graph size or depth, unbuildable dependency, or any structural cycle.
+A parent config declares each named child edge with a stable child `agent_preset_id`, optional child-local `revision` number, Harness context and usage policy, and one explicit Host Environment policy. Parent Publish resolves an omitted selector to the child's active Revision and stores one exact `child_agent_preset_revision_id`. It rejects a missing, unpublished, disabled, archived, unauthorized, unretained, or unexecutable child, duplicate sibling name, excessive graph size or depth, incompatible Environment policy, unbuildable dependency, or any structural cycle. A `shared_root` edge requires the child and root to freeze the same Provider configuration and lock with no wider child access; `dedicated` uses the child's frozen configuration with new Host state; `none` requires the child not to require an Environment.
 
 Publishing a child later does not change an existing parent Revision. The parent adopts the new child behavior only after another parent Publish. A parent Revision may execute its pinned historical child Revision; exact historical selection is also available to authorized root Runs as described below.
 
-The Worker recursively reconstructs the exact finite graph into Harness `SubagentDefinition` and `SubagentCollection` values. Root and child definitions use the same Harness build and Plugin contracts. A Run Override may patch the managed child roster by stable local name; acceptance recursively resolves and freezes the complete resulting graph before work starts. An asynchronous hosted child receives its own persisted execution resources, fresh bindings, and the already selected exact child Revision under [Async Subagents](18-async-subagents.md). The first version does not accept inline child Agent definitions.
+The Worker recursively reconstructs the exact finite graph into Harness `SubagentDefinition` and `SubagentCollection` values. Root and child definitions use the same Harness build and Plugin contracts. A Run Override may patch the managed child roster by stable local name; acceptance recursively resolves and freezes the complete resulting graph before work starts. An asynchronous hosted child receives its own Thread, Run, RunAttempts, fresh `RunBindings`, fresh Environment adapters selected through its frozen Host association policy, the already selected exact child Revision, and a compatible Runtime lock under [Async Subagents](18-async-subagents.md). An inline child remains process-local Harness execution and borrows the active Environment facade. The first version does not accept inline child Agent definitions in Preset configuration or Run overrides.
 
 ## Run Selection and Reconstruction
 
@@ -443,11 +456,11 @@ For each execution attempt, the Worker or Runner:
 1. reads the accepted Run's exact Revision graph and `EffectiveAgentConfig`;
 2. verifies and materializes its exact `runtime_lock_digest` under the [runtime-loading contract](26-harness-plugin-artifacts-and-runtime-loading.md);
 3. records that lock digest, Harness version, and bounded selected Plugin distribution identities on the attempt;
-4. reauthorizes and resolves current credentials, RoleBindings, invocation grants, Secret eligibility, provider availability, and live Environment attachments without changing the frozen non-secret configuration;
-5. reconstructs concrete `HarnessModelCharacteristics`, native `ModelSettings`, fresh native Models, Capabilities, Plugins, `AgentDefinition` values, and `RunBindings`; and
-6. enters the Harness only after the current attempt fence authorizes effects.
+4. reauthorizes current credentials, RoleBindings, invocation grants, Secret eligibility, Provider availability, and current Host Environment state without changing the frozen non-secret configuration;
+5. constructs the optional fresh primary Environment adapter and default Harness mount, reconstructs concrete `HarnessModelCharacteristics`, native `ModelSettings`, fresh native Models, definition-selected Capabilities, Plugins, `AgentDefinition` values, and `RunBindings`, then appends mandatory Foundation Worker infrastructure Capabilities such as the fenced inbox-delivery hook without changing the accepted model or tool surface; and
+6. enters the Harness only after the current execution-attempt fence authorizes effects.
 
-Deployment code can change between attempts, but one accepted Run never silently changes Plugin code, dependencies, managed-resource Revisions, child graph, tool surface, output contract, or retry budgets. In `on_demand`, a Worker with a conflicting process-local import set declines the work before claim; in `runner`, a matching lock-scoped Runner claims it. Current credentials, authorization, Secret eligibility, Provider availability, and live Environment bindings remain fresh per attempt.
+Deployment code can change between attempts, but one accepted Run never silently changes Plugin code, dependencies, managed-resource Revisions, child graph, tool surface, output contract, Environment desired configuration, or retry budgets. In `on_demand`, a Worker with a conflicting process-local import set declines the work before claim; in `runner`, a matching lock-scoped Runner claims it. Current credentials, authorization, Secret eligibility, Provider availability, and Host Environment state remain fresh per attempt; every attempt constructs fresh `RunBindings` and, when selected, one fresh Environment adapter.
 
 ## Harness Plugin Configuration
 
@@ -645,7 +658,7 @@ Wheel and entry-point constraints give deterministic packaging and loading, not 
 03. Every accepted Run pins one exact Preset Revision and one immutable `EffectiveAgentConfig`; claim, retry, waiting, and recovery never remerge mutable state.
 04. Authorized invocation may select the active Revision or one exact retained executable historical Revision; exact selection never falls back.
 05. Revision and effective-config content contain only serializable Foundation data and exact references, never Python objects, callable handlers, credential values, arbitrary import targets, or Plugin artifacts.
-06. Current credentials, authorization, Secret eligibility, Provider availability, and live Environment bindings are resolved freshly for every execution attempt without changing frozen non-secret configuration.
+06. Current credentials, authorization, Secret eligibility, Provider availability, Host Environment state, `RunBindings`, and Environment adapters are resolved or constructed freshly for every execution attempt without changing frozen non-secret configuration.
 07. Preset lifecycle changes never rewrite Revisions or accepted Runs.
 08. Plugin selection is explicit: on-demand authoring selects exact authorized PluginVersions, runner authoring selects active keys, and Publish freezes exact PluginVersions in both profiles.
 09. Plugin code executes with Worker authority in either the on-demand Worker interpreter or a Runner; every Revision and accepted Run pins one exact Runtime lock digest, and every execution attempt records the lock it used.

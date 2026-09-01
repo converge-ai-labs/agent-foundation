@@ -1,90 +1,116 @@
 from __future__ import annotations
 
-import asyncio
-import threading
-from collections.abc import AsyncGenerator, Mapping
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
+from stat import S_IMODE
 
-import a13n_environment_provider.docker.provider as docker_provider_module
-import a13n_environment_provider.docker.runtime as docker_runtime_module
 import pytest
-from a13n_envd_client import EIPSession
 from a13n_environment_provider import (
     DEFAULT_DOCKER_IMAGE,
     DirectoryDockerBootstrapStore,
     DockerBootstrapMaterial,
-    DockerBootstrapStoreError,
     DockerContainerInspection,
     DockerContainerSpec,
     DockerEngine,
     DockerEngineError,
     DockerEngineMount,
+    DockerEnvironment,
     DockerEnvironmentProvider,
     DockerImageInspection,
-    DockerImagePullPolicy,
-    DockerMountConfiguration,
-    DockerProviderConfiguration,
     DockerProviderRuntime,
     DockerProviderStateData,
-    DockerResourcePhase,
-    DockerSDKEngine,
-    EIPEnvironmentAttachment,
-    EIPSessionSource,
-    EnvironmentManagementAction,
-    EnvironmentOperationContext,
-    EnvironmentPauseMode,
     EnvironmentProviderError,
-    EnvironmentProviderOutcomeCertainty,
-    EnvironmentReconciliationPhase,
-    build_environment_provider_factory_catalog,
+    EnvironmentState,
 )
 
 pytestmark = pytest.mark.anyio
 
 _IMAGE_ID = f"sha256:{'1' * 64}"
-_CONTAINER_ID = f"sha256:{'2' * 64}"
 
 
 class _FakeDockerEngine(DockerEngine):
-    def __init__(self, *, image_present: bool = False) -> None:
-        self.image_present = image_present
-        self.pull_count = 0
-        self.create_specs: list[DockerContainerSpec] = []
+    def __init__(self) -> None:
         self.containers: dict[str, DockerContainerInspection] = {}
-        self.create_then_error = False
-        self.fail_inspect_after_start = False
-        self.fail_inspect_after_stop = False
-        self.fail_inspect_after_remove = False
-        self.status_after_start: str | None = None
-        self._inspection_failure_pending = False
-        self.topology_validations = 0
+        self.create_specs: list[DockerContainerSpec] = []
+        self.inspect_error: DockerEngineError | None = None
+        self.find_error: DockerEngineError | None = None
+        self.start_error: DockerEngineError | None = None
+        self.stop_error: DockerEngineError | None = None
+        self.remove_error: DockerEngineError | None = None
+        self.start_calls = 0
+        self._counter = 0
 
     async def validate_local_topology(self) -> None:
-        self.topology_validations += 1
+        return None
 
     async def inspect_image(self, reference: str) -> DockerImageInspection | None:
         assert reference == DEFAULT_DOCKER_IMAGE
-        if not self.image_present:
-            return None
         return DockerImageInspection(image_id=_IMAGE_ID, user="sandbox")
 
     async def pull_image(self, reference: str) -> None:
-        assert reference == DEFAULT_DOCKER_IMAGE
-        self.pull_count += 1
-        self.image_present = True
+        raise AssertionError(f"unexpected image pull: {reference}")
 
     async def validate_mount(self, mount: DockerEngineMount) -> None:
         if mount.type == "bind":
-            assert Path(mount.source).is_dir()
+            assert Path(mount.source).exists()
 
     async def create_container(self, spec: DockerContainerSpec) -> str:
+        self._counter += 1
+        container_id = f"sha256:{self._counter:064x}"
         self.create_specs.append(spec)
-        inspection = DockerContainerInspection(
-            container_id=_CONTAINER_ID,
+        self.containers[container_id] = self._inspection(container_id, spec, "created")
+        return container_id
+
+    async def inspect_container(self, container_id: str) -> DockerContainerInspection | None:
+        if self.inspect_error is not None:
+            error = self.inspect_error
+            self.inspect_error = None
+            raise error
+        return self.containers.get(container_id)
+
+    async def find_containers(self, labels: Mapping[str, str]) -> tuple[DockerContainerInspection, ...]:
+        if self.find_error is not None:
+            error = self.find_error
+            self.find_error = None
+            raise error
+        return tuple(
+            item
+            for item in self.containers.values()
+            if all(item.labels.get(key) == value for key, value in labels.items())
+        )
+
+    async def start_container(self, container_id: str) -> None:
+        self.start_calls += 1
+        if self.start_error is not None:
+            error = self.start_error
+            self.start_error = None
+            raise error
+        current = self.containers[container_id]
+        self.containers[container_id] = self._inspection_from(current, "running")
+
+    async def stop_container(self, container_id: str, *, timeout_seconds: int) -> None:
+        del timeout_seconds
+        if self.stop_error is not None:
+            error = self.stop_error
+            self.stop_error = None
+            raise error
+        current = self.containers[container_id]
+        self.containers[container_id] = self._inspection_from(current, "exited")
+
+    async def remove_container(self, container_id: str) -> None:
+        if self.remove_error is not None:
+            error = self.remove_error
+            self.remove_error = None
+            raise error
+        self.containers.pop(container_id, None)
+
+    @staticmethod
+    def _inspection(container_id: str, spec: DockerContainerSpec, status: str) -> DockerContainerInspection:
+        return DockerContainerInspection(
+            container_id=container_id,
             image_id=spec.image_id,
-            status="created",
+            status=status,
             user="sandbox",
             command=spec.command,
             environment=spec.environment,
@@ -98,48 +124,10 @@ class _FakeDockerEngine(DockerEngine):
             memory_bytes=spec.memory_bytes,
             pids_limit=spec.pids_limit,
         )
-        self.containers[_CONTAINER_ID] = inspection
-        if self.create_then_error:
-            self.create_then_error = False
-            raise DockerEngineError("response lost", dispatched=True)
-        return _CONTAINER_ID
 
-    async def inspect_container(self, container_id: str) -> DockerContainerInspection | None:
-        if self._inspection_failure_pending:
-            self._inspection_failure_pending = False
-            raise DockerEngineError("inspection response lost")
-        return self.containers.get(container_id)
-
-    async def find_containers(self, labels: Mapping[str, str]) -> tuple[DockerContainerInspection, ...]:
-        return tuple(
-            inspection
-            for inspection in self.containers.values()
-            if all(inspection.labels.get(key) == value for key, value in labels.items())
-        )
-
-    async def start_container(self, container_id: str) -> None:
-        self._set_status(container_id, self.status_after_start or "running")
-        self.status_after_start = None
-        if self.fail_inspect_after_start:
-            self.fail_inspect_after_start = False
-            self._inspection_failure_pending = True
-
-    async def stop_container(self, container_id: str, *, timeout_seconds: int) -> None:
-        assert timeout_seconds >= 0
-        self._set_status(container_id, "exited")
-        if self.fail_inspect_after_stop:
-            self.fail_inspect_after_stop = False
-            self._inspection_failure_pending = True
-
-    async def remove_container(self, container_id: str) -> None:
-        self.containers.pop(container_id, None)
-        if self.fail_inspect_after_remove:
-            self.fail_inspect_after_remove = False
-            self._inspection_failure_pending = True
-
-    def _set_status(self, container_id: str, status: str) -> None:
-        current = self.containers[container_id]
-        self.containers[container_id] = DockerContainerInspection(
+    @staticmethod
+    def _inspection_from(current: DockerContainerInspection, status: str) -> DockerContainerInspection:
+        return DockerContainerInspection(
             container_id=current.container_id,
             image_id=current.image_id,
             status=status,
@@ -158,505 +146,310 @@ class _FakeDockerEngine(DockerEngine):
         )
 
 
-class _ReadySource(EIPSessionSource):
-    def open_session(
-        self,
-        *,
-        expected_environment_id: str,
-        required_methods: frozenset[str],
-    ) -> AbstractAsyncContextManager[EIPSession]:
-        @asynccontextmanager
-        async def ready() -> AsyncGenerator[EIPSession]:
-            self._claim()
-            assert expected_environment_id == "environment-test"
-            assert "environment.readiness" in required_methods
-            yield cast(EIPSession, object())
-
-        return ready()
-
-    async def discard(self) -> None:
-        return None
-
-
-class _CancelledDiscardSource(_ReadySource):
-    async def discard(self) -> None:
-        raise asyncio.CancelledError("cancel attachment release")
-
-
-def _operation(
-    action: EnvironmentManagementAction,
-    *,
-    operation_id: str | None = None,
-    attempt: int = 1,
-) -> EnvironmentOperationContext:
-    return EnvironmentOperationContext(
-        operation_id=operation_id or f"operation-{action.value}",
-        action=action,
-        resource_correlation="resource-test",
-        attempt=attempt,
+def _environment(tmp_path: Path, engine: _FakeDockerEngine, state: EnvironmentState | None = None) -> DockerEnvironment:
+    provider = DockerEnvironmentProvider()
+    configuration = provider.validate_configuration(
+        schema_version="1",
+        value={"environment_id": "environment-test"},
     )
-
-
-def _provider(tmp_path: Path, engine: _FakeDockerEngine) -> DockerEnvironmentProvider:
-    runtime = DockerProviderRuntime(
-        engine=engine,
-        bootstrap_store=DirectoryDockerBootstrapStore((tmp_path / "bootstrap").resolve()),
-    )
-    return DockerEnvironmentProvider(DockerProviderConfiguration(environment_id="environment-test"), runtime)
-
-
-def _patch_readiness(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        docker_provider_module,
-        "_http_source",
-        lambda endpoint, credential: _ReadySource(),
-    )
-
-
-async def test_default_configuration_pulls_sandbox_and_creates_fixed_eip_container(tmp_path: Path) -> None:
-    engine = _FakeDockerEngine()
-    provider = _provider(tmp_path, engine)
-
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
-
-    assert engine.pull_count == 1
-    assert len(engine.create_specs) == 1
-    spec = engine.create_specs[0]
-    assert spec.image_id == _IMAGE_ID
-    assert spec.command == ("agent-envd", "--config", "/run/a13n/bootstrap/envd.json")
-    assert spec.environment["AGENT_ENVD_HTTP_BIND"] == "0.0.0.0:8787"
-    assert spec.environment["AGENT_ENVD_HTTP_PLAINTEXT_SCOPE"] == "provider_private_link"
-    assert spec.mounts[-1].target == "/run/a13n/bootstrap"
-    assert spec.mounts[-1].read_only
-    state = DockerProviderStateData.model_validate(resource.state.data)
-    assert state.phase is DockerResourcePhase.RUNNING
-    assert state.image_id == _IMAGE_ID
-    assert state.container_id == _CONTAINER_ID
-
-
-async def test_never_pull_requires_local_image(tmp_path: Path) -> None:
-    engine = _FakeDockerEngine()
-    runtime = DockerProviderRuntime(
-        engine=engine,
-        bootstrap_store=DirectoryDockerBootstrapStore((tmp_path / "bootstrap").resolve()),
-    )
-    provider = DockerEnvironmentProvider(
-        DockerProviderConfiguration(
-            environment_id="environment-test",
-            pull_policy=DockerImagePullPolicy.NEVER,
+    environment = provider.create_environment(
+        configuration=configuration,
+        state=state,
+        runtime=DockerProviderRuntime(
+            engine=engine,
+            bootstrap_store=DirectoryDockerBootstrapStore((tmp_path / "bootstrap").resolve()),
         ),
-        runtime,
     )
-
-    with pytest.raises(EnvironmentProviderError) as captured:
-        await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
-
-    assert captured.value.code == "provider_resource_missing"
-    assert engine.pull_count == 0
-    assert not engine.create_specs
+    assert isinstance(environment, DockerEnvironment)
+    return environment
 
 
-async def test_resource_entry_attachment_pause_resume_and_destroy(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_readiness(monkeypatch)
-    engine = _FakeDockerEngine(image_present=True)
-    provider = _provider(tmp_path, engine)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
+def _skip_eip(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def open_eip(self, inspection, allocation, *, mount_id: str) -> None:
+        del self, inspection, allocation, mount_id
 
-    async with resource:
-        async with resource.acquire_attachment() as attachment:
-            assert isinstance(attachment, EIPEnvironmentAttachment)
-            assert attachment.environment_id == "environment-test"
-        paused = await provider.pause(
-            resource,
-            operation=_operation(EnvironmentManagementAction.PAUSE),
-            mode=EnvironmentPauseMode.FILESYSTEM,
-        )
-
-    paused_data = DockerProviderStateData.model_validate(paused.data)
-    assert paused_data.phase is DockerResourcePhase.PAUSED
-    old_allocation = await provider._runtime.bootstrap_store.recover(paused_data.bootstrap_correlation)
-    assert old_allocation is not None
-    old_credential = old_allocation.material.credential
-
-    resumed = await provider.resume(paused, operation=_operation(EnvironmentManagementAction.RESUME))
-    resumed_data = DockerProviderStateData.model_validate(resumed.state.data)
-    assert resumed_data.phase is DockerResourcePhase.RUNNING
-    new_allocation = await provider._runtime.bootstrap_store.recover(resumed_data.bootstrap_correlation)
-    assert new_allocation is not None
-    assert new_allocation.material.credential != old_credential
-
-    async with resumed:
-        pass
-    await provider.destroy(resumed.state, operation=_operation(EnvironmentManagementAction.DESTROY))
-    assert not engine.containers
-    assert await provider._runtime.bootstrap_store.recover(resumed_data.bootstrap_correlation) is None
+    monkeypatch.setattr(DockerEnvironment, "_open_eip", open_eip)
 
 
-async def test_uncertain_create_reconciles_created_container_as_paused(tmp_path: Path) -> None:
-    engine = _FakeDockerEngine(image_present=True)
-    engine.create_then_error = True
-    provider = _provider(tmp_path, engine)
-    operation = _operation(EnvironmentManagementAction.CREATE)
-
-    with pytest.raises(EnvironmentProviderError) as captured:
-        await provider.create(operation=operation)
-
-    assert captured.value.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN
-    result = await provider.reconcile(operation, last_known_state=None)
-    assert result.phase is EnvironmentReconciliationPhase.PAUSED
-    assert result.state is not None
-    state = DockerProviderStateData.model_validate(result.state.data)
-    assert state.container_id == _CONTAINER_ID
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/",
-        "/run",
-        "/run/a13n",
-        "/run/a13n/bootstrap",
-        "/home/sandbox",
-        "/home/sandbox/.local/state/agent-envd",
-        "/home/sandbox/.local/state/agent-envd/output",
-    ],
-)
-def test_configuration_rejects_mounts_overlapping_provider_runtime_trees(path: str) -> None:
-    with pytest.raises(ValueError, match="must not overlap"):
-        DockerProviderConfiguration(
-            environment_id="environment-test",
-            mounts=(
-                DockerMountConfiguration(
-                    mount_id="workspace",
-                    container_path=path,
-                ),
-            ),
-        )
-
-
-async def test_resume_post_start_inspection_failure_has_unknown_outcome(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_readiness(monkeypatch)
-    engine = _FakeDockerEngine(image_present=True)
-    provider = _provider(tmp_path, engine)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
-    async with resource:
-        paused = await provider.pause(
-            resource,
-            operation=_operation(EnvironmentManagementAction.PAUSE),
-            mode=EnvironmentPauseMode.FILESYSTEM,
-        )
-
-    engine.fail_inspect_after_start = True
-    with pytest.raises(EnvironmentProviderError) as captured:
-        await provider.resume(paused, operation=_operation(EnvironmentManagementAction.RESUME))
-
-    assert captured.value.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN
-
-
-async def test_resume_post_start_non_running_inspection_has_unknown_outcome(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_readiness(monkeypatch)
-    engine = _FakeDockerEngine(image_present=True)
-    provider = _provider(tmp_path, engine)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
-    async with resource:
-        paused = await provider.pause(
-            resource,
-            operation=_operation(EnvironmentManagementAction.PAUSE),
-            mode=EnvironmentPauseMode.FILESYSTEM,
-        )
-
-    engine.status_after_start = "exited"
-    with pytest.raises(EnvironmentProviderError) as captured:
-        await provider.resume(paused, operation=_operation(EnvironmentManagementAction.RESUME))
-
-    assert captured.value.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN
-
-
-async def test_pause_post_stop_inspection_failure_has_unknown_outcome(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_readiness(monkeypatch)
-    engine = _FakeDockerEngine(image_present=True)
-    provider = _provider(tmp_path, engine)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
-
-    async with resource:
-        engine.fail_inspect_after_stop = True
-        with pytest.raises(EnvironmentProviderError) as captured:
-            await provider.pause(
-                resource,
-                operation=_operation(EnvironmentManagementAction.PAUSE),
-                mode=EnvironmentPauseMode.FILESYSTEM,
-            )
-
-    assert captured.value.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN
-
-
-async def test_pause_pre_dispatch_inspection_failure_keeps_attachment_admission(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_readiness(monkeypatch)
-    engine = _FakeDockerEngine(image_present=True)
-    provider = _provider(tmp_path, engine)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
-
-    async with resource:
-        engine._inspection_failure_pending = True
-        with pytest.raises(EnvironmentProviderError) as captured:
-            await provider.pause(
-                resource,
-                operation=_operation(EnvironmentManagementAction.PAUSE),
-                mode=EnvironmentPauseMode.FILESYSTEM,
-            )
-        assert captured.value.certainty is not EnvironmentProviderOutcomeCertainty.UNKNOWN
-        async with resource.acquire_attachment() as attachment:
-            assert isinstance(attachment, EIPEnvironmentAttachment)
-
-
-async def test_destroy_post_remove_inspection_failure_has_unknown_outcome(tmp_path: Path) -> None:
-    engine = _FakeDockerEngine(image_present=True)
-    provider = _provider(tmp_path, engine)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
-    engine.fail_inspect_after_remove = True
-
-    with pytest.raises(EnvironmentProviderError) as captured:
-        await provider.destroy(resource.state, operation=_operation(EnvironmentManagementAction.DESTROY))
-
-    assert captured.value.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN
-
-
-async def test_same_create_retry_reuses_bootstrap_after_authoritative_absence(tmp_path: Path) -> None:
-    engine = _FakeDockerEngine(image_present=True)
-    provider = _provider(tmp_path, engine)
-    operation = _operation(EnvironmentManagementAction.CREATE)
-    bootstrap_correlation = docker_provider_module._bootstrap_correlation(operation.operation_id)
-    configuration = DockerProviderConfiguration(environment_id="environment-test")
-    fingerprint = docker_provider_module._configuration_fingerprint(configuration)
-    material = docker_provider_module._new_bootstrap_material(configuration, fingerprint)
-    allocation = await provider._runtime.bootstrap_store.create(bootstrap_correlation, material)
-
-    result = await provider.reconcile(operation, last_known_state=None)
-    assert result.phase is EnvironmentReconciliationPhase.ABSENT
-
-    retried = await provider.create(operation=operation.model_copy(update={"attempt": 2}))
-    current = await provider._runtime.bootstrap_store.recover(bootstrap_correlation)
-    assert current is not None
-    assert current.material.credential == allocation.material.credential
-    assert DockerProviderStateData.model_validate(retried.state.data).phase is DockerResourcePhase.RUNNING
-
-
-async def test_sdk_container_mutation_settles_before_cancellation_propagates() -> None:
-    entered = threading.Event()
-    release = threading.Event()
-
-    class BlockingContainers:
-        def create(self, **options: object):
-            assert options["image"] == _IMAGE_ID
-            entered.set()
-            assert release.wait(timeout=5)
-
-            class Container:
-                id = _CONTAINER_ID
-
-            return Container()
-
-    class Client:
-        containers = BlockingContainers()
-
-    engine = DockerSDKEngine(Client())
-    spec = DockerContainerSpec(
-        image_id=_IMAGE_ID,
-        command=("agent-envd",),
-        environment={},
-        labels={},
-        mounts=(),
-        eip_container_port=8787,
-        nano_cpus=None,
-        memory_bytes=None,
-        pids_limit=None,
-    )
-    create_task = asyncio.create_task(engine.create_container(spec))
-    assert await asyncio.to_thread(entered.wait, 5)
-    create_task.cancel()
-    await asyncio.sleep(0)
-    assert not create_task.done()
-
-    release.set()
-    with pytest.raises(asyncio.CancelledError):
-        await create_task
-
-
-async def test_cancelled_bootstrap_publication_completes_then_cleans_allocation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    engine = _FakeDockerEngine(image_present=True)
-    store = DirectoryDockerBootstrapStore((tmp_path / "store").resolve())
-    provider = DockerEnvironmentProvider(
-        DockerProviderConfiguration(environment_id="environment-test"),
-        DockerProviderRuntime(engine=engine, bootstrap_store=store),
-    )
-    published = threading.Event()
-    release = threading.Event()
-    original_publish = store._publish_new
-
-    def delayed_publish(
-        correlation: str,
-        material: DockerBootstrapMaterial,
-    ) -> docker_runtime_module.DockerBootstrapAllocation:
-        allocation = original_publish(correlation, material)
-        published.set()
-        assert release.wait(timeout=5)
-        return allocation
-
-    monkeypatch.setattr(store, "_publish_new", delayed_publish)
-    operation = _operation(EnvironmentManagementAction.CREATE)
-    create_task = asyncio.create_task(provider.create(operation=operation))
-    assert await asyncio.to_thread(published.wait, 5)
-    create_task.cancel()
-    release.set()
-
-    with pytest.raises(asyncio.CancelledError):
-        await create_task
-
-    correlation = docker_provider_module._bootstrap_correlation(operation.operation_id)
-    assert await store.recover(correlation) is None
-    assert not engine.create_specs
-
-
-async def test_attachment_release_preserves_cancellation_and_resets_admission(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sources = iter((_ReadySource(), _CancelledDiscardSource(), _ReadySource()))
-    monkeypatch.setattr(
-        docker_provider_module,
-        "_http_source",
-        lambda endpoint, credential: next(sources),
-    )
-    engine = _FakeDockerEngine(image_present=True)
-    provider = _provider(tmp_path, engine)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE))
-
-    async with resource:
-        with pytest.raises(asyncio.CancelledError):
-            async with resource.acquire_attachment():
-                pass
-        async with resource.acquire_attachment() as attachment:
-            assert isinstance(attachment, EIPEnvironmentAttachment)
-
-
-async def test_sdk_inspection_requires_one_exact_eip_publication() -> None:
-    attributes = {
-        "Id": _CONTAINER_ID,
-        "Image": _IMAGE_ID,
-        "Config": {"User": "sandbox", "Cmd": [], "Env": [], "Labels": {}},
-        "State": {"Status": "running"},
-        "HostConfig": {
-            "PortBindings": {
-                "8787/tcp": [{"HostIp": "127.0.0.1", "HostPort": "49152"}],
-            }
-        },
-        "NetworkSettings": {
-            "Ports": {
-                "8787/tcp": [{"HostIp": "127.0.0.1", "HostPort": "49152"}],
-            }
-        },
-        "Mounts": [],
-    }
-    exact = docker_runtime_module._inspection(attributes)
-    assert exact.eip_binding_exact
-    assert exact.eip_route_exact
-
-    attributes["HostConfig"]["PortBindings"]["9000/tcp"] = [  # type: ignore[index]
-        {"HostIp": "0.0.0.0", "HostPort": "49000"}
-    ]
-    extra_binding = docker_runtime_module._inspection(attributes)
-    assert not extra_binding.eip_binding_exact
-
-    attributes["HostConfig"]["PortBindings"].pop("9000/tcp")  # type: ignore[index, union-attr]
-    attributes["NetworkSettings"]["Ports"]["8787/tcp"].append(  # type: ignore[index, union-attr]
-        {"HostIp": "0.0.0.0", "HostPort": "49153"}
-    )
-    duplicate_route = docker_runtime_module._inspection(attributes)
-    assert not duplicate_route.eip_route_exact
-
-
-async def test_directory_bootstrap_store_recovers_committed_credential_after_late_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    store = DirectoryDockerBootstrapStore((tmp_path / "store").resolve())
-    correlation = f"bootstrap-{'c' * 24}"
-    first = DockerBootstrapMaterial(
+@pytest.mark.skipif(os.name != "posix", reason="POSIX filesystem modes are required")
+async def test_directory_bootstrap_store_keeps_host_root_private_across_replacement(tmp_path: Path) -> None:
+    root = (tmp_path / "bootstrap").resolve()
+    store = DirectoryDockerBootstrapStore(root)
+    initial = DockerBootstrapMaterial(
         environment_id="environment-test",
-        configuration_fingerprint=f"sha256:{'d' * 64}",
+        configuration_fingerprint=f"sha256:{'2' * 64}",
         envd_configuration=b"{}",
-        credential="first",
+        credential="credential-initial",
     )
-    await store.create(correlation, first)
+
+    allocation = await store.create("bootstrap-1234567890abcdef12345678", initial)
+    assert S_IMODE(root.stat().st_mode) == 0o700
+    assert allocation.material.credential == "credential-initial"
+
+    root.chmod(0o755)
     replacement = DockerBootstrapMaterial(
-        environment_id=first.environment_id,
-        configuration_fingerprint=first.configuration_fingerprint,
-        envd_configuration=first.envd_configuration,
-        credential="replacement",
+        environment_id=initial.environment_id,
+        configuration_fingerprint=initial.configuration_fingerprint,
+        envd_configuration=initial.envd_configuration,
+        credential="credential-replaced",
     )
-    original_replace = docker_runtime_module.os.replace
+    allocation = await store.replace(allocation.correlation, replacement)
 
-    def replace_then_fail(source: Path, destination: Path) -> None:
-        original_replace(source, destination)
-        raise OSError("simulated failure after atomic credential commit")
-
-    monkeypatch.setattr(docker_runtime_module.os, "replace", replace_then_fail)
-    with pytest.raises(DockerBootstrapStoreError, match="could not be replaced"):
-        await store.replace(correlation, replacement)
-    monkeypatch.setattr(docker_runtime_module.os, "replace", original_replace)
-
-    recovered = await store.recover(correlation)
-    assert recovered is not None
-    assert recovered.material == replacement
+    assert S_IMODE(root.stat().st_mode) == 0o700
+    assert allocation.material.credential == "credential-replaced"
 
 
-async def test_directory_bootstrap_store_detects_conflict_and_replaces_credential(tmp_path: Path) -> None:
-    store = DirectoryDockerBootstrapStore((tmp_path / "store").resolve())
-    correlation = f"bootstrap-{'a' * 24}"
-    first = DockerBootstrapMaterial(
-        environment_id="environment-test",
-        configuration_fingerprint=f"sha256:{'b' * 64}",
-        envd_configuration=b"{}",
-        credential="first",
+async def test_docker_create_caches_exact_container_state_before_entry_returns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    environment = _environment(tmp_path, engine)
+
+    await environment.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
     )
-    same = await store.create(correlation, first)
-    assert await store.create(correlation, first) == same
 
-    conflicting = DockerBootstrapMaterial(
-        environment_id=first.environment_id,
-        configuration_fingerprint=first.configuration_fingerprint,
-        envd_configuration=first.envd_configuration,
-        credential="different",
+    state = environment.dump_state()
+    assert state is not None
+    decoded = DockerProviderStateData.model_validate(state.state)
+    assert decoded.container_id in engine.containers
+    assert engine.containers[decoded.container_id].status == "running"
+    assert len(engine.create_specs) == 1
+    await environment.close()
+    assert decoded.container_id in engine.containers
+
+
+async def test_docker_failed_start_retains_created_container_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    engine.start_error = DockerEngineError("start response lost", dispatched=True)
+    environment = _environment(tmp_path, engine)
+
+    with pytest.raises(EnvironmentProviderError):
+        await environment.enter(
+            thread_id="thread-1",
+            run_id="run-1",
+            agent_instance_id="agent-1",
+            mount_id="workspace",
+        )
+
+    state = environment.dump_state()
+    assert state is not None
+    assert DockerProviderStateData.model_validate(state.state).container_id in engine.containers
+    await environment.close()
+
+
+async def test_docker_reentry_reuses_exact_target_and_replaces_confirmed_absence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    first = _environment(tmp_path, engine)
+    await first.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
     )
-    with pytest.raises(Exception, match="different material"):
-        await store.create(correlation, conflicting)
+    state = first.dump_state()
+    assert state is not None
+    first_id = DockerProviderStateData.model_validate(state.state).container_id
+    await first.close()
 
-    replaced = await store.replace(correlation, conflicting)
-    assert replaced.material.credential == "different"
-    await store.remove(correlation)
-    assert await store.recover(correlation) is None
+    reentered = _environment(tmp_path, engine, state)
+    await reentered.enter(
+        thread_id="thread-1",
+        run_id="run-2",
+        agent_instance_id="agent-2",
+        mount_id="workspace",
+    )
+    assert DockerProviderStateData.model_validate(reentered.dump_state().state).container_id == first_id  # type: ignore[union-attr]
+    await reentered.close()
+
+    engine.containers.pop(first_id)
+    replacement = _environment(tmp_path, engine, state)
+    await replacement.enter(
+        thread_id="thread-1",
+        run_id="run-3",
+        agent_instance_id="agent-3",
+        mount_id="workspace",
+    )
+    replacement_state = replacement.dump_state()
+    assert replacement_state is not None
+    assert DockerProviderStateData.model_validate(replacement_state.state).container_id != first_id
+    await replacement.close()
 
 
-def test_builtin_catalog_resolves_docker_without_touching_engine() -> None:
-    catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.docker",))
+async def test_docker_destroy_uses_fresh_adapter_and_clears_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    entered = _environment(tmp_path, engine)
+    await entered.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
+    )
+    state = entered.dump_state()
+    assert state is not None
+    container_id = DockerProviderStateData.model_validate(state.state).container_id
+    await entered.close()
 
-    assert tuple(catalog) == ("a13n.docker",)
-    assert catalog["a13n.docker"].configuration_model("1") is DockerProviderConfiguration
+    destroyer = _environment(tmp_path, engine, state)
+    await destroyer.destroy()
+    assert container_id not in engine.containers
+    assert destroyer.dump_state() is None
+    await destroyer.close()
+
+
+async def test_docker_inspection_unavailable_does_not_create_speculative_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    first = _environment(tmp_path, engine)
+    await first.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
+    )
+    state = first.dump_state()
+    assert state is not None
+    await first.close()
+    initial_create_count = len(engine.create_specs)
+
+    engine.inspect_error = DockerEngineError("inspection unavailable")
+    reentry = _environment(tmp_path, engine, state)
+    with pytest.raises(EnvironmentProviderError) as captured:
+        await reentry.enter(
+            thread_id="thread-1",
+            run_id="run-2",
+            agent_instance_id="agent-2",
+            mount_id="workspace",
+        )
+
+    assert captured.value.code == "provider_unavailable"
+    assert len(engine.create_specs) == initial_create_count
+    assert reentry.dump_state() == state
+    await reentry.close()
+
+
+async def test_docker_incompatible_target_fails_without_start_or_create(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    first = _environment(tmp_path, engine)
+    await first.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
+    )
+    state = first.dump_state()
+    assert state is not None
+    decoded = DockerProviderStateData.model_validate(state.state)
+    await first.close()
+    current = engine.containers[decoded.container_id]
+    engine.containers[decoded.container_id] = DockerContainerInspection(
+        container_id=current.container_id,
+        image_id=current.image_id,
+        status="exited",
+        user=current.user,
+        command=current.command,
+        environment=current.environment,
+        labels={**current.labels, "io.a13n.configuration-fingerprint": f"sha256:{'9' * 64}"},
+        mounts=current.mounts,
+        eip_host_ip=current.eip_host_ip,
+        eip_host_port=current.eip_host_port,
+        eip_binding_exact=current.eip_binding_exact,
+        eip_route_exact=current.eip_route_exact,
+        nano_cpus=current.nano_cpus,
+        memory_bytes=current.memory_bytes,
+        pids_limit=current.pids_limit,
+    )
+    initial_create_count = len(engine.create_specs)
+    initial_start_count = engine.start_calls
+
+    reentry = _environment(tmp_path, engine, state)
+    with pytest.raises(EnvironmentProviderError) as captured:
+        await reentry.enter(
+            thread_id="thread-1",
+            run_id="run-2",
+            agent_instance_id="agent-2",
+            mount_id="workspace",
+        )
+
+    assert captured.value.code == "provider_state_conflict"
+    assert len(engine.create_specs) == initial_create_count
+    assert engine.start_calls == initial_start_count
+    assert reentry.dump_state() == state
+    await reentry.close()
+
+
+async def test_docker_eip_failure_after_create_retains_known_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _FakeDockerEngine()
+    environment = _environment(tmp_path, engine)
+
+    async def fail_eip(self, inspection, allocation, *, mount_id: str) -> None:
+        del self, inspection, allocation, mount_id
+        raise RuntimeError("EIP readiness failed")
+
+    monkeypatch.setattr(DockerEnvironment, "_open_eip", fail_eip)
+    with pytest.raises(RuntimeError, match="EIP readiness failed"):
+        await environment.enter(
+            thread_id="thread-1",
+            run_id="run-1",
+            agent_instance_id="agent-1",
+            mount_id="workspace",
+        )
+
+    state = environment.dump_state()
+    assert state is not None
+    assert DockerProviderStateData.model_validate(state.state).container_id in engine.containers
+    await environment.close()
+
+
+async def test_docker_unknown_destroy_outcome_preserves_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    entered = _environment(tmp_path, engine)
+    await entered.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
+    )
+    state = entered.dump_state()
+    assert state is not None
+    await entered.close()
+
+    engine.stop_error = DockerEngineError("stop response lost", dispatched=True)
+    destroyer = _environment(tmp_path, engine, state)
+    with pytest.raises(EnvironmentProviderError) as captured:
+        await destroyer.destroy()
+
+    assert captured.value.code == "provider_unknown_outcome"
+    assert destroyer.dump_state() == state
+    await destroyer.close()

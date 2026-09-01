@@ -1,239 +1,205 @@
 # Environment Providers
 
-`a13n-environment-provider` defines the shared Host-facing contracts for Environment specifications, provider plugins, resource lifecycle, provider state, and fresh runtime attachments.
+`a13n-environment-provider` defines the Provider-owned boundary between a Host-selected target and the provider-neutral operations consumed by Agent Harness.
 
-The two main values are:
+The public lifecycle has three entities:
 
-- `EnvironmentProvider`: a resolved provider specification with create, resume, pause, destroy, reconciliation, and optional automatic-destroy scopes;
-- `EnvironmentResource`: one identified provider resource with a single-entry process-local scope, explicit `close()`, and fresh attachment acquisition.
+- `EnvironmentProvider` is an inert trusted plugin. It validates one exact configuration version and constructs fresh `Environment` adapters.
+- `Environment` is a single-use, process-local adapter for one target. It owns target creation or re-entry, readiness, operations, cached state, process-local cleanup, and explicit destruction.
+- `EnvironmentState` is a provider-owned portable semantic soft reference. It is supplied before an adapter is constructed and can be persisted after any lifecycle outcome.
 
-The input selected for one Harness call communicates only that call's cleanup behavior:
+Harness receives only already constructed `Environment` or `EnvironmentMount` values. It does not receive Providers, specifications, Resources, attachments, or provider runtime collaborators.
 
-- `executable.run(..., environment=provider)` explicitly selects one temporary create-through-destroy scope;
-- `executable.run(..., environment=entered_resource)` selects one run attachment and no pause or destroy action.
-
-## High-level Harness flow
-
-Most embedded applications pass a Provider directly:
-
-```python
-from pathlib import Path
-
-from a13n_environment_provider import (
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-)
-
-provider = DirectLocalEnvironmentProvider(
-    DirectLocalProviderConfiguration(
-        environment_id="workspace",
-        root=DirectLocalRootConfiguration(path=Path("./workspace").resolve()),
-    )
-)
-
-result = await executable.run("Use the workspace", environment=provider)
-```
-
-The Harness calls `provider.ephemeral()`, which creates and enters the Resource, acquires a fresh attachment, closes attachment and Resource scopes, and destroys the latest observed resource state before terminal result delivery.
+## Lifecycle at a glance
 
 ```mermaid
 flowchart LR
-    App[Embedded application] --> Harness
-    Harness --> Provider[EnvironmentProvider.ephemeral]
-    Provider --> Resource[EnvironmentResource]
-    Resource --> Attachment[Fresh runtime attachment]
-    Attachment --> Binding[Harness provider binding]
-    Binding --> Run[Logical Harness run]
+    Host[Host policy and persistence] --> Provider[EnvironmentProvider]
+    Provider --> Adapter[Fresh Environment]
+    State[EnvironmentState or none] --> Adapter
+    Runtime[Fresh runtime collaborators] --> Adapter
+    Adapter --> Harness[Agent Harness Run]
+    Harness --> Operations[Files, shell, processes, output, and ports]
+    Adapter --> Latest[Detached cached state]
+    Latest --> Host
 ```
 
-This path is appropriate only for resources that should be temporary. A suspended run also closes and destroys the Provider-input Resource.
+A normal Run follows this sequence:
 
-## Host-managed reusable Resource
+1. The Host resolves an allowlisted Provider.
+2. The Provider validates credential-free desired configuration.
+3. The Host loads the latest authoritative `EnvironmentState` and creates fresh runtime collaborators.
+4. The Provider constructs one fresh adapter without external I/O.
+5. Harness enters the adapter, uses its operations, exports its latest state, and closes it.
+6. The Host persists the latest state and applies retention policy separately.
 
-A Host explicitly manages a Resource when it must survive across runs, restarts, or scheduling decisions:
+`close()` releases process-local clients, sessions, daemons, temporary output, and admission owned by that adapter. It is idempotent and non-destructive. Harness never calls `destroy()`.
+
+When retention policy selects removal, the Host constructs a different fresh adapter from the exact current state and calls `destroy()` explicitly. Successful destruction clears that adapter's cached state. A failed or unknown outcome preserves the last validated state for inspection or retry.
+
+## Resolve and construct an Environment
+
+A persisted `EnvironmentProviderSpec` contains only a provider key, exact configuration schema version, and credential-free JSON configuration:
 
 ```python
 from a13n_environment_provider import (
-    EnvironmentManagementAction,
-    EnvironmentOperationContext,
+    EnvironmentProviderSpec,
+    build_environment_provider_catalog,
 )
 
-correlation = "resource-session-workspace"
-resource = await provider.create(
-    operation=EnvironmentOperationContext(
-        operation_id="operation-create-session-workspace",
-        action=EnvironmentManagementAction.CREATE,
-        resource_correlation=correlation,
-        attempt=1,
-    )
+spec = EnvironmentProviderSpec(
+    provider_key="a13n.direct-local",
+    schema_version="1",
+    configuration={
+        "environment_id": "workspace",
+        "root": {"path": "/srv/agent-workspaces/current"},
+    },
+)
+
+catalog = build_environment_provider_catalog(
+    builtin_keys=("a13n.direct-local",),
+)
+provider = catalog.resolve(spec.provider_key)
+configuration = provider.validate_configuration(
+    schema_version=spec.schema_version,
+    value=spec.configuration,
+)
+environment = provider.create_environment(
+    configuration=configuration,
+    state=None,
+)
+```
+
+Provider construction, `validate_configuration()`, and `create_environment()` are inert. The workspace or backing target is inspected only when the adapter enters a lifecycle operation.
+
+Pass the fresh adapter to Harness:
+
+```python
+result = await executable.run(
+    "Inspect the workspace",
+    environment=environment,
+)
+```
+
+Harness enters and closes the adapter exactly once. Construct another adapter for every independent Run, even when several Runs target the same workspace, container, VM, or remote sandbox.
+
+## Re-enter a stateful target
+
+The Host supplies state before entry:
+
+```python
+current_state = await state_store.load(environment_key)
+environment = provider.create_environment(
+    configuration=configuration,
+    state=current_state,
+    runtime=fresh_runtime,
 )
 
 try:
-    async with resource:
-        first = await executable.run("Start", environment=resource)
-        second = await executable.run(
-            "Continue",
-            environment=resource,
-            previous_state=first.state,
-        )
-finally:
-    await provider.destroy(
-        resource.state,
-        operation=EnvironmentOperationContext(
-            operation_id="operation-destroy-session-workspace",
-            action=EnvironmentManagementAction.DESTROY,
-            resource_correlation=correlation,
-            attempt=1,
-        ),
+    result = await executable.run(
+        "Continue the task",
+        environment=environment,
+        previous_state=previous_harness_state,
     )
+finally:
+    await state_store.publish(environment_key, environment.dump_state())
 ```
 
-The Resource must already be entered. The Harness acquires and releases one fresh attachment per run but does not exit, pause, or destroy the Resource. `EnvironmentResource.close()` and ordinary context exit close process-local clients and attachment admission only; provider `pause()` and `destroy()` remain explicit lifecycle operations.
+`dump_state()` is synchronous and performs no target I/O. It returns a detached deep copy of the latest validated cached state, so caller mutation cannot alter the adapter's cache. Providers update that cache as soon as changed target identity is known, before later readiness work that might fail.
 
-If the Host knows at scope construction time that the selected resource is temporary, it can opt into automatic destruction and retain the exact lifecycle operation identity:
+State is a soft reference, not proof that a target still exists. On entry, a Provider validates the state and inspects the exact target. It may create a replacement only after authoritative absence and according to that Provider's contract. It never treats an incompatible target, ambiguous discovery, unavailable control plane, or unknown mutation outcome as absence.
+
+`EnvironmentState` contains no bearer credential, live client, task, process-local handle, Harness mount policy, or destruction authority. Storage, authorization, retention, scheduling, and selection of the authoritative version remain Host responsibilities.
+
+## Explicit destruction
+
+Destroy requires a fresh, not-yet-entered adapter:
 
 ```python
-destroy_operation = EnvironmentOperationContext(
-    operation_id="operation-destroy-temporary-workspace",
-    action=EnvironmentManagementAction.DESTROY,
-    resource_correlation=correlation,
-    attempt=1,
+cleanup = provider.create_environment(
+    configuration=configuration,
+    state=current_state,
+    runtime=fresh_runtime,
 )
-
-async with provider.resource_scope(
-    resource,
-    destroy_on_exit=True,
-    destroy_operation=destroy_operation,
-):
-    result = await executable.run("Use the temporary workspace", environment=resource)
+try:
+    await cleanup.destroy()
+finally:
+    await state_store.publish(environment_key, cleanup.dump_state())
+    await cleanup.close()
 ```
 
-`destroy_on_exit` defaults to `False`. The flag and exact destroy operation are supplied together; the package never infers ownership, reference counts, or Host-wide idleness.
+The Provider removes only the exact backing target and provider-owned bootstrap material represented by validated state. Shared Host directories, Docker bind sources, and external named volumes remain externally owned.
 
-A later Harness run always receives a fresh attachment. Harness continuation restores `HarnessState`; provider `resume()` is a separate Host operation based on persisted `EnvironmentProviderResourceState`.
+Do not use context exit, Harness completion, suspension, or cancellation as an implicit destruction signal. Those paths close process-local resources only.
 
-## Lifecycle control
+## Provider catalog and plugins
 
-Cleanup has three distinct layers:
-
-| Layer                          | Owner and trigger                                | Effect                                                                              |
-| ------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| Harness mount                  | Harness run close, unmount, or mount replacement | Stops mount-local sessions, handles, retained output, and adapters                  |
-| Resource and attachment scopes | Current caller                                   | Closes process-local clients, admission, and attachment material                    |
-| Provider resource              | Explicit caller policy                           | Creates, resumes, pauses, destroys, and reconciles the external or logical resource |
-
-`EnvironmentProvider.ephemeral()` is the canonical temporary-resource helper. Its normal order is:
-
-1. create the Resource;
-2. enter the Resource scope;
-3. yield it for fresh attachment acquisition;
-4. exit the Resource scope;
-5. destroy the latest Resource state.
-
-If create reports an unknown outcome, it reconciles the exact create operation. `ABSENT` permits one retry with the same operation ID and `attempt + 1`; `RUNNING` resumes the exact observed resource. If destroy reports an unknown outcome, `ABSENT` completes successfully and `RUNNING` or `PAUSED` permits one same-operation retry. Reconciliation must return the exact operation ID.
-
-Cleanup still runs after body or Resource-entry failure. A body failure and destruction failure are both retained. Cancellation remains the primary exception, with cleanup failure attached as diagnostic context.
-
-## Provider specifications and catalogs
-
-A persisted provider specification contains only credential-free desired configuration:
+`EnvironmentProviderCatalog` is an explicit allowlist. Built-ins and extension entry points are enabled by exact key:
 
 ```python
-class EnvironmentProviderSpec(BaseModel):
-    provider_key: str
-    schema_version: str
-    parameters: Mapping[str, JsonValue]
-```
-
-The selected factory owns the exact configuration model for each supported schema version. Provider availability and schema validity do not authorize use; the Host applies current policy and supplies current credentials through a process-local runtime collaborator.
-
-```python
-catalog = build_environment_provider_factory_catalog(
-    builtin_keys=("a13n.direct-local",),
-    extension_keys=selected_provider_keys,
-)
-provider = catalog.create_provider(
-    provider_spec,
-    runtime=provider_runtime,
+catalog = build_environment_provider_catalog(
+    builtin_keys=("a13n.direct-local", "a13n.docker"),
+    extension_keys=("acme.sandbox",),
 )
 ```
 
-Metadata discovery imports nothing. The caller explicitly selects extension keys when building an immutable catalog. A plugin key cannot shadow a built-in key. Unknown keys and schema versions fail exactly; there is no latest-version inference, fallback provider, or placeholder built-in.
+Metadata discovery imports nothing by itself. `extension_keys` selects exactly which installed entry points may load. An extension cannot shadow a registered key, and unknown keys or schema versions fail without latest-version inference or fallback.
 
-Provider state, attachments, live clients, endpoints, and credentials never belong in `EnvironmentProviderSpec` or `HarnessState`.
+Register one no-argument Provider through the entry-point group:
 
-## Durable lifecycle and reconciliation
+```toml
+[project.entry-points."a13n_environment_provider.providers"]
+"acme.sandbox" = "acme_agent_environment:AcmeSandboxProvider"
+```
 
-Every effectful operation receives a Host-generated `EnvironmentOperationContext`:
+A Provider implementation should:
 
-- `operation_id` identifies one logical lifecycle operation;
-- `action` names create, resume, pause, or destroy;
-- `resource_correlation` links operations for one intended resource;
-- `attempt` starts at 1 and only advances for a retry of the same operation.
+1. expose one stable namespaced `key` and exact `configuration_versions`;
+2. validate configuration into a frozen package-owned Pydantic model;
+3. accept credentials, SDK clients, transport factories, and bootstrap stores only through a fresh process-local runtime collaborator;
+4. return one fresh pre-entry-inert `Environment` from `create_environment()`;
+5. validate supplied state before mutation and update cached state at every target-identity transition;
+6. expose provider-neutral `EnvironmentOperations` after entry;
+7. keep `close()` non-destructive and implement target removal only in explicit `destroy()`.
 
-An allocating provider records operation and resource correlation in provider metadata before create can become ambiguous. `resume()` targets the exact resource from validated state and never silently creates a replacement.
+The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates both installed entry-point and explicit-code registration with the same validation, construction, and Harness path.
 
-`reconcile()` is bounded and read-only. It inspects one exact prior operation and returns `RUNNING`, `PAUSED`, `ABSENT`, or `UNKNOWN`; it never creates, resumes, pauses, or destroys a resource. A timeout after possible dispatch is an unknown outcome and requires exact-operation reconciliation rather than a new operation ID.
+## Built-in Providers
 
-Persist `EnvironmentProviderResourceState` after each successful lifecycle transition. It is sensitive provider state, not Harness continuation state and not a bearer credential. Storage, encryption, scheduling, authorization, and recovery policy remain Host responsibilities.
+| Provider key        | Target and state                                                                | Cleanup boundary                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `a13n.direct-local` | Existing Host directory; stateless                                              | Closes process-local process/output helpers; never removes the directory                                |
+| `a13n.local-envd`   | Fresh private `agent-envd` generation over a Host-selected workspace; stateless | Stops the daemon and removes its private runtime; never removes the workspace                           |
+| `a13n.docker`       | Exact local Docker container identified by `EnvironmentState`                   | Closes EIP sessions on `close()`; explicit `destroy()` removes the container and its bootstrap material |
 
-## Direct Local sharing
+Direct Local is appropriate only when sharing the embedding Host account is acceptable. Its operation policy constrains calls through the adapter but is not an operating-system sandbox against an allowed child process.
 
-`a13n.direct-local` exposes one existing Host directory. The directory has no Agent, Session, Harness, or Provider owner.
+Local Envd and Docker expose provider-neutral operations through EIP. The Provider owns daemon or container lifecycle and bootstrap; Harness file, shell, process, retained-output, and port operations do not use Docker exec, copy, archive, or logs.
 
-- the Host creates, selects, retains, backs up, shares, and removes the directory;
-- Direct Local validates it and issues fresh shared attachments;
-- several Agents, attachments, and ordinary Host processes can use it concurrently;
-- Direct Local creates no lifecycle marker and never removes the directory;
-- `destroy()` detaches the logical Provider resource only;
-- `read_only` restricts operations through the binding but is not an OS sandbox against an allowed local child process.
+## Local Envd runtime
 
-Use Local Envd, Docker, or an implemented third-party EIP provider when workloads require isolation from the embedding OS account. E2B and other sandbox backends remain extension architectures rather than current built-in Providers.
-
-## Local Envd sandbox
-
-`a13n.local-envd` runs a compatible `agent-envd` executable selected by the Host. Each entered Resource owns one daemon generation, one private runtime allocation, and one reusable stdio carrier. Attachments remain sequential and single-use: each one initializes and closes a fresh EIP session, then returns the healthy carrier for the next attachment. Resource exit stops the daemon and removes only its private runtime; it never removes the selected workspace.
-
-Executable discovery is an explicit Host convenience rather than library-global configuration:
+The Host selects one compatible `agent-envd` executable and private-runtime allocator:
 
 ```python
-from pathlib import Path
-
 from a13n_environment_provider import (
-    EnvironmentProviderSpec,
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
-    build_environment_provider_factory_catalog,
     resolve_agent_envd_executable,
 )
 
-catalog = build_environment_provider_factory_catalog(
-    builtin_keys=("a13n.local-envd",),
-)
-spec = EnvironmentProviderSpec(
-    provider_key="a13n.local-envd",
-    schema_version="1",
-    parameters={
-        "environment_id": "sandbox",
-        "workspace": {"path": str(Path("./workspace").resolve())},
-        "execution_network": "deny",
-    },
-)
 runtime = LocalEnvdProviderRuntime(
     executable=resolve_agent_envd_executable(),
     allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
 )
-provider = catalog.create_provider(spec, runtime=runtime)
 ```
 
-`resolve_agent_envd_executable()` checks an explicit argument, then `A13N_AGENT_ENVD_EXECUTABLE`, then `agent-envd` or `agent-envd.exe` through `shutil.which()`. It returns one validated absolute executable. The library does not read `.env`; a Host or development command may load one before calling the resolver. In this repository, `make local-envd-test` builds the Rust daemon, loads the optional root `.env` only for that command, defaults to `target/debug/agent-envd`, and exercises the real provider path.
+`resolve_agent_envd_executable()` checks an explicit argument, then `A13N_AGENT_ENVD_EXECUTABLE`, then `agent-envd` or `agent-envd.exe` on `PATH`. The library does not load `.env`, install a native binary, or silently fall back to Direct Local. Entry validates exact daemon/client compatibility and the required native-isolation probe.
 
-Local Envd validates the exact daemon/client release and required native-isolation probe during create and resume. It does not fall back to Direct Local or disable isolation. Filesystem pause stops the current daemon generation while preserving workspace files; resume starts a fresh Resource entry and generation.
+Run the real provider path with `make local-envd-test`.
 
-## Docker sandbox
+## Docker runtime
 
-`a13n.docker` manages one container on a local Docker Engine. With only `environment_id`, it uses the repository sandbox `latest` image, pulls it when missing, exposes the container-backed `/workspace` virtual mount, and enables Bash. Docker owns only outer image/container lifecycle and bootstrap; every Harness file, shell, process, output, and port operation uses authenticated HTTP EIP rather than Docker exec, copy, archive, or logs.
+Docker requires an async engine adapter and a durable bootstrap store:
 
 ```python
 from pathlib import Path
@@ -242,107 +208,24 @@ from a13n_environment_provider import (
     DirectoryDockerBootstrapStore,
     DockerProviderRuntime,
     DockerSDKEngine,
-    EnvironmentProviderSpec,
-    build_environment_provider_factory_catalog,
 )
 
-catalog = build_environment_provider_factory_catalog(
-    builtin_keys=("a13n.docker",),
-)
-spec = EnvironmentProviderSpec(
-    provider_key="a13n.docker",
-    schema_version="1",
-    parameters={"environment_id": "sandbox"},
-)
 runtime = DockerProviderRuntime(
     engine=DockerSDKEngine.from_env(),
     bootstrap_store=DirectoryDockerBootstrapStore(
         Path("/var/lib/my-host/docker-bootstrap")
     ),
 )
-provider = catalog.create_provider(spec, runtime=runtime)
 ```
 
-The default bootstrap store favors local usability with ordinary Host-readable files; a Host can supply another `DockerBootstrapStore` with stricter ownership or persistence. Registry authentication, credential helpers, mirrors, and proxies remain ordinary Docker client configuration. The Provider supports existing Host bind directories and external named volumes, never creates or deletes named volumes, publishes EIP only on a Docker-assigned `127.0.0.1` Host port, and supports filesystem pause. Run the real image and Harness lifecycle check with `make docker-provider-test`.
+The built-in directory store keeps its POSIX Host root private with mode `0700`. Files inside an allocation remain readable by the fixed non-root container user through the bind mount; unrelated Host users cannot traverse the private parent. A Host needing different ownership, persistence, or sharing supplies another `DockerBootstrapStore`.
 
-## Create a provider plugin
+Docker publishes EIP only on a Docker-assigned `127.0.0.1` Host port. It can use existing Host bind directories and external named volumes, but it never creates or deletes those sources. Registry authentication, credential helpers, mirrors, and proxies remain Docker client configuration.
 
-A plugin supplies one namespaced provider key and implements:
+Run the real image and Harness lifecycle check with `make docker-provider-test`.
 
-1. a frozen versioned Pydantic configuration model;
-2. an exact process-local `EnvironmentProviderRuntime` subtype;
-3. an inert `EnvironmentProviderFactory`;
-4. an `EnvironmentProvider` implementing lifecycle and reconciliation methods;
-5. a single-entry `EnvironmentResource` that issues fresh attachments;
-6. one supported attachment backend: Direct Local or EIP.
+## Environment operations and tools
 
-```python
-class AcmeSandboxFactory(EnvironmentProviderFactory):
-    @classmethod
-    def provider_key(cls) -> str:
-        return "acme.sandbox"
+The Provider package owns typed files, shell, process, retained-output, and port operation contracts. An entered adapter advertises only the operation families and exact actions it can enforce.
 
-    @classmethod
-    def supported_schema_versions(cls) -> frozenset[str]:
-        return frozenset({"1"})
-
-    @classmethod
-    def configuration_model(cls, schema_version: str) -> type[BaseModel]:
-        if schema_version != "1":
-            raise EnvironmentProviderError(...)
-        return AcmeSandboxConfiguration
-
-    def create_provider(
-        self,
-        configuration: BaseModel,
-        *,
-        runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentProvider:
-        if not isinstance(configuration, AcmeSandboxConfiguration):
-            raise EnvironmentProviderError(...)
-        if not isinstance(runtime, AcmeSandboxRuntime):
-            raise EnvironmentProviderError(...)
-        return AcmeSandboxProvider(configuration, runtime=runtime)
-```
-
-Register the factory class through the Provider entry-point group:
-
-```toml
-[project.entry-points."a13n_environment_provider.providers"]
-"acme.sandbox" = "acme_environment.provider:AcmeSandboxFactory"
-```
-
-### Provider requirements
-
-- Keep specification validation, factory construction, and Provider construction inert.
-- Validate exact schema versions without fallback or shape inference.
-- Accept credentials and client factories only through a typed process-local runtime collaborator.
-- Tie every lifecycle effect to the exact operation identity and resource correlation.
-- Return state before Resource-scope entry and validate it on resume, pause, destroy, and reconciliation.
-- Implement unsupported actions as explicit typed failures.
-- Treat reconciliation as bounded read-only observation.
-- Issue only fresh supported attachments while the Resource scope is entered.
-- Keep Resource scope cleanup separate from provider pause and destruction.
-
-### Attachment requirements
-
-A plugin returns only a supported shared attachment type:
-
-- `DirectLocalEnvironmentAttachment` for the in-process Direct Local backend;
-- `EIPEnvironmentAttachment` for an initialized-session source backed by stdio, authenticated HTTP(S), or an already accepted reverse WebSocket.
-
-Attachments are process-local, single-use, and non-serializable. Docker and third-party E2B or other sandbox providers use their lifecycle SDK only for outer lifecycle and bootstrap; Harness file, shell, process, output, and port operations then use EIP.
-
-## Errors and diagnostics
-
-Provider failures expose stable category, outcome certainty, recovery guidance, and typed operation context. They also retain a rich developer-facing description, structured provider details, and normal Python exception chaining.
-
-The rich exception is trusted local diagnostics and is not automatically safe for an API response, model context, event, or telemetry. Use `error.safe_projection()` for bounded publication.
-
-## Design references
-
-The normative architecture is in:
-
-- [Environment Provider specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-environment-provider);
-- [Harness Environment integration](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/agent-harness/08-environment-integration.md);
-- [Harness hosting contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/agent-harness/13-hosting-contract.md).
+Agent Harness applies mount names, access ceilings, routing, operation timeouts, state aggregation, and optional model-facing tools. Adding an Environment does not automatically expose tools to the model. See [Use Environments from Agent Harness](../agent-harness/environments.md) for Run inputs and `DynamicEnvironmentCapability` configuration.

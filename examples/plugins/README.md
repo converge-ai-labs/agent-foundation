@@ -4,12 +4,12 @@ This standalone project demonstrates the supported configuration and direct-code
 
 ## Composition Matrix
 
-| Boundary                  | Declarative or installed-package mode                                                                                                          | Explicit code mode                                                                                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Custom Capability         | Authorize an exact type with `CapabilityTypeCatalog`, then select its serialization name in `AgentSpec.capabilities`                           | Construct the Capability and place it in `AgentDefinition.capabilities`                                    |
-| Environment provider      | Select an `EnvironmentProviderFactory` from `a13n_environment_provider.providers`, then construct a Provider from an exact specification       | Supply an `EnvironmentProviderFactory` object directly, then construct the same Provider                   |
-| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `a13n_harness.environment_run_extensions`, then call `create_extension()`                      | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
-| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
+| Boundary                  | Declarative or installed-package mode                                                                                                           | Explicit code mode                                                                                         |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Custom Capability         | Authorize an exact type with `CapabilityTypeCatalog`, then select its serialization name in `AgentSpec.capabilities`                            | Construct the Capability and place it in `AgentDefinition.capabilities`                                    |
+| Environment provider      | Explicitly enable an `EnvironmentProvider` from `a13n_environment_provider.providers`, then validate configuration and construct fresh adapters | Register an `EnvironmentProvider` object directly, then use the same validation and construction path      |
+| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `a13n_harness.environment_run_extensions`, then call `create_extension()`                       | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
+| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build  | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
 
 Entry-point metadata provides only a stable key and import target. Harness middleware configuration uses the Harness-owned versioned envelope; YAML is preferred for files, JSON is supported for files and inline environment values, and each plugin package owns only the typed `configuration` payload.
 
@@ -55,28 +55,27 @@ a13n-harness = { path = "../../packages/agent-harness", editable = true }
 
 A standalone integration distribution should remove those development sources and declare the released Provider and Harness ranges it supports.
 
-## Environment Provider Factory
+## Environment Provider
 
-The distribution registers one package factory:
+The distribution registers one no-argument Provider class:
 
 ```toml
 [project.entry-points."a13n_environment_provider.providers"]
-"example.workspace" = "a13n_plugin_examples.environment:WorkspaceEnvironmentProviderFactory"
+"example.workspace" = "a13n_plugin_examples.environment:WorkspaceEnvironmentProvider"
 ```
 
 [`environment.py`](src/a13n_plugin_examples/environment.py) contains:
 
 - a strict package-owned schema-version-1 `WorkspaceEnvironmentConfiguration` model;
-- an exact process-local `WorkspaceEnvironmentRuntime` collaborator;
-- a no-argument, side-effect-free `WorkspaceEnvironmentProviderFactory`;
-- a complete `WorkspaceEnvironmentProvider` and single-entry Resource;
-- fresh `DirectLocalEnvironmentAttachment` values for Harness transfer.
+- an optional process-local `WorkspaceEnvironmentRuntime` collaborator;
+- a no-argument, side-effect-free `WorkspaceEnvironmentProvider`;
+- a fresh `WorkspaceEnvironment` adapter backed by Direct Local operations.
 
-Specification validation, factory construction, and Provider construction perform no filesystem I/O. `create()` and `resume()` validate the selected existing workspace; neither creates or owns it. Harness mount and provider-binding cleanup, Resource scope cleanup, and explicit Provider destroy remain separate operations.
+Provider construction, configuration validation, and `create_environment()` perform no filesystem I/O. The workspace is checked only when Harness enters the fresh adapter. The Provider is stateless because its target is the deterministic Host-selected directory; `dump_state()` returns `None`, and neither `close()` nor explicit `destroy()` deletes that directory.
 
 ### Installed entry-point mode
 
-[`run_environment_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment.py) discovers metadata, verifies that `example.workspace` is installed, selects only that key, and constructs two Providers from Host-supplied exact specifications and fresh runtime collaborators.
+[`run_environment_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment.py) explicitly enables only `example.workspace`, resolves the installed Provider, validates two configurations, and constructs two fresh Environments.
 
 ```bash
 uv run plugin-example-environment-entrypoint
@@ -84,13 +83,13 @@ uv run plugin-example-environment-entrypoint
 
 ### Explicit code mode
 
-[`run_environment_code_demo()`](src/a13n_plugin_examples/demo_environment.py) imports and supplies `WorkspaceEnvironmentProviderFactory()` directly. It still invokes the same catalog Provider-construction path, so schema, runtime, state, and lifecycle validation remain identical.
+[`run_environment_code_demo()`](src/a13n_plugin_examples/demo_environment.py) registers `WorkspaceEnvironmentProvider()` directly without scanning package metadata. It then uses the same validation, construction, and Harness Run path.
 
 ```bash
 uv run plugin-example-environment-code
 ```
 
-Both paths create two Resources, acquire and transfer two fresh attachments, construct one `EnvironmentRuntime` with an atomic initial mount set, enter and activate the runtime, and verify default and explicitly qualified routing. The source Provider then demonstrates explicit durable lifecycle calls: reconcile create as running, resume the exact validated state into a fresh Resource and attachment, reconcile resume as running, destroy, and reconcile authoritative absence. The example Provider advertises no pause mode, so it reports that pause is unsupported rather than silently changing lifecycle semantics:
+Both paths pass two already constructed adapters to a real offline Harness Run, verify default and qualified routing, export no state for the stateless mounts, close both adapters non-destructively, and preserve both Host directories:
 
 ```text
 selection mode: entrypoint
@@ -98,25 +97,25 @@ selected provider: example.workspace
 active aliases: source, docs
 default route: source workspace
 docs route: documentation workspace
-durable lifecycle: running -> running -> absent
-pause supported: False
+exported state aliases: none
+roots preserved: True
 ```
 
-Code mode prints the same result with `selection mode: code`. A provider that advertises `EnvironmentPauseMode.FULL` or `FILESYSTEM` adds the explicit pause transition before resume; the complete Host operation sequence is documented in the [Environment guide](../../docs/agent-harness/environments.md#manage-a-durable-provider-lifecycle-explicitly).
+Code mode prints the same result with `selection mode: code`.
 
-### Real provider checklist
+### Real Provider checklist
 
-- Use one stable namespaced entry-point name and return the same value from `provider_key()`.
-- Keep configuration, factory, and Provider construction strict, bounded, and side-effect free.
-- Support exact schema versions without fallback or shape inference.
-- Accept current credentials and client factories only through a typed process-local runtime collaborator.
-- Tie every lifecycle call to a Host-generated operation identity and resource correlation.
-- Return provider-owned state before resource-scope entry and validate it exactly on resume, destroy, and reconciliation.
-- Issue only fresh supported attachments while a single-entry Resource scope is active.
-- Treat `reconcile()` as bounded read-only inspection of one exact prior operation.
-- Keep mount names, permission ceilings, desired mount definitions, attachment transfer, durable storage, authorization, and scheduling under Host control.
+- Use one stable namespaced entry-point name and return the same value from `key`.
+- Keep Provider construction, configuration validation, and Environment construction strict, bounded, and side-effect free.
+- Support exact configuration and state versions without fallback or shape inference.
+- Accept current credentials, SDK clients, bootstrap stores, and transport factories only through fresh process-local runtime collaborators.
+- Construct one fresh Environment per independent Run or explicit Host lifecycle operation.
+- Validate supplied state before target mutation; create a replacement only after authoritative absence.
+- Update cached state as soon as changed target identity is known, before later readiness can fail.
+- Keep `close()` process-local and non-destructive; expose backing-target removal only through explicit `destroy()` on a fresh adapter.
+- Keep mount names, access ceilings, desired configuration, state authority, retention, authorization, and scheduling under Host control.
 
-The example uses the public `DirectLocalEnvironmentAttachment` backend to stay focused on provider packaging and lifecycle. A remote sandbox provider issues an `EIPEnvironmentAttachment`; it does not implement another Harness mount or provider-neutral operation layer.
+The example subclasses the public Direct Local adapter to stay focused on Provider packaging. A remote sandbox Provider can expose the same Provider-neutral operation surface through EIP without creating another Harness lifecycle layer.
 
 ## Environment Run Extension
 
@@ -163,7 +162,7 @@ marker removed: True
 
 Code mode reports `selection mode: code` and `extension id: marker-code`.
 
-A run extension spans the complete `EnvironmentRuntime`, not one provider resource. It enters once in registration order after state restore, remains entered across mount mutations, and exits in reverse order while provider-neutral Environment operations are still available. It receives no model, `AgentContext`, Harness plugin context, or runtime mutation authority.
+A run extension spans the complete `EnvironmentRuntime`, not one Provider adapter. It enters once in registration order after state restore, remains entered across mount mutations, and exits in reverse order while provider-neutral Environment operations are still available. It receives no model, `AgentContext`, Harness plugin context, or runtime mutation authority.
 
 ### Real run-extension checklist
 

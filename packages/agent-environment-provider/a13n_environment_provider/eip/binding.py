@@ -1,32 +1,26 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import asynccontextmanager
 
 from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
-from a13n_environment_provider import EIPSessionSource
 
+from ..attachments import EIPSessionSource
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentMountDescriptor,
-    EnvironmentMountState,
     EnvironmentOperationFamily,
     EnvironmentPermissionSet,
 )
-from ..providers import BoundEnvironmentProvider, EnvironmentProviderBinding, EnvironmentProviderOperations
+from ..operations import EnvironmentOperations
 from ._common import invoke
 from .files import EIPFileOperator
 from .output import EIPOutputOperations, EIPOutputRegistry
-from .processes import (
-    EIPPortOperations,
-    EIPProcessOperations,
-    EIPShellOperations,
-    _ProcessConversions,
-)
+from .processes import EIPPortOperations, EIPProcessOperations, EIPShellOperations, _ProcessConversions
 
 _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
     "file.stat": (EnvironmentAction.FILE_STAT,),
@@ -58,86 +52,50 @@ _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
 }
 
 
-class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
-    def __init__(
-        self,
-        *,
-        environment_id: str,
-        session_source: EIPSessionSource,
-    ) -> None:
-        if not environment_id:
-            raise ValueError("environment_id must not be empty")
-        self._environment_id = environment_id
-        self._session_source = session_source
-        self._scope_created = False
-        self._entry_started = False
-        self._discarded = False
-
-    @property
-    def provider_type(self) -> str:
-        return "a13n.eip"
-
-    @property
-    def environment_id(self) -> str:
-        return self._environment_id
-
-    def bind(
-        self,
-        *,
-        run_id: str,
-        instance,
-        mount_id: str,
-    ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
-        del run_id, instance
-        if self._discarded or self._scope_created:
-            raise EnvironmentError("EIP provider binding was already consumed", code="environment_conflict")
-        self._scope_created = True
-        return self._bind(mount_id=mount_id)
-
-    @asynccontextmanager
-    async def _bind(
-        self,
-        *,
-        mount_id: str,
-    ) -> AsyncGenerator[BoundEnvironmentProvider]:
-        self._entry_started = True
-        async with self._session_source.open_session(
-            expected_environment_id=self._environment_id,
-            required_methods=frozenset({"environment.describe", "environment.readiness", "session.close"}),
-        ) as session:
-            if session.descriptor.environment_id != self._environment_id:
-                raise EnvironmentError(
-                    "EIP session returned a different environment identity",
-                    code="environment_stale_mount",
-                )
-            provider = _BoundEIPProvider(
-                session=session,
-                environment_id=self._environment_id,
-                mount_id=mount_id,
+@asynccontextmanager
+async def open_eip_environment(
+    *,
+    provider_key: str,
+    environment_id: str,
+    session_source: EIPSessionSource,
+    mount_id: str,
+) -> AsyncGenerator[EIPEnvironmentSession]:
+    """Open one provider-owned EIP session and expose semantic operation facets."""
+    async with session_source.open_session(
+        expected_environment_id=environment_id,
+        required_methods=frozenset({"environment.describe", "environment.readiness", "session.close"}),
+    ) as session:
+        if session.descriptor.environment_id != environment_id:
+            raise EnvironmentError(
+                "EIP session returned a different environment identity",
+                code="environment_stale_mount",
             )
-            try:
-                yield provider
-            finally:
-                await provider.close()
+        environment = EIPEnvironmentSession(
+            session=session,
+            provider_key=provider_key,
+            environment_id=environment_id,
+            mount_id=mount_id,
+        )
+        try:
+            yield environment
+        finally:
+            await environment.close()
 
-    async def discard(self) -> None:
-        if self._discarded or self._entry_started:
-            return
-        await self._session_source.discard()
-        self._discarded = True
 
+class EIPEnvironmentSession:
+    """Entered EIP operations owned by one concrete Environment adapter."""
 
-class _BoundEIPProvider:
     def __init__(
         self,
         *,
         session: EIPSession,
+        provider_key: str,
         environment_id: str,
         mount_id: str,
     ) -> None:
         self._session = session
+        self._provider_key = provider_key
         self._environment_id = environment_id
-        self._mount_id = mount_id
         self._generation = str(session.descriptor.generation)
         self._descriptor = _convert_descriptor(session.descriptor)
         methods = set(session.descriptor.available_methods)
@@ -158,17 +116,16 @@ class _BoundEIPProvider:
             session=session,
             files=files,
             outputs=outputs,
-            provider_type=self.provider_type,
+            provider_type=provider_key,
             environment_id=environment_id,
             mount_id=mount_id,
             generation=self._generation,
         )
-        processes = EIPProcessOperations(conversions) if "process.start" in methods else None
         self._conversions = conversions
-        self._operations = EnvironmentProviderOperations(
+        self._operations = EnvironmentOperations(
             files=files if any(method.startswith("file.") for method in methods) else None,
             shell=EIPShellOperations(conversions) if "shell.exec" in methods else None,
-            processes=processes,
+            processes=EIPProcessOperations(conversions) if "process.start" in methods else None,
             ports=EIPPortOperations(conversions) if {"port.inspect", "port.wait"} & methods else None,
             outputs=EIPOutputOperations(outputs) if "output.read" in methods else None,
         )
@@ -176,14 +133,6 @@ class _BoundEIPProvider:
             status="available",
             ready_families=self._descriptor.operation_families,
         )
-
-    @property
-    def provider_type(self) -> str:
-        return "a13n.eip"
-
-    @property
-    def environment_id(self) -> str:
-        return self._environment_id
 
     @property
     def descriptor(self) -> EnvironmentDescriptor:
@@ -194,7 +143,7 @@ class _BoundEIPProvider:
         return self._availability
 
     @property
-    def operations(self) -> EnvironmentProviderOperations:
+    def operations(self) -> EnvironmentOperations:
         return self._operations
 
     async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
@@ -226,13 +175,6 @@ class _BoundEIPProvider:
                 first_error = error
         if first_error is not None:
             raise first_error
-
-    async def export_state(self) -> EnvironmentMountState | None:
-        return None
-
-    async def restore_state(self, state: EnvironmentMountState) -> None:
-        del state
-        raise EnvironmentError("EIP provider state restore is unsupported", code="environment_unsupported")
 
 
 def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDescriptor:

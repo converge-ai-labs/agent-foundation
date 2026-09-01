@@ -6,16 +6,16 @@
 
 The Harness is one EIP requester, not the reason those resources exist. Product gateways, CLIs, IDEs, provider controllers, and trusted background services can use the same generated low-level client. Envd never needs to know whether output becomes model input, a browser preview, an artifact, or another backend operation.
 
-Envd is optional for Harness Environments. Direct Local remains first-class when an embedding process intentionally grants local roots and commands. The [Environment Provider package](../agent-environment-provider/README.md) supplies Direct Local or EIP attachments; Local Envd, Docker, and E2B use EIP. Both operation backends satisfy [Harness Environment Integration](../agent-harness/08-environment-integration.md).
+Envd is optional for Harness Environments. Direct Local remains first-class when an embedding process intentionally grants local roots and commands. The [Environment Provider package](../agent-environment-provider/README.md) constructs fresh Direct Local or EIP-backed `Environment` adapters; Local Envd, Docker, and E2B use EIP. Both operation backends satisfy [Harness Environment Integration](../agent-harness/08-environment-integration.md).
 
-Envd does not provision a container or VM. A provider creates or attaches the native Environment and supplies trusted daemon bootstrap. Envd governs operations inside it. In required mode it contains every command with a native Linux, macOS, or Windows backend. In explicit disabled mode an outer sandbox owns containment while all other envd controls remain active.
+Envd does not provision a container or VM. A fresh provider-specific Environment adapter creates or re-enters the backing target from Host-supplied state and supplies trusted daemon bootstrap. Envd governs operations inside it. In required mode it contains every command with a native Linux, macOS, or Windows backend. In explicit disabled mode an outer sandbox owns containment while all other envd controls remain active.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     subgraph Host[Trusted Host and control plane]
-        Provider[Provider lifecycle and bootstrap]
+        Provider[Environment adapter lifecycle and bootstrap]
         Consumers[Harness, gateway, CLI, IDE, controller]
         Control[Host HTTP dialer or<br/>WebSocket listener and EIP requester]
     end
@@ -57,7 +57,7 @@ Carrier direction and EIP role are separate. With HTTP the Host dials envd; with
 
 | Concern                                                                             | Owner                                                                                  | Contract                                            |
 | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Provider selection, create/resume/pause/destroy, and vendor credentials             | [Environment Provider package](../agent-environment-provider/README.md) and Host       | Outside EIP                                         |
+| Provider selection, current state, lifecycle policy, and vendor credentials         | Host and [Environment Provider package](../agent-environment-provider/README.md)       | Outside EIP; executed through a fresh adapter       |
 | Product-user authentication, tenant routing, and browser policy                     | Host/product control plane                                                             | Never delegated through EIP params                  |
 | Harness mount routing and provider-neutral mapping                                  | Harness and Host                                                                       | Selects one current Environment mount               |
 | Canonical IDL, generated wire surfaces, and low-level Python client                 | [Protocol Source, Client, and Generation](08-protocol-source-client-and-generation.md) | One reusable daemon/client realization              |
@@ -116,12 +116,12 @@ Every command reserves one finite byte allowance for stdout and another for stde
 
 ## Provider Profiles
 
-| Profile               | Provider responsibility                                                                               | Envd posture                                                  |
-| --------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Optional local daemon | Launch envd with explicit mounts, private stdio or control-service binding, and isolation policy      | Required native isolation by default                          |
-| Docker/OCI            | Create or resume the container, bootstrap envd, and provide private stdio or Host-dialed HTTP routing | Required or explicit disabled when container owns containment |
-| E2B/remote sandbox    | Provision/resume vendor Environment and expose trusted control-service attachment                     | Often explicit disabled when vendor sandbox owns containment  |
-| Remote machine        | Install/launch compatible envd, issue short-lived attachment credentials, validate identity           | Required unless another documented boundary owns containment  |
+| Profile               | Fresh Environment adapter behavior                                                                        | Envd posture                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Optional local daemon | Launch envd with explicit mounts, private stdio or control-service binding, and isolation policy          | Required native isolation by default                          |
+| Docker/OCI            | Create or re-enter the exact container, bootstrap envd, and provide private stdio or HTTP routing         | Required or explicit disabled when container owns containment |
+| E2B/remote sandbox    | Create or re-enter the exact vendor Environment and expose trusted control-service routing                | Often explicit disabled when vendor sandbox owns containment  |
+| Remote machine        | Re-enter the configured machine, launch compatible envd, issue short-lived credentials, validate identity | Required unless another documented boundary owns containment  |
 
 Provider lifecycle credentials never enter envd. Reverse-WebSocket attachment credentials are distinct short-lived values issued for the specific control-service binding and never reach EIP payloads or commands.
 
@@ -135,7 +135,8 @@ sequenceDiagram
     participant Control as EIP requester/control service
     participant Native
 
-    Host->>Provider: provision or attach Environment
+    Host->>Provider: create fresh Environment from config and current state
+    Host->>Provider: enter adapter with Run correlation
     Provider->>Envd: trusted config, endpoint, protected token file
     Envd->>Envd: generation, private runtime, owners, isolation probe
     alt trusted stdio
@@ -161,8 +162,8 @@ A file transfer inserts a typed attachment between open and close/commit. Carrie
 
 Four lifetimes remain separate:
 
-1. **Provider lifecycle state** belongs to the Environment Provider package's provider codec and optional Host storage and can identify a container, E2B sandbox, local daemon, remote machine, or control-service binding.
-2. **Native Environment state** consists of configured files and provider resources and can outlive envd.
+1. **Environment state** is one provider-owned `EnvironmentState` codec whose current value is authoritatively owned by the Host and can identify a container, E2B sandbox, remote machine, or control-service binding.
+2. **Native backing-target state** consists of configured files and provider-native resources and can outlive envd.
 3. **Daemon-generation state** includes sessions, operations/receipts, process handles, output references, spool data, and cleanup evidence. Transfers have a narrower session lifetime. All volatile state ends at restart.
 4. **Host execution state** owns durable Agent attempts, checkpoints, and outcomes and is never committed by envd.
 

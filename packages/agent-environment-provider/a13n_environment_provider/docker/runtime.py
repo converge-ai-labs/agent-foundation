@@ -15,8 +15,6 @@ from types import MappingProxyType
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from ..management import EnvironmentProviderRuntime
-
 _CONTAINER_ID = re.compile(r"^(?:sha256:)?(?P<digest>[0-9a-f]{64})$")
 _BOOTSTRAP_CORRELATION = re.compile(r"^bootstrap-[0-9a-f]{24}$")
 _EIP_PORT_KEY = "8787/tcp"
@@ -177,7 +175,7 @@ class DockerBootstrapStore(ABC):
 
 
 @dataclass(frozen=True, slots=True)
-class DockerProviderRuntime(EnvironmentProviderRuntime):
+class DockerProviderRuntime:
     engine: DockerEngine
     bootstrap_store: DockerBootstrapStore
 
@@ -246,6 +244,7 @@ class DirectoryDockerBootstrapStore(DockerBootstrapStore):
         material: DockerBootstrapMaterial,
     ) -> DockerBootstrapAllocation:
         self._root.mkdir(parents=True, exist_ok=True)
+        _protect_store_root(self._root)
         temporary = Path(tempfile.mkdtemp(prefix=f".{correlation}-", dir=self._root))
         try:
             _write_material(temporary, material)
@@ -274,6 +273,7 @@ class DirectoryDockerBootstrapStore(DockerBootstrapStore):
         correlation: str,
         material: DockerBootstrapMaterial,
     ) -> DockerBootstrapAllocation:
+        _protect_store_root(self._root)
         target = self._root / correlation
         temporary = Path(tempfile.mkdtemp(prefix=".replacement-", dir=target))
         try:
@@ -291,6 +291,8 @@ class DirectoryDockerBootstrapStore(DockerBootstrapStore):
         return recovered
 
     def _recover(self, correlation: str) -> DockerBootstrapAllocation | None:
+        if self._root.exists():
+            _protect_store_root(self._root)
         target = self._root / correlation
         try:
             if not target.exists():
@@ -525,7 +527,14 @@ class DockerSDKEngine(DockerEngine):
             raise DockerEngineError("Docker container remove failed", dispatched=True) from error
 
 
+def _protect_store_root(root: Path) -> None:
+    if os.name == "posix":
+        root.chmod(0o700)
+
+
 def _write_material(directory: Path, material: DockerBootstrapMaterial) -> None:
+    # The allocation is mounted as the container's filesystem root for bootstrap,
+    # while the private store root prevents unrelated Host users from traversing it.
     directory.chmod(0o755)
     _write_file(directory / "envd.json", material.envd_configuration, 0o644)
     _write_file(directory / "credential", material.credential.encode(), 0o644)

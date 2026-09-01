@@ -4,239 +4,114 @@ from pathlib import Path
 
 import pytest
 from a13n_environment_provider import (
-    DirectLocalEnvironmentAttachment,
+    DirectLocalEnvironment,
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
     DirectLocalProviderRuntime,
     DirectLocalRootConfiguration,
-    EnvironmentManagementAction,
-    EnvironmentOperationContext,
-    EnvironmentPauseMode,
+    EnvironmentAction,
     EnvironmentProviderError,
-    EnvironmentProviderResourceState,
-    EnvironmentProviderSpec,
-    EnvironmentReconciliationPhase,
-    build_environment_provider_factory_catalog,
+    EnvironmentState,
 )
 
 pytestmark = pytest.mark.anyio
 
 
-def _operation(action: EnvironmentManagementAction, suffix: str) -> EnvironmentOperationContext:
-    return EnvironmentOperationContext(
-        operation_id=f"operation-{suffix}",
-        action=action,
-        resource_correlation="resource-local-1",
-        attempt=1,
-    )
-
-
-def _provider(root: Path, *, environment_id: str = "local-1") -> DirectLocalEnvironmentProvider:
-    catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
-    provider = catalog.create_provider(
-        spec=EnvironmentProviderSpec(
-            provider_key="a13n.direct-local",
-            schema_version="1",
-            parameters={
-                "environment_id": environment_id,
-                "root": {"path": str(root)},
-            },
-        ),
-        runtime=DirectLocalProviderRuntime(),
-    )
-    assert isinstance(provider, DirectLocalEnvironmentProvider)
-    return provider
-
-
-async def test_direct_local_create_issues_shared_fresh_attachments_without_mutating_root(
-    tmp_path: Path,
-) -> None:
-    marker = tmp_path / "host-owned.txt"
-    marker.write_text("preserve")
-    provider = _provider(tmp_path)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
-
-    async with resource:
-        async with (
-            resource.acquire_attachment() as first,
-            resource.acquire_attachment() as second,
-        ):
-            assert isinstance(first, DirectLocalEnvironmentAttachment)
-            assert isinstance(second, DirectLocalEnvironmentAttachment)
-            assert first.attachment_id != second.attachment_id
-            assert first.configuration.root.path == tmp_path.resolve()
-        state = resource.state
-
-    await provider.destroy(
-        state,
-        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
-    )
-    assert marker.read_text() == "preserve"
-    assert tuple(tmp_path.iterdir()) == (marker,)
-
-
-async def test_direct_local_resume_validates_exact_state_and_existing_directory(
-    tmp_path: Path,
-) -> None:
-    provider = _provider(tmp_path)
-    created = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
-    state = created.state
-
-    resumed = await provider.resume(
-        state,
-        operation=_operation(EnvironmentManagementAction.RESUME, "resume"),
-    )
-    async with resumed:
-        async with resumed.acquire_attachment() as attachment:
-            assert attachment.environment_id == "local-1"
-
-    invalid = EnvironmentProviderResourceState(
-        provider_key=state.provider_key,
-        state_version=state.state_version,
-        data={
-            "environment_id": "other",
-            "configuration_fingerprint": "sha256:" + "0" * 64,
+def _environment(root: Path, *, read_only: bool = False) -> DirectLocalEnvironment:
+    provider = DirectLocalEnvironmentProvider()
+    configuration = provider.validate_configuration(
+        schema_version="1",
+        value={
+            "environment_id": "local-test",
+            "root": {"path": str(root), "read_only": read_only},
         },
     )
-    with pytest.raises(EnvironmentProviderError) as exc_info:
-        await provider.resume(
-            invalid,
-            operation=_operation(EnvironmentManagementAction.RESUME, "invalid"),
-        )
-    assert exc_info.value.code == "provider_state_invalid"
-
-
-async def test_direct_local_pause_is_rejected_before_effect(tmp_path: Path) -> None:
-    provider = _provider(tmp_path)
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
-    async with resource:
-        with pytest.raises(EnvironmentProviderError) as exc_info:
-            await provider.pause(
-                resource,
-                operation=_operation(EnvironmentManagementAction.PAUSE, "pause"),
-                mode=EnvironmentPauseMode.FILESYSTEM,
-            )
-    assert exc_info.value.code == "provider_action_unsupported"
-    assert tmp_path.is_dir()
-
-
-async def test_direct_local_reconciliation_is_deterministic_and_read_only(tmp_path: Path) -> None:
-    provider = _provider(tmp_path)
-    create_operation = _operation(EnvironmentManagementAction.CREATE, "create")
-    running = await provider.reconcile(create_operation, last_known_state=None)
-    assert running.phase is EnvironmentReconciliationPhase.RUNNING
-    assert running.state is not None
-
-    tmp_path.rmdir()
-    absent = await provider.reconcile(create_operation, last_known_state=None)
-    assert absent.phase is EnvironmentReconciliationPhase.ABSENT
-    assert absent.state is None
-
-    destroyed = await provider.reconcile(
-        _operation(EnvironmentManagementAction.DESTROY, "destroy"),
-        last_known_state=running.state,
+    environment = provider.create_environment(
+        configuration=configuration,
+        state=None,
+        runtime=DirectLocalProviderRuntime(),
     )
-    assert destroyed.phase is EnvironmentReconciliationPhase.ABSENT
+    assert isinstance(environment, DirectLocalEnvironment)
+    return environment
 
 
-def test_direct_local_configuration_requires_existing_path_shape_but_not_existence(
-    tmp_path: Path,
-) -> None:
-    missing = tmp_path / "missing"
+async def test_direct_local_entry_exposes_provider_owned_file_operations(tmp_path: Path) -> None:
+    marker = tmp_path / "host-owned.txt"
+    marker.write_text("preserve")
+    environment = _environment(tmp_path)
+
+    await environment.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
+        host_refs={"session_id": "session-1"},
+    )
+    await environment.operations.files.write_text("/created.txt", "created", mode="create")  # type: ignore[union-attr]
+
+    assert environment.environment_id == "local-test"
+    assert environment.availability.status == "available"
+    assert EnvironmentAction.FILE_WRITE_TEXT in environment.descriptor.permissions.operations
+    assert (tmp_path / "created.txt").read_text() == "created"
+    assert environment.dump_state() is None
+
+    await environment.close()
+    assert marker.read_text() == "preserve"
+    assert (tmp_path / "created.txt").read_text() == "created"
+
+
+async def test_direct_local_read_only_configuration_denies_writes(tmp_path: Path) -> None:
+    environment = _environment(tmp_path, read_only=True)
+    await environment.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
+    )
+
+    assert EnvironmentAction.FILE_WRITE_TEXT not in environment.descriptor.permissions.operations
+    with pytest.raises(Exception) as captured:
+        await environment.operations.files.write_text("/denied.txt", "denied", mode="create")  # type: ignore[union-attr]
+    assert getattr(captured.value, "code", None) == "environment_denied"
+    await environment.close()
+
+
+async def test_direct_local_destroy_is_non_destructive(tmp_path: Path) -> None:
+    marker = tmp_path / "host-owned.txt"
+    marker.write_text("preserve")
+    environment = _environment(tmp_path)
+
+    await environment.destroy()
+    await environment.close()
+
+    assert marker.read_text() == "preserve"
+    assert environment.dump_state() is None
+
+
+def test_direct_local_provider_is_inert_and_rejects_state(tmp_path: Path) -> None:
+    provider = DirectLocalEnvironmentProvider()
+    configuration = provider.validate_configuration(
+        schema_version="1",
+        value={"environment_id": "local-test", "root": {"path": str(tmp_path)}},
+    )
+    assert isinstance(configuration, DirectLocalProviderConfiguration)
+    assert configuration.root == DirectLocalRootConfiguration(path=tmp_path)
+
+    with pytest.raises(EnvironmentProviderError) as captured:
+        provider.create_environment(
+            configuration=configuration,
+            state=EnvironmentState(
+                provider_key="a13n.direct-local",
+                state_version="1",
+                state={"target": "invalid"},
+            ),
+        )
+    assert captured.value.code == "provider_state_invalid"
+
+
+def test_direct_local_configuration_does_not_require_root_existence(tmp_path: Path) -> None:
     configuration = DirectLocalProviderConfiguration(
-        environment_id="local-1",
-        root=DirectLocalRootConfiguration(path=missing),
+        environment_id="local-test",
+        root=DirectLocalRootConfiguration(path=tmp_path / "missing"),
     )
-    assert configuration.root.path == missing
-
-
-async def test_direct_local_state_uses_canonical_root_and_rejects_symlink_retarget(
-    tmp_path: Path,
-) -> None:
-    first_root = tmp_path / "first"
-    second_root = tmp_path / "second"
-    first_root.mkdir()
-    second_root.mkdir()
-    alias = tmp_path / "alias"
-    try:
-        alias.symlink_to(first_root, target_is_directory=True)
-    except OSError:
-        pytest.skip("directory symlinks are unavailable")
-
-    direct = await _provider(first_root).create(operation=_operation(EnvironmentManagementAction.CREATE, "direct"))
-    via_alias_provider = _provider(alias)
-    via_alias = await via_alias_provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "alias"))
-    assert direct.state == via_alias.state
-
-    alias.unlink()
-    alias.symlink_to(second_root, target_is_directory=True)
-    with pytest.raises(EnvironmentProviderError) as exc_info:
-        await via_alias_provider.resume(
-            via_alias.state,
-            operation=_operation(EnvironmentManagementAction.RESUME, "retargeted"),
-        )
-    assert exc_info.value.code == "provider_state_invalid"
-
-
-async def test_direct_local_destroy_rejects_another_environment_state(tmp_path: Path) -> None:
-    first_root = tmp_path / "first"
-    second_root = tmp_path / "second"
-    first_root.mkdir()
-    second_root.mkdir()
-    first = _provider(first_root, environment_id="local-1")
-    created = await first.create(operation=_operation(EnvironmentManagementAction.CREATE, "first"))
-
-    for index, second in enumerate(
-        (
-            _provider(first_root, environment_id="local-2"),
-            _provider(second_root, environment_id="local-1"),
-        ),
-        start=1,
-    ):
-        with pytest.raises(EnvironmentProviderError) as exc_info:
-            await second.destroy(
-                created.state,
-                operation=_operation(EnvironmentManagementAction.DESTROY, f"second-{index}"),
-            )
-        assert exc_info.value.code == "provider_state_invalid"
-
-
-async def test_direct_local_rejects_inconsistent_operation_identity(tmp_path: Path) -> None:
-    provider = _provider(tmp_path)
-    operation = _operation(EnvironmentManagementAction.CREATE, "shared")
-    resource = await provider.create(operation=operation)
-
-    with pytest.raises(EnvironmentProviderError) as reuse_error:
-        await provider.destroy(
-            resource.state,
-            operation=operation.model_copy(
-                update={
-                    "action": EnvironmentManagementAction.DESTROY,
-                    "resource_correlation": "resource-other",
-                }
-            ),
-        )
-    assert reuse_error.value.code == "provider_conflict"
-
-    with pytest.raises(EnvironmentProviderError) as reconcile_error:
-        await provider.reconcile(
-            operation.model_copy(
-                update={
-                    "action": EnvironmentManagementAction.DESTROY,
-                    "resource_correlation": "resource-other",
-                }
-            ),
-            last_known_state=resource.state,
-        )
-    assert reconcile_error.value.code == "provider_conflict"
-
-
-def test_direct_local_configuration_rejects_nul_in_os_bound_values(tmp_path: Path) -> None:
-    with pytest.raises(ValueError):
-        DirectLocalRootConfiguration(path=Path(f"{tmp_path}\x00other"))
-    with pytest.raises(ValueError):
-        DirectLocalProviderConfiguration(
-            environment_id="local-1",
-            root=DirectLocalRootConfiguration(path=tmp_path),
-            allowed_executables=frozenset({Path("/bin/tool\x00other")}),
-        )
+    assert configuration.root.path == tmp_path / "missing"

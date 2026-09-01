@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -29,11 +28,11 @@ from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness.capabilities import (
     HandoffCapability,
     HandoffConfiguration,
-    InlineSubagentManagerState,
+    InlineSubagentCollectionState,
     SubagentCapability,
-    SubagentManager,
     WorkingState,
     WorkingStateCapability,
+    WorkingStateConfiguration,
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
@@ -60,7 +59,6 @@ from pydantic import BaseModel
 from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -140,8 +138,8 @@ def _previous_child_id(messages: list[ModelMessage]) -> str | None:
                     continue
             elif isinstance(content, BaseModel):
                 content = content.model_dump(mode="json")
-            if isinstance(content, dict) and isinstance(content.get("child_instance_id"), str):
-                return content["child_instance_id"]
+            if isinstance(content, dict) and isinstance(content.get("execution_id"), str):
+                return content["execution_id"]
     return None
 
 
@@ -167,35 +165,8 @@ def _child_definition(
     )
 
 
-def _inline_subagents(
-    *,
-    usage_limits: UsageLimits | None = None,
-    observed_limits: list[UsageLimits | None] | None = None,
-    open_child: Any | None = None,
-    child_capabilities: Sequence[Any] = (),
-) -> SubagentCapability:
-    if open_child is None:
-
-        @asynccontextmanager
-        async def open_child(context, child, input, child_instance_id, continuation, child_limits):
-            del child, input, continuation
-            if observed_limits is not None:
-                observed_limits.append(child_limits)
-            yield RunBindings(
-                instance=AgentInstanceContext(
-                    identity=AgentIdentityRef(issuer="test", subject="child"),
-                    agent_instance_id=f"internal-{child_instance_id}",
-                    parent_agent_instance_id=context.instance.agent_instance_id,
-                    delegation_id=child_instance_id,
-                ),
-                environment=EmptyEnvironmentRuntime(),
-                capabilities=tuple(child_capabilities),
-            )
-
-    return SubagentCapability(
-        execution="inline",
-        operator=SubagentManager(open_child, usage_limits=usage_limits),
-    )
+def _inline_subagents() -> SubagentCapability:
+    return SubagentCapability()
 
 
 def _parent_definition(
@@ -288,7 +259,7 @@ async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "inspect"}),
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "inspect"}),
                     tool_call_id="delegate-1",
                 )
             }
@@ -390,7 +361,7 @@ async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspe
         yield {
             0: DeltaToolCall(
                 name="delegate",
-                json_args=json.dumps({"subagent": "reviewer", "task": "inspect"}),
+                json_args=json.dumps({"subagent": "reviewer", "prompt": "inspect"}),
                 tool_call_id="delegate-1",
             )
         }
@@ -405,77 +376,6 @@ async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspe
     assert "subagent_deferred_unsupported" in child_failures[0]
 
 
-async def test_inline_delegation_rejects_reused_child_authority_before_child_execution() -> None:
-    child_calls = 0
-
-    async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        nonlocal child_calls
-        del messages, info
-        child_calls += 1
-        yield "child-done"
-
-    child = AgentDefinition(
-        agent=AgentSpec(),
-        output_type=str,
-        definition_id="reused-authority-child-v1",
-        model=FunctionModel(stream_function=child_stream),
-    )
-
-    @asynccontextmanager
-    async def open_child(context, child, input, child_instance_id, continuation, child_limits):
-        del child, input, continuation, child_limits
-        yield RunBindings(
-            instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="test", subject="child"),
-                agent_instance_id="reused-child-authority",
-                parent_agent_instance_id=context.instance.agent_instance_id,
-                delegation_id=child_instance_id,
-            ),
-            environment=EmptyEnvironmentRuntime(),
-        )
-
-    failures: list[str] = []
-
-    async def parent_stream(
-        messages: list[ModelMessage],
-        info: AgentInfo,
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        turn = sum(isinstance(message, ModelResponse) for message in messages)
-        if turn < 2:
-            yield {
-                0: DeltaToolCall(
-                    name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": f"inspect-{turn + 1}"}),
-                    tool_call_id=f"delegate-{turn + 1}",
-                )
-            }
-            return
-        failures.extend(
-            str(part.content)
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, RetryPromptPart | ToolReturnPart)
-        )
-        yield "parent-recovered"
-
-    executable = HarnessBuilder().build(
-        _parent_definition(
-            child,
-            FunctionModel(stream_function=parent_stream),
-            subagent_capability=_inline_subagents(open_child=open_child),
-        )
-    )
-
-    result = await executable.run("delegate twice", bindings=_bindings_factory())
-
-    assert result.output_or_raise() == "parent-recovered"
-    assert child_calls == 1
-    assert failures
-    assert failures[-1] == "Inline delegation failed before a complete child result."
-
-
 async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
     async def parent_stream(
         messages: list[ModelMessage],
@@ -483,32 +383,28 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     ) -> AsyncIterator[str | DeltaToolCalls]:
         del info
         if not _returns_after_latest_user(messages):
-            child_id = _previous_child_id(messages)
+            execution_id = _previous_child_id(messages)
+            if execution_id is None:
+                name = "delegate"
+                arguments = {"subagent": "reviewer", "prompt": _latest_user_text(messages) or "continue"}
+            else:
+                name = "resume_subagent"
+                arguments = {"execution_id": execution_id, "prompt": _latest_user_text(messages) or "continue"}
             yield {
                 0: DeltaToolCall(
-                    name="delegate",
-                    json_args=json.dumps(
-                        {
-                            "subagent": "reviewer",
-                            "task": {"request": _latest_user_text(messages)},
-                            "child_instance_id": child_id,
-                        }
-                    ),
-                    tool_call_id=f"delegate-{len(messages)}",
+                    name=name,
+                    json_args=json.dumps(arguments),
+                    tool_call_id=f"{name}-{len(messages)}",
                 )
             }
             return
         yield "parent-done"
 
-    observed_limits: list[UsageLimits | None] = []
     executable = HarnessBuilder().build(
         _parent_definition(
             _child_definition(),
             FunctionModel(stream_function=parent_stream),
-            subagent_capability=_inline_subagents(
-                usage_limits=UsageLimits(request_limit=7, total_tokens_limit=60_000),
-                observed_limits=observed_limits,
-            ),
+            subagent_capability=_inline_subagents(),
         )
     )
     bindings = _bindings_factory()
@@ -528,12 +424,13 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
 
     assert first.output_or_raise() == "parent-done"
     assert first.state is not None
-    restored = InlineSubagentManagerState.model_validate(
+    restored = InlineSubagentCollectionState.model_validate(
         first.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
     )
     child_id, child_record = next(iter(restored.children.items()))
     assert child_id.startswith("reviewer-")
     assert child_record.state.thread_id != first.state.thread_id
+    assert child_record.state.environment_states == {}
     child_events = [event for event in events if event.run_id != parent_run_id]
     assert child_events
     started_events = [
@@ -568,13 +465,9 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert len(child_usage_events) == 1
     usage_records = child_usage_events[0].event.payload["records"]
     assert isinstance(usage_records, list) and len(usage_records) == 1
-    assert usage_records[0]["agent_instance_id"] == f"internal-{child_id}"
+    assert usage_records[0]["agent_instance_id"].startswith("agent-")
     assert usage_records[0]["parent_agent_instance_id"] == "parent-1"
     assert usage_records[0]["delegation_id"] == child_id
-    assert observed_limits[0] is not None
-    assert observed_limits[0].request_limit == 5
-    assert observed_limits[0].total_tokens_limit == 60_000
-    assert observed_limits[0].count_tokens_before_request is False
     assert first.usage.requests == 3
 
     second = await executable.run(
@@ -586,7 +479,7 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert second.output_or_raise() == "parent-done"
     assert second.state is not None
     assert second.state.thread_id == first.state.thread_id
-    continued = InlineSubagentManagerState.model_validate(
+    continued = InlineSubagentCollectionState.model_validate(
         second.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
     )
     assert set(continued.children) == {child_id}
@@ -595,7 +488,19 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
 
 
-async def test_inline_delegation_intersects_child_agent_spec_usage_limits() -> None:
+async def test_inline_delegation_intersects_child_agent_spec_usage_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_limits: list[UsageLimits | None] = []
+    intersect_limits = delegation_toolset_module._intersect_usage_limits
+
+    def capture_limits(*values: UsageLimits | None) -> UsageLimits | None:
+        result = intersect_limits(*values)
+        observed_limits.append(result)
+        return result
+
+    monkeypatch.setattr(delegation_toolset_module, "_intersect_usage_limits", capture_limits)
+
     async def parent_stream(
         messages: list[ModelMessage],
         info: AgentInfo,
@@ -608,7 +513,7 @@ async def test_inline_delegation_intersects_child_agent_spec_usage_limits() -> N
                     json_args=json.dumps(
                         {
                             "subagent": "reviewer",
-                            "task": {"request": "inspect"},
+                            "prompt": "inspect",
                         }
                     ),
                     tool_call_id="delegate-1",
@@ -625,15 +530,11 @@ async def test_inline_delegation_intersects_child_agent_spec_usage_limits() -> N
             )
         )
     )
-    observed_limits: list[UsageLimits | None] = []
     executable = HarnessBuilder().build(
         _parent_definition(
             child,
             FunctionModel(stream_function=parent_stream),
-            subagent_capability=_inline_subagents(
-                usage_limits=UsageLimits(request_limit=7, total_tokens_limit=60_000),
-                observed_limits=observed_limits,
-            ),
+            subagent_capability=_inline_subagents(),
         )
     )
 
@@ -647,7 +548,7 @@ async def test_inline_delegation_intersects_child_agent_spec_usage_limits() -> N
     assert len(observed_limits) == 1
     assert observed_limits[0] is not None
     assert observed_limits[0].request_limit == 4
-    assert observed_limits[0].total_tokens_limit == 60_000
+    assert observed_limits[0].total_tokens_limit == 80_000
 
 
 class ChildEventMutationPlugin(AbstractHarnessPlugin):
@@ -698,7 +599,7 @@ async def test_plugin_cannot_change_forwarded_child_event_provenance(
                     json_args=json.dumps(
                         {
                             "subagent": "reviewer",
-                            "task": {"request": "inspect"},
+                            "prompt": "inspect",
                         }
                     ),
                     tool_call_id="delegate-1",
@@ -745,7 +646,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "worker", "task": "nested work"}),
+                    json_args=json.dumps({"subagent": "worker", "prompt": "nested work"}),
                     tool_call_id="delegate-grandchild",
                 )
             }
@@ -757,11 +658,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
         output_type=str,
         definition_id="nested-child-definition-v1",
         model=FunctionModel(stream_function=child_stream),
-        capabilities=(
-            _inline_subagents(
-                child_capabilities=(InvocationPolicyCapability(evaluator=_allow),),
-            ),
-        ),
+        capabilities=(_inline_subagents(),),
         subagents=(
             SubagentDefinition(
                 name="worker",
@@ -780,7 +677,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "review deeply"}),
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "review deeply"}),
                     tool_call_id="delegate-child",
                 )
             }
@@ -791,9 +688,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
         _parent_definition(
             child,
             FunctionModel(stream_function=parent_stream),
-            subagent_capability=_inline_subagents(
-                child_capabilities=(InvocationPolicyCapability(evaluator=_allow),),
-            ),
+            subagent_capability=_inline_subagents(),
         )
     )
     bindings = _bindings_factory()
@@ -829,10 +724,10 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
         record
         for record in records
         if isinstance(record["parent_agent_instance_id"], str)
-        and record["parent_agent_instance_id"].startswith("internal-reviewer-")
+        and record["parent_agent_instance_id"].startswith("agent-")
     ]
     assert len(nested_records) == 1
-    assert nested_records[0]["agent_instance_id"].startswith("internal-worker-")
+    assert nested_records[0]["agent_instance_id"].startswith("agent-")
 
 
 async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_failure() -> None:
@@ -845,20 +740,23 @@ async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_fai
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "work"}),
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "work"}),
                     tool_call_id="delegate-pre-request-failure",
                 )
             }
             return
         yield "handled"
 
+    child = _child_definition().with_updates(
+        agent=HarnessAgentSpec(
+            usage_limits=UsageLimits(count_tokens_before_request=True),
+        )
+    )
     executable = HarnessBuilder().build(
         _parent_definition(
-            _child_definition(),
+            child,
             FunctionModel(stream_function=parent_stream),
-            subagent_capability=_inline_subagents(
-                usage_limits=UsageLimits(count_tokens_before_request=True),
-            ),
+            subagent_capability=_inline_subagents(),
         )
     )
     events: list[HarnessEvent] = []
@@ -931,7 +829,7 @@ async def test_inline_delegation_inherits_parent_pricing_without_double_counting
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "price this"}),
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "price this"}),
                     tool_call_id="delegate-priced",
                 )
             }
@@ -988,7 +886,7 @@ async def test_inline_delegation_cancellation_before_state_commit_leaves_no_chil
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "work"}),
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "work"}),
                     tool_call_id="delegate-cancel-before-commit",
                 )
             }
@@ -1027,54 +925,10 @@ async def test_inline_delegation_cancellation_before_state_commit_leaves_no_chil
 
     state = await stream.context.state.read(
         SUBAGENT_CAPABILITY_ID,
-        InlineSubagentManagerState,
+        InlineSubagentCollectionState,
         version="1",
     )
     assert state is None
-
-
-async def test_inline_delegation_retains_new_id_after_handled_dispatch_rejection() -> None:
-    async def parent_stream(
-        messages: list[ModelMessage],
-        info: AgentInfo,
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        if not _returns_after_latest_user(messages):
-            yield {
-                0: DeltaToolCall(
-                    name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "work"}),
-                    tool_call_id="delegate-rejected",
-                )
-            }
-            return
-        yield "handled"
-
-    @asynccontextmanager
-    async def rejecting_binder(context, child, input, child_instance_id, continuation, usage_limits):
-        del context, child, input, child_instance_id, continuation, usage_limits
-        raise ToolFailed("Denied by current Host policy.")
-        yield RunBindings.embedded()
-
-    executable = HarnessBuilder().build(
-        _parent_definition(
-            _child_definition(),
-            FunctionModel(stream_function=parent_stream),
-            subagent_capability=_inline_subagents(open_child=rejecting_binder),
-        )
-    )
-    bindings = _bindings_factory()
-    result = await executable.run("start", bindings=bindings)
-
-    assert result.output_or_raise() == "handled"
-    assert result.state is not None
-    restored = InlineSubagentManagerState.model_validate(
-        result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
-    )
-    child_id = next(iter(restored.children))
-    returns = _returns_after_latest_user(result.all_messages())
-    assert any(child_id in str(part.content) for part in returns if part.tool_name == "delegate")
-    assert restored.children[child_id].state.message_history == ()
 
 
 async def test_inline_delegation_borrows_exact_parent_embedded_task_state() -> None:
@@ -1134,7 +988,7 @@ async def test_inline_delegation_borrows_exact_parent_embedded_task_state() -> N
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "complete task-1"}),
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "complete task-1"}),
                     tool_call_id="delegate-shared-task",
                 )
             }
@@ -1152,10 +1006,10 @@ async def test_inline_delegation_borrows_exact_parent_embedded_task_state() -> N
     assert working.tasks is not None
     task = working.tasks.tasks["task-1"]
     assert task.status == "completed"
-    assert task.owner is not None and task.owner.startswith("internal-reviewer-")
+    assert task.owner is not None and task.owner.startswith("agent-")
 
 
-async def test_inline_delegation_rejects_invalid_child_lineage_before_model_work() -> None:
+async def test_inline_provider_task_state_requires_host_owned_execution() -> None:
     child_calls = 0
 
     async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -1167,7 +1021,9 @@ async def test_inline_delegation_rejects_invalid_child_lineage_before_model_work
     child = AgentDefinition(
         agent=AgentSpec(),
         output_type=str,
+        definition_id="provider-task-child-v1",
         model=FunctionModel(stream_function=child_stream),
+        capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),
     )
 
     async def parent_stream(
@@ -1175,41 +1031,33 @@ async def test_inline_delegation_rejects_invalid_child_lineage_before_model_work
         info: AgentInfo,
     ) -> AsyncIterator[str | DeltaToolCalls]:
         del info
-        failures = [
-            part
+        rejected = any(
+            isinstance(part, RetryPromptPart | ToolReturnPart)
             for message in messages
             if isinstance(message, ModelRequest)
             for part in message.parts
-            if isinstance(part, ToolReturnPart)
-        ]
-        if not failures:
+        )
+        if not rejected:
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "work"}),
-                    tool_call_id="bad-lineage",
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "inspect"}),
+                    tool_call_id="delegate-provider-task",
                 )
             }
-        else:
-            yield "handled"
+            return
+        yield "handled"
 
-    @asynccontextmanager
-    async def bad_binder(context, child, input, child_instance_id, continuation, usage_limits):
-        del context, child, input, child_instance_id, continuation, usage_limits
-        yield RunBindings.embedded()
-
-    executable = HarnessBuilder().build(
-        _parent_definition(
-            child,
-            FunctionModel(stream_function=parent_stream),
-            subagent_capability=_inline_subagents(open_child=bad_binder),
-        )
+    result = (
+        await HarnessBuilder()
+        .build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
+        .run("start", bindings=_bindings_factory())
     )
-    bindings = _bindings_factory()
-    result = await executable.run("start", bindings=bindings)
 
     assert result.output_or_raise() == "handled"
     assert child_calls == 0
+    assert result.state is not None
+    assert SUBAGENT_CAPABILITY_ID not in result.state.agent_context_state.entries
 
 
 async def test_inline_delegation_allows_concurrent_children_selected_by_the_toolset() -> None:
@@ -1238,12 +1086,12 @@ async def test_inline_delegation_allows_concurrent_children_selected_by_the_tool
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "first"}),
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "first"}),
                     tool_call_id="delegate-capacity-1",
                 ),
                 1: DeltaToolCall(
                     name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "second"}),
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "second"}),
                     tool_call_id="delegate-capacity-2",
                 ),
             }
@@ -1265,7 +1113,7 @@ async def test_inline_delegation_allows_concurrent_children_selected_by_the_tool
     assert result.output_or_raise() == "handled"
     assert child_calls == 2
     assert result.state is not None
-    restored = InlineSubagentManagerState.model_validate(
+    restored = InlineSubagentCollectionState.model_validate(
         result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
     )
     assert len(restored.children) == 2

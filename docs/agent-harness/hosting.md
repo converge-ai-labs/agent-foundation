@@ -58,12 +58,13 @@ Close the executable when its owning cache entry or process shuts down. Replacem
 For each logical run, reconstruct:
 
 - authenticated `AgentInstanceContext` when the embedded default is insufficient;
-- one current Environment Provider, entered Resource, or single-use `EnvironmentRuntime`;
+- current Provider selection, configuration, authoritative `EnvironmentState`, and runtime collaborators;
+- one fresh already constructed `Environment` per mount, or an advanced Host-owned `EnvironmentRuntime`;
 - current model resolver and credentials;
 - run Capabilities for invocation policy, approvals, media/documents/Web, monitoring, delegation, or Skill selection;
 - bounded non-authoritative metadata.
 
-Saved messages and Capability state never restore these values. A resume must re-evaluate current policy and provider availability. Model-cost policy is definition-scoped rather than a fresh run attachment: the Builder inserts the default catalog policy or accepts exactly one code-first replacement, and inline descendants inherit the parent's effective policy.
+Saved messages and Capability state never restore these values. A resume must re-evaluate current policy and Provider availability before constructing fresh adapters. Model-cost policy is definition-scoped rather than a fresh run collaborator: the Builder inserts the default catalog policy or accepts exactly one code-first replacement, and inline descendants inherit the parent's effective policy.
 
 ## Durable State Boundary
 
@@ -73,7 +74,7 @@ Persist a complete `HarnessState` candidate only as one part of a Host checkpoin
 - Execution and ExecutionAttempt identity;
 - current generation, lease, and opaque fence;
 - selected checkpoint reference and producing provenance;
-- desired Environment mount definitions and provider resource state;
+- desired Environment mount definitions and authoritative `EnvironmentState` values;
 - pending deferred calls, approvals, or external delivery records;
 - durable asynchronous-child state;
 - usage/accounting and terminal output records.
@@ -87,7 +88,7 @@ One logical Harness run can contain bounded internal model attempts. They share 
 A replacement worker attempt is different. It starts a new Harness run with:
 
 - a new `run_id`;
-- fresh bindings and provider scopes;
+- fresh bindings and freshly constructed Environment adapters;
 - the Host-selected prior `HarnessState`;
 - current fenced lifecycle ownership.
 
@@ -123,54 +124,41 @@ Child runs never create durable deferred work. Declaratively deferred tools are 
 
 ## Environments
 
-Environment source type communicates ownership:
+Harness accepts only already constructed `Environment` or `EnvironmentMount` values through `environment=` and `environments=`. Each adapter is fresh and single-use. Harness validates the aggregate, enters every selected adapter, maps Provider state into `HarnessState.environment_states`, and closes all adapters non-destructively before terminal result delivery.
 
-- a Provider passed through `environment=` or `environments=` delegates one complete ephemeral Resource lifecycle to the Harness;
-- an already entered Resource is borrowed for one fresh attachment while the Host retains its outer lifecycle;
-- an `EnvironmentRuntime` in `RunBindings.environment` is the advanced route for exact mounts and Host-retained mutation authority.
+The Host remains responsible for Provider allowlisting, exact configuration validation, current credentials and runtime collaborators, durable desired mount definitions, authoritative `EnvironmentState` persistence, and retention policy. It supplies state before adapter construction and persists `environment.dump_state()` after any lifecycle outcome. A later Run always receives a newly constructed adapter, even when it re-enters the same target.
 
-Use Provider input only for a temporary Resource that should be destroyed before terminal result delivery, including a suspended result. Use an entered Resource when the same provider resource must survive sequential runs, deferred continuation, or Host scheduling. A mixed `environments` mapping can contain both forms. With several aliases, set `default_environment` explicitly when `/workspace` should route to one of them; mapping order never grants authority.
+Harness never calls `destroy()`. When retention selects removal, the Host constructs a fresh not-yet-entered adapter from the exact current state and invokes `destroy()` explicitly. Successful destruction clears cached state; an incompatible target or unknown outcome preserves the last validated state for inspection or retry.
 
-The Host remains responsible for provider plugin selection, specification validation, credentials, durable desired mount definitions, and authoritative `EnvironmentProviderResourceState` persistence. It explicitly creates, resumes, pauses, reconciles, and destroys reusable Resources. Each Harness run acquires a fresh attachment and never restores live authority from `HarnessState`.
+With several aliases, set `default_environment` explicitly when `/workspace` should route to one of them; mapping order never grants authority. An `EnvironmentRuntime` in `RunBindings.environment` remains the advanced route for exact runtime mounts and Host-retained mutation authority. Do not combine that route with high-level Environment inputs, and never copy credentials, live clients, runtime bindings, or destruction authority into `HarnessState` or model context.
 
-Advanced attachment and runtime-mount assembly lives under `a13n_harness.environment.advanced`. Keep every attachment-acquisition scope open for the complete lifetime of the adapted mount. Never copy provider credentials, Resource objects, attachments, an `EnvironmentRuntime`, or provider launch state into `HarnessState` or model context.
+## Run-owned Shell Processes
 
-## Background Processes Across Turns and Restarts
+Process-capable shell commands belong to the exact logical Harness Run that starts them. Harness retains each bound process handle and its retained output only in a private Run controller. A concise `process-*` reference is model-facing authority for that controller, not portable continuation data or a Provider process ID.
 
-A background process has two distinct owners:
+The Host does not construct a process manager or operator. It supplies the ordinary fresh Environment adapter and permissions for the Run. Harness starts, observes, controls, kills, and releases processes through that entered `BoundEnvironment`. Before Environment adapters close, Run cleanup cancels completion watchers, kills every still-live process, and releases every handle and retained-output object.
 
-| Domain              | Stored fact                                                                   | Owner                              |
-| ------------------- | ----------------------------------------------------------------------------- | ---------------------------------- |
-| Parent continuation | `process-N`, opaque backend ID, unread offsets, sequence, bounded observation | `HarnessState.agent_context_state` |
-| Canonical work      | Process object, controls, retained output, Environment scope, cleanup         | Configured `ShellOperator`         |
+`HarnessState` contains no process reference, backend ID, unread offset, status mirror, watcher, or cleanup fact. A continuation Run starts with an empty controller and cannot rebind a reference retained in message history. Current-Run completion notices are best-effort native input hints only; they do not wake a later Run or establish durable delivery.
 
-The standard `ProcessManager` is the process-local canonical owner. Construct it once for an embedding executable or Runner generation. Its Host `ProcessLauncher` may reopen exact provider state into a fresh Environment, reuse an underlying sandbox according to provider semantics, start the process, and return a self-contained `ManagedProcess`. The launcher must finish this construction before returning and must not borrow the parent Run's `BoundEnvironment`.
-
-Parent Run or Environment exit never closes the Manager. `force_close()` is an explicit Host decision, normally made when the embedding executable or Runner generation ends. A Host with a broader canonical process service can retain or replace the operator under its own lifecycle policy.
-
-For every later Run that may address existing work, reconstruct the Capability with the same Manager and supply the complete selected `HarnessState`. The parent projection rebinds its opaque backend ID through that Manager. A missing record becomes explicitly lost; Harness never reconstructs it from a mount name, PID, provider enumeration, or another process.
-
-Current-Run observers can enqueue bounded wait/status notices. Stable Manager hooks are independent and include `AgentInstanceContext.host_refs`, so a Host can correlate completion after the Run closes and optionally schedule a new Run from its selected continuation. Hook delivery is best-effort unless the Host adds a durable contract outside Harness.
-
-The default Manager does not survive a Host process or Runner-generation restart. A Host requiring that guarantee supplies a custom background-capable `ShellOperator` backed by independently retained process and output state. The standard Toolset, compact projections, and loss behavior remain unchanged.
+A product that requires cross-Run execution, restart survival, hosted process storage, or post-Run wake must implement that capability outside the current Harness shell contract rather than persisting `BoundProcessHandle` or extending `HarnessState`.
 
 ## Minimal vs. Production Host
 
-| Embedded application                             | Distributed Host                                     |
-| ------------------------------------------------ | ---------------------------------------------------- |
-| Omit `bindings` or use `RunBindings.embedded()`  | Explicit authenticated instance context              |
-| In-memory selected state                         | Durable immutable checkpoints and selection          |
-| No Environment or Provider-input temporary scope | Host-managed Resources and fresh per-run attachments |
-| Process-local policy collaborators               | Current tenant/user policy and credentials           |
-| Direct result handling                           | Fenced terminal commit and delivery lifecycle        |
-| Inline child execution                           | Optional durable child Execution lifecycle           |
+| Embedded application                            | Distributed Host                                                     |
+| ----------------------------------------------- | -------------------------------------------------------------------- |
+| Omit `bindings` or use `RunBindings.embedded()` | Explicit authenticated instance context                              |
+| In-memory selected state                        | Durable immutable checkpoints and selection                          |
+| No Environment or one fresh local adapter       | Host-managed Provider state and fresh adapters for every Run attempt |
+| Process-local policy collaborators              | Current tenant/user policy and credentials                           |
+| Direct result handling                          | Fenced terminal commit and delivery lifecycle                        |
+| Inline child execution                          | Optional durable child Execution lifecycle                           |
 
 Start with the embedded path and add Host-owned durable boundaries only when the product requires them.
 
 ## Runnable Example
 
-The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates the boundary before a full durable Host: it streams repeated turns, atomically stores the returned `HarnessState` only after successful completion, resumes the same Thread after application restart, and explicitly selects one temporary Provider lifecycle per turn.
+The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates the boundary before a full durable Host: it streams repeated turns, atomically stores the returned `HarnessState` only after successful completion, resumes the same Thread after application restart, and constructs one fresh Direct Local Environment per turn.
 
-The [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates both Resource-exit policies in one executable flow: the reusable source Resource exits without destruction and is later resumed and explicitly destroyed, while the temporary docs Resource supplies an exact destroy operation and selects `destroy_on_exit=True`.
+The [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates installed and explicit Provider catalogs, strict configuration validation, fresh adapter construction, multi-mount routing, state export, non-destructive close, and an Environment Run extension.
 
 Its single state file is application teaching code, not an Execution ledger, lease, fence, or prescribed production persistence implementation. Add the Host-owned records described above when multiple workers, replacement attempts, side effects, or durable terminal delivery require them.

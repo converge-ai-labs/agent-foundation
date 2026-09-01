@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from a13n_environment_provider import (
-    EnvironmentManagementAction,
-    EnvironmentOperationContext,
-    EnvironmentProviderSpec,
-    build_environment_provider_factory_catalog,
-)
+from a13n_environment_provider import Environment
 from a13n_harness import (
     AgentSpec,
     HarnessBuilder,
@@ -29,16 +25,61 @@ from a13n_harness.environment import (
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )
-from a13n_harness.environment.advanced import (
+from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.providers import (
+    EnvironmentProviderBinding,
     EnvironmentRuntimeMount,
-    create_environment_provider_binding,
-    create_environment_runtime,
 )
+from a13n_harness.identity import AgentInstanceContext
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 EXTENSION_KEY = "example.workspace-marker"
 type ExtensionSelectionMode = Literal["entrypoint", "code"]
+
+
+class _EnvironmentBinding(EnvironmentProviderBinding):
+    """Advanced runtime adapter for the already constructed demo Environment."""
+
+    def __init__(self, environment: Environment) -> None:
+        self._environment = environment
+        self._used = False
+
+    @property
+    def provider_type(self) -> str:
+        return self._environment.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self._environment.environment_id
+
+    @asynccontextmanager
+    async def bind(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        instance: AgentInstanceContext,
+        mount_id: str,
+        host_refs: Mapping[str, str],
+    ) -> AsyncGenerator[Environment]:
+        if self._used:
+            raise RuntimeError("demo Environment binding is single-use")
+        self._used = True
+        try:
+            await self._environment.enter(
+                thread_id=thread_id,
+                run_id=run_id,
+                agent_instance_id=instance.agent_instance_id,
+                mount_id=mount_id,
+                host_refs=host_refs,
+            )
+            yield self._environment
+        finally:
+            await self._environment.close()
+
+    async def discard(self) -> None:
+        await self._environment.close()
 
 
 def _offline_model() -> FunctionModel:
@@ -68,31 +109,20 @@ async def _run_extension_demo(
     catalog: EnvironmentRunExtensionFactoryCatalog,
     workspace_root: Path,
 ) -> EnvironmentExtensionDemoResult:
-    from a13n_plugin_examples.environment import (
-        WorkspaceEnvironmentProviderFactory,
-        WorkspaceEnvironmentRuntime,
-    )
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
 
-    provider_catalog = build_environment_provider_factory_catalog(
-        explicit_factories=(WorkspaceEnvironmentProviderFactory(),)
+    provider = WorkspaceEnvironmentProvider()
+    configuration = provider.validate_configuration(
+        schema_version="1",
+        value={
+            "root": str(workspace_root),
+            "environment_id": "extension-workspace",
+            "read_only": False,
+        },
     )
-    manager = provider_catalog.create_provider(
-        EnvironmentProviderSpec(
-            provider_key="example.workspace",
-            schema_version="1",
-            parameters={
-                "root": str(workspace_root),
-                "environment_id": "extension-workspace",
-                "read_only": False,
-            },
-        ),
-        runtime=WorkspaceEnvironmentRuntime(),
-    )
-    operation = EnvironmentOperationContext(
-        operation_id=f"operation-create-{selection_mode}",
-        action=EnvironmentManagementAction.CREATE,
-        resource_correlation=f"resource-extension-{selection_mode}",
-        attempt=1,
+    environment = provider.create_environment(
+        configuration=configuration,
+        state=None,
     )
     extension_id = f"marker-{selection_mode}"
     marker_path = "/workspace/.example-run"
@@ -104,7 +134,6 @@ async def _run_extension_demo(
         )
     )
     marker_text: str | None = None
-    marker_removed = False
 
     async def read_marker(context: RunPreparationContext) -> str:
         nonlocal marker_text
@@ -116,47 +145,31 @@ async def _run_extension_demo(
         output_type=str,
         model=_offline_model(),
     )
-    resource = await manager.create(operation=operation)
-    try:
-        async with resource:
-            async with resource.acquire_attachment() as attachment:
-                provider = create_environment_provider_binding(attachment)
-                environment_runtime = create_environment_runtime(
-                    mounts={
-                        "workspace": EnvironmentRuntimeMount(
-                            binding=provider,
-                            permission_ceiling=EnvironmentPermissionSet(
-                                operations=frozenset(
-                                    {
-                                        EnvironmentAction.FILE_READ_TEXT,
-                                        EnvironmentAction.FILE_WRITE_TEXT,
-                                        EnvironmentAction.FILE_REMOVE,
-                                    }
-                                )
-                            ),
-                            working_directory="/",
-                        )
-                    },
-                    default_mount="workspace",
-                    extensions=(extension,),
-                )
-                result = await executable.run(
-                    input_factory=read_marker,
-                    bindings=RunBindings.embedded(environment=environment_runtime),
-                )
-                if result.output_or_raise() != "extension observed":
-                    raise RuntimeError("The offline Agent returned an unexpected result")
-                marker_removed = not (workspace_root / ".example-run").exists()
-    finally:
-        await manager.destroy(
-            resource.state,
-            operation=EnvironmentOperationContext(
-                operation_id=f"operation-destroy-{selection_mode}",
-                action=EnvironmentManagementAction.DESTROY,
-                resource_correlation=f"resource-extension-{selection_mode}",
-                attempt=1,
-            ),
-        )
+    environment_runtime = create_environment_runtime(
+        mounts={
+            "workspace": EnvironmentRuntimeMount(
+                binding=_EnvironmentBinding(environment),
+                permission_ceiling=EnvironmentPermissionSet(
+                    operations=frozenset(
+                        {
+                            EnvironmentAction.FILE_READ_TEXT,
+                            EnvironmentAction.FILE_WRITE_TEXT,
+                            EnvironmentAction.FILE_REMOVE,
+                        }
+                    )
+                ),
+                working_directory="/",
+            )
+        },
+        default_mount="workspace",
+        extensions=(extension,),
+    )
+    result = await executable.run(
+        input_factory=read_marker,
+        bindings=RunBindings.embedded(environment=environment_runtime),
+    )
+    if result.output_or_raise() != "extension observed":
+        raise RuntimeError("The offline Agent returned an unexpected result")
 
     return EnvironmentExtensionDemoResult(
         selection_mode=selection_mode,
@@ -164,7 +177,7 @@ async def _run_extension_demo(
         extension_id=extension.extension_id,
         run_id=result.run_id,
         marker_text=marker_text or "",
-        marker_removed=marker_removed,
+        marker_removed=not (workspace_root / ".example-run").exists(),
     )
 
 

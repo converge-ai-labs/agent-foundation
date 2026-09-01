@@ -6,8 +6,8 @@
 
 - one stable `thread_id` for the independently advancing message history;
 - detached public Pydantic AI message history;
-- detached JSON state namespaced by stable Capability ID, including model-facing continuation projections such as managed process references;
-- optional portable Environment backend state under one explicit aggregate field.
+- detached JSON state namespaced by stable Capability ID;
+- portable provider-owned Environment states under one direct mount-name mapping.
 
 It contains no executable definition, plugin object, model, Toolset, provider client, Environment mount definition, desired mount set, provider launch state, current authority, usage ledger, event log, Host execution record, lease, queue, or delivery state. A Host may persist the value or embed it in a larger durable record, but the Harness does not choose or commit a durable checkpoint.
 
@@ -39,7 +39,7 @@ class HarnessState(BaseModel):
     agent_context_state: AgentContextStateSnapshot = (
         AgentContextStateSnapshot()
     )
-    environment_state: EnvironmentState | None = None
+    environment_states: Mapping[str, EnvironmentState] = {}
 
     @classmethod
     def new(...) -> HarnessState: ...
@@ -47,9 +47,9 @@ class HarnessState(BaseModel):
 
 `HarnessState` and its nested values are frozen detached envelopes. Pydantic message history is round-tripped through `ModelMessagesTypeAdapter`; Capability and Environment payload data are round-tripped through Pydantic `JsonValue`. Public accessors decode fresh copies, so mutable aliases do not cross the state boundary.
 
-`thread_id` is a Harness-generated opaque correlation value consisting of the `thread-` prefix and 32 lowercase hexadecimal characters. `HarnessState.new()` creates a new Thread and generates its ID; direct envelope validation requires the field. Serialization, ordinary copies, exports, and resume preserve it exactly. The field is not accepted through `RunBindings`, metadata, or a run argument. `HarnessState.fork()` copies the messages and portable State payloads into a new envelope with a newly generated ID, which is the required core path for intentionally creating an independently advancing history from an existing checkpoint. Trusted plugins and Host state transformations remain able to construct complete State under the existing trust boundary; the ID is not cryptographic integrity or authority.
+`thread_id` is a Harness-generated opaque correlation value consisting of the `thread-` prefix and 32 lowercase hexadecimal characters. `HarnessState.new()` creates a new Thread and generates its ID; direct envelope validation requires the field. Serialization, ordinary copies, exports, and resume preserve it exactly. The field is not accepted through `RunBindings`, metadata, or a run argument. `HarnessState.fork()` copies messages and Capability state into a new envelope with a newly generated ID but resets `environment_states` to an empty mapping. A fork is a new Thread and does not inherit backing-target selection by default. This is the required core path for intentionally creating an independently advancing history from an existing checkpoint. Trusted plugins and Host state transformations remain able to construct complete State under the existing trust boundary; the ID is not cryptographic integrity or authority.
 
-`schema_version` versions only the Harness envelope and is `1` for this contract. Import requires the exact supported envelope version and a valid required `thread_id`; validation never invents a replacement identity for malformed input. Each Capability entry has an independent non-blank version owned by that Capability's codec; each Environment mount entry has an independent provider-owned codec version. [Environment Integration](08-environment-integration.md#portable-environment-state) owns its schema and authority boundary.
+`schema_version` versions only the Harness envelope and is `1` for this contract. Import requires the exact supported envelope version and a valid required `thread_id`; validation never invents a replacement identity for malformed input. Each Capability entry has an independent non-blank version owned by that Capability's codec; each `environment_states` value has an independent provider-owned codec version. [Environment Integration](08-environment-integration.md#portable-environment-state) owns the direct mapping and its authority boundary.
 
 ## AgentContextState
 
@@ -82,15 +82,17 @@ A read validates the requested namespace, exact entry version, and the owning Py
 
 The coordinator does not maintain a Capability registry and does not reject an entry merely because no active Capability reads it in the current run. Unknown or transferred namespaces remain opaque and survive snapshotting. This permits trusted plugin handoff, optional Capability removal and reintroduction, and Host-controlled state migration without a second global codec system. A Capability accepts a namespace only by reading it through its own expected ID, version, and model.
 
-Namespace isolation is a composition convention backed by the typed API, not a sandbox against trusted Python. A trusted plugin or Capability can intentionally replace another entry or the complete `HarnessState`; the Harness does not enforce provenance or ownership allowlists.
+The removed namespace `a13n.dynamic-environment.processes` is the one direct-cut exception. Import rejects any snapshot containing that namespace before Environment entry or another Run effect. It is never treated as opaque unknown state because preserving and re-exporting its obsolete operator backend IDs and output cursors would imply a continuation contract that no longer exists.
 
-Dynamic Environment uses one namespace to preserve its owning Thread ID, bounded `process-N` mapping, one exact opaque operator backend ID, independent next-unread stdout and stderr offsets, monotonic allocation sequence, and last observed status. This state is neither an Environment backend snapshot nor process truth. It cannot recreate, enumerate, or authorize a Host or provider process. On a later Run, the Capability's configured background-capable `ShellOperator` canonically rebinds the stored selector or marks it lost; [Environment Integration](08-environment-integration.md#command-and-background-process-operators) owns matching, output drain, observation, and Host continuity semantics.
+Namespace isolation is otherwise a composition convention backed by the typed API, not a sandbox against trusted Python. A trusted plugin or Capability can intentionally replace another entry or the complete `HarnessState`; the Harness does not enforce provenance or ownership allowlists.
 
-Async `SubagentCapability` uses a separate namespace to preserve the current parent Thread ID, bounded `subagent-N` mapping, exact child name and definition ID, delegated prompt, one opaque operator backend ID, observed status, bounded failure, resumability, and optional real Thread correlation. Successful child output and bounded recent activity remain only in canonical operator state and never enter the portable parent projection. Single-execution `subagent_info` fetches current activity detail; a single-child `wait_subagent` fetches complete output and the normal managed-tool boundary spills oversized output to a run-private file. The namespace stores no activity, output, child `HarnessState`, and is not a Session child, scheduler record, task store, or durable execution. A later parent Run uses the same configured `SubagentOperator` to attach its current observer to each nonterminal selector, collect a canonical terminal projection, or mark it lost. Completion after a parent Run closes never mutates the already exported parent state; stable operator hooks may independently wake a Host. [Delegation and Subagents](11-delegation-and-subagents.md#async-parent-projection) owns the manager lifecycle. Inline mode separately stores complete nested child `HarnessState` under its own documented state model.
+Dynamic Environment stores no process namespace. The process controller is Run-local and closes with the Run after killing and releasing every remaining process. A process reference retained in message history is historical model content rather than restored authority. [Environment Integration](08-environment-integration.md#run-owned-shell-processes) owns process admission, explicit-offset polling, active readiness, and cleanup.
+
+Async `SubagentCapability` stores no execution projection in parent `HarnessState`. Public execution references, exact child correlation, status, failure, resumability, activity, output, and child `HarnessState` remain owned by the Host operator and child Thread records. `subagent_info` and `wait_subagent` query that current authority; the normal managed-tool boundary spills an oversized valid wait result to a run-private file. Completion after a parent Run closes never mutates its exported state, and Host wake or delivery remains independent of Harness continuation. Inline mode separately stores complete nested child `HarnessState` under the Subagent Capability namespace, with borrowed Environment state removed as defined by [Delegation and Subagents](11-delegation-and-subagents.md#inline-execution).
 
 ## Export
 
-`AgentContext.export_state(message_history)` preserves `AgentContext.thread_id` and combines it with a detached message sequence, the current `AgentContextState` snapshot, and a fresh aggregate Environment export:
+`AgentContext.export_state(message_history)` preserves `AgentContext.thread_id` and combines it with a detached message sequence, the current `AgentContextState` snapshot, and a fresh mount-name-to-state Environment snapshot:
 
 ```python
 async def export_state(
@@ -99,9 +101,9 @@ async def export_state(
 ) -> HarnessState: ...
 ```
 
-The method can await provider-defined portable Environment-state collection but performs no persistence side effect. It captures the current mount set under the aggregate operation fence, so the Environment value contains entries from one complete mount-set observation rather than a mixture of states before and after a mutation. The Environment aggregate validates canonical JSON and preserves provider permissions and bounded operation deadlines; timeout, cancellation, provider failure, or invalid JSON fails the complete export rather than silently dropping a mount. The Host owns capacity admission for input state and exported results before persistence. `HarnessRunStream.export_state()` selects the latest complete message view owned by the stream and delegates to this method.
+The method calls provider-defined `dump_state()` but performs no persistence side effect. Each call is an infallible synchronous process-local read of the adapter's last validated cache; it performs no target refresh. The method captures the current mount set under the aggregate operation fence, so `environment_states` contains entries from one complete mount-set observation rather than a mixture before and after mutation. Values are imported `a13n-environment-provider` `EnvironmentState` envelopes; mounts that return `None` are omitted. Export cancellation, an adapter contract violation, invalid canonical JSON, an invalid state envelope, or a Host-admitted size violation fails the complete export rather than silently dropping a stateful mount. Host unconditional finalization can still read each adapter cache independently from this continuation export. `HarnessRunStream.export_state()` selects the latest complete message view owned by the stream and delegates to this method.
 
-State export does not require `HarnessState.message_history` to equal a result object's private message view. Normal inner execution produces aligned values, but trusted result middleware may intentionally transfer or replace state. Structural validity is enforced; semantic provenance is part of the trusted plugin contract. A plugin that replaces `environment_state` remains trusted code but cannot make the value authorize or construct a binding on resume.
+State export does not require `HarnessState.message_history` to equal a result object's private message view. Normal inner execution produces aligned values, but trusted result middleware may intentionally transfer or replace state. Structural validity is enforced; semantic provenance is part of the trusted plugin contract. A plugin that replaces `environment_states` remains trusted code but cannot make the mapping authorize or construct an Environment on resume.
 
 ## Complete Message Boundaries
 
@@ -160,19 +162,17 @@ A provider-suspended response is continuation of an already issued model request
 
 A new run receives `previous_state` separately from fresh `RunBindings`. Stream construction deep-copies the supplied state. Entry then:
 
-01. enters the new Environment runtime from fresh Host authority and atomically publishes its initial mount set while the runtime remains non-active;
-02. restores a present `environment_state` only into compatible, already selected mounts;
-03. enters ordered Environment run extensions after successful restore or confirmation that no Environment state was supplied;
-04. activates the runtime after every extension enters successfully;
-05. invokes the optional `RunInputFactory` against that entered Environment;
-06. restores the selected `thread_id` into a read-only field on the fresh `AgentContext`;
-07. creates one `AgentContextState` initialized from the imported Capability snapshot;
-08. creates the remaining fresh `AgentContext` dependencies and plugin graph;
-09. reconciles non-empty imported history with the current definition-owned system prompt before a new model request, while leaving provider-suspended continuation unchanged;
-10. passes the resulting messages to the first `ModelAttempt`;
-11. lets each Capability read and validate only the namespaces it understands.
+1. receives fresh Environment instances already constructed from Host-selected state and atomically enters/publishes the initial mount set;
+2. validates that portable `environment_states` is observation only and does not restore or replace adapter state after entry;
+3. invokes the optional `RunInputFactory` against that entered Environment;
+4. restores the selected `thread_id` into a read-only field on the fresh `AgentContext`;
+5. creates one `AgentContextState` initialized from the imported Capability snapshot;
+6. creates the remaining fresh `AgentContext` dependencies and plugin graph;
+7. reconciles non-empty imported history with the current definition-owned system prompt before a new model request, while leaving provider-suspended continuation unchanged;
+8. passes the resulting messages to the first `ModelAttempt`;
+9. lets each Capability read and validate only the namespaces it understands.
 
-Environment restore and ordered run-extension entry finish before runtime activation and input production, never overlap a mount mutation, and never create a mount, select desired mounts, consume Host launch state, or grant access. An unmatched saved mount is ignored with a bounded diagnostic; an incompatible selected mount fails according to the Environment codec contract. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.
+Initial Environment entry and complete mount publication finish before input production and never overlap mount mutation. Harness does not apply saved Environment state to an entered adapter: the Host must select state before constructing each Environment. An unmatched portable mapping entry is inert; an explicit unmanaged/import flow can adopt it only before Run construction. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.
 
 Identity, policy, credentials, model resolution, Environment authority, desired mounts, tool grants, provider sessions, and Host ownership always come from fresh trusted bindings. Message metadata, Thread identity, Capability state, and portable Environment state grant none of them.
 
@@ -192,7 +192,7 @@ class HostExecutionState(BaseModel):
     pending_delivery: HostDeliveryState | None
 ```
 
-This is an ownership illustration, not a Harness API. Definition selection, desired Environment mount definitions, `ExecutionAttempt` generation, artifact locks, provider provisioning and attachment, provider launch-state codecs, client-tool pending state, asynchronous child lifecycle, and delivery fencing remain Host-owned. `HostLaunchState` is separate from `HarnessState.environment_state`: the former makes a provider resource reachable, while the latter can restore only portable backend-local data after fresh reachability and authority already exist.
+This is an ownership illustration, not a Harness API. Definition selection, desired Environment mounts, `ExecutionAttempt` generation, artifact locks, Provider selection, current state authority, runtime collaborators, client-tool pending state, asynchronous child lifecycle, and delivery fencing remain Host-owned. `HarnessState.environment_states` is a portable observation and fallback for explicit unmanaged/import flows; it is not the managed Host's current state or authority.
 
 The Harness does not define or require a generic provider route pin. Provider-specific continuation facts that cannot be derived from `thread_id` and public Pydantic messages, including an opaque model-session selector, belong to the selected model integration or Host envelope rather than the Harness schema. A broader product-conversation routing key does not replace the distinct prompt-cache affinity required for each independently advancing Agent message history.
 
@@ -204,12 +204,12 @@ State export records observations; it does not make a side effect exactly once. 
 
 Four compatibility axes remain independent:
 
-| Axis                            | Owner                |
-| ------------------------------- | -------------------- |
-| Harness envelope version        | Harness              |
-| Pydantic message codec          | Pydantic AI          |
-| Capability entry version        | Owning Capability    |
-| Environment mount-state version | Environment provider |
+| Axis                             | Owner                |
+| -------------------------------- | -------------------- |
+| Harness envelope version         | Harness              |
+| Pydantic message codec           | Pydantic AI          |
+| Capability entry version         | Owning Capability    |
+| `EnvironmentState.state_version` | Environment Provider |
 
 Invalid messages, unsupported envelope versions, blank namespace IDs or versions, and invalid Capability or Environment payloads fail without mutating the supplied value. A Host that changes process-local Agent composition or provider integration decides whether to retain, migrate, or remove incompatible opaque data before resume. Definition-owned system-prompt replacement is the explicit exception for a new model request: the Harness reconciles public prompt parts from the current definition without treating them as opaque Capability or provider state.
 
@@ -219,7 +219,7 @@ Invalid messages, unsupported envelope versions, blank namespace IDs or versions
 | -------------------------------------------------- | ------------------------------ |
 | Envelope, detached encoding, and state coordinator | Harness                        |
 | One Capability namespace and semantic migration    | Owning Capability              |
-| Environment aggregate and per-mount codec          | Harness core and provider      |
+| Environment state mapping and provider value codec | Harness core and Provider      |
 | Trusted complete-state transformation              | Harness plugin or Host adapter |
 | Durable selection, launch, retention, and fencing  | Host                           |
 | External effect reconciliation                     | Provider and Host              |
@@ -232,4 +232,4 @@ Preserving unknown namespaces supports code-first composition, plugin handoff, a
 
 ### Portable Continuation vs. Durable Recovery
 
-Messages, Capability JSON, and optional portable Environment JSON remain process-portable. Complete crash recovery still needs the Host definition, desired mount definitions, provider launch, pending-delivery, and reconciliation state outside the Harness.
+Messages, Capability JSON, and portable Environment state envelopes remain process-portable. Complete crash recovery still needs the Host definition, desired mounts, current Environment authority, fresh runtime collaborators, pending-delivery state, and reconciliation evidence outside Harness.

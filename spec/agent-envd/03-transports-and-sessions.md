@@ -193,7 +193,7 @@ Stdio has no bearer credential. Its trust boundary requires the provider to crea
 
 The HTTP profile binds one dedicated EIP listener configured by the provider. A public or provider-routed endpoint uses HTTPS with ordinary certificate and hostname validation. Platform trust roots are the default; an explicitly configured deployment CA can add trust without making custom certificates mandatory. Plain HTTP is permitted only on an explicitly trusted loopback or private provider link, including the private hop behind provider-managed TLS termination. The client never follows redirects or upgrades the request to a browser or generic HTTP API.
 
-Every request carries a bootstrap or session Bearer credential in `Authorization`. The credential is required even when an outer provider link also authenticates traffic. It never appears in a URL, query, cookie, EIP payload, model-visible value, log, trace, or provider resource state.
+Every request carries a bootstrap or session Bearer credential in `Authorization`. The credential is required even when an outer provider link also authenticates traffic. It never appears in a URL, query, cookie, EIP payload, model-visible value, log, trace, or Environment state.
 
 The listener exposes fixed-purpose control and transfer resources only. It has no generic JSON endpoint, file path route, arbitrary URL fetch, health route, browser CORS surface, or directory listing.
 
@@ -249,7 +249,7 @@ Sec-WebSocket-Protocol: eip.v1
 
 The control service must select exactly the offered supported `eip.v<major>` value. Missing or different subprotocol, redirect, invalid TLS, malformed upgrade, or an unexpected extension fails the connection before EIP initialization. Per-message compression is disabled unless a later accepted profile defines bounded decompression explicitly.
 
-The mandatory Bearer token authenticates the envd attachment to the control service. The control service independently resolves that token to the expected Environment resource attachment before accepting the upgrade. Successful HTTP upgrade authenticates the resulting WebSocket, so the token is not repeated after upgrade. The service never forwards browser or product-user credentials as the envd attachment token.
+The mandatory Bearer token authenticates the envd attachment to the control service. The control service independently resolves that token to the expected Host-authorized Environment identity and daemon generation before accepting the upgrade. Successful HTTP upgrade authenticates the resulting WebSocket, so the token is not repeated after upgrade. The service never forwards browser or product-user credentials as the envd attachment token.
 
 ### Initialization and multiplexing
 
@@ -328,7 +328,7 @@ A provider selects stdio, HTTP, or reverse WebSocket before session establishmen
 03. Only the HTTP profile binds an inbound EIP listener; envd exposes no inbound WebSocket, browser, generic HTTP, arbitrary download/upload, health, or readiness API.
 04. Public or provider-routed HTTP uses validated HTTPS; plaintext HTTP is limited to an explicitly trusted loopback or private provider link. Reverse WebSocket retains its defined `ws`/validated `wss` endpoint policy, token, redirect, and `eip.v1` rules.
 05. Every carrier requires its defined bootstrap authentication except trusted private stdio, and credentials/session selectors never enter URLs, cookies, EIP payloads, model state, or ordinary observability.
-06. The requester's first EIP request is `initialize`, and its first post-initialization operation is `environment.readiness`; no application method is dispatched or binding published before readiness succeeds.
+06. The requester's first EIP request is `initialize`, and its first post-initialization operation is `environment.readiness`; no application method is dispatched or Session published before readiness succeeds.
 07. Every successful carrier or HTTP initialization creates a fresh Session; one daemon admits at most one active initialized Session and supports fresh sequential Sessions, including provider-owned readiness Sessions and cleanly rearmed Sessions over one generation-owned stdio carrier.
 08. Carrier or request loss removes affected Session transfer delivery but does not erase generation-owned operations, processes, receipts, or command output.
 09. Reconnect or stdio rearming never automatically replays a request or resumes a file transfer.

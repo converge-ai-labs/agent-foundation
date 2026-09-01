@@ -22,7 +22,7 @@ parser; it does not import a Harness parser API.
 | Idempotency and unknown mutation outcomes                         | [Durable Operations](06-durable-operations-and-outbox.md)                        |
 | GitHub credential value and eligibility                           | [Secret Management](11-secret-management.md)                                     |
 | Exact Agent composition                                           | [Agent Management](12-agent-management.md)                                       |
-| Environment attachment and write authority                        | [Environment Management](19-environment-management.md)                           |
+| Entered Environment and write authority                           | [Environment Management](19-environment-management.md)                           |
 
 Foundation accepts no server-native source path, arbitrary URL, executable extension, or ambient Skill directory through this API.
 
@@ -288,10 +288,10 @@ Materialization outcomes are:
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `skill_materialization_invalid`     | A locked revision, object, digest, or package contract is invalid; fail closed until another AgentPresetRevision is selected        |
 | `skill_materialization_unavailable` | Object storage or Environment access is temporarily unavailable; retry only through a new fenced RunAttempt under ordinary ceilings |
-| `skill_materialization_stale`       | The attachment, provider generation, or RunAttempt fence changed; abandon the attempt and reacquire authority                       |
+| `skill_materialization_stale`       | The Environment mount incarnation, Provider generation, or RunAttempt fence changed; abandon the attempt and reacquire authority    |
 | `skill_materialization_cancelled`   | Cancellation or shutdown won; preserve the ordinary cancelled or interrupted lifecycle                                              |
 
-Materialization is content-addressed Host preparation, not an Agent tool call or a provider-resource recovery record. A replacement attempt uses its fresh Environment, verifies or recreates the same exact root when available, and never substitutes the current Skill head. No failure above publishes Skill instructions, paths, model requests, or Agent tool calls.
+Materialization is content-addressed Host preparation, not an Agent tool call or a backing-target recovery record. A replacement attempt uses its fresh Environment, verifies or recreates the same exact root when available, and never substitutes the current Skill head. No failure above publishes Skill instructions, paths, model requests, or Agent tool calls.
 
 ## Compatibility
 

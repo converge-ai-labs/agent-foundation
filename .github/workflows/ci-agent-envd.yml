@@ -11,7 +11,9 @@ on:
       - "crates/agent-envd/**"
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/agent-envd-client/**"
-      - "packages/agent-harness/tests/test_environment_eip_e2e.py"
+      - "packages/agent-environment-provider/a13n_environment_provider/eip/**"
+      - "packages/agent-environment-provider/a13n_environment_provider/local_envd/**"
+      - "packages/agent-environment-provider/tests/test_local_envd.py"
       - "proto/agent-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
@@ -32,7 +34,9 @@ on:
       - "crates/agent-envd/**"
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/agent-envd-client/**"
-      - "packages/agent-harness/tests/test_environment_eip_e2e.py"
+      - "packages/agent-environment-provider/a13n_environment_provider/eip/**"
+      - "packages/agent-environment-provider/a13n_environment_provider/local_envd/**"
+      - "packages/agent-environment-provider/tests/test_local_envd.py"
       - "proto/agent-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
@@ -114,7 +118,9 @@ jobs:
               - 'packages/agent-envd-client/pyproject.toml'
               - 'packages/agent-envd-client/a13n_envd_client/eip/**'
               - 'packages/agent-envd-client/tests/eip/**'
-              - 'packages/agent-harness/tests/test_environment_eip_e2e.py'
+              - 'packages/agent-environment-provider/a13n_environment_provider/eip/**'
+              - 'packages/agent-environment-provider/a13n_environment_provider/local_envd/**'
+              - 'packages/agent-environment-provider/tests/test_local_envd.py'
               - 'proto/agent-envd/eip/**'
               - 'scripts/eip_codegen/**'
               - 'scripts/tests/test_eip_codegen.py'

@@ -25,8 +25,10 @@ from a13n_harness.environment import EnvironmentError
 from a13n_harness.environment.advanced import (
     BoundEnvironment,
     EnvironmentRuntime,
-    EnvironmentRuntimeMount,
     create_empty_environment_runtime,
+)
+from a13n_harness.environment.providers import (
+    EnvironmentRuntimeMount,
 )
 from a13n_harness.plugins import (
     PluginRunExchange,
@@ -685,9 +687,21 @@ class TaskAffineEnvironment(EnvironmentRuntime):
         self.delegate._begin_close()
 
     @asynccontextmanager
-    async def bind(self, *, run_id: str, instance) -> AsyncGenerator[BoundEnvironment]:
+    async def bind(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        instance,
+        host_refs,
+    ) -> AsyncGenerator[BoundEnvironment]:
         owner_task = asyncio.current_task()
-        async with self.delegate.bind(run_id=run_id, instance=instance) as environment:
+        async with self.delegate.bind(
+            thread_id=thread_id,
+            run_id=run_id,
+            instance=instance,
+            host_refs=host_refs,
+        ) as environment:
             try:
                 yield environment
             finally:
@@ -715,8 +729,20 @@ class FailingLifecycleEnvironment(TaskAffineEnvironment):
         self.fail = asyncio.Event()
 
     @asynccontextmanager
-    async def bind(self, *, run_id: str, instance) -> AsyncGenerator[BoundEnvironment]:
-        async with self.delegate.bind(run_id=run_id, instance=instance) as environment:
+    async def bind(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        instance,
+        host_refs,
+    ) -> AsyncGenerator[BoundEnvironment]:
+        async with self.delegate.bind(
+            thread_id=thread_id,
+            run_id=run_id,
+            instance=instance,
+            host_refs=host_refs,
+        ) as environment:
             async with asyncio.TaskGroup() as tasks:
 
                 async def fail_lifecycle() -> None:
@@ -983,8 +1009,20 @@ class FailingTrackingEnvironment(TaskAffineEnvironment):
         self.log = log
 
     @asynccontextmanager
-    async def bind(self, *, run_id: str, instance) -> AsyncGenerator[BoundEnvironment]:
-        async with self.delegate.bind(run_id=run_id, instance=instance) as environment:
+    async def bind(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        instance,
+        host_refs,
+    ) -> AsyncGenerator[BoundEnvironment]:
+        async with self.delegate.bind(
+            thread_id=thread_id,
+            run_id=run_id,
+            instance=instance,
+            host_refs=host_refs,
+        ) as environment:
             try:
                 yield environment
             finally:

@@ -1,682 +1,534 @@
-"""Portable Agent process projections over fresh Host-managed operations."""
+"""Private Run-owned process controller over the entered Environment."""
 
 from __future__ import annotations
 
 import asyncio
+import codecs
 import re
+import secrets
 from collections import OrderedDict
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from dataclasses import field as dataclass_field
-from datetime import UTC, datetime
-from types import MappingProxyType
-from typing import Any, Literal, cast
+from dataclasses import dataclass, field
+from typing import Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_serializer, field_validator
+from pydantic import JsonValue
 from pydantic_ai import RunContext
 
-from a13n_harness._json import redact_json
-from a13n_harness.capabilities.processes import (
-    ProcessBackendEventHook,
-    ProcessExecutionSnapshot,
-    ProcessOutputChunk,
-    ProcessOutputPage,
-    ShellOperator,
-)
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.commands import CommandRequest, ProcessStatus
-from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.environment.retention import EnvironmentOutputCapture
-from a13n_harness.state import AgentContextState
-
-from .output import DEFAULT_TOOL_OUTPUT_CHARS, acknowledge_tool_output, continuation_disclosure, tool_output_size
-from .shell_results import (
-    OutputCaptureProjection,
-    ProcessProjection,
+from a13n_harness.environment.commands import (
+    BoundProcessHandle,
+    CommandRequest,
+    ProcessInfo,
+    ProcessOutputSnapshot,
     ProcessReadOutputResult,
-    ProcessStatusItem,
-    ProcessStatusListSuccess,
+    ProcessStatus,
+    ProcessStreamRead,
+)
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
+
+from .output import tool_output_size
+from .shell_results import (
+    OutputPageProjection,
+    ProcessInputSuccess,
+    ProcessObservationSuccess,
+    ProcessSignalSuccess,
     ProcessStatusProjection,
+    ShellExecSuccess,
 )
 
-_MAX_MODEL_TEXT_BYTES = 256 * 1024
 _MAX_MODEL_OUTPUT_BYTES = 1024 * 1024
+_DEFAULT_INLINE_BYTES = 64 * 1024
 _MAX_REFERENCE_ENTRIES = 100_000
-_PROCESS_RESULT_ENVELOPE_CHARS = 128
-_REFERENCE_PATTERN = re.compile(r"^process-([1-9][0-9]*)$")
+_MAX_PROJECTED_OUTPUT_CHARS = 10_500
+_REFERENCE_PATTERN = re.compile(r"^process-([0-9a-f]{4})-([1-9][0-9]*)$")
 _TERMINAL_PHASES = frozenset({"exited", "signaled", "timed_out", "cancelled", "failed"})
-_PROCESS_STATE_VERSION = "2"
-PROCESS_STATE_ID = "a13n.dynamic-environment.processes"
-
-
-class ManagedProcessState(BaseModel):
-    """Portable parent-private projection of one Host-managed process."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
-
-    backend_id: str = Field(min_length=1, max_length=512)
-    stdout_offset: int = Field(default=0, ge=0)
-    stderr_offset: int = Field(default=0, ge=0)
-    status: ProcessStatus
-    stdin_open: bool
-    stdout_produced_bytes: int = Field(default=0, ge=0)
-    stderr_produced_bytes: int = Field(default=0, ge=0)
-    backend_lost: bool = False
-
-
-class ProcessManagerState(BaseModel):
-    """Versioned process-N mapping stored in the current Agent context."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    owner_thread_id: str = Field(min_length=1, max_length=256)
-    next_sequence: int = Field(default=1, ge=1, le=_MAX_REFERENCE_ENTRIES + 1)
-    processes: Mapping[str, ManagedProcessState] = Field(default_factory=dict)
-
-    @field_validator("processes", mode="after")
-    @classmethod
-    def _validate_processes(cls, value: Mapping[str, ManagedProcessState]) -> Mapping[str, ManagedProcessState]:
-        copied = dict(value)
-        if len(copied) > _MAX_REFERENCE_ENTRIES:
-            raise ValueError("process state exceeds the finite reference limit")
-        if any(_REFERENCE_PATTERN.fullmatch(process_id) is None for process_id in copied):
-            raise ValueError("process state contains an invalid compact reference")
-        return MappingProxyType(copied)
-
-    @field_serializer("processes")
-    def _serialize_processes(self, value: Mapping[str, ManagedProcessState]) -> dict[str, ManagedProcessState]:
-        return dict(value)
+_RUN_PROCESS_ACTIONS = frozenset(
+    {
+        EnvironmentAction.SHELL_EXEC,
+        EnvironmentAction.PROCESS_START,
+        EnvironmentAction.PROCESS_INSPECT,
+        EnvironmentAction.PROCESS_READ_OUTPUT,
+        EnvironmentAction.PROCESS_WRITE_STDIN,
+        EnvironmentAction.PROCESS_CLOSE_STDIN,
+        EnvironmentAction.PROCESS_SIGNAL,
+        EnvironmentAction.PROCESS_WAIT,
+        EnvironmentAction.PROCESS_KILL,
+        EnvironmentAction.PROCESS_RELEASE,
+        EnvironmentAction.OUTPUT_RELEASE,
+    }
+)
 
 
 @dataclass(slots=True)
 class _ProcessEntry:
     process_id: str
-    state: ManagedProcessState
-    drain_lock: asyncio.Lock = dataclass_field(default_factory=asyncio.Lock)
+    handle: BoundProcessHandle
+    latest: ProcessInfo
+    control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    watcher: asyncio.Task[None] | None = None
+    model_visible: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-class _ProcessRunManager:
-    """Manage one parent Run's compact process projection over a stable operator."""
+class _RunProcessController:
+    """Own process references and cleanup for one logical Harness Run."""
 
     def __init__(
         self,
+        environment: BoundEnvironment,
         *,
-        operator: ShellOperator,
         execution_guard: Callable[[], None] | None = None,
     ) -> None:
-        if not isinstance(operator, ShellOperator):
-            raise TypeError("operator must be a ShellOperator")
-        self._operator = operator
+        if not isinstance(environment, BoundEnvironment):
+            raise TypeError("environment must be a BoundEnvironment")
+        self._environment = environment
         self._execution_guard = execution_guard
+        self._incarnation = secrets.token_hex(2)
         self._entries: OrderedDict[str, _ProcessEntry] = OrderedDict()
         self._next_sequence = 1
-        self._state_store: AgentContextState | None = None
-        self._owner_thread_id: str | None = None
-        self._state_lock = asyncio.Lock()
-        self._start_lock = asyncio.Lock()
-        self._active_context: RunContext[AgentContext] | None = None
-        self._loaded = False
-        self._observers: dict[str, ProcessBackendEventHook] = {}
+        self._admission_lock = asyncio.Lock()
+        self._context: AgentContext | None = None
+        self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
 
     @asynccontextmanager
     async def active_run(self, ctx: RunContext[AgentContext]) -> AsyncGenerator[None]:
-        """Bind parent state and reconcile canonical Host snapshots for this run."""
-        await self._load(ctx.deps.state, owner_thread_id=ctx.deps.thread_id)
-        owned = self._active_context is None
-        if owned:
-            self._active_context = ctx
-            await self._attach_nonterminal()
-        try:
-            yield
-        finally:
-            if owned and self._active_context is ctx:
-                self._active_context = None
-
-    async def start(self, request: CommandRequest, *, alias: str | None) -> ProcessProjection:
-        self._guard_execution()
-        self._require_loaded()
-        async with self._start_lock:
-            if len(self._entries) >= _MAX_REFERENCE_ENTRIES or self._next_sequence > _MAX_REFERENCE_ENTRIES:
-                raise EnvironmentError(
-                    "Environment compact reference capacity is exhausted.",
-                    code="environment_reference_exhausted",
-                )
-            process_id = f"process-{self._next_sequence}"
-            observer = self._event_callback(process_id)
-            self._observers[process_id] = observer
-            snapshot: ProcessExecutionSnapshot | None = None
-            try:
-                snapshot = await self._operator.start(self._context(), request, alias, process_id, observer)
-                _validate_snapshot(snapshot, snapshot.backend_id)
-                entry = _ProcessEntry(process_id=process_id, state=_state_from_snapshot(snapshot))
-                self._entries[process_id] = entry
-                self._next_sequence += 1
-                try:
-                    await self._persist()
-                except BaseException:
-                    self._entries.pop(process_id, None)
-                    self._next_sequence -= 1
-                    raise
-            except BaseException:
-                self._observers.pop(process_id, None)
-                if snapshot is not None:
-                    await _kill_accepted_process(self._operator, self._context(), snapshot.backend_id)
-                raise
-        return self._project_process(entry)
+        """Attach the current native attempt only for best-effort readiness."""
+        if self._context is None:
+            self._context = ctx.deps
+        elif self._context is not ctx.deps:
+            raise RuntimeError("Run process controller cannot cross logical Runs")
+        yield
 
     def resource_id(self, process_id: str) -> str:
-        return self._entry(process_id).state.backend_id
+        """Resolve a model selector to a private provider process identity."""
+        return self._entry(process_id).handle.identity.process_id
+
+    async def start(
+        self,
+        request: CommandRequest,
+        *,
+        alias: str | None,
+        yield_time_seconds: float,
+        expected_mount_id: str | None = None,
+    ) -> ShellExecSuccess:
+        self._guard_execution()
+        published = False
+        entry: _ProcessEntry | None = None
+        async with self._admission_lock:
+            self._assert_open()
+            process_id = self._reserve_reference()
+            started = await self._environment.processes.start(
+                request,
+                alias=alias,
+                required_actions=_RUN_PROCESS_ACTIONS,
+                expected_mount_id=expected_mount_id,
+            )
+            entry = _ProcessEntry(
+                process_id=process_id,
+                handle=started.process.handle,
+                latest=started.process,
+            )
+            try:
+                entry.watcher = asyncio.create_task(
+                    self._watch(entry),
+                    name=f"{process_id}-completion",
+                )
+                self._entries[process_id] = entry
+                published = True
+            except BaseException:
+                await _await_cleanup_shielded(self._kill_and_release(entry))
+                raise
+
+        assert entry is not None
+        try:
+            if yield_time_seconds > 0:
+                try:
+                    baseline = entry.latest
+                    waited = await self._environment.processes.wait(
+                        entry.handle,
+                        condition="tree_cleaned",
+                        timeout_seconds=yield_time_seconds,
+                    )
+                    self._adopt_info(entry, waited, baseline=baseline)
+                except EnvironmentError as exc:
+                    if exc.code != "environment_timeout":
+                        raise
+            observation = await self._observe(
+                entry,
+                stdout_offset=0,
+                stderr_offset=0,
+                wait_seconds=0,
+            )
+            if _is_final(observation[0]):
+                result = _shell_exec_result(None, observation, bound_output=False)
+                await _await_cleanup_shielded(self._retire(entry))
+                return result
+            entry.model_visible.set()
+            return _shell_exec_result(process_id, observation)
+        except BaseException:
+            if not published:
+                await _await_cleanup_shielded(self._kill_and_release(entry))
+            raise
 
     async def wait(
         self,
         process_id: str,
         *,
+        stdout_offset: int,
+        stderr_offset: int,
         timeout_seconds: float,
-        max_inline_bytes: int = 64 * 1024,
-        max_output_bytes: int = _MAX_MODEL_OUTPUT_BYTES,
-    ) -> ProcessReadOutputResult:
+    ) -> ProcessObservationSuccess:
         self._guard_execution()
         entry = self._entry(process_id)
-        return await self._drain(
+        observation = await self._observe(
             entry,
+            stdout_offset=stdout_offset,
+            stderr_offset=stderr_offset,
             wait_seconds=timeout_seconds,
-            max_inline_bytes=max_inline_bytes,
-            max_output_bytes=max_output_bytes,
+        )
+        return _process_observation(
+            entry.process_id,
+            observation,
+            stdout_offset=stdout_offset,
+            stderr_offset=stderr_offset,
         )
 
-    async def status(self, *, cursor: int, limit: int) -> ProcessStatusListSuccess:
+    async def write_input(
+        self,
+        process_id: str,
+        data: str,
+        *,
+        close_stdin: bool,
+    ) -> ProcessInputSuccess:
         self._guard_execution()
-        self._require_loaded()
-        candidates = [entry for process_id, entry in self._entries.items() if self._sequence(process_id) > cursor]
-        selected = candidates[:limit]
-        next_cursor = self._sequence(selected[-1].process_id) if len(candidates) > len(selected) and selected else None
-        items: list[ProcessStatusItem] = []
-        for entry in selected:
-            if not entry.state.backend_lost and entry.state.status.phase not in _TERMINAL_PHASES:
-                snapshot = await self._operator.inspect(self._context(), entry.state.backend_id)
-                if snapshot is None:
-                    await self._mark_lost(entry)
-                else:
-                    await self._apply_snapshot(entry, snapshot)
-            items.append(self._status_item(entry))
+        entry = self._entry(process_id)
+        async with entry.control_lock:
+            self._require_live(entry)
+            encoded = data.encode("utf-8")
+            accepted_bytes = 0
+            if encoded:
+                result = await self._environment.processes.write_stdin(
+                    entry.handle,
+                    encoded,
+                    close_after_write=False,
+                )
+                accepted_bytes = result.accepted_bytes
+            if close_stdin:
+                await self._environment.processes.close_stdin(entry.handle)
+            baseline = entry.latest
+            inspected = await self._environment.processes.inspect(entry.handle)
+            self._adopt_info(entry, inspected, baseline=baseline)
         return {
             "ok": True,
-            "processes": items,
-            "showing": len(items),
-            "next_cursor": next_cursor,
-            "truncated": next_cursor is not None,
+            "process_id": process_id,
+            "accepted_bytes": accepted_bytes,
+            "stdin_open": entry.latest.stdin_open,
+            "status": _project_status(entry.latest.status),
         }
-
-    async def write_input(self, process_id: str, data: str, *, close_stdin: bool) -> tuple[int, bool]:
-        self._guard_execution()
-        entry = self._entry(process_id)
-        self._require_live(entry)
-        result = await self._operator.write_stdin(
-            self._context(),
-            entry.state.backend_id,
-            data.encode("utf-8"),
-            close_stdin,
-        )
-        if result is None:
-            await self._mark_lost(entry)
-            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
-        _validate_snapshot(result.snapshot, entry.state.backend_id)
-        await self._apply_snapshot(entry, result.snapshot)
-        return result.accepted_bytes, result.snapshot.stdin_open
 
     async def signal(
         self,
         process_id: str,
-        signal: Literal["interrupt", "terminate"],
-    ) -> tuple[bool, ProcessProjection]:
+        signal: Literal["interrupt", "terminate", "kill"],
+    ) -> ProcessSignalSuccess:
         self._guard_execution()
         entry = self._entry(process_id)
-        self._require_live(entry)
-        result = await self._operator.signal(self._context(), entry.state.backend_id, signal)
-        if result is None:
-            await self._mark_lost(entry)
-            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
-        _validate_snapshot(result.snapshot, entry.state.backend_id)
-        await self._apply_snapshot(entry, result.snapshot)
-        return result.accepted, self._project_process(entry)
-
-    async def kill(
-        self,
-        process_id: str,
-        *,
-        max_inline_bytes: int = 64 * 1024,
-        max_output_bytes: int = _MAX_MODEL_OUTPUT_BYTES,
-    ) -> ProcessReadOutputResult:
-        self._guard_execution()
-        entry = self._entry(process_id)
-        self._require_live(entry)
-        snapshot = await self._operator.kill(self._context(), entry.state.backend_id)
-        if snapshot is None:
-            await self._mark_lost(entry)
-            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
-        await self._apply_snapshot(entry, snapshot)
-        return await self._drain(
-            entry,
-            wait_seconds=0,
-            max_inline_bytes=max_inline_bytes,
-            max_output_bytes=max_output_bytes,
-        )
-
-    async def _load(self, store: AgentContextState, *, owner_thread_id: str) -> None:
-        if self._loaded:
-            if self._state_store is not store or self._owner_thread_id != owner_thread_id:
-                raise RuntimeError("Process run projection cannot cross Agent Contexts")
-            return
-        restored = await store.read(PROCESS_STATE_ID, ProcessManagerState, version=_PROCESS_STATE_VERSION)
-        if restored is None:
-            state = ProcessManagerState(owner_thread_id=owner_thread_id)
-        elif restored.owner_thread_id != owner_thread_id:
-            state = ProcessManagerState(
-                owner_thread_id=owner_thread_id,
-                next_sequence=restored.next_sequence,
-            )
-        else:
-            state = restored
-        self._entries = OrderedDict(
-            (process_id, _ProcessEntry(process_id=process_id, state=value))
-            for process_id, value in sorted(state.processes.items(), key=lambda item: self._sequence(item[0]))
-        )
-        highest = max((self._sequence(process_id) for process_id in self._entries), default=0)
-        self._next_sequence = max(state.next_sequence, highest + 1)
-        self._state_store = store
-        self._owner_thread_id = owner_thread_id
-        self._loaded = True
-        if restored is not None and restored.owner_thread_id != owner_thread_id:
-            await self._persist()
-
-    async def _attach_nonterminal(self) -> None:
-        for entry in tuple(self._entries.values()):
-            if entry.state.backend_lost or entry.state.status.phase in _TERMINAL_PHASES:
-                continue
-            try:
-                observer = self._event_callback(entry.process_id)
-                self._observers[entry.process_id] = observer
-                snapshot = await self._operator.rebind(
-                    self._context(),
-                    entry.state.backend_id,
-                    observer,
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                await self._notify(entry, "gap")
-                continue
-            if snapshot is None:
-                await self._mark_lost(entry)
+        async with entry.control_lock:
+            self._require_live(entry)
+            baseline = entry.latest
+            if signal == "kill":
+                result = await self._environment.processes.kill(entry.handle)
+                self._adopt_info(entry, result.process, baseline=baseline)
+                accepted = True
             else:
-                await self._apply_snapshot(entry, snapshot)
+                result = await self._environment.processes.signal(entry.handle, signal)
+                self._adopt_info(entry, result.process, baseline=baseline)
+                accepted = result.accepted
+        return {
+            "ok": True,
+            "process_id": process_id,
+            "accepted": accepted,
+            "stdin_open": entry.latest.stdin_open,
+            "status": _project_status(entry.latest.status),
+        }
 
-    async def _persist(self) -> None:
-        store = self._state_store
-        if store is None:
-            raise RuntimeError("ProcessManager is not bound to AgentContext State")
-        async with self._state_lock:
-            owner_thread_id = self._owner_thread_id
-            if owner_thread_id is None:
-                raise RuntimeError("Process run projection has no owner Thread")
-            await store.write(
-                PROCESS_STATE_ID,
-                ProcessManagerState(
-                    owner_thread_id=owner_thread_id,
-                    next_sequence=self._next_sequence,
-                    processes={process_id: entry.state for process_id, entry in self._entries.items()},
-                ),
-                version=_PROCESS_STATE_VERSION,
+    async def _observe(
+        self,
+        entry: _ProcessEntry,
+        *,
+        stdout_offset: int,
+        stderr_offset: int,
+        wait_seconds: float,
+    ) -> tuple[ProcessInfo, ProcessReadOutputResult]:
+        if wait_seconds > 0:
+            try:
+                baseline = entry.latest
+                waited = await self._environment.processes.wait(
+                    entry.handle,
+                    condition="tree_cleaned",
+                    timeout_seconds=wait_seconds,
+                )
+                self._adopt_info(entry, waited, baseline=baseline)
+            except EnvironmentError as exc:
+                if exc.code != "environment_timeout":
+                    raise
+        baseline = entry.latest
+        inspected = await self._environment.processes.inspect(entry.handle)
+        self._adopt_info(entry, inspected, baseline=baseline)
+        output = await self._environment.processes.read_output(
+            entry.handle,
+            stdout_start_offset=stdout_offset,
+            stderr_start_offset=stderr_offset,
+            wait_seconds=0,
+            policy=EnvironmentOutputPolicy(
+                max_inline_bytes=(_MAX_MODEL_OUTPUT_BYTES if _is_final(entry.latest) else _DEFAULT_INLINE_BYTES),
+                max_output_bytes=_MAX_MODEL_OUTPUT_BYTES,
+                overflow="retain",
+            ),
+        )
+        self._validate_output(
+            entry,
+            output,
+            minimum_info=inspected,
+            stdout_offset=stdout_offset,
+            stderr_offset=stderr_offset,
+        )
+        observed = output.process.model_copy(
+            update={
+                "output": ProcessOutputSnapshot(
+                    stdout=output.stdout.capture,
+                    stderr=output.stderr.capture,
+                )
+            }
+        )
+        self._adopt_info(entry, observed, baseline=inspected)
+        return observed, output
+
+    async def _watch(self, entry: _ProcessEntry) -> None:
+        try:
+            while True:
+                try:
+                    baseline = entry.latest
+                    waited = await self._environment.processes.wait(
+                        entry.handle,
+                        condition="tree_cleaned",
+                        timeout_seconds=180,
+                    )
+                    self._adopt_info(entry, waited, baseline=baseline)
+                    if _is_final(entry.latest):
+                        break
+                except EnvironmentError as exc:
+                    if exc.code != "environment_timeout":
+                        return
+            await entry.model_visible.wait()
+            if self._entries.get(entry.process_id) is not entry or self._closed:
+                return
+            context = self._context
+            if context is not None:
+                await context._steering.notify(
+                    (
+                        f"Background process {entry.process_id} has finished. "
+                        "Call shell_wait with your last returned stdout_offset and "
+                        "stderr_offset to inspect its final output."
+                    ),
+                    source="background_process",
+                    references=(entry.process_id,),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Readiness is advisory. Explicit shell_wait polling remains authoritative.
+            return
+
+    async def _retire(self, entry: _ProcessEntry) -> None:
+        watcher = entry.watcher
+        if watcher is not None and watcher is not asyncio.current_task() and not watcher.done():
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+        await self._release_owned_resources(entry)
+        if self._entries.get(entry.process_id) is entry:
+            self._entries.pop(entry.process_id, None)
+
+    async def close(self) -> None:
+        async with self._admission_lock:
+            if self._close_task is None:
+                self._closed = True
+                self._close_task = asyncio.create_task(
+                    self._close_owned(),
+                    name=f"run-processes-{self._incarnation}-close",
+                )
+            close_task = self._close_task
+        await _await_cleanup_shielded(close_task)
+
+    async def _close_owned(self) -> None:
+        entries = tuple(self._entries.values())
+        failures: list[BaseException] = []
+        for entry in entries:
+            try:
+                await self._kill_and_release(entry)
+            except BaseException as exc:
+                failures.append(exc)
+            finally:
+                if self._entries.get(entry.process_id) is entry:
+                    self._entries.pop(entry.process_id, None)
+        if failures:
+            raise BaseExceptionGroup("Run-owned process cleanup failed", failures)
+
+    async def _kill_and_release(self, entry: _ProcessEntry) -> None:
+        watcher = entry.watcher
+        if watcher is not None and watcher is not asyncio.current_task() and not watcher.done():
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+        failures: list[BaseException] = []
+        try:
+            if not _is_final(entry.latest):
+                baseline = entry.latest
+                result = await self._environment.processes.kill(entry.handle)
+                self._adopt_info(entry, result.process, baseline=baseline)
+        except EnvironmentError as exc:
+            if exc.code != "environment_not_found":
+                failures.append(exc)
+        try:
+            await self._release_owned_resources(entry)
+        except BaseException as exc:
+            failures.append(exc)
+        if failures:
+            raise BaseExceptionGroup("Run-owned process resource cleanup failed", failures)
+
+    async def _release_owned_resources(self, entry: _ProcessEntry) -> None:
+        failures: list[BaseException] = []
+        try:
+            await self._environment.processes.release(entry.handle)
+        except EnvironmentError as exc:
+            if exc.code != "environment_not_found":
+                failures.append(exc)
+        references = []
+        for capture in (entry.latest.output.stdout, entry.latest.output.stderr):
+            reference = capture.reference
+            if reference is not None and reference not in references:
+                references.append(reference)
+        for reference in references:
+            try:
+                await self._environment.outputs.release(reference=reference)
+            except EnvironmentError as exc:
+                if exc.code != "environment_not_found":
+                    failures.append(exc)
+        if failures:
+            raise BaseExceptionGroup("Run-owned process release failed", failures)
+
+    def _adopt_info(
+        self,
+        entry: _ProcessEntry,
+        info: ProcessInfo,
+        *,
+        baseline: ProcessInfo | None = None,
+    ) -> None:
+        if info.handle != entry.handle:
+            raise EnvironmentError(
+                "The process provider returned a mismatched handle.",
+                code="environment_provider_failure",
             )
+        expected = (baseline or entry.latest).output
+        current = info.output
+        if (
+            current.stdout.produced_bytes < expected.stdout.produced_bytes
+            or current.stderr.produced_bytes < expected.stderr.produced_bytes
+        ):
+            raise EnvironmentError(
+                "The process provider returned non-monotonic output metadata.",
+                code="environment_provider_failure",
+            )
+        _validate_capture(current.stdout)
+        _validate_capture(current.stderr)
+        latest_info = entry.latest
+        if latest_info.status.phase in _TERMINAL_PHASES and info.status.phase not in _TERMINAL_PHASES:
+            return
+        latest = latest_info.output
+        if (
+            current.stdout.produced_bytes >= latest.stdout.produced_bytes
+            and current.stderr.produced_bytes >= latest.stderr.produced_bytes
+        ):
+            entry.latest = info
+
+    def _validate_output(
+        self,
+        entry: _ProcessEntry,
+        output: ProcessReadOutputResult,
+        *,
+        minimum_info: ProcessInfo,
+        stdout_offset: int,
+        stderr_offset: int,
+    ) -> None:
+        if output.process.handle != entry.handle:
+            raise EnvironmentError(
+                "The process provider returned output for another handle.",
+                code="environment_provider_failure",
+            )
+        _validate_stream(output.stdout, requested_offset=stdout_offset)
+        _validate_stream(output.stderr, requested_offset=stderr_offset)
+        if (
+            output.stdout.capture.produced_bytes < minimum_info.output.stdout.produced_bytes
+            or output.stderr.capture.produced_bytes < minimum_info.output.stderr.produced_bytes
+        ):
+            raise EnvironmentError(
+                "The process provider returned non-monotonic output page metadata.",
+                code="environment_provider_failure",
+            )
+        if sum(len(chunk.data) for chunk in (*output.stdout.chunks, *output.stderr.chunks)) > (
+            2 * _MAX_MODEL_OUTPUT_BYTES
+        ):
+            raise EnvironmentError(
+                "The process provider exceeded Harness output bounds.",
+                code="environment_provider_failure",
+            )
+
+    def _reserve_reference(self) -> str:
+        if len(self._entries) >= _MAX_REFERENCE_ENTRIES:
+            raise EnvironmentError(
+                "The Run process reference limit has been reached.",
+                code="environment_limit_exceeded",
+            )
+        process_id = f"process-{self._incarnation}-{self._next_sequence}"
+        self._next_sequence += 1
+        return process_id
 
     def _entry(self, process_id: str) -> _ProcessEntry:
-        self._require_loaded()
-        if _REFERENCE_PATTERN.fullmatch(process_id) is None:
-            raise EnvironmentError("Expected a process reference.", code="environment_reference_invalid")
+        self._assert_open()
+        match = _REFERENCE_PATTERN.fullmatch(process_id)
+        if match is None or match.group(1) != self._incarnation:
+            raise EnvironmentError(
+                "The process reference is unknown in this Run.",
+                code="environment_not_found",
+            )
         entry = self._entries.get(process_id)
         if entry is None:
-            raise EnvironmentError("Process reference is unknown.", code="environment_reference_invalid")
+            raise EnvironmentError(
+                "The process reference is unknown in this Run.",
+                code="environment_not_found",
+            )
         return entry
 
     @staticmethod
-    def _sequence(process_id: str) -> int:
-        match = _REFERENCE_PATTERN.fullmatch(process_id)
-        if match is None:
-            raise ValueError("invalid process reference")
-        return int(match.group(1))
-
-    def _event_callback(self, process_id: str) -> Callable[[ProcessExecutionSnapshot], Awaitable[None]]:
-        async def callback(snapshot: ProcessExecutionSnapshot) -> None:
-            entry = self._entries.get(process_id)
-            if entry is None:
-                return
-            _validate_snapshot(snapshot, entry.state.backend_id)
-            if self._active_context is not None:
-                await self._apply_snapshot(entry, snapshot)
-
-        return callback
-
-    async def _apply_snapshot(self, entry: _ProcessEntry, snapshot: ProcessExecutionSnapshot) -> None:
-        _validate_snapshot(snapshot, entry.state.backend_id)
-        previous = entry.state.status.phase
-        if previous in _TERMINAL_PHASES:
-            return
-        entry.state = _merge_snapshot(entry.state, snapshot)
-        await self._persist()
-        if entry.state.status.phase in _TERMINAL_PHASES:
-            await self._notify(entry, "completion")
-
-    async def _mark_lost(self, entry: _ProcessEntry) -> None:
-        if entry.state.backend_lost or entry.state.status.phase in _TERMINAL_PHASES:
-            return
-        entry.state = entry.state.model_copy(
-            update={
-                "status": ProcessStatus(
-                    phase="failed",
-                    termination_reason="backend_lost",
-                    started_at=entry.state.status.started_at,
-                    ended_at=datetime.now(UTC),
-                    cleanup="failed",
-                ),
-                "stdin_open": False,
-                "backend_lost": True,
-            }
-        )
-        await self._persist()
-        await self._notify(entry, "gap")
-
-    async def _drain(
-        self,
-        entry: _ProcessEntry,
-        *,
-        wait_seconds: float,
-        max_inline_bytes: int,
-        max_output_bytes: int,
-    ) -> ProcessReadOutputResult:
-        async with entry.drain_lock:
-            return await self._drain_unlocked(
-                entry,
-                wait_seconds=wait_seconds,
-                max_inline_bytes=max_inline_bytes,
-                max_output_bytes=max_output_bytes,
+    def _require_live(entry: _ProcessEntry) -> None:
+        if entry.latest.status.phase in _TERMINAL_PHASES:
+            raise EnvironmentError(
+                "The process is no longer running.",
+                code="environment_conflict",
             )
 
-    async def _drain_unlocked(
-        self,
-        entry: _ProcessEntry,
-        *,
-        wait_seconds: float,
-        max_inline_bytes: int,
-        max_output_bytes: int,
-    ) -> ProcessReadOutputResult:
-        self._require_live(entry, allow_terminal=True)
-        aggregate_budget = min(max_inline_bytes, max_output_bytes)
-        page_budget = max(1, aggregate_budget)
-        stdout_offset = entry.state.stdout_offset
-        stderr_offset = entry.state.stderr_offset
-        stdout_produced_bytes = entry.state.stdout_produced_bytes
-        stderr_produced_bytes = entry.state.stderr_produced_bytes
-        page = await self._operator.read_output(
-            self._context(),
-            entry.state.backend_id,
-            stdout_offset,
-            stderr_offset,
-            wait_seconds,
-            page_budget,
-        )
-        if page is None:
-            await self._mark_lost(entry)
-            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
-        _validate_output_page(
-            page,
-            entry.state.backend_id,
-            stdout_offset=stdout_offset,
-            stderr_offset=stderr_offset,
-            max_bytes=page_budget,
-            minimum_stdout_produced_bytes=stdout_produced_bytes,
-            minimum_stderr_produced_bytes=stderr_produced_bytes,
-        )
-        stdout_available = page.stdout.data
-        stderr_available = page.stderr.data
-        merged_snapshot = _snapshot_from_state(_merge_snapshot(entry.state, page.snapshot))
-        producer_complete = merged_snapshot.status.phase in _TERMINAL_PHASES
-
-        def project(stdout_data: bytes, stderr_data: bytes) -> dict[str, JsonValue]:
-            projected: dict[str, JsonValue] = {
-                "ok": True,
-                **cast(dict[str, JsonValue], self._project_process(entry, snapshot=merged_snapshot)),
-                "stdout": cast(
-                    JsonValue,
-                    _project_chunk(
-                        page.stdout,
-                        merged_snapshot.stdout_produced_bytes,
-                        stdout_data,
-                        producer_complete=producer_complete,
-                    ),
-                ),
-                "stderr": cast(
-                    JsonValue,
-                    _project_chunk(
-                        page.stderr,
-                        merged_snapshot.stderr_produced_bytes,
-                        stderr_data,
-                        producer_complete=producer_complete,
-                    ),
-                ),
-            }
-            if len(stdout_data) < len(stdout_available) or len(stderr_data) < len(stderr_available):
-                projected["disclosure"] = cast(
-                    JsonValue,
-                    continuation_disclosure(
-                        projected,
-                        hint=(
-                            f"Call shell_wait with process_id={entry.process_id!r} and "
-                            "timeout_seconds=0 to read the next output page."
-                        ),
-                    ),
-                )
-            return projected
-
-        stdout_data, stderr_data, projected = _fit_stream_projection(
-            stdout_available,
-            stderr_available,
-            raw_budget=aggregate_budget,
-            json_budget=DEFAULT_TOOL_OUTPUT_CHARS - _PROCESS_RESULT_ENVELOPE_CHARS,
-            project=project,
-        )
-        _require_stream_progress(stdout_available, stderr_available, stdout_data, stderr_data)
-        previous = entry.state.status.phase
-        entry.state = _state_from_snapshot(merged_snapshot).model_copy(
-            update={
-                "stdout_offset": page.stdout.start_offset + len(stdout_data),
-                "stderr_offset": page.stderr.start_offset + len(stderr_data),
-            }
-        )
-        await self._persist()
-        if previous not in _TERMINAL_PHASES and entry.state.status.phase in _TERMINAL_PHASES:
-            await self._notify(entry, "completion")
-        return cast(ProcessReadOutputResult, acknowledge_tool_output(projected))
-
-    def _project_process(
-        self,
-        entry: _ProcessEntry,
-        *,
-        snapshot: ProcessExecutionSnapshot | None = None,
-    ) -> ProcessProjection:
-        current = snapshot or _snapshot_from_state(entry.state)
-        return {
-            "process_id": entry.process_id,
-            "status": _project_status(current.status),
-            "stdin_open": current.stdin_open,
-            "stdout": _empty_capture(current.stdout_produced_bytes, current.status.phase in _TERMINAL_PHASES),
-            "stderr": _empty_capture(current.stderr_produced_bytes, current.status.phase in _TERMINAL_PHASES),
-        }
-
-    def _status_item(self, entry: _ProcessEntry) -> ProcessStatusItem:
-        return {
-            "process_id": entry.process_id,
-            "ok": True,
-            "status": _project_status(entry.state.status),
-            "stdin_open": entry.state.stdin_open,
-            "produced_bytes": {
-                "stdout": entry.state.stdout_produced_bytes,
-                "stderr": entry.state.stderr_produced_bytes,
-            },
-        }
-
-    async def _notify(self, entry: _ProcessEntry, kind: Literal["completion", "gap"]) -> None:
-        active = self._active_context
-        if active is None:
-            return
-        if kind == "completion":
-            message = (
-                f"Background process {entry.process_id} has finished. "
-                f"Call shell_wait with process_id={entry.process_id!r} and timeout_seconds=0 "
-                "to collect its final output."
+    def _assert_open(self) -> None:
+        if self._closed:
+            raise EnvironmentError(
+                "The Run process controller is closed.",
+                code="environment_unavailable",
             )
-        else:
-            message = (
-                f"Background process {entry.process_id} can no longer be observed by this backend. "
-                "Call shell_status to inspect its retained status."
-            )
-        await active.deps._steering.notify(
-            message,
-            source="background_process",
-            references=(entry.process_id,),
-        )
-
-    def _context(self) -> AgentContext:
-        active = self._active_context
-        if active is None:
-            raise RuntimeError("Process operation requires an active Harness Run")
-        return active.deps
-
-    def _require_loaded(self) -> None:
-        if not self._loaded:
-            raise RuntimeError("Process run projection must be entered through ShellToolset.wrap_run")
-
-    def _require_live(self, entry: _ProcessEntry, *, allow_terminal: bool = False) -> None:
-        if entry.state.backend_lost:
-            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
-        if not allow_terminal and entry.state.status.phase in _TERMINAL_PHASES:
-            raise EnvironmentError("The Host process is not running.", code="environment_reference_stale")
 
     def _guard_execution(self) -> None:
         if self._execution_guard is not None:
             self._execution_guard()
-
-
-def _state_from_snapshot(snapshot: ProcessExecutionSnapshot) -> ManagedProcessState:
-    return ManagedProcessState(
-        backend_id=snapshot.backend_id,
-        status=snapshot.status,
-        stdin_open=snapshot.stdin_open,
-        stdout_produced_bytes=snapshot.stdout_produced_bytes,
-        stderr_produced_bytes=snapshot.stderr_produced_bytes,
-    )
-
-
-def _snapshot_from_state(state: ManagedProcessState) -> ProcessExecutionSnapshot:
-    return ProcessExecutionSnapshot(
-        backend_id=state.backend_id,
-        status=state.status,
-        stdin_open=state.stdin_open,
-        stdout_produced_bytes=state.stdout_produced_bytes,
-        stderr_produced_bytes=state.stderr_produced_bytes,
-    )
-
-
-def _merge_snapshot(state: ManagedProcessState, snapshot: ProcessExecutionSnapshot) -> ManagedProcessState:
-    status = state.status if state.status.phase in _TERMINAL_PHASES else snapshot.status
-    stdin_open = state.stdin_open if state.status.phase in _TERMINAL_PHASES else snapshot.stdin_open
-    return state.model_copy(
-        update={
-            "status": status,
-            "stdin_open": stdin_open,
-            "stdout_produced_bytes": max(state.stdout_produced_bytes, snapshot.stdout_produced_bytes),
-            "stderr_produced_bytes": max(state.stderr_produced_bytes, snapshot.stderr_produced_bytes),
-            "backend_lost": False,
-        }
-    )
-
-
-def _validate_snapshot(snapshot: ProcessExecutionSnapshot, backend_id: str) -> None:
-    if not isinstance(snapshot, ProcessExecutionSnapshot):
-        raise TypeError("process backend returned an invalid snapshot")
-    if snapshot.backend_id != backend_id:
-        raise EnvironmentError("Host backend retargeted a managed process.", code="environment_provider_failure")
-
-
-def _validate_output_page(
-    page: ProcessOutputPage,
-    backend_id: str,
-    *,
-    stdout_offset: int,
-    stderr_offset: int,
-    max_bytes: int,
-    minimum_stdout_produced_bytes: int,
-    minimum_stderr_produced_bytes: int,
-) -> None:
-    if not isinstance(page, ProcessOutputPage):
-        raise TypeError("process backend returned an invalid output page")
-    _validate_snapshot(page.snapshot, backend_id)
-    if (
-        page.snapshot.stdout_produced_bytes < minimum_stdout_produced_bytes
-        or page.snapshot.stderr_produced_bytes < minimum_stderr_produced_bytes
-    ):
-        raise EnvironmentError("Host process output counters moved backwards.", code="environment_provider_failure")
-    if len(page.stdout.data) + len(page.stderr.data) > max_bytes:
-        raise EnvironmentError("Host process exceeded the output page budget.", code="environment_provider_failure")
-    _validate_output_chunk(
-        page.stdout,
-        requested_offset=stdout_offset,
-        produced_bytes=page.snapshot.stdout_produced_bytes,
-    )
-    _validate_output_chunk(
-        page.stderr,
-        requested_offset=stderr_offset,
-        produced_bytes=page.snapshot.stderr_produced_bytes,
-    )
-
-
-def _validate_output_chunk(
-    chunk: ProcessOutputChunk,
-    *,
-    requested_offset: int,
-    produced_bytes: int,
-) -> None:
-    if requested_offset > produced_bytes or chunk.available_end != produced_bytes:
-        raise EnvironmentError(
-            "Host process returned inconsistent output offsets.", code="environment_provider_failure"
-        )
-    expected_start = max(requested_offset, chunk.available_start)
-    if chunk.start_offset != expected_start:
-        raise EnvironmentError(
-            "Host process returned a noncontiguous output page.", code="environment_provider_failure"
-        )
-
-
-async def _kill_accepted_process(
-    operator: ShellOperator,
-    context: AgentContext,
-    backend_id: str,
-) -> None:
-    task = asyncio.create_task(operator.kill(context, backend_id))
-    cancelled = False
-    while True:
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            if task.cancelled():
-                break
-            cancelled = True
-            continue
-        except Exception:
-            break
-        break
-    if cancelled:
-        raise asyncio.CancelledError
 
 
 def _project_status(status: ProcessStatus) -> ProcessStatusProjection:
@@ -689,169 +541,183 @@ def _project_status(status: ProcessStatus) -> ProcessStatusProjection:
     }
 
 
-def _empty_capture(produced_bytes: int, producer_complete: bool) -> OutputCaptureProjection:
-    return {
-        "kind": "empty" if produced_bytes == 0 else "retained",
-        "producer_complete": producer_complete,
-        "content_complete": produced_bytes == 0,
-        "produced_bytes": produced_bytes,
-        "captured_bytes": 0,
-        "dropped_bytes": 0,
-        "text": "",
-        "available_start": 0,
-        "available_end": produced_bytes,
-    }
-
-
-def _project_chunk(
-    chunk: ProcessOutputChunk,
-    produced_bytes: int,
-    data: bytes,
-    *,
-    producer_complete: bool = False,
-) -> OutputCaptureProjection:
-    return {
-        "kind": "empty" if produced_bytes == 0 else "retained",
-        "producer_complete": producer_complete or chunk.producer_complete,
-        "content_complete": chunk.content_complete and len(data) == chunk.available_end - chunk.start_offset,
-        "produced_bytes": produced_bytes,
-        "captured_bytes": len(data),
-        "dropped_bytes": chunk.available_start,
-        "text": data.decode("utf-8", errors="replace"),
-        "available_start": chunk.available_start,
-        "available_end": chunk.available_end,
-    }
-
-
-def _project_capture(capture: EnvironmentOutputCapture, data: bytes = b"") -> OutputCaptureProjection:
-    return {
-        "kind": capture.kind,
-        "producer_complete": capture.producer_complete,
-        "content_complete": capture.content_complete and len(data) == capture.captured_bytes,
-        "produced_bytes": capture.produced_bytes,
-        "captured_bytes": len(data),
-        "dropped_bytes": capture.dropped_bytes,
-        "text": data.decode("utf-8", errors="replace"),
-        "available_start": capture.available_start,
-        "available_end": capture.available_end,
-    }
-
-
-def _fit_stream_prefixes(stdout: bytes, stderr: bytes, budget: int) -> tuple[bytes, bytes]:
-    """Allocate one aggregate contiguous-prefix budget across two output streams."""
-    if budget <= 0:
-        return b"", b""
-    stdout_limit = (budget + 1) // 2
-    stderr_limit = budget // 2
-    selected_stdout = stdout[:stdout_limit]
-    selected_stderr = stderr[:stderr_limit]
-    remaining = budget - len(selected_stdout) - len(selected_stderr)
-    if remaining > 0:
-        extra_stdout = stdout[len(selected_stdout) : len(selected_stdout) + remaining]
-        selected_stdout += extra_stdout
-        remaining -= len(extra_stdout)
-    if remaining > 0:
-        selected_stderr += stderr[len(selected_stderr) : len(selected_stderr) + remaining]
-    return _utf8_safe_prefix(selected_stdout, stdout), _utf8_safe_prefix(selected_stderr, stderr)
-
-
-def _utf8_safe_prefix(value: bytes, available: bytes) -> bytes:
-    if not value or len(value) >= len(available):
-        return value
-    end = len(value)
-    start = end - 1
-    while start >= 0 and end - start <= 4 and value[start] & 0xC0 == 0x80:
-        start -= 1
-    if start < 0:
-        return b""
-    lead = value[start]
-    expected = 1
-    if 0xC2 <= lead <= 0xDF:
-        expected = 2
-    elif 0xE0 <= lead <= 0xEF:
-        expected = 3
-    elif 0xF0 <= lead <= 0xF4:
-        expected = 4
-    if expected > 1 and end - start < expected:
-        sequence = available[start : start + expected]
-        try:
-            sequence.decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
-            return value
-        return value[:start]
-    return value
-
-
-def _fit_stream_projection[ProjectionT](
-    stdout: bytes,
-    stderr: bytes,
-    *,
-    raw_budget: int,
-    json_budget: int,
-    project: Callable[[bytes, bytes], ProjectionT],
-) -> tuple[bytes, bytes, ProjectionT]:
-    selected_stdout, selected_stderr = _fit_stream_prefixes(stdout, stderr, 0)
-    selected_projection = project(selected_stdout, selected_stderr)
-    high = min(max(raw_budget, 0), len(stdout) + len(stderr))
-    low = 1
-    while low <= high:
-        candidate_budget = (low + high) // 2
-        candidate_stdout, candidate_stderr = _fit_stream_prefixes(stdout, stderr, candidate_budget)
-        candidate_projection = project(candidate_stdout, candidate_stderr)
-        safe_projection = redact_json(cast(JsonValue, candidate_projection))
-        assert isinstance(safe_projection, dict)
-        if tool_output_size(safe_projection) <= json_budget:
-            selected_stdout = candidate_stdout
-            selected_stderr = candidate_stderr
-            selected_projection = candidate_projection
-            low = candidate_budget + 1
-        else:
-            high = candidate_budget - 1
-    return selected_stdout, selected_stderr, selected_projection
-
-
-def _capture_initial_bytes(capture: EnvironmentOutputCapture) -> bytes:
-    if capture.inline is not None:
-        return capture.inline
-    if not capture.preview:
-        return b""
-    segments = sorted(capture.preview, key=lambda segment: segment.start_offset)
-    expected = 0
-    chunks: list[bytes] = []
-    for segment in segments:
-        if segment.start_offset != expected:
-            break
-        chunks.append(segment.data)
-        expected += len(segment.data)
-    return b"".join(chunks)
-
-
-def _materialize_segments(segments: Sequence[Any], start_offset: int) -> tuple[bytes, int]:
-    expected = start_offset
-    chunks: list[bytes] = []
-    for segment in sorted(segments, key=lambda item: item.start_offset):
-        if segment.start_offset != expected:
-            raise EnvironmentError("Process output contains a gap.", code="environment_output_gap")
-        chunks.append(segment.data)
-        expected += len(segment.data)
-    return b"".join(chunks), expected
-
-
-def _require_stream_progress(
-    stdout_available: bytes,
-    stderr_available: bytes,
-    stdout_selected: bytes,
-    stderr_selected: bytes,
-) -> None:
-    if (stdout_available or stderr_available) and not (stdout_selected or stderr_selected):
+def _validate_capture(capture: EnvironmentOutputCapture) -> None:
+    if not (0 <= capture.available_start <= capture.available_end <= capture.produced_bytes):
         raise EnvironmentError(
-            "The output page byte limit cannot contain the next complete UTF-8 character.",
-            code="environment_too_large",
+            "The process provider returned an invalid retained-output range.",
+            code="environment_provider_failure",
+        )
+    if capture.captured_bytes > capture.produced_bytes:
+        raise EnvironmentError(
+            "The process provider returned invalid captured-output metadata.",
+            code="environment_provider_failure",
         )
 
 
-__all__ = [
-    "PROCESS_STATE_ID",
-    "ManagedProcessState",
-    "ProcessManagerState",
-]
+def _validate_stream(stream: ProcessStreamRead, *, requested_offset: int) -> None:
+    capture = stream.capture
+    _validate_capture(capture)
+    if requested_offset > capture.available_end:
+        raise EnvironmentError(
+            "The requested output offset is beyond the retained range.",
+            code="environment_cursor_invalid",
+        )
+    expected = max(requested_offset, capture.available_start)
+    for chunk in stream.chunks:
+        if chunk.start_offset != expected:
+            raise EnvironmentError(
+                "The process provider returned a non-contiguous output page.",
+                code="environment_provider_failure",
+            )
+        expected += len(chunk.data)
+        if expected > capture.available_end:
+            raise EnvironmentError(
+                "The process provider returned output outside its retained range.",
+                code="environment_provider_failure",
+            )
+
+
+def _project_stream(
+    stream: ProcessStreamRead,
+    *,
+    requested_offset: int,
+    data: bytes,
+    full_page_bytes: int,
+) -> OutputPageProjection:
+    capture = stream.capture
+    start_offset = stream.chunks[0].start_offset if stream.chunks else max(requested_offset, capture.available_start)
+    return {
+        "requested_offset": requested_offset,
+        "start_offset": start_offset,
+        "next_offset": start_offset + len(data),
+        "available_start": capture.available_start,
+        "available_end": capture.available_end,
+        "produced_bytes": capture.produced_bytes,
+        "producer_complete": capture.producer_complete,
+        "content_complete": capture.content_complete and len(data) == full_page_bytes,
+        "omitted_before_bytes": max(0, start_offset - requested_offset),
+        "text": data.decode("utf-8", errors="replace"),
+    }
+
+
+def _process_observation(
+    process_id: str,
+    observation: tuple[ProcessInfo, ProcessReadOutputResult],
+    *,
+    stdout_offset: int,
+    stderr_offset: int,
+    bound_output: bool = True,
+) -> ProcessObservationSuccess:
+    info, output = observation
+    stdout_full = b"".join(chunk.data for chunk in output.stdout.chunks)
+    stderr_full = b"".join(chunk.data for chunk in output.stderr.chunks)
+    budget = len(stdout_full) + len(stderr_full)
+    while True:
+        stdout_data, stderr_data = _fit_stream_prefixes(stdout_full, stderr_full, budget)
+        result: ProcessObservationSuccess = {
+            "ok": True,
+            "process_id": process_id,
+            "status": _project_status(info.status),
+            "stdin_open": info.stdin_open,
+            "stdout": _project_stream(
+                output.stdout,
+                requested_offset=stdout_offset,
+                data=stdout_data,
+                full_page_bytes=len(stdout_full),
+            ),
+            "stderr": _project_stream(
+                output.stderr,
+                requested_offset=stderr_offset,
+                data=stderr_data,
+                full_page_bytes=len(stderr_full),
+            ),
+        }
+        if not bound_output or tool_output_size(cast(dict[str, JsonValue], result)) <= _MAX_PROJECTED_OUTPUT_CHARS:
+            return result
+        if budget == 0:
+            raise EnvironmentError(
+                "The process result metadata exceeds Harness output bounds.",
+                code="environment_provider_failure",
+            )
+        budget = max(0, int(budget * 0.75) - 1)
+
+
+def _fit_stream_prefixes(stdout: bytes, stderr: bytes, max_bytes: int) -> tuple[bytes, bytes]:
+    """Fit fair UTF-8-safe stream prefixes inside one aggregate byte budget."""
+    if max_bytes < 0:
+        raise ValueError("max_bytes must be non-negative")
+    stdout_limit = min(len(stdout), (max_bytes + 1) // 2)
+    stderr_limit = min(len(stderr), max_bytes // 2)
+    remaining = max_bytes - stdout_limit - stderr_limit
+    if remaining:
+        added = min(len(stdout) - stdout_limit, remaining)
+        stdout_limit += added
+        remaining -= added
+    if remaining:
+        stderr_limit += min(len(stderr) - stderr_limit, remaining)
+    return _utf8_safe_prefix(stdout, stdout_limit), _utf8_safe_prefix(stderr, stderr_limit)
+
+
+def _utf8_safe_prefix(data: bytes, limit: int) -> bytes:
+    prefix = data[:limit]
+    if limit >= len(data):
+        return prefix
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    decoder.decode(prefix, final=False)
+    buffered, _ = decoder.getstate()
+    return prefix[: len(prefix) - len(buffered)] if buffered else prefix
+
+
+def _shell_exec_result(
+    process_id: str | None,
+    observation: tuple[ProcessInfo, ProcessReadOutputResult],
+    *,
+    bound_output: bool = True,
+) -> ShellExecSuccess:
+    projected = _process_observation(
+        process_id or "",
+        observation,
+        stdout_offset=0,
+        stderr_offset=0,
+        bound_output=bound_output,
+    )
+    result: ShellExecSuccess = {
+        "ok": True,
+        "status": projected["status"],
+        "stdin_open": projected["stdin_open"],
+        "stdout": projected["stdout"],
+        "stderr": projected["stderr"],
+    }
+    if process_id is not None:
+        result["process_id"] = process_id
+    return result
+
+
+def _is_final(info: ProcessInfo) -> bool:
+    return (
+        info.status.phase in _TERMINAL_PHASES
+        and info.status.cleanup != "pending"
+        and info.output.stdout.producer_complete
+        and info.output.stderr.producer_complete
+    )
+
+
+async def _await_cleanup_shielded(awaitable: Awaitable[object]) -> None:
+    task = asyncio.ensure_future(awaitable)
+    cancellation: asyncio.CancelledError | None = None
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError as exc:
+            if cancellation is None:
+                cancellation = exc
+    cleanup_error = task.exception()
+    if cancellation is not None:
+        if cleanup_error is not None:
+            cancellation.add_note(f"Cleanup also failed with {type(cleanup_error).__name__}.")
+        raise cancellation from cleanup_error
+    if cleanup_error is not None:
+        raise cleanup_error
+
+
+__all__ = ["_RUN_PROCESS_ACTIONS", "_RunProcessController", "_fit_stream_prefixes", "_project_status"]

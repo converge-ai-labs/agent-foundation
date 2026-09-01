@@ -9,7 +9,6 @@ on:
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/agent-environment-provider/**"
       - "packages/agent-harness/pyproject.toml"
-      - "packages/agent-harness/tests/test_environment_docker_e2e.py"
       - "pyproject.toml"
       - "scripts/check-agent-distributions.py"
       - "scripts/release_version.py"
@@ -24,7 +23,6 @@ on:
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/agent-environment-provider/**"
       - "packages/agent-harness/pyproject.toml"
-      - "packages/agent-harness/tests/test_environment_docker_e2e.py"
       - "pyproject.toml"
       - "scripts/check-agent-distributions.py"
       - "scripts/release_version.py"
@@ -86,12 +84,6 @@ jobs:
       - name: Build sandbox image
         if: matrix.name == 'Linux'
         run: make image-sandbox
-
-      - name: Test Docker Provider through Agent Harness
-        if: matrix.name == 'Linux'
-        env:
-          A13N_DOCKER_E2E_IMAGE: agent-foundation-sandbox:local
-        run: uv run --locked python -m pytest packages/agent-harness/tests/test_environment_docker_e2e.py
 
       - name: Build Agent Environment Provider distribution
         if: matrix.name == 'Linux'

@@ -215,19 +215,12 @@ class DockerProviderConfiguration(BaseModel):
         return self
 
 
-class DockerResourcePhase(StrEnum):
-    RUNNING = "running"
-    PAUSED = "paused"
-
-
 class DockerProviderStateData(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     environment_id: Annotated[str, Field(min_length=1, max_length=128)]
-    resource_correlation: Annotated[str, Field(min_length=1, max_length=128)]
     container_id: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     image_id: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     bootstrap_correlation: Annotated[str, Field(pattern=r"^bootstrap-[0-9a-f]{24}$")]
     configuration_fingerprint: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
-    create_operation_id: Annotated[str, Field(min_length=1, max_length=128)]
-    phase: DockerResourcePhase
+    create_correlation: Annotated[str, Field(pattern=r"^create-[0-9a-f]{24}$")]

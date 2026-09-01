@@ -38,32 +38,33 @@ For a published release, install `agent-envd` from the registry only with the ma
 
 ## Recommended Harness path
 
-Create the built-in Local Envd provider and pass it to a Harness run:
+Resolve the built-in Local Envd Provider, construct one fresh Environment, and pass that adapter to a Harness Run:
 
 ```python
 from pathlib import Path
 
 from a13n_environment_provider import (
-    EnvironmentProviderSpec,
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
-    build_environment_provider_factory_catalog,
+    build_environment_provider_catalog,
     resolve_agent_envd_executable,
 )
 
-catalog = build_environment_provider_factory_catalog(
+catalog = build_environment_provider_catalog(
     builtin_keys=("a13n.local-envd",),
 )
-provider = catalog.create_provider(
-    EnvironmentProviderSpec(
-        provider_key="a13n.local-envd",
-        schema_version="1",
-        parameters={
-            "environment_id": "sandbox",
-            "workspace": {"path": str(Path("./workspace").resolve())},
-            "execution_network": "deny",
-        },
-    ),
+provider = catalog.resolve("a13n.local-envd")
+configuration = provider.validate_configuration(
+    schema_version="1",
+    value={
+        "environment_id": "sandbox",
+        "workspace": {"path": str(Path("./workspace").resolve())},
+        "execution_network": "deny",
+    },
+)
+environment = provider.create_environment(
+    configuration=configuration,
+    state=None,
     runtime=LocalEnvdProviderRuntime(
         executable=resolve_agent_envd_executable(),
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
@@ -72,11 +73,11 @@ provider = catalog.create_provider(
 
 result = await executable.run(
     "Inspect the workspace",
-    environment=provider,
+    environment=environment,
 )
 ```
 
-Each entered Local Envd Resource owns one daemon generation, one private runtime allocation, and one reusable stdio carrier. Every Harness run acquires a fresh EIP session attachment. Resource exit stops the daemon and removes only its private runtime, not the selected workspace.
+Each Local Envd adapter owns one daemon generation, one private runtime allocation, one reusable stdio carrier, and one EIP session while entered. Harness close stops the daemon and removes only its private runtime, not the selected workspace. Construct another fresh adapter for every independent Run.
 
 ## Isolation behavior
 
@@ -189,11 +190,11 @@ HTTP requires `AGENT_ENVD_HTTP_BIND`, `AGENT_ENVD_HTTP_CREDENTIAL_FILE`, and eit
 
 Reverse WebSocket requires `AGENT_ENVD_REVERSE_WS_URL` and `AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE`. An optional CA file adds deployment trust for `wss`. The daemon dials outward; it does not expose an inbound WebSocket listener.
 
-Credential files contain short-lived Provider-owned attachment tokens. Tokens do not belong in argv, ordinary environment variables, endpoint URLs, descriptors, logs, traces, or EIP payloads.
+Credential files contain short-lived Provider-owned bearer tokens. Tokens do not belong in argv, ordinary environment variables, endpoint URLs, descriptors, logs, traces, or EIP payloads.
 
 ## Lifecycle and ownership
 
-One daemon is one authority-bearing generation for one Environment identity. It admits at most one active initialized EIP session and can serve fresh sequential sessions over its selected carrier. Another user, mutually untrusted workload, or concurrent independent session needs another daemon, private runtime, and Provider resource boundary.
+One daemon is one authority-bearing generation for one Environment identity. It admits at most one active initialized EIP session. Another user, mutually untrusted workload, or concurrent independent session needs another daemon, private runtime, and Provider adapter.
 
 The daemon does not own Harness runs or durable workflow lifecycle. It also exposes no generic HTTP server, browser endpoint, health endpoint, readiness endpoint, or inbound WebSocket. Providers establish readiness through EIP initialization and readiness while observing process or carrier failure.
 
@@ -213,7 +214,7 @@ make eip-test
 - **Required isolation fails on Windows**: use a supported platform or a trusted outer sandbox with explicit disabled mode until the native backend is delivered.
 - **No command methods are advertised**: configure a command-enabled mount, `command_cwd`, executable roots or shell profiles, and a usable isolation posture.
 - **A method is unavailable**: inspect the exact descriptor `available_methods` and execution features rather than inferring broad capability families.
-- **The workspace disappeared after a run**: Local Envd removes its private runtime only. Workspace removal indicates external lifecycle policy, not normal Resource cleanup.
+- **The workspace disappeared after a run**: Local Envd removes its private runtime only. Workspace removal indicates external lifecycle policy, not normal adapter close.
 
 ## References
 

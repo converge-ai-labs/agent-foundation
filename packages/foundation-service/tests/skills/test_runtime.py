@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from a13n_environment_provider.direct_local.files import LocalFileOperator
+from a13n_environment_provider.direct_local.provider import _DirectLocalFilePolicy
 from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
-from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
-from a13n_harness.environment.local.files import LocalFileOperator
 from a13n_harness.errors import DefinitionError
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, AuthorizationError

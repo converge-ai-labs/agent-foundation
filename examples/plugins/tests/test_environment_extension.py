@@ -6,10 +6,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from a13n_environment_provider import (
-    EnvironmentOperationContext,
-    EnvironmentProviderResourceState,
-)
 from a13n_harness import RunError
 from a13n_harness.environment import (
     EnvironmentError,
@@ -101,23 +97,18 @@ def test_environment_extension_code_demo_runs_complete_scope(tmp_path: Path) -> 
     assert result.marker_removed is True
 
 
-def test_environment_extension_demo_destroys_resource_after_run_failure(
+def test_environment_extension_demo_closes_adapter_after_run_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
+    from a13n_plugin_examples.environment import WorkspaceEnvironment
 
-    destroyed: list[EnvironmentProviderResourceState] = []
-    original_destroy = WorkspaceEnvironmentProvider.destroy
+    closed: list[WorkspaceEnvironment] = []
+    original_close = WorkspaceEnvironment.close
 
-    async def record_destroy(
-        self: WorkspaceEnvironmentProvider,
-        state: EnvironmentProviderResourceState,
-        *,
-        operation: EnvironmentOperationContext,
-    ) -> None:
-        destroyed.append(state)
-        await original_destroy(self, state, operation=operation)
+    async def record_close(self: WorkspaceEnvironment) -> None:
+        await original_close(self)
+        closed.append(self)
 
     def failing_model() -> FunctionModel:
         async def stream(
@@ -130,7 +121,7 @@ def test_environment_extension_demo_destroys_resource_after_run_failure(
 
         return FunctionModel(stream_function=stream)
 
-    monkeypatch.setattr(WorkspaceEnvironmentProvider, "destroy", record_destroy)
+    monkeypatch.setattr(WorkspaceEnvironment, "close", record_close)
     monkeypatch.setattr(
         "a13n_plugin_examples.demo_environment_extension._offline_model",
         failing_model,
@@ -139,5 +130,6 @@ def test_environment_extension_demo_destroys_resource_after_run_failure(
     with pytest.raises(RunError):
         asyncio.run(run_environment_extension_code_demo(workspace_root=tmp_path))
 
-    assert len(destroyed) == 1
+    assert len(closed) == 1
     assert not (tmp_path / ".example-run").exists()
+    assert tmp_path.is_dir()

@@ -2,153 +2,158 @@
 
 ## Design Position
 
-`a13n-environment-provider` is the shared Host-facing package for declaring, validating, provisioning, attaching, reconciling, observing, and retiring Environment provider resources. It lets independently structured Host components understand the same provider configuration without importing Pydantic AI or the complete Harness runtime.
+`a13n-environment-provider` is the shared contract and built-in implementation package for one Environment. It separates inert provider selection from process-local operation and portable re-entry state.
 
-The package separates three values with different authority:
+The package has exactly three core Environment entities:
 
-1. an `EnvironmentProviderSpec` is serializable desired configuration;
-2. `EnvironmentProviderResourceState` is sensitive provider-owned data persisted and selected by a Host;
-3. an `EnvironmentRuntimeAttachment` is a fresh process-local value used to create one Harness run binding.
+1. `EnvironmentProvider` is an inert trusted plugin/factory for one namespaced provider key.
+2. `Environment` is a fresh process-local adapter that implements provider operations and re-entry lifecycle.
+3. `EnvironmentState` is a provider-owned portable semantic soft reference.
 
-The package contains built-in Direct Local, Local Envd, Docker, and E2B factories. `a13n-harness` depends on it, can own a Provider through its bounded `ephemeral()` scope, and adapts Resource attachments into provider-neutral run bindings. Any Host can use the same Provider directly while retaining durable persistence and lifecycle authority. Local Envd consumes one exact Host-resolved daemon executable and owns its local process/private runtime without searching or downloading binaries.
+A Provider validates configuration and constructs Environment instances without external I/O. An Environment enters or creates its target, exposes file/shell/process/output/port operations, dumps current state, closes process-local resources without destroying the target, and destroys the target only when a Host explicitly requests it.
 
 ## Architecture
 
 ```mermaid
-flowchart TB
-    subgraph Host[Host]
-        Definition[EnvironmentProviderSpec]
-        Store[Desired state and resource-state store]
-        Policy[Authorization, fencing, and lifecycle policy]
-        Orchestrator[Provider resource orchestrator]
+flowchart LR
+    subgraph Durable[Serializable values]
+        Config[Versioned provider configuration]
+        State[EnvironmentState]
     end
 
-    subgraph ProviderPackage[a13n-environment-provider]
-        Catalog[Provider factory catalog]
+    subgraph Process[Fresh process-local values]
+        Runtime[Host runtime collaborators]
         Provider[EnvironmentProvider]
-        Resource[EnvironmentResource]
-        Attachment[Fresh EnvironmentRuntimeAttachment]
-        Builtins[Direct Local, Local Envd, Docker, and E2B]
+        Environment[Environment]
     end
 
-    subgraph Harness[a13n-harness]
-        Adapter[Attachment-to-binding adapter]
-        Binding[EnvironmentProviderBinding]
-        Environment[Environment facade]
-    end
-
-    subgraph EIPLayer[EIP layer]
-        Client[a13n-envd-client]
-        Envd[agent-envd]
-    end
-
-    Definition --> Catalog --> Provider
-    Policy --> Orchestrator --> Provider
-    Store <--> Orchestrator
-    Provider --> Resource --> Attachment --> Adapter --> Binding --> Environment
-    Builtins --> Provider
-    Attachment --> Client --> Envd
+    Host[Host] -->|select and authorize| Config
+    Host -->|current value or None| State
+    Host --> Runtime
+    Config --> Provider
+    Provider -->|pure construction| Environment
+    State --> Environment
+    Runtime --> Environment
+    Environment -->|dump_state| State
+    Harness[a13n-harness] -->|enter/use/close| Environment
+    Host -->|warmup or destroy policy| Environment
 ```
 
-For reusable or durable resources, the Host decides whether to provision, attach, keep, replace, or destroy a Resource. An Environment Provider performs the selected operation and returns typed observations. It never commits those observations durably. The Host stores a resource-state envelope only after its own authorization and fencing checks. Resource-context exit closes only process-local responsibilities by default. A caller can explicitly select automatic destroy on scope exit; the Harness does so for a high-level Provider input entirely inside one logical run.
+Desired configuration and current state are independent. Configuration says what provider target is acceptable. State identifies the current target and codec version when the provider needs a portable reference. A stateless provider may return no state.
 
 ## Boundaries
 
-| Concern                                                                                    | Owner                                 | Explicit boundary                                                 |
-| ------------------------------------------------------------------------------------------ | ------------------------------------- | ----------------------------------------------------------------- |
-| Provider specification schema and provider key                                             | Provider package and selected factory | Serializable, credential-free desired configuration               |
-| User authorization and allowed provider configuration                                      | Host                                  | Evaluated before Provider invocation                              |
-| Catalog selection and installed-code trust                                                 | Host and provider package             | Availability is not authorization                                 |
-| Provision, attach, exact-operation reconciliation, maintenance, and destroy implementation | Selected Environment Provider         | External effects and read-only reconciliation with typed outcomes |
-| Durable resource records, operation fencing, retry policy, and lease selection             | Host                                  | Never delegated to package-global state                           |
-| Resource-state field meaning and codec                                                     | Selected provider                     | Opaque to the Host except envelope and policy metadata            |
-| Resource-state storage, encryption, retention, and authoritative selection                 | Host                                  | Separate from `HarnessState`                                      |
-| Live provider client and reusable resource scope                                           | Bound provider resource               | Process-local and explicitly closed                               |
-| Fresh runtime attachment                                                                   | Bound provider resource               | Single-use, process-local, and non-serializable                   |
-| Attachment-to-binding adaptation and Environment operations                                | Harness                               | No provider lifecycle authority                                   |
-| EIP protocol and session behavior                                                          | `a13n-envd-client` and `agent-envd`   | Independent from vendor provisioning                              |
+| Concern                                      | Owner                                                  |
+| -------------------------------------------- | ------------------------------------------------------ |
+| Namespaced Provider key and configuration    | Environment Provider package and implementation        |
+| Provider discovery and trusted selection     | Package catalog and Host authorization                 |
+| Fresh runtime collaborators and credentials  | Host                                                   |
+| Environment construction                     | `EnvironmentProvider` without external I/O             |
+| File, shell, process, output, and port I/O   | Entered `Environment`                                  |
+| Create, re-enter, and confirmed replacement  | `Environment.enter()` or optional `warmup()`           |
+| Portable re-entry state                      | `EnvironmentState`; provider owns opaque payload codec |
+| Process-local cleanup                        | `Environment.close()`                                  |
+| Backing-target destruction                   | Host policy invoking `Environment.destroy()`           |
+| Durable state publication and Thread linkage | Host                                                   |
+| Multi-mount routing and Agent-facing policy  | Harness                                                |
+| Retention, unused cleanup, and orphan prune  | Host                                                   |
 
-The provider package does not own an Agent schema, Harness `EnvironmentState`, desired Harness mount definitions, model-facing mount names, tools, durable Execution, queue, database, user API, or product policy.
+The package does not own Harness state aggregation, mount names, model-facing tools, Agent identity schemas, Thread relationships, durable records, queues, leases, user APIs, or product retention policy.
 
 ## Core Flow
 
+For each independent Run:
+
+01. The Host resolves one authorized Provider configuration and its current authoritative `EnvironmentState | None`.
+02. The Host supplies fresh process-local runtime collaborators.
+03. The Provider validates configuration and state compatibility and constructs a new Environment without I/O.
+04. The Host passes that Environment to Harness as one mount candidate.
+05. Harness supplies ephemeral Run/Thread/mount correlation and calls `enter()`.
+06. The Environment creates, re-enters, or safely replaces a confirmed-absent target and exposes provider-neutral operations.
+07. Harness uses the Environment through its Run-local routing and policy facade.
+08. Harness snapshots `dump_state()` into portable continuation when requested.
+09. Harness calls non-destructive `close()` during Run cleanup.
+10. In unconditional finalization, the Host compares supplied and dumped state and publishes only a changed value.
+11. Separately, the Host may construct an Environment and invoke `warmup()` or `destroy()` according to retention or prune policy.
+
 ```mermaid
 sequenceDiagram
-    participant Caller
     participant Host
-    participant Catalog
-    participant Provider
-    participant Resource
+    participant Provider as EnvironmentProvider
+    participant Environment
     participant Harness
 
-    Caller->>Host: declare provider configuration
-    Host->>Catalog: validate EnvironmentProviderSpec
-    Catalog-->>Host: typed resolved specification
-    Host->>Host: authorize and persist desired state
-    Host->>Provider: create or resume with operation context
-    Provider-->>Host: pre-entry Resource and resource-state observation
-    Host->>Host: fence and persist selected resource state
-    Host->>Resource: enter live resource scope
-    loop one or more sequential runs
-        Host->>Resource: acquire fresh runtime attachment scope
-        Resource-->>Host: single-use attachment
-        Host->>Harness: adapt attachment into fresh run binding
-        Harness-->>Host: result and portable HarnessState candidate
-        Host->>Resource: release attachment scope
-    end
-    alt Host selects pause
-        Host->>Provider: pause entered resource
-        Provider-->>Host: updated resource state
-        Host->>Resource: close live resource scope
-    else Host leaves resource running
-        Host->>Resource: close live resource scope
-    else Host selects destroy
-        Host->>Resource: close live resource scope
-        Host->>Provider: destroy from authoritative resource state
-        Provider-->>Host: confirmed destroy completion
-    end
-    Host->>Host: commit lifecycle transition
+    Host->>Provider: create_environment(configuration, state, runtime)
+    Provider-->>Host: fresh Environment, no I/O
+    Host->>Harness: Run with Environment mount
+    Harness->>Environment: enter(correlation)
+    Environment-->>Harness: entered or typed failure
+    Harness->>Environment: provider-neutral operations
+    Harness->>Environment: dump_state()
+    Harness->>Environment: close()
+    Harness-->>Host: result or failure
+    Host->>Environment: dump_state() during finalization when needed
+    Host->>Host: publish changed state only
 ```
 
-Provider resource operations and Host commits are independent. Every effectful management call carries a Host operation identity suitable for provider idempotency metadata and exact-resource correlation. A successful provider API response is not a durable Host transition; a Host transaction cannot make an uncertain provider side effect known. The Provider's bounded read-only reconciliation operation uses that identity, provider tags, and current provider inspection to return running, paused, absent, or still-unknown evidence without claiming exactly-once execution.
+## Re-entry Position
+
+`EnvironmentState` is available before entry. No restore step mutates an already entered adapter. A provider can:
+
+- create on absent state;
+- re-enter a compatible target identified by state;
+- create a replacement only after proving that target absent;
+- fail on incompatible, unavailable, or unknown evidence.
+
+A successful create or replacement updates known state before later readiness work. State therefore remains available to Host finalization even if entry, execution, checkpointing, cancellation, or local close later fails.
+
+`close()` never destroys the backing target. This is true for explicit close, context exit, successful completion, failure, and cancellation.
 
 ## Operation Backends
 
-Direct Local and EIP are the only operation backends consumed by the Harness:
+The Provider package owns provider-neutral single-Environment contracts for:
 
-| Resource integration   | Runtime attachment                 | Harness operation backend |
-| ---------------------- | ---------------------------------- | ------------------------- |
-| Direct Local           | `DirectLocalEnvironmentAttachment` | Direct Local              |
-| Local Envd             | `EIPEnvironmentAttachment`         | EIP                       |
-| Docker                 | `EIPEnvironmentAttachment`         | EIP                       |
-| E2B                    | `EIPEnvironmentAttachment`         | EIP                       |
-| Compatible third party | One accepted attachment type       | Direct Local or EIP       |
+- canonical paths and bounded file operations;
+- foreground commands and provider process handles;
+- retained stdout/stderr access;
+- readiness requirements;
+- provider ports;
+- operation receipts and typed errors;
+- state dump, local close, and explicit destruction.
 
-Local Envd never falls back to Direct Local, and Docker/E2B never use vendor file or command APIs as hidden fallback operations. The Local Envd process or outer vendor resource establishes lifecycle; `agent-envd` and EIP own file, shell, process, output, and port behavior.
+Direct Local implements these contracts over the embedding operating system. Local Envd, Docker, and E2B implement them through `agent-envd` and EIP after provider-specific entry. Harness adds mount names, access ceilings, routing, stale-incarnation fencing, aggregate projection, and model Toolsets.
 
 ## Dependency and Release Direction
 
-The package imports no Harness, Pydantic AI, Host implementation, database, or presentation type. It can depend on the low-level `a13n-envd-client`, Docker SDK, E2B SDK, Pydantic, AnyIO, and package-discovery support required by its public contracts.
+```mermaid
+flowchart LR
+    Envd[a13n-envd-client] --> Provider[a13n-environment-provider]
+    Provider --> Harness[a13n-harness]
+```
 
-Both a resource-managing Host and `a13n-harness` depend on `a13n-environment-provider`. The Host selects and imports trusted provider plugins, validates specifications, constructs Providers, chooses durable lifecycle operations, retains resource state, and acquires attachments. The Harness never discovers provider plugins or resolves specifications, but it accepts an already constructed Provider as an explicit temporary source and invokes its `ephemeral()` lifecycle; it also accepts an entered Resource and acquires one fresh attachment without selecting pause or destroy. A third-party provider plugin depends on the provider package, not on Harness internals, so the same Provider and Resource contracts serve both paths.
+`a13n-environment-provider` depends on `a13n-envd-client` and exposes Direct Local/EIP operation contracts and built-ins. `a13n-harness` depends on the Provider package. The Provider package never imports Harness.
 
-`a13n-environment-provider` belongs to the Harness release group with `a13n-harness` and `a13n-stream-protocol`. One Harness release assigns the same version to all three. Published Harness metadata requires the exact provider-package version, while the provider package selects a compatible independently released `a13n-envd-client` range. Package version does not replace EIP version negotiation.
+The package releases independently. Provider configuration and state codec compatibility follow explicit schema and `state_version` values rather than Harness release identity.
 
 ## Security Position
 
-Importing the package, reading a provider schema, discovering metadata, building a catalog, constructing a factory, or constructing a Provider performs no provider I/O and reads no credential. External effects begin only through an explicit async management operation or entered resource/attachment scope.
-
-Provider specifications contain no credential, bearer token, Docker socket, E2B API key, private endpoint, container ID, sandbox ID, or live session. Current credentials enter through a Host-supplied runtime collaborator. Resource state is sensitive even when it contains no bearer secret because it can carry resource identity and attachment information; it is never model-visible or stored in `HarnessState`.
+- Provider discovery grants no authority. A Host allowlists keys and supplies trusted runtime collaborators.
+- Configuration and state carry no credentials, clients, sessions, bearer URLs, process handles, or mutable authority objects.
+- State is a selector, not authorization. Entry revalidates provider key, codec version, configuration compatibility, and target metadata.
+- Provider denial narrows Harness policy; Harness permission never bypasses provider enforcement.
+- Direct Local is an explicit embedding trust choice and does not claim native sandbox isolation.
+- Docker and E2B credentials remain in Host runtime collaborators; EIP credentials remain process-local.
+- Public errors and observations redact provider-native secrets and unnecessary Host identifiers.
 
 ## Stable Principles
 
-01. One provider specification is understood consistently across Host components without importing the Harness.
-02. The Host owns durable desired state, resource-state selection, fencing, and lifecycle decisions.
-03. Environment Providers implement resource effects and exact-operation reconciliation but do not persist or commit Host lifecycle.
-04. A reusable bound resource and a single-use runtime attachment have separate lifetimes.
-05. Harness binding and operation semantics remain independent from provider resource management.
-06. Direct Local and EIP are the only Environment operation backends.
-07. Local Envd uses one Host-resolved local daemon process, while Docker and E2B use vendor SDKs for outer lifecycle; all three use EIP for operations.
-08. Provider specification, resource state, runtime attachment, Harness state, and EIP session never substitute for one another.
-09. Import and construction are inert; async management entry is the first effectful boundary.
-10. Failure after possible provider dispatch remains unknown until exact-operation provider reconciliation supplies running, paused, absent, or still-unknown evidence.
+01. `EnvironmentProvider`, `Environment`, and `EnvironmentState` are the only shared Environment lifecycle entities.
+02. Provider discovery, validation, and Environment construction perform no external I/O.
+03. Every independent Run receives fresh Environment instances.
+04. State is supplied before entry and is never a live object or existence proof.
+05. Confirmed absence may create a replacement; unknown evidence fails.
+06. `close()` and context exit are always non-destructive.
+07. Only explicit Host policy invokes `destroy()`.
+08. Harness owns multi-mount routing, not provider discovery or backing-target lifecycle.
+09. Hosts own current state, Thread association, changed-only publication, retention, and prune without a prescribed persistence model.
+10. Credentials and process-local clients never enter configuration, `EnvironmentState`, or Harness continuation.

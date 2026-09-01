@@ -9,7 +9,6 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolset
 
-from a13n_harness.capabilities.processes import ShellOperator
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import (
@@ -25,6 +24,7 @@ from a13n_harness.toolsets.file_media import (
     NativeInputMediaKind,
 )
 from a13n_harness.toolsets.files import FileToolset
+from a13n_harness.toolsets.process_manager import _RUN_PROCESS_ACTIONS
 from a13n_harness.toolsets.shell import ShellToolset
 
 from ._dynamic_context import _DynamicEnvironmentContext
@@ -75,22 +75,10 @@ class DynamicEnvironmentCapability(AbstractModelContextCapability):
 
     id = DYNAMIC_ENVIRONMENT_CAPABILITY_ID
 
-    def __init__(
-        self,
-        configuration: DynamicEnvironmentConfiguration,
-        *,
-        operator: ShellOperator | None = None,
-    ) -> None:
+    def __init__(self, configuration: DynamicEnvironmentConfiguration) -> None:
         if not isinstance(configuration, DynamicEnvironmentConfiguration):
             configuration = DynamicEnvironmentConfiguration.model_validate(configuration, strict=True)
-        selected = operator or ShellOperator()
-        if not isinstance(selected, ShellOperator):
-            raise TypeError("operator must be a ShellOperator")
-        if type(selected.supports_background) is not bool:
-            raise TypeError("ShellOperator.supports_background must be a boolean declaration")
         self.configuration = configuration.model_copy(deep=True)
-        self.operator = selected
-        self._supports_background = selected.supports_background
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(DYNAMIC_ENVIRONMENT_CAPABILITY_ID)
@@ -103,12 +91,14 @@ class DynamicEnvironmentCapability(AbstractModelContextCapability):
             return existing
         replacement = _DynamicEnvironmentRunCapability(
             self.configuration,
-            operator=self.operator,
-            supports_background=self._supports_background,
             run_id=ctx.deps.run_id,
             environment=ctx.deps.environment,
         )
         ctx.deps._record_run_capability(DYNAMIC_ENVIRONMENT_CAPABILITY_ID, replacement)
+        ctx.deps._register_run_cleanup(
+            "a13n.dynamic-environment.shell-processes",
+            replacement._close_processes,
+        )
         return replacement
 
 
@@ -120,18 +110,18 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         self,
         configuration: DynamicEnvironmentConfiguration,
         *,
-        operator: ShellOperator,
-        supports_background: bool,
         run_id: str,
         environment: BoundEnvironment,
     ) -> None:
-        super().__init__(configuration, operator=operator)
-        self._supports_background = supports_background
+        super().__init__(configuration)
         self._run_id = run_id
         self._environment = environment
+        self._process_capable = any(
+            _RUN_PROCESS_ACTIONS <= mount.permission_ceiling.operations for mount in environment.snapshot.mounts
+        )
         self._shell_toolset = ShellToolset(
-            operator=operator,
-            supports_background=supports_background,
+            environment,
+            process_capable=self._process_capable,
             resource_resolver=lambda tool_id: self._dynamic_context._resource_resolver(tool_id),
             execution_guard=lambda: self._dynamic_context._assert_authorized_fence(),
         )
@@ -216,6 +206,9 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
 
     def _assert_authorized_fence(self) -> None:
         self._dynamic_context._assert_authorized_fence()
+
+    async def _close_processes(self) -> None:
+        await self._shell_toolset.close()
 
 
 def _resolve_file_media_understanding(

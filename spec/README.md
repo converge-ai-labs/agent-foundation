@@ -7,7 +7,7 @@ Agent Foundation is an open-source foundation for embedding Agents or hosting th
 The platform consists of:
 
 - `agent-harness`, distributed as `a13n-harness`, for code-first Pydantic AI execution;
-- `agent-environment-provider`, distributed as `a13n-environment-provider`, for shared Environment provider specifications, Providers, Resources, built-ins, and runtime attachments;
+- `agent-environment-provider`, distributed as `a13n-environment-provider`, for shared Environment Provider specifications, fresh process-local adapters, portable state, and built-ins;
 - `agent-stream-protocol`, distributed as `a13n-stream-protocol`, for shared Harness-to-AG-UI observation;
 - `agent-ui`, distributed as `a13n-ui`, for reloadable local Agent/Environment composition, Sessions, a stable local Host with replaceable runtime Runners, and complete WebUI/CLI interaction;
 - `agent-envd`, distributed as `agent-envd`, for Environment Interaction Protocol operations;
@@ -62,7 +62,7 @@ flowchart TB
     end
 
     StreamProtocol[agent-stream-protocol]
-    ProviderPackage[agent-environment-provider<br/>specs, Providers, attachments]
+    ProviderPackage[agent-environment-provider<br/>Providers, Environments, state]
 
     subgraph Environment[Environment layer]
         Bound[BoundEnvironment]
@@ -112,14 +112,14 @@ flowchart TB
     Run -. telemetry .-> OTel
 ```
 
-Dependency direction is one-way: Hosts embed the Harness and can use the shared Environment Provider package directly; the Harness depends on provider attachments but the provider package imports no Harness, Host lifecycle, or presentation type. Agent UI and hosted transports consume Agent Stream Protocol above public Harness observations. Foundation clients call only the public service `/api` boundary, and the Foundation CLI consumes the Rust SDK rather than implementing a second transport client.
+Dependency direction is one-way: Hosts embed Harness and can use the shared Environment Provider package directly; Harness depends on the Provider package's single-Environment contracts, while the Provider package imports no Harness, Host lifecycle, or presentation type. Agent UI and hosted transports consume Agent Stream Protocol above public Harness observations. Foundation clients call only the public service `/api` boundary, and the Foundation CLI consumes the Rust SDK rather than implementing a second transport client.
 
 ## Component Responsibilities
 
 | Component                    | Owns                                                                                                                                                                                                                                                                                                                                                       | Does not own                                                                                                                                           |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent-harness`              | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                                                                                                                                                                                                  | Provider resource management, durable Agent schemas, local sessions, presentation, delivery, or billing                                                |
-| `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Providers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                                                                                                                                                                  | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                                                     |
+| `agent-harness`              | Process-local Agent construction, trusted plugins, Run context, fresh Environment entry, multi-mount routing/policy, recovery, execution, results, and continuation state                                                                                                                                                                                  | Provider discovery, backing-target lifecycle, durable Agent schemas, presentation, delivery, or billing                                                |
+| `agent-environment-provider` | Provider specifications/catalog, `EnvironmentProvider`, `Environment`, `EnvironmentState`, single-Environment operations, and Direct Local/Local Envd/Docker/E2B built-ins                                                                                                                                                                                 | Harness multi-mount routing, Agent execution, durable storage, Host state authority, retention policy, or product APIs                                 |
 | `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                                                                                                                                                | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                                               |
 | `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, continuation-backed Sessions, stable Host authority, replaceable runtime Runners, process-local root and child execution, WebUI, and CLI                                                                                                                              | Durable work acceptance, distributed execution, multi-tenant authorization, or another Agent loop                                                      |
 | `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                                                                                                                                               | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle                               |
@@ -136,13 +136,13 @@ The Harness is built directly on Pydantic AI 2:
 - `AgentDefinition` is an immutable process-local Python value containing native `AgentSpec`, one build-time explicit or schema-derived output contract, an optional concrete Model, top-level Capabilities, plugins, and recovery configuration;
 - Capability is the only top-level feature-behavior plane; each feature Capability owns its tools, Toolsets, instructions, settings, and hooks;
 - `HarnessBuilder` resolves an explicit or disabled-by-default ambient plugin Build Context, creates fresh configured instances, binds all trusted plugins, authorizes custom Capability types, and calls `Agent.from_spec()` once;
-- high-level run arguments supply optional Provider or Resource sources, while `RunBindings` supplies a fresh Agent instance, optional advanced `EnvironmentRuntime`, optional async `RunModelResolver`, run Capabilities, and metadata;
+- Run arguments supply optional already constructed Environment adapters, while `RunBindings` supplies a fresh Agent instance, optional async `RunModelResolver`, Run Capabilities, metadata, and bounded Host references;
 - one logical Harness Run owns one context, Environment, plugin graph, state coordinator, usage accumulator, public `run_id`, and stable Thread correlation;
 - bounded model recovery can start several `ModelAttempt` values with unique upstream model-attempt IDs inside that Run;
-- `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and optional portable Environment backend data; desired mount definitions, selected provider resource-state envelopes, and provider launch or reattachment data remain Host-owned;
+- `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and `environment_states: Mapping[str, EnvironmentState]`; desired mounts, current managed state, runtime collaborators, and lifecycle policy remain Host-owned;
 - Pydantic AI owns native Model profiles, transport/output retries, provider-suspended continuation, deferred external calls/approvals, Toolsets, messages, events, and usage.
 
-Harness middleware plugins are trusted concrete objects, and the Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `a13n_harness.plugins` factories and append fresh concrete plugins during each definition build. Environment provider specifications, factories, Providers, Resources, and built-ins belong to `a13n-environment-provider`; the Harness can own an already constructed Provider through `ephemeral()` or borrow a fresh attachment from an entered Resource. A Host owns serializable Agent schemas, artifact locks, package trust, optional provider resource-state storage, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
+Harness middleware plugins are trusted concrete objects, and Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `a13n_harness.plugins` factories and append fresh concrete plugins during each definition build. Environment Provider specifications, catalogs, `EnvironmentProvider`, `Environment`, `EnvironmentState`, and built-ins belong to `a13n-environment-provider`. Harness receives fresh Environment adapters only. A Host owns serializable Agent schemas, artifact locks, package trust, current Environment state and associations, runtime collaborators, lifecycle policy, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
 
 The complete design is indexed in [agent-harness/README.md](agent-harness/README.md).
 
@@ -170,15 +170,15 @@ Recovery never converts missing evidence into rollback or exactly-once success. 
 
 ## Environment Foundation
 
-Environment is a Harness-owned run lifecycle resource, not a Capability. The public `Environment` facade gives trusted code and optional model-facing Capabilities a stable run- and Identity-bound view over provider-neutral file, shell, process, and port operations. A Host-retained `EnvironmentRuntime` activates after initial portable-state restore and supports linearizable `mount`, `replace`, `unmount`, and `set_default` operations throughout the active logical run. Direct Local and EIP are the only operation backends.
+The shared Environment model has only `EnvironmentProvider`, `Environment`, and `EnvironmentState`. A Provider constructs a fresh adapter from optional state without I/O. The entered Environment implements provider-neutral file, shell, process, output, port, readiness, state dump, non-destructive close, and explicit Host-only destroy. Harness owns only the Run-local multi-mount facade, routing, access ceilings, stale-incarnation checks, model projection, and continuation aggregation. Direct Local and EIP are the operation backends.
 
-`a13n-environment-provider` owns shared provider specifications, the create/resume/pause/destroy Provider API, provider resource state, fresh runtime attachments, and the built-in `a13n.direct-local`, `a13n.local-envd`, `a13n.docker`, and `a13n.e2b` providers. A Host chooses lifecycle actions and optional storage. Local Envd owns a required-isolation local daemon process over a Host-selected workspace and never falls back to Direct Local. The Harness either owns a Provider through its bounded ephemeral lifecycle or borrows an entered Host-owned Resource, then adapts a fresh Direct Local or EIP attachment into a single-use `EnvironmentRuntimeMount`.
+`a13n-environment-provider` owns provider specifications/catalog, the three core entities, single-Environment operation contracts, and built-in `a13n.direct-local`, `a13n.local-envd`, `a13n.docker`, and `a13n.e2b` Providers. Every independent Run receives fresh adapters. `close()` is always non-destructive; only explicit Host policy invokes `destroy()`. Local Envd owns a fresh required-isolation daemon process over a Host-selected workspace and never falls back to Direct Local. Docker state contains the exact container ID, while Local Envd keeps raw PID and private runtime data process-local.
 
-The Harness adapts EIP through `a13n-envd-client`; other trusted consumers can use that client independently. The client communicates only over a supplied session source and never discovers, downloads, installs, or launches an executable. `agent-envd` carries JSON-RPC control and raw file transfer over trusted stdio, Host-dialed HTTP, or an envd-initiated reverse WebSocket. It owns daemon-generation operation/receipt evidence, process handles, disk-backed command output with explicit-offset reads, session-scoped transfers, and Linux/macOS/Windows command containment. Carrier direction never changes the low-level client's requester role or envd's responder role.
+The Environment Provider package adapts EIP-backed `a13n-envd-client` sessions into fresh Provider-specific `Environment` adapters; Harness receives only those constructed adapters. Other trusted consumers can use the low-level client independently. The client communicates only over a supplied session source and never discovers, downloads, installs, or launches an executable. `agent-envd` carries JSON-RPC control and raw file transfer over trusted stdio, Host-dialed HTTP, or an envd-initiated reverse WebSocket. It owns daemon-generation operation/receipt evidence, process handles, disk-backed command output with explicit-offset reads, session-scoped transfers, and Linux/macOS/Windows command containment. Carrier direction never changes the low-level client's requester role or envd's responder role.
 
 Agent UI exposes `a13n.local-envd` as Local Sandbox. Its release pins one exact agent-envd version and target hashes, lazily downloads only the selected Host binary into an Agent UI-managed runtime cache, and never searches ambient `PATH`; an advanced absolute executable override must pass version, isolation, and EIP compatibility checks. Direct Local, Docker, and E2B do not trigger this Host download.
 
-Provider-defined portable backend data can enter only the explicit `HarnessState.environment_state` field after fresh mounts are selected. Provider resource identity and generation evidence plus optional launch or reattachment data remain in Host continuation state. Live clients, sockets, credentials, process handles, readiness, runtime mutation authority, and provider authority do not become Harness state. Optional `DynamicEnvironmentCapability` composes File/Shell tools with dynamic model context but owns neither provider lifecycle nor state.
+Provider-defined portable data enters only `HarnessState.environment_states`, a direct mapping from mount name to `EnvironmentState`. State is supplied before entry when a Host constructs each adapter; Harness never restores it afterward. Managed Host current state wins, including authoritative `None`; portable fallback is adopted only through an explicit unmanaged/import flow. Live clients, sockets, credentials, PIDs, process handles, readiness, Run-local mutation authority, Host associations, and retention policy do not become Harness state. Optional `DynamicEnvironmentCapability` composes File/Shell tools with dynamic model context but owns no backing-target lifecycle.
 
 ## Foundation Client Surfaces
 
@@ -220,11 +220,11 @@ Foundation AgentPresetRevisions are Host-owned serializable documents, not Harne
 lock or the active runner-profile lock. The selected Worker execution loop verifies that exact lock and the Version's exact
 managed-resource references, reconstructs native Pydantic/Harness objects,
 resolves current authorized Connections, Secrets, permissions, and
-operator-approved Environment connectors, and supplies fresh connections from
-the Run's exact Environment configuration. Harness owns each connector's
-bounded ephemeral resource and attachment lifecycle for that run. Foundation
-stores no selected provider resource state and does not resume or reconcile a
-Sandbox from an earlier RunAttempt.
+operator-approved Environment Providers, and constructs fresh Environment
+adapters from the Run's exact desired configuration plus current Foundation
+state. Harness enters and closes those adapters non-destructively. Foundation
+owns changed-only state publication, Thread association, explicit cleanup, and
+orphan prune.
 
 Workspace Skills are stable authoring resources with immutable ZIP- or
 GitHub-imported revisions in shared object storage. Each AgentPresetRevision locks exact
@@ -271,12 +271,12 @@ The hosted service boundary is defined in [Foundation Service](foundation-servic
 
 ## Deployment Profiles
 
-| Profile             | Persistence and coordination                                                                                          | Execution                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Embedded            | Application-selected                                                                                                  | Harness in product process                                                   |
-| Local Agent UI      | SQLite metadata plus immutable snapshot, continuation, Skill, and provider-state files; last-write-wins local updates | Harness plus Environment Provider resources and process-local async children |
-| Minimal service     | SQLite, in-memory Redis, and local objects                                                                            | Control, worker, and Connector Service together in one process               |
-| Distributed service | PostgreSQL, real Redis, and shared object storage                                                                     | Separately scalable control, worker, and connector roles                     |
+| Profile             | Persistence and coordination                                                                                             | Execution                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Embedded            | Application-selected                                                                                                     | Harness in product process                                               |
+| Local Agent UI      | SQLite metadata plus immutable snapshot, continuation, Skill, and Environment-state files; last-write-wins local updates | Harness plus fresh Environment adapters and process-local async children |
+| Minimal service     | SQLite, in-memory Redis, and local objects                                                                               | Control, worker, and Connector Service together in one process           |
+| Distributed service | PostgreSQL, real Redis, and shared object storage                                                                        | Separately scalable control, worker, and connector roles                 |
 
 Foundation Service configuration, role ownership, dependency requirements, and readiness are defined by [Runtime Configuration and Deployment](foundation-service/01-runtime-configuration-and-deployment.md). The internal relational, Redis-compatible, object, and mounted-filesystem surfaces are defined by [Foundation Storage Capabilities](foundation-service/03-storage.md). The final distribution's relational metadata and migration authority are defined by the [Relational Schema Lifecycle](foundation-service/04-relational-schema.md).
 
@@ -327,16 +327,16 @@ flowchart LR
     Adapter --> Capability[Pydantic Capability]
     Adapter --> Native[Model, tool, or Toolset]
     RunAuthority[Fresh RunBindings] --> Capability
-    RunAuthority --> Environment[Environment lifecycle resource]
-    Adapter --> RunExtension[Environment run extension]
-    RunExtension --> Environment
+    HostState[Host current EnvironmentState] --> EnvProvider[EnvironmentProvider]
+    Adapter --> EnvProvider
+    EnvProvider --> Environment[Fresh Environment adapter]
     DirectPlugin & ConfiguredPlugin --> Harness[Harness run]
     Capability & Native --> Agent[Pydantic Agent]
     Environment --> Harness
     Agent --> Provider[Feature provider]
 ```
 
-Installed plugins and native objects are trusted in-process code. Harness plugin, Connector Provider, Environment provider, and Environment run-extension package presence is only availability; an operator explicitly enables or selects the relevant key and exact artifact before import/use. Factory-produced and directly constructed objects enter the same concrete composition path for their extension kind. Untrusted or independently governed behavior belongs behind feature-specific protocols. The core defines no universal remote-plugin or package-installation system. Foundation's [managed Harness plugin artifacts](foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md) are a Host-specific internal code-deployment boundary that preserves this trust model rather than a new platform-wide extension mechanism.
+Installed plugins and native objects are trusted in-process code. Harness plugin, Connector Provider, and Environment Provider package presence is only availability; an operator explicitly enables or selects the relevant key and exact artifact before import/use. Provider-constructed Environment adapters and directly constructed code-first objects enter their owning concrete composition paths. Untrusted or independently governed behavior belongs behind feature-specific protocols. The core defines no universal remote-plugin or package-installation system. Foundation's [managed Harness plugin artifacts](foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md) are a Host-specific internal code-deployment boundary that preserves this trust model rather than a new platform-wide extension mechanism.
 
 ## Observability and Cost
 

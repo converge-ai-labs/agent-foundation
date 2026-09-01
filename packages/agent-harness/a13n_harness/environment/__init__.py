@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING, Any
 
+from a13n_environment_provider import Environment
+
 from .commands import (
     ArgvCommand,
     BoundProcessHandle,
@@ -68,7 +70,6 @@ from .models import (
     EnvironmentMountDescriptor,
     EnvironmentMountInfo,
     EnvironmentMountObservation,
-    EnvironmentMountState,
     EnvironmentOperationFamily,
     EnvironmentPath,
     EnvironmentPermissionSet,
@@ -76,7 +77,6 @@ from .models import (
     EnvironmentSnapshot,
     EnvironmentState,
 )
-from .providers import BoundEnvironment as Environment
 from .providers import FileScopeSelection
 from .retention import (
     BoundOutputCursor,
@@ -89,7 +89,7 @@ from .retention import (
     OpaqueOutputReference,
     OpaqueProcessHandle,
 )
-from .sources import EnvironmentAccess, EnvironmentEntry, EnvironmentMount, EnvironmentSource
+from .sources import EnvironmentAccess, EnvironmentEntry, EnvironmentMount
 from .virtual_files import VirtualFileOperator
 
 if TYPE_CHECKING:
@@ -141,7 +141,6 @@ __all__ = [
     "EnvironmentMountDescriptor",
     "EnvironmentMountInfo",
     "EnvironmentMountObservation",
-    "EnvironmentMountState",
     "EnvironmentOperationFamily",
     "EnvironmentOutputCapture",
     "EnvironmentOutputPolicy",
@@ -160,7 +159,6 @@ __all__ = [
     "EnvironmentRunExtensionFactoryReference",
     "EnvironmentRunExtensionFactoryRegistration",
     "EnvironmentSnapshot",
-    "EnvironmentSource",
     "EnvironmentState",
     "FileCopyResult",
     "FileEntriesResult",

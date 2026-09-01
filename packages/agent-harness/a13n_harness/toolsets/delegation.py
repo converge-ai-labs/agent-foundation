@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import re
 import secrets
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -18,8 +19,9 @@ from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
 from a13n_harness._json import dump_json_bytes
-from a13n_harness.capabilities.subagents import _validate_child_lineage
 from a13n_harness.context import AgentContext, BuiltSubagent, RunBindings
+from a13n_harness.environment.models import EnvironmentChange, EnvironmentError
+from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime, EnvironmentRuntimeMount
 from a13n_harness.errors import DefinitionError, HarnessError, RunError, StateError
 from a13n_harness.events import (
     HarnessEvent,
@@ -27,6 +29,7 @@ from a13n_harness.events import (
     InlineDelegationPayload,
     emit_harness_event,
 )
+from a13n_harness.identity import AgentInstanceContext
 from a13n_harness.input import RunInputValue
 from a13n_harness.observation import observe_operation
 from a13n_harness.result import HarnessRunResult
@@ -36,7 +39,7 @@ from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOu
 from ._instructions import InstructionFunctionToolset, tool_instruction
 
 if TYPE_CHECKING:
-    from a13n_harness.capabilities.subagents import InlineSubagentManagerState, SubagentOperator
+    from a13n_harness.capabilities.subagents import InlineSubagentCollectionState
 
 _SUBAGENT_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,62}$")
 _JSON_ADAPTER = TypeAdapter(JsonValue)
@@ -62,7 +65,7 @@ class DelegateResult(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
-    child_instance_id: str
+    execution_id: str
     subagent: str
     output: JsonValue
 
@@ -75,20 +78,17 @@ class DelegationToolset:
         *,
         owner: AbstractCapability[AgentContext],
         context: AgentContext,
-        operator: SubagentOperator,
-        state: InlineSubagentManagerState,
+        state: InlineSubagentCollectionState,
     ) -> None:
         self._owner = owner
         self._context = context
-        self._operator = operator
         self._state = state.model_copy(deep=True)
         self._state_lock = asyncio.Lock()
         self._active_lock = asyncio.Lock()
         self._active_children: set[str] = set()
-        self._child_authority_ids: set[str] = set()
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
-        tool = HarnessTool(
+        delegate_tool = HarnessTool(
             self.delegate,
             harness_metadata=HarnessToolMetadata(
                 tool_id="delegation.inline",
@@ -98,10 +98,19 @@ class DelegationToolset:
                 output_policy=_INLINE_RESULT_POLICY,
             ),
             name="delegate",
-            description=(
-                "Run one declared subagent inline and wait for its result. Omit child_instance_id to create a new "
-                "child, or supply a previously returned ID to continue that exact child."
+            description="Run one declared subagent inline and wait for its complete result.",
+        )
+        resume_tool = HarnessTool(
+            self.resume_subagent,
+            harness_metadata=HarnessToolMetadata(
+                tool_id="delegation.inline.resume",
+                effects=frozenset({"execute"}),
+                credential_audiences=(),
+                idempotency="none",
+                output_policy=_INLINE_RESULT_POLICY,
             ),
+            name="resume_subagent",
+            description="Continue one retained inline child and wait for its complete result.",
         )
         children = tuple(self._context.subagents.values())
         available = (
@@ -111,7 +120,7 @@ class DelegationToolset:
         )
         instruction = tool_instruction("delegate").format(available_subagents=available)
         return InstructionFunctionToolset(
-            tools=[tool],
+            tools=[delegate_tool, resume_tool],
             id="a13n-delegation-tools",
             instructions=instruction,
         )
@@ -120,11 +129,33 @@ class DelegationToolset:
         self,
         ctx: RunContext[AgentContext],
         subagent: Annotated[str, Field(description="Stable declared subagent name")],
-        task: Annotated[JsonValue, Field(description="Bounded delegated task")],
-        child_instance_id: Annotated[
-            str | None,
-            Field(description="Existing inline child ID to continue; omit to create a child"),
-        ] = None,
+        prompt: Annotated[str, Field(min_length=1, max_length=1024 * 1024)],
+    ) -> JsonValue:
+        return await self._execute(ctx, subagent=subagent, prompt=prompt, child_instance_id=None)
+
+    async def resume_subagent(
+        self,
+        ctx: RunContext[AgentContext],
+        execution_id: Annotated[str, Field(min_length=1, max_length=68)],
+        prompt: Annotated[str, Field(min_length=1, max_length=1024 * 1024)],
+    ) -> JsonValue:
+        record = self._state.children.get(execution_id)
+        if record is None:
+            raise ToolFailed("Unknown inline child instance ID.")
+        return await self._execute(
+            ctx,
+            subagent=record.subagent_name,
+            prompt=prompt,
+            child_instance_id=execution_id,
+        )
+
+    async def _execute(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        subagent: str,
+        prompt: str,
+        child_instance_id: str | None,
     ) -> JsonValue:
         self._require_context(ctx)
         invocation_id = f"delegation-{secrets.token_urlsafe(9)}"
@@ -157,45 +188,29 @@ class DelegationToolset:
 
         try:
             try:
-                child_input = _build_child_input(ctx, child, task)
+                child_input = _build_child_input(ctx, child, prompt)
                 limits = _intersect_usage_limits(
                     ctx.usage_limits,
                     child.executable._fresh_definition_usage_limits(),
                     child.declaration.usage_limits,
-                    self._operator.usage_limits,
                 )
                 with observe_operation(
                     "delegation",
                     capability_id=self._owner.id,
                     operation_id=invocation_id,
                 ):
-                    bindings_context = self._operator.open_child(
-                        self._context,
+                    bindings = _create_inline_child_bindings(ctx, child, reserved_id)
+                    bindings = await _finalize_child_bindings(ctx, child, bindings)
+                    result = await self._run_child(
+                        ctx,
                         child,
                         child_input,
                         reserved_id,
-                        continuation,
+                        invocation_id,
+                        bindings,
+                        selected_state,
                         limits,
                     )
-                    async with bindings_context as bindings:
-                        if not isinstance(bindings, RunBindings):
-                            raise DefinitionError(
-                                "Subagent operator returned invalid child bindings.",
-                                code="subagent_binding_invalid",
-                            )
-                        _validate_child_lineage(self._context, bindings, reserved_id)
-                        await self._reserve_child_authority(bindings.instance.agent_instance_id)
-                        bindings = await _finalize_child_bindings(ctx, child, bindings)
-                        result = await self._run_child(
-                            ctx,
-                            child,
-                            child_input,
-                            reserved_id,
-                            invocation_id,
-                            bindings,
-                            selected_state,
-                            limits,
-                        )
             except asyncio.CancelledError:
                 raise
             except ToolFailed as exc:
@@ -207,15 +222,6 @@ class DelegationToolset:
                     "dispatch_rejected",
                     invocation_id=invocation_id,
                 )
-                if not continuation and baseline is not None:
-                    await self._store_child_or_fail(
-                        ctx,
-                        reserved_id,
-                        child,
-                        baseline,
-                        subagent=subagent,
-                        invocation_id=invocation_id,
-                    )
                 raise ToolFailed(f"Inline child {reserved_id} did not start successfully.") from exc
             except Exception as exc:
                 await _emit_delegation_event_best_effort(
@@ -296,22 +302,13 @@ class DelegationToolset:
                 child_run_id=result.run_id,
             )
             return DelegateResult(
-                child_instance_id=reserved_id,
+                execution_id=reserved_id,
                 subagent=subagent,
                 output=output,
             ).model_dump(mode="json")
         finally:
             async with self._active_lock:
                 self._active_children.discard(reserved_id)
-
-    async def _reserve_child_authority(self, agent_instance_id: str) -> None:
-        async with self._active_lock:
-            if agent_instance_id in self._child_authority_ids:
-                raise DefinitionError(
-                    "Child bindings reused an existing authority identity.",
-                    code="delegation_lineage_invalid",
-                )
-            self._child_authority_ids.add(agent_instance_id)
 
     async def _run_child(
         self,
@@ -395,7 +392,7 @@ class DelegationToolset:
         from a13n_harness.capabilities.subagents import (
             _INLINE_SUBAGENT_STATE_VERSION,
             SUBAGENT_CAPABILITY_ID,
-            InlineSubagentManagerState,
+            InlineSubagentCollectionState,
             InlineSubagentState,
             _validate_inline_subagent_state,
         )
@@ -404,12 +401,12 @@ class DelegationToolset:
             child_instance_id=child_instance_id,
             subagent_name=child.declaration.name,
             child_definition_id=child.definition.definition_id,
-            state=state,
+            state=_without_borrowed_environment_state(state),
         )
         async with self._state_lock:
             children = dict(self._state.children)
             children[child_instance_id] = record
-            candidate = InlineSubagentManagerState(children=children)
+            candidate = InlineSubagentCollectionState(children=children)
             _validate_inline_subagent_state(candidate, self._context)
             await self._context.state.write(
                 SUBAGENT_CAPABILITY_ID,
@@ -443,6 +440,118 @@ class DelegationToolset:
                 "The finalized Delegation owner has an incompatible identity.",
                 code="capability_scope_invalid",
             )
+
+
+class _BorrowedEnvironmentRuntime(EnvironmentRuntime):
+    """Single-use child runtime that borrows the parent's already entered facade."""
+
+    def __init__(self, environment: BoundEnvironment) -> None:
+        self._environment = environment
+        self._used = False
+        self._active = asyncio.Event()
+        self._closed = False
+
+    @asynccontextmanager
+    async def bind(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        instance: AgentInstanceContext,
+        host_refs,
+    ) -> AsyncGenerator[BoundEnvironment]:
+        del thread_id, run_id, instance, host_refs
+        if self._used:
+            raise EnvironmentError("Borrowed Environment runtime is single-use.", code="environment_runtime_reused")
+        self._used = True
+        try:
+            yield self._environment
+        finally:
+            self._closed = True
+            self._active.set()
+
+    async def wait_until_active(self) -> None:
+        await self._active.wait()
+        if self._closed:
+            raise EnvironmentError("Borrowed Environment runtime is closed.", code="run_not_active")
+
+    async def mount(
+        self,
+        name: str,
+        mount: EnvironmentRuntimeMount,
+        *,
+        make_default: bool = False,
+    ) -> EnvironmentChange:
+        del name, mount, make_default
+        raise EnvironmentError("Inline children cannot mutate Environment mounts.", code="environment_denied")
+
+    async def replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
+        del name, mount
+        raise EnvironmentError("Inline children cannot mutate Environment mounts.", code="environment_denied")
+
+    async def unmount(self, name: str) -> EnvironmentChange:
+        del name
+        raise EnvironmentError("Inline children cannot mutate Environment mounts.", code="environment_denied")
+
+    async def set_default(self, name: str | None) -> EnvironmentChange:
+        del name
+        raise EnvironmentError("Inline children cannot mutate Environment mounts.", code="environment_denied")
+
+    async def _activate(self) -> None:
+        if self._closed:
+            raise EnvironmentError("Borrowed Environment runtime is closed.", code="run_not_active")
+        self._active.set()
+
+    def _begin_close(self) -> None:
+        self._closed = True
+        self._active.set()
+
+
+def _create_inline_child_bindings(
+    ctx: RunContext[AgentContext],
+    child: BuiltSubagent,
+    child_instance_id: str,
+) -> RunBindings:
+    from a13n_harness.execution import derive_child_identity
+    from a13n_harness.tools.policy import INVOCATION_POLICY_CAPABILITY_ID, InvocationPolicyCapability
+
+    parent = ctx.deps
+    identity = derive_child_identity(
+        parent.identity,
+        child.definition.definition_id,
+        child.declaration.identity,
+    )
+    invocation_policy = ctx.capabilities.get(INVOCATION_POLICY_CAPABILITY_ID)
+    if invocation_policy is not None and type(invocation_policy) is not InvocationPolicyCapability:
+        raise DefinitionError(
+            "Inline delegation found an incompatible invocation policy.",
+            code="capability_type_mismatch",
+        )
+    return RunBindings(
+        instance=AgentInstanceContext(
+            identity=identity,
+            agent_instance_id=f"agent-{secrets.token_urlsafe(12)}",
+            parent_agent_instance_id=parent.instance.agent_instance_id,
+            delegation_id=child_instance_id,
+            actor=parent.instance.actor,
+            host_refs=parent.instance.host_refs,
+        ),
+        environment=_BorrowedEnvironmentRuntime(parent.environment),
+        model_resolver=parent.model_resolver,
+        toolset_instructions=parent._toolset_instructions_override,
+        capabilities=((invocation_policy,) if invocation_policy is not None else ()),
+        metadata=parent.metadata,
+    )
+
+
+def _without_borrowed_environment_state(state: HarnessState) -> HarnessState:
+    return HarnessState(
+        schema_version=state.schema_version,
+        thread_id=state.thread_id,
+        message_history=state.message_history,
+        agent_context_state=state.agent_context_state,
+        environment_states={},
+    )
 
 
 def _build_child_input(
@@ -529,52 +638,19 @@ async def _finalize_task_bindings(
     bindings: RunBindings,
 ) -> RunBindings:
     from a13n_harness.capabilities.working_state import (
-        TASK_STATE_RUN_CAPABILITY_ID,
         WORKING_STATE_CAPABILITY_ID,
-        TaskStateRunCapability,
         WorkingStateCapability,
     )
 
     child_working_state = _definition_working_state(child)
-    attachments = [capability for capability in bindings.capabilities if capability.id == TASK_STATE_RUN_CAPABILITY_ID]
-    if len(attachments) > 1:
-        raise DefinitionError(
-            "Inline child bindings contain duplicate task-state attachments.",
-            code="task_state_binding_invalid",
-        )
-    attachment = attachments[0] if attachments else None
-    if attachment is not None and type(attachment) is not TaskStateRunCapability:
-        raise DefinitionError(
-            "Inline child task-state attachment has an incompatible type.",
-            code="task_state_type_mismatch",
-        )
     if child_working_state is None or not child_working_state.configuration.tasks_enabled:
-        if attachment is not None:
-            raise DefinitionError(
-                "A task-state attachment requires a child WorkingStateCapability.",
-                code="task_state_owner_missing",
-            )
         return bindings
-
-    policy = child.declaration.context
-    if policy.task_state == "isolated":
-        if type(attachment) is TaskStateRunCapability and attachment.source == "embedded_borrowed":
-            raise DefinitionError(
-                "An isolated child cannot borrow its parent task scope.",
-                code="task_state_borrow_forbidden",
-            )
-        if child_working_state.configuration.task_mode == "provider" and (
-            type(attachment) is not TaskStateRunCapability or attachment.source != "provider"
-        ):
-            raise DefinitionError(
-                "An isolated provider-mode child requires a fresh provider task binding.",
-                code="task_state_binding_missing",
-            )
-        if child_working_state.configuration.task_mode == "embedded" and attachment is not None:
-            raise DefinitionError(
-                "An isolated embedded child cannot receive a task-state attachment.",
-                code="task_state_mode_mismatch",
-            )
+    if child_working_state.configuration.task_mode == "provider":
+        raise DefinitionError(
+            "Inline provider-mode tasks require Host-owned async execution.",
+            code="task_state_binding_missing",
+        )
+    if child.declaration.context.task_state == "isolated":
         return bindings
 
     parent_owner = ctx.capabilities.get(WORKING_STATE_CAPABILITY_ID)
@@ -583,22 +659,10 @@ async def _finalize_task_bindings(
             "Shared child tasks require an active parent WorkingStateCapability.",
             code="task_state_binding_missing",
         )
-    if parent_owner.configuration.task_mode != child_working_state.configuration.task_mode:
+    if parent_owner.configuration.task_mode != "embedded":
         raise DefinitionError(
-            "Parent and child Working State task modes are incompatible.",
+            "Shared inline child tasks require embedded parent Working State.",
             code="task_state_mode_mismatch",
-        )
-    if child_working_state.configuration.task_mode == "provider":
-        if type(attachment) is not TaskStateRunCapability or attachment.source != "provider":
-            raise DefinitionError(
-                "Shared provider-mode tasks require a fresh provider child binding.",
-                code="task_state_binding_missing",
-            )
-        return bindings
-    if attachment is not None:
-        raise DefinitionError(
-            "The binder cannot replace the parent-owned embedded task view.",
-            code="task_state_binding_invalid",
         )
     borrowed = await parent_owner.bind_inline_child_task_state(
         ctx,

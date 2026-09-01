@@ -19,20 +19,20 @@ flowchart LR
 
 ## Ownership
 
-| Concept              | Meaning                                                                                            | Owner                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `AgentDefinition`    | Immutable process-local native build inputs                                                        | [Agent Definition and Build](03-agent-definition-and-build.md)             |
-| `ExecutableAgent`    | Reusable built Pydantic Agent plus Agent-bound plugins                                             | [Public API](14-public-api-and-packaging.md)                               |
-| `RunBindings`        | Fresh trusted Agent instance, Environment, model resolver, Capabilities, and metadata              | [Execution Context](06-execution-context-and-lifecycle.md)                 |
-| `AgentContext`       | One logical run's shared Pydantic dependency                                                       | [Capability Model](04-capability-model.md)                                 |
-| `BoundPluginContext` | Immutable index of fresh plugins used by one logical run                                           | [Plugin System](05-plugin-system.md)                                       |
-| Logical Harness run  | One outer context/plugin/Environment/usage scope with one public `run_id`                          | [Execution Context](06-execution-context-and-lifecycle.md)                 |
-| `ModelAttempt`       | One inner `Agent.run_stream_events()` invocation with a unique upstream run ID                     | Pydantic AI and [Execution Context](06-execution-context-and-lifecycle.md) |
-| `HarnessState`       | Stable Thread ID, detached messages, Capability namespaces, and optional portable Environment data | [State and Resume](10-snapshot-and-resume.md)                              |
-| `HarnessRunResult`   | Immutable process-local terminal outcome                                                           | [Public API](14-public-api-and-packaging.md)                               |
-| `BoundEnvironment`   | Identity-bound provider-neutral facade entered for one logical run                                 | [Environment Integration](08-environment-integration.md)                   |
-| `EnvironmentRuntime` | Process-local lifecycle and Host mutation authority retained for the entered logical run           | [Environment Integration](08-environment-integration.md)                   |
-| Pydantic `RunUsage`  | Live accumulator shared across all `ModelAttempt` values of the logical run                        | Pydantic AI                                                                |
+| Concept                  | Meaning                                                                                            | Owner                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `AgentDefinition`        | Immutable process-local native build inputs                                                        | [Agent Definition and Build](03-agent-definition-and-build.md)             |
+| `ExecutableAgent`        | Reusable built Pydantic Agent plus Agent-bound plugins                                             | [Public API](14-public-api-and-packaging.md)                               |
+| `RunBindings`            | Fresh trusted Agent instance, Environment, model resolver, Capabilities, and metadata              | [Execution Context](06-execution-context-and-lifecycle.md)                 |
+| `AgentContext`           | One logical run's shared Pydantic dependency                                                       | [Capability Model](04-capability-model.md)                                 |
+| `BoundPluginContext`     | Immutable index of fresh plugins used by one logical run                                           | [Plugin System](05-plugin-system.md)                                       |
+| Logical Harness run      | One outer context/plugin/Environment/usage scope with one public `run_id`                          | [Execution Context](06-execution-context-and-lifecycle.md)                 |
+| `ModelAttempt`           | One inner `Agent.run_stream_events()` invocation with a unique upstream run ID                     | Pydantic AI and [Execution Context](06-execution-context-and-lifecycle.md) |
+| `HarnessState`           | Stable Thread ID, detached messages, Capability namespaces, and optional portable Environment data | [State and Resume](10-snapshot-and-resume.md)                              |
+| `HarnessRunResult`       | Immutable process-local terminal outcome                                                           | [Public API](14-public-api-and-packaging.md)                               |
+| `BoundEnvironment`       | Identity-bound provider-neutral facade entered for one logical run                                 | [Environment Integration](08-environment-integration.md)                   |
+| Bound Environment facade | Harness-internal process-local multi-mount routing and policy scope for one logical Run            | [Environment Integration](08-environment-integration.md)                   |
+| Pydantic `RunUsage`      | Live accumulator shared across all `ModelAttempt` values of the logical run                        | Pydantic AI                                                                |
 
 ## Identity
 
@@ -98,7 +98,7 @@ No identifier, claim, or affinity value grants authority by itself.
 
 ## Model-facing References
 
-When a model must name a resource in a later tool call, the owning Capability exposes a compact scoped reference instead of serializing an internal, provider, or globally durable identifier. First-party forms use a bounded readable prefix plus the shortest suffix suitable for the owning scope, such as `process-1`, `output-1`, `task-1`, or `code-reviewer-a7b9`.
+When a model must name a resource in a later tool call, the owning component exposes a compact scoped reference instead of serializing an internal, provider, or globally durable identifier. First-party forms use a bounded readable prefix plus the shortest suffix suitable for the owning scope, such as `process-k7m2-1`, `output-1`, `task-1`, or `code-reviewer-a7b9`.
 
 A compact model reference:
 
@@ -109,13 +109,13 @@ A compact model reference:
 - is never reused or silently redirected after release, expiry, removal, incompatible restore, or mount replacement; and
 - fails explicitly when unknown, stale, exhausted, or no longer authorized rather than exposing a longer private identifier as fallback.
 
-The owner persists a compact reference only when its semantic continuation crosses runs. Environment mount, cursor, and provider retained-output projections are run-local. Background `process-N` references remain in Dynamic Environment state with one opaque operator backend ID; Working State task references remain in their task scope; inline child references remain in parent Subagent Capability state; and async `subagent-N` references remain only in that parent Agent's async projection. Harness run IDs, Pydantic tool-call IDs, `AgentInstanceRef`, `thread_id`, provider handles and cursors, operator backend identities, receipts, operation IDs, and Host Execution or `ExecutionAttempt` IDs retain their owning opaque/full representations and are not rewritten by this projection rule. The Environment, Working State, and Subagent specifications own each concrete allocator and lifetime.
+The owner persists a compact reference only when its semantic continuation crosses Runs and the owning contract supports that lifetime. Environment mount, provider handle, retained-output, and shell-process references are Run-local and are never mirrored into Harness state. Working State task references remain in their task scope, and inline child references remain in parent Subagent Capability state. Async subagent execution references and their current status remain Host-owned and are queried through `SubagentOperator`; Harness does not mirror or rewrite them to another allocation scheme. Harness run IDs, Pydantic tool-call IDs, `AgentInstanceRef`, `thread_id`, provider handles and cursors, receipts, operation IDs, and Host Execution or `ExecutionAttempt` IDs retain their owning opaque/full representations. The Environment, Working State, and Subagent specifications own each concrete allocator and lifetime.
 
 ## Process-local and Durable State
 
 A Host revision reconstructs a process-local `AgentDefinition`; it is not itself a Harness value. A Host Execution selects an executable, fresh `RunBindings`, optional input, and optional prior `HarnessState`. The Harness result and state become durable only if the Host commits them.
 
-One logical Harness Run can use several model-attempt IDs during bounded model recovery. This does not change the Foundation `ExecutionAttempt`, Harness run ID, context, `EnvironmentRuntime` lifetime, plugins, state coordinator, or usage accumulator. Runtime mount mutations publish immutable snapshots inside that one Environment lifetime rather than creating another run identity.
+One logical Harness Run can use several model-attempt IDs during bounded model recovery. This does not change the Foundation `ExecutionAttempt`, Harness Run ID, context, entered Environment lifetime, plugins, state coordinator, or usage accumulator. Run-local mount mutations publish immutable snapshots inside that one lifetime rather than creating another Run identity.
 
 ## Version Boundaries
 

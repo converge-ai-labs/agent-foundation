@@ -227,7 +227,7 @@ flowchart LR
 
 The Host may use typed Presets, provider integration revisions, or artifact locks under its own contracts. It may persist or generate the exact Harness plugin document and pass an explicit context, or let deployment environment variables opt the builder in; it need not own a plugin factory adapter. The Harness neither verifies a Host artifact digest nor derives Python import paths from untrusted definition data.
 
-Fresh current-run authority does not belong in `AgentDefinition`. Identity, the Environment runtime, run-scoped model resolution, policy, credentials, and other invocation collaborators enter through `RunBindings` or their narrowly owning fresh Pydantic Capabilities. `AgentDefinition` deliberately has no `environment`, provider selector, desired mount definitions, or `environment.operations` field. Environment consumers declare and enforce scoped readiness at the operation or owning feature boundary; the optional `DynamicEnvironmentCapability` configures only model projection.
+Fresh current-run authority does not belong in `AgentDefinition`. Identity, run-scoped model resolution, policy, credentials, and other invocation collaborators enter through `RunBindings` or their narrowly owning fresh Pydantic Capabilities; Environment adapters enter through explicit Run arguments. `AgentDefinition` deliberately has no `environment`, provider selector, desired mount definitions, or `environment.operations` field. Environment consumers declare and enforce scoped readiness at the operation or owning feature boundary; the optional `DynamicEnvironmentCapability` configures only model projection.
 
 ## Failure Semantics
 

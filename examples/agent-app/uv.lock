@@ -66,7 +66,9 @@ source = { editable = "../../packages/agent-environment-provider" }
 dependencies = [
     { name = "a13n-envd-client" },
     { name = "docker" },
+    { name = "pathspec" },
     { name = "pydantic" },
+    { name = "pydantic-core" },
     { name = "websockets" },
 ]
 
@@ -74,7 +76,9 @@ dependencies = [
 requires-dist = [
     { name = "a13n-envd-client", editable = "../../packages/agent-envd-client" },
     { name = "docker", specifier = ">=7.2,<8" },
+    { name = "pathspec", specifier = ">=1.1,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pydantic-core", specifier = ">=2.41,<3" },
     { name = "websockets", specifier = ">=15,<16" },
 ]
 
@@ -86,16 +90,13 @@ name = "a13n-harness"
 version = "0.0.0"
 source = { editable = "../../packages/agent-harness" }
 dependencies = [
-    { name = "a13n-envd-client" },
     { name = "a13n-environment-provider" },
     { name = "genai-prices" },
     { name = "httpx2" },
     { name = "mem0ai" },
     { name = "opentelemetry-api" },
-    { name = "pathspec" },
     { name = "pydantic" },
     { name = "pydantic-ai", extra = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"] },
-    { name = "pydantic-core" },
     { name = "pydantic-monty" },
     { name = "pyyaml" },
     { name = "tenacity" },
@@ -104,16 +105,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-envd-client", editable = "../../packages/agent-envd-client" },
     { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
     { name = "genai-prices", specifier = ">=0.1.4,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "mem0ai", specifier = ">=2.0.19,<3" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
-    { name = "pathspec", specifier = ">=1.1,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"], specifier = ">=2.33,<2.34" },
-    { name = "pydantic-core", specifier = ">=2.41,<3" },
     { name = "pydantic-monty", specifier = ">=0.0.19,<0.1" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "tenacity", specifier = ">=9,<10" },
