@@ -2,7 +2,13 @@
 
 ## Design Position
 
-Each Foundation Service product distribution ships one executable package and one container image. That build artifact fixes exactly one trusted distribution descriptor and starts it as a `control` role, a `worker` role, or the all-in-one `all` composition. Configuration, schema preparation, resource construction, component startup, readiness, draining, and shutdown follow one process lifecycle regardless of whether the executable is invoked directly or through a container entrypoint.
+Each Foundation Service product distribution ships one executable package and one
+container image. That build artifact fixes exactly one trusted distribution
+descriptor and starts it as a `control`, `worker`, or `connector` role, or as the
+all-in-one `all` composition. Configuration, schema preparation, resource
+construction, component startup, readiness, draining, and shutdown follow one
+process lifecycle regardless of whether the executable is invoked directly or
+through a container entrypoint.
 
 Runtime owns process behavior, not domain behavior. It loads the distribution fixed by the artifact, validates one effective configuration, starts only the components assigned to the selected role, and fails closed when the deployment cannot preserve their required semantics.
 
@@ -63,6 +69,8 @@ a2a_enabled = true
 [worker]
 handoff_preference_window = "30s"
 
+[connector]
+
 [plugin_runtime]
 mode = "on_demand"
 
@@ -92,10 +100,10 @@ The observability section contains the tracing switch and Harness content select
 
 Foundation supports two profiles:
 
-| Profile        | Roles                         | Relational           | Redis                              | Objects                          | Process constraint                                             |
-| -------------- | ----------------------------- | -------------------- | ---------------------------------- | -------------------------------- | -------------------------------------------------------------- |
-| Single-process | `all`                         | SQLite or PostgreSQL | Process-local memory or real Redis | Local directory or S3-compatible | Exactly one service process when any local backend is selected |
-| Distributed    | `all`, `control`, or `worker` | PostgreSQL           | Real Redis                         | Shared S3-compatible storage     | One or more independently replaceable processes                |
+| Profile        | Roles                                      | Relational           | Redis                              | Objects                          | Process constraint                                             |
+| -------------- | ------------------------------------------ | -------------------- | ---------------------------------- | -------------------------------- | -------------------------------------------------------------- |
+| Single-process | `all`                                      | SQLite or PostgreSQL | Process-local memory or real Redis | Local directory or S3-compatible | Exactly one service process when any local backend is selected |
+| Distributed    | `all`, `control`, `worker`, or `connector` | PostgreSQL           | Real Redis                         | Shared S3-compatible storage     | One or more independently replaceable processes                |
 
 The distributed profile requires PostgreSQL, real Redis, and shared object storage. It rejects SQLite, process-local Redis, and local object storage before opening service traffic. A mounted shared filesystem can satisfy a domain that explicitly owns filesystem semantics, but it does not replace shared object storage or make SQLite and local object locking distributed.
 
@@ -103,21 +111,36 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 
 ## Process Roles
 
-`control` and `worker` are the two independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs Run scan, compatibility preflight, claim, leases, plugin code, and Harness execution in the Worker process. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; lock-scoped Runner children own the execution loop.
+`control`, `worker`, and `connector` are independently deployable roles. `all`
+is their exact process composition. The default `on_demand` Plugin Runtime
+profile runs Run scan, compatibility preflight, claim, leases, plugin code, and
+Harness execution in the Worker process. The optional `runner` profile gives
+each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating,
+and child-process lifecycle; lock-scoped Runner children own the execution loop.
 
-| Capability                                | `control` | `worker` |   `all` |
-| ----------------------------------------- | --------: | -------: | ------: |
-| Product API and browser application       |       Yes |       No |     Yes |
-| Native and Hosted AG-UI Gateway surfaces  |       Yes |       No |     Yes |
-| A2A Gateway surface when enabled          |       Yes |       No |     Yes |
-| Authentication and authorization ingress  |       Yes |       No |     Yes |
-| Domain-owned control reconcilers          |       Yes |       No |     Yes |
-| Outbox publication                        |       Yes |       No |     Yes |
-| Profile-selected Worker execution runtime |        No |      Yes |     Yes |
-| Run scan, claim, takeover, and lease      |        No |  Runtime | Runtime |
-| Harness and Environment invocation        |        No |  Runtime | Runtime |
-| Operational liveness and readiness probes |       Yes |      Yes |     Yes |
-| Automatic migration when enabled          |       Yes |    Never |     Yes |
+The `connector` role owns the Connector MCP Gateway, ConnectorProvider registry
+and execution, Connection credential materialization, and Connector event
+webhook or polling data plane. Control owns Connector, Connection, setup, and
+Trigger management plus durable Run acceptance. Worker is an MCP Client and
+never loads or calls ConnectorProvider code. The complete Connector contract is
+defined by [Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md).
+
+| Capability                                | `control` | `worker` | `connector` |   `all` |
+| ----------------------------------------- | --------: | -------: | ----------: | ------: |
+| Product API and browser application       |       Yes |       No |          No |     Yes |
+| Native and Hosted AG-UI Gateway surfaces  |       Yes |       No |          No |     Yes |
+| A2A Gateway surface when enabled          |       Yes |       No |          No |     Yes |
+| Control authentication and authorization  |       Yes |       No |          No |     Yes |
+| Connector MCP authentication and policy   |        No |       No |         Yes |     Yes |
+| Domain-owned control reconcilers          |       Yes |       No |          No |     Yes |
+| Outbox publication                        |       Yes |       No |          No |     Yes |
+| Connector MCP and event ingress           |        No |       No |         Yes |     Yes |
+| ConnectorProvider discovery and execution |        No |       No |         Yes |     Yes |
+| Profile-selected Worker execution runtime |        No |      Yes |          No |     Yes |
+| Run scan, claim, takeover, and lease      |        No |  Runtime |          No | Runtime |
+| Harness and Environment invocation        |        No |  Runtime |          No | Runtime |
+| Operational liveness and readiness probes |       Yes |      Yes |         Yes |     Yes |
+| Automatic migration when enabled          |       Yes |    Never |       Never |     Yes |
 
 Every background component has exactly one role owner. `all` installs the union once; it does not start a second application, duplicate a router, or construct another copy of shared process resources. Rolling overlap is safe only when the owning domain makes the component leased, fenced, or idempotent.
 
@@ -152,17 +175,23 @@ stateDiagram-v2
 
 Startup performs these ordered gates:
 
-1. load the artifact's fixed distribution descriptor, Worker build identity, and effective configuration;
-2. validate the role, distribution, and deployment profile as one unit;
-3. configure process logging once;
-4. apply or verify the final relational schema;
-5. construct required storage and external clients;
-6. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
-7. start the selected role components under one supervised lifespan;
-8. for a Worker role, start the on-demand execution loop or the runner Supervisor and active-lock Runner selected by the persisted deployment mode;
-9. report readiness only after every preceding gate succeeds.
+01. load the artifact's fixed distribution descriptor, Worker build identity, and effective configuration;
+02. validate the role, distribution, and deployment profile as one unit;
+03. configure process logging once;
+04. apply or verify the final relational schema;
+05. construct required storage and external clients;
+06. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
+07. start the selected role components under one supervised lifespan;
+08. for a Worker role, start the on-demand execution loop or the runner Supervisor and active-lock Runner selected by the persisted deployment mode;
+09. for a Connector role, load the exact trusted ConnectorProvider registry and start the MCP and event data-plane components; and
+10. report readiness only after every preceding gate succeeds.
 
-A container entrypoint delegates to this lifecycle and does not own another migration, role, or fallback policy. A worker verifies the expected schema head and never mutates it. A control or all-in-one process can apply migrations under the schema contract when automatic migration is enabled; a deployment using a dedicated migration job disables replica migration.
+A container entrypoint delegates to this lifecycle and does not own another
+migration, role, or fallback policy. Worker-only and Connector-only processes
+verify the expected schema head and never mutate it. A control or all-in-one
+process can apply migrations under the schema contract when automatic migration
+is enabled; a deployment using a dedicated migration job disables replica
+migration.
 
 Critical role components run under structured supervision. An unexpected normal return or unhandled failure from a critical component makes the process unready and terminates the process after bounded cleanup. The runtime does not silently restart one component inside a partially healthy process. Expected dependency disconnection is handled by the owning client or component without disguising an unrecoverable component failure.
 
@@ -177,8 +206,10 @@ Readiness succeeds only when:
 - the database is reachable and at the expected final distribution schema head;
 - required Redis operations are reachable;
 - the selected object store and required filesystem roots passed their bounded capability checks;
-- every selected critical role component started successfully; and
-- a Worker can scan work through a healthy on-demand loop or the healthy Runner required by its configured profile.
+- every selected critical role component started successfully;
+- a selected Worker can scan work through a healthy on-demand loop or the healthy Runner required by its configured profile; and
+- a selected Connector process loaded every trusted Provider and can serve its
+  required authenticated MCP and event boundaries.
 
 An enabled A2A surface contributes its required push and delivery components to readiness. A disabled A2A surface contributes no route, component, or readiness dependency.
 
@@ -197,6 +228,11 @@ A control process rejects new product mutations and streaming connections, then 
 An Attempt stops renewal only after `yielded`, an ordinary outcome, cancellation, or failure commits, or when the configured drain deadline arrives. Readiness failure and one failed yield CAS never release the lease. If the deadline arrives first, the process fences local execution, stops renewal, and exits; another Worker remains forbidden from takeover until the recorded lease actually expires. Shutdown never extends a lease indefinitely, reports unfinished work as successful, or lets two Workers hold valid authority for one Run.
 
 Rolling deployment starts and readies compatible new capacity before old capacity is terminated. After a service-drain yield, a different compatible `worker_build_id` may claim the Run immediately; old-build replicas defer for the bounded `handoff_preference_window` and then become fallback capacity. Same-image restart therefore still recovers after the window. An incompatible upgrade must retain compatible old capacity or use a separately reviewed state or lock migration; handoff itself does not relax compatibility. Runner rotation uses its exact historical Runtime lock and does not apply this build-preference delay.
+
+A Connector process rejects new MCP calls, event deliveries, polling claims, and
+Provider lifecycle operations before draining active bounded Provider calls.
+Shutdown cancellation is best effort and never reports an unknown external side
+effect as rolled back or automatically replays it on another replica.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 
@@ -217,7 +253,12 @@ No failure causes an implicit switch to a local backend, another distribution, o
 
 ## Compatibility
 
-Role values, configuration precedence, stable TOML section names, Plugin Runtime mode, and supported deployment profiles are operational compatibility contracts. New optional fields and new distribution-owned namespaces can be added. Reinterpreting an existing field, changing precedence, making an accepted profile unsafe, or changing a role's ownership requires an explicit compatibility change.
+Role values, configuration precedence, stable TOML section names, Plugin Runtime
+mode, and supported deployment profiles are operational compatibility contracts.
+New optional fields and new distribution-owned namespaces can be added.
+Reinterpreting an existing field, changing precedence, making an accepted
+profile unsafe, or changing a role's ownership requires an explicit
+compatibility change.
 
 The `gateway.a2a_enabled` field is a common operational compatibility contract; its absence has the release-default meaning `true`. The `assets.max_size_bytes` field is a common safety contract shared by every Asset publication and acquisition path.
 
@@ -227,12 +268,12 @@ The effective configuration is deployment input, not a durable product resource 
 
 ## Invariants
 
-01. One executable and image per product distribution support `control`, `worker`, and their `all` composition.
+01. One executable and image per product distribution support `control`, `worker`, `connector`, and their `all` composition.
 02. One immutable effective configuration is resolved before any service resource or background component starts.
 03. No configuration file is loaded unless its path is explicit.
 04. Distributed deployments require PostgreSQL, real Redis, and shared object storage.
-05. Worker-only processes verify schema compatibility and never migrate.
-06. `all` installs each control and worker capability exactly once.
+05. Worker-only and Connector-only processes verify schema compatibility and never migrate.
+06. `all` installs each control, worker, and connector capability exactly once.
 07. A process becomes ready only after schema, dependencies, and selected critical components are ready.
 08. A critical component cannot fail silently while the process remains ready.
 09. Drain stops new work before bounded component and resource cleanup.

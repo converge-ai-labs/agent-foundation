@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import secrets
 import sys
-from collections.abc import Coroutine, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import JsonValue, TypeAdapter
+
+from a13n_ui.configuration import ConfigurationSettings
 from a13n_ui.errors import RuntimeGenerationError
 from a13n_ui.runtime_settings import RuntimeGenerationSettings
+from a13n_ui.settings import EnvdRuntimeSettings, StorageSettings
 
 from .models import (
     RuntimeDiagnostic,
@@ -33,6 +38,31 @@ from .protocol import (
     require_string_list,
 )
 from .runner import current_runtime_readiness
+from .wire import (
+    ExecuteEnvironmentCommand,
+    ExecuteRootRun,
+    ProviderStateUpdate,
+    RunnerAsyncWorkEvent,
+    RunnerEnvironmentResult,
+    RunnerRunResult,
+)
+
+_RunEventCallback = Callable[[str, tuple[JsonValue, ...]], Awaitable[None]]
+_ProviderStateCallback = Callable[[ProviderStateUpdate], Awaitable[None]]
+_AsyncWorkCallback = Callable[[RunnerAsyncWorkEvent], Awaitable[None]]
+
+
+@dataclass(slots=True)
+class _HostExecution:
+    result: asyncio.Future[RunnerRunResult]
+    on_event: _RunEventCallback
+    on_provider_state: _ProviderStateCallback
+
+
+@dataclass(slots=True)
+class _HostEnvironmentCommand:
+    result: asyncio.Future[RunnerEnvironmentResult]
+    on_provider_state: _ProviderStateCallback
 
 
 @dataclass(slots=True)
@@ -42,7 +72,18 @@ class _RunnerGeneration:
     channel: ControlChannel
     observation: RuntimeGenerationObservation
     watcher: asyncio.Task[None] | None = None
+    reader: asyncio.Task[None] | None = None
     selected_exit_reason: RuntimeExitReason | None = None
+    lifecycle_waiters: dict[str, asyncio.Future[dict[str, Any]]] = None  # type: ignore[assignment]
+    late_responses: set[str] = None  # type: ignore[assignment]
+    executions: dict[str, _HostExecution] = None  # type: ignore[assignment]
+    environment_commands: dict[str, _HostEnvironmentCommand] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        self.lifecycle_waiters = {}
+        self.late_responses = set()
+        self.executions = {}
+        self.environment_commands = {}
 
 
 class RuntimeGenerationService:
@@ -54,45 +95,47 @@ class RuntimeGenerationService:
         *,
         command: Sequence[str] | None = None,
         environment: dict[str, str] | None = None,
+        storage: StorageSettings | None = None,
+        configuration: ConfigurationSettings | None = None,
+        envd_runtime: EnvdRuntimeSettings | None = None,
+        on_async_work: _AsyncWorkCallback | None = None,
     ) -> None:
         self._settings = settings
         self._command = tuple(command or (sys.executable, "-m", "a13n_ui.runtime_runner"))
         if not self._command or any(not isinstance(item, str) or not item for item in self._command):
             raise ValueError("runtime Runner command must be a non-empty exact argument vector")
         self._environment = dict(environment or {})
+        self._storage = storage
+        self._configuration = configuration
+        self._envd_runtime = envd_runtime
+        self._on_async_work = on_async_work
         self._lock = asyncio.Lock()
+        self._lifecycle_lock = asyncio.Lock()
         self._active: _RunnerGeneration | None = None
         self._candidate: _RunnerGeneration | None = None
+        self._draining: dict[str, _RunnerGeneration] = {}
         self._observations: dict[str, RuntimeGenerationObservation] = {}
         self._diagnostics: list[RuntimeDiagnostic] = []
         self._closed = False
 
+    def set_async_work_handler(self, callback: _AsyncWorkCallback) -> None:
+        """Bind the one stable Host callback before asynchronous work is admitted."""
+
+        if not callable(callback):
+            raise TypeError("async work callback must be callable")
+        if self._on_async_work is not None and self._on_async_work is not callback:
+            raise RuntimeError("async work callback is already configured")
+        self._on_async_work = callback
+
     async def start(self) -> RuntimeGenerationObservation:
-        """Start and promote the initial passive runtime Runner."""
+        """Start and promote the initial runtime Runner."""
 
-        async with self._lock:
-            if self._closed:
-                raise self._error("runtime_service_closed", "Runtime supervision is closed.")
-            if self._active is not None:
-                return self._active.observation
-            candidate = await self._start_candidate()
-            try:
-                await self._activate(candidate)
-            except BaseException:
-                await _complete_cleanup(self._stop_candidate(candidate))
-                raise
-            self._active = candidate
-            self._candidate = None
-            return candidate.observation
-
-    async def restart(self) -> RuntimeRestartResult:
-        """Promote a fresh Runner before draining the previously selected generation."""
-
-        async with self._lock:
-            if self._closed:
-                raise self._error("runtime_service_closed", "Runtime supervision is closed.")
-            previous = self._active
-            if previous is None:
+        async with self._lifecycle_lock:
+            async with self._lock:
+                if self._closed:
+                    raise self._error("runtime_service_closed", "Runtime supervision is closed.")
+                if self._active is not None:
+                    return self._active.observation
                 candidate = await self._start_candidate()
                 try:
                     await self._activate(candidate)
@@ -101,32 +144,193 @@ class RuntimeGenerationService:
                     raise
                 self._active = candidate
                 self._candidate = None
-                return RuntimeRestartResult(previous_generation_id=None, active=candidate.observation)
+                return candidate.observation
 
-            candidate = await self._start_candidate()
-            try:
-                await self._activate(candidate)
-            except BaseException as exc:
-                await _complete_cleanup(self._stop_candidate(candidate))
-                if isinstance(exc, asyncio.CancelledError):
-                    raise
-                if isinstance(exc, RuntimeGenerationError):
-                    raise
-                raise self._error(
-                    "runtime_candidate_failed",
-                    "The candidate runtime Runner failed before promotion.",
-                    generation_id=candidate.generation_id,
-                ) from exc
+    async def restart(self) -> RuntimeRestartResult:
+        """Promote a fresh Runner before draining the previously selected generation."""
 
-            self._active = candidate
-            self._candidate = None
-            cancelled = await _complete_cleanup(self._drain_and_stop(previous))
-            if cancelled:
-                raise asyncio.CancelledError
+        async with self._lifecycle_lock:
+            async with self._lock:
+                if self._closed:
+                    raise self._error("runtime_service_closed", "Runtime supervision is closed.")
+                previous = self._active
+                candidate = await self._start_candidate()
+                try:
+                    await self._activate(candidate)
+                except BaseException as exc:
+                    await _complete_cleanup(self._stop_candidate(candidate))
+                    if isinstance(exc, asyncio.CancelledError | RuntimeGenerationError):
+                        raise
+                    raise self._error(
+                        "runtime_candidate_failed",
+                        "The candidate runtime Runner failed before promotion.",
+                        generation_id=candidate.generation_id,
+                    ) from exc
+                self._active = candidate
+                self._candidate = None
+                if previous is not None:
+                    self._draining[previous.generation_id] = previous
+            if previous is not None:
+                try:
+                    cancelled = await _complete_cleanup(self._drain_and_stop(previous))
+                    if cancelled:
+                        raise asyncio.CancelledError
+                finally:
+                    self._draining.pop(previous.generation_id, None)
             return RuntimeRestartResult(
-                previous_generation_id=previous.generation_id,
+                previous_generation_id=previous.generation_id if previous is not None else None,
                 active=candidate.observation,
             )
+
+    async def execute_root(
+        self,
+        request: ExecuteRootRun,
+        *,
+        on_event: _RunEventCallback,
+        on_provider_state: _ProviderStateCallback,
+    ) -> RunnerRunResult:
+        """Admit one Run to the currently selected generation and await its terminal result."""
+
+        async with self._lock:
+            runner = self._active
+            if (
+                self._closed
+                or runner is None
+                or runner.observation.state is not RuntimeGenerationState.active
+                or runner.process.returncode is not None
+            ):
+                raise self._error("runtime_unavailable", "No active runtime Runner is available.")
+            bound = request.model_copy(update={"generation_id": runner.generation_id})
+            if bound.request_id in runner.executions:
+                raise self._error("runtime_request_duplicate", "The runtime request ID is already active.")
+            future: asyncio.Future[RunnerRunResult] = asyncio.get_running_loop().create_future()
+            execution = _HostExecution(
+                result=future,
+                on_event=on_event,
+                on_provider_state=on_provider_state,
+            )
+            runner.executions[bound.request_id] = execution
+            try:
+                await runner.channel.send(
+                    "EXECUTE_ROOT",
+                    generation_id=runner.generation_id,
+                    request=bound.model_dump(mode="json"),
+                )
+            except BaseException:
+                runner.executions.pop(bound.request_id, None)
+                raise
+        try:
+            return await asyncio.shield(future)
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                await asyncio.shield(self.cancel_root(bound.request_id))
+            raise
+
+    async def execute_environment(
+        self,
+        request: ExecuteEnvironmentCommand,
+        *,
+        on_provider_state: _ProviderStateCallback,
+    ) -> RunnerEnvironmentResult:
+        """Admit one Environment lifecycle command to the active generation."""
+
+        async with self._lock:
+            runner = self._active
+            if (
+                self._closed
+                or runner is None
+                or runner.observation.state is not RuntimeGenerationState.active
+                or runner.process.returncode is not None
+            ):
+                raise self._error("runtime_unavailable", "No active runtime Runner is available.")
+            bound = request.model_copy(update={"generation_id": runner.generation_id})
+            if bound.request_id in runner.environment_commands or bound.request_id in runner.executions:
+                raise self._error("runtime_request_duplicate", "The runtime request ID is already active.")
+            future: asyncio.Future[RunnerEnvironmentResult] = asyncio.get_running_loop().create_future()
+            command = _HostEnvironmentCommand(
+                result=future,
+                on_provider_state=on_provider_state,
+            )
+            runner.environment_commands[bound.request_id] = command
+            future.add_done_callback(lambda _future: _remove_environment_command(runner, bound.request_id, command))
+            try:
+                await runner.channel.send(
+                    "EXECUTE_ENVIRONMENT",
+                    generation_id=runner.generation_id,
+                    request=bound.model_dump(mode="json"),
+                )
+            except BaseException:
+                runner.environment_commands.pop(bound.request_id, None)
+                raise
+        return await asyncio.shield(future)
+
+    async def close_session_work(self, session_id: str) -> None:
+        """Force-close generation-local asynchronous work for one Session."""
+
+        request_id = f"request-{secrets.token_hex(16)}"
+        waiter_key = f"SESSION_WORK_CLOSED:{request_id}"
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        sent = False
+        async with self._lock:
+            runner = self._active
+            if (
+                self._closed
+                or runner is None
+                or runner.observation.state is not RuntimeGenerationState.active
+                or runner.process.returncode is not None
+            ):
+                raise self._error("runtime_unavailable", "No active runtime Runner is available.")
+            runner.lifecycle_waiters[waiter_key] = future
+            try:
+                await runner.channel.send(
+                    "CLOSE_SESSION_WORK",
+                    generation_id=runner.generation_id,
+                    request_id=request_id,
+                    session_id=session_id,
+                )
+                sent = True
+            except BaseException:
+                runner.lifecycle_waiters.pop(waiter_key, None)
+                raise
+        try:
+            response = await asyncio.wait_for(
+                asyncio.shield(future),
+                timeout=self._settings.command_timeout_seconds,
+            )
+        finally:
+            if runner.lifecycle_waiters.pop(waiter_key, None) is future:
+                if sent:
+                    runner.late_responses.add(waiter_key)
+                future.cancel()
+        failure = response.get("failure")
+        if failure is not None:
+            detail = failure.get("message") if isinstance(failure, dict) else None
+            message = "The runtime Runner could not close Session asynchronous work."
+            if isinstance(detail, str) and detail:
+                message = f"{message} {detail}"
+            raise self._error(
+                "runtime_session_cleanup_failed",
+                message,
+                generation_id=runner.generation_id,
+            )
+
+    async def cancel_root(self, request_id: str) -> bool:
+        """Request cancellation of one active generation-bound root Run."""
+
+        async with self._lock:
+            runners = tuple(
+                item for item in (self._active, self._candidate, *self._draining.values()) if item is not None
+            )
+            runner = next((item for item in runners if request_id in item.executions), None)
+            if runner is None or runner.process.returncode is not None:
+                return False
+        response = await self._request(
+            runner,
+            "CANCEL_ROOT",
+            "CANCEL_ROOT_RESULT",
+            request_id=request_id,
+        )
+        return response.get("accepted") is True
 
     async def status(self) -> RuntimeStatus:
         """Return detached current routing and bounded retained observations."""
@@ -158,15 +362,16 @@ class RuntimeGenerationService:
     async def close(self) -> None:
         """Idempotently stop candidate and active Runners with bounded escalation."""
 
-        async with self._lock:
-            if self._closed:
-                return
-            candidate = self._candidate
-            active = self._active
+        async with self._lifecycle_lock:
+            async with self._lock:
+                if self._closed:
+                    return
+                candidate = self._candidate
+                active = self._active
+                self._candidate = None
+                self._active = None
+                self._closed = True
             cancelled = await _complete_cleanup(self._close_generations(candidate, active))
-            self._candidate = None
-            self._active = None
-            self._closed = True
             if cancelled:
                 raise asyncio.CancelledError
 
@@ -243,6 +448,10 @@ class RuntimeGenerationService:
                 "A13N_UI_RUNNER_MAX_MESSAGE_BYTES": str(self._settings.max_message_bytes),
             }
         )
+        if self._storage is not None and self._configuration is not None and self._envd_runtime is not None:
+            environment["A13N_UI_RUNNER_STORAGE"] = self._storage.model_dump_json()
+            environment["A13N_UI_RUNNER_CONFIGURATION"] = self._configuration.model_dump_json()
+            environment["A13N_UI_RUNNER_ENVD_RUNTIME"] = self._envd_runtime.model_dump_json()
         process: asyncio.subprocess.Process | None = None
         try:
             process = await asyncio.create_subprocess_exec(
@@ -284,6 +493,7 @@ class RuntimeGenerationService:
             )
             self._candidate = runner
             self._publish(runner)
+            runner.reader = asyncio.create_task(self._read_runner(runner), name=f"read-{generation_id}")
             runner.watcher = asyncio.create_task(self._watch_exit(runner), name=f"watch-{generation_id}")
             return runner
         except BaseException as exc:
@@ -353,10 +563,161 @@ class RuntimeGenerationService:
                 with contextlib.suppress(asyncio.CancelledError):
                     await process_exit
 
+    async def _read_runner(self, runner: _RunnerGeneration) -> None:
+        error: BaseException | None = None
+        try:
+            while True:
+                message = await runner.channel.receive()
+                require_generation(message, runner.generation_id)
+                message_type = require_string(message, "type", max_length=64)
+                response_id = message.get("request_id")
+                waiter_key = f"{message_type}:{response_id}" if isinstance(response_id, str) else message_type
+                waiter = runner.lifecycle_waiters.pop(waiter_key, None)
+                if waiter is not None:
+                    if not waiter.done():
+                        waiter.set_result(message)
+                    continue
+                if waiter_key in runner.late_responses:
+                    runner.late_responses.discard(waiter_key)
+                    continue
+                if message_type == "RUN_EVENT":
+                    request_id = require_string(message, "request_id", max_length=64)
+                    run_id = require_string(message, "run_id", max_length=128)
+                    execution = runner.executions.get(request_id)
+                    events = message.get("events")
+                    if execution is None or not isinstance(events, list):
+                        raise ControlProtocolError("execution event does not match an active request")
+                    validated = TypeAdapter(tuple[JsonValue, ...]).validate_python(tuple(events))
+                    await execution.on_event(run_id, validated)
+                    continue
+                if message_type == "ASYNC_WORK_EVENT":
+                    event = RunnerAsyncWorkEvent.model_validate_json(json.dumps(message.get("event")), strict=True)
+                    callback = self._on_async_work
+                    if callback is not None:
+                        try:
+                            await callback(event)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            self._record_diagnostic(
+                                runner.generation_id,
+                                "async_work_callback_failed",
+                                "The stable Host rejected an asynchronous work notification.",
+                            )
+                    continue
+                if message_type == "PROVIDER_STATE_UPDATE":
+                    update = ProviderStateUpdate.model_validate_json(json.dumps(message.get("update")), strict=True)
+                    execution = runner.executions.get(update.request_id)
+                    command = runner.environment_commands.get(update.request_id)
+                    if execution is None and command is None:
+                        raise ControlProtocolError("provider state update does not match an active request")
+                    if execution is not None:
+                        callback = execution.on_provider_state
+                    else:
+                        assert command is not None
+                        callback = command.on_provider_state
+                    try:
+                        await callback(update)
+                    except BaseException:
+                        await runner.channel.send(
+                            "PROVIDER_STATE_FAILED",
+                            generation_id=runner.generation_id,
+                            update_id=update.update_id,
+                        )
+                    else:
+                        await runner.channel.send(
+                            "PROVIDER_STATE_ACK",
+                            generation_id=runner.generation_id,
+                            update_id=update.update_id,
+                        )
+                    continue
+                if message_type == "RUN_RESULT":
+                    result = RunnerRunResult.model_validate_json(json.dumps(message.get("result")), strict=True)
+                    execution = runner.executions.get(result.request_id)
+                    if execution is None or execution.result.done():
+                        raise ControlProtocolError("terminal result does not match an active request")
+                    execution.result.set_result(result)
+                    continue
+                if message_type == "RUN_SCOPE_CLOSED":
+                    request_id = require_string(message, "request_id", max_length=64)
+                    execution = runner.executions.get(request_id)
+                    if execution is None or not execution.result.done():
+                        raise ControlProtocolError("closed Run scope does not match a terminal request")
+                    _remove_execution(runner, request_id, execution)
+                    continue
+                if message_type == "ENVIRONMENT_RESULT":
+                    result = RunnerEnvironmentResult.model_validate_json(json.dumps(message.get("result")), strict=True)
+                    command = runner.environment_commands.get(result.request_id)
+                    if command is None or command.result.done():
+                        raise ControlProtocolError("Environment result does not match an active request")
+                    command.result.set_result(result)
+                    continue
+                if (
+                    message_type in {"DRAINED", "FORCE_CLOSED"}
+                    and runner.observation.state is RuntimeGenerationState.draining
+                ):
+                    continue
+                raise ControlProtocolError(f"unexpected Runner message: {message_type}")
+        except BaseException as exc:
+            error = exc
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            if runner.observation.state in {
+                RuntimeGenerationState.ready,
+                RuntimeGenerationState.active,
+            }:
+                self._transition(runner, RuntimeGenerationState.draining)
+            self._record_diagnostic(
+                runner.generation_id,
+                "runtime_channel_failed",
+                "The runtime Runner control channel failed.",
+            )
+            await runner.channel.close()
+        finally:
+            if error is None:
+                error = ControlProtocolError("Runner channel reader stopped")
+            for waiter in tuple(runner.lifecycle_waiters.values()):
+                if not waiter.done():
+                    waiter.set_exception(error)
+            runner.lifecycle_waiters.clear()
+            lost = self._error(
+                "runtime_runner_lost",
+                "The runtime Runner exited before returning a terminal result.",
+                generation_id=runner.generation_id,
+            )
+            for execution in tuple(runner.executions.values()):
+                if not execution.result.done():
+                    execution.result.set_exception(lost)
+            for command in tuple(runner.environment_commands.values()):
+                if not command.result.done():
+                    command.result.set_exception(lost)
+            runner.executions.clear()
+            runner.environment_commands.clear()
+
+    async def _request(
+        self,
+        runner: _RunnerGeneration,
+        message_type: str,
+        expected_type: str,
+        **fields: object,
+    ) -> dict[str, Any]:
+        correlation = fields.get("request_id")
+        waiter_key = f"{expected_type}:{correlation}" if isinstance(correlation, str) else expected_type
+        if waiter_key in runner.lifecycle_waiters:
+            raise ControlProtocolError(f"a {expected_type} response is already pending")
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        runner.lifecycle_waiters[waiter_key] = future
+        try:
+            await runner.channel.send(message_type, generation_id=runner.generation_id, **fields)
+            return await future
+        finally:
+            if runner.lifecycle_waiters.get(waiter_key) is future:
+                runner.lifecycle_waiters.pop(waiter_key, None)
+
     async def _activate(self, candidate: _RunnerGeneration) -> None:
         try:
             active = await asyncio.wait_for(
-                candidate.channel.request("ACTIVATE", expected_type="ACTIVE"),
+                self._request(candidate, "ACTIVATE", "ACTIVE"),
                 timeout=self._settings.command_timeout_seconds,
             )
             require_generation(active, candidate.generation_id)
@@ -373,7 +734,7 @@ class RuntimeGenerationService:
         if candidate.process.returncode is None:
             with contextlib.suppress(Exception):
                 exiting = await asyncio.wait_for(
-                    candidate.channel.request("SHUTDOWN", expected_type="EXITING"),
+                    self._request(candidate, "SHUTDOWN", "EXITING"),
                     timeout=self._settings.command_timeout_seconds,
                 )
                 require_generation(exiting, candidate.generation_id)
@@ -387,9 +748,11 @@ class RuntimeGenerationService:
             if runner.observation.state is not RuntimeGenerationState.exited:
                 self._mark_exited(runner, RuntimeExitReason.unexpected)
             await runner.channel.close()
+            await self._finish_reader(runner)
             return
         if runner.observation.state is RuntimeGenerationState.exited:
             await runner.channel.close()
+            await self._finish_reader(runner)
             await self._finish_watcher(runner)
             return
         runner.selected_exit_reason = RuntimeExitReason.graceful
@@ -397,12 +760,12 @@ class RuntimeGenerationService:
             self._transition(runner, RuntimeGenerationState.draining)
             try:
                 drained = await asyncio.wait_for(
-                    runner.channel.request("DRAIN", expected_type="DRAINED"),
+                    self._request(runner, "DRAIN", "DRAINED"),
                     timeout=self._settings.drain_timeout_seconds,
                 )
                 require_generation(drained, runner.generation_id)
                 exiting = await asyncio.wait_for(
-                    runner.channel.request("SHUTDOWN", expected_type="EXITING"),
+                    self._request(runner, "SHUTDOWN", "EXITING"),
                     timeout=self._settings.command_timeout_seconds,
                 )
                 require_generation(exiting, runner.generation_id)
@@ -412,6 +775,23 @@ class RuntimeGenerationService:
                     "runtime_drain_failed",
                     "The runtime Runner did not complete graceful drain and shutdown.",
                 )
+                try:
+                    forced = await asyncio.wait_for(
+                        self._request(runner, "FORCE_CLOSE", "FORCE_CLOSED"),
+                        timeout=self._settings.command_timeout_seconds,
+                    )
+                    require_generation(forced, runner.generation_id)
+                    exiting = await asyncio.wait_for(
+                        self._request(runner, "SHUTDOWN", "EXITING"),
+                        timeout=self._settings.command_timeout_seconds,
+                    )
+                    require_generation(exiting, runner.generation_id)
+                except (TimeoutError, ControlProtocolError, OSError):
+                    self._record_diagnostic(
+                        runner.generation_id,
+                        "runtime_force_close_failed",
+                        "The runtime Runner did not complete manager force-close before process termination.",
+                    )
         await self._ensure_stopped(runner, RuntimeExitReason.graceful)
 
     async def _ensure_stopped(self, runner: _RunnerGeneration, graceful_reason: RuntimeExitReason) -> None:
@@ -438,6 +818,7 @@ class RuntimeGenerationService:
                             generation_id=runner.generation_id,
                         ) from exc
         await runner.channel.close()
+        await self._finish_reader(runner)
         if runner.observation.state is not RuntimeGenerationState.exited:
             self._mark_exited(runner, reason)
         await self._finish_watcher(runner)
@@ -463,6 +844,15 @@ class RuntimeGenerationService:
             }
         )
         self._publish(runner)
+
+    async def _finish_reader(self, runner: _RunnerGeneration) -> None:
+        reader = runner.reader
+        if reader is None or reader is asyncio.current_task():
+            return
+        if not reader.done():
+            reader.cancel()
+        with contextlib.suppress(asyncio.CancelledError, ControlProtocolError, OSError):
+            await reader
 
     async def _finish_watcher(self, runner: _RunnerGeneration) -> None:
         watcher = runner.watcher
@@ -503,6 +893,7 @@ class RuntimeGenerationService:
         protected = {
             self._active.generation_id if self._active is not None else None,
             self._candidate.generation_id if self._candidate is not None else None,
+            *self._draining,
         }
         while len(self._observations) > self._settings.retained_generations:
             removable = [item for item in self._observations.values() if item.generation_id not in protected]
@@ -512,7 +903,7 @@ class RuntimeGenerationService:
             self._observations.pop(oldest.generation_id, None)
 
     def _refresh_return_codes(self) -> None:
-        for runner in (self._active, self._candidate):
+        for runner in (self._active, self._candidate, *self._draining.values()):
             if (
                 runner is not None
                 and runner.process.returncode is not None
@@ -540,6 +931,28 @@ class RuntimeGenerationService:
     ) -> RuntimeGenerationError:
         details = {"generation_id": generation_id} if generation_id is not None else None
         return RuntimeGenerationError(message, code=code, details=details)
+
+
+def _remove_execution(
+    runner: _RunnerGeneration,
+    request_id: str,
+    execution: _HostExecution,
+) -> None:
+    if not execution.result.cancelled():
+        execution.result.exception()
+    if runner.executions.get(request_id) is execution:
+        runner.executions.pop(request_id, None)
+
+
+def _remove_environment_command(
+    runner: _RunnerGeneration,
+    request_id: str,
+    command: _HostEnvironmentCommand,
+) -> None:
+    if not command.result.cancelled():
+        command.result.exception()
+    if runner.environment_commands.get(request_id) is command:
+        runner.environment_commands.pop(request_id, None)
 
 
 async def _complete_cleanup(awaitable: Coroutine[Any, Any, None]) -> bool:

@@ -4,7 +4,8 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_service.app import create_app
+from a13n_service.app import ServiceComponents, create_app
+from a13n_service.connectors import ConnectorProviderCatalog, LocalConnectorProviderOperations
 from a13n_service.secret_management import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
 from a13n_service.skill_management import AgentSkillLockResolver, FoundationSkillRuntimePreparer
@@ -39,6 +40,7 @@ def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
         "filesystem_root": tmp_path / "files",
         "secret_master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
         "secret_encryption_key_id": "foundation-service-test-key",
+        "connector_internal_auth_token": "foundation-service-test-connector-token",
     }
     values.update(updates)
     return ServiceSettings(**values)
@@ -100,6 +102,14 @@ def test_worker_role_serves_only_operational_endpoints(tmp_path: Path) -> None:
     assert request(app, "/").status_code == 404
 
 
+def test_connector_role_exposes_no_control_plane_routes() -> None:
+    app = create_app(ServiceSettings(_env_file=None, role=ServiceRole.connector))
+
+    assert request(app, "/healthz").json() == {"status": "ok", "role": "connector"}
+    assert request(app, "/api/openapi.json").status_code == 404
+    assert request(app, "/").status_code == 404
+
+
 def test_configured_web_build_requires_an_index(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Foundation Web index is missing"):
         create_app(ServiceSettings(_env_file=None, role=ServiceRole.control, web_dist_dir=tmp_path))
@@ -111,6 +121,7 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
     async with app.router.lifespan_context(app):
         storage = app.state.storage
+        assert len(app.state.connector_providers) == 0
         assert app.state.db_engine is storage.engine
         assert app.state.db_session_factory is storage.sessions
         assert isinstance(app.state.agent_skill_lock_resolver, AgentSkillLockResolver)
@@ -122,6 +133,44 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready", "role": "all"}
+
+
+@pytest.mark.anyio
+async def test_provider_code_is_loaded_only_by_connector_capable_roles(tmp_path: Path) -> None:
+    catalog = ConnectorProviderCatalog(())
+    control_components = ServiceComponents(connector_provider_operations=LocalConnectorProviderOperations(catalog))
+    provider_components = ServiceComponents(connector_provider_catalog=catalog)
+    directories = {name: tmp_path / name for name in ("control", "worker", "connector")}
+    for directory in directories.values():
+        directory.mkdir()
+    control = create_app(
+        local_settings(directories["control"], role=ServiceRole.control),
+        components=control_components,
+    )
+    worker = create_app(
+        local_settings(directories["worker"], role=ServiceRole.worker),
+        components=provider_components,
+    )
+    connector = create_app(
+        local_settings(
+            directories["connector"],
+            role=ServiceRole.connector,
+            connector_internal_auth_token="0" * 32,
+        ),
+        components=provider_components,
+    )
+
+    async with control.router.lifespan_context(control):
+        assert not hasattr(control.state, "connector_providers")
+        assert control.state.connector_provider_operations is not None
+        assert not hasattr(control.state, "connector_provider_runtime")
+    async with worker.router.lifespan_context(worker):
+        assert not hasattr(worker.state, "connector_providers")
+        assert not hasattr(worker.state, "connector_provider_runtime")
+    async with connector.router.lifespan_context(connector):
+        assert connector.state.connector_providers is catalog
+        assert connector.state.connector_provider_runtime is not None
+        assert connector.state.connector_mcp_gateway is not None
 
 
 @pytest.mark.anyio

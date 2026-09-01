@@ -404,7 +404,7 @@ class RunStateEnvelope:
 
 This is the complete serialized outer schema. `HarnessState` is encoded through its owning public adapter and carries the same `thread_id`. `checkpoint_seq` starts at zero and increases monotonically for each successful semantic state replacement. The initial value has `checkpoint_kind=initial`, `input_disposition=pending`, no attempt identity, fence zero, and no outcome candidate.
 
-`environment_config` is resolved and authorized at Run acceptance. Its exact connection targets, named or inline sources, connector locks, Secret references, permission ceilings, desired mount definitions, and digest remain byte-for-byte equivalent across every checkpoint replacement for that Run. A worker reauthorizes its references and resolves fresh Secret values, but cannot rewrite the accepted configuration.
+`environment_config` is resolved and authorized at Run acceptance. Its exact connection targets, named or inline sources, connector locks, Secret references, access levels, desired mount definitions, and digest remain byte-for-byte equivalent across every checkpoint replacement for that Run. A worker reauthorizes its references and resolves fresh Secret values, but cannot rewrite the accepted configuration.
 
 `selected_skill_names` is the complete effective selection resolved at Run acceptance. It is ordered by the selected AgentPresetVersion's available catalog, contains no duplicate or unknown name, and remains byte-for-byte equivalent across every checkpoint replacement. A worker revalidates it against the exact revision locks and current authority but cannot replace it with Agent defaults or another invocation value.
 

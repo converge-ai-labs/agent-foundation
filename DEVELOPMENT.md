@@ -4,11 +4,12 @@ This file explains the engineering choices shared by deployable Python services.
 
 ## Service Shape
 
-`foundation-service` ships one package and container image with two independently deployable roles and their all-in-one composition:
+`foundation-service` ships one package and container image with three independently deployable roles and their all-in-one composition:
 
-- `all`: control and worker in one process;
+- `all`: control, worker, and connector capabilities in one process;
 - `control`: APIs, scheduling, and control-plane maintenance;
-- `worker`: Run workers only.
+- `worker`: Run workers and Connector MCP clients only;
+- `connector`: Connector MCP, Provider execution, and Connector event ingress only.
 
 A role is a process ownership and scaling boundary, not a separate product, schema, tenant, or authorization boundary. Every background loop must have one explicit owning role, and overlap during rolling deployment must be safe through durable leases, fencing, or idempotency.
 
@@ -20,7 +21,7 @@ Organize business code by feature and add layers only for a real capability; do 
 - Application services own use-case orchestration and short transaction boundaries. They do not import FastAPI or encode HTTP status.
 - Repositories own SQLAlchemy queries, may flush, and never commit. ORM objects stay inside the persistence boundary and are not API responses or Harness contracts.
 - Durable asynchronous lifecycles use idempotent reconcilers and fenced workers. Model, tool, queue, and stream waits happen outside database transactions.
-- Process-role wiring selects routers, reconcilers, and workers; `control` and `worker` do not duplicate feature or domain models.
+- Process-role wiring selects routers, reconcilers, and workers; `control`, `worker`, and `connector` do not duplicate feature or domain models. Only `connector` and `all` load trusted Connector Provider code.
 
 ## HTTP Namespace and Browser Applications
 
@@ -28,7 +29,7 @@ Product-facing HTTP APIs use the `/api` namespace. Keep OpenAPI schemas and inte
 
 Operational liveness and readiness probes use explicit paths such as `/healthz` and `/readyz` outside `/api`. They expose only bounded process and dependency state and are not product resources. Browser history fallback must never turn an unknown `/api` request or an operational probe into an HTML application response.
 
-A browser application deployed with a service lives under `apps/`, remains private rather than becoming a language package, and builds reproducibly from its own lock file. Production images build immutable browser assets in a dedicated stage, copy only the output into the non-root runtime image, and require no Node.js runtime. The service can serve those assets from `/` for roles that own product ingress. Worker-only roles do not expose the browser application or product APIs.
+A browser application deployed with a service lives under `apps/`, remains private rather than becoming a language package, and builds reproducibly from its own lock file. Production images build immutable browser assets in a dedicated stage, copy only the output into the non-root runtime image, and require no Node.js runtime. The service can serve those assets from `/` for roles that own product ingress. Worker- and connector-only roles do not expose the browser application or product APIs.
 
 During local development, the browser dev server uses relative `/api` URLs and proxies that namespace unchanged to the backend. Repository commands start and stop the frontend and backend as one development stack while preserving each process's native diagnostics and shutdown behavior. Production remains same-origin and does not add CORS merely to accommodate local tooling.
 
@@ -82,7 +83,7 @@ Autogenerate is only a draft. Review names, constraints, server defaults, nullab
 
 ### Auto migration and locking
 
-The shared image enables auto migration by default for `all` and `control`, with PostgreSQL advisory locking serializing concurrent rollout replicas. Deployments that use a dedicated singleton migration job disable replica auto migration. The `worker` role never migrates; a non-owner performs `db current --check-heads` and fails closed when schema is incompatible.
+The shared image enables auto migration by default for `all` and `control`, with PostgreSQL advisory locking serializing concurrent rollout replicas. Deployments that use a dedicated singleton migration job disable replica auto migration. The `worker` and `connector` roles never migrate; a non-owner performs `db current --check-heads` and fails closed when schema is incompatible.
 
 PostgreSQL migrations use a dedicated synchronous `NullPool` connection and a service-scoped session advisory lock. The same connection holds the lock across revision inspection, transactional DDL, reviewed autocommit blocks, and stamping. Advisory-lock waiting temporarily uses `lock_timeout=0` and its own bounded `statement_timeout`; after acquisition, the normal short DDL lock timeout is restored. This keeps replica serialization independent from table-lock safety.
 

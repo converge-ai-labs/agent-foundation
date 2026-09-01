@@ -171,7 +171,11 @@ class SnapshotRepository:
         envelope = await self._store.read_object(object_ref)
         model_type = ResolvedAgentSnapshot if reference.snapshot_kind == "agent" else ResolvedEnvironmentSnapshot
         try:
-            snapshot = model_type.model_validate(envelope.payload, strict=True)
+            snapshot = model_type.model_validate(
+                envelope.payload,
+                strict=True,
+                context={"legacy_snapshot_payload": envelope.payload},
+            )
         except ValidationError as exc:
             raise StoreIntegrityError(
                 "A selected composition snapshot is invalid.",

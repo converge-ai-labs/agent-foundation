@@ -208,7 +208,7 @@ class SessionEnvironmentResourceRecord(Base):
     )
     mount_name: Mapped[str] = mapped_column(String(128), primary_key=True)
     model_alias: Mapped[str] = mapped_column(String(63), nullable=False)
-    permission_ceiling_json: Mapped[str] = mapped_column(Text, nullable=False)
+    access: Mapped[str] = mapped_column(String(16), nullable=False)
     provider_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     provider_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
     provider_spec_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

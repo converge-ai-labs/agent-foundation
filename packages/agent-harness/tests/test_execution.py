@@ -823,6 +823,53 @@ async def test_stream_steer_delivers_native_asap_input() -> None:
         assert terminal_error.value.code == "run_not_active"
 
 
+async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[tuple[ModelMessage, ...]] = []
+
+    async def steering_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        calls.append(tuple(messages))
+        if len(calls) == 1:
+            started.set()
+            await release.wait()
+            yield "first response"
+        else:
+            yield "collected"
+
+    executable = _build(FunctionModel(stream_function=steering_stream))
+    async with executable.stream("initial", bindings=RunBindings.embedded()) as stream:
+        consumer = asyncio.create_task(_consume_stream(stream))
+        await started.wait()
+        enqueue_id = await stream.context._steering.notify(
+            "Background subagent subagent-1 has finished. Call wait_subagent.",
+            source="async_subagent",
+            references=("subagent-1",),
+        )
+        release.set()
+        items = await asyncio.wait_for(consumer, timeout=2)
+
+    assert enqueue_id
+    assert len(calls) == 2
+    assert "wait_subagent" in str(calls[1])
+    notifications = [
+        item.event
+        for item in items
+        if isinstance(item, HarnessEvent)
+        and isinstance(item.event, HarnessExtensionEvent)
+        and item.event.payload.get("type") == "steering_input_enqueued"
+    ]
+    assert len(notifications) == 1
+    assert notifications[0].kind == "lifecycle"
+    assert notifications[0].payload == {
+        "type": "steering_input_enqueued",
+        "enqueue_id": enqueue_id,
+        "source": "async_subagent",
+        "references": ["subagent-1"],
+    }
+
+
 async def test_stream_steer_requires_an_active_native_run() -> None:
     executable = _build(_turn_model([]))
     stream = executable.stream("initial", bindings=RunBindings.embedded())

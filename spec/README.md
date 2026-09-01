@@ -34,6 +34,7 @@ flowchart TB
         Lifecycle[Durable Runs and RunAttempts]
         Worker[Worker]
         Reconstruct[Trusted reconstruction adapters]
+        ConnectorService[Connector Service<br/>MCP Gateway and Providers]
     end
 
     subgraph LocalUI[agent-ui]
@@ -47,6 +48,7 @@ flowchart TB
     subgraph FoundationClients[Foundation clients]
         FoundationCLI[agent-foundation CLI]
         RustSDK[Foundation Rust SDK]
+        MCPClients[Standard MCP clients]
     end
 
     subgraph Harness[agent-harness]
@@ -89,11 +91,16 @@ flowchart TB
     Control --> Definitions & Connectors
     Definitions & Connectors --> Lifecycle --> Worker
     Definitions & Connectors --> Reconstruct --> Definition
+    Control -. Connector management .-> ConnectorService
+    Worker --> ConnectorService
+    MCPClients --> ConnectorService
+    ConnectorService -. verified occurrence .-> Control
     Definition --> Builder --> Plugins
     Worker --> Bindings
     Identity --> Bindings
     Plugins & Bindings --> Context --> Run --> State
-    Run --> Models & Tools
+    Run --> Models
+    ConnectorService --> Tools
     Run -. deferred calls .-> Clients
     Worker & Runner --> ProviderPackage
     ProviderPackage --> Local & EIPClient
@@ -109,18 +116,18 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 
 ## Component Responsibilities
 
-| Component                    | Owns                                                                                                                                                                                                                                                                                                                                   | Does not own                                                                                                                                            |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent-harness`              | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                                                                                                                                                                              | Provider resource management, durable Agent schemas, local sessions, presentation, delivery, or billing                                                 |
-| `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Providers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                                                                                                                                              | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                                                      |
-| `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                                                                                                                            | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                                                |
-| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, continuation-backed Sessions, stable Host authority, replaceable runtime Runners, process-local root and child execution, WebUI, and CLI                                                                                                          | Durable work acceptance, distributed execution, multi-tenant authorization, or another Agent loop                                                       |
-| `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                                                                                                                           | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle                                |
-| `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                                                                                                                                                         | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                                                        |
-| Foundation SDKs              | Language-typed access to the public Foundation Service Native `/api` contract, including streams and notifications                                                                                                                                                                                                                     | Service internals, standard-protocol replacement, product policy, or durable lifecycle authority                                                        |
-| `agent-foundation`           | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                                                                                                                                                                                 | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control                                            |
-| `foundation-service`         | Managed Secrets, ModelConfigs, AgentPresets and immutable AgentPresetVersions, Skill/Connector/Environment revisions, immutable Assets, managed Harness plugin artifacts and Runtime locks, durable Runs/RunAttempts, Protocol Gateway, events, raw usage, generic OTel tracing, authorized trace queries, and optional web projection | Pydantic Agent loop, Python object serialization, client-side effects, provider resource lifecycle and state, telemetry storage, or telemetry authority |
-| Product                      | Caller authentication, business policy, user experience, and final delivery                                                                                                                                                                                                                                                            | Harness internals and provider implementation                                                                                                           |
+| Component                    | Owns                                                                                                                                                                                                                                                                                                                                                      | Does not own                                                                                                                                           |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent-harness`              | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                                                                                                                                                                                                 | Provider resource management, durable Agent schemas, local sessions, presentation, delivery, or billing                                                |
+| `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Providers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                                                                                                                                                                 | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                                                     |
+| `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                                                                                                                                               | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                                               |
+| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, continuation-backed Sessions, stable Host authority, replaceable runtime Runners, process-local root and child execution, WebUI, and CLI                                                                                                                             | Durable work acceptance, distributed execution, multi-tenant authorization, or another Agent loop                                                      |
+| `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                                                                                                                                              | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle                               |
+| `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                                                                                                                                                                            | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                                                       |
+| Foundation SDKs              | Language-typed access to the public Foundation Service Native `/api` contract, including streams and notifications                                                                                                                                                                                                                                        | Service internals, standard-protocol replacement, product policy, or durable lifecycle authority                                                       |
+| `agent-foundation`           | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                                                                                                                                                                                                    | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control                                           |
+| `foundation-service`         | Managed Secrets, ModelConfigs, AgentPresets and immutable AgentPresetVersions, Skill/Connector/Environment revisions, immutable Assets, managed Harness plugin artifacts and Runtime locks, durable Runs/RunAttempts, Protocol Gateway, Connector Service, events, raw usage, generic OTel tracing, authorized trace queries, and optional web projection | Pydantic Agent loop, Python object serialization, client-side effects, external provider resource authority, telemetry storage, or telemetry authority |
+| Product                      | Caller authentication, business policy, user experience, and final delivery                                                                                                                                                                                                                                                                               | Harness internals and provider implementation                                                                                                          |
 
 ## Harness Foundation
 
@@ -175,7 +182,13 @@ Provider-defined portable backend data can enter only the explicit `HarnessState
 
 ## Foundation Client Surfaces
 
-Foundation Service clients operate only through the public `/api` namespace. The language SDKs own typed transport and service-contract mapping. The `agent-foundation` executable is a user-facing composition layer above the Rust SDK and does not duplicate HTTP serialization, authentication transport, retries, or service models.
+Foundation Service SDKs, the remote CLI, and the browser management application
+operate only through the public `/api` namespace. Standard MCP Clients use the
+separate Connector Service MCP surface and do not become Foundation SDK clients.
+The language SDKs own typed management transport and service-contract mapping.
+The `agent-foundation` executable is a user-facing composition layer above the
+Rust SDK and does not duplicate HTTP serialization, authentication transport,
+retries, or service models.
 
 Standard AG-UI clients and A2A peers use the Foundation Service Protocol
 Gateway directly and require no Foundation SDK. Their wire versions, errors,
@@ -262,8 +275,8 @@ The hosted service boundary is defined in [Foundation Service](foundation-servic
 | ------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Embedded            | Application-selected                                                                                                  | Harness in product process                                                   |
 | Local Agent UI      | SQLite metadata plus immutable snapshot, continuation, Skill, and provider-state files; last-write-wins local updates | Harness plus Environment Provider resources and process-local async children |
-| Minimal service     | SQLite, in-memory Redis, and local objects                                                                            | Control and worker together in one process                                   |
-| Distributed service | PostgreSQL, real Redis, and shared object storage                                                                     | Separately scalable control and worker roles                                 |
+| Minimal service     | SQLite, in-memory Redis, and local objects                                                                            | Control, worker, and Connector Service together in one process               |
+| Distributed service | PostgreSQL, real Redis, and shared object storage                                                                     | Separately scalable control, worker, and connector roles                     |
 
 Foundation Service configuration, role ownership, dependency requirements, and readiness are defined by [Runtime Configuration and Deployment](foundation-service/01-runtime-configuration-and-deployment.md). The internal relational, Redis-compatible, object, and mounted-filesystem surfaces are defined by [Foundation Storage Capabilities](foundation-service/03-storage.md). The final distribution's relational metadata and migration authority are defined by the [Relational Schema Lifecycle](foundation-service/04-relational-schema.md).
 
@@ -296,6 +309,12 @@ Foundation Service additionally exposes the
 streams, Hosted AG-UI, and A2A are separate public protocols over common
 application authority. Upstream AG-UI and A2A wire contracts do not inherit
 Foundation JSON naming or `/api/v1` error semantics.
+
+Foundation Service also exposes the standard Connector MCP surface defined by
+[Connectors, Connections, and Triggers](foundation-service/23-connectors-connections-and-triggers.md).
+MCP uses its own protocol and error contract, authenticates the existing
+Foundation Principal or one RunAttempt capability, and does not become a
+resource-oriented `/api/v1` operation.
 
 ## Extension Model
 

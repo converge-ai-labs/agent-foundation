@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Annotated, Any, Literal, Self, cast
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import Field, JsonValue, ValidationInfo, model_validator
 
 from a13n_ui.configuration.models import (
     AgentEnvironmentRequirements,
@@ -24,7 +25,9 @@ from a13n_ui.configuration.models import (
     StrictModel,
     SubagentIdentitySelection,
     UsageLimitsSelection,
+    _without_legacy_defaults,
     canonical_digest,
+    legacy_environment_access,
 )
 
 _DIGEST = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -62,9 +65,14 @@ class ResolvedSubagentEdge(StrictModel):
     identity: SubagentIdentitySelection = SubagentIdentitySelection()
     usage_limits: UsageLimitsSelection | None
     environment: ChildEnvironmentPolicy
-    lifetime: Literal["parent_scope", "session"]
-    steering: Literal["enabled", "disabled"]
-    continuation: Literal["enabled", "disabled"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_runtime_controls(cls, value: object) -> object:
+        return _without_legacy_defaults(
+            value,
+            {"lifetime": "parent_scope", "steering": "disabled", "continuation": "disabled"},
+        )
 
 
 class ResolvedAgentNode(StrictModel):
@@ -79,6 +87,7 @@ class ResolvedAgentNode(StrictModel):
     skill_materialization_mount: _ID | None = None
     default_skill_names: tuple[str, ...] | None = None
     capabilities: tuple[FirstPartyCapabilitySelection, ...] = ()
+    environment_tools: bool = True
     environment: AgentEnvironmentRequirements
     subagents: tuple[ResolvedSubagentEdge, ...] = ()
     async_subagents: AsyncSubagentConfiguration
@@ -111,7 +120,7 @@ class ResolvedAgentSnapshot(StrictModel):
     harness_release: str = Field(min_length=1, max_length=128)
 
     @model_validator(mode="after")
-    def _validate_snapshot(self) -> Self:
+    def _validate_snapshot(self, info: ValidationInfo) -> Self:
         refs = tuple(node.agent_revision for node in self.resolved_agents)
         agent_ids = tuple(node.agent_id for node in self.resolved_agents)
         if len(refs) != len(set(refs)) or self.root_agent not in refs:
@@ -147,19 +156,24 @@ class ResolvedAgentSnapshot(StrictModel):
             )
         )
         if self.logical_agent_digest != expected:
-            if any(edge.identity.inherit_agent_id for node in self.resolved_agents for edge in node.subagents):
-                raise ValueError("logical Agent digest does not match snapshot content")
-            legacy_content = cast(
-                dict[str, Any],
-                self.model_dump(
-                    mode="python",
-                    exclude={"logical_agent_digest", "generation_id", "catalog_digest"},
-                ),
-            )
-            for node in cast(tuple[dict[str, Any], ...], legacy_content["resolved_agents"]):
-                for edge in cast(tuple[dict[str, Any], ...], node["subagents"]):
-                    edge.pop("identity")
-            if self.logical_agent_digest != canonical_digest(legacy_content):
+            legacy_identity_matches = False
+            if not any(edge.identity.inherit_agent_id for node in self.resolved_agents for edge in node.subagents):
+                legacy_content = cast(
+                    dict[str, Any],
+                    self.model_dump(
+                        mode="python",
+                        exclude={"logical_agent_digest", "generation_id", "catalog_digest"},
+                    ),
+                )
+                for node in cast(tuple[dict[str, Any], ...], legacy_content["resolved_agents"]):
+                    for edge in cast(tuple[dict[str, Any], ...], node["subagents"]):
+                        edge.pop("identity")
+                legacy_identity_matches = self.logical_agent_digest == canonical_digest(legacy_content)
+            if not legacy_identity_matches and not _legacy_snapshot_digest_matches(
+                info,
+                field="logical_agent_digest",
+                expected=self.logical_agent_digest,
+            ):
                 raise ValueError("logical Agent digest does not match snapshot content")
         return self
 
@@ -176,9 +190,20 @@ class ResolvedEnvironmentMountDefinition(StrictModel):
     provider_key: str = Field(min_length=3, max_length=128)
     provider_schema_version: str = Field(min_length=1, max_length=64)
     normalized_parameters: dict[str, JsonValue] = Field(default_factory=dict)
-    permission_ceiling: frozenset[str] = frozenset()
+    access: Literal["read_only", "read_write", "full"] = "full"
     lifecycle_capabilities: ResolvedEnvironmentLifecycleCapabilities
     dependency: DependencyLock
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_permission_ceiling(cls, value: object) -> object:
+        if not isinstance(value, dict) or "permission_ceiling" not in value:
+            return value
+        normalized = dict(value)
+        if "access" in normalized:
+            raise ValueError("permission_ceiling and access must not both be present")
+        normalized["access"] = legacy_environment_access(normalized.pop("permission_ceiling"))
+        return normalized
 
 
 class ResolvedEnvironmentSnapshot(StrictModel):
@@ -192,7 +217,7 @@ class ResolvedEnvironmentSnapshot(StrictModel):
     provider_locks: tuple[DependencyLock, ...] = ()
 
     @model_validator(mode="after")
-    def _validate_snapshot(self) -> Self:
+    def _validate_snapshot(self, info: ValidationInfo) -> Self:
         names = tuple(mount.mount_name for mount in self.mounts)
         if len(names) != len(set(names)):
             raise ValueError("resolved Environment mount names must be unique")
@@ -210,9 +235,25 @@ class ResolvedEnvironmentSnapshot(StrictModel):
                 exclude={"logical_environment_digest", "generation_id", "catalog_digest"},
             )
         )
-        if self.logical_environment_digest != expected:
+        if self.logical_environment_digest != expected and not _legacy_snapshot_digest_matches(
+            info,
+            field="logical_environment_digest",
+            expected=self.logical_environment_digest,
+        ):
             raise ValueError("logical Environment digest does not match snapshot content")
         return self
+
+
+def _legacy_snapshot_digest_matches(info: ValidationInfo, *, field: str, expected: str) -> bool:
+    if not isinstance(info.context, dict):
+        return False
+    payload = info.context.get("legacy_snapshot_payload")
+    if not isinstance(payload, Mapping) or payload.get(field) != expected:
+        return False
+    content = dict(payload)
+    for name in {field, "generation_id", "catalog_digest"}:
+        content.pop(name, None)
+    return canonical_digest(content) == expected
 
 
 def _lock_identity(lock: DependencyLock) -> tuple[str, str, str | None, str | None]:

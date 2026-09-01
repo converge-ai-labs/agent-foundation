@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +24,8 @@ from a13n_harness import (
 from a13n_harness.capabilities import (
     CodeActCapability,
     CodeActConfig,
-    DelegationCapability,
-    DelegationRunCapability,
+    SubagentCapability,
+    SubagentManager,
 )
 from a13n_harness.codeact.runtime import CodeActRunState
 from a13n_harness.environment import (
@@ -397,6 +398,23 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
         else:
             yield "parent-done"
 
+    async def allow(*args: Any, **kwargs: Any) -> InvocationPolicyDecision:
+        del args, kwargs
+        return InvocationPolicyDecision.allow()
+
+    @asynccontextmanager
+    async def bind_child(context, child, input, child_instance_id, continuation, usage_limits):
+        del child, input, continuation, usage_limits
+        yield RunBindings(
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="child"),
+                agent_instance_id=f"internal-{child_instance_id}",
+                parent_agent_instance_id=context.instance.agent_instance_id,
+                delegation_id=child_instance_id,
+            ),
+            environment=EmptyEnvironmentRuntime(),
+        )
+
     parent = AgentDefinition(
         agent=AgentSpec(),
         output_type=str,
@@ -405,7 +423,10 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
         capabilities=(
             _codeact_tools(parent_double, allowed=("parent_double",)),
             CodeActCapability(),
-            DelegationCapability(),
+            SubagentCapability(
+                execution="inline",
+                operator=SubagentManager(bind_child),
+            ),
         ),
         subagents=(
             SubagentDefinition(
@@ -416,32 +437,13 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
         ),
     )
 
-    async def allow(*args: Any, **kwargs: Any) -> InvocationPolicyDecision:
-        del args, kwargs
-        return InvocationPolicyDecision.allow()
-
-    async def bind_child(child, input, child_instance_id, continuation, usage_limits):
-        del child, input, continuation, usage_limits
-        return RunBindings(
-            instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="test", subject="child"),
-                agent_instance_id=f"internal-{child_instance_id}",
-                parent_agent_instance_id="parent-1",
-                delegation_id=child_instance_id,
-            ),
-            environment=EmptyEnvironmentRuntime(),
-        )
-
     bindings = RunBindings(
         instance=AgentInstanceContext(
             identity=AgentIdentityRef(issuer="test", subject="parent"),
             agent_instance_id="parent-1",
         ),
         environment=EmptyEnvironmentRuntime(),
-        capabilities=(
-            InvocationPolicyCapability(evaluator=allow),
-            DelegationRunCapability(binder=bind_child),
-        ),
+        capabilities=(InvocationPolicyCapability(evaluator=allow),),
     )
     result = await HarnessBuilder().build(parent).run("start", bindings=bindings)
 

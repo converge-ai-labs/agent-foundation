@@ -277,7 +277,12 @@ class FoundationAgentSkillSelection:
 
 The request selects immutable revision IDs, including an authorized retained non-current revision. It accepts no `latest`, upload receipt, GitHub selector, object URL, or source path. AgentPreset Publish resolves and copies the complete locks.
 
-`materialization_mount` is absent exactly when no Skills are available. `all` exposes the complete unique-name catalog and has empty `default_names`; `exact` exposes the exact possibly-empty set. Publication rejects inaccessible or deleted Skills, duplicate final names, unknown exact names, a catalog over the service limit, and an Environment mount whose permission ceiling lacks list, stat, read, write, create, and remove file operations. Later Skill publication or deletion never mutates the AgentPresetVersion or an accepted Run.
+`materialization_mount` is absent exactly when no Skills are available. `all`
+exposes the complete unique-name catalog and has empty `default_names`; `exact`
+exposes the exact possibly-empty set. Publication rejects inaccessible or deleted
+Skills, duplicate final names, unknown exact names, a catalog over the service limit,
+and an Environment mount whose access is not `read_write` or `full`. Later Skill publication or deletion never mutates the AgentPresetVersion or
+an accepted Run.
 
 Root, ordinary continuation, fork, and equivalent Host-owned initial Run submissions can optionally carry `selected_skill_names`. Absence uses the selected AgentPresetVersion's `default_mode` and `default_names`; a present JSON array is the exact selection for that Run, including an empty array that selects no Skills. JSON `null` is invalid. The array contains at most 512 distinct names, and every name must occur in the AgentPresetVersion's `available` locks. The override can choose any subset of that locked catalog but cannot add a revision, change a digest or materialization mount, or select a source or mutable Skill head. Waiting feedback and explicit retry preserve the source Run's effective tuple: those operations continue frozen deferred work or accepted intent rather than accepting a new run override.
 

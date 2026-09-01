@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -10,6 +12,8 @@ from a13n_logging import LogFormat
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from a13n_service.connectors.capability import ConnectorCapabilityCodec
+from a13n_service.connectors.registry import ConnectorProviderTrust
 from a13n_service.database import MigrationConfig
 from a13n_service.secret_management import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (
@@ -30,6 +34,7 @@ class ServiceRole(StrEnum):
     all = "all"
     control = "control"
     worker = "worker"
+    connector = "connector"
 
 
 class DatabaseBackend(StrEnum):
@@ -63,6 +68,17 @@ class ServiceSettings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     build_version: str = "unknown"
     web_dist_dir: Path | None = None
+    connector_providers: tuple[ConnectorProviderTrust, ...] = ()
+    connector_trigger_min_interval_seconds: int = Field(default=60, ge=1, le=86_400)
+    connector_capability_signing_key_base64: SecretStr | None = Field(default=None, repr=False)
+    connector_internal_auth_token: SecretStr | None = Field(
+        default=None,
+        min_length=32,
+        max_length=4_096,
+        repr=False,
+    )
+    connector_mcp_operation_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    connector_service_base_url: str = "http://127.0.0.1:8000"
 
     database_backend: DatabaseBackend = DatabaseBackend.postgresql
     database_url: SecretStr | None = Field(
@@ -201,6 +217,18 @@ class ServiceSettings(BaseSettings):
             encoded_key=self.secret_master_key_base64.get_secret_value(),
             encryption_key_id=self.secret_encryption_key_id,
         )
+
+    def connector_capability_codec(self) -> ConnectorCapabilityCodec:
+        if self.connector_capability_signing_key_base64 is None:
+            raise ValueError("FOUNDATION_CONNECTOR_CAPABILITY_SIGNING_KEY_BASE64 is required")
+        try:
+            key = base64.b64decode(
+                self.connector_capability_signing_key_base64.get_secret_value(),
+                validate=True,
+            )
+        except (binascii.Error, ValueError):
+            raise ValueError("FOUNDATION_CONNECTOR_CAPABILITY_SIGNING_KEY_BASE64 is invalid") from None
+        return ConnectorCapabilityCodec(key)
 
 
 @lru_cache(maxsize=1)

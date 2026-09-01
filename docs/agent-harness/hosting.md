@@ -137,45 +137,40 @@ Advanced attachment and runtime-mount assembly lives under `a13n_harness.environ
 
 ## Background Processes Across Turns and Restarts
 
-A managed background process spans two independent state domains:
+A background process has two distinct owners:
 
-| Domain             | Stored fact                                                                                                      | Owner                              |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Agent continuation | `process-N`, exact portable process identity, unread stdout/stderr offsets, monotonic sequence, last observation | `HarnessState.agent_context_state` |
-| Runtime truth      | Process existence, status, retained output, Environment generation, resource lifecycle                           | Environment provider and Host      |
+| Domain              | Stored fact                                                                   | Owner                              |
+| ------------------- | ----------------------------------------------------------------------------- | ---------------------------------- |
+| Parent continuation | `process-N`, opaque backend ID, unread offsets, sequence, bounded observation | `HarnessState.agent_context_state` |
+| Canonical work      | Process object, controls, retained output, Environment scope, cleanup         | Configured `ShellOperator`         |
 
-The portable process identity is `(provider_type, environment_id, generation, provider process ID)`. It is a selector, not a credential. A continuation can use it only after a fresh current mount reauthorizes the operation. The Harness never restores by mount name, current default mount, prior opaque mount ID, or process enumeration.
+The standard `ProcessManager` is the process-local canonical owner. Construct it once for an embedding executable or Runner generation. Its Host `ProcessLauncher` may reopen exact provider state into a fresh Environment, reuse an underlying sandbox according to provider semantics, start the process, and return a self-contained `ManagedProcess`. The launcher must finish this construction before returning and must not borrow the parent Run's `BoundEnvironment`.
 
-For every continuation that may access an existing background process, the Host must:
+Parent Run or Environment exit never closes the Manager. `force_close()` is an explicit Host decision, normally made when the embedding executable or Runner generation ends. A Host with a broader canonical process service can retain or replace the operator under its own lifecycle policy.
 
-1. persist and select the complete `HarnessState`, not just message history;
-2. persist the provider resource record and keep or reconnect the real Environment resource;
-3. attach exactly one current Environment with the stored provider type and logical Environment ID;
-4. preserve the same generation when the process is expected to survive;
-5. ensure the provider retains output until the Agent drains it or lifecycle policy explicitly destroys it;
-6. start a fresh Harness Run and let `ProcessManager` lazily rebind and reconcile the exact provider process ID.
+For every later Run that may address existing work, reconstruct the Capability with the same Manager and supply the complete selected `HarnessState`. The parent projection rebinds its opaque backend ID through that Manager. A missing record becomes explicitly lost; Harness never reconstructs it from a mount name, PID, provider enumeration, or another process.
 
-No current attachment is a temporary unavailable result and does not erase the Agent mapping. A generation mismatch or authoritative not-found response marks the process `backend_lost`; the Host must not substitute another process. A cached bound handle made stale by mount replacement is discarded and rebound by portable identity.
+Current-Run observers can enqueue bounded wait/status notices. Stable Manager hooks are independent and include `AgentInstanceContext.host_refs`, so a Host can correlate completion after the Run closes and optionally schedule a new Run from its selected continuation. Hook delivery is best-effort unless the Host adds a durable contract outside Harness.
 
-Harness observation exists only during an entered shell Toolset Turn. It waits on the real provider process, can enqueue a native completion hint, and can call optional `ProcessEventHook` values. Turn cleanup cancels only these waits and never kills the provider process. To wake a Thread while no Harness Turn is active, the Host uses provider-native events or polling keyed by its durable Environment-resource record and schedules a new continuation. Events are hints and can be lost or duplicated; `shell_status`, `shell_wait`, and lazy rebind remain authoritative.
-
-This contract supports a later Run or Host process restart only when the provider preserves the process and retained output independently. The built-in Direct Local entered provider ends its managed processes when its scope closes and does not provide cross-Run continuation. A surviving EIP/`agent-envd` resource can, provided its logical Environment ID and generation remain unchanged. The six shell tools intentionally include no ambient process-list operation, so only process references already stored in the selected `HarnessState` are recoverable.
+The default Manager does not survive a Host process or Runner-generation restart. A Host requiring that guarantee supplies a custom background-capable `ShellOperator` backed by independently retained process and output state. The standard Toolset, compact projections, and loss behavior remain unchanged.
 
 ## Minimal vs. Production Host
 
-| Embedded application                            | Distributed Host                                   |
-| ----------------------------------------------- | -------------------------------------------------- |
-| Omit `bindings` or use `RunBindings.embedded()` | Explicit authenticated instance context            |
-| In-memory selected state                        | Durable immutable checkpoints and selection        |
-| No Environment or Harness-owned Provider        | Host-owned Resources and fresh per-run attachments |
-| Process-local policy collaborators              | Current tenant/user policy and credentials         |
-| Direct result handling                          | Fenced terminal commit and delivery lifecycle      |
-| Inline child execution                          | Optional durable child Execution lifecycle         |
+| Embedded application                             | Distributed Host                                     |
+| ------------------------------------------------ | ---------------------------------------------------- |
+| Omit `bindings` or use `RunBindings.embedded()`  | Explicit authenticated instance context              |
+| In-memory selected state                         | Durable immutable checkpoints and selection          |
+| No Environment or Provider-input temporary scope | Host-managed Resources and fresh per-run attachments |
+| Process-local policy collaborators               | Current tenant/user policy and credentials           |
+| Direct result handling                           | Fenced terminal commit and delivery lifecycle        |
+| Inline child execution                           | Optional durable child Execution lifecycle           |
 
 Start with the embedded path and add Host-owned durable boundaries only when the product requires them.
 
 ## Runnable Example
 
-The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates the boundary before a full durable Host: it streams repeated turns, atomically stores the returned `HarnessState` only after successful completion, resumes the same Thread after application restart, and creates and destroys one Harness-owned Provider Resource per turn.
+The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates the boundary before a full durable Host: it streams repeated turns, atomically stores the returned `HarnessState` only after successful completion, resumes the same Thread after application restart, and explicitly selects one temporary Provider lifecycle per turn.
+
+The [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates both Resource-exit policies in one executable flow: the reusable source Resource exits without destruction and is later resumed and explicitly destroyed, while the temporary docs Resource supplies an exact destroy operation and selects `destroy_on_exit=True`.
 
 Its single state file is application teaching code, not an Execution ledger, lease, fence, or prescribed production persistence implementation. Add the Host-owned records described above when multiple workers, replacement attempts, side effects, or durable terminal delivery require them.

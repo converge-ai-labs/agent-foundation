@@ -26,52 +26,61 @@ type EnvironmentSource = EnvironmentProvider | EnvironmentResource
 
 
 class EnvironmentAccess(StrEnum):
-    """Convenient permission ceilings for a mounted Environment source."""
+    """User-facing access level for a mounted Environment source."""
 
     READ_ONLY = "read_only"
+    READ_WRITE = "read_write"
     FULL = "full"
 
     def permission_set(self) -> EnvironmentPermissionSet:
         if self is EnvironmentAccess.FULL:
-            return EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
-        return EnvironmentPermissionSet(operations=_READ_ONLY_ACTIONS)
+            operations = frozenset(EnvironmentAction)
+        elif self is EnvironmentAccess.READ_WRITE:
+            operations = _READ_WRITE_ACTIONS
+        else:
+            operations = _READ_ONLY_ACTIONS
+        return EnvironmentPermissionSet(operations=operations)
 
 
-_READ_ONLY_ACTIONS = frozenset(
+_ENVIRONMENT_LIFECYCLE_ACTIONS = frozenset(
     {
-        EnvironmentAction.FILE_STAT,
-        EnvironmentAction.FILE_READ_TEXT,
-        EnvironmentAction.FILE_READ_BYTES,
-        EnvironmentAction.FILE_LIST,
-        EnvironmentAction.FILE_QUERY,
-        EnvironmentAction.FILE_SEARCH_TEXT,
-        EnvironmentAction.FILE_COPY_SOURCE,
-        EnvironmentAction.PROCESS_INSPECT,
-        EnvironmentAction.PROCESS_READ_OUTPUT,
-        EnvironmentAction.PROCESS_WAIT,
-        EnvironmentAction.PROCESS_RELEASE,
-        EnvironmentAction.OUTPUT_READ,
-        EnvironmentAction.OUTPUT_RELEASE,
-        EnvironmentAction.PORT_INSPECT,
-        EnvironmentAction.PORT_WAIT,
         EnvironmentAction.STATE_EXPORT,
+        EnvironmentAction.STATE_RESTORE,
     }
+)
+_READ_ONLY_ACTIONS = (
+    frozenset(
+        {
+            EnvironmentAction.FILE_STAT,
+            EnvironmentAction.FILE_READ_TEXT,
+            EnvironmentAction.FILE_READ_BYTES,
+            EnvironmentAction.FILE_LIST,
+            EnvironmentAction.FILE_QUERY,
+            EnvironmentAction.FILE_SEARCH_TEXT,
+            EnvironmentAction.FILE_COPY_SOURCE,
+        }
+    )
+    | _ENVIRONMENT_LIFECYCLE_ACTIONS
+)
+_READ_WRITE_ACTIONS = (
+    frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
+    | _ENVIRONMENT_LIFECYCLE_ACTIONS
 )
 
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
-    """One Environment source with an optional permission and path policy."""
+    """One Environment source with a user-facing access level and path policy."""
 
     source: EnvironmentSource
-    access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
+    access: EnvironmentAccess = EnvironmentAccess.FULL
     working_directory: str | None = "/"
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, EnvironmentProvider | EnvironmentResource):
             raise TypeError("EnvironmentMount source must be an EnvironmentProvider or EnvironmentResource")
-        if not isinstance(self.access, EnvironmentAccess | EnvironmentPermissionSet):
-            raise TypeError("EnvironmentMount access must be EnvironmentAccess or EnvironmentPermissionSet")
+        if not isinstance(self.access, EnvironmentAccess):
+            raise TypeError("EnvironmentMount access must be an EnvironmentAccess")
         if self.working_directory is not None and (
             not isinstance(self.working_directory, str)
             or not self.working_directory.startswith("/")
@@ -84,9 +93,7 @@ class EnvironmentMount:
 
     @property
     def permissions(self) -> EnvironmentPermissionSet:
-        if isinstance(self.access, EnvironmentAccess):
-            return self.access.permission_set()
-        return self.access.model_copy(deep=True)
+        return self.access.permission_set()
 
 
 type EnvironmentEntry = EnvironmentSource | EnvironmentMount

@@ -5,13 +5,16 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from enum import StrEnum
+from typing import Literal
+from uuid import uuid4
 
-from a13n_environment_provider import build_environment_provider_factory_catalog
+from a13n_environment_provider import EnvironmentPauseMode
 from a13n_harness import RunInputValue
 from anyio import CancelScope, Event, Lock, move_on_after
 from anyio.streams.memory import MemoryObjectReceiveStream
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.usage import RunUsage
 
 from a13n_ui.composition import (
     AgentEnvironmentCompatibility,
@@ -34,15 +37,15 @@ from a13n_ui.configuration import (
     SkillSourceStatus,
 )
 from a13n_ui.configuration.catalog import CatalogRepository
-from a13n_ui.environments import EnvironmentAvailability, EnvironmentService, ProviderRuntimeResolver
+from a13n_ui.environments import EnvironmentAvailability, EnvironmentService
 from a13n_ui.errors import EnvironmentLifecycleError, HostStateError
-from a13n_ui.model_adapters import RunModelResolverFactory, unavailable_run_model_resolver_factory
 from a13n_ui.runs import ForegroundRunCoordinator
 from a13n_ui.runtime_generations import (
     RuntimeGenerationService,
     RuntimeRestartResult,
     RuntimeStatus,
 )
+from a13n_ui.runtime_generations.wire import ExecuteEnvironmentCommand, ProviderStateUpdate, SelectedEnvironmentResource
 from a13n_ui.sessions import (
     EventSubscription,
     LocalSession,
@@ -54,7 +57,7 @@ from a13n_ui.sessions import (
     SessionUpdate,
 )
 from a13n_ui.settings import AgentUiSettings
-from a13n_ui.storage import LocalStore, open_local_store
+from a13n_ui.storage import LocalStore, ObjectKind, ObjectRef, open_local_store
 
 
 class HostState(StrEnum):
@@ -83,8 +86,6 @@ class AgentUiHost:
         self,
         settings: AgentUiSettings,
         store: LocalStore,
-        *,
-        model_resolver_factory: RunModelResolverFactory = unavailable_run_model_resolver_factory,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -92,25 +93,22 @@ class AgentUiHost:
         catalog = CatalogRepository(store)
         self._configuration = ConfigurationService(settings.configuration, catalog)
         self._composition = CompositionService(store, catalog)
-        factories = build_environment_provider_factory_catalog(
-            builtin_keys=settings.configuration.builtin_provider_keys,
-            extension_keys=settings.configuration.extension_provider_keys,
-        )
-        self._environments = EnvironmentService(
-            store=store,
-            factories=factories,
-            runtimes=ProviderRuntimeResolver(),
-        )
+        self._environments = EnvironmentService(store=store)
         self._sessions = SessionService(store, self._composition)
         self._events = SessionEventHub()
+        self._runtime = RuntimeGenerationService(
+            settings.runtime,
+            storage=settings.storage,
+            configuration=settings.configuration,
+            envd_runtime=settings.envd_runtime,
+        )
         self._runs = ForegroundRunCoordinator(
             sessions=self._sessions,
             composition=self._composition,
             environments=self._environments,
             events=self._events,
-            model_resolver_factory=model_resolver_factory,
+            runtime=self._runtime,
         )
-        self._runtime = RuntimeGenerationService(settings.runtime)
         self._operation_lock = Lock()
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
@@ -275,6 +273,49 @@ class AgentUiHost:
         async with self._operation():
             return await self._environments.availability(session_id)
 
+    async def provision_session_environment(self, session_id: str) -> EnvironmentAvailability:
+        async with self._operation():
+            async with self._runs.session_guard(session_id):
+                for resource in await self._environments.resources(session_id):
+                    await self._execute_environment_command(
+                        session_id,
+                        resource.mount_name,
+                        action="ensure_available",
+                    )
+                return await self._environments.availability(session_id)
+
+    async def retry_session_environment(
+        self,
+        session_id: str,
+        mount_name: str,
+    ) -> EnvironmentAvailability:
+        async with self._operation():
+            async with self._runs.session_guard(session_id):
+                await self._execute_environment_command(session_id, mount_name, action="ensure_available")
+                return await self._environments.availability(session_id)
+
+    async def pause_session_environment(
+        self,
+        session_id: str,
+        mount_name: str,
+        *,
+        mode: EnvironmentPauseMode = EnvironmentPauseMode.FILESYSTEM,
+    ) -> EnvironmentAvailability:
+        async with self._operation():
+            async with self._runs.session_guard(session_id, suppress_wake=True):
+                await self._execute_environment_command(session_id, mount_name, action="pause", pause_mode=mode)
+                return await self._environments.availability(session_id)
+
+    async def destroy_session_environment(
+        self,
+        session_id: str,
+        mount_name: str,
+    ) -> EnvironmentAvailability:
+        async with self._operation():
+            async with self._runs.session_guard(session_id, suppress_wake=True):
+                await self._execute_environment_command(session_id, mount_name, action="destroy")
+                return await self._environments.availability(session_id)
+
     async def run_session(
         self,
         session_id: str,
@@ -297,6 +338,13 @@ class AgentUiHost:
         async with self._operation():
             return await self._runs.deferred_requests(session_id)
 
+    async def session_async_usage(self, session_id: str) -> RunUsage:
+        """Return generation-memory usage from deduplicated asynchronous work."""
+
+        async with self._operation():
+            await self._sessions.get(session_id)
+            return await self._runs.async_usage(session_id)
+
     async def cancel_session(self, session_id: str) -> bool:
         async with self._operation():
             return await self._runs.cancel(session_id)
@@ -315,16 +363,26 @@ class AgentUiHost:
     async def delete_session(self, session_id: str) -> None:
         async with self._operation():
             await self._sessions.get(session_id)
-            await self._runs.cancel(session_id)
-            cleanup_error: Exception | None = None
-            try:
-                await self._environments.release_session(session_id)
-            except Exception as exc:
-                cleanup_error = exc
-            await self._sessions.delete(session_id)
+            async with self._runs.session_guard(session_id, cancel_active=True, suppress_wake=True):
+                cleanup_error: Exception | None = None
+                try:
+                    await self._runtime.close_session_work(session_id)
+                except Exception as exc:
+                    cleanup_error = exc
+                for resource in await self._environments.resources(session_id):
+                    try:
+                        await self._execute_environment_command(
+                            session_id,
+                            resource.mount_name,
+                            action="destroy",
+                        )
+                    except Exception as exc:
+                        cleanup_error = exc
+                await self._sessions.delete(session_id)
+            await self._runs.forget_session(session_id)
             if cleanup_error is not None:
                 raise EnvironmentLifecycleError(
-                    "The Session was deleted, but one or more Environment resources could not be destroyed.",
+                    "The Session was deleted, but its asynchronous work or Environment cleanup did not complete.",
                     code="session_deleted_cleanup_failed",
                 ) from cleanup_error
 
@@ -458,9 +516,63 @@ class AgentUiHost:
 
     async def _provision_eager_environment(self, session: LocalSession) -> LocalSession:
         snapshot = await self._composition.environment(session.environment_snapshot)
-        if snapshot.definition.lifecycle.provision == "eager":
-            await self._environments.provision(session.session_id)
+        if snapshot.definition.provision == "eager":
+            for resource in await self._environments.resources(session.session_id):
+                await self._execute_environment_command(
+                    session.session_id,
+                    resource.mount_name,
+                    action="ensure_available",
+                )
         return session
+
+    async def _execute_environment_command(
+        self,
+        session_id: str,
+        mount_name: str,
+        *,
+        action: Literal["ensure_available", "pause", "destroy"],
+        pause_mode: EnvironmentPauseMode | None = None,
+    ) -> None:
+        session = await self._sessions.get(session_id)
+        async with self._environments.lifecycle(session_id, mount_name):
+            resource = await self._environments.resource(session_id, mount_name)
+            request = ExecuteEnvironmentCommand(
+                request_id=f"request-{uuid4().hex}",
+                generation_id="runtime-pending",
+                session_id=session_id,
+                environment_snapshot=ObjectRef(
+                    object_kind=ObjectKind.environment_snapshot,
+                    object_schema_version="1",
+                    logical_digest=session.environment_snapshot.object_digest,
+                ),
+                selected_resource=SelectedEnvironmentResource(
+                    resource=resource,
+                    provider_state=self._environments.provider_state_ref(resource),
+                ),
+                action=action,
+                pause_mode=pause_mode,
+            )
+            result = await self._runtime.execute_environment(
+                request,
+                on_provider_state=self._persist_provider_state,
+            )
+        if result.failure is not None:
+            raise EnvironmentLifecycleError(
+                "The runtime Runner could not complete the Environment operation.",
+                code="environment_operation_failed",
+                details={"failure": result.failure},
+            )
+
+    async def _persist_provider_state(self, update: ProviderStateUpdate) -> None:
+        await self._environments.persist_runner_state(
+            session_id=update.session_id,
+            mount_name=update.mount_name,
+            provider_key=update.provider_key,
+            provider_spec_digest=update.provider_spec_digest,
+            state_version=update.state_version,
+            provider_state=update.provider_state,
+            status=update.status,
+        )
 
     async def _stop(self) -> None:
         async with self._operation_lock:
@@ -497,19 +609,13 @@ class AgentUiHost:
 @asynccontextmanager
 async def open_agent_ui_host(
     settings: AgentUiSettings,
-    *,
-    model_resolver_factory: RunModelResolverFactory = unavailable_run_model_resolver_factory,
 ) -> AsyncGenerator[AgentUiHost]:
     """Start, expose, and close one complete stable Agent UI Host lifetime."""
 
     host: AgentUiHost | None = None
     try:
         async with open_local_store(settings.storage) as store:
-            host = AgentUiHost(
-                settings,
-                store,
-                model_resolver_factory=model_resolver_factory,
-            )
+            host = AgentUiHost(settings, store)
             try:
                 await host._configuration.initialize()
                 await host._runtime.start()
@@ -521,7 +627,6 @@ async def open_agent_ui_host(
                     try:
                         await host._runs.close()
                         await host._runtime.close()
-                        await host._environments.close()
                     finally:
                         await host._composition.close()
                     await host._configuration.close()

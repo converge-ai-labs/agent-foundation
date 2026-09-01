@@ -2,7 +2,12 @@
 
 ## Design Position
 
-Foundation Service is the optional modular durable Host for Agent Foundation. It keeps one product schema, authorization boundary, executable package, and container image while assigning control and worker work to separately scalable process roles under the shared [runtime contract](01-runtime-configuration-and-deployment.md). It does not split lifecycle ownership across microservices.
+Foundation Service is the optional modular durable Host for Agent Foundation. It
+keeps one product schema, authorization boundary, executable package, and
+container image while assigning control, worker, and Connector data-plane work
+to separately scalable process roles under the shared [runtime
+contract](01-runtime-configuration-and-deployment.md). It does not split durable
+lifecycle ownership across microservices.
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Run`, and `Item`. Foundation persists each hosted Thread as an independent versioned relational resource, uses `Run` as the durable Agent-work, scheduling, recovery, state, and outcome boundary, and uses `RunAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Run; Foundation defines no separate durable Execution resource.
 
@@ -12,7 +17,9 @@ The worker embeds the public Harness Python API through the deployment's selecte
 
 ```mermaid
 flowchart LR
-    Client[Web, SDK, CLI, AG-UI, A2A, webhook, or schedule trigger]
+    Client[Web, SDK, CLI, AG-UI, A2A, or schedule trigger]
+    StandardMCPClient[Standard MCP client]
+    ConnectorWebhook[Connector webhook]
 
     subgraph Control[Control role]
         Gateway[Protocol Gateway]
@@ -41,9 +48,17 @@ flowchart LR
     subgraph WorkerRole[Worker role]
         Runtime[On-demand loop or Runner]
         Reconstruct[Trusted reconstruction]
-        Connector[Environment Connector]
+        EnvConnector[Environment Connector]
+        MCPClient[Connector MCP Client]
         Observer[HarnessAguiObserver]
         Harness[agent-harness]
+    end
+
+    subgraph ConnectorRole[Connector role]
+        MCPGateway[Connector MCP Gateway]
+        ConnectorOps[Connector internal operations]
+        Provider[ConnectorProvider execution]
+        EventIngress[Connector event ingress and polling]
     end
 
     Envd[agent-envd]
@@ -57,9 +72,14 @@ flowchart LR
     ActiveControl -. best-effort wakeup .-> ControlBus --> Runtime
     Runtime -->|scan, preflight, claim, and takeover| Database
     Runtime --> Reconstruct --> Harness
-    Runtime --> Connector --> Harness
-    Connector --> Envd
-    Harness --> External
+    Runtime --> EnvConnector --> Harness
+    EnvConnector --> Envd
+    Harness --> MCPClient --> MCPGateway --> Provider --> External
+    StandardMCPClient --> MCPGateway
+    ConnectorWebhook --> EventIngress
+    ConnectorControl -. authenticated internal operation .-> ConnectorOps
+    ConnectorOps --> Provider
+    EventIngress -->|verified occurrence| ConnectorControl
     Harness --> Observer --> Runtime
     Runtime -. live AG-UI .-> LiveBus -. authorized subscription .-> API
     Runtime --> Database & Objects
@@ -79,6 +99,7 @@ PostgreSQL is the distributed authority for accepted resources, including immuta
 | AgentPresets, immutable Versions, managed Skill revisions, and ModelConfigs | Foundation control plane                                                  | Selects exact Agent inputs and freezes current model configuration per Run                         |
 | Immutable Workspace Assets                                                  | [Asset Management](37-asset-management.md)                                | Publishes exact binary identity and supplies authorized Run input, output, and protocol references |
 | Managed Harness plugin artifacts and Runtime locks                          | Foundation control plane and Worker runtime                               | Preflights on demand or stages exact trusted Runner environments                                   |
+| Connector MCP, Provider execution, and Connector event ingress              | [Connector Service](23-connectors-connections-and-triggers.md)            | Runs in the `connector` role without moving durable management or Run authority                    |
 | Durable Thread resource                                                     | Foundation                                                                | Owns Session membership, origin, current Run, continuation head, and version                       |
 | Run and RunAttempt                                                          | Foundation                                                                | Own durable scheduling, state, fencing, recovery, and outcome                                      |
 | Queue-if-busy existing-Thread Run intent                                    | [Queued Submissions](36-agent-control-queued-submissions.md)              | Accepts immediately when eligible or remains editable outside the Run DAG                          |
@@ -90,21 +111,28 @@ PostgreSQL is the distributed authority for accepted resources, including immuta
 | Current Environment mount set, provider-neutral operations, and routing     | Harness                                                                   | Enters fresh runtime mounts without owning external resource lifecycle                             |
 | Harness-to-AG-UI conversion                                                 | `HarnessAguiObserver`                                                     | Foundation supplies visibility processing, retention, and delivery                                 |
 | Durable lifecycle events, Items, and usage                                  | Foundation                                                                | Commits product facts independently from process-local observations                                |
-| Native, Hosted AG-UI, and A2A public protocols                              | [Protocol Gateway](28-protocol-gateway.md)                                | Map distinct wire protocols to the same application and IAM authority                              |
 | RunAttempt tracing and authorized backend query                             | [Observability](38-observability.md) and [Trace Query](39-trace-query.md) | Export and read best-effort diagnostic projections without becoming domain authority               |
+| Native, Hosted AG-UI, and A2A public protocols                              | [Protocol Gateway](28-protocol-gateway.md)                                | Map distinct wire protocols to the same application and IAM authority                              |
 | Client-side effects                                                         | External client                                                           | Foundation authenticates feedback but does not claim the effect                                    |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Run/RunAttempt kernel.
 
 ## Process Roles
 
-One artifact supports two independently deployable roles and their all-in-one composition:
+One artifact supports three independently deployable roles and their all-in-one composition:
 
-- `all` owns control and worker loops in one process;
+- `all` owns control, worker, and Connector Service components in one process;
 - `control` owns product APIs, authorization, domain-owned control work, deferred feedback, and outbox publication;
-- `worker` owns periodic Run scanning, transactional claim and expired-lease takeover, Agent reconstruction, Environment connection and active-run keep-alive, Harness invocation, observation consumption, and fenced publication.
+- `worker` owns periodic Run scanning, transactional claim and expired-lease takeover, Agent reconstruction, Environment connection and active-run keep-alive, Harness invocation, observation consumption, and fenced publication; and
+- `connector` owns the Connector MCP Gateway, ConnectorProvider execution, Connection credential materialization, and Connector event ingress or polling.
 
-These names describe deployment roles, not product resources. A `Run` remains the durable scheduled-work resource regardless of which role processes it. The [runtime contract](01-runtime-configuration-and-deployment.md) owns the complete component matrix, deployment profiles, readiness, and drain behavior. Worker-only processes expose operational probes but no product API and never migrate the schema.
+These names describe deployment roles, not product resources. `Connector Service` is the name of the `connector` role's runtime responsibility, not a
+database model. A `Run` remains the durable scheduled-work resource regardless
+of which role processes it. The [runtime
+contract](01-runtime-configuration-and-deployment.md) owns the complete
+component matrix, deployment profiles, readiness, and drain behavior. Worker-
+and Connector-only processes expose operational probes but no `/api/v1` product
+surface and never migrate the schema.
 
 ## End-to-End Interactive Run
 
@@ -151,10 +179,15 @@ flowchart LR
     Applications --> Domain[Foundation domain contracts]
     Applications --> Ports[Authorization, storage, coordination, and reconstruction ports]
     Adapters[Database, Redis, object store, and ingress adapters] --> Ports
-    Applications --> Connector[Connect existing Environment]
+    Applications --> ConnectorService[Connector Service operations]
+    Applications --> EnvConnector[Connect existing Environment]
     Applications --> HostedHarness[Hosted Harness adapter]
     HostedHarness --> Harness[agent-harness]
-    Connector --> Attachment[Process-local runtime attachment]
+    HostedHarness --> MCPClient[Connector MCP Client]
+    MCPClient --> MCPGateway[Connector Service MCP Gateway]
+    ConnectorService --> MCPGateway
+    MCPGateway --> Provider[ConnectorProvider]
+    EnvConnector --> Attachment[Process-local runtime attachment]
     Attachment --> Harness
     HostedHarness --> Observer[HarnessAguiObserver]
     Observer --> Harness
@@ -180,7 +213,7 @@ No later fact follows merely because an earlier fact occurred. In particular, a 
 
 ## Invariants
 
-01. Foundation has one domain and authorization model across `all`, `control`, and `worker` roles.
+01. Foundation has one domain and authorization model across `all`, `control`, `worker`, and `connector` roles.
 02. Session, Thread, Run, and Item follow the shared platform meanings; Thread owns versioned advancement selection, while Run and RunAttempt directly own durable scheduling and recovery.
 03. PostgreSQL is accepted lifecycle authority; Redis carries coordination and bounded Run replay without becoming lifecycle authority.
 04. One RunAttempt starts at most one logical Harness Run.

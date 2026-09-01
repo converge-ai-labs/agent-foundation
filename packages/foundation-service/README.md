@@ -34,6 +34,14 @@ Control-plane and all-in-one roles expose immutable Workspace Assets below `/api
 
 `FOUNDATION_ASSET_MAX_SIZE_BYTES` is the positive finite bound applied while streaming uploads and defaults to 100 MiB. Private staging uses `FOUNDATION_FILESYSTEM_ROOT`; object bytes use the selected object backend. Cleanup behavior can be operationally tuned with `FOUNDATION_ASSET_CLEANUP_POLL_INTERVAL_SECONDS`, `FOUNDATION_ASSET_CLEANUP_LEASE_SECONDS`, and `FOUNDATION_ASSET_CLEANUP_MAX_ATTEMPTS`. These settings do not change Asset identity, retention authority, or authorization semantics.
 
+## Connectors
+
+The shared artifact supports `all`, `control`, `worker`, and `connector` roles. Only `connector` and `all` load the exact deployment-trusted Python entry points selected by `FOUNDATION_CONNECTOR_PROVIDERS`. The connector-capable roles expose stateless Streamable HTTP MCP under `/mcp/connectors/{connector_id}` and `/internal/mcp/connectors/{connector_id}`. Workers reconstruct Harness `ContextualMCP` clients and never import or call Connector Provider code.
+
+In a distributed deployment, `control` calls `connector` for Provider catalog, validation, Connection, and Trigger event-source operations. Both roles configure the same `FOUNDATION_CONNECTOR_INTERNAL_AUTH_TOKEN`, containing at least 32 characters, and Control sets `FOUNDATION_CONNECTOR_SERVICE_BASE_URL` to the Connector Service origin. The token is an internal service credential and must not appear in URLs or logs. The `all` role uses the same narrow operations interface in process and does not require a loopback HTTP call.
+
+TurnAttempt MCP access uses a separate short-lived signed capability. Configure `FOUNDATION_CONNECTOR_CAPABILITY_SIGNING_KEY_BASE64` as standard base64 for at least 32 random bytes wherever the Connector Service verifies those capabilities. This key does not replace the Control-to-Connector internal token or the managed Secret master key.
+
 ## Runtime
 
 `ServiceSettings` owns the `FOUNDATION_*` environment contract and maps it to the frozen `StorageSettings` model. The storage package accepts typed configuration and does not read process environment variables itself. `foundation-service serve` constructs all selected providers once in FastAPI lifespan, publishes the resulting `StorageResources` on `app.state.storage`, and closes the resources during shutdown.

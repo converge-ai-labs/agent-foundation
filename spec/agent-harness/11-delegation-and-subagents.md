@@ -2,13 +2,28 @@
 
 ## Design Position
 
-Subagents are complete child Agent definitions built into an immutable `SubagentCollection`. The collection is authority-neutral build output: it describes the immediate children of one `ExecutableAgent` without choosing how they are scheduled. The parent executable owns it and its child executables; every fresh parent `AgentContext` borrows that exact collection so any trusted Capability can implement a definition-selected child presentation or execution scheme through the ordinary Pydantic run lifecycle.
+Subagents are complete child Agent definitions built into an immutable `SubagentCollection`. The collection is authority-neutral topology: it names the immediate children of one `ExecutableAgent` without selecting a model-visible presentation, execution mode, scheduler, storage system, or child authority.
 
-The first-party `DelegationCapability` provides the standard blocking inline tool-as-subagent execution path. It owns configuration, run binding, lifecycle, Toolset composition, stable inline child identities, and each child's latest complete `HarnessState` in its namespaced `DelegationState`. Its run-local Delegation Toolset owns the `delegate` schema and complete per-call behavior: child selection, context shaping, fresh-authority use, child execution, event forwarding, state advancement, and result or error projection. Every invocation still receives fresh run authority, and the parent waits for the ordinary tool result. Multiple delegation calls in one Pydantic tool batch can run concurrently when they target different child instances.
+The first-party `SubagentCapability` is the standard presentation and execution adapter. Construction fixes both behavioral inputs:
 
-Asynchronous or durable background subagents are Host behavior. A definition-selected Host Capability reads the same `SubagentCollection` from `AgentContext`, while a fresh Host run Capability that owns any typed collaborator supplies current scheduling and submission authority. The behavior Capability can return an ordinary bounded result with a compact Host-scoped child reference immediately, while the Host retains canonical receipt and execution identities and owns tasks or workers, persistence, delivery, wake-up, retries, cancellation, and cross-run accounting. Background completion is later input, not a deferred result for the spawn tool call. Pydantic deferred values remain available for approvals and external tools whose current run must suspend, but they are not the Harness subagent protocol.
+```python
+type SubagentExecutionMode = Literal["inline", "async"]
 
-There is no separate subagent Agent builder, Agent loop, plugin system, hook system, event queue, or runtime Capability inheritance mechanism. Every child uses the same complete process-local `AgentDefinition`, `ExecutableAgent`, fresh plugin binding, `RunBindings`, run stream, state, event, output, and cleanup contracts as a root Agent. Shared authoring inputs may be materialized into that complete definition before build; execution never consults a parent definition.
+
+class SubagentCapability(AbstractCapability[AgentContext]):
+    def __init__(
+        self,
+        *,
+        execution: SubagentExecutionMode,
+        operator: SubagentOperator,
+    ) -> None: ...
+```
+
+The Capability owns Toolset selection, tool schemas, guidance, compact model references, result projection, parent-state projection, and Pydantic lifecycle. Inline execution exposes one blocking delegation tool. Async execution exposes the standard start, info, wait, steer, cancel, and resume tools. A Host configures or subclasses the operator and never supplies, replaces, or branches on a first-party Toolset.
+
+The mode and operator are trusted process-local definition inputs. They are not serialized into `HarnessState`, selected by `RunBindings`, changed by a tool argument, or inferred from backend availability. An unavailable operator operation returns a bounded tool failure without changing the fixed Toolset. Shared async admission, observation, cleanup, loss, generation ownership, and complete Host takeover are owned by [Async Components and Lifecycle](20-async-components-and-lifecycle.md).
+
+There is no `SubagentConfiguration`, max-subagent permission setting, run binding that selects execution mode, generic Job abstraction, or Session-visible Harness child registry. Capability presence and its fixed mode determine the model surface. Exact child definitions, edge context policy, native `UsageLimits`, current tool policy, and Host authorization constrain execution without becoming tool-availability switches.
 
 ## Child Definitions and Built Collection
 
@@ -36,67 +51,96 @@ class BuiltSubagent:
 
 
 class SubagentCollection(Mapping[str, BuiltSubagent]):
-    """Immutable immediate-child collection in authored order."""
-
     def require(self, name: str) -> BuiltSubagent: ...
 ```
 
-The materialized parent contains a unique finite set of named, complete child Agent definitions. Each child has its own model, instructions, output, Capabilities, Environment requirements, and nested subagents. `context`, `identity`, and `usage_limits` are portable edge policy: context and usage are ceilings on work, while identity selects the ordinary child identity derivation described below. Host-specific execution policy can narrow the ceilings or replace the complete fresh child binding but cannot infer authority from the edge alone.
+The Harness validates the finite recursive definition graph and builds children before their parent. Each child owns its complete Model, Prompt, output contract, Capabilities, plugins, recovery policy, Environment requirements, and nested children. Every parent `AgentContext` borrows the exact immutable immediate collection from its executable.
 
-Before Harness build, trusted composition code can construct that child independently, select an already complete process-local definition, or derive one from another complete definition with [`AgentDefinition.with_updates()`](03-agent-definition-and-build.md#agentdefinition). Derivation is exact build-time materialization, not a child-edge flag or runtime relationship. Omitted fields are retained, so a shallow specialization explicitly replaces `definition_id` and `subagents=()` when nested children must not carry forward. Identity, credentials, current State, Session overrides, live Environment runtimes and mounts, and other `RunBindings` values are never definition inputs and cannot be inherited by this operation.
+The collection contains no Identity, credential, current State, Environment runtime, scheduler, task, execution mode, operator, backend selector, or Host record. A child executable is reusable process-local build output and is never serialized as durable payload. A distributed Host persists its own target revision and reconstructs the exact definition on the selected worker.
 
-A hosted source schema may present authoring modes such as `inherit` and `reference`: `inherit` resolves configured overrides against an authored parent source, while `reference` selects an independently managed complete Agent resource. Both modes must disappear during trusted resolution and produce the same finite complete child `AgentDefinition` graph. The Harness does not persist source inheritance metadata, resolve Host resource references, or perform a parent lookup during build or execution.
+A hosted source schema may support authoring conveniences such as inheritance or references, but trusted resolution produces the same complete finite child definitions before Harness build. The Harness does not resolve Host resource keys, clone a live parent, infer child authority, or consult a parent definition during execution.
 
-Before Harness build, a hosted worker verifies the selected Foundation revision and dependency locks, then uses trusted adapters to reconstruct each child's process-local Model, top-level Capabilities with their owned tools and Toolsets, plugins, build-time output contract, and nested definitions. Python objects remain process-local and no Harness compiler or class catalog is involved. Each authored edge maps to exactly one reconstructed child in authored order; reconstruction cannot add, omit, replace, or mutate a child edge.
+## Operator and Default Manager
 
-The Harness validates the finite reconstructed graph and builds children before their parent. The resulting `SubagentCollection` contains only immediate children; each child executable exposes its own collection recursively. The parent contains the recursively built immutable child outputs, but neither parent nor children have an independent resource lifecycle. Every run of that parent receives `AgentContext.subagents is parent_executable.subagents`; an executable with no children supplies the canonical immutable empty collection. The context borrows the collection and cannot mutate it. Harness-owned collections are normalized to tuples or read-only mappings, edge selectors and context policy are frozen values, usage limits are defensively copied, and the `AgentSpec` used by each built Pydantic Agent is a deep copy. The declaration and child `AgentDefinition` remain trusted code-first values containing native Models, tools, Toolsets, Capabilities, plugins, and output objects; the Harness does not pretend to deep-freeze or clone those arbitrary objects. Their mutation and reentrancy rules remain the caller's responsibility under the definition contract.
+`SubagentOperator` is the public execution boundary. It is a normal overridable Python class, not a Toolset, factory stack, storage provider framework, or transport protocol. `open_child()` opens one fresh child authority scope and yields its `RunBindings`; this single operation is shared by inline and default asynchronous execution and is deliberately distinct from attaching a parent observer. The async operations start, attach, snapshot, observe bounded activity, wait, steer, and cancel canonical child work by an opaque backend ID. `attach()` replaces the observer for the current parent Run and atomically returns the latest snapshot; it neither resumes nor recreates the child. `snapshot()` is a one-shot read that does not change observation.
 
-The collection contains no current Identity, credential, Environment runtime or mount, policy decision, live state, scheduler, task, queue, Host job, receipt, or execution mode. `SubagentIdentityPolicy` is authority-neutral derivation policy, not a current identity. A process-local child executable is reusable build output; it never becomes durable payload. A distributed Host persists its own target reference and reconstructs the exact child build on a worker instead of serializing the executable.
+Every operation receives the current borrowed `AgentContext` for correlation and authorization. An operator may read bounded context metadata while handling the call, but it must not retain the live `AgentContext` or Pydantic `RunContext`. The operator implementation and its injected dependencies determine execution and storage; there is no per-execution storage metadata, namespace field, provider field, or permission configuration in Harness state.
 
-Host reconstruction rejects unavailable child artifacts and produces the complete recursive definition graph before calling the Harness. Harness build rejects invalid edge values, duplicate immediate-child names, and structural definition cycles. Definition-selected delegation Capabilities validate any presentation or result contract they require when they assemble their tool surface. The Harness does not resolve registry keys, Presets, opaque Host references, or a separate resolved-edge format. Self-like delegation is represented by a finite materialized child definition whose delegation surface is removed or explicitly narrowed.
+The Harness provides `SubagentManager` as the concrete default `SubagentOperator`. It accepts one Host `open_child` callback and optional stable Host event hooks. It:
 
-## Child Identity Derivation
+- executes inline children through the same fresh child authority scope;
+- validates that each opened scope has a distinct child Agent instance, the requested parent instance, and the exact delegation ID before admitting execution;
+- owns async child tasks, streams, exact input, bounded recent activity, latest complete child `HarnessState`, output, failure, steering, and cancellation in memory;
+- uses opaque backend IDs to find those canonical live records;
+- retains only weak or replaceable run observers so a completed parent Run is not kept alive;
+- marks restored references `lost` when no matching in-memory record remains;
+- force-cancels its owned children only when the Host invokes Manager `force_close()`.
 
-A Host that runs an authored child creates a fresh `AgentInstanceContext`. The public child-identity helper starts from the parent's trusted `AgentIdentityRef`, retains `issuer`, `subject`, and every string claim, and applies the edge's one explicit choice for `agent_id`:
+The default Manager lifecycle and replacement by a real independently managed Host Thread follow [Async Components and Lifecycle](20-async-components-and-lifecycle.md). The Host owns operator construction, dependencies, stable hooks, and forced shutdown. A stable default Manager spans every executable or Runner-generation Run that can address its work; parent Run closure does not close it or cancel admitted children.
 
-- `inherit_agent_id=False` replaces or adds `agent_id` with the selected child `AgentDefinition.definition_id`, or with the Host's exact logical child Agent ID when its reconstruction schema owns that value;
-- `inherit_agent_id=True` retains the parent's `agent_id` claim when present and does not synthesize one when absent.
+## Subagent Completion Observation
 
-The conventional `user_id` claim and every other identity claim therefore inherit automatically. Values that should not follow child work belong in fresh run metadata rather than Agent Identity. Each child still receives a distinct Host-selected `agent_instance_id`, the parent instance ID, and delegation correlation. A nested child repeats the same derivation from its immediate parent's effective identity and its own edge policy.
+Subagent completion uses the independent current-Run observer and stable Host-hook paths defined by [Async Components and Lifecycle](20-async-components-and-lifecycle.md#active-observers-and-stable-host-hooks). While the exact parent Harness Run remains active, its projection applies the latest snapshot and enqueues a concise notice directing the model to `wait_subagent`; `subagent_info` remains available for status and bounded activity. The operator always dispatches its configured stable hooks regardless of parent activity. A failed observer or enqueue leaves canonical completion available through explicit tools and later reconciliation.
 
-The helper is a deterministic convenience, not an authority boundary. Inline and asynchronous child binders remain responsible for complete fresh `RunBindings` and may supply a different issuer, subject, or claim set when current Host policy selects another workload principal. The Harness never rewrites a binder's returned identity after authorization. Identity and claims do not enter Delegation State; every continuation reauthorizes the exact child and rebinds its effective identity.
+## Standard Toolsets
 
-## Collection Presentation
+Inline mode exposes exactly one standard tool:
 
-The collection and its execution presentation are separate. First-party helpers support these ordinary compositions:
+- `delegate` selects an immediate child, executes it inside the tool call, and returns the bounded child result plus a stable inline child reference.
 
-- one unified `delegate` tool that selects a child by stable name;
-- one named tool per child for a small fixed roster;
-- a custom definition-selected Capability that reads `ctx.deps.subagents` and contributes its run-stable Toolset;
-- no Harness delegation tool, leaving the collection available only to trusted Capability or Host composition.
+Async mode exposes exactly six standard tools:
 
-The first-party Delegation Capability defaults to the unified form:
+- `delegate` starts one async child and returns a compact `subagent-N` reference with `running` after operator acceptance; backend queueing is not a Harness status;
+- `subagent_info` without an execution ID returns a paged lightweight status list. With an execution ID it returns that execution's exact input and bounded process-local activity detail in addition to status. Activity can include a rolling model-output preview and bounded current or recent Tool calls, arguments, outcomes, and result previews. Neither form returns the complete child output;
+- `wait_subagent` performs one bounded wait for one child or one bounded fan-in snapshot. A single-child wait returns the complete canonical output; the ordinary managed-tool output policy spills an oversized result to a run-private file and returns its bounded disclosure rather than paging or truncating it inside the subagent manager. Fan-in remains summary-only and paged;
+- `steer_subagent` offers one input to a compatible live execution;
+- `cancel_subagent` requests cancellation from canonical operator state;
+- `resume_subagent` starts a new linked execution from one retained resumable backend reference.
+
+The standard async parameters are intentionally small:
 
 ```python
-class DelegateInput(BaseModel):
-    subagent: str
-    task: JsonValue
-    child_instance_id: str | None = None
+delegate(subagent_name: str, prompt: str)
+subagent_info(execution_id: str | None = None, execution_offset: int = 0, execution_limit: int = 20)
+wait_subagent(
+    execution_id: str | None = None,
+    timeout_seconds: float | None = None,
+    execution_offset: int = 0,
+    execution_limit: int = 20,
+)
+steer_subagent(execution_id: str, message: str)
+cancel_subagent(execution_id: str)
+resume_subagent(execution_id: str, prompt: str)
 ```
 
-`child_instance_id=None` creates a new inline child instance. Supplying an existing ID continues that exact child using its stored state. The returned ordinary tool value includes the stable compact child instance ID and the bounded validated response so the parent can refer to the same child later. An unknown ID, a child name that does not match the stored record, or an ID already active in another invocation fails before dispatch.
+`subagent_name` selects one exact declared child. `prompt` carries the bounded task, constraints, and expected result. `execution_id` is a compact `subagent-N` reference, never an opaque backend ID. Info paging applies only when the ID is omitted. Wait paging applies only to no-ID fan-in summaries. `timeout_seconds` bounds one wait attempt and does not cancel the child. Steering addresses one running execution; resume addresses one terminal resumable execution and creates a new compact reference.
 
-Despite the compatibility-preserving field name, `child_instance_id` is a model-facing scoped reference, not `AgentInstanceContext.agent_instance_id`, an `AgentInstanceRef`, a Harness run ID, a provider session ID, or Host authority. The first-party form is `{subagent_name}-{suffix}` with a four-character lowercase hexadecimal suffix, for example `code-reviewer-a7b9`. It is unique only within one parent Agent instance's Delegation State and remains stable across that parent's Harness-state continuation. Trusted binding code maps the pair of parent lineage and compact reference to the exact internal child `AgentInstanceRef` and reauthorizes it on every invocation.
+Neither surface has an execution-mode argument. Inline mode never exposes manager tools, and async `delegate` never waits for child completion. Tool guidance is contributed with the exact selected Toolset. A Host-specific Capability may define another presentation, but it cannot replace the standard Toolset while retaining the first-party Capability identity.
 
-Each new child instance starts with a new `HarnessState`, whose generated `thread_id` is distinct from its parent and siblings. Its fresh model resolver reads that ID from the child `AgentContext` and assigns distinct provider session and prompt-cache affinity even when the Host groups the tree under one workload instance, Session, trace, route, or Execution. Continuing the same compact child reference selects the stored nested State and therefore restores the exact child Thread ID; neither the internal `AgentInstanceRef` nor the fresh child Harness run ID is the history key.
+## Child Identity and Context
 
-Separate named tools remove the `subagent` selector but preserve the same state, binding, authorization, usage, result, and concurrency semantics. A custom presentation must not claim first-party inline semantics unless it preserves those contracts. Tool discovery can hide children while retaining stable names; discovery grants no invocation authority.
+A Host operator creates a fresh `AgentInstanceContext` for every child execution. The public `derive_child_identity()` helper starts from the parent Identity, preserves `issuer`, `subject`, and string claims, and applies `SubagentIdentityPolicy.inherit_agent_id`:
 
-Portable model-visible presentation configuration belongs to the first-party Delegation Capability configuration. A Host that replaces or complements it with a custom Capability locks and resolves that Capability like any other model-visible Agent behavior. `SubagentCollection` is placed on `AgentContext` as immutable authority-neutral build output; it is not itself a model tool, a `RunBindings` input, or recoverable state. A declarative Capability's `from_spec()` and Agent-bound `for_agent()` do not receive it. A child-dependent Capability reads it in `for_run()` or later run-time hooks and can return a replacement whose instructions and Toolsets are stable for that run.
+- `False` selects the child definition ID or the Host's exact logical child Agent ID;
+- `True` retains the parent's existing `agent_id` claim and synthesizes none when it is absent.
 
-## Inline Child State
+The helper is deterministic convenience, not authorization. The operator remains responsible for fresh credentials, Environment, model resolver, run Capabilities, and internal instance correlation. State never restores Identity or authority.
 
-The Delegation Capability has one stable Capability ID and owns the following conceptual state entry:
+```python
+@dataclass(frozen=True, slots=True)
+class DelegationContextPolicy:
+    include_task: bool = True
+    history: Literal["none", "summary", "selected"] = "none"
+    task_state: Literal["shared", "isolated"] = "shared"
+```
+
+The Harness builds bounded child input under the exact edge policy. Selected history reuses existing message-selection semantics. Working-State sharing uses the explicit typed task-cell contract owned by [Context and Memory](09-context-and-memory.md#working-state-capability). Messages, notes, every non-task Capability namespace, live plugins, model clients, Environment attachments, credentials, callbacks, and mutable context values remain private to one Agent.
+
+A fresh child authority scope cannot alias consumed parent `RunBindings` or implicitly inherit background process, async-subagent, client-tool, or mount authority. An ordinary async child receives no background shell or nested subagent tools unless its exact definition includes those Capabilities and their own operators.
+
+## Inline Execution
+
+The inline operator opens one complete fresh child authority scope through `open_child()`. The parent Capability builds input, intersects limits, validates lineage, enters the returned `RunBindings`, executes the child, forwards canonical child observations, and owns nested continuation state.
 
 ```python
 class InlineSubagentState(BaseModel):
@@ -106,253 +150,195 @@ class InlineSubagentState(BaseModel):
     state: HarnessState
 
 
-class DelegationState(BaseModel):
-    children: dict[str, InlineSubagentState] = Field(default_factory=dict)
+class InlineSubagentManagerState(BaseModel):
+    children: dict[str, InlineSubagentState]
 ```
 
-The entry is stored under the Delegation Capability's stable namespace in the parent run's `AgentContext.state`. On parent resume, the Harness initializes a fresh `AgentContextState` from `HarnessState.agent_context_state`; the Delegation Capability reads and validates this namespace before exposing dependent behavior. The live child `AgentContext` is never stored or restored.
+A compact inline reference has the form `{subagent_name}-{suffix}` and is unique only inside that parent state. It is not the Host `agent_instance_id`, child Thread ID, backend ID, or authority. A new reference starts a new child `HarnessState` and Thread. Reusing a valid reference selects the exact nested state while the operator reauthorizes fresh run authority.
 
-`children` is keyed by `child_instance_id`. Each nested `HarnessState` owns the child's authoritative `thread_id` and message continuation; its `agent_context_state` contains that child's private Capability state, and its optional `environment_state` contains only portable data for fresh child mounts. The parent does not inject child messages into its own history, and a later call resumes the exact child by passing its ID. The Delegation entry otherwise stores only complete child continuation snapshots and non-authoritative selectors. It contains no live `AgentInstanceContext`, `RunBindings`, credential, provider object, provider session or prompt-cache key, desired mount definitions, Environment runtime, mount mutation authority, provider launch state, `RunUsage`, active task, lock, event queue, running status, retry counter, Host receipt, worker lease, or delivery record.
+Each complete delivered child result atomically advances its inline state before the parent tool result is delivered. A live child context, binding, task, lock, provider handle, or credential never enters state. Calls targeting different references may run concurrently; competing calls for the same reference cannot overwrite one another.
 
-On import, the Delegation Capability validates its state version, bounded child count and encoded size, canonical compact-reference format, unique IDs, and that every record names a current immediate child with a compatible logical definition ID. Cross-definition restore requires Host selection and any explicit Capability-state migration; a stale child record never selects another child merely because its name or position is similar. Each nested `HarnessState` is then passed to the selected child executable, whose own message, Capability-state, and selected Environment mount-state codecs perform their normal validation after fresh child run authority is authorized. Nested delegation state is finite by the definition graph and remains subject to the Harness envelope and Capability-specific bounds.
+Parent cancellation cancels and drains the active inline child. A child cannot suspend the parent through deferred tools; child deferred requests are denied or normalized to the bounded subagent failure contract. An inline advance becomes durable only when a complete parent boundary exports and the Host selects the resulting parent `HarnessState`.
 
-For a new invocation, the Delegation Capability generates a candidate suffix, checks the complete retained child map and active-invocation set, and reserves the compact reference before asking the fresh run binder to authorize it. A collision selects another candidate; bounded allocator exhaustion fails without starting child work and never falls back to an internal or longer secret-bearing ID. Entering the child stream constructs a new baseline `HarnessState` with a new Thread ID before first iteration; that state contains no consumed child input or model/tool work and remains process-local unless a handled failure needs it. Baseline export failure stops dispatch before child model or tool work. For continuation, the compact State ID is only a selector: fresh Host policy must reauthorize that exact parent, edge, compact reference, internal child instance, and lineage before creating a new `AgentInstanceContext`. The selected nested State, not the Host identity binding, restores the child's prior Thread ID. State never restores Identity or authority. A released or incompatible reference is not reassigned to another child.
+## Async Operator Contract
 
-After a child reaches a complete delivered Harness result, the Delegation Capability atomically selects the next child record before delivering the parent tool outcome. A valid latest complete state replaces a new or existing record. When a handled failure has no result state, an existing record remains unchanged while a new child stores its pre-start fallback baseline. The sanitized `ToolFailed` content for a new child includes the stable child instance ID so the parent can address the retained identity and reconcile current task state. The fallback does not claim that failed child input or effects were incorporated. An unhandled exception, cleanup uncertainty, or consumer cancellation leaves a prior record unchanged and creates no new record; any provider-backed task effect outside that record follows the Host reconciliation rule below rather than being treated as rolled back.
-
-Different child instance IDs can advance concurrently. The Capability maintains a process-local active-invocation guard and rejects or serializes a second invocation of the same ID so two runs cannot overwrite one state baseline. That guard is not continuation state and disappears when the parent run closes.
-
-A child-state replacement is process-local until a complete parent semantic boundary exports it in the parent's `HarnessState`. State-backed child continuity therefore does not create a partial parent tool-batch ledger or independent durable child execution.
-
-The same-child active guard is scoped to one parent Harness run. Two independent parent runs receive independent State copies and cannot merge competing child advances through the Harness. A Host that treats them as one durable continuation must serialize checkpoint selection with its own fence; otherwise it explicitly creates forks with separate lineage and State.
-
-## Shared Task State
-
-Inline parent and child Agents share the Working State Capability's task state by default. They do not share the complete `AgentContextState` or a shallow copy of `AgentContext`. [`Context, Working State, Compaction, and Memory`](09-context-and-memory.md#working-state-capability) owns the conceptual `TaskState`, identity-bound `TaskStateCell`, and `TaskStateRunCapability` contracts.
-
-An embedded cell linearizes every mutation with a short lock and monotonically advances `version`; a provider-backed cell supplies equivalent durable linearization and idempotency. Before a successful embedded mutation returns, the parent Working State Capability replaces its own `WorkingState.tasks` entry with the resulting immutable snapshot. Provider mode keeps `tasks=None` and can export only its bounded non-authoritative observed cursor. An identity-bound cell derives claim ownership and update attribution from its trusted Agent instance, so model tools never supply an owner or actor. Claims enforce current status, dependencies, eligibility, and same-owner idempotency; general updates require the expected version; task IDs are allocated under the same mutation boundary.
-
-`DelegationContextPolicy.task_state="shared"` asks for the same task store. In embedded mode, the parent Working State Capability creates a child-identity-bound view over its cell and the Delegation Capability places `TaskStateRunCapability(source="embedded_borrowed", cell=...)` in the child's final `RunBindings.capabilities`. The child does not serialize a duplicate task map into its private nested `HarnessState`; the parent Working State entry remains the sole embedded snapshot owner and stays current after each completed mutation. In provider mode, the trusted Host returns a fresh child `TaskStateRunCapability` whose provider cell is bound to the same durable scope as the parent and places it in `RunBindings.capabilities`. The provider remains the sole task-data authority, and neither parent nor child State contains its task map.
-
-`task_state="isolated"` passes no parent task view. An embedded child owns task state in its nested `HarnessState` and receives no task binding. A provider-mode child receives a fresh Host binding to a distinct child scope. A child without task tools needs no binding, and isolation never falls back to the parent store because a provider is unavailable.
-
-The Harness validates only contracts it owns: both sides participating in shared tasks use compatible Working State modes, embedded borrowing uses the exact parent-owned view, and provider-mode task tools receive a provider binding. The trusted Host is responsible for selecting the same provider scope for `shared` and a distinct scope for `isolated`. A missing or incompatible required binding fails before child dispatch rather than silently copying, seeding, or dropping tasks. When both definitions omit task tools, task sharing is a no-op.
-
-Notes, messages, and every non-task Capability state remain private to one Agent instance. Context policy can copy bounded content into child input, but it does not share mutable Capability state. A shared task cell contains coordination data, not authorization: every mutation still applies current tool and Host policy, and restored owner IDs grant no execution authority.
-
-For a Host-managed asynchronous child, a process-local Host may retain an embedded task store under its own lifetime rules. A distributed Host selects provider mode and gives each worker a fresh identity-bound cell for the selected durable scope with equivalent claim, operation-idempotency, compare-and-swap, and stale-owner fencing semantics; it cannot share a Python cell across workers. That Host state is not copied into parent or child Harness State.
-
-## Context and Fresh Run Bindings
-
-The collection selects topology, not authority. A Capability can inspect or present a built edge directly through `AgentContext.subagents`, but every child invocation still obtains complete fresh bindings. The first-party blocking path uses the reserved binder below; a Host-specific asynchronous Capability uses a fresh Host run Capability that owns its typed collaborator and leaves durable lifecycle outside Harness State.
+The conceptual async boundary is:
 
 ```python
-@dataclass(frozen=True, slots=True)
-class DelegationContextPolicy:
-    include_task: bool = True
-    history: Literal["none", "summary", "selected"] = "none"
-    task_state: Literal["shared", "isolated"] = "shared"
+class SubagentExecutionSnapshot(BaseModel):
+    backend_id: str
+    status: Literal["running", "succeeded", "failed", "cancelled"]
+    output: JsonValue | None = None
+    failure: JsonValue | None = None
+    resumable: bool = False
+    thread_id: str | None = None
 
 
-class DelegationRunCapability(AbstractCapability[AgentContext]):
-    async def bind_inline(
+class SubagentToolCallSnapshot(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    status: Literal["running", "success", "failed", "denied", "interrupted"]
+    arguments: JsonValue | None = None
+    result: JsonValue | None = None
+
+
+class SubagentActivitySnapshot(BaseModel):
+    sequence: int
+    output_preview: str
+    output_truncated: bool
+    active_tool_calls: tuple[SubagentToolCallSnapshot, ...]
+    recent_tool_calls: tuple[SubagentToolCallSnapshot, ...]
+    dropped_tool_calls: int
+
+
+class SubagentOperator:
+    def open_child(
         self,
+        context: AgentContext,
         child: BuiltSubagent,
-        input: RunInput,
+        input: RunInputValue,
         child_instance_id: str,
         continuation: bool,
-        usage_limits: UsageLimits,
-    ) -> RunBindings: ...
+        usage_limits: UsageLimits | None,
+    ) -> AbstractAsyncContextManager[RunBindings]: ...
+
+    async def start(
+        self,
+        context: AgentContext,
+        child: BuiltSubagent,
+        input: RunInputValue,
+        subagent_id: str,
+        resume_from: str | None,
+        usage_limits: UsageLimits | None,
+        observer: SubagentBackendEventHook,
+    ) -> SubagentExecutionSnapshot: ...
+
+    async def attach(
+        self,
+        context: AgentContext,
+        backend_id: str,
+        observer: SubagentBackendEventHook,
+    ) -> SubagentExecutionSnapshot | None: ...
+
+    async def snapshot(
+        self,
+        context: AgentContext,
+        backend_id: str,
+    ) -> SubagentExecutionSnapshot | None: ...
+
+    async def activity(
+        self,
+        context: AgentContext,
+        backend_id: str,
+    ) -> SubagentActivitySnapshot | None: ...
+
+    async def wait(
+        self,
+        context: AgentContext,
+        backend_id: str,
+        timeout_seconds: float | None,
+    ) -> SubagentExecutionSnapshot | None: ...
+
+    async def steer(
+        self,
+        context: AgentContext,
+        backend_id: str,
+        message: str,
+    ) -> str | None: ...
+
+    async def cancel(
+        self,
+        context: AgentContext,
+        backend_id: str,
+    ) -> bool: ...
+
+    async def force_close(self) -> None: ...
 ```
 
-This is a conceptual public Capability contract, not a wire schema. It enters through fresh `RunBindings.capabilities`; the Delegation Capability requires its documented public type and stable Capability ID before child dispatch. Omitting it is valid for an Agent that never delegates, but an attempted inline delegation fails closed. It is not reconstructed from `HarnessState` and carries fresh authority rather than portable Agent behavior.
+This is a process-local class contract, not a wire protocol. `backend_id` is the only opaque locator stored by the parent projection. The implementation and its dependencies determine where canonical state lives. A later snapshot must preserve the same backend ID; changing it fails without retargeting the compact reference.
 
-`DelegationRunCapability` evaluates the exact built edge against the current parent `AgentContext.instance`, the reserved compact child reference, whether the request is creation or continuation, context seed, effective limits, and Host policy. It returns complete fresh child `RunBindings`: an authorized `AgentInstanceContext` with parent/delegation lineage, a new single-use `EnvironmentRuntime`, an independently constructed optional `RunModelResolver`, narrowed run Capabilities, and any independently selected `ClientToolsRunCapability`, `TaskStateRunCapability`, or other typed run collaborator required by that child. The Delegation Capability validates those Capabilities against the child's authored modes, adds the parent-owned child-bound task view when local sharing requires it, and produces the final immutable bindings passed through the ordinary `ExecutableAgent.stream(..., bindings=...)` API; there is no extra task-view argument. For continuation, the returned workload identity, instance ID, and lineage must reproduce the same stable `AgentInstanceRef` and parent edge as the requested stored child; the compact State ID remains only a selector, while the Host's trusted derivation or records establish workload continuity. The child executable restores model-history identity exclusively from its selected nested `HarnessState`; the fresh model resolver reads that value from `AgentContext` under [the Thread-affinity contract](16-input-model-and-output.md#thread-affinity). For creation, the returned instance supplies a new stable internal ref associated with that compact selector while the child stream independently creates a new Thread ID. It cannot return the consumed parent binding, implicitly copy the parent's model or client-tool binding, or copy authority-bearing Capability instances.
+`resume_from` identifies one prior canonical record. Resume creates a new compact parent reference and a new canonical execution; it never overwrites the prior record. The default Manager resumes from its in-memory latest complete child `HarnessState`. A custom operator decides how a real Thread continues.
 
-The host policy chooses:
+`None` from attach, snapshot, or wait means the operator no longer retains that execution. The projection becomes `lost`; it never substitutes another backend, child, or Thread. `None` from `activity()` alone means that the backend does not provide live activity detail; it does not mark an otherwise observable execution lost.
 
-- whether the child uses the same workload Identity or an authorized child Identity;
-- which fresh Environment runtime and mounts are available;
-- narrowed tool, credential, and budget authority;
-- which parent messages or summary become child input;
-- which fresh run-specific Capabilities and optional client-tool attachment are supplied.
+## Async Parent Projection
 
-The Delegation Capability creates bounded child input under `DelegationContextPolicy`. A provider can reject the request but cannot widen the context or limit ceilings. The child always receives a fresh `AgentContext`; that context initializes its private state and messages from the selected nested `HarnessState` after fresh bindings are authorized. No live parent plugin instance or chain, `BoundPluginContext`, mutable message list, whole `AgentContextState`, model session, provider handle, credential, or event queue is shared. Its exact definition selects its own plugin specs, its executable owns a separately constructed Agent-bound graph, and each invocation derives fresh run-bound replacements. When task sharing is enabled, only the Working State Capability's typed task cell crosses the state boundary through its explicit child binding. Every other Capability state remains child-private.
+The async Capability stores only compact references and bounded portable observations:
 
-An embedded application supplies a local `DelegationRunCapability` with an explicit child-binding factory when it enables delegation. `RunBindings.embedded()` does not derive child filesystem, shell, provider, model, or client-tool authority from the parent binding.
+```python
+class ManagedSubagentState(BaseModel):
+    subagent_id: str
+    subagent_name: str
+    child_definition_id: str
+    backend_id: str
+    prompt: str
+    status: Literal["running", "succeeded", "failed", "cancelled", "lost"]
+    resumed_from: str | None = None
+    failure: JsonValue | None = None
+    resumable: bool = False
+    thread_id: str | None = None
 
-## Child Usage Limits
 
-For inline execution, the Delegation Capability resolves the child's effective `UsageLimits` as a field-by-field stricter intersection of the parent's effective limits, the child `AgentSpec` definition baseline, `SubagentDefinition.usage_limits`, and current Host policy. The child baseline is its authored Harness value or the Harness default for an accepted plain native Pydantic AI `AgentSpec`. An omitted child edge declaration adds no edge-specific ceiling, but the complete child definition can still narrow its standalone budget. No child definition, edge, or Host value can widen the parent's effective limits. Each numeric ceiling uses the smallest non-`None` value; `None` adds no constraint for that field. `count_tokens_before_request` is enabled when any input requires it. The result is passed as the explicit invocation limit to `child.executable.stream()`, and Pydantic AI remains responsible for native checks.
-
-The child receives the parent's live `RunUsage` accumulator. Pydantic AI therefore evaluates cumulative request, tool-call, token, and cost limits against the aggregate visible at each run's check boundaries. Such a limit is not a fresh child-local allowance. `per_request_input_tokens_limit` remains local to each individual request.
-
-A shared `RunUsage` is an accumulator, not an atomic distributed budget coordinator. Concurrent inline runs can pass checks before either updates the aggregate, and an enclosing delegation tool call can be counted after its child completes. Deployments requiring strict aggregate admission serialize or reserve budget through Host policy. `RunUsage` and Host budget facts do not enter Delegation State.
-
-A Host-managed asynchronous child starts a separate run with fresh usage unless that Host explicitly performs in-process sharing. When the Host presents execution as an authored subagent edge, it independently applies the edge's `usage_limits` as a ceiling and can narrow it under current policy. Cross-run and lineage budgets remain Host facts.
-
-## Inline Execution
-
-Inline execution calls the same `ExecutableAgent.stream()` path used for root Agents, including the child's own input-to-result plugin chain. The Delegation Capability is the child stream's sole consumer; it does not bypass, inherit, or splice the parent's middleware.
-
-```mermaid
-sequenceDiagram
-    participant Parent as Parent Pydantic Agent
-    participant Delegate as Delegation Toolset
-    participant State as Delegation State
-    participant Binder as DelegationRunCapability
-    participant Tasks as Working State Capability
-    participant Child as Child HarnessRunStream
-
-    Parent->>Delegate: delegate child, task, and optional child instance ID
-    Delegate->>State: validate new or stored child selector
-    Delegate->>Binder: authorize and obtain fresh child RunBindings
-    Binder-->>Delegate: fresh child bindings and authority
-    Delegate->>Tasks: validate provider binding or add embedded child view
-    Delegate->>Child: stream input, optional child HarnessState, final bindings, shared usage, and limits
-    loop Child stream
-        Child-->>Delegate: child HarnessEvent
-        Delegate-->>Parent: forward child observation
-    end
-    Child-->>Delegate: final HarnessRunResultEvent
-    Delegate->>State: atomically store latest complete child HarnessState
-    Delegate->>Delegate: validate and bound child output
-    Delegate-->>Parent: ordinary tool result with child instance ID
+class SubagentManagerState(BaseModel):
+    owner_thread_id: str
+    next_sequence: int
+    subagents: dict[str, ManagedSubagentState]
 ```
 
-Native parent cancellation cancels and drains the active delegation tool task. That task closes the child `HarnessRunStream`, whose underlying `AgentRunEvents.aclose()` cancels and drains the child run. Child output is validated and bounded before entering the parent result. Raw exceptions, private messages, and state are not returned to the model.
+`subagent-N` is allocated monotonically and is unique only inside one parent Thread's `AgentContextState`. The exact delegated prompt is a portable input snapshot; it grants no authority. Status, bounded failure, resumability, and child Thread correlation are non-authoritative observations reconciled with the operator. Successful output remains only in canonical operator state and is fetched by a single-child `wait_subagent`; it never enters the portable parent projection. Bounded activity is also canonical process-local observation and is fetched only for single-execution info. State contains no activity, output, child `HarnessState`, live Thread, Session ID, task, stream, callback, credential, Environment, `RunBindings`, queue, lease, storage metadata, retry ledger, or wake record.
 
-Parent and child events use separate Thread IDs, Run IDs, and Agent instance lineage. The Harness binds a private forwarder to the exact child stream and projects validated child events into the parent stream while the Delegation Capability consumes the terminal child result internally. Forwarding preserves the child's Thread, Run, and source sequence through plugin processing. Passing the parent's live `RunContext.usage` makes the root result accumulate usage from the complete inline descendant tree. Child results contain cumulative snapshots rather than child-only deltas; child-correlated messages, events, and Observation retain per-response attribution.
+At parent Run entry, a mismatched `owner_thread_id`, including one produced by `HarnessState.fork()`, invalidates copied references. Otherwise the projection validates child-definition correlation and attaches the current Run observer to each nonterminal backend ID. Missing default-Manager records after restart become `lost`. `info`, `wait`, `steer`, `cancel`, and `resume` resolve only the exact compact reference and backend ID.
 
-When [Harness Observation](19-observation-model.md#inline-children) is enabled, the blocking child logical Run creates one nested logical-run span inside the active trace and contains its own Pydantic Agent/model/tool descendants. The same invocation has no duplicate sibling dispatch span; event forwarding and span parentage remain independent projections.
+A successful spawn is an ordinary completed tool call, not `DeferredToolRequests`. Child completion does not satisfy the original tool-call ID. The Harness defines no generic task record, acceptance ledger, retry worker, lease, delivery ledger, or automatic parent scheduler.
 
-## Parent Checkpoint and Crash Boundary
+## Usage
 
-An inline child remains part of its parent delegation tool call, even though complete child state is retained for later calls. The Harness does not publish or retain a parent checkpoint while that tool call or any sibling in the same Pydantic tool batch remains incomplete. Pydantic keeps completed results for an active batch outside public parent message history until the complete batch forms the next `ModelRequest`; exporting only the unresolved parent response would lose sibling results and could replay side effects.
+Inline execution intersects parent effective `UsageLimits`, the child `AgentSpec` baseline, edge `usage_limits`, and any operator narrowing. Numeric fields use the strictest non-`None` value, and the child shares the parent's native usage accumulator.
 
-After the complete parent tool batch, the ordinary parent checkpoint contains every sibling tool result and the Delegation Capability entry containing each advanced child snapshot. The child state supports future calls after that boundary; it does not make the unresolved batch resumable.
+Async execution owns an independent child run and usage accumulator unless a custom operator deliberately maps it otherwise. The Capability supplies exact child and edge ceilings. An operator may narrow them but cannot widen authored or current Host policy. Limits constrain admitted work; they do not enable or disable tools.
 
-If the process stops during child work or before the parent boundary is durably selected, recovery uses the last complete parent checkpoint. The parent model request or tool batch can run again, and any process-local child-state replacement after that checkpoint is lost. An embedded shared-task mutation after that checkpoint is lost with the parent snapshot. A provider-backed task mutation can already be durable; its operation receipt and originating `ExecutionAttempt` make it Host reconciliation input, and a replacement child must not blindly override an owner whose child selector was never checkpointed. Work requiring independent crash recovery, retries, scheduling, or result retention uses a Host-managed asynchronous child rather than adding partial Pydantic tool-batch state to the Harness.
+## Failure and Completion
 
-## Host-Managed Asynchronous Subagents
+| Condition                                  | Outcome                                                      |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| Unknown child name                         | Tool failure before operator dispatch                        |
+| Invalid operator                           | Definition construction failure                              |
+| Operator unavailable or denies context     | Bounded tool failure; Toolset remains unchanged              |
+| Fresh child authority is invalid or reused | Dispatch stops before child stream entry                     |
+| Inline child fails with complete state     | Child state advances and parent receives bounded failure     |
+| Async snapshot changes backend ID          | Operation fails without retargeting the compact reference    |
+| Async backend record missing               | Parent projection becomes `lost` on reconciliation           |
+| Steering unsupported or execution terminal | Bounded current-state tool result or failure                 |
+| Parent Run closes while async child runs   | Canonical child continues under operator ownership           |
+| Default Manager or process is lost         | Restored compact reference becomes `lost`                    |
+| Active enqueue fails                       | Explicit wait/info and later reconciliation remain available |
+| Stable Host hook fails                     | Canonical state and other hooks remain unaffected            |
 
-`SubagentCollection` is the topology seam for Host-specific async behavior. A Host package can register an ordinary declarative `AbstractCapability[AgentContext]` directly or contribute it from a definition-selected Harness plugin. The Host's immutable integration configuration, dependency and artifact locks, and trusted reconstruction adapter make its model-visible instructions, Toolsets, configuration, and state semantics reproducible. In `for_run()` or later hooks, that Capability reads the current executable's collection from `ctx.deps.subagents`; it never captures a collection in `from_spec()`, depends on a Harness build-context factory, or receives an arbitrary child from `RunBindings`.
+Inline completion is part of the parent tool call. Async completion is independent operator state. The default Manager publishes a terminal async snapshot only after the child stream and fresh child authority scope have both finished cleanup; a cleanup failure can therefore replace a provisional success with failure before any waiter observes it. Neither completion is durable merely because the Harness observed it; only a custom Host operator can provide durable child lifecycle.
 
-Current scheduling or submission authority enters separately through a fresh typed Host run Capability that owns its collaborator. The Host places exactly one expected instance in `RunBindings.capabilities`; feature-specific code looks it up from finalized `RunContext.capabilities` by stable ID and expected public type before submission. A missing, duplicate, or incompatible adapter fails before child work. The behavior Capability selects only an exact `BuiltSubagent` from `ctx.deps.subagents` and never obtains authority from topology or state. The Harness defines no universal background-subagent adapter, tool schema, scheduler, receipt, or delivery protocol.
+## Ownership Summary
 
-Tools can be named `spawn`, `status`, `wait`, `steer`, `cancel`, or use another Host-specific contract. A spawn tool completes normally when the Host accepts work:
-
-```mermaid
-sequenceDiagram
-    participant Parent as Parent Harness run
-    participant Capability as Host background Capability
-    participant Host
-    participant Child as Background child
-
-    Parent->>Capability: spawn declared child and task
-    Capability->>Host: authorize and accept Host-owned work
-    Host-->>Capability: stable receipt and compact child reference
-    Capability-->>Parent: bounded ordinary result with compact reference
-    Parent->>Parent: continue the current run
-    Host->>Child: execute under Host scheduling and fresh authority
-    Child-->>Host: result or failure
-    Host->>Host: retain and route completion
-    Host-->>Parent: later enqueue, message, or fresh-run input
-```
-
-The spawn result is not `CallDeferred`. Child completion does not satisfy the original tool-call ID and does not resume a suspended parent tool call. If the parent is active, the Host may deliver through native enqueue or another Capability-owned message seam. If no eligible run is active, it can retain the result for a later turn or start a fresh parent run. Delivery acceptance, incorporation, duplicate suppression, and the decision not to run two parent executions concurrently are Host policies.
-
-The Host owns child target identity, execution or task records, persistence, queues, leases, retries, cancellation, steering, result retention, wake-up, active-parent routing, fresh-run creation, and cross-run accounting. It obtains fresh child authority when execution starts. No live parent `RunBindings`, `BoundPluginContext`, plugin instance or chain, Environment, client connection, credential, or OpenTelemetry span object is retained as durable child authority.
-
-The Host also owns asynchronous-child trace propagation. It may continue bounded work with W3C Trace Context, while independently scheduled or durable work starts a new trace linked to the dispatch context. A correlation string does not replace the propagation context or OpenTelemetry span link. The complete boundary belongs to [Harness Observation](19-observation-model.md#host-managed-asynchronous-children).
-
-A process-local Host such as a CLI selects a child from `SubagentCollection`, creates fresh child bindings, and calls that child's ordinary `ExecutableAgent.stream()` inside a Host-owned background job. It stores the resulting child `HarnessState` in its own bounded job record and owns synchronization, retention, result routing, and any serialized later mapping into parent Delegation State; it never lets the first-party blocking inline tool task outlive its parent run or retain that run's usage, borrowed cell, or authority. A durable service instead gives each child its own execution and checkpoint records while storing the child's `HarnessState` inside those records. Both choices reuse Harness execution and state without making the Harness a scheduler.
-
-## Authority and Nesting
-
-Every invocation is authorized from trusted parent Identity, the exact child definition, requested new or existing child identity, context policy, lineage depth, current native limits, Host budget policy, and Environment request. Child authority is equal to or narrower than the policy result.
-
-Nesting uses the same evaluation. There is no separate nesting policy language. A child cannot widen authority through prompt text, transferred messages, tool arguments, State selectors, or stored `HarnessState`.
-
-## Result and Failure
-
-The successful inline result uses the child's Pydantic output contract and includes its stable child instance ID. Denial, cancellation, timeout, invalid output, and child failure never become synthetic success. A handled child failure, including `failure.code="usage_limit_exceeded"`, is projected through public `pydantic_ai.exceptions.ToolFailed` with sanitized bounded content; for a newly created child, that content also carries the stable instance ID retained under the State rules above.
-
-Child invocations cannot suspend for Pydantic external-tool or approval deferral. The effective child tool surface removes every prepared definition whose canonical upstream `ToolDefinition.defer` property is true, together with first-party deferred guidance, before the model request. If an ordinary remaining function, argument validator, Capability hook, custom Toolset, or managed policy requests `CallDeferred` or `ApprovalRequired` at runtime, the mandatory outer tool-execution boundary resolves every pending call and approval with `ToolDenied("Deferred tool interaction is unavailable in subagent runs.")`; Pydantic records the denied tool results and continues the same child Run. User deferred handlers cannot override this complete earlier resolution. As a terminal fail-closed guard, if an incomplete or bypassed custom/upstream path still produces `DeferredToolRequests`, the child returns `status="failed"` with `SafeFailure.code="subagent_deferred_unsupported"`, its latest complete State, messages, events, and usage. An inline parent receives the ordinary bounded child failure projection and does not become suspended. Root invocations retain native deferred behavior and still return `status="suspended"` unless a configured upstream handler resolves them inline.
-
-| Failure                                                          | Result                                                                                  |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Unknown child                                                    | Tool validation failure before dispatch                                                 |
-| Unknown, mismatched, or incompatible child instance ID           | Tool failure before binding                                                             |
-| Same child instance already active                               | Bounded busy/conflict failure; no second run starts                                     |
-| Missing or duplicate `DelegationRunCapability`                   | Fail-closed delegation error before dispatch                                            |
-| Invalid or reused child binding                                  | Dispatch stops before child stream entry                                                |
-| New-child fallback baseline export fails                         | Dispatch stops before child model/tool work                                             |
-| Policy denial                                                    | Typed authorization failure                                                             |
-| Imported Delegation State or nested child state incompatible     | Run or invocation stops before child model/tool work                                    |
-| Required task binding missing or incompatible                    | Dispatch fails before child model/tool work                                             |
-| Concurrent task claim or stale task version                      | Typed conflict; no owner or state is silently overwritten                               |
-| Inline child fails with valid complete state                     | Child record advances; bounded `ToolFailed` includes its stable instance ID             |
-| New child has a handled failure without result state             | Pre-start baseline and ID are retained; failed input is not claimed as incorporated     |
-| Native usage limit exceeded                                      | Failed child result with terminal usage; parent projection is `ToolFailed`              |
-| Child function or policy dynamically requests deferral           | Complete `ToolDenied` results; the same child Run continues                             |
-| Child unexpectedly terminates with deferred requests             | Failed child result with `subagent_deferred_unsupported`; parent is not suspended       |
-| Child cleanup uncertainty                                        | Prior stored child state remains selected; provider task effects require reconciliation |
-| Required Host run Capability missing, duplicate, or incompatible | Typed setup fails before model work; no child work is submitted                         |
-| Host background submission failure                               | Owning Host Capability returns its ordinary classified tool failure                     |
-| Host background child failure or delivery race                   | Host lifecycle and delivery contract owns retention and later notification              |
-
-## Boundaries
-
-| Concern                                                                                         | Owner                                                                                |
-| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Child declaration and recursive resolved build plan                                             | Agent definition contract and Host resolver                                          |
-| Immutable built child collection, executable ownership, and `AgentContext` projection           | Harness build and run assembly                                                       |
-| Inline configuration, binding lifecycle, child-private State ownership, and Toolset composition | Delegation Capability                                                                |
-| Inline tool schema, context shaping, dispatch, event forwarding, and result normalization       | Delegation Toolset                                                                   |
-| Shared task state, atomic claim, and parent export                                              | Working State Capability                                                             |
-| Child Thread identity and continuation State                                                    | Child `HarnessState` and fresh `AgentContext`                                        |
-| Fresh child Identity, model resolver/affinity, Environment, plugin graph, and run authority     | Child executable, Harness plugin binding, `DelegationRunCapability`, and Host policy |
-| Child Agent loop and native per-run checks                                                      | Same Harness and Pydantic AI path as a root Agent                                    |
-| Complete parent tool-batch checkpoint boundary                                                  | Pydantic AI and Harness                                                              |
-| Definition-selected async tool presentation and portable configuration                          | Owning Host Capability or plugin-contributed Capability                              |
-| Fresh async submission authority, scheduling, durable lifecycle, wake-up, and delivery          | Owning Host run Capability, its typed collaborators, and Host services               |
-
-## Trade-offs
-
-### Complete Materialized Children vs. Runtime Inheritance
-
-Complete materialized definitions make child behavior inspectable and reproducible. Shared process-local authoring can use exact `AgentDefinition.with_updates()` derivation, and a Host may resolve its own source-level inheritance or references before definition-revision commit. The Harness receives no runtime template, unresolved reference, or inheritance system.
-
-### State-backed Child Continuity vs. Stateless Calls
-
-Keeping complete child snapshots in one namespaced Delegation State supports stable child identities and multi-turn specialization without injecting child history into the parent prompt. Unlike a message-only registry, the nested `HarnessState` preserves every child-private Capability continuation and compatible portable Environment data without preserving child mount authority or provider affinity. Fresh run binding reconstructs the latter from the stable internal child instance. The nested envelope increases parent state size and requires bounded retention, compatibility validation, and same-child serialization.
-
-### Explicit Task Cell vs. Shallow Context Sharing
-
-A typed shared task cell lets children atomically claim parent-created work without aliasing unrelated State, message history, clients, or authority. Local mode keeps one parent snapshot; provider mode keeps authoritative task data entirely behind a fresh Host binding. Both require the Working State Capability to define child binding and conflict semantics, but avoid races, stale-snapshot seeding, and accidental coupling caused by shallow-copying an entire context.
-
-### Complete Parent Boundaries vs. Mid-child Recovery
-
-Restarting from the last complete parent boundary can repeat inline work after process loss. Avoiding that replay requires a durable ledger for every sibling result in the active Pydantic tool batch, not merely a child snapshot. The Harness deliberately omits that partial-batch protocol; independently recoverable work belongs to a Host execution.
-
-### Host Capability vs. Core Async Protocol
-
-Leaving background scheduling with the Host preserves true parent/child parallelism and lets a CLI use in-process Host jobs while a service uses durable executions. A definition-selected Capability keeps model-visible behavior inspectable, while a fresh Host run adapter keeps authority out of build-time plugin and Capability instances. Hosts must define delivery and wake-up behavior explicitly, but the Harness avoids imposing one queue, receipt, persistence, or session model.
+| Concern                                                          | Owner                                                             |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Exact child topology and executable build                        | `AgentDefinition`, `SubagentDefinition`, and `SubagentCollection` |
+| Execution mode and standard model-visible Toolset                | `SubagentCapability`                                              |
+| Inline compact references and nested child state                 | Inline Capability projection                                      |
+| Async compact references and portable parent projection          | Async Capability projection                                       |
+| Fresh child authority scopes and canonical async execution       | `SubagentOperator`                                                |
+| Default process-local child tasks, streams, state, and lifecycle | `SubagentManager`                                                 |
+| Active-run completion enqueue                                    | Current Harness run projection                                    |
+| Stable completion hook and optional parent wake                  | Operator and Host                                                 |
+| Durable Session, Thread, retry, and delivery                     | Custom Host or service                                            |
 
 ## Invariants
 
-01. Every built collection is an immutable, authored-order mapping of immediate child names to recursively built executables; Harness-owned edge policy and limit values cannot be mutated through the collection, while trusted native definition objects retain their documented code-first mutability contract.
-02. Every fresh context borrows the exact collection owned by its executable; `RunBindings` cannot replace it, it is not state, and possession grants no child execution authority.
-03. The Harness defines one blocking inline subagent execution primitive and no hosted or deferred subagent mode.
-04. Every inline invocation receives fresh authority; stored child state restores no Identity, Environment, credential, or policy.
-05. Delegation State contains bounded complete reachable child `HarnessState` snapshots and compact scoped selectors, including child message history, but never active work, internal Agent identity authority, or Host lifecycle facts; a retained failed new child is reachable through the ID delivered in `ToolFailed`.
-06. Different child instances may run concurrently; one child instance has at most one active transition within a parent run, while cross-run continuation serialization or forking belongs to the Host.
-07. Inline parent and children can share only the Working State task cell; it has atomic trusted-identity claim semantics, while plugin instances, child messages, and every other Capability state remain private.
-08. Parent state is exported only at a complete parent semantic boundary, never from an unresolved child or sibling tool batch.
-09. Inline descendants share the parent usage accumulator but not mutable message lists, whole `AgentContext`, or run bindings.
-10. A Host async spawn returns an ordinary tool result; later completion is new Host-routed input and never a deferred result for the spawn call.
-11. Host-managed child execution obtains fresh authority and owns durability, delivery, wake-up, retries, cancellation, and cross-run accounting.
-12. Every child State owns a Thread ID distinct from its parent and siblings; continuation restores it from nested `HarnessState`, never from `AgentInstanceRef` or a transient child Harness run ID.
-13. Inline child Observation nests once in the active trace; Host-managed asynchronous children use Host-owned W3C propagation or a new trace with a span link.
-14. Every child invocation is non-suspending: declaratively deferred tools are absent, dynamic deferral is denied inside the same Run, and an unexpected terminal deferred output fails closed without suspending its parent.
+01. `SubagentCapability` fixes one execution mode, one operator, and one Harness-owned Toolset at definition construction.
+02. The Host configures or subclasses the operator and never supplies or replaces the first-party Toolset.
+03. No `RunBindings` value selects inline versus async behavior or supplies subagent execution authority.
+04. Inline parent state stores complete nested child `HarnessState`; async parent state never does.
+05. Async state contains only Thread-scoped compact references, exact input snapshots, and bounded status observations over operator-owned canonical state; activity and successful output are never portable parent state.
+06. The default `SubagentManager` is process-local and survives parent Run closure until its owner invokes `force_close()`; forced close cancels live children instead of waiting for natural completion.
+07. Active-run enqueue and stable Host-hook dispatch are independent; the operator always dispatches hooks.
+08. Ordinary async children receive only Capabilities in their exact definitions.
+09. Tool availability is not selected by max-count, depth, task, storage, or metadata configuration.
+10. The Harness does not become a generic durable job or distributed workflow framework.

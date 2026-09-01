@@ -2,22 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
-from typing import TYPE_CHECKING
-
-from a13n_harness import RunModelResolver
-
-from a13n_ui.errors import RunCoordinationError
-
-if TYPE_CHECKING:
-    from a13n_ui.composition import ResolvedAgentSnapshot
 
 _BUILTIN_ADAPTER_DISTRIBUTION = "a13n-ui"
 _PYDANTIC_AI_ADAPTER_KEY = "a13n.pydantic-ai"
-
-type RunModelResolverFactory = Callable[["ResolvedAgentSnapshot"], Awaitable[RunModelResolver]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,17 +16,6 @@ class ModelAdapterRegistration:
     adapter_key: str
     distribution_name: str
     distribution_version: str
-
-
-async def unavailable_run_model_resolver_factory(
-    _snapshot: ResolvedAgentSnapshot,
-) -> RunModelResolver:
-    """Fail explicitly until the embedding Host supplies current credential resolution."""
-
-    raise RunCoordinationError(
-        "Foreground execution requires a Host-owned fresh Model resolver factory.",
-        code="model_resolver_unavailable",
-    )
 
 
 def model_adapter_registration(adapter_key: str) -> ModelAdapterRegistration | None:
@@ -56,9 +34,4 @@ def model_adapter_registration(adapter_key: str) -> ModelAdapterRegistration | N
     )
 
 
-__all__ = [
-    "ModelAdapterRegistration",
-    "RunModelResolverFactory",
-    "model_adapter_registration",
-    "unavailable_run_model_resolver_factory",
-]
+__all__ = ["ModelAdapterRegistration", "model_adapter_registration"]

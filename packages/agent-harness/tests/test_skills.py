@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -25,13 +26,13 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import (
-    DelegationCapability,
-    DelegationRunCapability,
     FileSkillSource,
     SkillCatalogItem,
     SkillManager,
     SkillsCapability,
     SkillSelectionRunCapability,
+    SubagentCapability,
+    SubagentManager,
 )
 from a13n_harness.context import SkillPath
 from a13n_harness.environment import (
@@ -245,11 +246,7 @@ async def _run_single_view(
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            DynamicEnvironmentCapability(
-                DynamicEnvironmentConfiguration(
-                    max_reference_entries=64,
-                )
-            ),
+            DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
             capability,
         ),
     )
@@ -863,12 +860,29 @@ async def test_child_run_uses_its_own_skill_selection(tmp_path: Path) -> None:
         model=FunctionModel(stream_function=child_stream),
         capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
     )
+
+    @asynccontextmanager
+    async def bind_child(context, child, input, child_instance_id, continuation, usage_limits):
+        del child, input, continuation, usage_limits
+        yield RunBindings(
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="child"),
+                agent_instance_id=f"internal-{child_instance_id}",
+                parent_agent_instance_id=context.instance.agent_instance_id,
+                delegation_id=child_instance_id,
+            ),
+            environment=_binding(tmp_path),
+        )
+
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=parent_stream),
         capabilities=(
-            DelegationCapability(),
+            SubagentCapability(
+                execution="inline",
+                operator=SubagentManager(bind_child),
+            ),
             SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),
         ),
         subagents=(
@@ -880,18 +894,6 @@ async def test_child_run_uses_its_own_skill_selection(tmp_path: Path) -> None:
         ),
     )
 
-    async def bind_child(child, input, child_instance_id, continuation, usage_limits):
-        del child, input, continuation, usage_limits
-        return RunBindings(
-            instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="test", subject="child"),
-                agent_instance_id=f"internal-{child_instance_id}",
-                parent_agent_instance_id="skill-parent",
-                delegation_id=child_instance_id,
-            ),
-            environment=_binding(tmp_path),
-        )
-
     result = await executable.run(
         "Delegate",
         bindings=RunBindings(
@@ -902,7 +904,6 @@ async def test_child_run_uses_its_own_skill_selection(tmp_path: Path) -> None:
             environment=_binding(tmp_path),
             capabilities=(
                 InvocationPolicyCapability(evaluator=_Allow()),
-                DelegationRunCapability(binder=bind_child),
                 SkillSelectionRunCapability(names=frozenset({"alpha"})),
             ),
         ),
@@ -985,11 +986,7 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            DynamicEnvironmentCapability(
-                DynamicEnvironmentConfiguration(
-                    max_reference_entries=64,
-                )
-            ),
+            DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
             SkillsCapability(_manager()),
         ),
     )
@@ -1098,11 +1095,7 @@ async def test_selected_skill_markdown_uses_relaxed_full_read_budget(tmp_path: P
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            DynamicEnvironmentCapability(
-                DynamicEnvironmentConfiguration(
-                    max_reference_entries=64,
-                )
-            ),
+            DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
             SkillsCapability(_manager()),
         ),
     )
@@ -1171,11 +1164,7 @@ async def test_large_selected_skill_markdown_continues_without_skipping_lines(tm
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            DynamicEnvironmentCapability(
-                DynamicEnvironmentConfiguration(
-                    max_reference_entries=64,
-                )
-            ),
+            DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
             SkillsCapability(_manager()),
         ),
     )

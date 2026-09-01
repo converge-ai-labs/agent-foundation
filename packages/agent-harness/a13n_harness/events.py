@@ -84,6 +84,34 @@ class ContextSnapshotPayload(_FirstPartyPayload):
     trigger_tokens: int = Field(gt=0)
 
 
+class MemoryRecallStartedPayload(_FirstPartyPayload):
+    type: Literal["memory_recall_started"] = "memory_recall_started"
+    operation_id: str = Field(pattern=r"^memory-recall-[A-Za-z0-9_-]+$", max_length=128)
+    scopes: tuple[Literal["thread", "agent", "user"], ...] = Field(min_length=1, max_length=3)
+
+
+class MemoryRecallCompletedPayload(_FirstPartyPayload):
+    type: Literal["memory_recall_completed"] = "memory_recall_completed"
+    operation_id: str = Field(pattern=r"^memory-recall-[A-Za-z0-9_-]+$", max_length=128)
+    scopes: tuple[Literal["thread", "agent", "user"], ...] = Field(min_length=1, max_length=3)
+    result_count: int = Field(ge=0, le=100)
+
+
+class MemoryRecallFailedPayload(_FirstPartyPayload):
+    type: Literal["memory_recall_failed"] = "memory_recall_failed"
+    operation_id: str = Field(pattern=r"^memory-recall-[A-Za-z0-9_-]+$", max_length=128)
+    scopes: tuple[Literal["thread", "agent", "user"], ...] = Field(min_length=1, max_length=3)
+    error_code: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=128)
+    retryable: bool
+
+
+class MemoryRecallSkippedPayload(_FirstPartyPayload):
+    type: Literal["memory_recall_skipped"] = "memory_recall_skipped"
+    operation_id: str = Field(pattern=r"^memory-recall-[A-Za-z0-9_-]+$", max_length=128)
+    scopes: tuple[Literal["thread", "agent", "user"], ...] = Field(min_length=1, max_length=3)
+    reason: Literal["continuation", "empty_query"]
+
+
 class ContextOperationStartedPayload(_FirstPartyPayload):
     type: Literal["handoff_started", "compaction_started"]
     operation_id: str = Field(min_length=1, max_length=128)
@@ -178,6 +206,22 @@ class InlineDelegationPayload(_FirstPartyPayload):
         if self.action in {"started", "completed"} and self.child_run_id is None:
             raise ValueError("started and completed inline delegation events require child_run_id")
         return self
+
+
+class SteeringInputEnqueuedPayload(_FirstPartyPayload):
+    """One external steering input or Harness lifecycle notice accepted by the active Run."""
+
+    type: Literal["steering_input_enqueued"] = "steering_input_enqueued"
+    enqueue_id: str = Field(min_length=1, max_length=256)
+    source: Literal["external", "async_subagent", "background_process"]
+    references: tuple[str, ...] = Field(default=(), max_length=16)
+
+    @field_validator("references")
+    @classmethod
+    def _validate_references(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not reference or len(reference) > 128 for reference in value):
+            raise ValueError("steering references must be non-empty bounded strings")
+        return value
 
 
 class UsageReportPayload(_FirstPartyPayload):
@@ -275,12 +319,17 @@ type FirstPartyEventPayload = (
     | ModelRequestCompletedPayload
     | ModelRequestFailedPayload
     | ContextSnapshotPayload
+    | MemoryRecallStartedPayload
+    | MemoryRecallCompletedPayload
+    | MemoryRecallFailedPayload
+    | MemoryRecallSkippedPayload
     | ContextOperationStartedPayload
     | ContextOperationPreparedPayload
     | ContextOperationCompletedPayload
     | ContextOperationFailedPayload
     | TaskChangedPayload
     | InlineDelegationPayload
+    | SteeringInputEnqueuedPayload
     | UsageReportPayload
     | CodeActExecutionStartedPayload
     | CodeActToolCallStartedPayload

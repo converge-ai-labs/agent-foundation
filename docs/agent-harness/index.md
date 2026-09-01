@@ -81,6 +81,7 @@ Stable Agent behavior is composed as Pydantic AI Capabilities. The Harness provi
 | Need                                             | Capability or guide                                                                         |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
 | Runtime context and model-readable working state | `RuntimeContextCapability`, `WorkingStateCapability`                                        |
+| Long-term memory                                 | `Mem0Capability` with native Mem0 recall and bounded memory tools                           |
 | Files, commands, processes, output, and ports    | `DynamicEnvironmentCapability` and [Environments](environments.md)                          |
 | Human clarification or deferred approval         | `UserInteractionCapability`                                                                 |
 | Media, documents, and Web integrations           | [Capabilities](capabilities.md) and [Multimedia Understanding](multimedia-understanding.md) |

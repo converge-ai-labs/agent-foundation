@@ -2,7 +2,7 @@
 
 Agent Harness provides two advanced orchestration features without adding a workflow engine:
 
-- inline delegation runs a declared child Agent and waits for its result;
+- subagent execution runs an exact declared child inline or through an asynchronous operator;
 - CodeAct runs restricted Python over an explicitly eligible subset of the active tool surface.
 
 Both execute through the canonical Harness and Pydantic AI boundaries, so policy, events, usage, cancellation, result validation, and cleanup remain consistent.
@@ -19,7 +19,7 @@ from a13n_harness import (
     HarnessBuilder,
     SubagentDefinition,
 )
-from a13n_harness.capabilities import DelegationCapability
+from a13n_harness.capabilities import SubagentBindingOperator, SubagentCapability
 from pydantic_ai.agent.spec import AgentSpec
 
 child = AgentDefinition(
@@ -29,17 +29,24 @@ child = AgentDefinition(
 )
 
 parent = HarnessBuilder().build(
-    AgentSpec(),
-    output_type=str,
-    model=coordinator_model,
-    capabilities=(DelegationCapability(),),
-    subagents=(
-        SubagentDefinition(
-            name="reviewer",
-            description="Review one bounded change.",
-            agent=child,
+    AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        model=coordinator_model,
+        capabilities=(
+            SubagentCapability(
+                execution="inline",
+                operator=SubagentBindingOperator(open_child),
+            ),
         ),
-    ),
+        subagents=(
+            SubagentDefinition(
+                name="reviewer",
+                description="Review one bounded change.",
+                agent=child,
+            ),
+        ),
+    )
 )
 ```
 
@@ -47,30 +54,50 @@ Build recursively validates a finite acyclic graph and unique sibling names. Eac
 
 ### Supply Fresh Child Authority
 
-The definition describes topology, not current authority. Each parent run supplies a `DelegationRunCapability` whose binder creates fresh child bindings under the authored edge ceilings.
+The definition describes topology and fixes execution mode, but not current authority. `SubagentBindingOperator(open_child)` receives the current parent context and returns one fresh child `RunBindings` async scope under the authored edge ceilings.
 
-`DelegationCapability` exposes one blocking `delegate` tool over the declared children. A call:
+Inline `SubagentCapability` exposes one blocking `delegate` tool over the declared children. A call:
 
 1. selects one declared child;
 2. asks the fresh run binder for child authority and context;
 3. runs the child through its canonical `ExecutableAgent.stream()` path;
 4. forwards validated child observations into the parent stream;
 5. waits for one child terminal result;
-6. returns a bounded `DelegateResult` to the parent model.
+6. returns a bounded result to the parent model.
 
 A returned `child_instance_id` can continue only that child's private nested `HarnessState` through the same parent invocation context.
 
+### Asynchronous Children
+
+Use one stable `SubagentManager` when a child may outlive the parent Run:
+
+```python
+from a13n_harness.capabilities import SubagentCapability, SubagentManager
+
+subagent_manager = SubagentManager(
+    open_child,
+    event_hooks=(on_subagent_event,),
+)
+capability = SubagentCapability(
+    execution="async",
+    operator=subagent_manager,
+)
+```
+
+The Manager owns admitted child tasks, streams, state, output, usage, steering, cancellation, and fresh child-binding cleanup. The parent stores only `subagent-N`, one opaque backend ID, the exact prompt, and bounded observations. Closing a parent Run or its Environment detaches observation without cancelling the child. A later compatible Run uses the same Manager to inspect or wait. `force_close()` is an explicit Host operation, normally used when the embedding executable or Runner generation shuts down; Harness never invokes it from parent cleanup.
+
+Stable hooks contain parent Thread, Run, Agent-instance, and Host-reference correlation. They can wake a later Run, but they are not a durable delivery system. The default Manager is process-local and its records become lost after restart. A durable Host can implement `SubagentOperator` over its own independently managed child Threads without changing the standard Toolset.
+
 ### Deliberate Boundary
 
-Inline delegation is blocking and process-local. It does not provide:
+The default inline operator and asynchronous Manager are process-local. They do not provide:
 
-- background submission;
 - durable child executions or workers;
 - receipts, polling, or result inboxes;
 - cross-process cancellation routing;
 - durable child scheduling or delivery.
 
-A Host can implement those as ordinary Host-owned tools and lifecycle records. Do not reinterpret inline delegation as a background protocol.
+A Host can implement those semantics behind `SubagentOperator`. Do not turn the parent projection into a second job or child-state store.
 
 ### Deferred Tools in Child Runs
 

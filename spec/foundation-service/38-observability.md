@@ -108,18 +108,17 @@ The Foundation-owned processor projects only validated values from this closed c
 | `a13n.observation.session.id`      | Foundation product Session                                      |
 | `session.id`                       | Foundation Thread used as the cross-trace observability session |
 | `a13n.thread.id`                   | Foundation Thread                                               |
-| `a13n.run.id`                      | Accepted Foundation Run                                         |
+| `a13n.foundation.run.id`           | Accepted Foundation Run                                         |
 | `a13n.run_attempt.id`              | Current worker generation                                       |
 | `a13n.run_attempt.number`          | Positive generation number within the Run                       |
 | `a13n.run_attempt.replaces.id`     | Immediately replaced Attempt, when present                      |
 | `a13n.run_attempt.recovery.reason` | `lease_expired`, `retry_after_failure`, or `planned_handoff`    |
-| `a13n.harness.run.id`              | Harness Run after its durable fenced binding                    |
 | `a13n.agent.preset.id`             | Selected AgentPreset identity                                   |
 | `a13n.agent.preset.version.id`     | Exact selected immutable AgentPresetVersion                     |
 | `a13n.model.id`                    | Exact selected Foundation ModelConfig identity                  |
 | `a13n.model.provider.type`         | Bounded selected provider type                                  |
 
-The root additionally owns `a13n.run_attempt.outcome` with `succeeded`, `yielded`, `failed`, or `cancelled` after a matching authoritative Attempt decision, plus an optional bounded `a13n.run_attempt.failure.code`. An unfinished span or missing outcome does not invent a durable status. Harness and Pydantic AI retain their existing attributes and remain the sole owners of Harness Run, model, tool, streaming, native usage, and native exception fields.
+The root additionally owns `a13n.run_attempt.outcome` with `succeeded`, `yielded`, `failed`, or `cancelled` after a matching authoritative Attempt decision, plus an optional bounded `a13n.run_attempt.failure.code`. An unfinished span or missing outcome does not invent a durable status. Harness retains `a13n.run.id` for its process-local Harness Run; Foundation never overwrites or reinterprets that field as its durable Run identity. Harness and Pydantic AI retain their other existing attributes and remain the sole owners of Harness Run, model, tool, streaming, native usage, and native exception fields.
 
 Correlation values are never authorization evidence. The processor does not flatten arbitrary identity claims, request metadata, Agent metadata, headers, provider state, or `RunBindings.metadata`. A value that fails the owning ID or bounded scalar contract is omitted and diagnosed by safe category rather than truncated into a different identity.
 

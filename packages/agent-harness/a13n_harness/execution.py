@@ -21,7 +21,14 @@ from pydantic_ai.agent import AgentRunEvents
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Instrumentation, ResolveModelId
 from pydantic_ai.exceptions import AgentRunError, RunCancelled, UsageLimitExceeded, UserError
-from pydantic_ai.messages import AgentStreamEvent, ModelMessage, ModelRequest, ModelResponse, SystemPromptPart
+from pydantic_ai.messages import (
+    AgentStreamEvent,
+    EnqueuedMessagesEvent,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    SystemPromptPart,
+)
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.models.instrumented import InstrumentedModel
 from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, StructuredDict, TextOutput, ToolOutput
@@ -43,12 +50,6 @@ from a13n_harness.capabilities.context import (
     HandoffCapability,
     RuntimeContextCapability,
     WorkspaceOutlineCapability,
-)
-from a13n_harness.capabilities.delegation import (
-    DELEGATION_CAPABILITY_ID,
-    DELEGATION_RUN_CAPABILITY_ID,
-    DelegationCapability,
-    DelegationRunCapability,
 )
 from a13n_harness.capabilities.documents import (
     DOCUMENTS_CAPABILITY_ID,
@@ -85,6 +86,7 @@ from a13n_harness.capabilities.steering import (
     SteeringBridge,
     SteeringCapability,
 )
+from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
     WEB_RUN_CAPABILITY_ID,
@@ -1290,6 +1292,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     context_state,
                     run_id=self.run_id,
                     retain_inputs=COMPACTION_CAPABILITY_ID in self._executable._definition_reserved_capability_ids,
+                    events=self._emitter,
                 ),
                 _skill_selection_names=self._skill_selection_names,
                 _capability_provenance=_CapabilityProvenance(
@@ -1751,7 +1754,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             self._pydantic_events.cancel()
 
     async def steer(self, input: RunInputValue) -> str:
-        """Retain and deliver one user steering value through native Pydantic enqueue."""
+        """Deliver one user steering value through native Pydantic enqueue."""
         if not self._entered or self._closed or self._context is None:
             raise RunError("The run is not active.", code="run_not_active")
         return await self._context._steering.steer(input)
@@ -2028,7 +2031,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         except HarnessError as exc:
             raise PluginError("Plugin middleware supplied an invalid input.", code="plugin_input_invalid") from exc
 
-        await exchange.context._steering.prepare(current_input)
+        await exchange.context._steering.prepare(
+            current_input,
+            restore_retained=self._deferred_resume is not None,
+        )
 
         policy = self._executable.definition.model_recovery
         max_attempts = policy.max_attempts if policy.enabled else 1
@@ -2041,6 +2047,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._latest_messages = current_history
 
         while True:
+            await exchange.context._steering.resolve_delivered(current_history)
             retry_error: BaseException | None = None
             next_attempt_index = attempt_index + 1
             response_tracker = InterruptedResponseTracker()
@@ -2343,6 +2350,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         response_tracker: InterruptedResponseTracker,
     ) -> AsyncIterator[Any]:
         async for event in events:
+            if isinstance(event, EnqueuedMessagesEvent):
+                await self.context._steering.mark_applied(event.enqueue_id)
             response_tracker.observe(
                 cast(AgentStreamEvent, event),
                 response_history_count=len(events.all_messages()),
@@ -2574,8 +2583,7 @@ def _validate_built_capability_tree(
         WEB_RUN_CAPABILITY_ID,
         WORKING_STATE_CAPABILITY_ID,
         TASK_STATE_RUN_CAPABILITY_ID,
-        DELEGATION_CAPABILITY_ID,
-        DELEGATION_RUN_CAPABILITY_ID,
+        SUBAGENT_CAPABILITY_ID,
     }
     for capability in leaves:
         if not isinstance(capability, AbstractCapability):
@@ -2707,7 +2715,7 @@ def _validate_built_capability_tree(
                 DocumentsCapability,
                 WebCapability,
                 WorkingStateCapability,
-                DelegationCapability,
+                SubagentCapability,
             )
             and capability_id in definition_reserved_ids
         )
@@ -2827,7 +2835,6 @@ def _validate_capability_source(
         FileMediaUnderstandingRunCapability,
         WebRunCapability,
         TaskStateRunCapability,
-        DelegationRunCapability,
     )
     leaves: list[AbstractCapability[AgentContext]] = []
     for capability in capabilities:
@@ -2894,8 +2901,7 @@ def _validate_capability_source(
         WEB_RUN_CAPABILITY_ID,
         WORKING_STATE_CAPABILITY_ID,
         TASK_STATE_RUN_CAPABILITY_ID,
-        DELEGATION_CAPABILITY_ID,
-        DELEGATION_RUN_CAPABILITY_ID,
+        SUBAGENT_CAPABILITY_ID,
     }
     accepted: set[str] = set()
     for capability in leaves:
@@ -2926,7 +2932,7 @@ def _validate_capability_source(
                     DocumentsCapability,
                     WebCapability,
                     WorkingStateCapability,
-                    DelegationCapability,
+                    SubagentCapability,
                 )
             )
         ) or (source == "run" and type(capability) in run_types)
@@ -2962,8 +2968,7 @@ def _validate_capability_source(
             | WebRunCapability
             | WorkingStateCapability
             | TaskStateRunCapability
-            | DelegationCapability
-            | DelegationRunCapability,
+            | SubagentCapability,
         )
         if reserved_type or capability.id in reserved_ids:
             if not allowed:

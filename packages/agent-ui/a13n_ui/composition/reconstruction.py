@@ -24,9 +24,12 @@ from a13n_harness.capabilities import (
     DocumentsCapability,
     FileSkillSource,
     MediaCapability,
+    ShellOperator,
     SkillManager,
     SkillsCapability,
     SkillsPolicy,
+    SubagentCapability,
+    SubagentOperator,
     UserInteractionCapability,
     WebCapability,
     WorkingStateCapability,
@@ -54,7 +57,7 @@ from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.usage import UsageLimits
 
-from a13n_ui.configuration import CatalogRepository, DependencyLock
+from a13n_ui.configuration import DependencyLock
 from a13n_ui.errors import CompositionError
 from a13n_ui.model_adapters import model_adapter_registration
 
@@ -229,12 +232,26 @@ class ExecutableCache:
             self._entries.clear()
 
 
+type SkillPackageLoader = Callable[[ResolvedSkill], Awaitable[JsonValue]]
+
+
 class AgentReconstructor:
     """Map one authority-neutral snapshot through public Harness build contracts."""
 
-    def __init__(self, catalog: CatalogRepository, cache: ExecutableCache) -> None:
-        self._catalog = catalog
+    def __init__(
+        self,
+        skill_packages: SkillPackageLoader,
+        cache: ExecutableCache,
+        *,
+        inline_subagents: SubagentOperator | None = None,
+        async_subagents: SubagentOperator | None = None,
+        shell_operator: ShellOperator | None = None,
+    ) -> None:
+        self._skill_packages = skill_packages
         self._cache = cache
+        self._inline_subagents = inline_subagents or SubagentOperator()
+        self._async_subagents = async_subagents or SubagentOperator()
+        self._shell_operator = shell_operator
 
     async def executable(
         self,
@@ -301,15 +318,16 @@ class AgentReconstructor:
                 )
 
         node_by_ref = {node.agent_revision: node for node in snapshot.resolved_agents}
-        definitions: dict[object, AgentDefinition[Any]] = {}
+        definitions: dict[tuple[object, bool], AgentDefinition[Any]] = {}
 
-        async def reconstruct(node: ResolvedAgentNode) -> AgentDefinition[Any]:
-            known = definitions.get(node.agent_revision)
+        async def reconstruct(node: ResolvedAgentNode, *, root: bool) -> AgentDefinition[Any]:
+            definition_key = (node.agent_revision, root)
+            known = definitions.get(definition_key)
             if known is not None:
                 return known
             children: list[SubagentDefinition] = []
             for edge in node.subagents:
-                child = await reconstruct(node_by_ref[edge.target_agent])
+                child = await reconstruct(node_by_ref[edge.target_agent], root=False)
                 children.append(
                     SubagentDefinition(
                         name=edge.name,
@@ -340,7 +358,20 @@ class AgentReconstructor:
                 for plugin in node.plugins
                 if plugin.definition.enabled
             )
-            capabilities = list(_capabilities(node))
+            capabilities = list(
+                _capabilities(
+                    node,
+                    shell_operator=self._shell_operator if root else None,
+                )
+            )
+            if children:
+                async_execution = root and node.async_subagents.tools == "standard"
+                capabilities.append(
+                    SubagentCapability(
+                        execution="async" if async_execution else "inline",
+                        operator=self._async_subagents if async_execution else self._inline_subagents,
+                    )
+                )
             if node.skills:
                 assert environment is not None
                 capabilities.append(await self._skills(snapshot, environment, node))
@@ -358,7 +389,7 @@ class AgentReconstructor:
                 name=node.agent_id,
                 description=node.description,
                 system_prompt=system_prompt,
-                model_settings=node.model.definition.settings or None,
+                model_settings=_harness_model_settings(node) or None,
                 metadata={
                     "agent_snapshot": snapshot.logical_agent_digest,
                     "agent_revision": node.agent_revision.content_digest,
@@ -381,10 +412,10 @@ class AgentReconstructor:
                     backoff_max_seconds=recovery.backoff_max_seconds,
                 ),
             )
-            definitions[node.agent_revision] = definition
+            definitions[definition_key] = definition
             return definition
 
-        root = await reconstruct(node_by_ref[snapshot.root_agent])
+        root = await reconstruct(node_by_ref[snapshot.root_agent], root=True)
         try:
             return HarnessBuilder(configured_plugins_enabled=False).build(root)
         except Exception as exc:
@@ -402,15 +433,8 @@ class AgentReconstructor:
     ) -> SkillsCapability:
         packages: dict[str, tuple[_PackageFile, ...]] = {}
         for skill in node.skills:
-            package_reference = await self._catalog.skill_package_reference(skill.revision)
-            if package_reference.logical_digest != skill.package_object_digest:
-                raise CompositionError(
-                    "A managed Skill package selection changed after snapshot publication.",
-                    code="skill_package_mismatch",
-                    details={"skill_id": skill.revision.resource_id},
-                )
             packages[skill.definition.skill_name] = _decode_package(
-                await self._catalog.skill_package(skill.revision),
+                await self._skill_packages(skill),
                 skill,
             )
         mount_name = node.skill_materialization_mount
@@ -445,13 +469,30 @@ class AgentReconstructor:
         return SkillsCapability(manager)
 
 
-def _capabilities(node: ResolvedAgentNode) -> tuple[AbstractCapability[Any], ...]:
+def _harness_model_settings(node: ResolvedAgentNode) -> dict[str, JsonValue]:
+    settings = node.model.definition.settings
+    if node.model.definition.model_name != "test":
+        return settings
+    return {key: value for key, value in settings.items() if not key.startswith("test_")}
+
+
+def _capabilities(
+    node: ResolvedAgentNode,
+    *,
+    shell_operator: ShellOperator | None,
+) -> tuple[AbstractCapability[Any], ...]:
     values: list[AbstractCapability[Any]] = []
+    dynamic_selected = False
     for selection in node.capabilities:
         if selection.key == "a13n.dynamic-environment":
-            values.append(
-                DynamicEnvironmentCapability(DynamicEnvironmentConfiguration(**selection.configuration.model_dump()))
-            )
+            dynamic_selected = True
+            if node.environment_tools:
+                values.append(
+                    DynamicEnvironmentCapability(
+                        DynamicEnvironmentConfiguration(),
+                        operator=shell_operator,
+                    )
+                )
         elif selection.key == "a13n.working-state":
             values.append(WorkingStateCapability(WorkingStateConfiguration(**selection.configuration.model_dump())))
         elif selection.key == "a13n.user-interaction":
@@ -495,6 +536,14 @@ def _capabilities(node: ResolvedAgentNode) -> tuple[AbstractCapability[Any], ...
                 "An Agent snapshot selects an unsupported Capability.",
                 code="capability_schema_unavailable",
             )
+    if node.environment_tools and not dynamic_selected:
+        values.insert(
+            0,
+            DynamicEnvironmentCapability(
+                DynamicEnvironmentConfiguration(),
+                operator=shell_operator,
+            ),
+        )
     return tuple(values)
 
 
@@ -549,4 +598,9 @@ def _registration_matches(
     )
 
 
-__all__ = ["AgentReconstructor", "ExecutableCache", "SnapshotSkillMaterializer"]
+__all__ = [
+    "AgentReconstructor",
+    "ExecutableCache",
+    "SkillPackageLoader",
+    "SnapshotSkillMaterializer",
+]

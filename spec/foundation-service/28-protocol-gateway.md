@@ -4,7 +4,17 @@
 
 Foundation Service Protocol Gateway is the public protocol boundary of the `control` and `all` roles. It exposes Foundation-owned Native APIs, hosted AG-UI, and A2A without introducing another interaction model, execution authority, or independently deployed proxy. Each adapter validates and maps its own wire protocol, then calls the same Foundation application commands, queries, and authorized subscription ports.
 
-The Gateway does not own Agent execution, Run scheduling, persistence, or authorization policy. The durable [`Session`, `Thread`, `Run`, and `Item`](../interaction-model.md) model, current [IAM](10-identity-and-access-management.md), and the owning domain use case remain authoritative regardless of which protocol accepted or delivered the operation.
+The [Connector Service](23-connectors-connections-and-triggers.md) owns its
+separate standard and internal MCP protocol boundary on `connector` and `all`
+roles. Connector MCP is not a Protocol Gateway adapter and does not enter the
+Native `/api/v1` namespace.
+
+The Gateway does not own Agent execution, Run scheduling, persistence, or
+authorization policy. The durable [`Session`, `Thread`, `Run`, and
+`Item`](../interaction-model.md) model, current
+[IAM](10-identity-and-access-management.md), and the owning domain use case
+remain authoritative regardless of which protocol accepted or delivered the
+operation.
 
 ## Boundaries
 
@@ -27,7 +37,8 @@ The Gateway never calls ORM repositories, Redis keys, object keys, Worker privat
 
 ## Protocol Surfaces
 
-Only `control` and `all` roles expose product protocols. A `worker` exposes no Native, AG-UI, A2A, browser, or product-stream route.
+Only `control` and `all` roles expose the protocols owned by this Gateway. A
+`worker` exposes no Native, AG-UI, A2A, browser, or product-stream route.
 
 | Surface      | Namespace                                                                | Availability                                                               | Primary callers                                  |
 | ------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -35,7 +46,7 @@ Only `control` and `all` roles expose product protocols. A `worker` exposes no N
 | Hosted AG-UI | `/ag-ui/v1`                                                              | Always present on `control` and `all`                                      | Standard AG-UI clients and third-party frontends |
 | A2A          | direct `/a2a/v1/agent-presets/{agent_preset_id}` plus hostname discovery | Controlled only by deployment-wide `a2a_enabled`, which defaults to `true` | Remote Agents and Agent platforms                |
 
-There is no AgentPreset-level enable switch for Native, AG-UI, or A2A. Every callable AgentPreset has Native and Hosted AG-UI surfaces. When `a2a_enabled=true`, every callable AgentPreset also has a direct A2A base URL and direct Agent Card URL. Preset protocol configuration controls bounded metadata, input schema, client tool surface, visibility, media modes, and limits; it does not turn a protocol on or off.
+There is no AgentPreset-level enable switch for Native, AG-UI, or A2A. Every callable AgentPreset has Native and Hosted AG-UI surfaces. When `a2a_enabled=true`, every callable AgentPreset also has a direct A2A base URL and direct Agent Card URL. Preset protocol configuration controls bounded metadata, input schema, client tool surface, visibility, media modes, and limits; it does not run a protocol on or off.
 
 When `a2a_enabled=false`, the process does not mount A2A discovery, runtime, streaming, or push-notification routes and does not start A2A delivery components. The setting is immutable effective runtime configuration and does not select another distribution. Native and Hosted AG-UI remain unchanged.
 
