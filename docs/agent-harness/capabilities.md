@@ -104,6 +104,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `ShellReviewCapability`        | Optional model-backed risk review for `environment.shell_exec`                              | Fresh invocation policy still authorizes every managed call    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `SkillSelectionRunCapability` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateRunCapability` in provider mode             |
+| `Mem0Capability`               | One bounded automatic recall plus optional search, list, and explicit-add tools             | Borrowed `AsyncMemoryClient`, or `MEM0_API_KEY` per run        |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
 | `MediaCapability`              | Media-reading Toolset                                                                       | `MediaRunCapability`                                           |
 | `DocumentsCapability`          | Document-conversion Toolset                                                                 | `DocumentsRunCapability`                                       |
@@ -143,6 +144,38 @@ capabilities = (
 All three have explicit byte, item, depth, or line bounds. Configure them to match the Environment and target model rather than treating their defaults as universal.
 
 For context lifecycle features, Harness `AgentSpec.model_characteristics` can resolve model-relative defaults once at build time; callers supply it through the `model_characteristics` construction key. With a known context window, an otherwise unconfigured `HandoffCapability()` warns at 65% and `CompactionCapability()` compacts at 90%. Explicit token settings override these values, and the Capabilities remain opt-in.
+
+## Mem0 Long-Term Memory
+
+`mem0ai` is a default Harness dependency, so no package extra is required. The integration remains behaviorally opt-in: add `Mem0Capability` to an Agent definition and either configure `MEM0_API_KEY` (plus optional `MEM0_BASE_URL`) or pass a native `AsyncMemoryClient`. Environment-created clients defer the SDK's eager remote validation to the first bounded recall or memory-tool operation, so optional recall still fails open when authentication or the provider is unavailable.
+
+```python
+from a13n_harness.capabilities import Mem0Capability, Mem0Scope
+
+capabilities = (
+    Mem0Capability(
+        scope=Mem0Scope.USER,
+        auto_recall=True,
+        toolset=True,
+        recall_limit=5,
+    ),
+)
+```
+
+A fixed scope exposes `memory_search`, `memory_list`, and `memory_add` without an entity or scope argument. The Harness resolves `thread` from the current `thread_id`, `agent` from the `agent_id` identity claim, and `user` from the `user_id` claim. With `scope=None`, one automatic recall searches all available scopes and each memory tool accepts only the `thread`, `agent`, or `user` selector; the model never supplies the underlying ID.
+
+The first eligible input in each logical run performs at most one bounded recall. Recalled records enter only as an untrusted input preamble and are removed from exported history. Internal model recovery reuses the same result. `memory_add` stores exactly the supplied bounded text with Mem0 inference disabled; update and delete are not model-visible.
+
+When no client is supplied, the Harness constructs the native async client off the event loop and closes it at logical-run cleanup. A supplied client is borrowed and is never entered or closed by the Harness:
+
+```python
+from mem0 import AsyncMemoryClient
+
+mem0_client = AsyncMemoryClient(api_key="...")
+capabilities = (Mem0Capability(client=mem0_client, scope=Mem0Scope.USER),)
+```
+
+The Host owns the borrowed client's lifecycle. The Harness does not automatically write terminal transcripts to memory because a process-local result does not prove durable checkpoint acceptance. Applications that need extraction should enqueue it only after their own successful durable commit.
 
 ## Shell Command Review
 

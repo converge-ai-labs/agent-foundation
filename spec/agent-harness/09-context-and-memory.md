@@ -344,28 +344,53 @@ The compact summary replaces tool traffic only after the nested request succeeds
 
 Ordinary compact-run failures, including an empty plain-text summary, emit a bounded `compaction_failed` observation and leave the original history unchanged. Cancellation propagates. This fail-open rule does not turn the compact summary into an authoritative durable fact and does not conceal provider context-limit failures if the original request still exceeds its actual window.
 
-## Memory Integration
+## Mem0 Integration
 
-Long-term memory is an optional integration backed by a narrow provider. Its placement follows the boundary it needs rather than forcing retrieval, model tools, and observation into one lifecycle type.
+`Mem0Capability` is the first-party long-term-memory integration. `mem0ai` is a default `a13n-harness` dependency, and the Capability uses its native `AsyncMemoryClient` rather than defining a competing provider abstraction. The Capability remains opt-in in an Agent definition; package installation or environment configuration alone enables no behavior.
 
 ```python
-class MemoryProvider(Protocol):
-    async def recall(
-        self,
-        request: MemoryRecallRequest,
-    ) -> Sequence[MemoryItem]: ...
+class Mem0Scope(StrEnum):
+    THREAD = "thread"
+    AGENT = "agent"
+    USER = "user"
 
-    async def observe(
+
+class Mem0Capability(AbstractModelContextCapability):
+    def __init__(
         self,
-        observation: MemoryObservation,
+        *,
+        client: AsyncMemoryClient | None = None,
+        scope: Mem0Scope | None = None,
+        toolset: bool = True,
+        auto_recall: bool = True,
+        recall_limit: int = 5,
+        recall_threshold: float | None = None,
+        recall_timeout: float = 2.0,
+        recall_required: bool = False,
     ) -> None: ...
 ```
 
-A query-dependent recall plugin derives memory scope from trusted Agent Identity and actor bindings, inspects the canonical semantic input after `RunInputFactory`, asks the provider for bounded relevant items, and appends provenance-preserving user content through the plugin's semantic-input boundary before content resolution. Its selected catalog registration can capture an authority-neutral `MemoryProvider` port; every provider call receives the trusted scope derived from the shared `AgentContext`, while the provider remains responsible for live policy and credentials. The factory itself carries no current-run authority. Its plugin-contributed Capability or Toolset can expose explicit model-directed memory search and update tools, request-level context behavior, or versioned continuation metadata. Result middleware or a Capability can observe validated output, pre-compaction history, a validated summary, or terminal messages according to the selected policy.
+An externally supplied client is borrowed and never closed by the Harness. Without one, every logical Run constructs one run-owned client from `MEM0_API_KEY` and optional `MEM0_BASE_URL`; the run-owned path suppresses the SDK's eager synchronous remote validation so authentication and provider availability are established only by a bounded asynchronous recall or tool operation. Logical-Run cleanup closes the SDK client. The SDK default base URL applies when `MEM0_BASE_URL` is absent. No client, credential, endpoint, or SDK response enters `HarnessState`.
 
-Memory items retain source and scope metadata. They are untrusted context and cannot carry grants, credentials, delegation authority, or Environment handles.
+The Capability resolves scope only from trusted current context:
 
-Provider writes can be inline when required for consistency or emitted as host work. A plugin result hook observes only a process-local result candidate and does not make the write durable by observation alone. Durable extraction, consolidation, retention, and scheduling belong to the host or memory provider. No background memory task is allowed to outlive a process-local harness run without explicit host ownership.
+| Scope    | Trusted value                 | Mem0 entity field |
+| -------- | ----------------------------- | ----------------- |
+| `thread` | `AgentContext.thread_id`      | `run_id`          |
+| `agent`  | the `agent_id` Identity claim | `agent_id`        |
+| `user`   | the `user_id` Identity claim  | `user_id`         |
+
+A configured `scope` is fixed for recall and tools; a missing required claim fails before model or memory-provider work. With `scope=None`, recall searches the union of all currently available scopes through one `OR` filter, while model tools accept one `thread`, `agent`, or `user` selector and resolve its value in trusted code. The model never supplies an entity ID. Thread is always available; agent and user are available only when their corresponding claims are present.
+
+Pydantic `for_run()` receives the final prompt after `RunInputFactory` and Harness semantic-input middleware. The first native attempt extracts bounded text from that prompt, performs at most one automatic search for the logical Harness Run, and records the immutable result on the fresh run replacement retained by `AgentContext`; later internal `ModelAttempt` values reuse it. Exact deferred or provider-suspended continuation without new semantic input performs no recall. A successful non-empty result becomes one bounded untrusted `INPUT_PREAMBLE` block through the model-context coordinator. It is never inserted into authoritative input or exported history, and it is not projected on tool-result requests.
+
+`recall_timeout` bounds provider wait. Timeout, authentication or provider failure, malformed response, empty query, and no result produce bounded observations. With `recall_required=False`, they omit the block and execution continues; with `recall_required=True`, timeout, authentication or provider failure, or malformed response terminates before model work. Cancellation always propagates.
+
+When `toolset=True`, the Capability composes exactly one of two Toolsets. A fixed-scope Toolset exposes `memory_search`, `memory_list`, and `memory_add` without a scope argument. An unbound Toolset exposes the same names with a `Mem0Scope` selector. Search and list are managed read tools, while add is a managed write tool and stores explicit bounded text with `infer=False`. Provider failures become bounded typed tool failures. Raw entity IDs, update, delete, batch, history, event polling, and entity administration are not model-visible.
+
+Automatic recall emits bounded context lifecycle events and one `memory_recall` Harness operation observation. The operation span and metric contain only the closed operation kind; events may include configured scope kinds, outcome, and result count. Pydantic owns model-visible memory-tool spans and the managed invocation boundary owns their events. Harness-authored observations contain no query, memory text, entity value, endpoint, credential, SDK response body, or raw exception.
+
+Mem0 records and SDK-side extraction remain provider-owned durable state. The Capability performs no automatic terminal transcript extraction: a process-local result does not prove Host checkpoint acceptance. A Host that requires automatic extraction dispatches it after its own durable commit. No memory task outlives a logical Harness Run without explicit Host ownership.
 
 ## State Ownership
 
@@ -379,7 +404,7 @@ Provider writes can be inline when required for consistency or emitted as host w
 | Retained semantic inputs and user steering   | Mandatory steering bridge namespace when automatic compaction is enabled                          |
 | Monitored-process tasks and completion route | Host collaborator; Capability state can retain only incorporated completion IDs                   |
 | Temporary media/document/web content         | Owning Capability or selected provider until bounded projection and cleanup                       |
-| Long-term memory records                     | Memory provider; plugin instances own no durable namespace                                        |
+| Long-term memory records                     | Mem0; `Mem0Capability` owns no portable or durable namespace                                      |
 | Portable multi-Environment backend state     | Explicit `HarnessState.environment_state`; launch and native resources remain Host/provider-owned |
 | Host delivery, counters, and scheduler work  | Host                                                                                              |
 
@@ -395,7 +420,7 @@ A child run receives an explicit context seed and a fresh `AgentContext`. Parent
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Imported messages are invalid                                          | Run creation fails before provider work                                                                           |
 | Optional dynamic guidance is unavailable                               | Owning Capability omits it and emits a diagnostic                                                                 |
-| Required guidance or memory fails                                      | Model step fails                                                                                                  |
+| Required guidance or Mem0 recall fails                                 | Run fails before model work with a bounded memory error                                                           |
 | Shared task binding is missing or incompatible                         | Inline child dispatch fails before child model/tool work                                                          |
 | Task claim conflicts or uses a stale version                           | Typed conflict; the existing task owner and state remain unchanged                                                |
 | Structured question cannot be correlated or validated                  | Deferred resume fails under [Tool Execution](07-tool-execution.md#structured-user-questions)                      |
@@ -406,18 +431,20 @@ A child run receives an explicit context seed and a fresh `AgentContext`. Parent
 | Resource exceeds policy or conversion fails                            | Owning tool returns a bounded typed failure and cleans its partial assets                                         |
 | Compaction output is invalid                                           | Original history remains active                                                                                   |
 | Context exceeds the provider limit after policy                        | Model step fails with a bounded context error                                                                     |
-| Memory observation fails                                               | Owning policy chooses run failure or Host retry; history remains valid                                            |
+| Optional Mem0 recall times out or fails                                | Recall block is omitted after bounded observation; history remains valid                                          |
 
 ## Boundaries
 
-| Concern                                             | Owner                                        |
-| --------------------------------------------------- | -------------------------------------------- |
-| Semantic-input memory recall and result observation | [Harness Plugin System](05-plugin-system.md) |
-| Instruction and history composition                 | Pydantic AI and owning Capabilities          |
-| Active messages and namespaced run state            | Harness                                      |
-| Long-term memory storage and consolidation          | Memory provider or host                      |
-| Application conversation and display history        | Host                                         |
-| Provider context limits and request acceptance      | Model provider                               |
+| Concern                                        | Owner                               |
+| ---------------------------------------------- | ----------------------------------- |
+| Prompt-dependent Mem0 recall and bounded tools | `Mem0Capability` and Mem0 SDK       |
+| Dynamic recall placement and overlay cleanup   | Harness model-context coordinator   |
+| Instruction and history composition            | Pydantic AI and owning Capabilities |
+| Active messages and namespaced run state       | Harness                             |
+| Long-term memory storage and consolidation     | Mem0 or Host                        |
+| Automatic post-commit extraction               | Host                                |
+| Application conversation and display history   | Host                                |
+| Provider context limits and request acceptance | Model provider                      |
 
 ## Trade-offs
 
@@ -429,6 +456,10 @@ Direct instructions, public model-request hooks, native enqueue, and Capability 
 
 Tasks and notes share tool presentation and one state owner without turning `AgentContext` into a collection of managers. A typed task cell supports atomic parent/child coordination, while notes, messages, and unrelated Capability state remain isolated.
 
+### Native Mem0 Client vs. Another Memory Port
+
+Using the native async SDK keeps one supported Mem0 API and response contract, while accepting its dependency and compatibility surface as part of the Harness release. A borrowed client amortizes SDK validation and connection setup across Runs. The environment-backed convenience path instead creates and closes one client per logical Run so the Harness does not invent an executable-lifetime resource owner.
+
 ### Host-owned Memory Work vs. Automatic Background Tasks
 
-Host scheduling survives process loss and supports provider retries. Embedded applications that need only recall can use an in-process provider without installing a scheduler.
+Host scheduling after checkpoint acceptance survives process loss and supports provider retries. The Harness therefore owns bounded recall and explicit tool writes but does not infer automatic extraction from a process-local terminal candidate.

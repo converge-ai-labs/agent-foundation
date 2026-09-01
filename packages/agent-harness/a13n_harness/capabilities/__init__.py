@@ -41,6 +41,7 @@ from .media import (
     MediaResource,
     MediaRunCapability,
 )
+from .mem0 import MEM0_API_KEY_ENV, MEM0_BASE_URL_ENV, Mem0Capability, Mem0Scope
 from .processes import (
     ManagedProcess,
     ProcessBackendEventHook,
@@ -141,6 +142,8 @@ from .working_state import (
 )
 
 __all__ = [
+    "MEM0_API_KEY_ENV",
+    "MEM0_BASE_URL_ENV",
     "WEB_SCRAPE_BACKEND_ENV",
     "WEB_SCRAPE_BACKEND_PRIORITY_ENV",
     "WEB_SCRAPE_MODE_ENV",
@@ -183,6 +186,8 @@ __all__ = [
     "MediaReader",
     "MediaResource",
     "MediaRunCapability",
+    "Mem0Capability",
+    "Mem0Scope",
     "ProcessBackendEventHook",
     "ProcessEvent",
     "ProcessEventHook",
