@@ -2,12 +2,12 @@
 
 ## Design Position
 
-Foundation manages Skills as Workspace-owned resources with immutable revisions. A Builder publishes a revision from a staged ZIP package or a typed GitHub selector, then selects exact revisions while authoring an Agent. Package bytes live in object storage; identity, revisions, authorization, provenance, and AgentPresetVersion locks live in Foundation's durable control state.
+Foundation manages Skills as Workspace-owned resources with immutable revisions. A Builder publishes a revision from a staged ZIP package or a typed GitHub selector, then selects exact revisions while authoring an Agent. Package bytes live in object storage; identity, revisions, authorization, provenance, and AgentPresetRevision locks live in Foundation's durable control state.
 
 Foundation follows the shared [Managed Skill Package Contract](../managed-skill-packages.md)
 and never executes from an upload, repository, mutable ref, object URL, or Worker
-cache. A Worker materializes only the effective Run selection from the revisions
-locked by the selected `AgentPresetVersion`, then uses the public Harness `SkillManager`
+cache. A Worker materializes only the exact Skill locks frozen in the Run's
+`EffectiveAgentConfig`, then uses the public Harness `SkillManager`
 and `SkillsCapability`. Managed Skills are content resources, not trusted Harness
 plugins. Foundation validates package `SKILL.md` metadata with its own admission
 parser; it does not import a Harness parser API.
@@ -57,7 +57,7 @@ class SkillRevision:
 
 `sk_`, `skr_`, and `sku_` prefix stable Skills, immutable revisions, and staged ZIP receipts. A Skill is created atomically with revision `1`. Publishing a revision appends the next number, selects it as current, and increments the Skill `version`. Changing only `display_name` also increments `version`.
 
-`manifest.skill_name` and `manifest.description` are verified projections of `SKILL.md`. A later revision can change them; existing AgentPresetVersions remain bound to their exact old revision and name. Workspace Skills can share a model-facing name; AgentPreset Publish rejects duplicates only within one selected catalog.
+`manifest.skill_name` and `manifest.description` are verified projections of `SKILL.md`. A later revision can change them; existing AgentPresetRevisions remain bound to their exact old revision and name. Workspace Skills can share a model-facing name; AgentPreset Publish rejects duplicates only within one selected catalog.
 
 Foundation stores each normalized package as one immutable ZIP object. For package contract version `1`, its internal object key is derived exactly as follows:
 
@@ -67,7 +67,7 @@ tenants/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/{c
 
 The ZIP contains only the files named by the revision manifest. ZIP byte encoding is not content identity; every read verifies the expanded files against the manifest. Foundation derives the key only after an authorized Workspace and revision lookup. It is not stored in `SkillRevision`, accepted from a caller, exposed by the API, or treated as access authority. `imported_from` records source provenance only and is never used to locate package content.
 
-Objects and revisions remain while referenced by a retained AgentPresetVersion, Run, or current Skill head. Tombstoning a Skill prevents new revisions and AgentPreset bindings but does not rewrite retained Agents or Runs.
+Objects and revisions remain while referenced by a retained AgentPresetRevision, Run, or current Skill head. Tombstoning a Skill prevents new revisions and AgentPreset bindings but does not rewrite retained Agents or Runs.
 
 ## Service Bounds
 
@@ -250,47 +250,28 @@ The ZIP upload operation ends when its receipt commits; the later Skill request 
 
 Source acquisition, validation, and object storage occur without a database session. Foundation publishes or verifies the immutable package object before the final short transaction. A failed or unknown commit creates no authoritative revision and is reconciled by the same idempotency key.
 
-## AgentPresetVersion Selection
+## AgentPresetRevision Selection
 
-Agent authoring accepts this value per Agent node:
+Agent authoring selects one ordered tuple of exact Skill revisions:
 
 ```python
-class AgentSkillSelectionRequest:
-    available_revision_ids: tuple[SkillRevisionId, ...]
-    materialization_mount: str | None
-    default_mode: Literal["all", "exact"]
-    default_names: tuple[str, ...]
-
-
 class SkillRevisionLock:
     skill_revision_id: SkillRevisionId
     skill_name: str
     content_digest: str
-
-
-class AgentSkillSelection:
-    available: tuple[SkillRevisionLock, ...]
-    materialization_mount: str | None
-    default_mode: Literal["all", "exact"]
-    default_names: tuple[str, ...]
 ```
 
-The request selects immutable revision IDs, including an authorized retained non-current revision. It accepts no `latest`, upload receipt, GitHub selector, object URL, or source path. AgentPreset Publish resolves and copies the complete locks.
+Each `AgentPresetConfig.skills` entry selects one immutable revision ID, including an authorized retained non-current revision. It accepts no `latest`, upload receipt, GitHub selector, object URL, or source path. AgentPreset Publish resolves the ordered list, rejects duplicate final model-facing names, and copies the complete locks into the Revision.
 
-`materialization_mount` is absent exactly when no Skills are available. `all`
-exposes the complete unique-name catalog and has empty `default_names`; `exact`
-exposes the exact possibly-empty set. Publication rejects inaccessible or deleted
-Skills, duplicate final names, unknown exact names, a catalog over the service limit,
-and an Environment mount whose access is not `read_write` or `full`. Later Skill publication or deletion never mutates the AgentPresetVersion or
-an accepted Run.
+Foundation exposes no separate available catalog, `default_mode`, `default_names`, per-item default flag, or caller-selected materialization mount. The selected list is the Preset default. A non-empty list requires one primary Environment with sufficient write access; Foundation materializes Skills into its Runtime-owned Skill directory. Later Skill publication or deletion never mutates the AgentPresetRevision or an accepted Run.
 
-Root, ordinary continuation, fork, and equivalent Host-owned initial Run submissions can optionally carry `selected_skill_names`. Absence uses the selected AgentPresetVersion's `default_mode` and `default_names`; a present JSON array is the exact selection for that Run, including an empty array that selects no Skills. JSON `null` is invalid. The array contains at most 512 distinct names, and every name must occur in the AgentPresetVersion's `available` locks. The override can choose any subset of that locked catalog but cannot add a revision, change a digest or materialization mount, or select a source or mutable Skill head. Waiting feedback and explicit retry preserve the source Run's effective tuple: those operations continue frozen deferred work or accepted intent rather than accepting a new run override.
+A present `AgentRunOverride.skills` replaces the complete list with another ordered tuple of exact authorized SkillRevision IDs; `[]` selects no Skills. The override may add a revision not present in the base Revision, but it cannot select a source, mutable Skill head, or duplicate final name. Omission inherits the Revision list. Waiting feedback and explicit Retry preserve the source Run's complete effective configuration rather than accepting another override.
 
-Run acceptance orders the resulting names by their order in `available` and stores that complete effective tuple as `RunStateEnvelope.selected_skill_names`. It is immutable for the Run and is included in the canonical idempotency request. An invalid shape, null, oversized array, unknown name, or duplicate name fails before Run creation with `400` and `skill_selection_invalid`. The effective tuple is Foundation Host state, not Harness portable Capability state.
+Run acceptance resolves the final list into `EffectiveAgentConfig.skills`, including exact revision IDs, verified names, and content digests. It is immutable for the Run and participates in the canonical idempotency request. Invalid, inaccessible, oversized, or duplicate-name selections fail before Run creation with `skill_selection_invalid`. The effective list is Foundation Host configuration, not Harness portable Capability state.
 
 ## Worker Materialization and Harness Use
 
-Before Harness entry, the Worker verifies the state selection against the complete AgentPresetVersion catalog, then reads and verifies only the selected locked revisions and package content. It constructs an explicit `SkillManager` with the exact Host materializer and supplies `SkillSelectionRunCapability(names=frozenset(selected_skill_names))` from the Run state. After Harness enters the fresh Environment, but before model or tool work, `SkillsCapability`:
+Before Harness entry, the Worker verifies the exact locks in `EffectiveAgentConfig.skills`, then reads and verifies their package content. It constructs an explicit `SkillManager` with the exact Host materializer and supplies `SkillSelectionRunCapability` with every effective Skill name. After Harness enters the fresh primary Environment, but before model or tool work, `SkillsCapability`:
 
 1. invokes the materializer to write those files through the current version-pinned `FileOperator` into a Host-reserved content-addressed root;
 2. verifies the complete root and writes a Host completion manifest last;
@@ -305,7 +286,7 @@ Materialization outcomes are:
 
 | Outcome                             | Semantics                                                                                                                           |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `skill_materialization_invalid`     | A locked revision, object, digest, or package contract is invalid; fail closed until another AgentPresetVersion is selected         |
+| `skill_materialization_invalid`     | A locked revision, object, digest, or package contract is invalid; fail closed until another AgentPresetRevision is selected        |
 | `skill_materialization_unavailable` | Object storage or Environment access is temporarily unavailable; retry only through a new fenced RunAttempt under ordinary ceilings |
 | `skill_materialization_stale`       | The attachment, provider generation, or RunAttempt fence changed; abandon the attempt and reacquire authority                       |
 | `skill_materialization_cancelled`   | Cancellation or shutdown won; preserve the ordinary cancelled or interrupted lifecycle                                              |
@@ -314,13 +295,13 @@ Materialization is content-addressed Host preparation, not an Agent tool call or
 
 ## Compatibility
 
-Stable Skill/revision meaning, source union, shared package contract, public API, Agent lock fields, Run override and effective-selection meaning, completion-manifest boundary, and internal package-key derivation are compatibility facts. Changing that persisted key layout requires migration; object-storage backend and GitHub acquisition implementations remain private.
+Stable Skill/revision meaning, source union, shared package contract, public API, exact Agent lock fields, whole-list Run override semantics, completion-manifest boundary, and internal package-key derivation are compatibility facts. Changing that persisted key layout requires migration; object-storage backend and GitHub acquisition implementations remain private.
 
 ## Invariants
 
 1. Every Skill belongs to one immutable Organization and Workspace, and every revision selects one immutable package and provenance record.
 2. Uploads, GitHub refs, object URLs, caches, and package content grant no runtime authority by themselves.
-3. AgentPresetVersions lock the available Skill catalog and defaults; each Run freezes one exact effective name tuple within that catalog.
-4. Later Skill mutations do not change AgentPresetVersion locks or an accepted Run's effective selection.
+3. AgentPresetRevisions lock one ordered default Skill list; an optional Run override whole-replaces it with another exact authorized list.
+4. Later Skill mutations do not change AgentPresetRevision locks or an accepted Run's `EffectiveAgentConfig.skills`.
 5. No database transaction spans source acquisition, object storage, Environment I/O, or Harness work.
 6. Harness scanning begins only after the complete materialized root verifies.

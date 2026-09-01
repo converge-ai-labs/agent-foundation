@@ -77,7 +77,7 @@ semantic no-op does not create a new version or representation tag.
 
 Foundation domain models do not introduce a second generic scalar `revision`
 counter for mutable objects. An owning contract can expose an immutable content
-record such as `AgentPresetVersion` together with its explicit identity or content
+record such as `AgentPresetRevision` together with its explicit identity or content
 digest. Versioned objects use their `version` for stale-write protection;
 explicitly non-versioned mutable resources can use their owning representation
 ETag without exposing another scalar counter. Database migrations, protocols,
@@ -91,7 +91,7 @@ Package releases, protocol major/minor identities, Git or artifact revisions, an
 
 Public APIs and SDKs use concise domain language such as `id`, `model`, `agent`, and `provider`. They do not expose internal suffixes merely to restate meaning already established by the resource, operation, or type.
 
-Internal domain, persistence, event, and adapter models use more explicit names when several identities or selection domains would otherwise be ambiguous, for example an AgentPreset ID and AgentPresetVersion ID beside a provider model identity. Typed values such as an AgentPresetVersion reference or model selector carry semantics that a bare string and naming convention cannot.
+Internal domain, persistence, event, and adapter models use more explicit names when several identities or selection domains would otherwise be ambiguous, for example an AgentPreset ID and AgentPresetRevision ID beside a provider model identity. Typed values such as an AgentPresetRevision reference or model selector carry semantics that a bare string and naming convention cannot.
 
 A type name states the concept rather than its repository, distribution, or module owner. It does not repeat qualifiers such as `Foundation`, `Service`, `Managed`, or `Workspace` when the surrounding namespace and fields already establish that context. A qualifier is retained only when two real concepts coexist at the same boundary, such as Workspace-Secret and invoking-User-Secret credential sources. Likewise, `managed` belongs in a type name only when the same boundary also exposes a distinct unmanaged form.
 

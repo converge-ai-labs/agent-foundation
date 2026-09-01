@@ -204,9 +204,9 @@ An object published without a committed Asset row is a non-authoritative cleanup
 
 ## Agent Publication Capability
 
-An AgentPresetVersion can explicitly select the trusted Foundation `AssetCapability`. When selected, it exposes one effectful model tool, `publish_asset`, that accepts a logical path in the current default Environment plus optional filename and media-type metadata. It reads only a confined regular file through the active Environment file interface, never a Worker host path. Omitted filename defaults to the source basename, and omitted media type defaults to `application/octet-stream`.
+An AgentPresetRevision can explicitly select the trusted Foundation `AssetCapability`. When selected, it exposes one effectful model tool, `publish_asset`, that accepts a logical path in the current default Environment plus optional filename and media-type metadata. It reads only a confined regular file through the active Environment file interface, never a Worker host path. Omitted filename defaults to the source basename, and omitted media type defaults to `application/octet-stream`.
 
-Publication is explicit. Foundation never turns every created Environment file, command output, model output, Run output, or oversized Item value into an Asset. A Version without `AssetCapability` cannot publish one through this boundary.
+Publication is explicit. Foundation never turns every created Environment file, command output, model output, Run output, or oversized Item value into an Asset. A Revision without `AssetCapability` cannot publish one through this boundary.
 
 The tool uses the ordinary durable Agent tool-dispatch contract. One `(run_attempt_id, invocation_id)` can publish at most one Asset and returns the same `AssetRef` when the exact invocation is reconciled within its owning attempt. A later model-issued tool invocation always creates a new Asset, even for the same path and bytes. Worker replacement never automatically replays the invocation; if publication committed but its result did not enter a complete checkpoint, recovery preserves the ordinary `unknown_outcome` and the Asset remains independently readable by authorized source-Run queries.
 
@@ -237,7 +237,7 @@ The domain contributes `asset.read`, `asset.create`, `asset.use`, and `asset.del
 - Viewer can read Asset metadata and content.
 - Runner adds direct upload and use as Agent input.
 - Builder and Admin add deletion.
-- Agent-originated `publish_asset` requires the exact Version-selected Capability and current Run grant rather than ambient model use of a public caller route.
+- Agent-originated `publish_asset` requires the exact Revision-selected Capability and current Run grant rather than ambient model use of a public caller route.
 
 Every operation reauthorizes the Workspace and active Asset. Asset IDs, digests, ETags, Run references, protocol Artifact IDs, and content URLs grant no authority.
 

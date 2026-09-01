@@ -68,7 +68,7 @@ class AguiThreadBinding:
 class AguiRunBinding:
     client_identity: str
     agent_preset_id: str
-    agent_preset_version_id: str
+    agent_preset_revision_id: str
     external_thread_id: str
     external_run_id: str
     run_id: RunId
@@ -91,17 +91,17 @@ Hosted input is append-only relative to Foundation history:
 
 An initial call does not import an arbitrary prior transcript. Historical import is a separate Native operation with its own authority and validation.
 
-The adapter maps the accepted new user tail into one canonical `AgentInput`. Text and binary parts retain their order, media type, acquisition, and delivery semantics; structured AG-UI data maps to `structured_content` and follows the selected AgentPresetVersion's optional `ProtocolConfig.input_data_schema`. The common Agent input contract validates the resulting value before the control operation accepts a Run. AG-UI protocol fields that express state, context, client tools, or feedback remain command options or correlated feedback and never enter `AgentInput` implicitly.
+The adapter maps the accepted new user tail into one canonical `AgentInput`. Text and binary parts retain their order, media type, acquisition, and delivery semantics; structured AG-UI data maps to `structured_content` and follows the selected AgentPresetRevision's optional `ProtocolConfig.input_data_schema`. The common Agent input contract validates the resulting value before the control operation accepts a Run. AG-UI protocol fields that express state, context, client tools, or feedback remain command options or correlated feedback and never enter `AgentInput` implicitly.
 
 Standard `state`, `context`, and `tools` plus Foundation extensions are bounded untrusted inputs:
 
-| Input                   | Accepted meaning                                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| empty or absent `state` | Always valid                                                                                                        |
-| non-empty `state`       | Product context validated by the selected Version's public JSON schema; never `HarnessState` or a resource mutation |
-| `context`               | Bounded semantic context validated by the selected Version's policy; never authentication or resource selection     |
-| `tools`                 | Client-executable tool declarations validated against the selected Version's policy and frozen at acceptance        |
-| `forwardedProps.a13n`   | Versioned Foundation extension object containing only fields declared below                                         |
+| Input                   | Accepted meaning                                                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| empty or absent `state` | Always valid                                                                                                         |
+| non-empty `state`       | Product context validated by the selected Revision's public JSON schema; never `HarnessState` or a resource mutation |
+| `context`               | Bounded semantic context validated by the selected Revision's policy; never authentication or resource selection     |
+| `tools`                 | Client-executable tool declarations validated against the selected Revision's policy and frozen at acceptance        |
+| `forwardedProps.a13n`   | Versioned Foundation extension object containing only fields declared below                                          |
 
 `forwardedProps.a13n` can contain a structured `resume` array. Each element names one pending call and one approve, reject, complete, or respond value under the exact frozen kind. The array can cover any explicit subset and calls the same atomic waiting-feedback command as Native input; omitted approvals become rejections and omitted non-approval calls become no-response outcomes. It accepts a new child Run and never reopens the waiting parent. Duplicate, unknown, or mismatched entries and unknown Foundation extension fields fail validation.
 
@@ -109,7 +109,7 @@ When the binding's current/head Run is waiting, a new ordinary user tail without
 
 The adapter sets `waiting_resolution` only for this declared abandonment case. It never adds the field to an ordinary completed-head continuation or silently converts an extension validation failure into defaults. The server-owned binding supplies current Thread version and sealed digest under the same final concurrency checks; a stale binding conflicts without accepting a Run or rebinding pending inbox delivery.
 
-The normalized client tool surface and exact `agent_preset_version_id` are frozen with the accepted Run. A feedback run reuses the waiting Run's exact surface; it cannot change tool names, schemas, or pending-call identity.
+The normalized client tool surface and exact `agent_preset_revision_id` are frozen with the accepted Run. A feedback run reuses the waiting Run's exact surface; it cannot change tool names, schemas, or pending-call identity.
 
 ## Lifecycle Projection
 
@@ -148,7 +148,7 @@ The Hosted profile always permits these standard event families when their sourc
 - text message lifecycle; and
 - client-visible tool-call and tool-result lifecycle.
 
-The selected Version's ProtocolConfig can select supported state, message snapshot, activity, subagent, and safe reasoning-summary projections from the Gateway's registered allowlist. It cannot expose raw chain-of-thought, encrypted reasoning values, raw provider frames, internal tool payloads, or Foundation execution identities.
+The selected Revision's ProtocolConfig can select supported state, message snapshot, activity, subagent, and safe reasoning-summary projections from the Gateway's registered allowlist. It cannot expose raw chain-of-thought, encrypted reasoning values, raw provider frames, internal tool payloads, or Foundation execution identities.
 
 `RAW`, raw `a13n.harness.*` fallback, RunAttempt, Worker, Redis, internal Harness Run, provider-native events, and unprocessed exceptions are never delivered. The stable Foundation custom registry initially contains only:
 

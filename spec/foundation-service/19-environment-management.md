@@ -14,17 +14,17 @@ While a RunAttempt is actively using an attachment, its connector may perform bo
 
 ## Boundaries
 
-| Concern                                                         | Owner                                        | Contract                                                                               |
-| --------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Environment identity and immutable connection revisions         | Foundation                                   | Serializable non-secret connection configuration                                       |
-| Agent requirements and Run execution configuration              | Foundation                                   | Exact desired mount definitions, connector locks, Secret references, and access levels |
-| External Sandbox or provider-resource lifecycle                 | User and external provider                   | Resource exists and is running before Foundation connects                              |
-| Connector schema, connection, keep-alive, and local close       | Trusted Foundation Environment connector     | Produces one process-local canonical runtime attachment                                |
-| Connector artifact trust and availability                       | Foundation distribution or operator boundary | Exact code lock; no Workspace authorization                                            |
-| Workspace provider selection                                    | Foundation authorization                     | Enables one exact trusted connector lock                                               |
-| Secret storage and current eligibility                          | [Secret Management](11-secret-management.md) | Resolves fresh values without persisting them in Environment data                      |
-| Current mount set, provider-neutral routing, and portable state | Harness                                      | Enters fresh mount candidates and stores portable Environment data                     |
-| EIP session and daemon enforcement                              | Agent-envd and its client                    | Daemon generation and bounded Environment operations                                   |
+| Concern                                                         | Owner                                        | Contract                                                                                     |
+| --------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Environment identity and immutable connection revisions         | Foundation                                   | Serializable non-secret connection configuration                                             |
+| Agent selection and Run execution configuration                 | Foundation                                   | At most one primary Environment, exact connector lock, Secret references, and access ceiling |
+| External Sandbox or provider-resource lifecycle                 | User and external provider                   | Resource exists and is running before Foundation connects                                    |
+| Connector schema, connection, keep-alive, and local close       | Trusted Foundation Environment connector     | Produces one process-local canonical runtime attachment                                      |
+| Connector artifact trust and availability                       | Foundation distribution or operator boundary | Exact code lock; no Workspace authorization                                                  |
+| Workspace provider selection                                    | Foundation authorization                     | Enables one exact trusted connector lock                                                     |
+| Secret storage and current eligibility                          | [Secret Management](11-secret-management.md) | Resolves fresh values without persisting them in Environment data                            |
+| Current mount set, provider-neutral routing, and portable state | Harness                                      | Enters fresh mount candidates and stores portable Environment data                           |
+| EIP session and daemon enforcement                              | Agent-envd and its client                    | Daemon generation and bounded Environment operations                                         |
 
 Provider discovery, package upload, schema validity, or identifier possession does not authorize provider use. API input and stored data never supply an arbitrary Python import target.
 
@@ -153,60 +153,29 @@ Secret values and value-derived data never enter revisions, Run state, events, I
 
 ## Environment Selection and Run State
 
-An AgentPresetVersion stores an ordered set of exact desired Environment mount requirements plus its runtime-selection policy:
+An AgentPresetConfig selects at most one primary exact Environment revision:
 
 ```python
-class AgentEnvironmentRequirement:
-    mount_name: str
+class EnvironmentSelection:
     environment_revision_id: EnvironmentRevisionId
-    required: bool
 ```
 
-Mount names are unique and use the Harness mount-name syntax. An optional default
-mount names one requirement. Authoring may accept an `EnvironmentId`, but
-materialization stores its current revision. Runtime-selection policy controls
-whether a caller can replace or add desired mounts and the maximum mount count
-and maximum access levels it can select.
-
-A permitted Run mount selection uses an exact revision, a mutable Environment resolved at acceptance, or inline configuration:
+A typed Run override may replace that selection with another exact revision or one inline configuration. Explicit null clears the Environment; omission inherits the Revision:
 
 ```python
-type EnvironmentSourceSelection = (
-    EnvironmentIdSelection
-    | EnvironmentRevisionSelection
-    | InlineEnvironmentSelection
-)
-
-
-class EnvironmentIdSelection:
-    environment_id: EnvironmentId
-
-
-class EnvironmentRevisionSelection:
-    environment_revision_id: EnvironmentRevisionId
-
-
 class InlineEnvironmentSelection:
     connection_spec: EnvironmentConnectionSpec
     credential_bindings: tuple[EnvironmentCredentialBinding, ...]
     access: EnvironmentAccess = "full"
-
-
-class EnvironmentSelectionEntry:
-    mount_name: str
-    required: bool
-    source: EnvironmentSourceSelection
 ```
 
-Inline entries pass the same selection, schema, credential-reference,
-access, and authorization validation but create no reusable revision.
+Inline selection passes the same provider-selection, schema, credential-reference, access, and authorization validation but creates no reusable revision. Foundation exposes no public multi-Environment topology, mount-name map, default-mount selector, mutable Environment-head selector, or per-Preset Environment policy document in the first version.
 
-Acceptance writes the complete non-secret configuration into the initial `state.json`:
+Publish resolves an exact named selection into the immutable Revision. Run acceptance resolves the final exact or inline selection into `EffectiveAgentConfig.environment`:
 
 ```python
-class EnvironmentExecutionMount:
-    mount_name: str
-    required: bool
+class EnvironmentExecutionConfig:
+    schema_version: str
     source_environment_revision_id: EnvironmentRevisionId | None
     connection_spec: EnvironmentConnectionSpec
     connector_package_revision_id: EnvironmentProviderPackageRevisionId | None
@@ -214,16 +183,9 @@ class EnvironmentExecutionMount:
     credential_bindings: tuple[EnvironmentCredentialBinding, ...]
     access: EnvironmentAccess
     logical_digest_sha256: str
-
-
-class EnvironmentExecutionConfig:
-    schema_version: str
-    desired_mounts: tuple[EnvironmentExecutionMount, ...]
-    default_mount: str | None
-    logical_digest_sha256: str
 ```
 
-`EnvironmentExecutionConfig` is one immutable field of the Run state envelope, not a relational Environment snapshot resource or column. It records desired mount definitions, not a Harness current mount set. Every replacement RunAttempt reuses it while reauthorizing current selection and credentials. It never follows newer Environment revisions, connector artifacts, or Workspace defaults.
+`EnvironmentExecutionConfig` is one immutable field of the accepted `EffectiveAgentConfig`, not a relational Environment snapshot resource or column. Every replacement execution attempt reuses it while reauthorizing current provider selection and credentials. It never follows newer Environment revisions, connector artifacts, or Workspace defaults.
 
 ## Management API
 
@@ -252,20 +214,19 @@ An authorized revision-detail read can return its protected non-secret connectio
 
 ## RunAttempt Runtime Mount Construction
 
-Run acceptance performs no provider I/O. For each claimed RunAttempt, the Worker:
+Run acceptance performs no provider I/O. For each claimed execution attempt, the Worker:
 
-1. reads the exact `EnvironmentExecutionConfig` from `state.json` and verifies
+1. reads the optional exact `EnvironmentExecutionConfig` from `EffectiveAgentConfig` and verifies
    schemas and connector locks;
-2. reauthorizes provider selection, Environment use, access levels,
+2. when present, reauthorizes provider selection, Environment use, access level,
    principal eligibility, and every credential source;
 3. resolves fresh Secret values outside the authorization transaction;
-4. asks each exact connector to connect to the already-running resource and
+4. asks the exact connector to connect to the already-running resource and
    return one fresh attachment after validating EIP compatibility;
 5. derives the exact internal Harness action ceiling from `read_only`,
    `read_write`, or `full`, intersects it with the attachment descriptor, adapts
-   each attachment into a fresh `EnvironmentRuntimeMount`, and constructs one
-   `EnvironmentRuntime` with the complete desired initial mount mapping and
-   default mount, retains that runtime, and supplies it through
+   the attachment into one fresh default `EnvironmentRuntimeMount`, constructs
+   one `EnvironmentRuntime`, retains that runtime, and supplies it through
    `RunBindings.environment`; and
 6. while the Harness run and attachment scopes are active, performs
    connector-defined bounded keep-alive and then closes process-local clients.
@@ -274,7 +235,7 @@ Keep-alive may extend a provider timeout only while the current Attempt remains 
 
 Foundation has no connection lease and does not serialize consumers of the same external resource. If the resource or provider rejects another connection, the Attempt fails with bounded `environment_connection_conflict` evidence surfaced to the user. Foundation does not queue, silently retry, or substitute a resource. Connectors may apply bounded transport retries before attachment or keep-alive; exhaustion fails the Attempt.
 
-On each Harness run, the runtime allocates a fresh opaque `mount_id` for every mounted incarnation. Foundation does not persist a `mount_id`, use it as an Environment or provider-resource identity, or expect it to survive a replacement RunAttempt. The Harness current mount set and its run-local change journal are not Foundation state.
+On each Harness run, the runtime allocates a fresh opaque `mount_id` for the mounted incarnation. Foundation does not persist a `mount_id`, use it as an Environment or provider-resource identity, or expect it to survive a replacement execution attempt. The Harness current mount set and its run-local change journal are not Foundation state.
 
 Portable provider-defined data can appear only in `HarnessState.environment_state` under the Harness codec contract. It does not identify or recreate an external resource, restore a current mount set, or supply mount authority. Agent-visible Environment operations are ordinary Agent tool calls and use the shared `unknown_outcome` recovery contract. Foundation performs no Sandbox inspection or lifecycle reconciliation during recovery.
 
@@ -312,13 +273,13 @@ actions.
 
 Connector code is trusted in-process code with worker-role authority. Exact locks and operator-only publication do not sandbox it. Connection parameters, including external resource IDs and private endpoints, are protected tenant data. Secret values remain process-local.
 
-Environment revisions, connection schemas, connector locks, desired mount configuration, Harness runtime mounts, EIP, and Foundation APIs evolve independently. An incompatible exact lock or state schema fails before model or tool work and never falls back to another revision, connector, or resource.
+Environment revisions, connection schemas, connector locks, accepted primary-Environment configuration, Harness runtime mounts, EIP, and Foundation APIs evolve independently. An incompatible exact lock or state schema fails before model or tool work and never falls back to another revision, connector, or resource.
 
 ## Invariants
 
 1. One EnvironmentRevision describes how to connect to an existing resource and performs no provider I/O.
 2. Foundation never creates, resumes, pauses, destroys, replaces, assigns, leases, or reconciles an external Environment resource.
-3. A Run's exact `EnvironmentExecutionConfig` is stored only in its immutable `state.json` envelope.
+3. A Run has at most one primary `EnvironmentExecutionConfig`, frozen only inside its immutable `EffectiveAgentConfig`.
 4. Every RunAttempt reauthorizes current provider selection and resolves fresh credential values.
 5. Runtime attachments, clients, and credentials are process-local and never persisted.
 6. Keep-alive exists only within an active attachment scope and creates no durable lifecycle state.

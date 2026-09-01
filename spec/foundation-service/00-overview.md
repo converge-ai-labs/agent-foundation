@@ -148,7 +148,7 @@ sequenceDiagram
     participant Harness
 
     Caller->>Control: submit Run with idempotency key
-    Control->>Control: authorize, resolve Agent and Environment revisions, snapshot current ModelConfig
+    Control->>Control: authorize, resolve Preset Revision and typed override into EffectiveAgentConfig
     Control->>DB: publish initial state and commit Thread advancement and Run
     Control-->>Caller: durable acceptance
     Worker->>DB: scan and profile-preflight eligible Runtime lock

@@ -115,7 +115,7 @@ that public read action.
 
 - Organization, Workspace, Session, Thread, and Run;
 - originating RunAttempt and Harness Run;
-- stable AgentPreset, exact AgentPresetVersion, and Runtime lock digest; and
+- stable AgentPreset, exact AgentPresetRevision, effective-config digest, and Runtime lock digest; and
 - accepted `model_id`, provider type, and model name from the RunAttempt observation, plus model/provider identity and measures from the record.
 
 A `usage_report` ID is a delivery identity, not another usage fact. Reports can overlap through retries or chunk delivery. `HarnessRunResult.usage_records` is a complete detached run-local snapshot and can overlap records already delivered incrementally. Foundation deduplicates all paths by immutable `record_id` and rejects conflicting content for the same identity.

@@ -114,7 +114,7 @@ The Foundation-owned processor projects only validated values from this closed c
 | `a13n.run_attempt.replaces.id`     | Immediately replaced Attempt, when present                      |
 | `a13n.run_attempt.recovery.reason` | `lease_expired`, `retry_after_failure`, or `planned_handoff`    |
 | `a13n.agent.preset.id`             | Selected AgentPreset identity                                   |
-| `a13n.agent.preset.version.id`     | Exact selected immutable AgentPresetVersion                     |
+| `a13n.agent.preset.revision.id`    | Exact selected immutable AgentPresetRevision                    |
 | `a13n.model.id`                    | Exact selected Foundation ModelConfig identity                  |
 | `a13n.model.provider.type`         | Bounded selected provider type                                  |
 
@@ -136,11 +136,11 @@ The first Attempt has no recovery reason. A replacement caused by expired lease 
 
 Foundation owns exactly these stable direct children of the root when the corresponding phase starts:
 
-| Span                            | Boundary                                                                                                                                                                                                                                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `foundation.reconstruct`        | Reads and validates complete Run state, exact AgentPresetVersion, Run-pinned Runtime lock, immutable Skill/plugin artifacts, frozen dependencies, current authority, fresh credentials, and process-local Agent values; ends when reconstruction required for Harness entry is ready |
-| `foundation.environment.attach` | Selects and connects the exact state-owned Environment configuration; ends when fresh attachments, runtime mounts, and `EnvironmentRuntime` are usable or attachment fails                                                                                                           |
-| `foundation.persist`            | Publishes the Harness outcome's complete state and result objects and performs the short fenced Attempt/Run decision; ends after commit or classified failure                                                                                                                        |
+| Span                            | Boundary                                                                                                                                                                                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundation.reconstruct`        | Reads and validates complete Run state, exact AgentPresetRevision, `EffectiveAgentConfig`, Run-pinned Runtime lock, immutable Skill/Plugin artifacts, frozen dependencies, current authority, fresh credentials, and process-local Agent values; ends when reconstruction required for Harness entry is ready |
+| `foundation.environment.attach` | Selects and connects the exact Environment configuration frozen in effective config; ends when fresh attachments, runtime mounts, and `EnvironmentRuntime` are usable or attachment fails                                                                                                                     |
+| `foundation.persist`            | Publishes the Harness outcome's complete state and result objects and performs the short fenced Attempt/Run decision; ends after commit or classified failure                                                                                                                                                 |
 
 These spans provide phase duration, outcome, and bounded failure class. They do not duplicate database, object-store, HTTP, provider, or Environment spans and do not keep a database session or transaction open across their full duration. An operation that never starts creates no placeholder span.
 

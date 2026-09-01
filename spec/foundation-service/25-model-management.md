@@ -2,26 +2,26 @@
 
 ## Design Position
 
-Foundation manages the configuration required for an Agent to call one primary generative model. A `ModelConfig` is a mutable Workspace resource selected by `model_id` from an `AgentPresetVersion`. It combines one trusted provider type, the provider's model name, non-secret connection configuration, one credential requirement, and advisory capability metadata.
+Foundation manages the configuration required for an Agent to call one primary generative model. A `ModelConfig` is a mutable Workspace resource selected by `model_config_id` from an `AgentPreset`. It combines one trusted provider type, the provider's model name, non-secret connection configuration, one credential requirement, and advisory capability metadata.
 
-Model configuration has no published revision or version history. Editing a `ModelConfig` changes the configuration used by every AgentPresetVersion that references it for each newly accepted Run. Foundation does not expose pinned and follow-latest modes, model aliases, rollback, deployment promotion, traffic splitting, load balancing, fallback routing, or provider-account failover. Provider infrastructure remains responsible for balancing and routing behind the configured endpoint.
+Model configuration has no published revision or version history. AgentPreset Publish resolves the current enabled `ModelConfig` into a non-secret `ModelExecutionSnapshot` and freezes it in the new `AgentPresetRevision`. Editing a `ModelConfig` therefore affects only future Publish and explicit Run model overrides; it never rewrites an existing Revision or accepted Run. Foundation does not expose pinned and follow-latest modes, model aliases, rollback, deployment promotion, traffic splitting, load balancing, fallback routing, or provider-account failover. Provider infrastructure remains responsible for balancing and routing behind the configured endpoint.
 
-Foundation freezes a non-secret `ModelExecutionSnapshot` when it accepts a new Run. This snapshot is an execution input, not a model-configuration revision or a management resource. Every replacement RunAttempt for that Run uses the same snapshot so a concurrent edit cannot change accepted work. A continuation, feedback, fork, child, or retry is a new Run and resolves the current `ModelConfig` again at its own acceptance boundary.
+One ordinary Run inherits the selected Revision's frozen model snapshot and concrete settings. A typed model override may select another current enabled `ModelConfig` or replace bounded model settings and characteristics; acceptance resolves the result once into `EffectiveAgentConfig`. The snapshot is execution data, not a model-configuration revision or management resource. Every replacement attempt for that Run uses the same resolved value.
 
 This contract covers only the primary text or multimodal generative model used by an Agent. Embedding, reranking, moderation, speech, image generation, video generation, and other specialized model resources are outside this domain.
 
 ## Boundaries
 
-| Concern                            | Owner                                                          | Contract                                                                                 |
-| ---------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Model configuration and lifecycle  | This document                                                  | Owns `ModelConfig`, provider discovery, testing, updating, enabling, and disabling       |
-| Agent model selection and behavior | [Agent Management](12-agent-management.md)                     | Stores one `model_id`, concrete Harness model characteristics, and native model settings |
-| Run-time model selection           | This document and [Durable Run State](14-run-persistence.md)   | Resolves the current enabled configuration and freezes one non-secret execution snapshot |
-| Secret values and use eligibility  | [Secret Management](11-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                     |
-| Provider API and balancing         | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                         |
-| Trusted provider code              | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code     |
-| Harness model behavior             | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                       |
-| Usage identity and measures        | [Events, Usage, and Delivery](20-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                        |
+| Concern                            | Owner                                                          | Contract                                                                                        |
+| ---------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Model configuration and lifecycle  | This document                                                  | Owns `ModelConfig`, provider discovery, testing, updating, enabling, and disabling              |
+| Agent model selection and behavior | [Agent Management](12-agent-management.md)                     | Stores one `model_config_id`, concrete Harness model characteristics, and native model settings |
+| Run-time model selection           | This document and [Durable Run State](14-run-persistence.md)   | Reuses the Revision snapshot or resolves one typed override into effective configuration        |
+| Secret values and use eligibility  | [Secret Management](11-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                            |
+| Provider API and balancing         | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                                |
+| Trusted provider code              | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code            |
+| Harness model behavior             | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                              |
+| Usage identity and measures        | [Events, Usage, and Delivery](20-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                               |
 
 `ModelConfig` is not a Provider account, connection pool, deployment, gateway, or credential container. Foundation exposes no independent Provider Connection resource for models. Connection fields live directly in the configuration and credential values remain in managed Secrets.
 
@@ -112,9 +112,9 @@ class ModelConfig:
 
 `base_url` is the normalized effective endpoint exposed when it is safe to do so. It is null when the provider derives its endpoint from typed fields such as region or project. `provider_config` contains only the fields declared by the selected provider definition and never contains a credential.
 
-Concrete `HarnessModelCharacteristics`, native `ModelSettings`, temperature, maximum output requested for one invocation, reasoning effort, tool choice, structured-output policy, timeouts, and other Agent behavior are not `ModelConfig` fields. The immutable `AgentPresetVersion` owns those values because two Presets can use the same model configuration differently.
+Concrete `HarnessModelCharacteristics`, native `ModelSettings`, temperature, maximum output requested for one invocation, reasoning effort, tool choice, structured-output policy, timeouts, and other Agent behavior are not `ModelConfig` fields. The immutable `AgentPresetRevision` owns those values because two Presets can use the same model configuration differently.
 
-Capabilities describe catalog knowledge or an explicit Workspace override. They are informational for authoring and display. They do not gate Agent save, Run acceptance, tool calling, structured output, or execution. Unknown facts are represented as unknown rather than false. Provider behavior and runtime errors remain authoritative. They do not populate, default, or validate an AgentPresetVersion's concrete `HarnessModelCharacteristics`.
+Capabilities describe catalog knowledge or an explicit Workspace override. They are informational for authoring and display. They do not gate Agent save, Run acceptance, tool calling, structured output, or execution. Unknown facts are represented as unknown rather than false. Provider behavior and runtime errors remain authoritative. They do not populate, default, or validate an AgentPresetRevision's concrete `HarnessModelCharacteristics`.
 
 ## Credential Requirements
 
@@ -145,9 +145,9 @@ Every configurable endpoint is validated as an outbound network destination:
 
 Validation is applied on create, update, test, and execution. A hostname that passed at save time does not bypass DNS or redirect validation later.
 
-## Run Selection and Reconstruction
+## Publish, Run Selection, and Reconstruction
 
-Run acceptance reads the exact immutable `AgentPresetVersion`, obtains its `model_id`, authorizes and validates the current enabled `ModelConfig`, and freezes this conceptual value:
+AgentPreset Publish reads the selected enabled `ModelConfig`, authorizes it, and freezes this conceptual value. Run acceptance normally reuses it; a typed model override performs the same resolution for the effective Run configuration:
 
 ```python
 class ModelExecutionSnapshot:
@@ -168,9 +168,9 @@ class ModelExecutionObservation:
     model_name: str
 ```
 
-The snapshot contains no Secret value and is not independently addressable. The Run row retains it while the Run is `accepted` or `running`. Every claim copies the safe observation to its new RunAttempt and reconstructs the native provider and Model from the same snapshot. A replacement attempt never reads the current `ModelConfig` as a fallback.
+The snapshot contains no Secret value and is not independently addressable. The `AgentPresetRevision.resolved_model` and accepted `EffectiveAgentConfig.model` pair it with exact `ModelSettings` and `HarnessModelCharacteristics`. Every claim copies the safe observation to its new execution attempt and reconstructs the native provider and Model from the same snapshot. A replacement attempt never reads the current `ModelConfig` as a fallback.
 
-When a Run seals as `waiting`, `completed`, `failed`, or `cancelled`, Foundation removes the execution snapshot and retains only `ModelExecutionObservation` on the Run and each started RunAttempt. The observation supports history and usage attribution but cannot reconstruct a provider client or reveal an endpoint or Secret reference. A feedback or other successor Run resolves the current configuration and receives a new snapshot.
+The complete non-secret snapshot remains part of the retained effective configuration required for retry, resume, historical exact-Revision invocation, and audit. `ModelExecutionObservation` is the smaller safe projection exposed on Run and attempt reads. Waiting feedback and explicit Retry reuse the source Run's effective model; an ordinary new continuation inherits the newly selected Revision or applies its own typed override.
 
 ```mermaid
 sequenceDiagram
@@ -181,12 +181,12 @@ sequenceDiagram
     participant Provider
 
     Caller->>Control: accept Run for stable AgentPreset
-    Control->>Store: resolve active AgentPresetVersion and current ModelConfig
-    Control->>Store: commit Run plus non-secret ModelExecutionSnapshot
+    Control->>Store: resolve selected AgentPresetRevision and typed override
+    Control->>Store: commit Run plus EffectiveAgentConfig
     Worker->>Store: claim RunAttempt and read frozen snapshot
     Worker->>Store: resolve current eligible Secret value
     Worker->>Provider: call exact accepted endpoint and model
-    Worker->>Store: seal Run and retain safe model observation
+    Worker->>Store: seal Run and retain effective config plus safe observation
 ```
 
 `adapter_key` and `adapter_version` identify the trusted adapter compatibility contract required to reconstruct the snapshot. The version changes only for an incompatible adapter change; it is not a package or transitive-dependency lock. If that compatibility identity is unavailable, the Run fails before model dispatch. Foundation never substitutes another model, provider, endpoint, or current configuration.
@@ -215,7 +215,7 @@ Create is a synchronous database mutation and retains no separate idempotency or
 
 `ModelConfig.version` starts at `1` and increments once for each effective update. `PATCH` requires `expected_version`; a mismatch returns `409 model_version_conflict` with the safe current version and changes nothing. A no-op update retains the same version. This counter is optimistic concurrency evidence, not configuration history, a provider model version, a revision selector, or a rollback handle.
 
-Create and update perform complete provider-schema, endpoint-policy, credential-reference, and static compatibility validation. Saving does not require a remote provider call. A PATCH that changes any execution field takes effect only for Runs accepted after its atomic commit and requires no approval workflow.
+Create and update perform complete provider-schema, endpoint-policy, credential-reference, and static compatibility validation. Saving does not require a remote provider call. A PATCH that changes any execution field affects only later AgentPreset Publish and model overrides accepted after its atomic commit and requires no approval workflow.
 
 ## Candidate Connection Test
 
@@ -227,9 +227,9 @@ Testing creates no `ModelTest` resource, verification status, health status, his
 
 ## Lifecycle
 
-An enabled model is available for Agent authoring and new Run acceptance. Disabling it removes it from new selection and causes a new Run using any referencing AgentPresetVersion to fail with `model_disabled`. A Run already accepted with a snapshot continues, including its replacement RunAttempts. Re-enabling the model restores new-Run execution for all existing references.
+An enabled model is available for Agent authoring and new Run acceptance. Disabling it removes it from new selection and causes a new Run using any referencing AgentPresetRevision to fail with `model_disabled`. A Run already accepted with a snapshot continues, including its replacement RunAttempts. Re-enabling the model restores new-Run execution for all existing references.
 
-Model Management exposes no hard delete. A configuration that should no longer be selected is disabled and retained so existing `AgentPresetVersion` references remain resolvable. Foundation exposes no server-side copy, model import, export, tag, or bulk-mutation surface. Creating a similar configuration uses the ordinary create contract with safe fields obtained from an authorized read.
+Model Management exposes no hard delete. A configuration that should no longer be selected is disabled and retained so existing `AgentPresetRevision` references remain resolvable. Foundation exposes no server-side copy, model import, export, tag, or bulk-mutation surface. Creating a similar configuration uses the ordinary create contract with safe fields obtained from an authorized read.
 
 ## Authorization and Audit
 
@@ -261,12 +261,12 @@ Create, update, enable, disable, and test attempts emit security audit events wi
 ## Invariants
 
 01. `ModelConfig` is a mutable Workspace resource for an Agent's primary generative model and has no configuration revision history.
-02. Every `AgentPresetVersion` selects exactly one `model_id`; per-Preset-Version runtime model settings remain in the immutable AgentPresetVersion.
-03. Every new Run resolves the current enabled configuration once and freezes a non-secret execution snapshot; replacement RunAttempts reuse it.
-04. A model edit affects old and new AgentPresetVersions only for Runs accepted after the edit commits.
+02. Every `AgentPresetRevision` freezes exactly one resolved `model_config_id`, non-secret execution snapshot, settings, and characteristics.
+03. Every new Run inherits that resolved model or freezes one typed model override inside `EffectiveAgentConfig`; replacement RunAttempts reuse it.
+04. A ModelConfig edit affects only future AgentPreset Publish and model overrides accepted after the edit commits.
 05. Every credential requirement has exactly one source, and no durable model or Run record contains a credential value.
 06. Provider and capability catalogs are advisory trusted metadata, and manual model names remain valid input.
 07. Capability metadata never becomes an execution gate.
 08. Official providers do not accept arbitrary endpoints; custom endpoints use a trusted adapter and the outbound network policy.
 09. Foundation does not balance, fail over, or silently substitute providers or model configurations.
-10. Disabling blocks new Run acceptance without invalidating existing `AgentPresetVersion` references or accepted Run snapshots.
+10. Disabling blocks new Run acceptance without invalidating existing `AgentPresetRevision` references or accepted Run snapshots.

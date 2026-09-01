@@ -2,40 +2,40 @@
 
 ## Design Position
 
-Foundation exposes `AgentPreset` as the stable Workspace-owned resource for Agent authoring, authorization, lifecycle, and invocation. An `AgentPreset` contains one mutable complete `config`; Publish snapshots that config into an immutable executable `AgentPresetVersion` and atomically makes the new Version active. Foundation does not persist a separate product `Agent` or `AgentRevision`.
+Foundation exposes `AgentPreset` as the stable Workspace-owned resource for Agent authoring, authorization, lifecycle, and invocation. An `AgentPreset` contains one mutable complete `config`; Publish resolves that config into an immutable executable `AgentPresetRevision` and atomically makes the new Revision active. Foundation does not persist a separate product `Agent` or `AgentRevision`.
 
-A Run selects one exact `AgentPresetVersion` at durable acceptance. A worker reconstructs process-local Harness `AgentDefinition`, `SubagentDefinition`, `ExecutableAgent`, and plugin objects from that Version. Those Python values are never management resources or durable payloads.
+A Run selects one exact `AgentPresetRevision` at durable acceptance. A Worker reconstructs process-local Harness `AgentDefinition`, `SubagentDefinition`, `ExecutableAgent`, and Plugin objects from the Revision's frozen effective configuration. Those Python values are never management resources or durable payloads.
 
-Foundation also owns the deployment-level catalog for trusted Harness Plugin Wheels. Every deployment fixes one Plugin Runtime profile. In the default `on_demand` profile, a Preset selects exact PluginVersions and Workers import compatible artifacts on demand. In the `runner` profile, a Preset selects stable plugin keys and explicit deployment-wide activation chooses the executable PluginVersions. Runtime locks, process-local loaded registries, and Runner processes are internal execution facts rather than management resources.
+Foundation also owns the deployment-level catalog for trusted Harness Plugin Wheels. Every deployment fixes one Plugin Runtime profile. In the default `on_demand` profile, mutable Presets select exact PluginVersions and Workers import compatible artifacts on demand. In the `runner` profile, mutable Presets select stable Plugin keys and deployment-wide activation determines which PluginVersion each key resolves to. Publish freezes exact PluginVersions and one exact Runtime lock into the resulting Revision in both profiles. Runtime locks, process-local loaded registries, and Runner processes are internal execution facts rather than management resources.
 
 ```mermaid
 flowchart LR
-    Config[AgentPreset mutable config] -->|Publish| Version[Immutable AgentPresetVersion]
+    Config[AgentPreset mutable config] -->|Publish and resolve| Revision[Immutable AgentPresetRevision]
     Wheel[PluginVersion Wheel] --> Selection{Runtime profile}
-    Selection -->|on_demand: Preset Publish| Version
-    Selection -->|runner: Activate| Lock[Internal Runtime lock]
-    Version --> Acceptance[Durable Run acceptance]
-    Lock --> Acceptance
-    Acceptance --> Run[Run with exact Version and lock digest]
-    Run -->|pins lock digest internally| Worker[Worker execution process]
+    Selection -->|on_demand: exact Version| Revision
+    Selection -->|runner: active key resolution| Revision
+    Revision --> Acceptance[Durable Run acceptance]
+    Override[Typed AgentRunOverride] --> Acceptance
+    Acceptance --> Run[Persisted Run with exact Revision and effective config]
+    Run -->|pins lock digest| Worker[Worker or Runner execution process]
     Worker --> Definition[Process-local AgentDefinition graph]
     Definition --> Harness[Agent Harness]
 ```
 
 ## Boundaries
 
-| Concern                                                                                   | Owner                                                                                                        | Relationship                                                               |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Preset identity, config, Versions, lifecycle, Publish, Rollback, and Duplicate            | This document                                                                                                | Defines the durable Agent management model                                 |
-| Plugin identities, Versions, lifecycle, selection, and runner-profile activation commands | This document                                                                                                | Defines the managed trusted-code product surface                           |
-| Wheel validation, Runtime locks, on-demand loading, and Runner switching                  | [Harness Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md)                         | Makes trusted Python extensions available without another product resource |
-| Plugin factories, configured instances, ordering, middleware, and Capability contribution | [Harness Plugin System](../agent-harness/05-plugin-system.md)                                                | Builds concrete process-local plugins from an explicitly selected catalog  |
-| Agent execution, state, and process-local subagent graph                                  | Agent Harness                                                                                                | Receives reconstructed definitions and fresh run bindings                  |
-| Run acceptance, pinning, recovery, and lineage                                            | [Interactions and Runs](13-interactions-runs-and-attempts.md) and [Durable Run State](14-run-persistence.md) | Persist the exact selected Version and never re-resolve the mutable Preset |
-| Agent input wire, canonicalization, and adapter mapping                                   | [Agent Input](33-agent-input.md)                                                                             | AgentPresetConfig stores adapter configuration and each Version freezes it |
-| Product authorization and executable-code administration                                  | [Foundation IAM](10-identity-and-access-management.md)                                                       | Separates Preset authoring from deployment code authority                  |
-| Secret values and run-time eligibility                                                    | [Secret Management](11-secret-management.md)                                                                 | Versions store requirements and references, never plaintext values         |
-| Public HTTP paths and common mutation behavior                                            | [Management API](21-management-api.md) and [Platform API Conventions](../api-conventions.md)                 | Expose the resources and commands defined here                             |
+| Concern                                                                                              | Owner                                                                                                        | Relationship                                                                |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Preset identity, config, Revisions, lifecycle, Publish, Rollback, Duplicate, and typed Run overrides | This document                                                                                                | Defines the durable Agent management model                                  |
+| Plugin identities, Versions, lifecycle, selection, and runner-profile activation commands            | This document                                                                                                | Defines the managed trusted-code product surface                            |
+| Wheel validation, Runtime locks, on-demand loading, and Runner switching                             | [Harness Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md)                         | Makes trusted Python extensions available without another product resource  |
+| Plugin factories, configured instances, ordering, middleware, and Capability contribution            | [Harness Plugin System](../agent-harness/05-plugin-system.md)                                                | Builds concrete process-local plugins from an explicitly selected catalog   |
+| Agent execution, state, and process-local subagent graph                                             | Agent Harness                                                                                                | Receives reconstructed definitions and fresh run bindings                   |
+| Run acceptance, persistence, recovery, and lineage                                                   | [Interactions and Runs](13-interactions-runs-and-attempts.md) and [Durable Run State](14-run-persistence.md) | Persist the exact selected Revision and effective config                    |
+| Agent input wire, canonicalization, and adapter mapping                                              | [Agent Input](33-agent-input.md)                                                                             | AgentPresetConfig stores adapter configuration and each Revision freezes it |
+| Product authorization and executable-code administration                                             | [Foundation IAM](10-identity-and-access-management.md)                                                       | Separates Preset authoring from deployment code authority                   |
+| Secret values and run-time eligibility                                                               | [Secret Management](11-secret-management.md)                                                                 | Revisions store requirements and references, never plaintext values         |
+| Public HTTP paths and common mutation behavior                                                       | [Management API](21-management-api.md) and [Platform API Conventions](../api-conventions.md)                 | Expose the resources and commands defined here                              |
 
 `PluginRuntime` is the Worker/Harness Python runtime. It is not an Agent `Environment`: it contains Python, Harness, Pydantic AI, Plugin Wheels, third-party distributions, and an immutable dependency lock; it contains no Prompt, Secret value, Run state, Agent work files, shell workspace, browser, or Environment resource.
 
@@ -62,47 +62,92 @@ class AgentPreset:
     lifecycle_state: AgentPresetLifecycleState
     resource_version: int
     config: AgentPresetConfig
-    active_version_id: str | None
-    config_base_version_id: str | None
+    active_revision_id: str | None
+    config_base_revision_id: str | None
     duplicated_from_preset_id: str | None
-    duplicated_from_version_id: str | None
+    duplicated_from_revision_id: str | None
     created_by: PrincipalRef | SystemActorRef
     created_at: datetime
     updated_at: datetime
 ```
 
-`config` is a complete, mutable authoring document. It is not named Draft and is not independently addressable. Saving it changes neither `active_version_id` nor running behavior. `resource_version` is the optimistic concurrency token for mutable Preset state; it is distinct from a published Version number, configuration schema version, package version, and content digest.
+`config` is a complete, mutable authoring document. It is not named Draft and is not independently addressable. Saving it changes neither `active_revision_id` nor running behavior. `resource_version` is the optimistic concurrency token for mutable Preset state; it is distinct from a published Revision number, configuration schema version, package version, and content digest.
 
-`config_base_version_id` records the active Version whose content last matched `config`. `has_unpublished_changes` is a derived comparison between the normalized config and the active Version content; it is not a second validation state.
+`config_base_revision_id` records the active Revision whose authoring content last matched `config`. `has_unpublished_changes` is a derived comparison between normalized config and the active Revision's authoring content; it is not a second validation state.
 
-A custom Preset is created as `enabled` with no active Version. Its complete config is editable immediately, but root invocation fails with `preset_not_published` until the first Publish. An enabled Preset with an active Version is callable.
+A custom Preset is created as `enabled` with no active Revision. Its complete config is editable immediately, but root invocation fails with `preset_not_published` until the first Publish. An enabled Preset with an active Revision is callable.
 
 ## AgentPresetConfig
 
-`AgentPresetConfig` is finite Foundation-owned serializable data. It contains the complete behavior needed to publish an executable Version, including:
-
-- instructions and the typed output declaration;
-- one exact `model_id` plus concrete Harness `HarnessModelCharacteristics` and native `ModelSettings`;
-- Capability, Tool, Skill, Connector, and Environment declarations or exact managed-resource references;
-- bounded public protocol metadata, schemas, visibility, client-tool policy, and limits;
-- non-secret Secret requirements;
-- bounded trusted-adapter keys and configuration;
-- the Harness Plugin Configuration Document and, in `on_demand`, exact PluginVersion bindings; and
-- named subagent edges to stable child Preset IDs with Harness context policy and usage ceilings.
-
-The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, plugin object, client, credential, plaintext Secret, Environment attachment, runtime mount, `EnvironmentRuntime`, live controller, arbitrary artifact URL, or process-local value. A request cannot carry a broad `config_override`. Per-Run input, fresh `RunBindings`, and typed execution options can narrow execution or satisfy declared requirements, but cannot replace the model, instructions, output schema, tools, Capabilities, plugins, dependency set, Environment provider contract, or security ceiling.
-
-Saving config performs only request-schema structure, type, size, and bounds validation. Foundation exposes no independent Validate resource, preview state, warning collection, or partially valid config lifecycle. Publish is the sole authoritative resolve-and-build validation path.
-
-The config stores one exact trusted input adapter key and bounded configuration. Publish validates them against the selected Plugin Runtime profile and freezes them inside the AgentPresetVersion. The Version carries no declaration of allowed input block types, media types, sources, deliveries, or per-input limits; every Version accepts the common [`AgentInput`](33-agent-input.md) wire contract. Run acceptance validates and canonicalizes that input, and the Worker verifies the pinned Runtime lock before invoking the adapter. A replacement RunAttempt reuses the same Version, adapter configuration, accepted input, and Runtime lock.
-
-A config can explicitly select the trusted Foundation [`AssetCapability`](37-asset-management.md#agent-publication-capability). Publish freezes that selection and validates its bounded configuration with the rest of the Version. Each RunAttempt binds only its current authorized Environment; `publish_asset` fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable the tool, and the Capability adds no durable Capability-state schema.
-
-## Protocol Configuration
-
-Every `AgentPresetConfig` embeds one finite `protocol` configuration. It is Preset-owned authoring data rather than an independently addressable resource, and it has no separate lifecycle, API, enable switch, or content digest:
+`AgentPresetConfig` is finite Foundation-owned serializable data. The following conceptual types define its public domain boundary; referenced resource schemas remain owned by their management documents:
 
 ```python
+class AgentModelConfig:
+    model_config_id: ModelConfigId
+    settings: ModelSettings
+    characteristics: HarnessModelCharacteristics
+
+
+class OnDemandPluginSelection:
+    instance_name: str
+    plugin_version_id: PluginVersionId
+    config: JsonObject
+
+
+class RunnerPluginSelection:
+    instance_name: str
+    plugin_key: str
+    config: JsonObject
+
+
+class SkillSelection:
+    skill_revision_id: SkillRevisionId
+
+
+class ConnectorSelection:
+    connector_revision_id: ConnectorRevisionId
+    connection_id: ConnectionId | None
+    tools: tuple[str, ...] | None
+
+
+class EnvironmentSelection:
+    environment_revision_id: EnvironmentRevisionId
+
+
+class SubagentSelection:
+    agent_preset_id: AgentPresetId
+    revision: int | None
+    description: str | None
+
+
+class OutputVariant:
+    name: str
+    description: str | None
+    schema: JsonSchema
+    resources: dict[str, JsonSchema]
+
+class OutputSpec:
+    name: str | None
+    description: str | None
+    schema: JsonSchema | None
+    resources: dict[str, JsonSchema]
+    variants: tuple[OutputVariant, ...] | None
+
+
+class RetryConfig:
+    tools: int
+    output: int
+
+
+class InputAdapterConfig:
+    adapter_key: str
+    config: JsonObject
+
+
+class AssetPublicationConfig:
+    enabled: Literal[True]
+
+
 class ProtocolConfig:
     schema_version: Literal["1"]
     public_name: str
@@ -116,31 +161,159 @@ class ProtocolConfig:
     a2a_skills: tuple[A2ASkillProjection, ...]
     extended_agent_card: ExtendedAgentCardPolicy | None
     limits: ProtocolLimits
+
+
+class AgentPresetConfig:
+    model: AgentModelConfig
+    instructions: str
+    input_adapter: InputAdapterConfig
+    plugins: tuple[OnDemandPluginSelection | RunnerPluginSelection, ...]
+    skills: tuple[SkillSelection, ...]
+    connectors: dict[str, ConnectorSelection]
+    environment: EnvironmentSelection | None
+    subagents: dict[str, SubagentSelection]
+    client_tools: tuple[ClientToolDefinition, ...]
+    output_spec: OutputSpec | None
+    retries: RetryConfig | None
+    secret_requirements: tuple[SecretRequirement, ...]
+    asset_publication: AssetPublicationConfig | None
+    protocol: ProtocolConfig
 ```
+
+The deployment's fixed Plugin Runtime profile determines which Plugin selection variant is legal. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. `skills` selects exact Skill Revisions rather than a mutable catalog plus defaults. `environment` selects at most one primary exact EnvironmentRevision. Connector and subagent map keys are stable local names within the Agent. `client_tools` stores only serializable declarations; executable handlers and callbacks remain SDK-local.
+
+`OutputSpec` permits either one top-level `schema` with optional local `resources`, or at least two mutually exclusive `variants`; it never permits nested variants or runtime retrieval of schema resources. `None` means free-text output. `RetryConfig` contains bounded non-negative tool-argument and structured-output model-correction budgets. It does not configure provider transport retry, Worker recovery, whole-Run retry, or business-workflow retry.
+
+The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, Plugin object, client, credential value, plaintext Secret, provider attachment, live controller, arbitrary artifact URL, or process-local value. Python extension code is selected only through `plugins`; Harness Capabilities, Hooks, and Toolsets are constructed internally after importing the selected Wheel and are not Agent Management resources or generic fields. `asset_publication` is the one dedicated platform Capability selection required by the [Asset publication contract](37-asset-management.md#agent-publication-capability), not an extensible Capability list.
+
+Saving config performs only request-schema structure, type, size, and bounds validation. Foundation exposes no independent Validate resource, preview state, warning collection, or partially valid config lifecycle. Publish is the sole authoritative resolve-and-build validation path.
+
+`input_adapter` selects one trusted adapter key and bounded configuration. Publish validates and freezes it inside the Revision. The Revision carries no declaration of allowed input block types, media types, sources, deliveries, or per-input limits; every Revision accepts the common [`AgentInput`](33-agent-input.md) wire contract. Run acceptance validates and canonicalizes that input, and the Worker verifies the pinned Runtime lock before invoking the adapter. A replacement execution attempt reuses the same Revision, adapter configuration, accepted input, and Runtime lock.
+
+When `asset_publication` is present, the trusted Foundation `AssetCapability` exposes `publish_asset`. Each execution attempt binds only its current authorized Environment; the tool fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable the tool, and the Capability adds no durable Capability-state schema.
+
+## Protocol Configuration
+
+Every `AgentPresetConfig` embeds one finite `protocol` configuration. It is Preset-owned authoring data rather than an independently addressable resource, and it has no separate lifecycle, API, enable switch, or content digest.
 
 The bounded nested types are Foundation-owned serializable values. Publish validates JSON Schemas, public metadata, MIME modes, event names, client-tool policies, A2A projections, and per-protocol limits against finite registries and deployment hard ceilings. Configuration can narrow a permitted surface but cannot expose raw reasoning, credentials, private execution identities, unregistered events, arbitrary code, or a capability that the deployment does not support.
 
 `input_data_schema`, when present, is the self-contained JSON Schema Draft 2020-12 contract projected for `AgentInput.structured_content`. Publish validates and freezes it. Run acceptance applies it only when `structured_content` is non-null; absent structured content is always valid. The schema does not restrict text or binary blocks, media types, sources, or deliveries.
 
-Safe defaults impose no structured-content schema, expose bounded text output and the standard Run, text, and client-visible tool event families, accept no client tools, require empty state and context, generate a minimal public-safe A2A Agent Card, and expose no extended Card. Native and Hosted AG-UI remain available for every callable Preset. The deployment-wide `gateway.a2a_enabled` setting is the only A2A availability switch; ProtocolConfig does not enable or disable a protocol.
+Safe defaults impose no structured-content schema, expose bounded text output and the standard Run, text, and client-visible tool event families, accept no protocol client tools, require empty state and context, generate a minimal public-safe A2A Agent Card, and expose no extended Card. Native and Hosted AG-UI remain available for every callable Preset. The deployment-wide `gateway.a2a_enabled` setting is the only A2A availability switch; ProtocolConfig does not enable or disable a protocol.
 
-Publish copies the normalized ProtocolConfig into the immutable `AgentPresetVersion`, whose `content_digest` already covers the complete config. Hosted AG-UI Run and A2A Task acceptance persist the exact `agent_preset_version_id`; retry, feedback, recovery, and replay therefore use the same protocol configuration without storing a redundant protocol digest. Publishing another Version changes Cards and acceptance policy only for later work. Continuation additionally follows the state and input compatibility rules of the selected Version.
+Publish freezes normalized ProtocolConfig in the immutable Revision, whose `content_digest` covers the complete config. Hosted AG-UI Run and A2A Task acceptance persist the exact `agent_preset_revision_id`; retry, feedback, recovery, and replay therefore use the same protocol configuration without storing a redundant protocol digest. Publishing another Revision changes Cards and acceptance policy only for later work. Continuation additionally follows the state and input compatibility rules of the selected Revision.
 
-## Immutable AgentPresetVersion
+## AgentRunOverride and Effective Configuration
+
+One Run request may carry a finite typed `config_override`. It is request data, not a management resource, and has no identity or lifecycle:
+
+```python
+class InlineEnvironmentSelection:
+    connection_spec: EnvironmentConnectionSpec
+    credential_bindings: tuple[EnvironmentCredentialBinding, ...]
+    access: EnvironmentAccess = "full"
+
+
+type EnvironmentOverride = EnvironmentSelection | InlineEnvironmentSelection
+
+
+class ModelOverride:
+    model_config_id: ModelConfigId | None
+    settings: ModelSettings | None
+    characteristics: HarnessModelCharacteristics | None
+
+
+class ConnectorOverride:
+    connector_revision_id: ConnectorRevisionId | None
+    connection_id: ConnectionId | None
+    tools: tuple[str, ...] | None
+    headers: dict[str, SensitiveString] | None
+
+
+class SubagentOverride:
+    agent_preset_id: AgentPresetId | None
+    revision: int | None
+    description: str | None
+
+
+class RetryOverride:
+    tools: int | None
+    output: int | None
+
+
+class AgentRunOverride:
+    model: ModelOverride | None
+    instructions: str | None
+    plugins: tuple[OnDemandPluginSelection | RunnerPluginSelection, ...] | None
+    skills: tuple[SkillSelection, ...] | None
+    connectors: dict[str, ConnectorOverride | None] | None
+    environment: EnvironmentOverride | None
+    subagents: dict[str, SubagentOverride | None] | None
+    client_tools: tuple[ClientToolDefinition, ...] | None
+    output_spec: OutputSpec | None
+    retries: RetryOverride | None
+```
+
+The wire schema preserves the distinction between an absent field and an explicit null. Top-level absence inherits the selected Revision. Scalar and string fields replace; an empty `instructions` string clears the base prompt. List fields replace as a whole and `[]` clears. `output_spec` replaces as a whole and explicit null selects free text. `environment` replaces the one primary Environment and explicit null clears it. `retries` patches only its explicitly present children, and zero disables the corresponding correction retry.
+
+`connectors` and `subagents` are name-keyed patches. An absent map inherits, an explicit null clears all entries, and `{}` changes nothing. A new name adds an entry, an existing object changes only explicitly present typed fields, and a name mapped to null deletes that entry. Connector changes use one public shape whether they replace a Connection binding, ConnectorRevision, or tool allowlist. Subagent entries may select only managed Presets; inline child Agent definitions are not accepted.
+
+`ConnectorOverride.headers` is available only when the selected trusted Provider's typed override schema declares runtime headers. Header names are bounded and schema-validated; every value is sensitive and is extracted into the encrypted Run payload. It is not a generic Provider-config dictionary and cannot add undeclared credential paths.
+
+An `on_demand` Plugin override selects exact PluginVersion IDs. A `runner` Plugin override selects stable Plugin keys, which acceptance resolves through the active deployment catalog. The final list always resolves to exact PluginVersions and one Runtime lock before acceptance commits.
+
+The caller may select resources it is currently authorized to use even when they were not present in the base Revision. Every replacement remains subject to resource authorization, schema validation, deployment compatibility, and platform security ceilings. Typed sensitive leaves may contain inline credential values; acceptance extracts them into a Run-owned encrypted payload and excludes them from ordinary config projections. No generic arbitrary-path secret bag is accepted.
+
+The resolved non-secret result has this conceptual shape:
+
+```python
+class EffectiveAgentConfig:
+    schema_version: str
+    model: ResolvedAgentModelConfig
+    instructions: str
+    input_adapter: InputAdapterConfig
+    plugins: tuple[ResolvedPluginVersion, ...]
+    runtime_lock_digest: str
+    skills: tuple[ResolvedSkillSelection, ...]
+    connectors: tuple[ResolvedConnectorSelection, ...]
+    environment: EnvironmentExecutionConfig | None
+    subagents: tuple[ResolvedSubagentEdge, ...]
+    client_tools: tuple[ClientToolDefinition, ...]
+    output_spec: OutputSpec | None
+    retries: RetryConfig | None
+    secret_requirements: tuple[SecretRequirement, ...]
+    asset_publication: AssetPublicationConfig | None
+    protocol: ProtocolConfig
+    content_digest: str
+```
+
+The resolved types are defined with `AgentPresetRevision` below and use the same exact reconstruction facts. The digest covers the complete normalized snapshot and excludes only sensitive plaintext, which has a separately protected digest in acceptance idempotency evidence.
+
+The SDK may store one local default override on an Agent Handle and merge it with a one-Run override before submission. Foundation receives only the resulting `config_override`, does not persist the SDK merge layers, and never inherits an override from a previous Run or Thread. Input, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
+
+Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. It does not retain a separately addressable normalized Override. Retry, resume, deferred-action completion, and Worker replacement reconstruct from that exact effective snapshot and never re-read mutable Preset config or reapply merge rules. Serializable client-tool declarations are part of the snapshot; their actual callable handlers remain with the SDK, and a missing handler is surfaced through the durable Action Required contract.
+
+## Immutable AgentPresetRevision
 
 Publish creates this immutable resource:
 
 ```python
 class ResolvedSubagentEdge:
     name: str
-    child_preset_id: str
-    child_preset_version_id: str
+    child_agent_preset_id: AgentPresetId
+    child_agent_preset_revision_id: AgentPresetRevisionId
     description: str | None
-    context: JsonObject
-    usage_limits: JsonObject
+
+
+class ResolvedAgentModelConfig:
+    execution: ModelExecutionSnapshot
+    settings: ModelSettings
+    characteristics: HarnessModelCharacteristics
 
 
 class ResolvedPluginVersion:
+    instance_name: str
     plugin_id: str
     plugin_version_id: str
     plugin_key: str
@@ -148,127 +321,139 @@ class ResolvedPluginVersion:
     distribution_version: str
     top_level_package: str
     wheel_digest: str
+    config: JsonObject
 
 
-class AgentPresetVersion:
+class ResolvedSkillSelection:
+    skill_revision_id: SkillRevisionId
+    skill_name: str
+    content_digest: str
+
+
+class ResolvedConnectorSelection:
+    name: str
+    connector_revision_id: ConnectorRevisionId
+    connection_id: ConnectionId | None
+    tools: tuple[FrozenConnectorTool, ...]
+    provider_lock: ConnectorProviderContractLock
+    sensitive_binding_keys: tuple[str, ...]
+
+
+class AgentPresetRevision:
     id: str
     organization_id: str
     workspace_id: str
     agent_preset_id: str
-    version_number: int
+    revision_number: int
     plugin_runtime_mode: Literal["on_demand", "runner"]
     config: AgentPresetConfig
+    resolved_model: ResolvedAgentModelConfig
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
-    runtime_lock_digest: str | None
+    runtime_lock_digest: str
+    resolved_skills: tuple[ResolvedSkillSelection, ...]
+    resolved_connectors: tuple[ResolvedConnectorSelection, ...]
+    resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: str
-    source_version_id: str | None
+    source_revision_id: str | None
     created_by: PrincipalRef | SystemActorRef
     created_at: datetime
 ```
 
-`version_number` starts at one and increases monotonically within one Preset. It is never reused and is not a CAS token. `content_digest` covers the normalized immutable Version representation, including exact managed-resource and subagent Version references. `source_version_id` records Rollback or Duplicate provenance without creating inheritance.
+`revision_number` starts at one and increases monotonically within one Preset. It is never reused and is not a CAS token. `content_digest` covers the normalized immutable Revision representation, including every resolved snapshot, lock, exact managed-resource reference, and subagent Revision. `source_revision_id` records Rollback or Duplicate provenance without creating inheritance.
 
-A Version is complete and executable but carries no mutable lifecycle state. It cannot be patched, archived independently, deleted, overwritten, or replaced. Historical Versions remain readable while their Preset and referencing Run records are retained.
+A Revision is complete and executable but carries no mutable lifecycle state. It cannot be patched, archived independently, deleted, overwritten, or replaced. Historical Revisions remain readable while their Preset and referencing Run records are retained.
 
-`plugin_runtime_mode` records the deployment profile under which Publish interpreted the config. In `on_demand`, `resolved_plugin_versions` contains the exact identity, plugin key, distribution identity, top-level package, and Wheel digest for every enabled PluginVersion in the resolved subagent graph and participates in `content_digest`; `runtime_lock_digest` names the immutable lock produced by Publish. In `runner`, the tuple is empty and the lock field is null because the deployment-wide active lock supplies exact distribution selection at Run acceptance. Worker, Harness, and Foundation service versions remain deployment compatibility facts rather than Preset artifacts.
+`plugin_runtime_mode` records the deployment profile under which Publish interpreted the config. In both profiles, `resolved_plugin_versions` contains every configured instance and its exact PluginVersion, artifact identity, and configuration; `runtime_lock_digest` names the exact immutable lock produced or selected by Publish. In `runner`, Publish resolves every configured `plugin_key` through the deployment's then-active catalog. Later Activate commands never rewrite either field. Worker, Harness, and Foundation service versions remain deployment compatibility facts rather than Preset artifacts.
+
+The other `resolved_*` fields freeze the non-secret Model execution snapshot, exact Skill content and materialization facts, Connector tool contracts and Provider locks, the optional primary Environment lock, and the complete exact child Revision graph. Secret values, current authorization, and live Provider availability are deliberately not frozen. This separation makes the Revision independently reconstructible without turning credentials or mutable operational eligibility into published content.
 
 ## Publish and Rollback
 
 Publish synchronously performs the authoritative reconstruction preflight and then atomically:
 
 1. verifies authorization and the Preset `resource_version`;
-2. resolves exact managed-resource revisions and each child Preset's current active Version;
+2. resolves the non-secret Model snapshot, exact managed-resource revisions, PluginVersions, and each unpinned child Preset's current active Revision;
 3. verifies the finite acyclic subagent graph, profile-specific Plugin selection, plugin factory configuration, ordering, requirements, schemas, and reconstruction compatibility;
-4. allocates the next `version_number` and creates the complete immutable Version;
-5. updates `active_version_id` and `config_base_version_id` to that Version; and
+4. allocates the next `revision_number` and creates the complete immutable Revision;
+5. updates `active_revision_id` and `config_base_revision_id` to that Revision; and
 6. increments `resource_version` and records the audit and outbox facts.
 
-Resolution and process-local build preflight occur outside an open database transaction. The final short transaction rechecks the mutable Preset, selected references, profile-specific Plugin evidence, and concurrency evidence before committing all durable facts. A failure creates no Version, changes no active pointer, and does not rewrite config.
+Resolution and process-local build preflight occur outside an open database transaction. The final short transaction rechecks the mutable Preset, selected references, profile-specific Plugin evidence, and concurrency evidence before committing all durable facts. A failure creates no Revision, changes no active pointer, and does not rewrite config.
 
-In `on_demand`, Publish requires one exact `plugin_version_id` binding for every enabled plugin key, copies the verified PluginVersion locks into the Version, and verifies that each pure-Python Wheel's declared dependencies are already satisfied by the Worker release. It never resolves `latest` or accesses a package index. In `runner`, Publish accepts no PluginVersion binding and requires every enabled stable plugin key to be present in the deployment's active Plugin catalog. The final transaction rechecks exact PluginVersion identities in `on_demand` and the active Plugin set in `runner`.
+In `on_demand`, Publish requires one exact `plugin_version_id` for every Plugin instance, copies the verified PluginVersion facts into the Revision, and verifies that each pure-Python Wheel's declared dependencies are already satisfied by the Worker release. It never resolves `latest` or accesses a package index. In `runner`, Publish accepts one stable `plugin_key` per root instance and resolves it through the deployment's active Plugin catalog. Foundation then composes one exact lock for the complete resolved root and child graph from those exact Versions and retained lock evidence; incompatible Version or dependency combinations fail Publish. The final transaction rechecks the exact selected Versions and lock evidence in either profile so a concurrent Activate cannot produce mixed content.
 
-Publish always activates its newly created Version. There is no published-but-inactive Preset Version state or separate Preset Activate command. Publishing or rolling back a disabled Preset changes its active Version but does not enable it.
+Publish always activates its newly created Revision. There is no published-but-inactive Preset Revision state or separate Preset Activate command. Publishing or rolling back a disabled Preset changes its active Revision but does not enable it.
 
-Rollback takes an exact historical `source_version_id`, revalidates that content under current rules, copies it into a new monotonically increasing Version, and atomically activates the new Version. It never moves `active_version_id` backward. If mutable config differs from the current active Version, Rollback fails with `config_has_unpublished_changes`; it has no force option that silently discards edits. On success, config and `config_base_version_id` match the newly created Version.
+Rollback takes an exact historical `source_revision_id`, revalidates that content under current rules, copies it into a new monotonically increasing Revision, and atomically activates the new Revision. It never moves `active_revision_id` backward. If mutable config differs from the current active Revision, Rollback fails with `config_has_unpublished_changes`; it has no force option that silently discards edits. On success, config and `config_base_revision_id` match the newly created Revision. Rollback reuses the source's exact PluginVersions and Runtime lock; it never resolves runner Plugin keys through the current active catalog.
 
 ## Built-in Presets and Duplicate
 
-Every Foundation distribution includes built-in Presets that are immediately executable after registration. A distribution release manifest owns their stable identities and content. In `on_demand`, it supplies exact built-in PluginVersion bindings; in `runner`, it supplies stable plugin keys whose built-in Versions are present in the active catalog. Repeated registration of unchanged content is idempotent; changed manifest content creates the next Version and atomically makes it active. Built-in Presets are read-only to users: they cannot edit config, Publish, Rollback, or Archive them.
+Every Foundation distribution includes built-in Presets that are immediately executable after registration. A distribution release manifest owns their stable identities and content. In `on_demand`, it supplies exact built-in PluginVersion selections; in `runner`, it supplies stable Plugin keys whose built-in Versions are present in the active catalog. Registration resolves and freezes exact Versions under the ordinary Publish rules. Repeated registration of unchanged resolved content is idempotent; changed content creates the next Revision and atomically makes it active. Built-in Presets are read-only to users: they cannot edit config, Publish, Rollback, or Archive them.
 
 Duplicate is the customization boundary for either a built-in or custom Preset. In one atomic operation it:
 
-1. reads the source Preset's exact active Version;
+1. reads the source Preset's exact active Revision;
 2. creates a new independent custom Preset with copied config;
-3. creates its immutable Version 1 with identical content;
-4. activates Version 1 and enables the new Preset; and
-5. records source Preset and Version provenance.
+3. creates its immutable Revision 1 with identical resolved content;
+4. activates Revision 1 and enables the new Preset; and
+5. records source Preset and Revision provenance.
 
-The duplicate is immediately callable and never follows, overlays, or automatically merges later source changes. A source without an active Version or an archived source cannot be duplicated.
+The duplicate is immediately callable and never follows, overlays, or automatically merges later source changes. A source without an active Revision or an archived source cannot be duplicated.
 
 ## Preset Lifecycle
 
-Lifecycle and active Version selection are independent:
+Lifecycle and active Revision selection are independent:
 
-- `enabled` permits new root invocation when an active Version exists;
+- `enabled` permits new root invocation when an active Revision exists;
 - `disabled` preserves config and the active pointer, blocks new root, Trigger, and Schedule acceptance, and still permits config editing, Publish, and Rollback;
 - `archived` is read-only, hidden from default collections, and blocks invocation, enablement, config mutation, Publish, Rollback, Duplicate, and selection by newly authored subagent edges.
 
-Enable revalidates the active Version, its exact on-demand PluginVersion locks or the runner active Plugin set, and the complete transitive subagent graph. A Preset without an active Version cannot be enabled for invocation. Disable does not cancel or rewrite accepted Runs. Disable fails with `preset_in_use` while an enabled Preset's active transitive graph references the target; accepted historical Runs do not add another lifecycle block.
+Enable revalidates the active Revision's retained exact dependencies and complete transitive subagent graph. It does not reinterpret that Revision through the current runner active catalog. A Preset without an active Revision cannot be enabled for invocation. Disable does not cancel or rewrite accepted Runs. Disable fails with `preset_in_use` while an enabled Preset's active transitive graph references the target; accepted historical Runs do not add another lifecycle block.
 
-Only a disabled custom Preset can be archived. Unarchive changes it to `disabled` and never activates or enables it. Built-in Presets cannot be archived. Neither Presets nor Preset Versions expose hard delete.
+Only a disabled custom Preset can be archived. Unarchive changes it to `disabled` and never activates or enables it. Built-in Presets cannot be archived. Neither Presets nor Preset Revisions expose hard delete.
 
 ## Subagent Composition
 
-A parent config declares each named child edge with a stable child `preset_id`. Parent Publish resolves and stores the exact active `child_preset_version_id`. It rejects a missing, unpublished, disabled, or archived child, duplicate sibling name, incompatible edge policy, unbuildable dependency, or any structural cycle.
+A parent config declares each named child edge with a stable child `agent_preset_id` and optional child-local `revision` number. Parent Publish resolves an omitted selector to the child's active Revision and stores one exact `child_agent_preset_revision_id`. It rejects a missing, unpublished, disabled, archived, unauthorized, unretained, or unexecutable child, duplicate sibling name, excessive graph size or depth, unbuildable dependency, or any structural cycle.
 
-Publishing a child later does not change an existing parent Version. The parent adopts the new child behavior only after another parent Publish. An active parent Version may internally execute its pinned historical child Version; this is part of the already published parent graph and is not public non-active Version selection.
+Publishing a child later does not change an existing parent Revision. The parent adopts the new child behavior only after another parent Publish. A parent Revision may execute its pinned historical child Revision; exact historical selection is also available to authorized root Runs as described below.
 
-The worker recursively reconstructs the exact finite graph into Harness `SubagentDefinition` and `SubagentCollection` values. Root and child definitions use the same Harness build and plugin contracts. An asynchronous hosted child receives its own Thread, Run, RunAttempts, fresh `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, exact child Version, and compatible Runtime lock under [Async Subagents](18-async-subagents.md); an inline child remains process-local Harness execution.
+The Worker recursively reconstructs the exact finite graph into Harness `SubagentDefinition` and `SubagentCollection` values. Root and child definitions use the same Harness build and Plugin contracts. A Run Override may patch the managed child roster by stable local name; acceptance recursively resolves and freezes the complete resulting graph before work starts. An asynchronous hosted child receives its own persisted execution resources, fresh bindings, and the already selected exact child Revision under [Async Subagents](18-async-subagents.md). The first version does not accept inline child Agent definitions.
 
 ## Run Selection and Reconstruction
 
-New root invocation supplies `agent_preset_id` and may supply `agent_preset_version_id` only as an optimistic active-Version precondition. Durable acceptance:
+A new root Run always supplies `agent_preset_id`. Omission of `agent_preset_revision_id` selects the active Revision; supplying it selects that exact Revision even when it is historical. SDKs may expose the Preset-local `revision_number` as a convenience but resolve it to the globally unique Revision ID at the wire boundary. An optional `expected_active_revision_id` is a separate optimistic precondition and never doubles as the exact selector.
 
-1. authorizes the stable Preset resource;
-2. requires `lifecycle_state=enabled` and a non-null active Version;
-3. requires any supplied `agent_preset_version_id` to equal that active Version;
-4. resolves the immutable Preset-owned Runtime lock in `on_demand`, or atomically reads the active deployment Runtime lock in `runner`; and
-5. persists `agent_preset_id`, exact `agent_preset_version_id`, and internal `runtime_lock_digest` on the Run and its initial state envelope.
+Durable acceptance:
 
-A caller cannot start new work from a non-active Version. A mismatch returns `preset_version_not_active`. Trigger and Schedule definitions store only `agent_preset_id`; each firing resolves the current active Version during its own Run acceptance. Long-lived automation that must retain different behavior uses a duplicated Preset.
+1. authorizes invocation of the stable Preset and use of every selected managed resource;
+2. requires `lifecycle_state=enabled` and, for active selection, a non-null active Revision;
+3. validates that an exact Revision belongs to the Preset, remains retained and executable, and satisfies current authorization and compatibility requirements;
+4. applies the typed `config_override`, resolves every final resource selection and any runner Plugin key, and validates the complete finite subagent graph;
+5. freezes the complete non-secret `EffectiveAgentConfig`, its digest, any encrypted Run-owned sensitive payload, and one exact Runtime lock; and
+6. persists `agent_preset_id`, exact `agent_preset_revision_id`, selector kind, effective-config digest, and internal `runtime_lock_digest` on the accepted execution state.
 
-Retry, resume after worker loss, waiting feedback lineage, and already accepted asynchronous child work use the Version pinned by their owning Run or published parent graph. They never resolve mutable config, `active`, or `latest` again. A new continuation Run may select the then-active Version only when its state compatibility contract accepts the sealed parent state; otherwise the caller creates a fork without implied state migration.
+Exact selection never falls back to the active Revision. A retained historical Revision may therefore start new work without duplicating its Preset, but disabling or archiving the stable Preset still blocks new root invocation. Trigger and Schedule definitions store only `agent_preset_id`, accept no config override in the first version, and resolve the current active Revision for each occurrence.
 
-For each RunAttempt, the Worker:
+Retry, resume after Worker loss, waiting feedback lineage, and already accepted asynchronous child work use the exact Revision graph and `EffectiveAgentConfig` pinned by their owning Run. They never resolve mutable config, an active Revision, an active Plugin pointer, or an SDK Handle again. A new continuation Run follows the state-compatibility contract owned by the execution model; Agent Management does not imply state migration merely because another Revision is active.
 
-1. reads the exact Preset Version graph selected by the Run;
-2. verifies and materializes the Run's exact `runtime_lock_digest` under the [runtime-loading contract](26-harness-plugin-artifacts-and-runtime-loading.md);
+For each execution attempt, the Worker or Runner:
+
+1. reads the accepted Run's exact Revision graph and `EffectiveAgentConfig`;
+2. verifies and materializes its exact `runtime_lock_digest` under the [runtime-loading contract](26-harness-plugin-artifacts-and-runtime-loading.md);
 3. records that lock digest, Harness version, and bounded selected Plugin distribution identities on the attempt;
-4. resolves current credentials, RoleBindings, run grants, Secret eligibility, provider availability, and fresh Environment attachments;
-5. adapts those attachments into runtime mounts, constructs one `EnvironmentRuntime`, reconstructs concrete `HarnessModelCharacteristics`, native `ModelSettings`, fresh native Models, definition-selected Capabilities, plugins, `AgentDefinition` values, and `RunBindings`, then appends mandatory Foundation Worker infrastructure Capabilities such as the fenced inbox-delivery hook without changing the accepted model or tool surface; and
-6. enters the Harness only after the current RunAttempt fence authorizes effects.
+4. reauthorizes and resolves current credentials, RoleBindings, invocation grants, Secret eligibility, provider availability, and live Environment attachments without changing the frozen non-secret configuration;
+5. reconstructs concrete `HarnessModelCharacteristics`, native `ModelSettings`, fresh native Models, Capabilities, Plugins, `AgentDefinition` values, and `RunBindings`; and
+6. enters the Harness only after the current attempt fence authorizes effects.
 
-Deployment code can change between RunAttempts, but one accepted Run never silently changes Plugin code or dependencies. Retry, waiting resume, and worker-loss recovery reconstruct the Runtime lock pinned by that Run. In `on_demand`, a Worker with a conflicting process-local import set declines the Run before claim; in `runner`, a matching lock-scoped Runner claims it. Current credentials, authorization, Secret eligibility, provider availability, and Environment attachment authority remain fresh per RunAttempt; each Attempt constructs fresh `RunBindings`, attachments, runtime mounts, and `EnvironmentRuntime`.
+Deployment code can change between attempts, but one accepted Run never silently changes Plugin code, dependencies, managed-resource Revisions, child graph, tool surface, output contract, or retry budgets. In `on_demand`, a Worker with a conflicting process-local import set declines the work before claim; in `runner`, a matching lock-scoped Runner claims it. Current credentials, authorization, Secret eligibility, Provider availability, and live Environment bindings remain fresh per attempt.
 
 ## Harness Plugin Configuration
 
-An Agent config embeds the exact Harness-owned Plugin Configuration Document:
+`AgentPresetConfig.plugins` is the one public Plugin configuration surface. Entries are ordered and use unique `instance_name` values. Several instances may select the same Plugin key or Version with different bounded JSON `config`; omission from the list means the Plugin is not configured. Foundation does not expose a second Capability list, enable-flag document, version-binding map, arbitrary import target, or raw Capability upload format.
 
-```yaml
-plugin_configuration:
-  schema_version: "1"
-  plugins:
-    - plugin_id: audit-primary
-      plugin_key: acme.audit
-      enabled: true
-      configuration:
-        mode: metadata
-```
-
-The ordered entries, unique instance IDs, stable keys, enable flags, and finite JSON configuration retain the meanings defined by the Harness. Several instances may use one key. Foundation neither stores an arbitrary import target nor defines another raw Capability upload format. A Plugin factory can contribute ordinary Pydantic AI Capabilities through `get_capabilities()`.
-
-`on_demand` adds one Foundation-owned `plugin_version_bindings` map outside the Harness document. Each enabled `plugin_key` has exactly one `plugin_version_id`, several configured instances of the same key share that binding, and disabled entries require no binding. `runner` rejects this map because exact selection belongs to deployment activation.
+In `on_demand`, each entry directly selects `plugin_version_id`. In `runner`, each entry selects `plugin_key`; Publish resolves the key to the currently active PluginVersion. Foundation supplies the resolved ordered instances to the Harness Plugin factory. A factory may contribute ordinary Pydantic AI Capabilities, Hooks, middleware, or Toolsets through the Harness interfaces, but those process-local products do not appear in Preset configuration or Run overrides.
 
 ## Plugin Artifact Model
 
@@ -315,7 +500,7 @@ Plugin upload and runner-profile deployment operations require executable-code a
 
 ## Profile-specific Dependency Selection
 
-In `on_demand`, the selected PluginVersion must be a pure-Python Wheel whose `Requires-Python` and every `Requires-Dist` declaration are satisfied by the reviewed Worker release. Worker, Publish, and Run claim perform no package-index access, installation, or dependency solving. A Plugin can keep private implementation modules beneath its unique top-level package, but cannot introduce another top-level distribution or collide with a top-level package owned by the Worker release. An absent dependency fails with `preset_publish_failed` reason `plugin_worker_dependency_missing` and creates no Preset Version.
+In `on_demand`, the selected PluginVersion must be a pure-Python Wheel whose `Requires-Python` and every `Requires-Dist` declaration are satisfied by the reviewed Worker release. Worker, Publish, and Run claim perform no package-index access, installation, or dependency solving. A Plugin can keep private implementation modules beneath its unique top-level package, but cannot introduce another top-level distribution or collide with a top-level package owned by the Worker release. An absent dependency fails with `preset_publish_failed` reason `plugin_worker_dependency_missing` and creates no Preset Revision.
 
 In `runner`, Activate jointly resolves all active PluginVersions plus the candidate from their Wheel `Requires-Dist`. It produces an immutable Runtime lock containing the exact normalized distribution versions, artifact identities, and hashes. Resolution uses only operator-configured public or private package indexes. Workers do not access indexes or solve dependencies while claiming Runs.
 
@@ -329,15 +514,15 @@ One deployment has exactly one homogeneous Runtime target identified by Python i
 
 Activate and Deactivate generate a candidate internal Runtime lock and use the [Worker Runner staging contract](26-harness-plugin-artifacts-and-runtime-loading.md). The active Plugin pointers and active lock digest change only after every currently serviceable Worker has successfully started the candidate Runtime. Failure leaves the previous Plugin selection and lock active.
 
-Activate also reconstructs every enabled Preset's active transitive Version graph that uses the target key against the candidate catalog. A PluginVersion that changes factory configuration compatibility cannot become active while those Presets remain enabled; the command fails before cutover rather than deferring the error to a new Run.
+Activate validates that the candidate active Plugin set can be resolved, materialized, imported, and started on every currently serviceable Worker. It does not rebuild enabled Presets against the candidate: their active and historical Revisions already own exact locks and remain unchanged. A future Preset Publish or runner Run Override that uses the newly active key performs its own Plugin config and complete Agent build validation and can fail without rolling back activation.
 
 These commands exist only in `runner`. In `on_demand`, the same stable HTTP routes return `409 plugin_runtime_mode_unsupported`; there is no global activation, deactivation, task receipt, maintenance window, or implicit Worker mutation.
 
-The commands never reload Python modules or restart the Worker container. Each candidate lock starts in a clean Runner process while the old Runner continues serving. At atomic cutover, the old Runner stops claiming new work and drains only attempts it already owns. Later commands may create another candidate while older Runners drain when capacity permits; insufficient capacity fails the new command without interrupting existing attempts.
+The commands never reload Python modules or restart the Worker container. Each candidate lock starts in a clean Runner process while older Runners continue serving. At atomic catalog cutover, the candidate Runner becomes available for newly resolved work. Older Runners continue claiming accepted Runs and new Runs whose selected historical Revision requires their exact locks; they are not limited to attempts already in progress. A Runner may exit when no eligible work needs its lock and the Supervisor can reconstruct it later. Later commands may create another candidate when capacity permits; insufficient capacity fails the new command without interrupting existing attempts.
 
-Draining an owned Attempt uses the common graceful RunAttempt handoff rather than changing its pinned Runtime. The old Runner keeps heartbeat and lease renewal active until a complete safe checkpoint and `yielded` transaction commit, another authoritative outcome wins, or the applicable drain deadline arrives. A successor creates a fresh Harness Run from the same state and exact historical Runtime lock; activation never substitutes the new active lock into an already accepted Run.
+Activating a historical PluginVersion changes resolution only for future runner Preset Publish and runner Plugin overrides accepted after cutover. It does not change any existing AgentPresetRevision, ordinary Run that inherits such a Revision, or already accepted Run. A Runner crash is recovered from the exact lock required by its work and never causes an implicit Version substitution.
 
-Activating a historical PluginVersion changes only new Run acceptance after the ordinary cutover; it does not move accepted Runs to another lock. A Runner crash after cutover is recovered from the same active lock and never causes an implicit rollback.
+When capacity policy retires a Runner that still owns work, it uses the common graceful attempt-handoff contract. The old Runner keeps heartbeat and lease renewal active until a complete safe checkpoint and `yielded` transaction commit, another authoritative outcome wins, or the applicable drain deadline arrives. A successor reconstructs the exact historical Runtime lock; retirement never substitutes the current active lock.
 
 These commands return a minimal asynchronous receipt rather than a Plugin Runtime or Operation management resource:
 
@@ -356,17 +541,17 @@ The accepted command returns `202` with `operation_id` and `running`. `GET /api/
 
 ## Plugin Lifecycle and Retention
 
-In `runner`, Deactivate fails with `plugin_in_use` when the key appears anywhere in an enabled Preset's active transitive Version graph. It does not cascade, rewrite Presets, or cancel Runs. Non-terminal Runs do not block Deactivate because their pinned Runtime locks remain reconstructible. Mutable configs and historical non-active Versions also do not block deactivation, but a config referencing an inactive key cannot Publish or Enable.
+In `runner`, Deactivate removes a key only from future active-key resolution. It does not cascade, rewrite Presets, invalidate active or historical Revisions, or cancel Runs because every published Revision already retains an exact reconstructible lock. A mutable config that references the inactive key cannot Publish until the key is activated again or the config changes.
 
-Successful runner-profile Deactivate publishes a catalog without the key and clears `active_version_id`; it does not mutate any PluginVersion. In `on_demand`, no Deactivate exists; Archive blocks Upload and new Preset binding but retained Preset Versions and Runs continue using exact locks. Only an inactive uploaded Plugin can be archived. Archive hides it from default management collections and also blocks runner-profile Activate. Unarchive restores an inactive manageable Plugin and does not activate a Version.
+Successful runner-profile Deactivate publishes a catalog without the key and clears `active_version_id`; it does not mutate any PluginVersion. In `on_demand`, no Deactivate exists; Archive blocks Upload and new Preset selection but retained Preset Revisions and Runs continue using exact locks. Only an inactive uploaded Plugin can be archived. Archive hides it from default management collections and also blocks runner-profile Activate. Unarchive restores an inactive manageable Plugin and does not activate a Version.
 
-Plugin, PluginVersion, successful Wheel artifact, runner task receipt evidence, and every Runtime lock referenced by an accepted Run are retained and expose no hard-delete or Version-overwrite operation. A Runner may exit after its attempts drain, and an on-demand Worker registry disappears at process exit. Worker-local materialization may be evicted when unused; authoritative artifacts remain reconstructible. Failed upload creates no PluginVersion.
+Plugin, PluginVersion, successful Wheel artifact, runner task receipt evidence, and every Runtime lock referenced by an AgentPresetRevision or accepted Run are retained and expose no hard-delete or Version-overwrite operation. A Runner may exit when its lock is not needed by active attempts or queued eligible work, and an on-demand Worker registry disappears at process exit. Worker-local materialization may be evicted when unused; authoritative artifacts remain reconstructible. Failed upload creates no PluginVersion.
 
 ## Agent Management API Contract
 
 The AgentPreset `/api/v1` routes are cataloged by [Management API](21-management-api.md). AgentPreset commands are synchronous and return their committed result:
 
-Preset and Version List or Get authorize `agent_preset.read`; Create authorizes
+Preset and Revision List or Get authorize `agent_preset.read`; Create authorizes
 `agent_preset.create`; metadata or config replacement authorizes
 `agent_preset.update`; Publish and Rollback authorize `agent_preset.publish`;
 Enable, Disable, Archive, and Unarchive authorize `agent_preset.lifecycle`;
@@ -382,47 +567,48 @@ treating Preset update permission as ambient access.
 ```python
 class AgentPresetPublishResult:
     preset: AgentPreset
-    version: AgentPresetVersion
+    revision: AgentPresetRevision
 ```
 
-| Operation                           | Request fields                                                 | Result                                                  |
-| ----------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------- |
-| Create                              | `name`, optional `description`, complete `config`              | `201` with the complete unpublished custom Preset       |
-| Patch metadata                      | `expected_resource_version`, optional `name` and `description` | `200` with the complete Preset                          |
-| Replace config                      | `expected_resource_version`, complete `config`                 | `200` with the complete Preset                          |
-| Publish                             | `expected_resource_version`                                    | `200` with the complete Preset and new complete Version |
-| Rollback                            | `expected_resource_version`, `source_version_id`               | `200` with the complete Preset and new complete Version |
-| Duplicate                           | `expected_resource_version`, `name`, optional `description`    | `201` with the complete new Preset                      |
-| Enable, Disable, Archive, Unarchive | `expected_resource_version`                                    | `200` with the complete Preset                          |
+| Operation                           | Request fields                                                 | Result                                                   |
+| ----------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------- |
+| Create                              | `name`, optional `description`, complete `config`              | `201` with the complete unpublished custom Preset        |
+| Patch metadata                      | `expected_resource_version`, optional `name` and `description` | `200` with the complete Preset                           |
+| Replace config                      | `expected_resource_version`, complete `config`                 | `200` with the complete Preset                           |
+| Publish                             | `expected_resource_version`                                    | `200` with the complete Preset and new complete Revision |
+| Rollback                            | `expected_resource_version`, `source_revision_id`              | `200` with the complete Preset and new complete Revision |
+| Duplicate                           | `expected_resource_version`, `name`, optional `description`    | `201` with the complete new Preset                       |
+| Enable, Disable, Archive, Unarchive | `expected_resource_version`                                    | `200` with the complete Preset                           |
 
-Create and every command require `Idempotency-Key`. Clients cannot write `source`, `lifecycle_state`, `active_version_id`, `version_number`, Version content, or server audit fields. Preset Versions support only List and Get.
+Create and every command require `Idempotency-Key`. Clients cannot write `source`, `lifecycle_state`, `active_revision_id`, `revision_number`, Revision content, or server audit fields. Preset Revisions support only List and Get.
 
-Preset List and Get use the same complete representation, including the mutable config. Version List and Get likewise use the same complete immutable representation, including config, digest, exact references, and audit fields. Both collections use opaque cursor pagination. Version List defaults to descending `version_number` with a stable ID tie-breaker.
+Preset List and Get use the same complete representation, including the mutable config. Revision List and Get likewise use the same complete immutable representation, including config, resolved snapshots, digests, exact references, and audit fields. Both collections use opaque cursor pagination. Revision List defaults to descending `revision_number` with a stable ID tie-breaker.
 
 Plugin Upload creates or returns an immutable Version synchronously. Runner-profile Activate and Deactivate return the minimal asynchronous receipt defined here because completion depends on artifact resolution and every serviceable Worker. They never report `succeeded` before atomic runtime cutover. `on_demand` exposes no successful runtime command.
 
 ## Compatibility
 
-The canonical Foundation v1 resources are `AgentPreset` and `AgentPresetVersion`. Foundation does not expose parallel `/presets`, `/agents`, `/agents/{id}/revisions`, `Agent`, or `AgentRevision` aliases with overlapping meaning. Durable Run and state schemas use `agent_preset_id` and `agent_preset_version_id` directly. A distribution importing data from another product translates that data before it enters this contract; the accepted Foundation model does not preserve a mutable behavior override or a second Agent identity.
+The canonical Foundation v1 resources are `AgentPreset` and `AgentPresetRevision`. Foundation does not expose parallel `/presets`, `/agents`, `/agents/{id}/revisions`, `Agent`, or `AgentRevision` aliases with overlapping meaning. Durable Run and state schemas use `agent_preset_id` and `agent_preset_revision_id` directly. `AgentRunOverride` is accepted request data and `EffectiveAgentConfig` is a Run-owned snapshot; neither creates a second Agent identity. A distribution importing data from another product translates that data before it enters this contract.
 
-Plugin Runtime mode is part of AgentPresetVersion compatibility. An on-demand config with exact PluginVersion bindings is not reinterpreted as a runner config with stable-key activation, or vice versa. The deployment rejects a mode mismatch rather than migrating mutable config or immutable Versions implicitly.
+Plugin Runtime mode is part of AgentPresetRevision compatibility. An on-demand config with exact PluginVersion selections is not reinterpreted as a runner config with stable-key activation, or vice versa. The deployment rejects a mode mismatch rather than migrating mutable config or immutable Revisions implicitly.
 
 ## Failure Semantics
 
 AgentPreset operations use this bounded domain code set:
 
-| Code                             | Meaning                                                                 |
-| -------------------------------- | ----------------------------------------------------------------------- |
-| `preset_not_found`               | Preset is absent or concealed                                           |
-| `preset_version_not_found`       | Version is absent, concealed, or does not belong to the required Preset |
-| `preset_not_published`           | No active Version exists                                                |
-| `preset_disabled`                | New root work is blocked                                                |
-| `preset_archived`                | The requested operation is unavailable for an archived Preset           |
-| `preset_in_use`                  | A lifecycle mutation would invalidate an enabled published graph        |
-| `preset_version_not_active`      | Invocation precondition does not match the active Version               |
-| `config_has_unpublished_changes` | Rollback would discard mutable config edits                             |
-| `preset_publish_failed`          | Resolve-and-build validation failed before commit                       |
-| `preset_state_conflict`          | The requested lifecycle transition is not legal                         |
+| Code                             | Meaning                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `preset_not_found`               | Preset is absent or concealed                                            |
+| `preset_revision_not_found`      | Revision is absent, concealed, or does not belong to the required Preset |
+| `preset_not_published`           | No active Revision exists                                                |
+| `preset_disabled`                | New root work is blocked                                                 |
+| `preset_archived`                | The requested operation is unavailable for an archived Preset            |
+| `preset_in_use`                  | A lifecycle mutation would invalidate an enabled published graph         |
+| `preset_revision_not_executable` | The exact retained Revision cannot currently be executed                 |
+| `active_revision_conflict`       | `expected_active_revision_id` does not match the active Revision         |
+| `config_has_unpublished_changes` | Rollback would discard mutable config edits                              |
+| `preset_publish_failed`          | Resolve-and-build validation failed before commit                        |
+| `preset_state_conflict`          | The requested lifecycle transition is not legal                          |
 
 `preset_publish_failed` can include only a bounded safe `reason` and config field path. Schema, authorization, concurrent mutation, and idempotency reuse continue to use `validation_error`, `forbidden`, `resource_version_conflict`, and `idempotency_conflict`.
 
@@ -432,17 +618,21 @@ Plugin operations additionally use bounded artifact, dependency, runtime compati
 
 ### Preset as the Stable Resource
 
-Using one stable Preset plus immutable Versions removes the otherwise overlapping Agent, Preset, and AgentRevision identities and matches the product's authoring language. It requires the contract to state explicitly that a Preset is complete Agent configuration rather than a partial template.
+Using one stable Preset plus immutable Revisions removes the otherwise overlapping Agent, Preset, and AgentRevision identities and matches the product's authoring language. It requires the contract to state explicitly that a Preset is complete Agent configuration rather than a partial template.
 
 ### Publish as Immediate Activation
 
-Publish keeps the normal path simple and guarantees that the newest published Version is the active Version. It does not provide a published-but-not-active staging state; validation occurs through the same complete construction path before atomic commit.
+Publish keeps the normal path simple and guarantees that the newest published Revision is the active Revision. It does not provide a published-but-not-active staging state; validation occurs through the same complete construction path before atomic commit.
+
+### Typed Run Overrides
+
+A finite typed override lets an SDK bind application-specific Model, Plugin, Skill, Connector, Environment, subagent, client-tool, output, and correction behavior without creating another managed Agent resource. Persisting only the resolved effective snapshot simplifies recovery but deliberately does not preserve a reversible audit of which SDK layer supplied each field.
 
 ### Shared PluginRuntime
 
 `on_demand` preserves the smallest Worker process model and exact per-Preset Plugin selection, but a process that already imported a conflicting Version cannot serve that Run. A single-Worker deployment therefore provides no finite scheduling guarantee across conflicting locks and may require external Worker replacement.
 
-`runner` keeps one deployment-wide active Plugin set and permits arbitrary compatible lock changes without in-process reload or Worker-container restart. It accepts the cost of temporarily running several Runner processes while attempts pinned to older locks drain, and all active Plugins must still have one jointly solvable dependency set.
+`runner` keeps one deployment-wide active Plugin set for future key resolution and permits compatible lock changes without in-process reload or Worker-container restart. Published Revisions remain exact, so Supervisors may need to reconstruct and retain several historical lock-scoped Runner processes. All active Plugins must still have one jointly solvable dependency set.
 
 ### Trusted In-process Plugins
 
@@ -451,15 +641,15 @@ Wheel and entry-point constraints give deterministic packaging and loading, not 
 ## Invariants
 
 01. `AgentPreset` is the only durable Agent authoring, authorization, lifecycle, and invocation resource; Foundation persists no product `Agent` or `AgentRevision`.
-02. Mutable config never executes. Publish alone creates and activates an immutable `AgentPresetVersion`.
-03. Every accepted Run pins one exact Preset Version and never resolves mutable config or `latest` during claim, retry, waiting, or recovery.
-04. Public invocation cannot select a non-active Version; a pinned parent graph may use its exact historical child Versions.
-05. Version content contains only serializable Foundation data and exact references, never Python objects, credentials, Secret values, arbitrary import targets, or Plugin artifacts.
-06. Current credentials, authorization, Secret eligibility, provider availability, `RunBindings`, Environment attachments, runtime mounts, and `EnvironmentRuntime` are resolved or constructed freshly for every RunAttempt.
-07. Preset lifecycle changes never rewrite Versions or accepted Runs.
-08. Plugin selection is explicit: on-demand Preset Versions bind exact authorized PluginVersions, runner Presets require the active catalog, and package presence alone enables nothing.
-09. Plugin code executes with Worker authority in either the on-demand Worker interpreter or a Runner; every accepted Run internally pins one exact Runtime lock digest, and every RunAttempt records the lock it used.
-10. `on_demand` Preset Versions bind exact PluginVersions and never resolve `latest`; `runner` Preset Versions use stable keys and Run acceptance pins the active deployment lock.
+02. Mutable config never executes. Publish alone creates and activates an immutable `AgentPresetRevision`.
+03. Every accepted Run pins one exact Preset Revision and one immutable `EffectiveAgentConfig`; claim, retry, waiting, and recovery never remerge mutable state.
+04. Authorized invocation may select the active Revision or one exact retained executable historical Revision; exact selection never falls back.
+05. Revision and effective-config content contain only serializable Foundation data and exact references, never Python objects, callable handlers, credential values, arbitrary import targets, or Plugin artifacts.
+06. Current credentials, authorization, Secret eligibility, Provider availability, and live Environment bindings are resolved freshly for every execution attempt without changing frozen non-secret configuration.
+07. Preset lifecycle changes never rewrite Revisions or accepted Runs.
+08. Plugin selection is explicit: on-demand authoring selects exact authorized PluginVersions, runner authoring selects active keys, and Publish freezes exact PluginVersions in both profiles.
+09. Plugin code executes with Worker authority in either the on-demand Worker interpreter or a Runner; every Revision and accepted Run pins one exact Runtime lock digest, and every execution attempt records the lock it used.
+10. Plugin Activate changes only future runner key resolution. It never changes an existing AgentPresetRevision or accepted Run; adopting a new active PluginVersion in a Preset requires another Publish.
 11. Runtime commands succeed only in `runner`; `on_demand` conflicts remain eligible before claim and are never silently substituted.
-12. No AgentPreset or Plugin Version is mutated, overwritten, or exposed through hard delete.
-13. ProtocolConfig is Preset-owned authoring data frozen by AgentPresetVersion; it is not another resource, digest, or per-Preset protocol switch.
+12. No AgentPreset Revision or PluginVersion is mutated, overwritten, or exposed through hard delete.
+13. ProtocolConfig is Preset-owned authoring data frozen by AgentPresetRevision; it is not another resource, digest, or per-Preset protocol switch.
