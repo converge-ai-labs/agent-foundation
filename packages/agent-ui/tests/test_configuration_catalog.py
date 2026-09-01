@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from a13n_harness.capabilities import WorkingStateConfiguration
 from a13n_ui.configuration import (
     AgentDefinitionDocument,
     ConfigurationSettings,
@@ -20,7 +21,11 @@ from a13n_ui.configuration import (
     load_envd_runtime_manifest,
 )
 from a13n_ui.configuration.loader import load_catalog_candidate
-from a13n_ui.configuration.models import DynamicEnvironmentCapabilityConfiguration, EnvironmentMountRequirement
+from a13n_ui.configuration.models import (
+    DynamicEnvironmentCapabilityConfiguration,
+    EnvironmentMountRequirement,
+    WorkingStateCapabilityConfiguration,
+)
 from a13n_ui.errors import ConfigurationError
 from a13n_ui.host import open_agent_ui_host
 from a13n_ui.settings import AgentUiSettings, StorageSettings
@@ -28,6 +33,18 @@ from a13n_ui.storage import ObjectKind
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio
+
+
+def test_working_state_configuration_maps_legacy_note_projection_limit() -> None:
+    configuration = WorkingStateCapabilityConfiguration.model_validate({"max_context_note_keys": 42})
+    serialized = configuration.model_dump(mode="python")
+
+    assert serialized["max_context_notes"] == 42
+    assert "max_context_note_keys" not in serialized
+    assert WorkingStateConfiguration(**serialized).max_context_notes == 42
+
+    with pytest.raises(ValidationError, match="must not both be present"):
+        WorkingStateCapabilityConfiguration.model_validate({"max_context_note_keys": 42, "max_context_notes": 43})
 
 
 def _write_yaml(path: Path, value: object) -> bytes:

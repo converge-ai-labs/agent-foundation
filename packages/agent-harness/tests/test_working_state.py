@@ -23,7 +23,10 @@ from a13n_harness.capabilities import (
     WorkingStateConfiguration,
 )
 from a13n_harness.capabilities.context import _requires_exact_history
-from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
+from a13n_harness.capabilities.working_state import (
+    WORKING_STATE_CAPABILITY_ID,
+    _render_working_state_blocks,
+)
 from a13n_harness.state import (
     AgentContextStateSnapshot,
     CapabilityState,
@@ -78,9 +81,12 @@ async def test_working_state_instructions_follow_enabled_tool_groups(
     names = {tool.name for tool in captured[0].function_tools}
     instructions = captured[0].instructions or ""
     assert ({"task_create", "task_get", "task_list", "task_update"} <= names) is tasks_enabled
-    assert ({"note", "note_get"} <= names) is notes_enabled
+    assert ({"note_write", "note_delete", "note_get"} <= names) is notes_enabled
     assert ('<tool-instruction name="task-manager">' in instructions) is tasks_enabled
     assert ('<tool-instruction name="note">' in instructions) is notes_enabled
+    if notes_enabled:
+        note_write = next(tool for tool in captured[0].function_tools if tool.name == "note_write")
+        assert set(note_write.parameters_json_schema["required"]) == {"key", "value"}
 
 
 async def test_embedded_task_cell_linearizes_claims_dependencies_and_allocator() -> None:
@@ -260,9 +266,9 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
         elif len(returns) == 3:
             yield {
                 0: DeltaToolCall(
-                    name="note",
+                    name="note_write",
                     json_args=json.dumps({"key": "review<&", "value": "Remember details"}),
-                    tool_call_id="note-1",
+                    tool_call_id="note-write-1",
                 )
             }
         else:
@@ -315,8 +321,59 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
     )
     assert '<task id="task-1"' not in context
     assert "Review &lt;unsafe&gt;" not in context
-    assert "review&lt;&amp;" in context
-    assert "Remember details" not in context
+    assert '<notes source="a13n-harness">' in context
+    assert '<note key="review&lt;&amp;">Remember details</note>' in context
+    assert "<note-ref" not in context
+
+
+async def test_note_tools_report_semantic_mutation_actions_and_list_count() -> None:
+    observed: list[dict[str, Any]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
+        ]
+        observed[:] = returns
+        calls = (
+            ("note_write", {"key": "decision", "value": "first"}),
+            ("note_write", {"key": "decision", "value": "second"}),
+            ("note_delete", {"key": "decision"}),
+            ("note_delete", {"key": "decision"}),
+            ("note_get", {}),
+        )
+        if len(returns) < len(calls):
+            name, arguments = calls[len(returns)]
+            yield {
+                0: DeltaToolCall(
+                    name=name,
+                    json_args=json.dumps(arguments),
+                    tool_call_id=f"note-action-{len(returns)}",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(WorkingStateCapability(),),
+    )
+    result = await executable.run("Track a decision", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    assert [entry.get("action") for entry in observed[:4]] == [
+        "created",
+        "updated",
+        "deleted",
+        "already_absent",
+    ]
+    assert observed[-1] == {"ok": True, "keys": [], "count": 0}
 
 
 async def test_pending_task_non_status_mutation_atomically_claims_owner() -> None:
@@ -398,13 +455,48 @@ async def test_working_state_context_has_hard_utf8_budget() -> None:
         for message in seen
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart)
-        and isinstance(part.content, str)
-        and part.content.startswith("<working-state")
+        if isinstance(part, UserPromptPart) and isinstance(part.content, str) and part.content.startswith("<tasks")
     )
     assert len(projected.encode("utf-8")) <= 1024
     assert "tasks-omitted" in projected
     assert "version=" not in projected
+
+
+async def test_working_state_projects_complete_notes_refs_and_omission_counts_separately() -> None:
+    cell = EmbeddedTaskStateCell()
+    await cell.create(CreateTask(subject="Active", description="Keep tasks last"))
+    snapshot = await cell.snapshot()
+    notes = {
+        "a-large": "<" + "😀" * 1_000,
+        "b-small": "visible & complete",
+        "c-omitted": "not selected",
+    }
+
+    blocks = _render_working_state_blocks(
+        tuple(snapshot.tasks.values()),
+        snapshot.tasks,
+        notes,
+        WorkingStateConfiguration(max_context_notes=2, max_context_bytes=1024),
+    )
+
+    assert len(blocks) == 2
+    assert blocks[0].source_id.endswith(".notes")
+    assert blocks[1].source_id.endswith(".tasks")
+    assert '<note-ref key="a-large" />' in blocks[0].content
+    assert "😀" not in blocks[0].content
+    assert '<note key="b-small">visible &amp; complete</note>' in blocks[0].content
+    assert '<notes-omitted count="1" />' in blocks[0].content
+    assert '<task id="task-1"' in blocks[1].content
+    assert sum(len(block.content.encode("utf-8")) for block in blocks) <= 1024
+
+    task_only = _render_working_state_blocks(
+        tuple(snapshot.tasks.values()),
+        snapshot.tasks,
+        {},
+        WorkingStateConfiguration(max_context_bytes=1024),
+    )
+    assert len(task_only) == 1
+    assert task_only[0].source_id.endswith(".tasks")
 
 
 async def test_task_list_and_task_results_hide_internal_versions() -> None:

@@ -1,6 +1,6 @@
 <summarize-guidelines>
 <overview>
-Summarize when continuity would improve by compacting progress or switching focus.
+Use `summarize` for an explicit semantic handoff when continuity would improve by moving to a fresh context. Notes and tasks remain separately projected as current structured state.
 </overview>
 <communication>
 Explain the transition naturally. Do not mention context windows or token limits to the user.
@@ -17,9 +17,10 @@ Explain the transition naturally. Do not mention context windows or token limits
 - Only a simple follow-up or minor adjustment remains.
 </when-not-to-summarize>
 <before-summarizing>
-- Preserve the user's intent, completed work, key decisions, remaining work, and immediate next step.
-- Include past interactions that would be wasteful or annoying to repeat.
-- Refresh any active task or note state that must survive the transition.
+- Reconcile stale notes and task statuses first.
+- Preserve the user's intent, completed work, key decisions, unresolved work, relevant past interactions, and immediate next step.
+- Do not mechanically duplicate all notes or tasks. Include a noted fact only when the handoff narrative or next step depends on it.
+- Do not write the complete handoff summary into a note.
 </before-summarizing>
 <files-to-inspect>
 List only files likely to require immediate inspection after continuation. Paths are reminders; contents are not loaded.

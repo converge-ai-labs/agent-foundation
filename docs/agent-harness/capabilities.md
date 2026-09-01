@@ -218,6 +218,16 @@ capabilities = (WorkingStateCapability(),)
 
 This embedded mode is useful for one process-local or state-resumed Agent. Provider mode replaces task storage with a fresh `TaskStateRunCapability`; the provider remains authoritative, while Harness events report bounded committed deltas.
 
+The Notes tools have explicit mutation semantics:
+
+- `note_write(key, value)` creates or updates a note and reports `created` or `updated`;
+- `note_delete(key)` is idempotent and reports `deleted` or `already_absent`;
+- `note_get(key=None)` reads one complete value or lists sorted keys with a count.
+
+Notes and active Tasks are projected in separate bounded request epilogues, with Notes first and Tasks last. Complete note values appear as `<note>` entries when they fit. A `<note-ref>` means the value is available through `note_get`, while `<notes-omitted>` reports entries outside the projection. Note values are never partially truncated, and empty Notes produce no Notes block. `WorkingStateConfiguration` defaults to at most 256 projected notes and 128 projected tasks within a shared 64 KiB context budget.
+
+Notes preserve structured session facts, Tasks preserve execution state, and `summarize` preserves narrative continuity and the next step. Before a handoff, reconcile stale notes and task statuses; do not copy every note or task into the summary. Automatic compaction likewise replaces history only, after which current Notes and Tasks are projected again.
+
 Working state is not a distributed workflow engine. Cross-worker ownership, durable leases, schedules, and delivery belong to the Host or task provider.
 
 ## Structured User Interaction

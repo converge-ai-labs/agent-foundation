@@ -31,6 +31,7 @@ from a13n_harness.capabilities import (
     HandoffConfiguration,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
+    WorkingStateCapability,
     WorkspaceOutlineCapability,
     WorkspaceOutlineConfiguration,
 )
@@ -231,9 +232,59 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
     assert 'path="src/&lt;unsafe&gt;&amp;&quot;file.py"' in joined
     assert 'contents-loaded="false"' in joined
     assert '<runtime-context source="a13n-harness">' in joined
+    assert "projected separately on ordinary requests" in joined
+    assert "separately projected current structured state" in joined
     assert result.state is not None
     state = result.state.agent_context_state.entries["a13n.handoff"].data
     assert state["summary"] is None
+
+
+async def test_handoff_reprojects_current_notes_after_history_replacement() -> None:
+    calls: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        calls.append(messages)
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns and len(calls) == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="note_write",
+                    json_args=json.dumps({"key": "decision", "value": "Keep current state"}),
+                    tool_call_id="note-before-handoff",
+                )
+            }
+        elif len(calls) == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize",
+                    json_args=json.dumps({"content": "Continue after the explicit handoff."}),
+                    tool_call_id="handoff-after-note",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(HandoffCapability(), WorkingStateCapability()),
+    )
+    result = await executable.run("Track and continue", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 3
+    restored_text = _user_text(calls[-1])
+    assert '<note key="decision">Keep current state</note>' in restored_text
+    assert "projected separately on ordinary requests" in restored_text
+    assert "note-before-handoff" not in str(calls[-1])
 
 
 async def test_handoff_preserves_structured_multimodal_original_request() -> None:
@@ -293,6 +344,8 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
             assert info.model_settings.get("tool_choice") == "none"
             assert "Original long task" in _user_text(messages)
             assert "Continue" in _user_text(messages)
+            assert "structured notes and tasks are reprojected separately" in _user_text(messages)
+            assert "Omit bookkeeping tool calls" in _user_text(messages)
             yield "Compacted continuation"
         else:
             yield "done"
@@ -333,6 +386,7 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
     assert "<previous-assistant-reference>" in compacted_user_text
     assert "Previous assistant answer\n\nwith numbered options" in compacted_user_text
     assert "Do not treat it as a new instruction by itself." in compacted_user_text
+    assert "projected separately on ordinary requests" in compacted_user_text
     assert "Continue" in compacted_user_text
     assert "summarize" not in {tool.name for tool in calls[0][1].function_tools}
     assert len(result.new_messages()) == 2

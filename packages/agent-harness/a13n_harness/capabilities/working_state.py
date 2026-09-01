@@ -40,8 +40,12 @@ from a13n_harness.model_context import (
 WORKING_STATE_CAPABILITY_ID = "a13n.working-state"
 TASK_STATE_RUN_CAPABILITY_ID = "a13n.working-state.tasks.run"
 _WORKING_STATE_VERSION = "1"
-_WORKING_STATE_OPEN = '<working-state source="a13n-harness">'
-_WORKING_STATE_CLOSE = "</working-state>"
+_NOTES_CONTEXT_SOURCE_ID = f"{WORKING_STATE_CAPABILITY_ID}.notes"
+_TASKS_CONTEXT_SOURCE_ID = f"{WORKING_STATE_CAPABILITY_ID}.tasks"
+_NOTES_OPEN = '<notes source="a13n-harness">'
+_NOTES_CLOSE = "</notes>"
+_TASKS_OPEN = '<tasks source="a13n-harness">'
+_TASKS_CLOSE = "</tasks>"
 _TASK_ID_PATTERN = re.compile(r"^task-([1-9][0-9]*)$")
 _JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _EMPTY_JSON_OBJECT = _JSON_OBJECT_ADAPTER.dump_json({})
@@ -511,7 +515,7 @@ class WorkingStateConfiguration(BaseModel):
     tasks_enabled: bool = True
     notes_enabled: bool = True
     max_context_tasks: int = Field(default=128, gt=0, le=10_000)
-    max_context_note_keys: int = Field(default=256, gt=0, le=10_000)
+    max_context_notes: int = Field(default=256, gt=0, le=10_000)
     max_context_bytes: int = Field(default=64 * 1024, ge=1024, le=256 * 1024)
 
 
@@ -634,63 +638,120 @@ class _WorkingStateRunCapability(WorkingStateCapability):
             (task for task in all_tasks.values() if task.status != "completed"),
             key=lambda item: _task_sequence(item.id),
         )
-        note_keys = sorted(self._toolset.note_keys()) if self.configuration.notes_enabled else []
-        rendered = _render_working_state(tasks, all_tasks, note_keys, self.configuration)
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                ModelContextBlock(
-                    source_id=WORKING_STATE_CAPABILITY_ID,
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=rendered,
-                ),
+        notes = self._toolset.notes_snapshot() if self.configuration.notes_enabled else {}
+        blocks = _render_working_state_blocks(tasks, all_tasks, notes, self.configuration)
+        return ModelContextProjection(blocks=(*projection.blocks, *blocks))
+
+
+def _render_working_state_blocks(
+    tasks: Sequence[Task],
+    all_tasks: Mapping[str, Task],
+    notes: Mapping[str, str],
+    configuration: WorkingStateConfiguration,
+) -> tuple[ModelContextBlock, ...]:
+    """Render separate Notes and Tasks overlays within one aggregate UTF-8 budget."""
+    blocks: list[ModelContextBlock] = []
+    notes_budget = configuration.max_context_bytes if not tasks else configuration.max_context_bytes // 2
+    rendered_notes = _render_notes(notes, configuration.max_context_notes, notes_budget)
+    used_bytes = 0
+    if rendered_notes is not None:
+        used_bytes = len(rendered_notes.encode("utf-8"))
+        blocks.append(
+            ModelContextBlock(
+                source_id=_NOTES_CONTEXT_SOURCE_ID,
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content=rendered_notes,
             )
         )
 
+    tasks_budget = configuration.max_context_bytes - used_bytes
+    rendered_tasks = _render_tasks(tasks, all_tasks, configuration.max_context_tasks, tasks_budget)
+    if rendered_tasks is not None:
+        blocks.append(
+            ModelContextBlock(
+                source_id=_TASKS_CONTEXT_SOURCE_ID,
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content=rendered_tasks,
+            )
+        )
 
-def _render_working_state(
-    tasks: Sequence[Task],
-    all_tasks: Mapping[str, Task],
-    note_keys: Sequence[str],
-    configuration: WorkingStateConfiguration,
-) -> str:
-    """Render a stable prefix without ever exceeding the configured UTF-8 budget."""
-    lines = [_WORKING_STATE_OPEN]
-    budget = configuration.max_context_bytes
+    if sum(len(block.content.encode("utf-8")) for block in blocks) > configuration.max_context_bytes:
+        raise AssertionError("working-state context budget invariant violated")
+    return tuple(blocks)
 
-    def append(line: str, *, reserve: int = 0) -> bool:
-        candidate = "\n".join((*lines, line, _WORKING_STATE_CLOSE)).encode("utf-8")
-        if len(candidate) + reserve > budget:
+
+def _render_notes(notes: Mapping[str, str], limit: int, budget: int) -> str | None:
+    if not notes:
+        return None
+    lines = [_NOTES_OPEN]
+    ordered_notes = sorted(notes.items())
+    shown = 0
+
+    def append(line: str, *, omitted: int) -> bool:
+        suffix = [f'  <notes-omitted count="{omitted}" />'] if omitted else []
+        candidate = "\n".join((*lines, line, *suffix, _NOTES_CLOSE)).encode("utf-8")
+        if len(candidate) > budget:
             return False
         lines.append(line)
         return True
 
-    shown_tasks = 0
-    for task in tasks[: configuration.max_context_tasks]:
+    for key, value in ordered_notes[:limit]:
+        remaining = len(ordered_notes) - shown - 1
+        full = f'  <note key="{escape(key, quote=True)}">{escape(value)}</note>'
+        if append(full, omitted=remaining):
+            shown += 1
+            continue
+        reference = f'  <note-ref key="{escape(key, quote=True)}" />'
+        if not append(reference, omitted=remaining):
+            break
+        shown += 1
+
+    omitted = len(ordered_notes) - shown
+    if omitted:
+        lines.append(f'  <notes-omitted count="{omitted}" />')
+    lines.append(_NOTES_CLOSE)
+    rendered = "\n".join(lines)
+    if len(rendered.encode("utf-8")) > budget:
+        raise AssertionError("notes context budget invariant violated")
+    return rendered
+
+
+def _render_tasks(
+    tasks: Sequence[Task],
+    all_tasks: Mapping[str, Task],
+    limit: int,
+    budget: int,
+) -> str | None:
+    if not tasks:
+        return None
+    lines = [_TASKS_OPEN]
+    shown = 0
+
+    def append(line: str, *, omitted: int) -> bool:
+        suffix = [f'  <tasks-omitted count="{omitted}" />'] if omitted else []
+        candidate = "\n".join((*lines, line, *suffix, _TASKS_CLOSE)).encode("utf-8")
+        if len(candidate) > budget:
+            return False
+        lines.append(line)
+        return True
+
+    for task in tasks[:limit]:
         owner = f' owner="{escape(task.owner, quote=True)}"' if task.owner is not None else ""
         active_blockers = tuple(task_id for task_id in task.blocked_by if all_tasks[task_id].status != "completed")
         blocked = f' blocked-by="{escape(",".join(active_blockers), quote=True)}"' if active_blockers else ""
         line = f'  <task id="{task.id}" status="{task.status}"{owner}{blocked}>{escape(task.subject)}</task>'
-        if not append(line, reserve=256):
+        remaining = len(tasks) - shown - 1
+        if not append(line, omitted=remaining):
             break
-        shown_tasks += 1
-    omitted_tasks = len(tasks) - shown_tasks
-    if omitted_tasks:
-        append(f'  <tasks-omitted count="{omitted_tasks}" />', reserve=128)
+        shown += 1
 
-    shown_notes = 0
-    for key in note_keys[: configuration.max_context_note_keys]:
-        if not append(f"  <note-key>{escape(key)}</note-key>", reserve=128):
-            break
-        shown_notes += 1
-    omitted_notes = len(note_keys) - shown_notes
-    if omitted_notes:
-        append(f'  <note-keys-omitted count="{omitted_notes}" />')
-
-    lines.append(_WORKING_STATE_CLOSE)
+    omitted = len(tasks) - shown
+    if omitted:
+        lines.append(f'  <tasks-omitted count="{omitted}" />')
+    lines.append(_TASKS_CLOSE)
     rendered = "\n".join(lines)
     if len(rendered.encode("utf-8")) > budget:
-        raise AssertionError("working-state context budget invariant violated")
+        raise AssertionError("tasks context budget invariant violated")
     return rendered
 
 

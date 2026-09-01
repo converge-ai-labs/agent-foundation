@@ -53,12 +53,13 @@ type TaskListToolResult = TaskListSuccess | ToolFailure
 class NoteMutationSuccess(TypedDict):
     ok: Literal[True]
     key: str
-    present: bool
+    action: Literal["created", "updated", "deleted", "already_absent"]
 
 
 class NoteKeysSuccess(TypedDict):
     ok: Literal[True]
     keys: list[str]
+    count: int
 
 
 class NoteValueSuccess(TypedDict):
@@ -92,7 +93,7 @@ class WorkingStateToolset:
             tools.extend((self.task_create, self.task_get, self.task_list, self.task_update))
             instructions.append(_TASK_INSTRUCTION)
         if notes:
-            tools.extend((self.note, self.note_get))
+            tools.extend((self.note_write, self.note_delete, self.note_get))
             instructions.append(_NOTE_INSTRUCTION)
         return (
             InstructionFunctionToolset(
@@ -123,8 +124,8 @@ class WorkingStateToolset:
         await self.ensure_bound(ctx)
         return await self._task_snapshot() if self._configuration.tasks_enabled else None
 
-    def note_keys(self) -> tuple[str, ...]:
-        return tuple(self._state.notes)
+    def notes_snapshot(self) -> dict[str, str]:
+        return self._state.notes
 
     async def task_create(
         self,
@@ -234,45 +235,63 @@ class WorkingStateToolset:
         except TaskStateError as exc:
             return _task_error(exc)
 
-    async def note(
+    async def note_write(
         self,
         ctx: RunContext[AgentContext],
         key: str,
-        value: str | None = None,
+        value: str,
     ) -> NoteToolResult:
-        from a13n_harness.capabilities.working_state import (
-            _MAX_NOTE_KEY_LENGTH,
-            _MAX_NOTE_VALUE_LENGTH,
-            _WORKING_STATE_VERSION,
-            WORKING_STATE_CAPABILITY_ID,
-            _working_state_with,
-        )
+        from a13n_harness.capabilities.working_state import _MAX_NOTES
 
         self._require_context(ctx)
-        if not key.strip() or "\x00" in key or len(key) > _MAX_NOTE_KEY_LENGTH:
-            return {"ok": False, "error": {"code": "note_key_invalid"}}
-        if value is not None and ("\x00" in value or len(value) > _MAX_NOTE_VALUE_LENGTH):
-            return {"ok": False, "error": {"code": "note_value_invalid"}}
+        error = _validate_note(key, value)
+        if error is not None:
+            return error
         async with self._state_lock:
             notes = self._state.notes
-            if value is None:
-                existed = notes.pop(key, None) is not None
-            else:
-                notes[key] = value
-                existed = True
-            state = _working_state_with(self._state, notes=notes)
-            await ctx.deps.state.write(WORKING_STATE_CAPABILITY_ID, state, version=_WORKING_STATE_VERSION)
-            self._state = state
-        return {"ok": True, "key": key, "present": existed and value is not None}
+            action: Literal["created", "updated"] = "updated" if key in notes else "created"
+            if action == "created" and len(notes) >= _MAX_NOTES:
+                return {"ok": False, "error": {"code": "note_limit_exceeded"}}
+            notes[key] = value
+            await self._replace_notes(ctx, notes)
+        return {"ok": True, "key": key, "action": action}
+
+    async def note_delete(self, ctx: RunContext[AgentContext], key: str) -> NoteToolResult:
+        self._require_context(ctx)
+        error = _validate_note_key(key)
+        if error is not None:
+            return error
+        async with self._state_lock:
+            notes = self._state.notes
+            if key not in notes:
+                return {"ok": True, "key": key, "action": "already_absent"}
+            del notes[key]
+            await self._replace_notes(ctx, notes)
+        return {"ok": True, "key": key, "action": "deleted"}
 
     async def note_get(self, ctx: RunContext[AgentContext], key: str | None = None) -> NoteGetToolResult:
         self._require_context(ctx)
         notes = self._state.notes
         if key is None:
-            return {"ok": True, "keys": sorted(notes)}
+            keys = sorted(notes)
+            return {"ok": True, "keys": keys, "count": len(keys)}
+        error = _validate_note_key(key)
+        if error is not None:
+            return error
         if key not in notes:
             return {"ok": False, "error": {"code": "note_not_found", "key": key}}
         return {"ok": True, "key": key, "value": notes[key]}
+
+    async def _replace_notes(self, ctx: RunContext[AgentContext], notes: Mapping[str, str]) -> None:
+        from a13n_harness.capabilities.working_state import (
+            _WORKING_STATE_VERSION,
+            WORKING_STATE_CAPABILITY_ID,
+            _working_state_with,
+        )
+
+        state = _working_state_with(self._state, notes=notes)
+        await ctx.deps.state.write(WORKING_STATE_CAPABILITY_ID, state, version=_WORKING_STATE_VERSION)
+        self._state = state
 
     async def _task_result(self, operation: str, *args) -> TaskToolResult:
         from a13n_harness.capabilities.working_state import TaskStateError
@@ -520,6 +539,25 @@ def _task_error(exc) -> ToolFailure:
         "details": details,
     }
     return {"ok": False, "error": error}
+
+
+def _validate_note_key(key: str) -> ToolFailure | None:
+    from a13n_harness.capabilities.working_state import _MAX_NOTE_KEY_LENGTH
+
+    if not isinstance(key, str) or not key.strip() or "\x00" in key or len(key) > _MAX_NOTE_KEY_LENGTH:
+        return {"ok": False, "error": {"code": "note_key_invalid"}}
+    return None
+
+
+def _validate_note(key: str, value: str) -> ToolFailure | None:
+    from a13n_harness.capabilities.working_state import _MAX_NOTE_VALUE_LENGTH
+
+    key_error = _validate_note_key(key)
+    if key_error is not None:
+        return key_error
+    if not isinstance(value, str) or "\x00" in value or len(value) > _MAX_NOTE_VALUE_LENGTH:
+        return {"ok": False, "error": {"code": "note_value_invalid"}}
+    return None
 
 
 __all__ = [

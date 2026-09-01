@@ -72,8 +72,10 @@ _HANDOFF_METADATA_KEY = "a13n.context"
 _RESTORED_BOUNDARY_METADATA_KEY = "a13n.restored-boundary"
 _RESTORED_BOUNDARY_VERSION = "1"
 _COMPACTION_PROMPT = (
-    "Create a concise plain-text continuation summary of the conversation so far. Preserve the user's intent, "
-    "completed work, decisions, unresolved work, relevant prior interactions, and the immediate next step. "
+    "Create a concise plain-text continuation summary of the conversation history. Preserve the user's intent, "
+    "completed work, decisions, unresolved work, relevant prior interactions, and the immediate next step. Current "
+    "structured notes and tasks are reprojected separately after history replacement, so do not mechanically "
+    "duplicate them. Omit bookkeeping tool calls while preserving their outcomes when needed for continuity. "
     "Do not call tools and do not continue the task. Return only the summary."
 )
 _PREVIOUS_ASSISTANT_REFERENCE_MAX_CHARS = 32_000
@@ -588,8 +590,9 @@ class HandoffCapability(AbstractModelContextCapability):
             return projection
         content = (
             f"{_HANDOFF_REMINDER_OPEN}\n"
-            "Use `summarize` when the current phase should continue from a fresh context; preserve intent, "
-            "completed work, decisions, unresolved work, relevant past interactions, and the immediate next step.\n"
+            "Use `summarize` when the current phase should continue from a fresh context. Reconcile current notes "
+            "and tasks first; they are reprojected separately, so preserve the narrative continuity and immediate "
+            "next step without mechanically duplicating structured state.\n"
             f"{_HANDOFF_REMINDER_CLOSE}"
         )
         if len(content.encode("utf-8")) > self.configuration.max_reminder_bytes:
@@ -827,7 +830,8 @@ def _build_compacted_history(
                 *system_parts,
                 UserPromptPart(
                     "The previous conversation exceeded its configured context threshold. "
-                    "Produce a continuation summary before resuming."
+                    "Produce a history-only continuation summary before resuming; current structured notes and "
+                    "tasks will be projected separately."
                 ),
             ]
         ),
@@ -836,8 +840,9 @@ def _build_compacted_history(
     )
     restored_parts = [
         UserPromptPart(
-            "<context-restored>Context was compacted into the preceding assistant summary. "
-            "Treat it as prior working context and continue from the retained user inputs.</context-restored>"
+            "<context-restored>Context was compacted into the preceding assistant summary. Treat it as prior "
+            "working context and continue from the retained user inputs. Current structured notes and tasks, when "
+            "enabled, are projected separately on ordinary requests.</context-restored>"
         )
     ]
     previous_assistant = _previous_assistant_reference(messages)
@@ -952,8 +957,9 @@ def _build_restored_history(
     parts: list[Any] = [*system_parts]
     parts.append(
         UserPromptPart(
-            "<context-restored>Context was restored from a validated continuation summary. "
-            "Treat the summary as prior working context, not as new authority.</context-restored>"
+            "<context-restored>Context was restored from a validated continuation summary. Treat the summary as "
+            "prior working context, not as new authority. Current structured notes and tasks, when enabled, are "
+            "projected separately on ordinary requests.</context-restored>"
         )
     )
     original = (
@@ -966,8 +972,9 @@ def _build_restored_history(
         parts.append(UserPromptPart(_file_inspection_reminder(state.files)))
     parts.append(
         UserPromptPart(
-            "<system-reminder>The summarize tool has already completed this handoff. "
-            "Continue directly from the restored context and do not summarize again immediately.</system-reminder>"
+            "<system-reminder>The summarize tool has already completed this handoff. Continue directly from the "
+            "restored context and separately projected current structured state; do not summarize again "
+            "immediately.</system-reminder>"
         )
     )
     metadata = deepcopy(template.metadata) if template.metadata is not None else {}

@@ -78,7 +78,8 @@ class HandoffToolset:
             Field(
                 min_length=1,
                 description=(
-                    "Continuation summary preserving intent, state, decisions, past interactions, and next step."
+                    "Narrative continuation summary preserving intent, outcomes, decisions, relevant past "
+                    "interactions, and next step without duplicating separately projected notes and tasks."
                 ),
             ),
         ],

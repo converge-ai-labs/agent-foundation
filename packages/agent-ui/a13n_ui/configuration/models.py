@@ -596,8 +596,19 @@ class WorkingStateCapabilityConfiguration(StrictModel):
     tasks_enabled: bool = True
     notes_enabled: bool = True
     max_context_tasks: int = Field(default=128, gt=0, le=10_000)
-    max_context_note_keys: int = Field(default=256, gt=0, le=10_000)
+    max_context_notes: int = Field(default=256, gt=0, le=10_000)
     max_context_bytes: int = Field(default=64 * 1024, ge=1024, le=256 * 1024)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_note_limit(cls, value: object) -> object:
+        if not isinstance(value, dict) or "max_context_note_keys" not in value:
+            return value
+        normalized = dict(value)
+        if "max_context_notes" in normalized:
+            raise ValueError("max_context_note_keys and max_context_notes must not both be present")
+        normalized["max_context_notes"] = normalized.pop("max_context_note_keys")
+        return normalized
 
 
 class DynamicEnvironmentCapabilitySelection(StrictModel):
