@@ -2,23 +2,23 @@
 
 ## Design Position
 
-`POST /api/v1/threads/{thread_id}/runs` carries one complete existing-Thread Run submission with queue-if-busy semantics. When the Thread cannot accept that intent immediately, Foundation creates an editable `QueuedSubmission`; otherwise the same command directly accepts a Run. A queued submission is not a Run, RunAttempt, Thread inbox entry, execution lease, or lifecycle outcome. Enqueue, edit, delete, and reorder operations never create a Run. Consumption atomically changes one queued submission to `consumed` and accepts exactly one new Run; only that Run and its later RunAttempts own scheduling, execution, recovery, and outcome.
+`POST /api/v1/threads/{thread_id}/runs` carries one complete existing-Thread Run submission with queue-if-busy semantics. When the Thread cannot accept that intent immediately, Foundation creates an editable `QueuedSubmission`; otherwise the same command directly accepts a Run. The explicit `waiting_resolution.mode="defaults"` branch is different: it resolves the selected waiting head and accepts one successor without consuming or reordering existing queued submissions. A queued submission is not a Run, RunAttempt, Thread inbox entry, execution lease, or lifecycle outcome. Enqueue, edit, delete, and reorder operations never create a Run. Consumption atomically changes one queued submission to `consumed` and accepts exactly one new Run; only that Run and its later RunAttempts own scheduling, execution, recovery, and outcome.
 
 When a running Run produces a completed outcome while the queue is non-empty, Foundation uses a state-first combined handoff when preparation succeeds. It publishes both the completed source state and the successor's complete initial state before one short relational transaction seals the source Run, consumes the first queued submission, accepts the successor, and advances the Thread. If preparation or final validation cannot complete promptly, the source Run seals independently and the durable terminal-Run-plus-queue condition is handled by the recovery scan.
 
-This contract keeps the queue intentionally small. A queued submission has only `queued` and `consumed` states. It has no lease, preparing, starting, blocked, failed, cancelled, or retry state. Validation failure leaves the submission queued and editable. A historical source is never stored in the queue; a caller that needs one uses [Continue From](34-agent-control-input-and-continuation.md#continue-from-an-explicit-run).
+This contract keeps the queue intentionally small. A queued submission has only `queued` and `consumed` states. It has no lease, preparing, starting, blocked, failed, cancelled, or retry state. Validation failure leaves the submission queued and editable. A historical source is never stored in the queue; a caller that needs one uses [Continue From](34-agent-control-input-and-continuation.md#continue-from-an-explicit-run). Pending ordinary steer and asynchronous-subagent results are Thread-inbox delivery rather than queued intent. They drain before the current Run can complete and therefore before queue consumption; an eligible async result accepted after an inactive terminal outcome still cannot bypass an earlier queued submission, while a result from a failed or cancelled origin is suppressed instead.
 
 ## Boundaries
 
-| Concern                                                                      | Owner                                                                                                                              | Relationship                                                           |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Ordinary input wire                                                          | [Agent Input](33-agent-input.md)                                                                                                   | Supplies the `AgentInput` inside the complete queued Run intent        |
-| Queue-if-busy submission, queue resource, order, edit, deletion, and consume | This contract                                                                                                                      | Chooses immediate Run acceptance or owns the two-state queue lifecycle |
-| Thread advancement and queue revisions                                       | [Durable Thread Persistence](24-thread-persistence.md)                                                                             | Supplies `version`, `queue_version`, current Run, and selected head    |
-| Accepted Run input, state, and lineage                                       | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md) and [Durable Run State](14-run-persistence.md) | Canonicalizes input and creates a continuation or root-like Run        |
-| Worker claim, lease, and recovery                                            | [Durable Run Attempt Persistence](15-run-attempt-persistence.md)                                                                   | Begins only after the consumed Run is durably accepted                 |
-| Active steer and interrupt                                                   | [Agent Control: Active Execution](35-agent-control-active-execution.md)                                                            | Unchanged; Thread inbox entries are not queued submissions             |
-| API and mutation evidence                                                    | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)         | Own common version, idempotency, retry, and unknown-commit behavior    |
+| Concern                                                                      | Owner                                                                                                                              | Relationship                                                                             |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Ordinary input wire                                                          | [Agent Input](33-agent-input.md)                                                                                                   | Supplies the `AgentInput` inside the complete queued Run intent                          |
+| Queue-if-busy submission, queue resource, order, edit, deletion, and consume | This contract                                                                                                                      | Chooses immediate Run acceptance or owns the two-state queue lifecycle                   |
+| Thread advancement and queue revisions                                       | [Durable Thread Persistence](24-thread-persistence.md)                                                                             | Supplies `version`, `queue_version`, current Run, and selected head                      |
+| Accepted Run input, state, and lineage                                       | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md) and [Durable Run State](14-run-persistence.md) | Canonicalizes input and creates a continuation or root-like Run                          |
+| Worker claim, lease, and recovery                                            | [Durable Run Attempt Persistence](15-run-attempt-persistence.md)                                                                   | Begins only after the consumed Run is durably accepted                                   |
+| Steer, async-result delivery, and interrupt                                  | [Agent Control: Active Execution](35-agent-control-active-execution.md) and [Async Subagents](18-async-subagents.md)               | Thread inbox entries are not queued submissions; existing queue order retains precedence |
+| API and mutation evidence                                                    | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)         | Own common version, idempotency, retry, and unknown-commit behavior                      |
 
 ## Queued Submission Model
 
@@ -105,7 +105,7 @@ class ThreadRunSubmissionReceipt:
     queue_version: int
 ```
 
-The route accepts `expected_thread_version` plus the complete [`ThreadRunSubmissionIntent`](34-agent-control-input-and-continuation.md#input-bearing-operations). It returns `202 ThreadRunSubmissionReceipt`; exactly one of `run` and `queued_submission` is present according to `outcome`. Immediate acceptance uses the ordinary Continue or root-like existing-Thread rule. Queue admission appends after the current last queued entry and stores no `expected_thread_version`, because that value is an admission precondition rather than delayed Run intent.
+The route accepts `expected_thread_version` plus the complete [`ThreadRunSubmissionIntent`](34-agent-control-input-and-continuation.md#input-bearing-operations) and optional top-level `waiting_resolution`. It returns `202 ThreadRunSubmissionReceipt`; exactly one of `run` and `queued_submission` is present according to `outcome`. Immediate acceptance uses the ordinary Continue, explicit waiting-Continue, or root-like existing-Thread rule. Queue admission appends after the current last queued entry and stores neither `expected_thread_version` nor `waiting_resolution`, because both are command-time admission preconditions rather than delayed Run intent.
 
 The request requires `expected_thread_version` but no expected queue version. Foundation verifies the Thread version before selecting either result against authoritative commit-time state. Concurrent submissions serialize under the Thread and queue locks. Immediate Run acceptance advances `Thread.version`, so another request carrying the old version conflicts; queue-only admission leaves that version unchanged, so other same-version requests can append in the resulting deterministic queue order. Idempotent replay preserves the originally selected immediate or queued outcome.
 
@@ -121,13 +121,14 @@ Consume always selects the first queued entry. A caller chooses another entry by
 
 A retained Thread accepts `POST /api/v1/threads/{thread_id}/runs` in this order after verifying `expected_thread_version`:
 
-1. if any queued submission already exists, append the new intent so it cannot bypass earlier queue order;
-2. otherwise, if the current Run is `accepted`, `running`, or `waiting`, create a queued submission;
-3. otherwise, if `head_run_id` names a completed Run, immediately accept an ordinary continuation from that head;
-4. otherwise, if `head_run_id=null` and the current Run is `failed` or `cancelled`, immediately accept a root-like Run with no parent in the same Thread;
-5. otherwise the selected head is waiting after a failed or cancelled feedback successor, so create a queued submission that remains pending until Retry or another explicit control operation establishes an eligible state.
+1. if `waiting_resolution.mode="defaults"` is present, require current/head to name the same waiting Run and immediately accept the one composite waiting-Continue successor under its digest, authorization, no-override, input, and inbox-binding rules; existing queued submissions remain untouched;
+2. otherwise, if any queued submission already exists, append the new intent so it cannot bypass earlier queue order;
+3. otherwise, if the current Run is `accepted`, `running`, or `waiting`, create a queued submission;
+4. otherwise, if `head_run_id` names a completed Run, immediately accept an ordinary continuation from that head;
+5. otherwise, if `head_run_id=null` and the current Run is `failed` or `cancelled`, immediately accept a root-like Run with no parent in the same Thread;
+6. otherwise the selected head is waiting after a failed or cancelled successor, so create a queued submission that remains pending until Retry or another explicit control operation establishes an eligible state.
 
-Continue From, Feedback, and Retry retain their independent precedence and can run while queued submissions exist because they establish the state from which later queue consumption proceeds. They do not append, reorder, or consume the queue.
+Continue From, Feedback, waiting Continue, and Retry retain their independent precedence and can run while queued submissions exist because they establish the state from which later queue consumption proceeds. They do not append, reorder, or consume the queue.
 
 Every mutation authenticates and authorizes the current principal against the Thread and revalidates the complete submitted intent's bounded schemas and references. Input or resource identifiers grant no authority by possession. Queue admission does not promise that consumption is currently eligible.
 
@@ -143,14 +144,15 @@ Consumption is Run acceptance delayed until the queue chooses an intent. Foundat
 
 For an already terminal Thread, the final short transaction:
 
-1. locks the Thread and selected queued submission;
+1. locks the Thread, current or selected head Run and every referenced async-result spawning Run in stable ID order, inbox counter and pending entries in `delivery_sequence`, and selected queued submission;
 2. resolves idempotent replay, then verifies `expected_thread_version`, `expected_queue_version`, current authorization, and that the entry remains queued in the same Thread;
 3. requires no current `accepted` or `running` Run and rejects a current or selected waiting state;
 4. repeats all ordinary Continue input, Preset, active-Version, Runtime, Skill, Environment, inline-Hook, parent-state, empty-state, and digest preconditions;
 5. when `head_run_id` names a completed Run, inserts one `accepted` Run with `lineage_kind="continue"`, `input_kind="agent_input"`, and `parent_run_id=head_run_id`;
 6. when `head_run_id=null` and the current Run is `failed` or `cancelled`, inserts one root-like `accepted` Run with `lineage_kind="root"`, `input_kind="agent_input"`, and `parent_run_id=null`; the trusted state adapter initializes empty state under the existing Thread ID;
-7. sets `current_run_id` to the new Run, preserves the completed head or the null head selected above, and increments `Thread.version`;
-8. sets the queue row's `consumed_run_id`, clears its position, increments its version, increments `Thread.queue_version`, and commits lifecycle, idempotency, and ordinary publication facts with the Run; it creates no queue-drain-specific outbox intent.
+7. marks every unbound async result whose spawning Run is failed or cancelled `suppressed`, then binds every remaining eligible result to the new Run in `delivery_sequence`; no pending entry is injected into initial Run input or consumed by this binding;
+8. sets `current_run_id` to the new Run, preserves the completed head or the null head selected above, and increments `Thread.version`;
+9. sets the queue row's `consumed_run_id`, clears its position, increments its version, increments `Thread.queue_version`, and commits lifecycle, idempotency, and ordinary publication facts with the Run; it creates no queue-drain-specific outbox intent.
 
 These writes commit or roll back together. No observer can see a consumed queue entry without its Run or an accepted Run whose source entry is still queued. The first RunAttempt is created only by a later Worker claim. Queue workers, control replicas, and clients therefore need no queue lease; concurrent consume, edit, delete, reorder, Continue, Continue From, Feedback, Retry, and outcome sealing operations serialize through the same versions and row locks.
 
@@ -180,8 +182,8 @@ sequenceDiagram
     activate DB
     Worker->>DB: TX1 lock Thread; verify version, current source, and selected head
     Worker->>DB: TX2 lock source Run and current RunAttempt; verify running, fence, and lease
-    Worker->>DB: TX3 lock target inbox rows and first queued row
-    Worker->>DB: TX4 verify no pending steer, queue order/version, object metadata, selections, authority, and policy
+    Worker->>DB: TX3 lock inbox counter, target inbox rows, and first queued row
+    Worker->>DB: TX4 verify no eligible pending delivery, queue order/version, object metadata, selections, authority, and policy
     alt every precondition still holds
         Worker->>DB: TX5 seal source Run completed and select exact sealed state/output
         Worker->>DB: TX6 terminalize source RunAttempt, disable lease, and charge usage
@@ -206,7 +208,7 @@ sequenceDiagram
     end
 ```
 
-Before the final transaction, Foundation has only detached relational facts and non-authoritative prepared objects. The transaction locks the Thread first, then the source Run and current RunAttempt, then target inbox rows and the first queued row. It repeats every condition needed by both source completion and successor acceptance only after those canonical locks are held. Its successful writes are:
+Before the final transaction, Foundation has only detached relational facts and non-authoritative prepared objects. The transaction locks the Thread first, then the source Run and current RunAttempt, then the inbox counter and target entries in `delivery_sequence`, then the first queued row. It repeats every condition needed by both source completion and successor acceptance only after those canonical locks are held, including proof that no eligible pending ordinary steer or async result remains bound to the source. Its successful writes are:
 
 1. select the exact completed candidate as the source Run's `sealed_state`, copy its output, set `status="completed"`, clear its active model snapshot and current-attempt selection, and set completion timestamps;
 2. terminalize the exact current RunAttempt as `succeeded`, disable its lease, and charge known usage;
@@ -226,17 +228,19 @@ A completed Run that did not use the combined handoff, and every eligible `faile
 
 The consumer applies these rules to the first queued entry:
 
-| Current outcome      | Selected head | Drain behavior                                                   |
-| -------------------- | ------------- | ---------------------------------------------------------------- |
-| `completed`          | completed     | Consume through ordinary Continue from that completed head       |
-| `failed`/`cancelled` | completed     | Consume through ordinary Continue from the preserved head        |
-| `failed`/`cancelled` | null          | Consume through root-like acceptance in the existing Thread      |
-| `failed`/`cancelled` | waiting       | Do not consume; Retry or explicit branch selection must progress |
-| `waiting`            | waiting       | Do not consume; authenticated Feedback must progress             |
+| Current outcome      | Selected head | Drain behavior                                                      |
+| -------------------- | ------------- | ------------------------------------------------------------------- |
+| `completed`          | completed     | Consume through ordinary Continue from that completed head          |
+| `failed`/`cancelled` | completed     | Consume through ordinary Continue from the preserved head           |
+| `failed`/`cancelled` | null          | Consume through root-like acceptance in the existing Thread         |
+| `failed`/`cancelled` | waiting       | Do not consume; Retry or explicit branch selection must progress    |
+| `waiting`            | waiting       | Do not consume; Feedback or explicit waiting Continue must progress |
 
 When combined handoff is unavailable, terminal commit and later consumption are independent transactions, so a terminal Thread can temporarily retain queued entries. A new submission during that window appends behind them rather than accepting a Run out of order. Validation or dependency failure likewise leaves the entry queued and editable.
 
-Continue From and Feedback do not alter the queue. Once either accepts an active successor, the queue waits for that successor's terminal outcome; the drain then uses the newly selected completed head, a preserved completed head, or the root-like null-head rule above.
+Continue From, Feedback, and waiting Continue do not alter the queue. Once any accepts an active successor, the queue waits for that successor's terminal outcome; the drain then uses the newly selected completed head, a preserved completed head, or the root-like null-head rule above.
+
+Pending delivery and queued submissions use separate orders. Delivery already bound to the current Run must drain before that Run can complete and therefore before combined queue handoff. Once a Run has completed with an empty bound inbox, any eligible async result accepted for the inactive Thread does not bypass a queued submission: ordinary queue consumption proceeds first, then the result binds to the accepted successor and enters through the unified FIFO. Queue consumption first suppresses any result whose own spawning Run failed or was cancelled. A race between queue consumption and async-result reconciliation serializes on the Thread, origin-Run, inbox, and queue locks, and the async-result path rechecks that no queued row remains before accepting its own successor Run.
 
 ## Relational Persistence
 
@@ -294,8 +298,10 @@ Keeping submitted intent separate from a Run makes queue edits and deletion hone
 05. Execution ownership, scheduling, leases, recovery, and outcome begin with the accepted Run and its later RunAttempts, never with the queue row.
 06. Queue-only mutation increments `Thread.queue_version` without changing Thread advancement version or Run references; ordinary consumption increments both versions once, while completion-time combined consumption applies the additional source-seal advancement defined below.
 07. An input, invocation-option, Hook, or dependency validation failure leaves the entry queued and editable rather than creating a blocked or failed queue state.
-08. Continue From and active Agent control do not mutate queued submissions; later consumption uses the then-selected completed head or null-head rule.
+08. Continue From, waiting Feedback or Continue, and active Agent control do not mutate queued submissions; later consumption uses the then-selected completed head or null-head rule.
 09. An existing-Thread Run submission never bypasses an existing queued submission. Successful state-first handoff can combine completed sealing with first-entry consumption; otherwise terminal state with queued entries is a valid transient or validation-blocked condition recovered by relational scanning.
 10. Waiting state blocks queue drain. A failed or cancelled feedback successor whose selected head remains waiting must be retried or explicitly redirected before queued intent can run.
 11. No accepted successor exists before its complete initial state and any object-backed input are durable; missing state is never an implicit queue-preparation status.
 12. A completion-time combined handoff advances `Thread.version` once for source sealing and once for successor acceptance, and advances `Thread.queue_version` once for consumption.
+13. Eligible inbox delivery bound to the current Run drains before that Run can complete and before queue consumption. An unbound asynchronous result for an already inactive Thread never bypasses a queued submission; it remains pending until queue consumption creates an active Run or the queue becomes empty, unless its spawning Run fails or is cancelled and terminally suppresses it first.
+14. Supplying `waiting_resolution.mode="defaults"` is an explicit waiting-head advancement, not queue consumption: it accepts one composite successor while preserving every queued row and its order.

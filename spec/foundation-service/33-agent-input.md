@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`AgentInput` is Foundation's versioned JSON submission and accepted-value protocol for one unit of ordinary semantic Agent input. Root invocation, continuation, queued submission, fork, active-Run steering, managed Trigger acceptance, and asynchronous child submission use the same protocol. Control preconditions, Agent, Skill, and Environment selection, authorization, and trigger metadata remain outside it.
+`AgentInput` is Foundation's versioned JSON submission and accepted-value protocol for one unit of ordinary semantic Agent input. Root invocation, continuation, queued submission, fork, active-Run steering, managed Trigger acceptance, and input submitted to an asynchronous child use the same protocol. A result returning from that child uses the distinct Host-owned [`AsyncSubagentResultInboxPayload`](18-async-subagents.md#asynchronous-child-runs), preserving Agent provenance instead of impersonating caller input or waiting feedback. Control preconditions, Agent, Skill, and Environment selection, authorization, and trigger metadata remain outside `AgentInput`.
 
 This contract owns content blocks, structured content, binary acquisition and delivery, accepted canonicalization, input adapter configuration, and deterministic mapping to the Harness native input boundary. [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md) owns Run acceptance, lineage, retry, and deferred feedback; [Agent Control: Active Execution](35-agent-control-active-execution.md) owns durable steering through the Thread inbox and interrupt of already accepted work; [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md) owns editable future input before Run acceptance. None defines another ordinary input protocol.
 
@@ -116,13 +116,13 @@ Delivery forms have these contracts:
 | `model_url`        | Requires `source.type="url"` and passes that exact caller URL directly to the matching native Model URL value. Foundation neither downloads it nor mints another URL, and it never writes an Environment file.                                                                                                                                                                     |
 | `environment_path` | Requires a writable default Environment binding. The Worker reads the accepted `url`, authorized source `path`, or exact `asset` into a bounded Worker-local staging file, then writes it through the active default Environment attachment's authorized `FileOperator.write_bytes_stream` interface. Only the resulting logical path enters Harness `RunInputValue`.              |
 
-The canonical `environment_path` is `/workspace/.a13n/inputs/{input_instance_id}/content-{block_index}`, where `input_instance_id` is the already existing owning Run ID for Run input or Thread-inbox entry ID for active steer, and `block_index` is the binary block's zero-based position in `AgentInput.content`. `/workspace/.a13n/inputs` is reserved for Foundation input materialization. The Worker creates missing parent directories, replaces the deterministic target with one complete file, and removes its private staging file after the transfer finishes. A Worker host path never enters Agent input. The accepted `filename` and `media_type` remain separate metadata and do not influence the sandbox path.
+The canonical `environment_path` is `/workspace/.a13n/inputs/{input_instance_id}/content-{block_index}`, where `input_instance_id` is the already existing owning Run ID for Run input or Thread-inbox entry ID for steer, and `block_index` is the binary block's zero-based position in `AgentInput.content`. `/workspace/.a13n/inputs` is reserved for Foundation input materialization. The Worker creates missing parent directories, replaces the deterministic target with one complete file, and removes its private staging file after the transfer finishes. A Worker host path never enters Agent input. The accepted `filename` and `media_type` remain separate metadata and do not influence the sandbox path.
 
 `auto` is submission-only. Acceptance resolves it using the source form, submitted media type, frozen Model execution snapshot, selected Environment configuration, and current policy; an explicit delivery must satisfy the same constraints. Byte-dependent limits are enforced when a Worker reads the source. Every replacement RunAttempt reuses the frozen mode.
 
 `model_content` and `model_url` stop after constructing model-native input; they never materialize a sandbox file. `environment_path` selects no temporary or persistent retention class. The materialized file is non-authoritative execution data whose lifetime follows the already-running Environment. Materialization neither creates nor resumes a Sandbox and adds no file-specific lifecycle management; any run-scoped keep-alive remains part of the independent [Environment binding contract](19-environment-management.md#runattempt-runtime-binding).
 
-For initial Run input, a replacement Attempt derives materialization behavior from existing durable model-request usage. If the Run's charged prior-attempt `model_requests` total is zero, it reads the source and replaces every `environment_path` target again before Harness execution. If the total is positive, it assumes the deterministic target was already written and does not read or rewrite it. This is a runtime decision, not a stored input flag. A pending active steer is handled independently: its source is read and its target is materialized until the existing inbox receipt makes that steer `consumed`.
+For initial Run input, a replacement Attempt derives materialization behavior from existing durable model-request usage. If the Run's charged prior-attempt `model_requests` total is zero, it reads the source and replaces every `environment_path` target again before Harness execution. If the total is positive, it assumes the deterministic target was already written and does not read or rewrite it. This is a runtime decision, not a stored input flag. A pending steer is handled independently after it binds to a running Run: its source is read and its target is materialized until the existing inbox receipt makes that steer `consumed`.
 
 Foundation does not guarantee that a URL or Environment path yields identical bytes across acceptance, Worker replacement, or explicit Retry. Each read revalidates current source authority, safety, type, and bounds and fails closed if the source is unavailable or no longer valid. An Asset ID does select identical immutable bytes across those reads while the Asset remains active; deletion or content unavailability fails closed and never rebinds the ID.
 
@@ -144,17 +144,19 @@ The adapter returns `None` only for accepted empty input. It receives no credent
 
 ## Use by Control Operation
 
-| Operation             | Behavior                                                                                                                                              |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Root invocation       | Stores new accepted input on the root Run.                                                                                                            |
-| Continuation          | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                                   |
-| Thread Run submission | Accepts input immediately when the Thread is eligible; otherwise stores the complete editable Run intent until consumption accepts a Run.             |
-| Fork                  | Stores new accepted input on the new Thread's first Run.                                                                                              |
-| Managed Trigger       | Places bounded machine data in `structured_content`, validating its optional protocol schema.                                                         |
-| Asynchronous child    | Stores parent- or Host-supplied input on the child Run.                                                                                               |
-| Active steer          | Stores accepted input in the target Thread inbox without creating a Run.                                                                              |
-| Retry                 | Copies the source Run's accepted input, preserving the same Asset ID or external source description, and reacquires any needed bytes for the new Run. |
-| Waiting feedback      | Uses the separate [atomic feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction).                                        |
+| Operation             | Behavior                                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root invocation       | Stores new accepted input on the root Run.                                                                                                               |
+| Continuation          | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                                      |
+| Thread Run submission | Accepts input immediately when the Thread is eligible; otherwise stores the complete editable Run intent until consumption accepts a Run.                |
+| Fork                  | Stores new accepted input on the new Thread's first Run.                                                                                                 |
+| Managed Trigger       | Places bounded machine data in `structured_content`, validating its optional protocol schema.                                                            |
+| Asynchronous child    | Stores parent- or Host-supplied input on the child Run.                                                                                                  |
+| Async child result    | Uses the separate Host-owned inbox payload and active-or-successor delivery contract; it is not `AgentInput`.                                            |
+| Steer                 | Stores accepted input in the Thread inbox without creating a Run; it binds to the current running Run or records the current/head waiting Run as source. |
+| Retry                 | Copies the source Run's accepted input, preserving the same Asset ID or external source description, and reacquires any needed bytes for the new Run.    |
+| Waiting feedback      | Uses the separate [atomic feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction).                                           |
+| Waiting Continue      | Stores the input inside one composite `WaitingRunContinueInput`; the same first model request receives it and the default deferred results.              |
 
 ## Failure Semantics
 
@@ -176,7 +178,7 @@ The adapter returns `None` only for accepted empty input. It receives no credent
 
 ## Invariants
 
-1. `AgentInput` is the single ordinary semantic-input protocol for root invocation, continuation, queued submission, fork, active steering, managed Trigger input, and asynchronous child input.
+1. `AgentInput` is the single ordinary caller- or Host-submitted semantic-input protocol for root invocation, continuation, queued submission, fork, active steering, managed Trigger input, and input sent to an asynchronous child; a returning child result retains its separate typed Agent provenance.
 2. Accepted binary input persists only a normalized caller URL, authorized Environment-path description, or exact immutable `asset_id`; it never persists inline bytes or an object-storage key.
 3. `structured_content` is bounded JSON, follows the optional frozen protocol schema when non-null, carries no authority, and never becomes implicit model JSON.
 4. Harness mapping uses the pinned Version and Runtime lock and fails closed rather than substituting input representation.

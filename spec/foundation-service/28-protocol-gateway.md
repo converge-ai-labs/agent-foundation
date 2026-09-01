@@ -77,6 +77,8 @@ Each adapter owns only:
 
 Adapters share application use cases instead of calling one another. AG-UI is not reconstructed from a Native envelope, A2A is not reconstructed from an AG-UI event, and no standard protocol handler creates a second Run acceptance path. A request that cannot map exactly to an accepted Foundation operation fails before mutation.
 
+Native `POST /api/v1/threads/{thread_id}/runs` advances a waiting head with defaults only when the caller explicitly supplies `waiting_resolution.mode="defaults"`; omission retains queue-if-busy behavior. Hosted AG-UI and A2A set that application option only for their documented “new message abandons current HITL” mapping. Explicit feedback remains a separate command. No adapter infers default abandonment merely because a Thread is waiting.
+
 ## Identity and Acceptance
 
 External protocol identifiers provide correlation only. They never grant authority and never replace Foundation IDs:

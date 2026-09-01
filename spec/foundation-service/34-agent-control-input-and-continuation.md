@@ -2,37 +2,37 @@
 
 ## Design Position
 
-Foundation accepts every new semantic unit of Agent work as a durable Run belonging to exactly one Session and Thread. Start, immediate continuation, continue from an explicit historical Run, waiting feedback, fork, and retry are distinct acceptance forms over that same boundary. An existing-Thread Run submission can instead create an editable queued submission when earlier work prevents immediate continuation. Every successful acceptance creates a new Run; queue admission creates no Run, and neither path reopens or mutates a sealed Run.
+Foundation accepts every new semantic unit of Agent work as a durable Run belonging to exactly one Session and Thread. Start, immediate continuation, continue from an explicit historical Run, waiting feedback, explicit waiting Continue with default resolutions, fork, and retry are distinct acceptance forms over that same boundary. An existing-Thread Run submission can instead create an editable queued submission when earlier work prevents immediate continuation. Every successful acceptance creates a new Run; queue admission creates no Run, and neither path reopens or mutates a sealed Run.
 
-This contract owns those acceptance forms, their public command surfaces, and deferred-interaction feedback. Adjacent input, Thread, Run, RunAttempt, and recovery concerns remain with the owners below. Worker takeover and automatic checkpoint recovery do not accept another semantic unit of work and remain outside this contract.
+This contract owns those caller- or responder-driven acceptance forms, their public command surfaces, and deferred-interaction feedback. Automatic Run acceptance for an inactive Thread receiving an asynchronous child result is owned by [Async Subagents](18-async-subagents.md#delivery-to-an-inactive-thread); it reuses the same Thread and Run advancement authority without becoming feedback or another public command. Adjacent input, Thread, Run, RunAttempt, and recovery concerns remain with the owners below. Worker takeover and automatic checkpoint recovery do not accept another semantic unit of work and remain outside this contract.
 
 ## Boundaries
 
-| Concern                                                                     | Owner                                                                                                                                           | Relationship                                                                     |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Session, Thread, Run, and Item meaning                                      | [Platform Interaction Model](../interaction-model.md)                                                                                           | Supplies the shared interaction identities                                       |
-| Ordinary semantic Agent input                                               | [Agent Input](33-agent-input.md)                                                                                                                | Supplies the versioned `AgentInput` accepted by input-bearing commands           |
-| Start, immediate continue, continue from, fork, retry, and waiting feedback | This contract                                                                                                                                   | Accepts one new Run or rejects the operation without advancing the Thread        |
-| Queue-if-busy existing-Thread Run submission                                | [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md)                                                                     | Stores complete editable submission intent whose later consumption creates a Run |
-| Thread version, current Run, and selected head                              | [Durable Thread Persistence](24-thread-persistence.md)                                                                                          | Supplies the exact advancement precondition and commits selected Run references  |
-| Run state, lineage, accepted intent, and outcome                            | [Durable Run State](14-run-persistence.md)                                                                                                      | Persists the complete accepted input and its deterministic state key             |
-| Worker claim and recovery inside one Run                                    | [Durable Run Attempt Persistence](15-run-attempt-persistence.md) and [Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md) | Creates replacement RunAttempts without accepting another Run                    |
-| Asynchronous child acceptance and retained delivery                         | [Async Subagents](18-async-subagents.md)                                                                                                        | Supplies Host-owned child-result facts without redefining native deferred calls  |
-| Common Thread inbox persistence                                             | [Agent Control: Active Execution](35-agent-control-active-execution.md#thread-inbox)                                                            | Stores available async-subagent results and their later consumption evidence     |
-| Public API conventions and durable mutation evidence                        | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                      | Own shared version, idempotency, retry, and unknown-commit behavior              |
+| Concern                                                                                       | Owner                                                                                                                                           | Relationship                                                                                                               |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Session, Thread, Run, and Item meaning                                                        | [Platform Interaction Model](../interaction-model.md)                                                                                           | Supplies the shared interaction identities                                                                                 |
+| Ordinary semantic Agent input                                                                 | [Agent Input](33-agent-input.md)                                                                                                                | Supplies the versioned `AgentInput` accepted by input-bearing commands                                                     |
+| Start, immediate continue, continue from, fork, retry, waiting feedback, and waiting Continue | This contract                                                                                                                                   | Accepts one new Run or rejects the operation without advancing the Thread                                                  |
+| Queue-if-busy existing-Thread Run submission                                                  | [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md)                                                                     | Stores complete editable submission intent whose later consumption creates a Run                                           |
+| Thread version, current Run, and selected head                                                | [Durable Thread Persistence](24-thread-persistence.md)                                                                                          | Supplies the exact advancement precondition and commits selected Run references                                            |
+| Run state, lineage, accepted intent, and outcome                                              | [Durable Run State](14-run-persistence.md)                                                                                                      | Persists the complete accepted input and its deterministic state key                                                       |
+| Worker claim and recovery inside one Run                                                      | [Durable Run Attempt Persistence](15-run-attempt-persistence.md) and [Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md) | Creates replacement RunAttempts without accepting another Run                                                              |
+| Asynchronous child acceptance and retained delivery                                           | [Async Subagents](18-async-subagents.md)                                                                                                        | Delivers Host-owned Agent input to an active Run or automatically accepts an eligible successor Run without using feedback |
+| Common Thread inbox persistence                                                               | [Agent Control: Active Execution](35-agent-control-active-execution.md#thread-inbox)                                                            | Stores cross-kind FIFO, waiting-source binding, rollover, and later consumption evidence                                   |
+| Public API conventions and durable mutation evidence                                          | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                      | Own shared version, idempotency, retry, and unknown-commit behavior                                                        |
 
 ## Acceptance and Lineage
 
 The accepted operation determines the new Run identity, state source, input protocol, and explicit retry correlation:
 
-| Operation         | Public command                                | Thread effect                                                                                 | State and lineage                                                                                                                                                                | Accepted Run input                                    |
-| ----------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Start             | `POST /api/v1/workspaces/{workspace_id}/runs` | Creates a root Thread with its first Run                                                      | `lineage_kind="root"`, `parent_run_id=null`                                                                                                                                      | New `AgentInput`                                      |
-| Submit / Continue | `POST /api/v1/threads/{thread_id}/runs`       | Advances an eligible existing Thread immediately or queues the submission behind earlier work | On acceptance, completed head: `lineage_kind="continue"` and exact head parent; null head after failed/cancelled current Run: root-like with `lineage_kind="root"` and no parent | Submitted `AgentInput`                                |
-| Continue From     | `POST /api/v1/runs/{source_run_id}/continue`  | Re-selects one completed historical Run and advances its Thread                               | `lineage_kind="continue"`, parent is the exact completed source Run                                                                                                              | New `AgentInput`                                      |
-| Feedback          | `POST /api/v1/runs/{waiting_run_id}/feedback` | Advances the existing Thread                                                                  | `lineage_kind="continue"`, parent is the exact waiting Run                                                                                                                       | Complete normalized `WaitingRunFeedback`              |
-| Fork              | `POST /api/v1/runs/{run_id}/fork`             | Creates an independent in-Session Thread with its first Run                                   | `lineage_kind="fork"`, parent is the exact completed source Run                                                                                                                  | New `AgentInput`                                      |
-| Retry             | `POST /api/v1/runs/{run_id}/retry`            | Advances the existing Thread                                                                  | Copies the failed or cancelled source Run's lineage and state-source edge and records `retry_of_run_id`                                                                          | Copies the source Run's accepted input kind and value |
+| Operation         | Public command                                | Thread effect                                                                                       | State and lineage                                                                                                                                                | Accepted Run input                                    |
+| ----------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Start             | `POST /api/v1/workspaces/{workspace_id}/runs` | Creates a root Thread with its first Run                                                            | `lineage_kind="root"`, `parent_run_id=null`                                                                                                                      | New `AgentInput`                                      |
+| Submit / Continue | `POST /api/v1/threads/{thread_id}/runs`       | Advances an eligible existing Thread immediately, explicitly advances waiting, or queues the intent | On acceptance, completed head: exact head parent; waiting Continue: exact waiting parent; null head after failed/cancelled current Run: root-like with no parent | `AgentInput` or composite `WaitingRunContinueInput`   |
+| Continue From     | `POST /api/v1/runs/{source_run_id}/continue`  | Re-selects one completed historical Run and advances its Thread                                     | `lineage_kind="continue"`, parent is the exact completed source Run                                                                                              | New `AgentInput`                                      |
+| Feedback          | `POST /api/v1/runs/{waiting_run_id}/feedback` | Advances the existing Thread                                                                        | `lineage_kind="continue"`, parent is the exact waiting Run                                                                                                       | Complete normalized `WaitingRunFeedback`              |
+| Fork              | `POST /api/v1/runs/{run_id}/fork`             | Creates an independent in-Session Thread with its first Run                                         | `lineage_kind="fork"`, parent is the exact completed source Run                                                                                                  | New `AgentInput`                                      |
+| Retry             | `POST /api/v1/runs/{run_id}/retry`            | Advances the existing Thread                                                                        | Copies the failed or cancelled source Run's lineage and state-source edge and records `retry_of_run_id`                                                          | Copies the source Run's accepted input kind and value |
 
 Start, continue, continue from, feedback, and fork have `retry_of_run_id=null`. Retry never uses the failed or cancelled source as `parent_run_id`: that field continues to name only the exact sealed state source. A retry of a failed root therefore has no parent; a retry of a failed continue, continue from, feedback, or fork copies the source Run's exact `parent_run_id` and `lineage_kind`.
 
@@ -94,11 +94,18 @@ class ThreadRunSubmissionIntent:
     selected_skill_names: tuple[str, ...] | None
     environment_selections: tuple[EnvironmentSelectionEntry, ...] | None
     hook_subscription: InlineHookSubscriptionInput | None
+
+
+class WaitingResolutionDefaults:
+    mode: Literal["defaults"]
+    sealed_state_digest_sha256: str
 ```
+
+`waiting_resolution` is an optional top-level field of `POST /threads/{thread_id}/runs`; it is not part of `ThreadRunSubmissionIntent` and is never retained in a queued submission. Its only accepted value is `WaitingResolutionDefaults`. Omitting it preserves ordinary queue-if-busy behavior. Supplying it is an explicit request to finalize the current waiting head with fail-closed defaults and accept the submitted `AgentInput` in that same successor Run.
 
 `selected_skill_names` follows the [Foundation Skill selection contract](27-skill-management.md#agentpresetversion-selection). Acceptance stores its normalized effective selection in `state.json`; that effective value participates in the canonical request digest.
 
-Only start, existing-Thread Run submission, continue from, fork, and equivalent Host-owned initial Run submission can supply ordinary invocation options. A queued existing-Thread submission preserves those options as unaccepted intent and resolves and reauthorizes them only when consumption accepts a Run. Feedback and retry accept no AgentPreset, Version, Skill, Environment, or input override; they preserve the exact selections and accepted intent required by their source Run.
+Only start, ordinary existing-Thread Run submission, continue from, fork, and equivalent Host-owned initial Run submission can supply ordinary invocation options. A queued existing-Thread submission preserves those options as unaccepted intent and resolves and reauthorizes them only when consumption accepts a Run. Feedback, waiting Continue, and retry accept no AgentPreset, Version, Skill, or Environment override; they preserve the exact execution surface required by their source Run. Waiting Continue carries only its new `AgentInput` and optional inline Hook input in addition to the default-resolution declaration.
 
 ### Start and Continue
 
@@ -118,12 +125,13 @@ POST /api/v1/threads/{thread_id}/runs
 Idempotency-Key: opaque-caller-key
 ```
 
-The request carries `expected_thread_version` plus the fields of `ThreadRunSubmissionIntent`. Foundation locks the Thread, verifies the expected version, and applies the queue admission order owned by [Queued Submissions](36-agent-control-queued-submissions.md#admission-and-mutation-rules):
+The request carries `expected_thread_version`, the fields of `ThreadRunSubmissionIntent`, and optional `waiting_resolution`. Foundation locks the Thread, verifies the expected version, and applies the queue admission order owned by [Queued Submissions](36-agent-control-queued-submissions.md#admission-and-mutation-rules):
 
-1. if any queued submission exists, append the complete intent after it;
-2. otherwise, if the current Run is `accepted`, `running`, or `waiting`, create a queued submission;
-3. otherwise, accept the continuation immediately from the completed head or through the null-head root-like rule below when eligible; and
-4. otherwise, retain the submission in the queue until Retry, Continue From, Feedback, or another explicit operation establishes an eligible state.
+1. if `waiting_resolution` is present, require the current and head Run to be the same waiting Run and apply the explicit [waiting Continue](#waiting-continue-with-defaults), without consuming or reordering any queued submission;
+2. otherwise, if any queued submission exists, append the complete intent after it;
+3. otherwise, if the current Run is `accepted`, `running`, or `waiting`, create a queued submission;
+4. otherwise, accept the continuation immediately from the completed head or through the null-head root-like rule below when eligible; and
+5. otherwise, retain the submission in the queue until Retry, Continue From, Feedback, waiting Continue, or another explicit operation establishes an eligible state.
 
 Queue admission creates no Run, does not change `Thread.version`, increments `Thread.queue_version`, and returns `outcome="queued"`. Immediate acceptance returns `outcome="run_accepted"`, creates the Run, and increments `Thread.version`. Both outcomes are selected against locked commit-time state and are preserved by the route's idempotency evidence.
 
@@ -131,7 +139,7 @@ When `head_run_id` names an exact completed Run, Foundation never infers a paren
 
 When `head_run_id=null` and the current Run is `failed` or `cancelled`, the same route performs root-like acceptance in the existing Thread. The new Run has `lineage_kind="root"`, `parent_run_id=null`, and `retry_of_run_id=null`. A trusted Foundation state adapter constructs a complete empty Harness state carrying the existing Thread's exact `thread_id`; it does not call `HarnessState.new()`, which would create another Thread ID. When omitted, the stable Preset defaults to the current failed or cancelled Run's stable Preset; acceptance resolves its current active Version and the ordinary policy-permitted selections. The acceptance transaction selects the new Run as current, leaves the head null until a waiting or completed outcome seals, and increments Thread version. This is new input rather than Retry of the failed or cancelled intent.
 
-A waiting head is not equivalent to an absent head and is eligible only for Feedback, Retry of an already accepted failed/cancelled feedback successor, or an explicit operation such as Continue From that selects another completed source. An existing-Thread Run submission queues instead of conflicting and remains unconsumed until one of those operations establishes an eligible state.
+A waiting head is not equivalent to an absent head. An existing-Thread Run submission without `waiting_resolution` queues instead of changing it. Feedback, explicit waiting Continue, Retry of an already accepted failed/cancelled successor, or an explicit branch operation such as Continue From can establish the next state.
 
 Schedules, Webhooks, service requests, managed Triggers, and Host-managed asynchronous children use the same Run-acceptance application boundary even when their owning ingress is not one of these public routes.
 
@@ -148,7 +156,7 @@ The request has the same `expected_thread_version`, `AgentInput`, Preset, Versio
 
 Acceptance initializes state from the exact source and creates a same-Thread Run with `lineage_kind="continue"` and `parent_run_id=source_run_id`. In the final short transaction it sets `current_run_id` to the new Run, sets `head_run_id` to the selected source, increments the Thread version, and commits the accepted Run and related facts. If the successor later seals as `waiting` or `completed`, it becomes the new head. If it seals as `failed` or `cancelled`, the selected source remains the head.
 
-Selecting a source other than the prior head intentionally abandons that prior branch as the Thread's active continuation selection. In particular, a historical waiting Run that is no longer both current and head is not eligible for Feedback. The operation does not synthesize rejection or no-response values for that abandoned pending set; the sealed Run remains retained history.
+Selecting a source other than the prior head intentionally abandons that prior branch as the Thread's active continuation selection. In particular, a historical waiting Run that is no longer both current and head is not eligible for Feedback. The operation does not synthesize rejection or no-response values for that abandoned deferred pending set; the sealed Run remains retained history. In the same transaction it first marks an async result from a failed or cancelled origin `suppressed`, then marks every remaining pending ordinary steer or async result sourced to the abandoned waiting branch `superseded`, so a stale Feedback, waiting Continue, or Retry cannot rebind those deliveries to the historical completed branch.
 
 Several retained successors can therefore share the same completed parent over time. The single-active-Run constraint serializes execution, while `parent_run_id` preserves every accepted branch. Continue From preserves the Thread ID and is distinct from Fork, which creates another Thread, and from automatic recovery, which creates no Run.
 
@@ -176,20 +184,19 @@ Idempotency-Key: opaque-caller-key
 
 The target must be the Thread's current failed or cancelled Run. The request carries `expected_thread_version` and accepts no new `AgentInput` or invocation option. Acceptance copies the source Run's `input_kind`, exact normalized accepted input or feedback value, `parent_run_id`, `lineage_kind`, AgentPresetVersion, Runtime lock, effective Skill selection, and Environment execution configuration. The copied accepted input retains each binary URL or Environment-path source description or exact immutable `asset_id`; Retry acceptance reauthorizes that source but does not read or copy its file body. Acceptance records the source in `retry_of_run_id`, reauthorizes every retained selector, creates a new Run-owned state from the same eligible state source, and obtains fresh credentials, `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, recovery authority, and model execution snapshot for the new Run. Execution treats Retry as a new Run with zero prior model requests and reacquires any binary bytes required by its frozen delivery. An Asset ID never resolves to replacement content; deletion or unavailability fails the new Run explicitly.
 
-Retry never re-runs a client-side effect, changes an accepted feedback decision, or makes the failed source an eligible state parent. If the failed source was a root, the retry initializes another root state. Otherwise it repeats the source operation's state transformation from the same frozen parent. Once another Run advances the Thread, the old terminal Run is no longer retryable.
+Retry never re-runs a client-side effect, changes an accepted feedback decision, or makes the failed source an eligible state parent. If the failed source was a root, the retry initializes another root state. Otherwise it repeats the source operation's state transformation from the same frozen parent. Pending ordinary steer and different-origin async delivery previously bound to the failed or cancelled source were already `superseded` and are not inherited. Every not-yet-consumed async result whose spawning Run is that source is instead `suppressed`, whether it published before or after source sealing; Retry never re-enables or binds it. When the preserved head is waiting, a later async result can bind to the retry Run only if its own spawning Run is not failed or cancelled. If retried execution needs child work, it accepts a new child and relationship under the retry Run. Once another Run advances the Thread, the old terminal Run is no longer retryable.
 
 ## Deferred Interaction
 
-Approval, client-tool execution, structured user input, and awaited child results are frozen pending facts inside one sealed waiting Run and its complete state object. They are not independent mutable resources or relational rows. Provider-owned continuation can also seal a Run as waiting, but it is resumed only when its owning internal integration supplies a complete provider result through the same new-Run feedback acceptance boundary. It is not accepted by the public feedback command. A pending set containing `provider_continuation` is therefore ineligible for this route rather than being partially finalized around it.
+Approval, client-tool execution, and structured user input are frozen pending facts inside one sealed waiting Run and its complete state object. They are not independent mutable resources or relational rows. Foundation defines no provider-continuation pending kind; provider-native public-message continuation remains inside the Harness/model-integration boundary and does not create a Foundation waiting reason or feedback mapping. Asynchronous child results remain durable Thread-inbox entries under [Async Subagents](18-async-subagents.md#result-publication); they never enter this pending set or cause a Run to wait.
 
 Feedback-eligible pending kinds remain distinct:
 
 - `approval` asks an authorized human or service to permit a proposed action;
 - `client_tool` asks an external client to perform a named effect and return its declared result;
-- `user_input` requests structured information without authorizing another effect; and
-- `child_result` waits for the exact immutable outcome of one accepted asynchronous child Run.
+- `user_input` requests structured information without authorizing another effect.
 
-The exact native deferred requests and Host-owned child wait requests live in `RunStateEnvelope.host.deferred`; the Run row stores only the matching bounded `RunPendingSummary` owned by [Durable Run State](14-run-persistence.md#run-state-object). The public route exposes those facts as read projections beneath the waiting Run and accepts one atomic feedback command:
+The exact native deferred requests live in `RunStateEnvelope.host.deferred`; the Run row stores only the matching bounded `RunPendingSummary` owned by [Durable Run State](14-run-persistence.md#run-state-object). The public route exposes those facts as read projections beneath the waiting Run and accepts one atomic feedback command:
 
 ```http
 POST /api/v1/runs/{waiting_run_id}/feedback
@@ -236,16 +243,15 @@ class WaitingRunFeedbackRequest:
     hook_subscription: InlineHookSubscriptionInput | None = None
 ```
 
-The frozen pending kind determines which action and result schema are legal: `approve` and `reject` apply only to approval, `complete` applies to an exact client-tool or authorized child-result request, and `respond` applies only to structured user input. `result` and `response` use the versioned JSON encoding declared by the exact pending request and its locked adapter. The request cannot repeat a call ID, name an unknown call, supply a mismatched action, or override the pending kind.
+The frozen pending kind determines which action and result schema are legal: `approve` and `reject` apply only to approval, `complete` applies to an exact client-tool request, and `respond` applies only to structured user input. `result` and `response` use the versioned JSON encoding declared by the exact pending request and its locked adapter. The request cannot repeat a call ID, name an unknown call, supply a mismatched action, or override the pending kind.
 
 Submitting this route finalizes the entire feedback-eligible pending set. The caller can supply any subset explicitly; Foundation expands every omitted call in frozen request order before acceptance:
 
-| Pending kind   | Explicit action       | Omitted outcome |
-| -------------- | --------------------- | --------------- |
-| `approval`     | `approve` or `reject` | `reject`        |
-| `client_tool`  | `complete`            | `no_response`   |
-| `user_input`   | `respond`             | `no_response`   |
-| `child_result` | authorized `complete` | `no_response`   |
+| Pending kind  | Explicit action       | Omitted outcome |
+| ------------- | --------------------- | --------------- |
+| `approval`    | `approve` or `reject` | `reject`        |
+| `client_tool` | `complete`            | `no_response`   |
+| `user_input`  | `respond`             | `no_response`   |
 
 An empty `resolutions` tuple therefore rejects every approval and records no response for every other feedback-eligible call. This is fail-closed finalization, not a partial update. The principal or internal caller must be authorized to finalize every pending call because omission also changes the continuation result.
 
@@ -267,8 +273,6 @@ class AcceptedPendingResolution:
         "approval",
         "client_tool",
         "user_input",
-        "child_result",
-        "provider_continuation",
     ]
     outcome: PendingResolutionOutcome
     result: JsonValue | None
@@ -281,23 +285,44 @@ class WaitingRunFeedback:
     resolutions: tuple[AcceptedPendingResolution, ...]
 ```
 
-Every accepted `WaitingRunFeedback` covers its complete owning pending set exactly once and preserves frozen request order. For the public route that set contains only feedback-eligible kinds; an internal provider continuation supplies every exact provider-owned result without omission defaults. Foundation expands public defaults and validates the complete typed value before computing the canonical semantic request digest. Explicitly rejecting an approval is therefore equivalent to omitting it; non-approval `no_response` arises only through omission. The accepted feedback is the immutable input of the new Run; the waiting parent and its pending summary never change.
+Every accepted `WaitingRunFeedback` covers its complete owning pending set exactly once and preserves frozen request order. Foundation expands public defaults and validates the complete typed value before computing the canonical semantic request digest. Explicitly rejecting an approval is therefore equivalent to omitting it; non-approval `no_response` arises only through omission. The accepted feedback is the immutable input of the new Run; the waiting parent and its pending summary never change.
 
-### Harness and Child-Result Mapping
+### Waiting Continue with Defaults
+
+An existing-Thread submission that supplies `waiting_resolution.mode="defaults"` deliberately abandons interactive resolution of the current waiting set while preserving the caller's new semantic input. Foundation expands the entire frozen set exactly as if `/feedback` had been called with an empty `resolutions` tuple: every approval becomes `reject`, and every client-tool or structured user-input request becomes `no_response`. The caller cannot mix explicit resolutions into this operation.
+
+The accepted immutable input has this conceptual schema:
+
+```python
+class WaitingRunContinueInput:
+    schema_version: Literal["1"]
+    waiting_run_id: RunId
+    sealed_state_digest_sha256: str
+    resolutions: tuple[AcceptedPendingResolution, ...]
+    input: AgentInput
+```
+
+The final acceptance transaction authenticates the caller, requires both ordinary Thread Continue authority and authority to finalize every frozen pending call, locks the Thread and waiting Run, and requires `current_run_id=head_run_id=waiting_run_id`. It verifies `expected_thread_version`, the exact sealed-state digest, the complete default resolution set, and scoped idempotency. Preset, Version, Skill, Environment, and client-tool-surface overrides are forbidden. The successor preserves the waiting Run's exact AgentPresetVersion, Runtime lock, effective Skill selection, Environment execution configuration, and deferred surface; it uses `lineage_kind="continue"`, `input_kind="waiting_continue"`, and `parent_run_id=waiting_run_id`.
+
+Acceptance creates exactly one successor Run. The `WaitingRunContinueInput` contains both the normalized defaults and the canonical accepted `AgentInput`; no intermediate feedback Run is created. Retry copies this composite value exactly. Any queued submissions remain in their existing order and state. This explicit advancement can occur while the queue is non-empty because it resolves the selected waiting head rather than consuming queued intent.
+
+The same acceptance transaction binds every still-pending Thread-inbox delivery whose `source_waiting_run_id` names the parent to the new successor in ascending `delivery_sequence`. The entries remain `pending`, preserve their sequence and payload, and are not part of `WaitingRunContinueInput`. A concurrent Feedback, waiting Continue, Continue From, or other branch operation admits at most one winner under the same Thread version and locks; a losing command creates no Run and changes no inbox binding.
+
+On first execution, Foundation passes the complete normalized resolutions as `DeferredToolResume` and the accepted `AgentInput` as ordinary input to the same first model request. The first checkpoint that marks the composite Run input `applied` proves both values crossed the Harness input boundary together and that the isolated request reached the complete first-request hook boundary. A crash before that checkpoint replays both; recovery from an applied checkpoint supplies neither again.
+
+### Harness Mapping
 
 The Worker maps the accepted batch by owning boundary:
 
-| Pending kind            | Mapping                                                                                                                                                                      |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `approval`              | Native `ToolApproved` or `ToolDenied`.                                                                                                                                       |
-| `client_tool`           | `complete` becomes the declared native result; `no_response` becomes an explicit failed external-call result, never a missing entry or successful `null`.                    |
-| `user_input`            | `respond` is validated against the exact request; `no_response` uses the locked interaction adapter's explicit representation.                                               |
-| `child_result`          | Enters through the Host-owned fresh-run input seam in [Async Subagents](18-async-subagents.md), never through `DeferredToolResume` or under the original spawn tool-call ID. |
-| `provider_continuation` | Enters through its owning Host/model integration and is never synthesized by the public omission policy.                                                                     |
+| Pending kind  | Mapping                                                                                                                                                   |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `approval`    | Native `ToolApproved` or `ToolDenied`.                                                                                                                    |
+| `client_tool` | `complete` becomes the declared native result; `no_response` becomes an explicit failed external-call result, never a missing entry or successful `null`. |
+| `user_input`  | `respond` is validated against the exact request; `no_response` uses the locked interaction adapter's explicit representation.                            |
 
-For native Pydantic requests, Foundation constructs one `DeferredToolResults` whose `calls` and `approvals` maps exactly cover the authoritative `DeferredToolRequests`, then passes both through the Harness [`DeferredToolResume`](../agent-harness/16-input-model-and-output.md#input) with the prior state and fresh `RunBindings` containing a freshly constructed `EnvironmentRuntime`. Defaults are therefore explicit results by the time Harness preflight runs. A batch that also contains child-result feedback can supply its Host-owned fresh-run input at the same new Harness Run boundary without reinterpreting that result as a native deferred call.
+For native Pydantic requests, Foundation constructs one `DeferredToolResults` whose `calls` and `approvals` maps exactly cover the authoritative `DeferredToolRequests`, then passes both through the Harness [`DeferredToolResume`](../agent-harness/16-input-model-and-output.md#input) with the prior state and fresh `RunBindings` containing a freshly constructed `EnvironmentRuntime`. Defaults are therefore explicit results by the time Harness preflight runs. An explicit feedback successor supplies no ordinary input, so its first model request receives only the deferred results. A waiting-Continue successor supplies both the deferred results and its `AgentInput` to that same first request.
 
-A child-result `no_response` closes this waiting batch but does not prove child cancellation, consume its Thread inbox entry, or discard an independently retained result. The child relationship and any available inbox entry continue under the asynchronous-child cancellation, retention, and later-incorporation policy.
+Pending deliveries bound from the waiting parent remain in PostgreSQL and invisible to the first model request. The Worker installs the Foundation-owned awaited Capability hook defined by [Active Execution](35-agent-control-active-execution.md#waiting-binding-and-first-request-hook-delivery). At the complete safe boundary after that request and any resulting tool batch, the hook queries and offers the eligible FIFO through native enqueue before an ordinary result can terminate. If the request produces another deferred/HITL result, the hook enqueues nothing; Foundation may seal the Run as waiting and roll the entries forward. The boundary is the first model request rather than the end of a `ModelAttempt`, because one `ModelAttempt` can contain several model requests.
 
 ## Suspension and Feedback Run
 
@@ -313,56 +338,57 @@ sequenceDiagram
     Worker->>Durable: publish waiting state candidate
     Worker->>Durable: seal waiting Run and pending summary
     Worker-->>Worker: close RunAttempt resources and release lease
-    Responder->>Durable: idempotent feedback with explicit subset
-    Durable->>Durable: authorize all calls and expand omitted defaults
-    Durable->>Durable: accept complete feedback as a new Run
+    Responder->>Durable: idempotent feedback or waiting Continue
+    Durable->>Durable: authorize all calls and normalize complete resolutions
+    Durable->>Durable: accept one successor and bind waiting inbox FIFO
     NextWorker->>Durable: claim the new Run's first RunAttempt
-    NextWorker->>Harness: prior state, complete DeferredToolResume, fresh RunBindings and EnvironmentRuntime
+    NextWorker->>Harness: prior state, DeferredToolResume, optional Continue input, Foundation delivery hook, and fresh bindings
 ```
 
-Suspension first conditionally publishes the complete waiting state candidate at the Run's deterministic state key. One fenced relational transition verifies that the Run remains current, seals it, terminalizes the source RunAttempt, copies the bounded pending summary to the Run row, selects the exact state digest and checkpoint sequence, retains the waiting Run as current, selects it as the Thread head, increments Thread version, and commits lifecycle facts. The worker then closes Harness, Environment connector, credential, socket, and database resources.
+Suspension first conditionally publishes the complete waiting state candidate at the Run's deterministic state key. One fenced relational transition verifies that the Run remains current, reconciles inbox receipts in the selected state, rolls the remaining bound delivery to this waiting source, seals it, terminalizes the source RunAttempt, copies the bounded pending summary to the Run row, selects the exact state digest and checkpoint sequence, retains the waiting Run as current, selects it as the Thread head, increments Thread version, and commits lifecycle facts. The worker then closes Harness, Environment connector, credential, socket, and database resources.
 
-Feedback authenticates the responder, locks the Thread, requires both `current_run_id` and `head_run_id` to name the target waiting Run, verifies the expected Thread version and sealed-state digest, authorizes the complete pending set, validates and expands the submitted subset, and applies scoped idempotency. After publishing the new Run's complete initial state and any object-backed feedback, one short transaction repeats those preconditions, inserts a Run with `input_kind="waiting_feedback"` and `parent_run_id=waiting_run_id`, selects it as current, increments Thread version, and commits lifecycle facts, idempotency evidence, response Items when applicable, and outbox intents. When an explicit child result is selected, that same transaction marks its exact Thread inbox entry consumed with the new Run and initialized state digest at checkpoint zero. The accepted feedback itself records the exact consumed pending identities; no mutable pending-action row is updated.
+Feedback authenticates the responder, locks the Thread, requires both `current_run_id` and `head_run_id` to name the target waiting Run, verifies the expected Thread version and sealed-state digest, authorizes the complete pending set, validates and expands the submitted subset, and applies scoped idempotency. After publishing the new Run's complete initial state and any object-backed feedback, one short transaction repeats those preconditions, inserts a Run with `input_kind="waiting_feedback"` and `parent_run_id=waiting_run_id`, selects it as current, increments Thread version, binds the waiting Run's pending inbox FIFO to that direct successor, and commits lifecycle facts, idempotency evidence, response Items when applicable, and outbox intents. The accepted feedback records the exact pending identities and normalized outcomes; no mutable pending-action row is updated.
 
-If the feedback Run later fails or is cancelled, retry can only reaccept that same normalized feedback intent. The waiting parent remains frozen, but it is no longer the Thread's current Run, so another feedback command with different content cannot race the accepted successor.
+If the Feedback or waiting-Continue Run later fails or is cancelled, Retry can only reaccept that same normalized accepted intent. The waiting parent remains frozen, but it is no longer the Thread's current Run, so another feedback command with different content cannot race the accepted successor.
 
 ## Persistence Impact
 
 Related persistence integration is:
 
-| Persistence owner        | Required contract                                                                                                                                                                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runs`                   | Stores `input_kind` to distinguish `agent_input` from `waiting_feedback`, and nullable `retry_of_run_id` to correlate exact terminal intent without changing the state-parent edge. Existing inline or object-backed JSON columns store the complete accepted descriptor value. |
-| Run lineage constraints  | Permit several retained same-Thread successors to share one completed `parent_run_id`; only the partial unique constraint for one `accepted` or `running` Run per Thread serializes active advancement.                                                                         |
-| Waiting pending data     | No `pending_actions` table. The waiting Run row stores only `pending_json`; its sealed state stores exact native and Host requests.                                                                                                                                             |
-| Async child delivery     | The child relationship and common `thread_inbox` entry remain authoritative; explicit selection consumes the exact entry while batch feedback never runs it into a native deferred call.                                                                                        |
-| Inline Hook delivery     | Optional creation commits atomically under [Hook Notifications](20a-hook-notifications.md); a queued submission retains unaccepted Hook input, and no Run column stores callback configuration.                                                                                 |
-| Durable command evidence | Existing idempotency, lifecycle, Item, and outbox records commit with the accepted Run under their owning contracts.                                                                                                                                                            |
+| Persistence owner        | Required contract                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `runs`                   | Stores `input_kind` to distinguish `agent_input`, `waiting_feedback`, `waiting_continue`, and the `async_subagent_result` input owned by [Async Subagents](18-async-subagents.md#delivery-to-an-inactive-thread), plus nullable `retry_of_run_id` to correlate exact terminal intent without changing the state-parent edge. Existing inline or object-backed JSON columns store the complete accepted descriptor value. |
+| Run lineage constraints  | Permit several retained same-Thread successors to share one completed `parent_run_id`; only the partial unique constraint for one `accepted` or `running` Run per Thread serializes active advancement.                                                                                                                                                                                                                  |
+| Waiting pending data     | No `pending_actions` table. The waiting Run row stores only `pending_json`; its sealed state stores exact native deferred requests.                                                                                                                                                                                                                                                                                      |
+| Inbox delivery           | The common `thread_inbox` entry remains authoritative; waiting Feedback or Continue binds pending entries to the direct successor, while checkpointing or eligible automatic async-result acceptance consumes them independently of deferred feedback.                                                                                                                                                                   |
+| Inline Hook delivery     | Optional creation commits atomically under [Hook Notifications](20a-hook-notifications.md); a queued submission retains unaccepted Hook input, and no Run column stores callback configuration.                                                                                                                                                                                                                          |
+| Durable command evidence | Existing idempotency, lifecycle, Item, and outbox records commit with the accepted Run under their owning contracts.                                                                                                                                                                                                                                                                                                     |
 
 `input_kind`, `retry_of_run_id`, the exact parent edge, Thread head selection, and the source or current Run's status make every acceptance form queryable without adding an `agent_control_operations` table or another execution resource.
 
 ## Failure Semantics
 
-| Condition                                                                                         | Outcome                                                                                                                 |
-| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Start, immediate continue, continue from, fork, retry, or feedback validation fails before commit | No Thread or Run advancement occurs                                                                                     |
-| Concurrent Thread advancement or sealing wins                                                     | The stale command conflicts and changes nothing                                                                         |
-| Retry target is not the current failed or cancelled Run                                           | Retry conflicts without creating a Run                                                                                  |
-| Feedback contains a duplicate, unknown, wrong-action, invalid-result, stale, or expired call      | No feedback Run is created; the waiting parent remains unchanged                                                        |
-| Feedback responder cannot finalize every pending call                                             | Request is denied without disclosing concealed pending content                                                          |
-| Native deferred requests and normalized results do not exactly cover one another                  | Feedback is rejected before acceptance when detectable; otherwise the accepted feedback Run fails before new model work |
-| Resume surface differs from the suspended surface                                                 | The accepted feedback Run fails before Harness continuation                                                             |
-| Child result is omitted                                                                           | The batch records `no_response`; child execution and retained delivery follow their independent policy                  |
+| Condition                                                                                                                    | Outcome                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Start, immediate continue, continue from, fork, retry, feedback, or waiting-Continue validation fails before commit          | No Thread or Run advancement occurs                                                                                       |
+| Concurrent Thread advancement or sealing wins                                                                                | The stale command conflicts and changes nothing                                                                           |
+| Retry target is not the current failed or cancelled Run                                                                      | Retry conflicts without creating a Run                                                                                    |
+| Feedback contains a duplicate, unknown, wrong-action, invalid-result, stale, or expired call                                 | No feedback Run is created; the waiting parent remains unchanged                                                          |
+| Feedback responder cannot finalize every pending call                                                                        | Request is denied without disclosing concealed pending content                                                            |
+| Waiting Continue omits the declaration, has a stale digest, supplies an execution override, or lacks full feedback authority | It queues when undeclared; otherwise no advancement or inbox rebinding commits                                            |
+| Native deferred requests and normalized results do not exactly cover one another                                             | The operation is rejected before acceptance when detectable; otherwise the accepted successor fails before new model work |
+| Resume surface differs from the suspended surface                                                                            | The accepted Feedback or waiting-Continue Run fails before Harness continuation                                           |
 
 ## Invariants
 
-01. Start, immediate continue, continue from, feedback, fork, and terminal retry accept another Run; an existing-Thread submission can instead queue without accepting one. Acceptance returns before later Worker claim, RunAttempt allocation, or Harness execution.
+01. Start, immediate continue, continue from, feedback, explicit waiting Continue, fork, and terminal retry accept another Run; an existing-Thread submission can instead queue without accepting one. Acceptance returns before later Worker claim, RunAttempt allocation, or Harness execution.
 02. Immediate Continue and Continue From preserve the Thread ID; Fork creates a distinct Thread ID. Continue with a null head initializes empty state under that existing ID rather than calling `HarnessState.new()`.
-03. Retry accepts no new input or invocation option, copies the exact accepted intent and state-source edge, and records `retry_of_run_id`.
-04. Ordinary Agent work uses `AgentInput`; waiting feedback uses the separate complete normalized `WaitingRunFeedback` protocol.
+03. Retry accepts no new input or invocation option, copies the exact accepted intent and state-source edge, records `retry_of_run_id`, and never inherits or re-enables async results originating from the failed or cancelled source.
+04. Ordinary Agent work uses `AgentInput`; waiting feedback uses the separate complete normalized `WaitingRunFeedback` protocol; waiting Continue stores one `WaitingRunContinueInput` containing default resolutions and `AgentInput`; asynchronous result input is owned independently by the async-subagent contract.
 05. Feedback finalizes the complete eligible pending set; omitted approvals reject and omitted non-approval calls record no response.
-06. A waiting Run is sealed and holds no RunAttempt lease; feedback creates a new Run whose `parent_run_id` names it.
-07. Native deferred values remain exactly correlated, Host-owned child delivery never impersonates a native deferred call, and approval, external effect, and child completion remain independent facts.
+06. A waiting Run is sealed and holds no RunAttempt lease; feedback or explicit waiting Continue creates a new Run whose `parent_run_id` names it.
+07. Native deferred values remain exactly correlated; Host-owned child delivery never enters feedback or impersonates a native deferred call, and approval, external effect, and child completion remain independent facts.
 08. Pending actions are immutable projections of one waiting Run, not independently mutable resources or relational rows.
 09. Continue From accepts any retained and readable completed Run in the same Thread, atomically selects it as head while creating its successor, and does not require that source to be the prior current Run or head.
-10. Existing-Thread Run submission never bypasses a queued submission. With an empty queue it queues while the current Run is `accepted`, `running`, or `waiting`; otherwise it uses the exact completed head or, only after a failed or cancelled current Run with `head_run_id=null`, accepts a root-like Run with no parent.
+10. An ordinary existing-Thread Run submission never bypasses a queued submission. With an empty queue it queues while the current Run is `accepted`, `running`, or `waiting`; otherwise it uses the exact completed head or, only after a failed or cancelled current Run with `head_run_id=null`, accepts a root-like Run with no parent. An explicitly declared waiting Continue advances the waiting head without consuming or reordering that separate queue.
+11. Waiting Feedback and waiting Continue bind pending waiting-source deliveries to their one direct successor; the first model request processes deferred results and optional Continue input before the Foundation-owned awaited delivery hook can make any such delivery visible.

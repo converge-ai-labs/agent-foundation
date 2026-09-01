@@ -68,7 +68,7 @@ class AguiRunBinding:
 
 The schemas are conceptual durable records, not another public resource model. External IDs are opaque bounded correlation chosen by the client. They grant no read, continuation, cancellation, or stream authority.
 
-The first accepted AG-UI run for a previously unbound `(client identity, AgentPreset, threadId)` creates a Session, root Thread, and root Foundation Run through the ordinary application contract. A later AG-UI run continues the binding's current active Thread. `parentRunId` bound to the active completed Foundation Run is an ordinary continuation; one bound to an authorized earlier completed Foundation Run creates an explicit Foundation fork and atomically selects that fork as the binding's active Thread. Cross-Preset, cross-client, incomplete, or concealed sources fail.
+The first accepted AG-UI run for a previously unbound `(client identity, AgentPreset, threadId)` creates a Session, root Thread, and root Foundation Run through the ordinary application contract. A later AG-UI run continues the binding's current active Thread. `parentRunId` bound to the active completed Foundation Run is an ordinary continuation; one bound to an authorized earlier completed Foundation Run creates an explicit Foundation fork and atomically selects that fork as the binding's active Thread. A new ordinary user tail against the exact current waiting Run has the explicit abandonment meaning defined below. Cross-Preset, cross-client, incomplete, or concealed sources fail.
 
 `runId` is the idempotency identity within one client, AgentPreset, and external Thread. Repeating the same `runId` and canonical accepted input returns or reattaches to the original Run. Reuse with different input conflicts. A lost HTTP response never causes the client to invent another `runId` for the same intent.
 
@@ -97,6 +97,10 @@ Standard `state`, `context`, and `tools` plus Foundation extensions are bounded 
 
 `forwardedProps.a13n` can contain a structured `resume` array. Each element names one pending call and one approve, reject, complete, or respond value under the exact frozen kind. The array can cover any explicit subset and calls the same atomic waiting-feedback command as Native input; omitted approvals become rejections and omitted non-approval calls become no-response outcomes. It accepts a new child Run and never reopens the waiting parent. Duplicate, unknown, or mismatched entries and unknown Foundation extension fields fail validation.
 
+When the binding's current/head Run is waiting, a new ordinary user tail without `resume` means “abandon the outstanding interaction and handle this message.” The adapter reads the exact waiting digest, invokes the Native existing-Thread route with `waiting_resolution.mode="defaults"`, and supplies the mapped `AgentInput`. That explicit application call creates one `waiting_continue` successor: its first model request receives both the default deferred results and the new user input. Existing queued submissions remain ordered and unconsumed. A user tail and explicit `resume` are mutually exclusive in one AG-UI request; the client sends another external `runId` after explicit feedback if it needs further semantic input.
+
+The adapter sets `waiting_resolution` only for this declared abandonment case. It never adds the field to an ordinary completed-head continuation or silently converts an extension validation failure into defaults. The server-owned binding supplies current Thread version and sealed digest under the same final concurrency checks; a stale binding conflicts without accepting a Run or rebinding pending inbox delivery.
+
 The normalized client tool surface and exact `agent_preset_version_id` are frozen with the accepted Run. A feedback run reuses the waiting Run's exact surface; it cannot change tool names, schemas, or pending-call identity.
 
 ## Lifecycle Projection
@@ -124,7 +128,7 @@ sequenceDiagram
 
 `RUN_STARTED` comes from durable Run acceptance. `RUN_FINISHED` and `RUN_ERROR` come only from the selected sealed Run outcome. An observer's Harness terminal event is suppressed as an external lifecycle authority and is replaced by the matching durable projection. Worker takeover creates a new Harness Run and fresh observer without changing external `runId` or producing another `RUN_STARTED`.
 
-A waiting Run emits the versioned custom `a13n.foundation.run_status` event with `status="waiting"` and a complete authorized pending contract, then closes the current delivery attachment. It does not emit a false success or error. A later new `runId` carrying valid `resume` accepts and observes the feedback Run.
+A waiting Run emits the versioned custom `a13n.foundation.run_status` event with `status="waiting"` and a complete authorized pending contract, then closes the current delivery attachment. It does not emit a false success or error. A later new `runId` carrying valid `resume` accepts and observes the feedback Run; a later ordinary user tail explicitly defaults that pending set and observes the one composite waiting-Continue Run. Waiting-bound steer and async results are not projected into the composite first request and enter only when the Foundation-owned awaited delivery hook reaches its later safe boundary.
 
 Transport abort, HTTP cancellation, EOF, timeout, and SSE disconnect terminate delivery only. The Run continues according to durable state.
 
@@ -173,6 +177,6 @@ Foundation selects one published Harness release group, which pins the Harness, 
 2. One external AG-UI Run binds one Foundation Run; Worker recovery does not change either identity.
 3. Client messages append accepted input and never overwrite Foundation history.
 4. Durable acceptance and sealed outcome, not transport or Harness observation, produce external Run lifecycle.
-5. A waiting Run is resumed by accepting another Run under another `runId`.
+5. A waiting Run is resumed by accepting another Run under another `runId`; explicit `resume` uses waiting feedback, while a new ordinary user tail uses declared default abandonment and waiting Continue.
 6. Hosted disconnect never cancels a Run.
 7. Every delivered event belongs to the stable Hosted visibility registry and contains no private execution payload.

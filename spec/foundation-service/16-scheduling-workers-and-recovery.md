@@ -141,7 +141,7 @@ As soon as Harness supplies its Run identity and before the first live observati
 
 ## Thread Inbox and Control Reconciliation
 
-The execution loop owns one process-local control dispatcher for every active RunAttempt. It registers the current `(run_attempt_id, fence)` with the live `HarnessRunStream` and joins the owning Thread's Redis control Stream consumer group under its Worker identity and generation. Claim, takeover, Redis wakeup, and every mandatory execution boundary invoke the complete [steer-consumption and reconciliation contract](35-agent-control-active-execution.md#steer-consumption-and-state-commitment); this scheduling contract does not define another inbox ordering, delivery, or completion flow.
+The execution loop owns one process-local control dispatcher for every active RunAttempt. It registers the current `(run_attempt_id, fence)` with the live `HarnessRunStream` and joins the owning Thread's Redis control Stream consumer group under its Worker identity and generation. Claim, takeover, Redis wakeup, and every mandatory execution boundary invoke the complete [unified FIFO delivery](35-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment) and [waiting-successor first-request hook](35-agent-control-active-execution.md#waiting-binding-and-first-request-hook-delivery) contracts; this scheduling contract does not define another inbox ordering, delivery, or completion flow.
 
 A claim or takeover reconciles PostgreSQL before relying on the Redis group and can then reclaim deliveries from a prior Worker generation. Every signal means only that the dispatcher must re-read the Thread's durable state. Missing, trimmed, expired, duplicated, stale, or already acknowledged signals never change the decision made from PostgreSQL.
 
@@ -153,7 +153,7 @@ Retries remain owned by the layer that knows the failed boundary:
 
 - bounded connection and keep-alive transport retries remain in the Environment connector;
 - Harness semantic recovery creates another ModelAttempt inside one Harness Run;
-- a pending steer that can no longer enter the current native Run follows the [active-control recovery rule](35-agent-control-active-execution.md#steer-consumption-and-state-commitment);
+- eligible pending inbox delivery that can no longer enter the current native Run prevents completed sealing and follows the [active-control recovery rule](35-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment);
 - Foundation creates another RunAttempt only after the prior Attempt has failed, yielded, or had its lease expire, and only under the applicable Run budget;
 - retrying sealed terminal intent creates a successor Run rather than reopening the original;
 - a recovered Agent decision is an ordinary new tool call, not a replay command; and
