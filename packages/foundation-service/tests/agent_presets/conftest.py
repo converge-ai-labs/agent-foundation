@@ -211,7 +211,17 @@ async def agent_preset_service(
         model_selector,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
     )
-    yield AgentPresetService(agent_preset_sessions, resolver, clock=lambda: NOW)
+    invocation_resolver = AgentPresetInvocationResolver(
+        agent_preset_sessions,
+        model_selector,
+        plugin_runtime_mode=PluginRuntimeMode.on_demand,
+    )
+    yield AgentPresetService(
+        agent_preset_sessions,
+        resolver,
+        invocation_resolver,
+        clock=lambda: NOW,
+    )
 
 
 @pytest.fixture

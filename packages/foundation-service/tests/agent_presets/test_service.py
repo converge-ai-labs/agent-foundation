@@ -10,6 +10,7 @@ from a13n_service.agent_presets.domain import (
     RollbackAgentPresetRequest,
 )
 from a13n_service.agent_presets.errors import AgentPresetError
+from a13n_service.agent_presets.models import AgentPresetRecord
 from a13n_service.agent_presets.service import AgentPresetService
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.storage import transaction
@@ -328,3 +329,77 @@ async def test_disable_rejects_transitive_active_subagent_reference(
 
     assert middle_published.revision.resolved_subagents[0].child_agent_preset_id == child.id
     assert in_use.value.code == "preset_in_use"
+
+
+@pytest.mark.anyio
+async def test_enable_revalidates_every_retained_subagent_revision(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    child = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-enable-child",
+        request=CreateAgentPresetRequest(name="Enable Child", config=preset_config()),
+    )
+    await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=child.id,
+        idempotency_key="publish-enable-child",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    middle = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-enable-middle",
+        request=CreateAgentPresetRequest(
+            name="Enable Middle",
+            config=preset_config(subagents={"child": {"agent_preset_id": child.id, "environment": {"mode": "none"}}}),
+        ),
+    )
+    await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=middle.id,
+        idempotency_key="publish-enable-middle",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    root = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-enable-root",
+        request=CreateAgentPresetRequest(
+            name="Enable Root",
+            config=preset_config(subagents={"middle": {"agent_preset_id": middle.id, "environment": {"mode": "none"}}}),
+        ),
+    )
+    published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=root.id,
+        idempotency_key="publish-enable-root",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    disabled = await agent_preset_service.change_lifecycle(
+        actor=actor(),
+        preset_id=root.id,
+        action="disable",
+        idempotency_key="disable-enable-root",
+        request=AgentPresetCommandRequest(expected_resource_version=published.preset.resource_version),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        child_record = await session.get(AgentPresetRecord, child.id)
+        assert child_record is not None
+        child_record.lifecycle_state = "disabled"
+
+    with pytest.raises(AgentPresetError) as rejected:
+        await agent_preset_service.change_lifecycle(
+            actor=actor(),
+            preset_id=root.id,
+            action="enable",
+            idempotency_key="enable-root-with-disabled-descendant",
+            request=AgentPresetCommandRequest(expected_resource_version=disabled.resource_version),
+        )
+
+    current = await agent_preset_service.get(actor=actor(), preset_id=root.id)
+    assert rejected.value.code == "preset_disabled"
+    assert current.lifecycle_state == "disabled"
+    assert current.resource_version == disabled.resource_version

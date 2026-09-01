@@ -219,14 +219,15 @@ async def connector_agent_services(
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
         connector_resolver=connector_resolver,
     )
+    invocation = AgentPresetInvocationResolver(
+        agent_preset_sessions,
+        model_selector,
+        plugin_runtime_mode=PluginRuntimeMode.on_demand,
+        connector_resolver=connector_resolver,
+    )
     yield (
-        AgentPresetService(agent_preset_sessions, publication, clock=lambda: NOW),
-        AgentPresetInvocationResolver(
-            agent_preset_sessions,
-            model_selector,
-            plugin_runtime_mode=PluginRuntimeMode.on_demand,
-            connector_resolver=connector_resolver,
-        ),
+        AgentPresetService(agent_preset_sessions, publication, invocation, clock=lambda: NOW),
+        invocation,
         provider,
     )
 

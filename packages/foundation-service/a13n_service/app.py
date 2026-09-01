@@ -322,10 +322,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     connector_resolver=app.state.agent_connector_selection_resolver,
                     plugin_resolver=app.state.agent_plugin_selection_resolver,
                 )
-                app.state.agent_preset_service = AgentPresetService(
-                    storage.sessions,
-                    app.state.agent_preset_resolver,
-                )
                 app.state.agent_preset_invocation_resolver = (
                     app.state.components.agent_preset_invocation_resolver
                     or AgentPresetInvocationResolver(
@@ -335,6 +331,11 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         connector_resolver=app.state.agent_connector_selection_resolver,
                         plugin_resolver=app.state.agent_plugin_selection_resolver,
                     )
+                )
+                app.state.agent_preset_service = AgentPresetService(
+                    storage.sessions,
+                    app.state.agent_preset_resolver,
+                    app.state.agent_preset_invocation_resolver,
                 )
                 app.state.model_config_service = ModelConfigService(
                     storage.sessions,

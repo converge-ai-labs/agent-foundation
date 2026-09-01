@@ -111,6 +111,11 @@ class FrozenAgentInvocation:
     sensitive_values_digest: str
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedAgentPresetEnable:
+    invocations: tuple[PreparedAgentInvocation, ...]
+
+
 class AgentPresetInvocationResolver:
     """Prepare outside I/O, then reauthorize and freeze inside Run acceptance."""
 
@@ -140,6 +145,7 @@ class AgentPresetInvocationResolver:
         agent_preset_revision_id: str | None = None,
         expected_active_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
+        _allow_disabled_root: bool = False,
     ) -> PreparedAgentInvocation:
         workspace_id = actor.boundary_workspace_id
         try:
@@ -158,7 +164,7 @@ class AgentPresetInvocationResolver:
                     preset_id=agent_preset_id,
                     for_update=False,
                 )
-                _require_invocable_preset(preset)
+                _require_invocable_preset(preset, allow_disabled=_allow_disabled_root)
                 if expected_active_revision_id is not None and preset.active_revision_id != expected_active_revision_id:
                     raise active_revision_conflict(preset.active_revision_id)
                 selector_kind = (
@@ -194,9 +200,17 @@ class AgentPresetInvocationResolver:
                     workspace_id=workspace_id,
                     selections=merged.config.skills,
                 )
-                plugins = None
                 if merged.config.plugins == revision.config.plugins:
-                    resolved_plugins = revision.resolved_plugin_versions
+                    try:
+                        plugins = await self._plugin_resolver.prepare_retained(
+                            session,
+                            actor=actor,
+                            workspace_id=workspace_id,
+                            selections=merged.config.plugins,
+                            resolved=revision.resolved_plugin_versions,
+                        )
+                    except PluginSelectionError as error:
+                        raise preset_revision_not_executable(error.reason) from error
                 else:
                     try:
                         plugins = await self._plugin_resolver.prepare(
@@ -207,7 +221,7 @@ class AgentPresetInvocationResolver:
                         )
                     except PluginSelectionError as error:
                         raise preset_revision_not_executable(error.reason) from error
-                    resolved_plugins = plugins.resolved
+                resolved_plugins = plugins.resolved
                 resolved_environment = _resolve_environment(revision, merged)
                 subagents = await self._prepare_subagents(
                     session,
@@ -279,6 +293,49 @@ class AgentPresetInvocationResolver:
             resolved_environment=resolved_environment,
             subagents=subagents,
         )
+
+    async def prepare_enable_revalidation(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_preset_id: str,
+    ) -> PreparedAgentPresetEnable:
+        """Preflight one disabled root and every exact retained child Revision."""
+
+        root = await self.prepare(
+            actor=actor,
+            agent_preset_id=agent_preset_id,
+            _allow_disabled_root=True,
+        )
+        invocations = [root]
+        visited = {root.agent_preset_revision_id}
+        pending = list(root.subagents)
+        while pending:
+            edge = pending.pop().edge
+            if edge.child_agent_preset_revision_id in visited:
+                continue
+            child = await self.prepare(
+                actor=actor,
+                agent_preset_id=edge.child_agent_preset_id,
+                agent_preset_revision_id=edge.child_agent_preset_revision_id,
+            )
+            visited.add(child.agent_preset_revision_id)
+            if len(visited) > MAX_SUBAGENT_NODES:
+                raise preset_revision_not_executable("subagent_graph_too_large")
+            invocations.append(child)
+            pending.extend(child.subagents)
+        return PreparedAgentPresetEnable(tuple(invocations))
+
+    async def freeze_enable_revalidation(
+        self,
+        session: AsyncSession,
+        *,
+        prepared: PreparedAgentPresetEnable,
+    ) -> None:
+        """Recheck all preflight evidence inside the final lifecycle transaction."""
+
+        for invocation in prepared.invocations:
+            await self.freeze_in_transaction(session, prepared=invocation)
 
     async def freeze_in_transaction(
         self,
@@ -680,9 +737,9 @@ async def _load_revision(
     return record
 
 
-def _require_invocable_preset(preset: AgentPresetRecord) -> None:
+def _require_invocable_preset(preset: AgentPresetRecord, *, allow_disabled: bool = False) -> None:
     state = AgentPresetLifecycleState(preset.lifecycle_state)
-    if state is AgentPresetLifecycleState.disabled:
+    if state is AgentPresetLifecycleState.disabled and not allow_disabled:
         raise preset_disabled()
     if state is AgentPresetLifecycleState.archived:
         raise preset_archived()

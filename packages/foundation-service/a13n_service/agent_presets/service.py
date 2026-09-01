@@ -58,6 +58,7 @@ from .errors import (
     preset_revision_not_found,
     resource_version_conflict,
 )
+from .invocation_resolution import AgentPresetInvocationResolver, PreparedAgentPresetEnable
 from .models import AgentPresetRecord, AgentPresetRevisionRecord
 from .resolution import AgentPresetResolver, PreparedRevisionResolution, resolution_error
 
@@ -71,11 +72,13 @@ class AgentPresetService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         resolver: AgentPresetResolver,
+        invocation_resolver: AgentPresetInvocationResolver,
         *,
         clock=None,
     ) -> None:
         self._sessions = sessions
         self._resolver = resolver
+        self._invocation_resolver = invocation_resolver
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def create(
@@ -667,6 +670,21 @@ class AgentPresetService:
         )
         if replay is not None:
             return replay
+        prepared_enable: PreparedAgentPresetEnable | None = None
+        if action == "enable":
+            current = await self.get(actor=actor, preset_id=preset_id)
+            if current.resource_version != request.expected_resource_version:
+                raise resource_version_conflict(current.resource_version)
+            if current.lifecycle_state is not AgentPresetLifecycleState.disabled or current.active_revision_id is None:
+                raise AgentPresetError(
+                    "preset_state_conflict",
+                    "The AgentPreset cannot be enabled from its current state.",
+                    status_code=409,
+                )
+            prepared_enable = await self._invocation_resolver.prepare_enable_revalidation(
+                actor=actor,
+                agent_preset_id=preset_id,
+            )
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -679,6 +697,11 @@ class AgentPresetService:
                 record = await _locked_preset(session, workspace.organization_id, workspace.workspace_id, preset_id)
                 _require_version(record, request.expected_resource_version)
                 _apply_lifecycle_transition(session, record, action=action)
+                if prepared_enable is not None:
+                    await self._invocation_resolver.freeze_enable_revalidation(
+                        session,
+                        prepared=prepared_enable,
+                    )
                 if action == "disable":
                     await _require_not_in_use(session, record)
                 _touch(record, actor=actor, now=now)

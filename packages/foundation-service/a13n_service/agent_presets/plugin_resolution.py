@@ -19,7 +19,13 @@ from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_work
 from a13n_service.plugins.domain import PluginLifecycleState, PluginSource
 from a13n_service.plugins.models import PluginRecord, PluginVersionRecord
 
-from .domain import OnDemandPluginSelection, PluginRuntimeMode, PluginSelection, ResolvedPluginVersion
+from .domain import (
+    OnDemandPluginSelection,
+    PluginRuntimeMode,
+    PluginSelection,
+    ResolvedPluginVersion,
+    RunnerPluginSelection,
+)
 
 _READY: Final = "ready"
 
@@ -66,6 +72,7 @@ class PreparedPluginVersion:
 @dataclass(frozen=True, slots=True)
 class PreparedPluginSelections:
     items: tuple[PreparedPluginVersion, ...]
+    require_available_plugin: bool = True
 
     @property
     def resolved(self) -> tuple[ResolvedPluginVersion, ...]:
@@ -145,6 +152,79 @@ class AgentPluginSelectionResolver:
             prepared.append(item)
         return PreparedPluginSelections(tuple(prepared))
 
+    async def prepare_retained(
+        self,
+        session: AsyncSession,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        selections: tuple[PluginSelection, ...],
+        resolved: tuple[ResolvedPluginVersion, ...],
+    ) -> PreparedPluginSelections:
+        """Revalidate exact frozen versions without following mutable Plugin heads."""
+
+        if len(selections) != len(resolved):
+            raise PluginSelectionError("plugin_revision_invalid")
+        if not selections:
+            return PreparedPluginSelections((), require_available_plugin=False)
+        await authorize_workspace(
+            session,
+            actor=actor,
+            workspace_id=workspace_id,
+            action=WorkspaceAction.plugin_read,
+        )
+        version_ids = tuple(item.plugin_version_id for item in resolved)
+        rows = tuple(
+            (
+                await session.execute(
+                    select(PluginVersionRecord, PluginRecord)
+                    .join(PluginRecord, PluginRecord.id == PluginVersionRecord.plugin_id)
+                    .where(PluginVersionRecord.id.in_(version_ids))
+                )
+            ).all()
+        )
+        by_id = {plugin_version.id: (plugin_version, plugin) for plugin_version, plugin in rows}
+        if set(by_id) != set(version_ids):
+            raise PluginSelectionError("plugin_version_unavailable")
+
+        prepared: list[PreparedPluginVersion] = []
+        version_by_plugin: dict[str, str] = {}
+        for index, (selection, expected) in enumerate(zip(selections, resolved, strict=True)):
+            path = f"plugins.{index}"
+            if selection.mode is not self.runtime_mode:
+                raise PluginSelectionError("plugin_runtime_mode_mismatch", path=path)
+            if (
+                selection.instance_name != expected.instance_name
+                or selection.config != expected.config
+                or (
+                    isinstance(selection, OnDemandPluginSelection)
+                    and selection.plugin_version_id != expected.plugin_version_id
+                )
+                or (isinstance(selection, RunnerPluginSelection) and selection.plugin_key != expected.plugin_key)
+            ):
+                raise PluginSelectionError("plugin_revision_invalid", path=path)
+            current = by_id.get(expected.plugin_version_id)
+            if current is None:
+                raise PluginSelectionError("plugin_version_unavailable", path=path)
+            plugin_version, plugin = current
+            if plugin_version.status != _READY:
+                raise PluginSelectionError("plugin_version_unavailable", path=path)
+            selected_version = version_by_plugin.setdefault(plugin.id, plugin_version.id)
+            if selected_version != plugin_version.id:
+                raise PluginSelectionError("plugin_version_conflict", path=path)
+            exact_selection = OnDemandPluginSelection(
+                instance_name=selection.instance_name,
+                plugin_version_id=expected.plugin_version_id,
+                config=selection.config,
+            )
+            item = _prepare_item(exact_selection, plugin_version, plugin)
+            if item.resolved() != expected:
+                raise PluginSelectionError("plugin_version_changed", path=path)
+            if self.runtime_mode is PluginRuntimeMode.on_demand:
+                self._validate_runtime_compatibility(item, path=path)
+            prepared.append(item)
+        return PreparedPluginSelections(tuple(prepared), require_available_plugin=False)
+
     async def freeze_in_transaction(
         self,
         session: AsyncSession,
@@ -179,7 +259,9 @@ class AgentPluginSelectionResolver:
             if current is None:
                 raise PluginSelectionError("plugin_version_changed", path=f"plugins.{index}")
             plugin_version, plugin = current
-            if plugin.lifecycle_state != PluginLifecycleState.available.value or plugin_version.status != _READY:
+            if (
+                prepared.require_available_plugin and plugin.lifecycle_state != PluginLifecycleState.available.value
+            ) or plugin_version.status != _READY:
                 raise PluginSelectionError("plugin_version_unavailable", path=f"plugins.{index}")
             if _prepare_item(expected.selection, plugin_version, plugin) != expected:
                 raise PluginSelectionError("plugin_version_changed", path=f"plugins.{index}")

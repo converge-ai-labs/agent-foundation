@@ -182,6 +182,99 @@ async def test_retained_revision_keeps_archived_plugin_executable(
 
 
 @pytest.mark.anyio
+async def test_enable_revalidates_retained_plugin_without_following_archive_state(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _add_plugin(agent_preset_sessions)
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-enable-retained-plugin",
+        request=CreateAgentPresetRequest(
+            name="Enable Retained Plugin",
+            config=preset_config(plugins=[_selection()]),
+        ),
+    )
+    published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-enable-retained-plugin",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    disabled = await agent_preset_service.change_lifecycle(
+        actor=actor(),
+        preset_id=preset.id,
+        action="disable",
+        idempotency_key="disable-enable-retained-plugin",
+        request=AgentPresetCommandRequest(expected_resource_version=published.preset.resource_version),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        plugin = await session.get(PluginRecord, PLUGIN_ID)
+        assert plugin is not None
+        plugin.lifecycle_state = "archived"
+
+    enabled = await agent_preset_service.change_lifecycle(
+        actor=actor(),
+        preset_id=preset.id,
+        action="enable",
+        idempotency_key="enable-retained-plugin",
+        request=AgentPresetCommandRequest(expected_resource_version=disabled.resource_version),
+    )
+
+    assert enabled.lifecycle_state == "enabled"
+
+
+@pytest.mark.anyio
+async def test_enable_rejects_changed_retained_plugin_evidence(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _add_plugin(agent_preset_sessions)
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-changed-retained-plugin",
+        request=CreateAgentPresetRequest(
+            name="Changed Retained Plugin",
+            config=preset_config(plugins=[_selection()]),
+        ),
+    )
+    published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-changed-retained-plugin",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    disabled = await agent_preset_service.change_lifecycle(
+        actor=actor(),
+        preset_id=preset.id,
+        action="disable",
+        idempotency_key="disable-changed-retained-plugin",
+        request=AgentPresetCommandRequest(expected_resource_version=published.preset.resource_version),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        version = await session.get(PluginVersionRecord, PLUGIN_VERSION_ID)
+        assert version is not None
+        version.content_digest = "b" * 64
+
+    with pytest.raises(AgentPresetError) as rejected:
+        await agent_preset_service.change_lifecycle(
+            actor=actor(),
+            preset_id=preset.id,
+            action="enable",
+            idempotency_key="enable-changed-retained-plugin",
+            request=AgentPresetCommandRequest(expected_resource_version=disabled.resource_version),
+        )
+
+    current = await agent_preset_service.get(actor=actor(), preset_id=preset.id)
+    assert rejected.value.code == "preset_revision_not_executable"
+    assert rejected.value.details == {"reason": "plugin_version_changed"}
+    assert current.lifecycle_state == "disabled"
+    assert current.resource_version == disabled.resource_version
+
+
+@pytest.mark.anyio
 async def test_publish_rejects_mode_and_worker_dependency_mismatches(
     agent_preset_service: AgentPresetService,
     agent_preset_sessions: async_sessionmaker[AsyncSession],
@@ -267,3 +360,54 @@ async def test_plugin_state_is_rechecked_in_commit_transaction(
                 prepared=prepared,
             )
     assert changed.value.reason == "plugin_version_unavailable"
+
+
+@pytest.mark.anyio
+async def test_retained_plugin_evidence_is_rechecked_in_commit_transaction(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _add_plugin(agent_preset_sessions)
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-retained-plugin-race",
+        request=CreateAgentPresetRequest(
+            name="Retained Plugin Race",
+            config=preset_config(plugins=[_selection()]),
+        ),
+    )
+    published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-retained-plugin-race",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    resolver = AgentPluginSelectionResolver(
+        agent_preset_sessions,
+        runtime_mode=PluginRuntimeMode.on_demand,
+        installed_distributions={},
+        installed_top_level_packages=frozenset(),
+    )
+    async with short_session(agent_preset_sessions) as session:
+        prepared = await resolver.prepare_retained(
+            session,
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            selections=published.revision.config.plugins,
+            resolved=published.revision.resolved_plugin_versions,
+        )
+    async with transaction(agent_preset_sessions) as session:
+        version = await session.get(PluginVersionRecord, PLUGIN_VERSION_ID)
+        assert version is not None
+        version.content_digest = "b" * 64
+
+    with pytest.raises(PluginSelectionError) as changed:
+        async with transaction(agent_preset_sessions) as session:
+            await resolver.freeze_in_transaction(
+                session,
+                actor=actor(),
+                workspace_id=WORKSPACE_ID,
+                prepared=prepared,
+            )
+    assert changed.value.reason == "plugin_version_changed"
