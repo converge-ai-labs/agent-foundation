@@ -119,6 +119,18 @@ langfuse-up: ## Start the local Langfuse trace backend
 langfuse-down: ## Stop local Langfuse while preserving its data
 	@$(LANGFUSE_COMPOSE) down --remove-orphans
 
+.PHONY: langfuse-test
+langfuse-test: langfuse-up ## Verify Foundation OTLP write and Trace Query against local Langfuse v4
+	@set -e; \
+	web_container="$$( $(LANGFUSE_COMPOSE) ps -q langfuse-web )"; \
+	public_key="$$( docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$$web_container" | sed -n 's/^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=//p' )"; \
+	secret_key="$$( docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$$web_container" | sed -n 's/^LANGFUSE_INIT_PROJECT_SECRET_KEY=//p' )"; \
+	web_address="$$( $(LANGFUSE_COMPOSE) port langfuse-web 3000 )"; \
+	A13N_TEST_LANGFUSE_BASE_URL="http://$$web_address" \
+	A13N_TEST_LANGFUSE_PUBLIC_KEY="$$public_key" \
+	A13N_TEST_LANGFUSE_SECRET_KEY="$$secret_key" \
+	uv run --locked python -m pytest packages/foundation-service/tests/trace_query/test_langfuse_integration.py
+
 .PHONY: langfuse-reset
 langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans

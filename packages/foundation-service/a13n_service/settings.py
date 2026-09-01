@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections.abc import Collection
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -15,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from a13n_service.connectors.capability import ConnectorCapabilityCodec
 from a13n_service.connectors.registry import ConnectorProviderTrust
 from a13n_service.database import MigrationConfig
+from a13n_service.observability import TraceContent
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (
     FilesystemConfig,
@@ -67,7 +69,25 @@ class ServiceSettings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     build_version: str = "unknown"
+    deployment_environment_name: str = Field(default="default", min_length=1, max_length=256)
+    service_instance_id: str | None = Field(default=None, min_length=1, max_length=1024)
     web_dist_dir: Path | None = None
+    observability_tracing: bool = True
+    observability_trace_content: TraceContent = TraceContent.none
+    observability_query_provider: str = Field(default="none", pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    observability_query_langfuse_base_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    observability_query_langfuse_public_key: SecretStr | None = Field(
+        default=None,
+        min_length=1,
+        max_length=4096,
+        repr=False,
+    )
+    observability_query_langfuse_secret_key: SecretStr | None = Field(
+        default=None,
+        min_length=1,
+        max_length=4096,
+        repr=False,
+    )
     connector_providers: tuple[ConnectorProviderTrust, ...] = ()
     connector_trigger_min_interval_seconds: int = Field(default=60, ge=1, le=86_400)
     connector_capability_signing_key_base64: SecretStr | None = Field(default=None, repr=False)
@@ -229,6 +249,30 @@ class ServiceSettings(BaseSettings):
         except (binascii.Error, ValueError):
             raise ValueError("FOUNDATION_CONNECTOR_CAPABILITY_SIGNING_KEY_BASE64 is invalid") from None
         return ConnectorCapabilityCodec(key)
+
+    def validate_trace_query_configuration(
+        self,
+        *,
+        registered_provider_keys: Collection[str] = ("langfuse",),
+    ) -> None:
+        """Validate provider selection without opening a control-plane client."""
+
+        if self.observability_query_provider == "none":
+            return
+        if self.observability_query_provider not in registered_provider_keys:
+            raise ValueError(f"Trace Query provider is not registered: {self.observability_query_provider}")
+        if self.observability_query_provider != "langfuse":
+            return
+        if self.observability_query_langfuse_base_url is None:
+            raise ValueError("FOUNDATION_OBSERVABILITY_QUERY_LANGFUSE_BASE_URL is required")
+        if self.observability_query_langfuse_public_key is None:
+            raise ValueError("FOUNDATION_OBSERVABILITY_QUERY_LANGFUSE_PUBLIC_KEY is required")
+        if self.observability_query_langfuse_secret_key is None:
+            raise ValueError("FOUNDATION_OBSERVABILITY_QUERY_LANGFUSE_SECRET_KEY is required")
+
+        from a13n_service.trace_query.langfuse import validate_langfuse_base_url
+
+        validate_langfuse_base_url(self.observability_query_langfuse_base_url)
 
 
 @lru_cache(maxsize=1)

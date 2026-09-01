@@ -13,6 +13,7 @@ from a13n_service.connectors import ConnectorError
 from a13n_service.iam import AuthenticationError
 from a13n_service.model_configs.service import ModelConfigError
 from a13n_service.skills.errors import SkillError
+from a13n_service.trace_query import TraceQueryError
 
 
 def install_api_conventions(app: FastAPI) -> None:
@@ -48,6 +49,10 @@ def install_api_conventions(app: FastAPI) -> None:
         if error.retry_after_seconds is not None:
             response.headers["Retry-After"] = str(error.retry_after_seconds)
         return response
+
+    @app.exception_handler(TraceQueryError)
+    async def trace_query_error_handler(request: Request, error: TraceQueryError) -> JSONResponse:
+        return _error_response(request, error.status_code, error.code, error.message, error.details)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:

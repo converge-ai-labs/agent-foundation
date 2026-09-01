@@ -26,6 +26,7 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.connector_providers == ()
     assert settings.database_backend is DatabaseBackend.postgresql
     assert settings.asset_max_size_bytes == 100 * 1024 * 1024
+    assert settings.observability_query_provider == "none"
     assert "foundation:foundation" not in repr(settings)
 
 
@@ -101,6 +102,60 @@ def test_network_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
     assert isinstance(storage.objects, S3ObjectConfig)
     assert "secret" not in repr(settings)
     assert "secret" not in repr(storage)
+
+
+def test_langfuse_trace_query_configuration_is_complete_and_redacted() -> None:
+    settings = ServiceSettings(
+        _env_file=None,
+        observability_query_provider="langfuse",
+        observability_query_langfuse_base_url="https://langfuse.example.com/",
+        observability_query_langfuse_public_key="pk-query-secret",
+        observability_query_langfuse_secret_key="sk-query-secret",
+    )
+
+    settings.validate_trace_query_configuration()
+
+    assert "pk-query-secret" not in repr(settings)
+    assert "sk-query-secret" not in repr(settings)
+
+
+def test_distribution_registered_trace_query_provider_is_accepted() -> None:
+    settings = ServiceSettings(_env_file=None, observability_query_provider="custom")
+
+    settings.validate_trace_query_configuration(registered_provider_keys=("custom", "langfuse"))
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"observability_query_provider": "tempo"}, "not registered"),
+        ({"observability_query_provider": "langfuse"}, "LANGFUSE_BASE_URL"),
+        (
+            {
+                "observability_query_provider": "langfuse",
+                "observability_query_langfuse_base_url": "https://langfuse.example.com",
+            },
+            "LANGFUSE_PUBLIC_KEY",
+        ),
+        (
+            {
+                "observability_query_provider": "langfuse",
+                "observability_query_langfuse_base_url": "https://user:password@langfuse.example.com",
+                "observability_query_langfuse_public_key": "pk-test",
+                "observability_query_langfuse_secret_key": "sk-test",
+            },
+            "base URL",
+        ),
+    ],
+)
+def test_invalid_trace_query_configuration_fails_static_validation(
+    values: dict[str, object],
+    message: str,
+) -> None:
+    settings = ServiceSettings(_env_file=None, **values)
+
+    with pytest.raises(ValueError, match=message):
+        settings.validate_trace_query_configuration()
 
 
 @pytest.mark.parametrize(

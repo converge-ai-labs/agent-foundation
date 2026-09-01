@@ -9,6 +9,7 @@ from a13n_service.connectors import ConnectorProviderCatalog, LocalConnectorProv
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
 from a13n_service.skills import SkillRuntimePreparer, SkillSelectionResolver
+from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 from fastapi import FastAPI
 
 
@@ -65,6 +66,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/readyz" not in document["paths"]
     schemas = document["components"]["schemas"]
     assert {"Asset", "ModelConfig", "Skill", "SkillPackageManifest", "SkillRevision"} <= schemas.keys()
+    assert {"Observation", "TraceCollection", "TraceDetail", "TraceSummary"} <= schemas.keys()
     assert {
         "FoundationAgentSkillSelection",
         "ManagedSkillPackageManifest",
@@ -75,6 +77,8 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert request(app, "/api/docs/oauth2-redirect").status_code == 200
     assert request(app, "/openapi.json").status_code == 404
     assert request(app, "/docs/oauth2-redirect").status_code == 404
+    assert "/api/v1/workspaces/{workspace_id}/traces" in document["paths"]
+    assert "/api/v1/workspaces/{workspace_id}/traces/{trace_id}" in document["paths"]
 
 
 def test_web_application_serves_assets_and_browser_history(tmp_path: Path) -> None:
@@ -135,6 +139,7 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         assert app.state.db_session_factory is storage.sessions
         assert isinstance(app.state.skill_selection_resolver, SkillSelectionResolver)
         assert isinstance(app.state.skill_runtime_preparer, SkillRuntimePreparer)
+        assert app.state.trace_query_service is not None
 
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -193,6 +198,75 @@ async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_p
     async with worker.router.lifespan_context(worker):
         assert not hasattr(worker.state, "skill_selection_resolver")
         assert isinstance(worker.state.skill_runtime_preparer, SkillRuntimePreparer)
+        assert not hasattr(worker.state, "trace_query_service")
+
+
+@pytest.mark.anyio
+async def test_trace_query_client_is_created_only_for_control_plane_roles(tmp_path: Path) -> None:
+    query_values = {
+        "observability_query_provider": "langfuse",
+        "observability_query_langfuse_base_url": "https://langfuse.example.com",
+        "observability_query_langfuse_public_key": "pk-test",
+        "observability_query_langfuse_secret_key": "sk-test",
+    }
+    control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control, **query_values))
+    worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker, **query_values))
+
+    async with control.router.lifespan_context(control):
+        assert control.state.trace_query_service is not None
+    async with worker.router.lifespan_context(worker):
+        assert not hasattr(worker.state, "trace_query_service")
+
+
+@pytest.mark.anyio
+async def test_distribution_registered_trace_query_provider_is_selected_only_by_control(tmp_path: Path) -> None:
+    class Provider:
+        capabilities = TraceQueryCapabilities()
+
+    created: list[Provider] = []
+    registry = TraceQueryProviderRegistry()
+
+    def create_provider() -> Provider:
+        provider = Provider()
+        created.append(provider)
+        return provider
+
+    registry.register("custom", create_provider)  # type: ignore[arg-type]
+    components = ServiceComponents(trace_query_provider_registry=registry)
+    control = create_app(
+        local_settings(
+            tmp_path / "control-custom",
+            role=ServiceRole.control,
+            observability_query_provider="custom",
+        ),
+        components=components,
+    )
+    worker = create_app(
+        local_settings(
+            tmp_path / "worker-custom",
+            role=ServiceRole.worker,
+            observability_query_provider="custom",
+        ),
+        components=components,
+    )
+
+    async with control.router.lifespan_context(control):
+        assert len(created) == 1
+        assert control.state.trace_query_service is not None
+    async with worker.router.lifespan_context(worker):
+        assert len(created) == 1
+        assert not hasattr(worker.state, "trace_query_service")
+
+
+def test_distribution_cannot_replace_the_builtin_langfuse_provider(tmp_path: Path) -> None:
+    registry = TraceQueryProviderRegistry()
+    registry.register("langfuse", lambda: object())  # type: ignore[arg-type,return-value]
+
+    with pytest.raises(ValueError, match="already registered"):
+        create_app(
+            local_settings(tmp_path),
+            components=ServiceComponents(trace_query_provider_registry=registry),
+        )
 
 
 @pytest.mark.anyio

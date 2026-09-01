@@ -53,6 +53,7 @@ from a13n_service.model_configs.service import (
     CandidateConnectionTester,
     ModelConfigService,
 )
+from a13n_service.observability import build_observability_runtime
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
 from a13n_service.skills.catalog import SkillCatalogService
 from a13n_service.skills.credentials import DatabaseGitHubCredentialResolver
@@ -65,6 +66,13 @@ from a13n_service.skills.selection import SkillSelectionResolver
 from a13n_service.skills.sources import GitHubCredentialResolver, SkillSourcePreparer
 from a13n_service.skills.uploads import SkillUploadService
 from a13n_service.storage import StorageResources, open_storage, short_session
+from a13n_service.trace_query import (
+    LangfuseTraceQueryProvider,
+    TraceAccessAuthorizer,
+    TraceQueryProviderRegistry,
+    TraceQueryService,
+)
+from a13n_service.trace_query.router import router as trace_query_router
 from a13n_service.web import mount_web_application
 
 logger = logging.getLogger("a13n_service.app")
@@ -86,6 +94,8 @@ class ServiceComponents:
     connector_attempt_authorizer: ConnectorAttemptAuthorizer | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
+    trace_access_authorizer: TraceAccessAuthorizer | None = None
+    trace_query_provider_registry: TraceQueryProviderRegistry | None = None
 
 
 @asynccontextmanager
@@ -95,12 +105,52 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     async def validate_model_request(request: httpx2.Request) -> None:
         await app.state.model_endpoint_policy.validate(str(request.url), resolve_dns=True)
 
-    async with open_storage(settings.storage_settings()) as storage:
-        async with AsyncExitStack() as stack:
+    observability = build_observability_runtime(
+        enabled=settings.observability_tracing,
+        trace_content=settings.observability_trace_content,
+        service_name=settings.service_name,
+        service_version=settings.build_version,
+        deployment_environment=settings.deployment_environment_name,
+        service_role=settings.role.value,
+        service_instance_id=settings.service_instance_id,
+    )
+    app.state.observability_runtime = observability
+    try:
+        async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
             app.state.storage = storage
             # Keep these names for service code that only needs relational access.
             app.state.db_engine = storage.engine
             app.state.db_session_factory = storage.sessions
+            if settings.role in _CONTROL_PLANE_ROLES:
+                provider_registry = app.state.trace_query_provider_registry.copy()
+                if settings.observability_query_provider == "langfuse":
+                    query_http_client = await stack.enter_async_context(
+                        httpx2.AsyncClient(follow_redirects=False, timeout=10.0)
+                    )
+                    public_key = settings.observability_query_langfuse_public_key
+                    secret_key = settings.observability_query_langfuse_secret_key
+                    base_url = settings.observability_query_langfuse_base_url
+                    if public_key is None or secret_key is None or base_url is None:
+                        raise RuntimeError("validated Langfuse Trace Query configuration is incomplete")
+                    provider_registry.register(
+                        "langfuse",
+                        lambda: LangfuseTraceQueryProvider(
+                            query_http_client,
+                            base_url=base_url,
+                            public_key=public_key.get_secret_value(),
+                            secret_key=secret_key.get_secret_value(),
+                        ),
+                    )
+                trace_query_provider = (
+                    None
+                    if settings.observability_query_provider == "none"
+                    else provider_registry.create(settings.observability_query_provider)
+                )
+                app.state.trace_query_service = TraceQueryService(
+                    provider_key=settings.observability_query_provider,
+                    provider=trace_query_provider,
+                    authorizer=app.state.components.trace_access_authorizer,
+                )
             secret_protector = settings.secret_protector()
             app.state.connector_secret_store = DatabaseConnectorSecretStore(storage.sessions, secret_protector)
             component_catalog = app.state.components.connector_provider_catalog
@@ -272,6 +322,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                             "role": settings.role.value,
                         },
                     )
+    finally:
+        await observability.aclose()
 
 
 class _BoundaryAuthorizedConnectorInvocationAuthorizer:
@@ -343,6 +395,13 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
     """Create an application without opening external resources."""
 
     resolved_settings = settings or get_settings()
+    resolved_components = components or ServiceComponents()
+    trace_query_provider_registry = resolved_components.trace_query_provider_registry or TraceQueryProviderRegistry()
+    if "langfuse" in trace_query_provider_registry.keys():
+        raise ValueError("Trace Query provider key is already registered: langfuse")
+    resolved_settings.validate_trace_query_configuration(
+        registered_provider_keys=(*trace_query_provider_registry.keys(), "langfuse")
+    )
     serves_control_plane = resolved_settings.role in _CONTROL_PLANE_ROLES
     serves_connector_plane = resolved_settings.role in _CONNECTOR_ROLES
     app = FastAPI(
@@ -356,7 +415,8 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
     )
     install_api_conventions(app)
     app.state.settings = resolved_settings
-    app.state.components = components or ServiceComponents()
+    app.state.components = resolved_components
+    app.state.trace_query_provider_registry = trace_query_provider_registry.copy()
     app.state.request_authenticator = app.state.components.request_authenticator
     app.state.model_provider_registry = built_in_provider_registry()
     app.state.model_endpoint_policy = EndpointPolicy.from_operator_allowlist(
@@ -414,6 +474,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.include_router(asset_router)
         app.include_router(model_config_router)
         app.include_router(skill_router)
+        app.include_router(trace_query_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:
