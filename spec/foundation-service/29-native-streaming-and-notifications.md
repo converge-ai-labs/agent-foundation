@@ -67,7 +67,7 @@ This is a bounded JSON collection, not an SSE endpoint. It returns authorized du
 
 ```python
 class WorkspaceEventPage:
-    items: tuple[LifecycleEventResource, ...]
+    items: tuple[LifecycleEvent, ...]
     next_cursor: str | None
     retained_floor: str
     high_watermark: str
@@ -94,13 +94,13 @@ The response is ordered by the positive contiguous `resource_seq` owned by the l
 class ResourceLifecycleEventPage:
     resource_type: Literal["run", "run_attempt"]
     resource_id: str
-    items: tuple[LifecycleEventResource, ...]
+    items: tuple[LifecycleEvent, ...]
     next_resource_seq: int
     retained_resource_seq_floor: int
     high_watermark_resource_seq: int
 ```
 
-`after_resource_seq` is the last resource event durably applied by the caller; `0` begins before the first event when that history remains retained. Each page contains every authorized retained lifecycle event after that value through its bounded page limit. The caller continues with `next_resource_seq` until it reaches its desired recovery target, or the reported `high_watermark_resource_seq` for general catch-up. Every `LifecycleEventResource` item includes the stable source event identity, resource identity, `resource_seq`, resource version, event type, and bounded payload. Hook-name filters do not remove events from this recovery collection: a consumer may ignore an event for its business projection only after advancing through its `resource_seq`.
+`after_resource_seq` is the last resource event durably applied by the caller; `0` begins before the first event when that history remains retained. Each page contains every authorized retained lifecycle event after that value through its bounded page limit. The caller continues with `next_resource_seq` until it reaches its desired recovery target, or the reported `high_watermark_resource_seq` for general catch-up. Every `LifecycleEvent` item includes the stable source event identity, resource identity, `resource_seq`, resource version, event type, and bounded payload. Hook-name filters do not remove events from this recovery collection: a consumer may ignore an event for its business projection only after advancing through its `resource_seq`.
 
 The request accepts `after_resource_seq` plus bounded `limit`; it does not accept an end sequence. For Webhook gap recovery, the received `resource_seq` is the caller's local target, and the caller stops paging after it has consumed through that sequence.
 

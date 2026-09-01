@@ -5,9 +5,9 @@ from pathlib import Path
 import httpx2
 import pytest
 from a13n_service.app import create_app
-from a13n_service.secret_management import SecretProtectionError
+from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
-from a13n_service.skill_management import AgentSkillLockResolver, FoundationSkillRuntimePreparer
+from a13n_service.skills import SkillRuntimePreparer, SkillSelectionResolver
 from fastapi import FastAPI
 
 
@@ -57,9 +57,18 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     response = request(app, "/api/openapi.json")
 
     assert response.status_code == 200
-    assert response.json()["info"] == {"title": "Agent Foundation Service", "version": "1.2.3"}
-    assert "/healthz" not in response.json()["paths"]
-    assert "/readyz" not in response.json()["paths"]
+    document = response.json()
+    assert document["info"] == {"title": "Agent Foundation Service", "version": "1.2.3"}
+    assert "/healthz" not in document["paths"]
+    assert "/readyz" not in document["paths"]
+    schemas = document["components"]["schemas"]
+    assert {"Asset", "ModelConfig", "Skill", "SkillPackageManifest", "SkillRevision"} <= schemas.keys()
+    assert {
+        "FoundationAgentSkillSelection",
+        "ManagedSkillPackageManifest",
+        "ModelConfigResource",
+        "WorkspaceSkill",
+    }.isdisjoint(schemas)
     assert request(app, "/api/docs").status_code == 200
     assert request(app, "/api/docs/oauth2-redirect").status_code == 200
     assert request(app, "/openapi.json").status_code == 404
@@ -113,8 +122,8 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         storage = app.state.storage
         assert app.state.db_engine is storage.engine
         assert app.state.db_session_factory is storage.sessions
-        assert isinstance(app.state.agent_skill_lock_resolver, AgentSkillLockResolver)
-        assert isinstance(app.state.skill_runtime_preparer, FoundationSkillRuntimePreparer)
+        assert isinstance(app.state.skill_selection_resolver, SkillSelectionResolver)
+        assert isinstance(app.state.skill_runtime_preparer, SkillRuntimePreparer)
 
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -128,13 +137,13 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_path: Path) -> None:
     control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control))
     async with control.router.lifespan_context(control):
-        assert isinstance(control.state.agent_skill_lock_resolver, AgentSkillLockResolver)
+        assert isinstance(control.state.skill_selection_resolver, SkillSelectionResolver)
         assert not hasattr(control.state, "skill_runtime_preparer")
 
     worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker))
     async with worker.router.lifespan_context(worker):
-        assert not hasattr(worker.state, "agent_skill_lock_resolver")
-        assert isinstance(worker.state.skill_runtime_preparer, FoundationSkillRuntimePreparer)
+        assert not hasattr(worker.state, "skill_selection_resolver")
+        assert isinstance(worker.state.skill_runtime_preparer, SkillRuntimePreparer)
 
 
 @pytest.mark.anyio

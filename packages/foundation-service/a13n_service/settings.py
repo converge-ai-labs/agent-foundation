@@ -11,7 +11,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from a13n_service.database import MigrationConfig
-from a13n_service.secret_management import SecretProtectionError, SecretProtector
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (
     FilesystemConfig,
     LocalObjectConfig,

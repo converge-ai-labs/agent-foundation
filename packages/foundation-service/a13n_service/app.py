@@ -13,37 +13,37 @@ from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 
 from a13n_service.api import install_api_conventions
-from a13n_service.asset_management.cleanup import AssetCleanupReconciler
-from a13n_service.asset_management.objects import AssetObjectStore
-from a13n_service.asset_management.router import router as asset_management_router
-from a13n_service.asset_management.service import AssetService
-from a13n_service.asset_management.staging import AssetStaging
+from a13n_service.assets.cleanup import AssetCleanupReconciler
+from a13n_service.assets.objects import AssetObjectStore
+from a13n_service.assets.router import router as asset_router
+from a13n_service.assets.service import AssetService
+from a13n_service.assets.staging import AssetStaging
 from a13n_service.iam import RequestAuthenticator
-from a13n_service.model_management.connection_test import NativeModelConnectionTester
-from a13n_service.model_management.endpoint_policy import EndpointPolicy
-from a13n_service.model_management.providers import built_in_provider_registry
-from a13n_service.model_management.router import router as model_management_router
-from a13n_service.model_management.runtime import (
+from a13n_service.model_configs.connection_test import NativeModelConnectionTester
+from a13n_service.model_configs.endpoint_policy import EndpointPolicy
+from a13n_service.model_configs.providers import built_in_provider_registry
+from a13n_service.model_configs.router import router as model_config_router
+from a13n_service.model_configs.runtime import (
     AcceptedModelSelector,
     NativeModelFactory,
     RuntimeSecretValueResolver,
 )
-from a13n_service.model_management.secrets import DatabaseSecretValueResolver
-from a13n_service.model_management.service import (
+from a13n_service.model_configs.secrets import DatabaseSecretValueResolver
+from a13n_service.model_configs.service import (
     CandidateConnectionTester,
     ModelConfigService,
 )
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
-from a13n_service.skill_management.catalog import SkillCatalogService
-from a13n_service.skill_management.credentials import DatabaseGitHubCredentialResolver
-from a13n_service.skill_management.github import GitHubSkillAcquirer
-from a13n_service.skill_management.objects import SkillPackageStore
-from a13n_service.skill_management.publication import SkillPublicationService
-from a13n_service.skill_management.router import router as skill_management_router
-from a13n_service.skill_management.runtime import FoundationSkillRuntimePreparer
-from a13n_service.skill_management.selection import AgentSkillLockResolver
-from a13n_service.skill_management.sources import GitHubCredentialResolver, SkillSourcePreparer
-from a13n_service.skill_management.uploads import SkillUploadService
+from a13n_service.skills.catalog import SkillCatalogService
+from a13n_service.skills.credentials import DatabaseGitHubCredentialResolver
+from a13n_service.skills.github import GitHubSkillAcquirer
+from a13n_service.skills.objects import SkillPackageStore
+from a13n_service.skills.publication import SkillPublicationService
+from a13n_service.skills.router import router as skill_router
+from a13n_service.skills.runtime import SkillRuntimePreparer
+from a13n_service.skills.selection import SkillSelectionResolver
+from a13n_service.skills.sources import GitHubCredentialResolver, SkillSourcePreparer
+from a13n_service.skills.uploads import SkillUploadService
 from a13n_service.storage import StorageResources, open_storage, short_session
 from a13n_service.web import mount_web_application
 
@@ -113,7 +113,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
                 app.state.skill_publication_service = SkillPublicationService(storage.sessions, source_preparer)
                 app.state.skill_catalog_service = SkillCatalogService(storage.sessions, package_store)
-                app.state.agent_skill_lock_resolver = AgentSkillLockResolver(storage.sessions)
+                app.state.skill_selection_resolver = SkillSelectionResolver(storage.sessions)
                 app.state.accepted_model_selector = AcceptedModelSelector(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -143,7 +143,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 app.state.asset_cleanup_reconciler = asset_cleanup_reconciler
             if settings.role in {ServiceRole.all, ServiceRole.worker}:
                 app.state.native_model_factory = NativeModelFactory(model_http_client)
-                app.state.skill_runtime_preparer = FoundationSkillRuntimePreparer(storage.sessions, package_store)
+                app.state.skill_runtime_preparer = SkillRuntimePreparer(storage.sessions, package_store)
             async with create_task_group() as background_tasks:
                 if asset_cleanup_reconciler is not None:
                     background_tasks.start_soon(asset_cleanup_reconciler.run)
@@ -219,9 +219,9 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         return {"status": "ready", "role": resolved_settings.role.value}
 
     if serves_control_plane:
-        app.include_router(asset_management_router)
-        app.include_router(model_management_router)
-        app.include_router(skill_management_router)
+        app.include_router(asset_router)
+        app.include_router(model_config_router)
+        app.include_router(skill_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:

@@ -31,7 +31,7 @@ Foundation accepts no server-native source path, arbitrary URL, executable exten
 The following schemas are conceptual domain and public read shapes:
 
 ```python
-class WorkspaceSkill:
+class Skill:
     id: SkillId
     organization_id: OrganizationId
     workspace_id: WorkspaceId
@@ -44,12 +44,12 @@ class WorkspaceSkill:
     deleted_at: datetime | None
 
 
-class WorkspaceSkillRevision:
+class SkillRevision:
     id: SkillRevisionId
     skill_id: SkillId
     workspace_id: WorkspaceId
     revision_number: int
-    manifest: ManagedSkillPackageManifest
+    manifest: SkillPackageManifest
     imported_from: ZipSkillImportProvenance | GitHubSkillImportProvenance
     created_at: datetime
     created_by: PrincipalRef
@@ -65,7 +65,7 @@ Foundation stores each normalized package as one immutable ZIP object. For packa
 tenants/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/{content_digest}.zip
 ```
 
-The ZIP contains only the files named by the revision manifest. ZIP byte encoding is not content identity; every read verifies the expanded files against the manifest. Foundation derives the key only after an authorized Workspace and revision lookup. It is not stored in `WorkspaceSkillRevision`, accepted from a caller, exposed by the API, or treated as access authority. `imported_from` records source provenance only and is never used to locate package content.
+The ZIP contains only the files named by the revision manifest. ZIP byte encoding is not content identity; every read verifies the expanded files against the manifest. Foundation derives the key only after an authorized Workspace and revision lookup. It is not stored in `SkillRevision`, accepted from a caller, exposed by the API, or treated as access authority. `imported_from` records source provenance only and is never used to locate package content.
 
 Objects and revisions remain while referenced by a retained AgentPresetVersion, Run, or current Skill head. Tombstoning a Skill prevents new revisions and AgentPreset bindings but does not rewrite retained Agents or Runs.
 
@@ -109,7 +109,7 @@ class SkillUploadReceipt:
     upload_id: SkillUploadId
     workspace_id: WorkspaceId
     archive_sha256: str
-    manifest: ManagedSkillPackageManifest
+    manifest: SkillPackageManifest
     expires_at: datetime
     consumed_by_revision_id: SkillRevisionId | None
 ```
@@ -133,7 +133,7 @@ class GitHubRevisionSource:
     credential_secret_id: SecretId | None = None
 
 
-FoundationSkillRevisionSource = Annotated[
+SkillRevisionSource = Annotated[
     ZipUploadSkillSource | GitHubRevisionSource,
     Field(discriminator="kind"),
 ]
@@ -141,12 +141,12 @@ FoundationSkillRevisionSource = Annotated[
 
 class CreateSkillRequest:
     display_name: str
-    source: FoundationSkillRevisionSource
+    source: SkillRevisionSource
 
 
 class CreateSkillRevisionRequest:
     expected_version: int
-    source: FoundationSkillRevisionSource
+    source: SkillRevisionSource
 ```
 
 ```http
@@ -179,8 +179,8 @@ class UpdateSkillRequest:
 
 
 class SkillPublicationReceipt:
-    skill: WorkspaceSkill
-    revision: WorkspaceSkillRevision
+    skill: Skill
+    revision: SkillRevision
     outcome: Literal["published", "already_current"]
 ```
 
@@ -255,21 +255,21 @@ Source acquisition, validation, and object storage occur without a database sess
 Agent authoring accepts this value per Agent node:
 
 ```python
-class FoundationAgentSkillSelectionRequest:
+class AgentSkillSelectionRequest:
     available_revision_ids: tuple[SkillRevisionId, ...]
     materialization_mount: str | None
     default_mode: Literal["all", "exact"]
     default_names: tuple[str, ...]
 
 
-class FoundationSkillRevisionLock:
+class SkillRevisionLock:
     skill_revision_id: SkillRevisionId
     skill_name: str
     content_digest: str
 
 
-class FoundationAgentSkillSelection:
-    available: tuple[FoundationSkillRevisionLock, ...]
+class AgentSkillSelection:
+    available: tuple[SkillRevisionLock, ...]
     materialization_mount: str | None
     default_mode: Literal["all", "exact"]
     default_names: tuple[str, ...]

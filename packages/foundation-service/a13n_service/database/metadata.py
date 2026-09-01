@@ -23,19 +23,19 @@ def service_metadata() -> MetaData:
 
     # The distribution descriptor imports every service-owned domain explicitly.
     # Deliberately avoid module scanning or plugin discovery.
-    from a13n_service.asset_management import models as asset_management_models
+    from a13n_service.assets import models as asset_models
     from a13n_service.durable_operations import models as durable_operations_models
     from a13n_service.iam import models as iam_models
-    from a13n_service.model_management import models as model_management_models
-    from a13n_service.secret_management import models as secret_management_models
-    from a13n_service.skill_management import models as skill_management_models
+    from a13n_service.model_configs import models as model_config_models
+    from a13n_service.secrets import models as secret_models
+    from a13n_service.skills import models as skill_models
 
     del (
-        asset_management_models,
+        asset_models,
         durable_operations_models,
         iam_models,
-        model_management_models,
-        secret_management_models,
-        skill_management_models,
+        model_config_models,
+        secret_models,
+        skill_models,
     )
     return Base.metadata

@@ -26,18 +26,18 @@ These types are conceptual. Hosts can use different storage envelopes as long as
 they preserve the same manifest and file bytes.
 
 ```python
-class ManagedSkillPackageFile:
+class SkillPackageFile:
     path: str
     size_bytes: int
     sha256: str
 
 
-class ManagedSkillPackageManifest:
+class SkillPackageManifest:
     schema_version: Literal["1"]
     skill_name: str
     description: str
     harness_skill_contract: Literal["1"]
-    files: tuple[ManagedSkillPackageFile, ...]
+    files: tuple[SkillPackageFile, ...]
     total_size_bytes: int
     content_digest: str
 

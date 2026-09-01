@@ -89,7 +89,7 @@ GET /api/v1/sessions/{session_id}/threads?limit=...&cursor=...
 The exact read and each collection item have this conceptual wire shape:
 
 ```python
-class ThreadResource:
+class Thread:
     thread_id: str
     version: int
     queue_version: int

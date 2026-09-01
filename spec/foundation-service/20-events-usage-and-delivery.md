@@ -73,7 +73,7 @@ Durable Hook subscription delivery is limited to committed lifecycle events. Liv
 The delivery envelope is conceptually:
 
 ```python
-class FoundationDeliveryEnvelope:
+class DeliveryEnvelope:
     delivery_id: DeliveryId
     hook_subscription_id: HookSubscriptionId
     hook_name: str

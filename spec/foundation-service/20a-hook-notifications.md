@@ -83,7 +83,7 @@ An Outbox is the PostgreSQL `outbox_records` table, not another middleware servi
 | Transport, retry, and destination acknowledgement | Foundation delivery                | Never changes the source fact or Agent outcome                  |
 | Caller business workflow                          | Caller                             | Reacts to notifications and reconciles from authoritative reads |
 
-Every durable Hook delivery over Webhook uses the common `FoundationDeliveryEnvelope`. This contract owns the finite hook-name registry; the delivery contract owns the durable envelope fields and transport meaning. Native Run SSE uses `RunStreamEvent`, Workspace lifecycle reads use `LifecycleEventResource`, and the notification WebSocket uses `NotificationFrame`; none is translated into the durable Hook envelope. Common correlation for durable Hook delivery includes the Workspace and, when applicable, Session, Thread, Run, RunAttempt, Harness Run, source, owning resource, resource sequence and version, schema version, occurrence time, subscription, and delivery identity. A field is absent rather than guessed when its source does not own that correlation.
+Every durable Hook delivery over Webhook uses the common `DeliveryEnvelope`. This contract owns the finite hook-name registry; the delivery contract owns the durable envelope fields and transport meaning. Native Run SSE uses `RunStreamEvent`, Workspace lifecycle reads use `LifecycleEvent`, and the notification WebSocket uses `NotificationFrame`; none is translated into the durable Hook envelope. Common correlation for durable Hook delivery includes the Workspace and, when applicable, Session, Thread, Run, RunAttempt, Harness Run, source, owning resource, resource sequence and version, schema version, occurrence time, subscription, and delivery identity. A field is absent rather than guessed when the source does not own it.
 
 Hook names use lowercase dot-separated segments. Names beginning with `run.` and `run_attempt.` preserve the exact Foundation lifecycle-event names. Names beginning with `agui.` preserve the exact AG-UI event type in lowercase. A `CUSTOM` event retains its exact custom name and public payload rather than being translated into another Foundation event vocabulary.
 
@@ -309,7 +309,7 @@ sequenceDiagram
         DB-->>Publisher: source IDs and subscription version references
     end
     Publisher->>DB: load immutable lifecycle event and Webhook configuration
-    Publisher->>Caller: signed HTTP POST with FoundationDeliveryEnvelope
+    Publisher->>Caller: signed HTTP POST with DeliveryEnvelope
     alt acknowledged
         Caller-->>Publisher: HTTP 2xx
         Publisher->>DB: mark Outbox row published

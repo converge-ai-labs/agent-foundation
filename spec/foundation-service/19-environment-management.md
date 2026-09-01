@@ -51,7 +51,7 @@ Workspace users view the safe catalog and enable an exact entry:
 
 ```python
 # Conceptual Foundation domain schema; not a wire or ORM model.
-class WorkspaceEnvironmentProviderSelection:
+class EnvironmentProviderSelection:
     organization_id: OrganizationId
     workspace_id: WorkspaceId
     provider_key: str
@@ -70,7 +70,7 @@ The connector receives only the accepted connection specification, bounded RunAt
 Its Foundation-owned service-provider interface is conceptually:
 
 ```python
-class FoundationEnvironmentConnector(Protocol):
+class EnvironmentConnector(Protocol):
     provider_key: str
 
     def open(
@@ -129,26 +129,12 @@ Revision creation resolves the enabled Workspace selection, validates schemas an
 Connection parameters contain no credential values. Each declared credential requirement is bound to exactly one non-secret source:
 
 ```python
-type EnvironmentCredentialSource = (
-    WorkspaceSecretEnvironmentCredential
-    | InvokingUserSecretEnvironmentCredential
-)
-
-
-class WorkspaceSecretEnvironmentCredential:
-    source: Literal["workspace_secret"]
-    secret_id: SecretId
-
-
-class InvokingUserSecretEnvironmentCredential:
-    source: Literal["invoking_user_secret"]
-    secret_key: str
-
-
 class EnvironmentCredentialBinding:
     requirement_key: str
-    credential: EnvironmentCredentialSource
+    credential: SecretCredentialSource
 ```
+
+`SecretCredentialSource` is the shared non-secret selector defined by the [Secret credential-reference contract](11-secret-management.md#credential-references). Environment bindings add only the connector requirement key; they do not create Environment-specific variants of the same Secret reference.
 
 Every RunAttempt reauthorizes the Environment, Workspace selection, credential source, owning principal, and current Secret eligibility. Foundation decrypts values only after closing the authorization transaction and supplies them to one process-local connector. Secret rotation therefore affects the next Attempt without creating another revision.
 

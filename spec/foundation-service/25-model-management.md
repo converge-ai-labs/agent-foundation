@@ -71,20 +71,8 @@ Provider model and capability catalogs ship with the adapter or Foundation relea
 
 ```python
 type ModelCredential = (
-    WorkspaceSecretCredential
-    | InvokingUserSecretCredential
-    | NoCredential
+    SecretCredentialSource | NoCredential
 )
-
-
-class WorkspaceSecretCredential:
-    source: Literal["workspace_secret"]
-    secret_id: SecretId
-
-
-class InvokingUserSecretCredential:
-    source: Literal["invoking_user_secret"]
-    secret_key: str
 
 
 class NoCredential:
@@ -119,6 +107,8 @@ class ModelConfig:
     created_at: datetime
     updated_at: datetime
 ```
+
+`SecretCredentialSource` and its variants come from the shared [Secret credential-reference contract](11-secret-management.md#credential-references). `NoCredential` remains Model-specific because only a provider schema can declare that a model needs no credential.
 
 `base_url` is the normalized effective endpoint exposed when it is safe to do so. It is null when the provider derives its endpoint from typed fields such as region or project. `provider_config` contains only the fields declared by the selected provider definition and never contains a credential.
 

@@ -39,6 +39,28 @@ Secret keys, owner references, timestamps, and versions are protected metadata e
 
 The relational Secret table cannot directly foreign-key one polymorphic owner reference to several owner tables, so Foundation domain logic enforces owner referential integrity and cleanup. Database constraints still foreign-key the explicit Organization and Workspace fields. Owner transfer is not a Secret mutation: moving a value requires a separately authorized create under the destination and deletion under the source.
 
+## Credential References
+
+Model, Environment, and other Agent-input contracts reuse one non-secret credential-source model when they select a Workspace Secret by ID or an invoking User Secret by key:
+
+```python
+class WorkspaceSecretCredential:
+    source: Literal["workspace_secret"]
+    secret_id: SecretId
+
+
+class InvokingUserSecretCredential:
+    source: Literal["invoking_user_secret"]
+    secret_key: str
+
+
+type SecretCredentialSource = (
+    WorkspaceSecretCredential | InvokingUserSecretCredential
+)
+```
+
+The source records lookup intent rather than a Secret value or authorization grant. The consuming contract decides which variants it permits and where the source is stored. Every resolution still applies the current owner, tenant, Principal, lifecycle, and use-eligibility rules from this contract.
+
 ## Secret Resource
 
 The public resource uses the following wire representation:

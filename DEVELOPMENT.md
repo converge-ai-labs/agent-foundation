@@ -22,6 +22,18 @@ Organize business code by feature and add layers only for a real capability; do 
 - Durable asynchronous lifecycles use idempotent reconcilers and fenced workers. Model, tool, queue, and stream waits happen outside database transactions.
 - Process-role wiring selects routers, reconcilers, and workers; `control` and `worker` do not duplicate feature or domain models.
 
+### Naming
+
+Use the package and module hierarchy as a namespace instead of repeating it in every identifier.
+
+- Name feature packages after precise domain nouns, such as `assets`, `model_configs`, `secrets`, and `skills`. Do not append generic ownership words such as `_management`, `_manager`, `_service`, or `_system` to a feature namespace.
+- Name a type for what it represents. Do not prefix it with the repository, distribution, service, or containing feature name merely to provide context. Retain a qualifier such as `Workspace`, `Run`, or `Environment` only when it distinguishes real concepts at the same boundary.
+- Use domain suffixes consistently: `Record` is an ORM persistence type, `Request` is inbound command data, `Revision` is immutable lineage content, `Snapshot` is a frozen capture, `Selection` is a choice, `Lock` is an exact frozen dependency, and `Receipt` is bounded operation evidence. Do not add a suffix only to make a name longer or more architectural.
+- Application `Service`, `Resolver`, `Factory`, `Reconciler`, and `Preparer` types must describe one cohesive role that is not already clear from a function. Avoid generic `Manager`, `Helper`, `Common`, and `Utils` abstractions.
+- Python refactors do not rename stable wire fields, error codes, event names, table names, indexes, or migration history merely to mirror an internal identifier.
+
+Formatters and general-purpose naming rules can enforce syntax and casing, but they cannot decide whether a qualifier carries domain meaning. Semantic naming clarity remains a design and review responsibility.
+
 ## HTTP Namespace and Browser Applications
 
 Product-facing HTTP APIs use the `/api` namespace. Keep OpenAPI schemas and interactive API documentation under the same prefix. Individual resource layouts remain owned by their API contracts; the prefix is not permission to introduce an unversioned compatibility promise for every implementation route. Protocol daemons such as `agent-envd` retain their owning transport contracts rather than inheriting this product-API convention.

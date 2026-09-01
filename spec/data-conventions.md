@@ -93,6 +93,10 @@ Public APIs and SDKs use concise domain language such as `id`, `model`, `agent`,
 
 Internal domain, persistence, event, and adapter models use more explicit names when several identities or selection domains would otherwise be ambiguous, for example an AgentPreset ID and AgentPresetVersion ID beside a provider model identity. Typed values such as an AgentPresetVersion reference or model selector carry semantics that a bare string and naming convention cannot.
 
+A type name states the concept rather than its repository, distribution, or module owner. It does not repeat qualifiers such as `Foundation`, `Service`, `Managed`, or `Workspace` when the surrounding namespace and fields already establish that context. A qualifier is retained only when two real concepts coexist at the same boundary, such as Workspace-Secret and invoking-User-Secret credential sources. Likewise, `managed` belongs in a type name only when the same boundary also exposes a distinct unmanaged form.
+
+Suffixes have stable domain meanings. `Revision` is an immutable member of a resource lineage; `Snapshot` is a frozen capture outside that lineage; `Request` is caller-supplied input; `Selection` records a choice; `Lock` freezes an exact dependency; `Ref` identifies without granting authority; `State` describes an owner's condition; `Event` records an occurrence; and `Receipt` is bounded evidence of an accepted or committed operation. A suffix is not added merely to make a local name sound more explicit.
+
 The public boundary validates and normalizes input once. Internal code consumes the resulting typed meaning instead of repeatedly inferring whether a string is an object ID, symbolic selection, external identity, scoped reference, or secret. No universal field-suffix rule overrides clarity at either boundary.
 
 ## Ownership and Authority
@@ -128,3 +132,4 @@ Data that affects authority, execution behavior, compatibility, or recovery is r
 11. A revision can aggregate other revisions, while a snapshot remains distinct only when it is a capture or derived projection outside a resource's published revision lineage.
 12. State becomes a checkpoint only after its owner validates completeness and durably selects it at a continuation boundary.
 13. Generations distinguish replaceable incarnations, and fences reject obsolete or terminal participants; neither is a content version by default.
+14. Type names state their concepts without repeating repository, distribution, or module ownership already established by their namespace.
