@@ -45,13 +45,23 @@ from a13n_service.models.service import (
     ModelService,
 )
 from a13n_service.observability import build_observability_runtime
+from a13n_service.plugins.builtins import BuiltinPluginArtifact
 from a13n_service.plugins.commands import (
     PluginRuntimeCandidateResolver,
     PluginRuntimeCommandDispatcher,
     PluginRuntimeStagingAuthority,
 )
+from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.objects import PluginObjectStore
+from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.plugins.router import router as plugin_router
+from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
+from a13n_service.plugins.runtime import (
+    WorkerReleaseManifest,
+    default_runtime_target,
+    installed_distribution_versions,
+    installed_harness_version,
+)
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
 from a13n_service.plugins.runtime_resolver import (
     FoundationPluginRuntimeCandidateResolver,
@@ -68,7 +78,6 @@ from a13n_service.skills.objects import SkillPackageStore
 from a13n_service.skills.publication import SkillPublicationService
 from a13n_service.skills.router import router as skill_router
 from a13n_service.skills.runtime import SkillRuntimePreparer
-from a13n_service.skills.selection import SkillSelectionResolver
 from a13n_service.skills.sources import GitHubCredentialResolver, SkillSourcePreparer
 from a13n_service.skills.uploads import SkillUploadService
 from a13n_service.storage import StorageResources, open_storage, short_session
@@ -104,6 +113,7 @@ class ServiceComponents:
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None
     trace_query_provider_registry: TraceQueryProviderRegistry | None = None
+    builtin_plugin_artifacts: tuple[BuiltinPluginArtifact, ...] = ()
 
 
 @asynccontextmanager
@@ -181,8 +191,42 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             package_store = SkillPackageStore(storage.objects)
             asset_staging = await AssetStaging.create(storage.files_root, limiter=storage.file_limiter)
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
+            plugin_objects = PluginObjectStore(storage.objects)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
             plugin_runtime_command_coordinator: PluginRuntimeCommandCoordinator | None = None
+            plugin_runner_supervisor: PluginRunnerSupervisor | None = None
+            if settings.role in _WORKER_ROLES:
+                plugin_runtime_materializer = await PluginRuntimeMaterializer.create(
+                    storage.files_root,
+                    plugin_objects,
+                    WorkerReleaseManifest(
+                        worker_release=settings.build_version,
+                        harness_version=installed_harness_version(),
+                        runtime_target=default_runtime_target(),
+                        distributions=installed_distribution_versions(),
+                    ),
+                    executable=settings.plugin_runtime_resolver_executable,
+                    max_wheel_bytes=settings.plugin_max_wheel_bytes,
+                    max_expanded_bytes=settings.plugin_max_expanded_bytes,
+                    max_archive_members=settings.plugin_max_archive_members,
+                    max_runtime_bytes=settings.plugin_runtime_max_materialized_bytes,
+                    timeout_seconds=settings.plugin_runtime_resolver_timeout_seconds,
+                    limiter=storage.file_limiter,
+                )
+                app.state.plugin_runtime_materializer = plugin_runtime_materializer
+                if settings.plugin_runtime_mode is PluginRuntimeMode.runner:
+                    plugin_runner_supervisor = await stack.enter_async_context(
+                        PluginRunnerSupervisor(
+                            plugin_runtime_materializer,
+                            ready_timeout_seconds=settings.plugin_runner_ready_timeout_seconds,
+                            command_timeout_seconds=settings.plugin_runner_command_timeout_seconds,
+                            shutdown_timeout_seconds=settings.plugin_runner_shutdown_timeout_seconds,
+                            max_processes=settings.plugin_runner_max_processes,
+                        )
+                    )
+                    app.state.plugin_runner_supervisor = plugin_runner_supervisor
+                else:
+                    app.state.plugin_on_demand_runtime = OnDemandPluginRuntime(plugin_runtime_materializer)
             if settings.role in _CONTROL_PLANE_ROLES:
                 selected_environment_providers = app.state.components.environment_provider_catalog
                 if selected_environment_providers is None:
@@ -206,10 +250,9 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     )
                 )
                 plugin_staging = await PluginStaging.create(storage.files_root, limiter=storage.file_limiter)
-                plugin_objects = PluginObjectStore(storage.objects)
                 runtime_dispatcher = app.state.components.plugin_runtime_command_dispatcher
                 candidate_resolver = app.state.components.plugin_runtime_candidate_resolver
-                staging_authority = app.state.components.plugin_runtime_staging_authority
+                staging_authority = app.state.components.plugin_runtime_staging_authority or plugin_runner_supervisor
                 if (
                     candidate_resolver is not None or staging_authority is not None
                 ) and settings.plugin_runtime_mode is not PluginRuntimeMode.runner:
@@ -269,6 +312,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     runtime_command_dispatcher=runtime_dispatcher,
                 )
                 await app.state.plugin_service.ensure_runtime_mode()
+                for artifact in app.state.components.builtin_plugin_artifacts:
+                    await app.state.plugin_service.register_builtin(
+                        registration=artifact.registration,
+                        body=artifact.body_factory(),
+                        content_length=artifact.content_length,
+                    )
                 github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)
                 credential_resolver = app.state.components.skill_credential_resolver
                 if credential_resolver is None:
@@ -285,7 +334,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
                 app.state.skill_publication_service = SkillPublicationService(storage.sessions, source_preparer)
                 app.state.skill_catalog_service = SkillCatalogService(storage.sessions, package_store)
-                app.state.skill_selection_resolver = SkillSelectionResolver(storage.sessions)
                 app.state.accepted_model_selector = AcceptedModelSelector(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -411,6 +459,20 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
     @app.get("/readyz", include_in_schema=False)
     async def readiness(request: Request) -> dict[str, str]:
         storage: StorageResources = request.app.state.storage
+        on_demand_runtime: OnDemandPluginRuntime | None = getattr(
+            request.app.state,
+            "plugin_on_demand_runtime",
+            None,
+        )
+        if on_demand_runtime is not None and not on_demand_runtime.ready:
+            logger.warning(
+                "plugin_runtime_readiness_failed",
+                extra={"event": "plugin_runtime_readiness_failed", "role": resolved_settings.role.value},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="plugin runtime unavailable",
+            )
         try:
             with fail_after(resolved_settings.database_readiness_timeout_seconds):
                 async with short_session(storage.sessions) as session:

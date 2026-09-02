@@ -1,11 +1,57 @@
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from a13n_service.etags import resource_etag
+from a13n_service.plugins.domain import BuiltinPluginRegistration, PluginSource
 from a13n_service.plugins.errors import PluginError
+from a13n_service.plugins.models import PluginRecord, PluginVersionRecord
 from a13n_service.plugins.service import PluginService
+from a13n_service.storage import short_session
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import ADMIN_ID, BUILDER_ID, RecordingRuntimeDispatcher, actor, build_wheel, wheel_body
+
+BUILTIN_PLUGIN_ID = "plg_builtinaudit0001"
+BUILTIN_PLUGIN_VERSION_ID = "plgv_builtinauditv100"
+SYSTEM_ACTOR_ID = "sa_pluginrelease0001"
+
+
+def _builtin_registration(
+    wheel: bytes,
+    *,
+    plugin_version_id: str = BUILTIN_PLUGIN_VERSION_ID,
+    version: str = "1.0.0",
+    plugin_key: str = "acme.audit",
+    distribution_name: str = "acme-audit",
+    top_level_package: str = "acme_audit",
+    required: bool = False,
+) -> BuiltinPluginRegistration:
+    return BuiltinPluginRegistration(
+        plugin_id=BUILTIN_PLUGIN_ID,
+        plugin_version_id=plugin_version_id,
+        system_actor_id=SYSTEM_ACTOR_ID,
+        plugin_key=plugin_key,
+        distribution_name=distribution_name,
+        top_level_package=top_level_package,
+        version=version,
+        content_digest=hashlib.sha256(wheel).hexdigest(),
+        required=required,
+    )
+
+
+async def _register_builtin(
+    service: PluginService,
+    wheel: bytes,
+    *,
+    registration: BuiltinPluginRegistration | None = None,
+):
+    return await service.register_builtin(
+        registration=registration or _builtin_registration(wheel),
+        body=wheel_body(wheel),
+        content_length=len(wheel),
+    )
 
 
 async def _upload(
@@ -50,6 +96,93 @@ async def test_upload_creates_stable_plugin_and_immutable_versions(plugin_servic
     assert plugin.distribution_name == "acme-audit"
     assert plugin.top_level_package == "acme_audit"
     assert plugin.active_version_id is None
+
+
+@pytest.mark.anyio
+async def test_builtin_registration_is_verified_idempotent_and_upgradable(
+    plugin_service: PluginService,
+    plugin_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    first_wheel = build_wheel()
+    first = await _register_builtin(plugin_service, first_wheel)
+    replay = await _register_builtin(plugin_service, first_wheel)
+    second_wheel = build_wheel(version="1.1.0")
+    second = await _register_builtin(
+        plugin_service,
+        second_wheel,
+        registration=_builtin_registration(
+            second_wheel,
+            plugin_version_id="plgv_builtinauditv110",
+            version="1.1.0",
+            required=True,
+        ),
+    )
+
+    assert replay == first
+    assert second.plugin_id == first.plugin_id == BUILTIN_PLUGIN_ID
+    assert second.version == "1.1.0"
+    plugin = await plugin_service.get(actor=actor(), plugin_id=BUILTIN_PLUGIN_ID)
+    assert plugin.source is PluginSource.builtin
+    assert plugin.active_version_id is None
+    versions = await plugin_service.list_versions(
+        actor=actor(),
+        plugin_id=BUILTIN_PLUGIN_ID,
+        limit=10,
+        cursor=None,
+    )
+    assert {item.version for item in versions.items} == {"1.0.0", "1.1.0"}
+    async with short_session(plugin_sessions) as session:
+        record = await session.get(PluginRecord, BUILTIN_PLUGIN_ID)
+        version = await session.get(PluginVersionRecord, second.id)
+    assert record is not None and record.required is True
+    assert record.created_by_type == "service_account"
+    assert version is not None and version.created_by_id == SYSTEM_ACTOR_ID
+
+
+@pytest.mark.anyio
+async def test_builtin_registration_reserves_identity_and_cannot_be_archived(
+    plugin_service: PluginService,
+) -> None:
+    wheel = build_wheel()
+    version = await _register_builtin(plugin_service, wheel)
+    plugin = await plugin_service.get(actor=actor(), plugin_id=version.plugin_id)
+
+    with pytest.raises(PluginError) as upload_rejected:
+        await _upload(
+            plugin_service,
+            build_wheel(version="2.0.0"),
+            key="cannot-replace-builtin",
+            plugin_id=version.plugin_id,
+        )
+    assert upload_rejected.value.code == "plugin_state_conflict"
+
+    with pytest.raises(PluginError) as archive_rejected:
+        await plugin_service.change_lifecycle(
+            actor=actor(),
+            plugin_id=version.plugin_id,
+            action="archive",
+            idempotency_key="cannot-archive-builtin",
+            if_match=resource_etag(plugin.id, plugin.updated_at),
+        )
+    assert archive_rejected.value.code == "plugin_state_conflict"
+
+
+@pytest.mark.anyio
+async def test_builtin_registration_rejects_manifest_or_existing_identity_mismatch(
+    plugin_service: PluginService,
+) -> None:
+    wheel = build_wheel()
+    wrong_digest = _builtin_registration(wheel).model_copy(update={"content_digest": "0" * 64})
+    with pytest.raises(PluginError) as digest_rejected:
+        await _register_builtin(plugin_service, wheel, registration=wrong_digest)
+    assert digest_rejected.value.code == "plugin_artifact_invalid"
+    assert digest_rejected.value.details == {"reason": "builtin_manifest_digest_mismatch"}
+
+    uploaded = await _upload(plugin_service, wheel, key="uploaded-owns-identity")
+    assert uploaded.version.plugin_id != BUILTIN_PLUGIN_ID
+    with pytest.raises(PluginError) as identity_rejected:
+        await _register_builtin(plugin_service, wheel)
+    assert identity_rejected.value.code == "plugin_identity_conflict"
 
 
 @pytest.mark.anyio

@@ -38,6 +38,7 @@ PluginKey = Annotated[
     StringConstraints(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", min_length=3, max_length=128),
 ]
 JsonObject = dict[str, JsonValue]
+ToolKey = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 _MODEL_SETTING_KEYS = frozenset(ModelSettings.__annotations__)
 
 
@@ -46,6 +47,19 @@ def _validate_model_settings(value: JsonObject) -> JsonObject:
     if unknown:
         raise ValueError(f"unsupported ModelSettings fields: {', '.join(unknown)}")
     return value
+
+
+def _validate_unique_tool_keys(value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+    if value is not None and len(value) != len(set(value)):
+        raise ValueError("tool names must be unique")
+    return value
+
+
+ToolSelection = Annotated[
+    tuple[ToolKey, ...] | None,
+    Field(max_length=512),
+    AfterValidator(_validate_unique_tool_keys),
+]
 
 
 def new_agent_id() -> str:
@@ -118,6 +132,18 @@ PluginSelection = Annotated[OnDemandPluginSelection | RunnerPluginSelection, Fie
 
 class SkillSelection(StrictModel):
     skill_revision_id: ObjectId
+
+
+class ConnectorConnectionToolSelection(StrictModel):
+    connector_connection_id: ObjectId
+    tools: ToolSelection = None
+    exposure: Literal["direct", "catalog"] = "direct"
+
+
+class MCPConnectionToolSelection(StrictModel):
+    mcp_connection_id: ObjectId
+    tools: ToolSelection = None
+    exposure: Literal["direct", "catalog"] = "direct"
 
 
 class EnvironmentSelection(StrictModel):
@@ -242,6 +268,8 @@ class AgentConfig(StrictModel):
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
+    connector_tools: dict[BoundedKey, ConnectorConnectionToolSelection] = Field(default_factory=dict, max_length=128)
+    mcp_tools: dict[BoundedKey, MCPConnectionToolSelection] = Field(default_factory=dict, max_length=128)
     environment: EnvironmentSelection | None = None
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
@@ -293,6 +321,18 @@ class ModelOverride(StrictModel):
         return None if value is None else _validate_model_settings(value)
 
 
+class ConnectorConnectionToolOverride(StrictModel):
+    connector_connection_id: ObjectId | None = None
+    tools: ToolSelection = None
+    exposure: Literal["direct", "catalog"] | None = None
+
+
+class MCPConnectionToolOverride(StrictModel):
+    mcp_connection_id: ObjectId | None = None
+    tools: ToolSelection = None
+    exposure: Literal["direct", "catalog"] | None = None
+
+
 class SubagentOverride(StrictModel):
     agent_id: ObjectId | None = None
     version: int | None = Field(default=None, ge=1)
@@ -312,6 +352,11 @@ class AgentRunOverride(StrictModel):
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
+    connector_tools: dict[BoundedKey, ConnectorConnectionToolOverride | None] | None = Field(
+        default=None,
+        max_length=128,
+    )
+    mcp_tools: dict[BoundedKey, MCPConnectionToolOverride | None] | None = Field(default=None, max_length=128)
     environment: EnvironmentOverride | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
@@ -371,6 +416,8 @@ class ResolvedRevisionContent(StrictModel):
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...] = ()
     runtime_lock_digest: Sha256Digest
     resolved_skills: tuple[ResolvedSkillSelection, ...] = ()
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
+    mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
     resolved_environment: EnvironmentExecutionConfig | None = None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...] = ()
 
@@ -415,10 +462,13 @@ class AgentRevision(StrictModel):
     version: int = Field(ge=1)
     plugin_runtime_mode: PluginRuntimeMode
     config: AgentConfig
+    config_digest: Sha256Digest
     resolved_model: ResolvedAgentModel
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: Sha256Digest
     resolved_skills: tuple[ResolvedSkillSelection, ...]
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
+    mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
     resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: Sha256Digest
@@ -435,6 +485,16 @@ class AgentCollection(StrictModel):
 class AgentRevisionCollection(StrictModel):
     items: tuple[AgentRevision, ...]
     next_cursor: str | None
+
+
+class BuiltinAgentRegistration(StrictModel):
+    """One distribution-owned Agent definition resolved for a specific Workspace."""
+
+    agent_id: ObjectId
+    system_actor_id: ObjectId
+    name: AgentName
+    description: AgentDescription | None = None
+    config: AgentConfig
 
 
 class CreateAgentRequest(BaseModel):

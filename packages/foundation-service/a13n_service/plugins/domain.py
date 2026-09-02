@@ -15,6 +15,8 @@ PLUGIN_ID_PREFIX = "plg"
 PLUGIN_VERSION_ID_PREFIX = "plgv"
 ContentDigest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 PluginKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{1,127}$")]
+PluginId = Annotated[str, StringConstraints(pattern=r"^plg_[a-z0-9]{16,64}$")]
+PluginVersionId = Annotated[str, StringConstraints(pattern=r"^plgv_[a-z0-9]{16,64}$")]
 
 
 class PluginSource(StrEnum):
@@ -52,6 +54,20 @@ class PluginVersion(DomainModel):
     artifact_ref: str = Field(min_length=1, max_length=1024)
     requires_dist: tuple[str, ...] = Field(default=(), max_length=512)
     status: Literal["ready"] = "ready"
+
+
+class BuiltinPluginRegistration(DomainModel):
+    """Distribution-owned identity and immutable Wheel expectation."""
+
+    plugin_id: PluginId
+    plugin_version_id: PluginVersionId
+    system_actor_id: ObjectId
+    plugin_key: PluginKey
+    distribution_name: str = Field(min_length=1, max_length=256)
+    top_level_package: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=256)
+    version: str = Field(min_length=1, max_length=256)
+    content_digest: ContentDigest
+    required: bool = False
 
 
 class PluginCollection(DomainModel):

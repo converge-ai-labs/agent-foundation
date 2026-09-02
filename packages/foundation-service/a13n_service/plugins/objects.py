@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from a13n_service.storage.object_store import ObjectConflict, ObjectInfo, ObjectStore, ObjectStoreError
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
+from a13n_service.storage.object_store import (
+    ObjectConflict,
+    ObjectInfo,
+    ObjectReader,
+    ObjectStore,
+    ObjectStoreError,
+)
 
 from .errors import plugin_artifact_unavailable
 from .staging import StagedPluginWheel
@@ -35,6 +44,34 @@ class PluginObjectStore:
         except (ObjectStoreError, ValueError) as error:
             raise plugin_artifact_unavailable() from error
         return key
+
+    @asynccontextmanager
+    async def open_verified(
+        self,
+        *,
+        artifact_ref: str,
+        content_digest: str,
+    ) -> AsyncGenerator[ObjectReader]:
+        """Open one authoritative Wheel after validating its content-addressed envelope."""
+
+        expected_key = plugin_artifact_key(content_digest)
+        if artifact_ref != expected_key:
+            raise plugin_artifact_unavailable()
+        try:
+            async with self._objects.open(artifact_ref) as reader:
+                metadata = {
+                    "content-sha256": content_digest,
+                    "size-bytes": str(reader.info.size),
+                }
+                _verify_info(
+                    reader.info,
+                    key=expected_key,
+                    metadata=metadata,
+                    size_bytes=reader.info.size,
+                )
+                yield reader
+        except (ObjectStoreError, ValueError) as error:
+            raise plugin_artifact_unavailable() from error
 
 
 def plugin_artifact_key(content_digest: str) -> str:

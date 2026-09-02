@@ -75,7 +75,7 @@ mode = "on_demand" # or "runner"
 
 Omitting `mode` selects `on_demand`. Control persists the selected mode as an internal compatibility fact and may replace it only while no Plugin, AgentRevision, or Run exists. Every Control, Worker, and all-in-one process verifies the same value before readiness. A non-empty configuration mismatch fails startup; the service never reinterprets stored Agent Revisions under another profile.
 
-Changing the persisted mode after any Plugin, AgentRevision, or Run exists is not a configuration update. Foundation exposes no mode mutation or migration API. A migration between profiles requires a separately reviewed data migration that creates replacement Agent Revisions, establishes the runner active set when applicable, and preserves every retained Run lock.
+Changing the persisted mode after any Plugin, AgentRevision, or Run exists is not a configuration update. Foundation exposes no mode mutation or migration API. A migration between profiles requires a separately reviewed data migration that translates retained Agent configs into new Revisions, establishes their current selections and the runner active set when applicable, and preserves every retained Run lock.
 
 ## Agent Selection and Revision Locking
 
@@ -222,7 +222,7 @@ The current runner lock is the preferred solution. A new activation preserves ev
 
 ## On-demand Agent Selection
 
-The `on_demand` Agent Revision configuration supplies an exact `plugin_version_id` binding for every enabled `plugin_key` in its Harness Plugin Configuration Document. Several instances of one key share one binding. Revision creation rejects a missing, duplicate, inaccessible, archived, key-mismatched, structurally incompatible, or dependency-ineligible Version.
+An `on_demand` AgentConfig submitted for Revision creation supplies an exact `plugin_version_id` binding for every configured Plugin instance. Several instances may select one Version. Revision creation rejects a missing, duplicate, inaccessible, archived, key-mismatched, structurally incompatible, or dependency-ineligible Version.
 
 Revision creation resolves the complete transitive subagent graph, verifies one compatible Plugin set, persists its Runtime lock, and stores the exact PluginVersion locks plus lock digest on the immutable AgentRevision. Later Plugin uploads or archives do not mutate that Revision. New Run acceptance copies its lock digest; Worker claim never resolves `latest`, a Plugin head, or another Revision.
 

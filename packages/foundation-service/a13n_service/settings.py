@@ -84,6 +84,15 @@ class ServiceSettings(BaseSettings):
     plugin_runtime_index_urls: tuple[SecretStr, ...] = Field(default=(), repr=False)
     plugin_runtime_resolver_timeout_seconds: float = Field(default=120, gt=0, le=900)
     plugin_runtime_resolver_max_packages: int = Field(default=512, ge=1, le=4096)
+    plugin_runtime_max_materialized_bytes: int = Field(
+        default=4 * 1024 * 1024 * 1024,
+        ge=1,
+        le=128 * 1024 * 1024 * 1024,
+    )
+    plugin_runner_ready_timeout_seconds: float = Field(default=60, gt=0, le=300)
+    plugin_runner_command_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    plugin_runner_shutdown_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    plugin_runner_max_processes: int = Field(default=8, ge=1, le=256)
     environment_provider_builtins: tuple[str, ...] = (
         "a13n.direct-local",
         "a13n.local-envd",

@@ -301,7 +301,7 @@ Stable Skill/revision meaning, source union, shared package contract, public API
 
 1. Every Skill belongs to one immutable Organization and Workspace, and every revision selects one immutable package and provenance record.
 2. Uploads, GitHub refs, object URLs, caches, and package content grant no runtime authority by themselves.
-3. AgentRevisions lock one ordered default Skill list; an optional Run override whole-replaces it with another exact authorized list.
+3. AgentRevisions lock one ordered configured Skill list; an optional Run override whole-replaces it with another exact authorized list.
 4. Later Skill mutations do not change AgentRevision locks or an accepted Run's `EffectiveAgentConfig.skills`.
 5. No database transaction spans source acquisition, object storage, Environment I/O, or Harness work.
 6. Harness scanning begins only after the complete materialized root verifies.

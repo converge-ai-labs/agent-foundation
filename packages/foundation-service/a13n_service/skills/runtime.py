@@ -1,11 +1,11 @@
-"""Worker preparation for immutable managed Skill locks and Run selections."""
+"""Worker preparation for the exact Skill locks frozen on an accepted Run."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 
 from a13n_harness.capabilities import SkillManager, SkillSelectionRunCapability, SkillsPolicy
 from pydantic import ValidationError
@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.storage import short_session
 
 from .domain import (
-    AgentSkillSelection,
     SkillPackageManifest,
     SkillRevisionLock,
 )
@@ -30,7 +29,23 @@ from .materialization import (
 )
 from .models import SkillRevisionRecord
 from .objects import SkillPackageStore, SkillPackageStoreError
-from .selection import FrozenSkillSelectionError, validate_frozen_run_skill_selection
+
+MAX_EFFECTIVE_SKILLS = 512
+_MATERIALIZATION_ROOT = "/environment/workspace/.a13n/skills/version-1"
+
+
+class ResolvedSkillLock(Protocol):
+    """Structural view of one exact lock from an EffectiveAgentConfig."""
+
+    @property
+    def skill_revision_id(self) -> str: ...
+
+    @property
+    def skill_name(self) -> str: ...
+
+    @property
+    def content_digest(self) -> str: ...
+
 
 type SkillRuntimeErrorCode = Literal[
     "skill_materialization_invalid",
@@ -73,15 +88,11 @@ class SkillRuntimePreparer:
         *,
         organization_id: str,
         workspace_id: str,
-        selection: AgentSkillSelection,
-        selected_skill_names: tuple[str, ...],
+        locks: tuple[ResolvedSkillLock, ...],
         fence: SkillAttemptFence | None = None,
     ) -> PreparedSkillRuntime:
-        try:
-            selected_locks = validate_frozen_run_skill_selection(selection, selected_skill_names)
-        except FrozenSkillSelectionError as error:
-            raise _invalid() from error
-        if not selection.available:
+        selected_locks = _validate_locks(locks)
+        if not selected_locks:
             return PreparedSkillRuntime(
                 manager=None,
                 selection_capability=None,
@@ -124,10 +135,7 @@ class SkillRuntimePreparer:
             locked_revisions.append(LockedSkillRevision(lock=lock, manifest=manifest))
         await _require_current(fence)
         catalog_digest = _catalog_digest(selected_locks)
-        mount = selection.materialization_mount
-        if mount is None:
-            raise _invalid()
-        root = f"/environment/{mount}/.a13n/skills/version-1/{catalog_digest}"
+        root = f"{_MATERIALIZATION_ROOT}/{catalog_digest}"
         source_id = f"foundation-skills-{catalog_digest[:24]}"
         plan = SkillMaterializationPlan(
             target_root=root,
@@ -149,7 +157,9 @@ class SkillRuntimePreparer:
         )
         return PreparedSkillRuntime(
             manager=manager,
-            selection_capability=SkillSelectionRunCapability(names=frozenset(selected_skill_names)),
+            selection_capability=SkillSelectionRunCapability(
+                names=frozenset(item.skill_name for item in selected_locks)
+            ),
             catalog_digest=catalog_digest,
             materialization_root=root,
         )
@@ -204,6 +214,26 @@ def _catalog_digest(locks: tuple[SkillRevisionLock, ...]) -> str:
     payload = [item.model_dump(mode="json") for item in locks]
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True).encode()
     return hashlib.sha256(b"a13n.foundation.skill-runtime.v1\n" + encoded).hexdigest()
+
+
+def _validate_locks(locks: tuple[ResolvedSkillLock, ...]) -> tuple[SkillRevisionLock, ...]:
+    if len(locks) > MAX_EFFECTIVE_SKILLS:
+        raise _invalid()
+    revision_ids = tuple(item.skill_revision_id for item in locks)
+    names = tuple(item.skill_name for item in locks)
+    if len(revision_ids) != len(set(revision_ids)) or len(names) != len(set(names)):
+        raise _invalid()
+    try:
+        return tuple(
+            SkillRevisionLock(
+                skill_revision_id=item.skill_revision_id,
+                skill_name=item.skill_name,
+                content_digest=item.content_digest,
+            )
+            for item in locks
+        )
+    except ValidationError as error:
+        raise _invalid() from error
 
 
 def _invalid() -> SkillRuntimeError:

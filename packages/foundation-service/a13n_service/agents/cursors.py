@@ -1,4 +1,4 @@
-"""Opaque scope-bound cursors for Agent Agent collections."""
+"""Opaque scope-bound cursors for Agent collections."""
 
 from __future__ import annotations
 

@@ -4,6 +4,8 @@ import pytest
 from a13n_service.agents.domain import (
     AgentModel,
     AgentRunOverride,
+    ConnectorConnectionToolSelection,
+    MCPConnectionToolSelection,
     OutputSpec,
     new_agent_id,
     new_agent_revision_id,
@@ -48,3 +50,19 @@ def test_model_settings_are_limited_to_native_pydantic_ai_fields() -> None:
                 "characteristics": {},
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("selection_type", "id_field", "identifier"),
+    [
+        (ConnectorConnectionToolSelection, "connector_connection_id", "cconn_1234567890abcdef"),
+        (MCPConnectionToolSelection, "mcp_connection_id", "mcpc_1234567890abcdef"),
+    ],
+)
+def test_connection_tool_selections_are_bounded_and_unique(selection_type, id_field: str, identifier: str) -> None:
+    selection = selection_type.model_validate({id_field: identifier, "tools": ["orders.lookup"], "exposure": "catalog"})
+
+    assert selection.tools == ("orders.lookup",)
+    assert selection.exposure == "catalog"
+    with pytest.raises(ValidationError, match="tool names must be unique"):
+        selection_type.model_validate({id_field: identifier, "tools": ["orders.lookup", "orders.lookup"]})

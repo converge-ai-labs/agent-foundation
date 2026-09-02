@@ -1,23 +1,33 @@
 import asyncio
+import hashlib
 from base64 import b64encode
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
 from a13n_service.database import DatabaseMigrator
+from a13n_service.plugins import BuiltinPluginArtifact, BuiltinPluginRegistration
 from a13n_service.plugins.commands import (
     PluginRuntimeCatalogSnapshot,
     PluginRuntimeCommand,
 )
+from a13n_service.plugins.materialization import PluginRuntimeMaterializer
+from a13n_service.plugins.models import PluginRecord, PluginVersionRecord
+from a13n_service.plugins.on_demand import OnDemandPluginRuntime
+from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import PluginRuntimeLock
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
 from a13n_service.plugins.runtime_resolver import FoundationPluginRuntimeCandidateResolver
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
-from a13n_service.skills import SkillRuntimePreparer, SkillSelectionResolver
+from a13n_service.skills import SkillRuntimePreparer
+from a13n_service.storage import short_session
 from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 from fastapi import FastAPI
+
+from .plugins.conftest import build_wheel, wheel_body
 
 
 class _UnusedPluginRuntimeCandidateResolver:
@@ -47,9 +57,9 @@ class _UnusedPluginRuntimeStagingAuthority:
         operation_id: str,
         runtime_lock: PluginRuntimeLock,
         staging_token: str,
-        runtime_version: int,
+        runtime_generation: int,
     ) -> None:
-        del operation_id, runtime_lock, staging_token, runtime_version
+        del operation_id, runtime_lock, staging_token, runtime_generation
         raise AssertionError("no Plugin Runtime command was expected")
 
     async def abort_candidate(
@@ -201,10 +211,12 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         storage = app.state.storage
         assert app.state.db_engine is storage.engine
         assert app.state.db_session_factory is storage.sessions
-        assert isinstance(app.state.skill_selection_resolver, SkillSelectionResolver)
         assert isinstance(app.state.skill_runtime_preparer, SkillRuntimePreparer)
         assert app.state.agent_plugin_selection_resolver is not None
         assert app.state.plugin_service is not None
+        assert isinstance(app.state.plugin_runtime_materializer, PluginRuntimeMaterializer)
+        assert isinstance(app.state.plugin_on_demand_runtime, OnDemandPluginRuntime)
+        assert not hasattr(app.state, "plugin_runner_supervisor")
         assert app.state.trace_query_service is not None
 
         transport = httpx2.ASGITransport(app=app)
@@ -213,6 +225,57 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready", "role": "all"}
+
+
+@pytest.mark.anyio
+async def test_control_lifespan_registers_distribution_builtin_plugins(tmp_path: Path) -> None:
+    wheel = build_wheel()
+    registration = BuiltinPluginRegistration(
+        plugin_id="plg_builtinaudit0001",
+        plugin_version_id="plgv_builtinauditv100",
+        system_actor_id="sa_pluginrelease0001",
+        plugin_key="acme.audit",
+        distribution_name="acme-audit",
+        top_level_package="acme_audit",
+        version="1.0.0",
+        content_digest=hashlib.sha256(wheel).hexdigest(),
+        required=True,
+    )
+    app = create_app(
+        local_settings(tmp_path, role=ServiceRole.control),
+        components=ServiceComponents(
+            builtin_plugin_artifacts=(
+                BuiltinPluginArtifact(
+                    registration=registration,
+                    body_factory=lambda: wheel_body(wheel),
+                    content_length=len(wheel),
+                ),
+            ),
+        ),
+    )
+
+    async with app.router.lifespan_context(app):
+        async with short_session(app.state.storage.sessions) as session:
+            plugin = await session.get(PluginRecord, registration.plugin_id)
+            version = await session.get(PluginVersionRecord, registration.plugin_version_id)
+
+        assert plugin is not None and plugin.required is True
+        assert plugin.source == "builtin"
+        assert version is not None and version.content_digest == registration.content_digest
+
+
+@pytest.mark.anyio
+async def test_on_demand_import_failure_removes_worker_readiness(tmp_path: Path) -> None:
+    app = create_app(local_settings(tmp_path, role=ServiceRole.worker))
+
+    async with app.router.lifespan_context(app):
+        app.state.plugin_on_demand_runtime = SimpleNamespace(ready=False)
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "plugin runtime unavailable"}
 
 
 @pytest.mark.anyio
@@ -291,15 +354,42 @@ async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(tmp_pat
 
 
 @pytest.mark.anyio
+async def test_all_in_one_runner_mode_uses_local_supervisor_as_staging_authority(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(
+            tmp_path,
+            plugin_runtime_mode="runner",
+            plugin_runtime_command_poll_interval_seconds=0.01,
+            plugin_runtime_command_lease_seconds=4,
+        )
+    )
+
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.plugin_runner_supervisor, PluginRunnerSupervisor)
+        assert isinstance(app.state.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
+        assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
+
+
+@pytest.mark.anyio
+async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(tmp_path: Path) -> None:
+    app = create_app(local_settings(tmp_path, role=ServiceRole.worker, plugin_runtime_mode="runner"))
+
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.plugin_runtime_materializer, PluginRuntimeMaterializer)
+        assert isinstance(app.state.plugin_runner_supervisor, PluginRunnerSupervisor)
+        assert not hasattr(app.state, "plugin_on_demand_runtime")
+        assert not hasattr(app.state, "plugin_runtime_command_coordinator")
+        assert not hasattr(app.state, "plugin_runtime_candidate_resolver")
+
+
+@pytest.mark.anyio
 async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_path: Path) -> None:
     control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control))
     async with control.router.lifespan_context(control):
-        assert isinstance(control.state.skill_selection_resolver, SkillSelectionResolver)
         assert not hasattr(control.state, "skill_runtime_preparer")
 
     worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker))
     async with worker.router.lifespan_context(worker):
-        assert not hasattr(worker.state, "skill_selection_resolver")
         assert isinstance(worker.state.skill_runtime_preparer, SkillRuntimePreparer)
         assert not hasattr(worker.state, "trace_query_service")
 
