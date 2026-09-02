@@ -49,6 +49,7 @@ run(
     environment: Environment | EnvironmentMount | None = None,
     environments: Mapping[str, Environment | EnvironmentMount] | None = None,
     default_environment: str | None = None,
+    environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
     bindings: RunBindings | None = None,
     ...,
 )
@@ -63,7 +64,8 @@ The rules are:
 5. A mapping with several entries has no default unless explicit. Mapping order never selects authority.
 6. An empty mapping, invalid mount name, duplicate Environment instance, invalid policy, or conflict with `RunBindings` fails before `enter()`.
 7. Omitting all Environment input creates an empty bound facade and exposes no Environment tools.
-8. Inputs never accept an `EnvironmentProvider`, provider specification, Provider Resource, attachment, state envelope, or catalog key.
+8. `environment_run_extensions` is the ordered finite set of fresh extension instances for this Run; duplicate extension IDs fail before Environment entry.
+9. Inputs never accept an `EnvironmentProvider`, provider specification, Provider Resource, attachment, state envelope, or catalog key.
 
 The default mount is addressable at `/workspace`. Every mount is addressable at `/environment/{name}`. Without a default, `/workspace` is unavailable.
 
@@ -79,6 +81,8 @@ A hosted worker normally constructs Environment instances from Host-authoritativ
 | Entry metadata correlation                         | Harness supplies ephemeral values from Host bindings             |
 | One Run's mount names, IDs, access, and routing    | Harness                                                          |
 | Entered multi-mount facade                         | Harness-internal bound aggregate                                 |
+| Environment Run Extension protocol and ordering    | Harness                                                          |
+| Extension selection and serializable configuration | Host                                                             |
 | Provider operation execution and local cleanup     | Entered Environment                                              |
 | Model-facing file and shell Toolsets               | Harness Capabilities                                             |
 | Run-owned process tracking, readiness, and cleanup | Harness-private Run process controller                           |
@@ -112,19 +116,49 @@ Core immutable values include:
 
 `EnvironmentMountInfo` contains the mount name, provider key, entered descriptor, access ceiling, and default working directory. It omits opaque mount ID and provider target identity from model context.
 
+## Environment Run Extensions
+
+An `EnvironmentRunExtension` is a trusted async context-manager scope around one complete entered Environment aggregate. It is separate from Harness middleware Plugins, declarative Capabilities, and Environment Providers. A Host supplies ordered fresh, pre-entry-inert instances as Run inputs.
+
+```python
+@dataclass(frozen=True, slots=True)
+class EnvironmentRunExtensionContext:
+    run_id: str
+    instance: AgentInstanceContext
+    environment: BoundEnvironment
+
+
+class EnvironmentRunExtension(Protocol):
+    @property
+    def extension_id(self) -> str: ...
+
+    def bind(
+        self,
+        *,
+        context: EnvironmentRunExtensionContext,
+    ) -> AbstractAsyncContextManager[None]: ...
+```
+
+Extension IDs are unique within one Run. Harness enters scopes in supplied order after the initial Environment aggregate is available and exits them in reverse order before adapter teardown. An entry failure unwinds scopes already entered and then follows ordinary Environment cleanup. Exit failures are aggregated with other cleanup outcomes without selecting backing-target destruction.
+
+Harness also exposes the optional `a13n_harness.environment_run_extensions` factory catalog. Metadata discovery returns keys and available package provenance without importing targets. Catalog construction imports only selected entry points and can also accept explicit trusted factories. A factory receives only `extension_key`, the Host-selected `extension_id`, and detached finite JSON configuration, and returns one fresh extension with that exact ID. Duplicate keys, invalid factories, and mismatched IDs fail explicitly.
+
+The catalog does not select packages or read Host resource files. A Host decides which keys are trusted, validates its serializable configuration, creates fresh instances for each independent Run, and records any provenance it needs.
+
 ## Entry and Aggregate Lifecycle
 
 Harness validates the complete initial mapping before provider effects. Entry then proceeds:
 
-1. normalize each raw Environment into an `EnvironmentMount`;
-2. allocate a fresh opaque mount ID per mount;
-3. call each adapter's `enter()` with ephemeral `thread_id`, `run_id`, `agent_instance_id`, mount ID, and bounded Host references;
-4. validate each immutable provider descriptor and derive effective actions;
-5. if every mount entered successfully, publish one complete internal `EnvironmentSnapshot` and stable bound facade;
-6. bind Environment-aware Capabilities and produce Agent input;
-7. execute model attempts and operations against that same facade;
-8. snapshot portable states when requested;
-9. install the terminal mutation fence, drain operation leases, and call non-destructive `close()` on each adapter in reverse entry order.
+01. normalize each raw Environment into an `EnvironmentMount`;
+02. allocate a fresh opaque mount ID per mount;
+03. call each adapter's `enter()` with ephemeral `thread_id`, `run_id`, `agent_instance_id`, mount ID, and bounded Host references;
+04. validate each immutable provider descriptor and derive effective actions;
+05. if every mount entered successfully, publish one complete internal `EnvironmentSnapshot` and stable bound facade;
+06. enter Environment Run Extension scopes in supplied order;
+07. bind Environment-aware Capabilities and produce Agent input;
+08. execute model attempts and operations against that same facade;
+09. snapshot portable states when requested;
+10. install the terminal mutation fence, exit extension scopes in reverse order, drain operation leases, and call non-destructive `close()` on each adapter in reverse entry order.
 
 A failure before publication unwinds entered adapters and closes every supplied adapter that might own local resources. No partial initial mount set becomes model-visible.
 
@@ -405,3 +439,4 @@ Cleanup aggregates failures without changing lifecycle ownership. A close failur
 20. Run cleanup kills and releases every remaining process before Environment adapters close.
 21. No process projection, backend ID, offset, status, loss marker, watcher, or readiness fact enters portable Harness or Environment state.
 22. Run-owned shell and async subagents share no Manager, store, projection, observer registry, or shutdown lifecycle.
+23. Environment Run Extensions are fresh Host-selected aggregate scopes, not another Plugin, Capability, or Provider plane.
