@@ -100,8 +100,8 @@ class RunAttemptCorrelation:
     run_id: str
     run_attempt_id: str
     run_attempt_number: int
-    agent_preset_id: str
-    agent_preset_revision_id: str
+    agent_id: str
+    agent_revision_id: str
     model_id: str | None = None
     model_provider_type: str | None = None
     replaces_run_attempt_id: str | None = None
@@ -115,8 +115,8 @@ class RunAttemptCorrelation:
             "thread_id",
             "run_id",
             "run_attempt_id",
-            "agent_preset_id",
-            "agent_preset_revision_id",
+            "agent_id",
+            "agent_revision_id",
         ):
             _validate_bounded_text(field_name, cast(str, getattr(self, field_name)), required=True)
         for field_name in ("model_id", "model_provider_type", "replaces_run_attempt_id"):
@@ -142,8 +142,8 @@ class RunAttemptCorrelation:
             "a13n.foundation.run.id": self.run_id,
             "a13n.run_attempt.id": self.run_attempt_id,
             "a13n.run_attempt.number": self.run_attempt_number,
-            "a13n.agent.preset.id": self.agent_preset_id,
-            "a13n.agent.preset.revision.id": self.agent_preset_revision_id,
+            "a13n.agent.preset.id": self.agent_id,
+            "a13n.agent.preset.revision.id": self.agent_revision_id,
         }
         if self.model_id is not None:
             values["a13n.model.id"] = self.model_id

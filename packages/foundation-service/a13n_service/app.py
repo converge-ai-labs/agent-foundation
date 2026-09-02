@@ -13,13 +13,13 @@ from anyio import create_task_group, fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 
-from a13n_service.agent_presets.domain import PluginRuntimeMode
-from a13n_service.agent_presets.environment_resolution import AgentEnvironmentSelectionResolver
-from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
-from a13n_service.agent_presets.plugin_resolution import AgentPluginSelectionResolver
-from a13n_service.agent_presets.resolution import AgentPresetResolver
-from a13n_service.agent_presets.router import router as agent_preset_router
-from a13n_service.agent_presets.service import AgentPresetService
+from a13n_service.agents.domain import PluginRuntimeMode
+from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
+from a13n_service.agents.invocation_resolution import AgentInvocationResolver
+from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
+from a13n_service.agents.resolution import AgentResolver
+from a13n_service.agents.router import router as agent_router
+from a13n_service.agents.service import AgentService
 from a13n_service.api import install_api_conventions
 from a13n_service.assets.cleanup import AssetCleanupReconciler
 from a13n_service.assets.objects import AssetObjectStore
@@ -30,19 +30,19 @@ from a13n_service.environments.catalog import FoundationEnvironmentProviderCatal
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import RequestAuthenticator
-from a13n_service.model_configs.connection_test import NativeModelConnectionTester
-from a13n_service.model_configs.endpoint_policy import EndpointPolicy
-from a13n_service.model_configs.providers import built_in_provider_registry
-from a13n_service.model_configs.router import router as model_config_router
-from a13n_service.model_configs.runtime import (
+from a13n_service.models.connection_test import NativeModelConnectionTester
+from a13n_service.models.endpoint_policy import EndpointPolicy
+from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.router import router as model_router
+from a13n_service.models.runtime import (
     AcceptedModelSelector,
     NativeModelFactory,
     RuntimeSecretValueResolver,
 )
-from a13n_service.model_configs.secrets import DatabaseSecretValueResolver
-from a13n_service.model_configs.service import (
+from a13n_service.models.secrets import DatabaseSecretValueResolver
+from a13n_service.models.service import (
     CandidateConnectionTester,
-    ModelConfigService,
+    ModelService,
 )
 from a13n_service.observability import build_observability_runtime
 from a13n_service.plugins.commands import (
@@ -91,8 +91,8 @@ _WORKER_ROLES = {ServiceRole.all, ServiceRole.worker}
 @dataclass(frozen=True, slots=True)
 class ServiceComponents:
     request_authenticator: RequestAuthenticator | None = None
-    agent_preset_resolver: AgentPresetResolver | None = None
-    agent_preset_invocation_resolver: AgentPresetInvocationResolver | None = None
+    agent_resolver: AgentResolver | None = None
+    agent_invocation_resolver: AgentInvocationResolver | None = None
     agent_plugin_selection_resolver: AgentPluginSelectionResolver | None = None
     plugin_runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None
     plugin_runtime_candidate_resolver: PluginRuntimeCandidateResolver | None = None
@@ -295,16 +295,16 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     storage.sessions,
                     app.state.environment_provider_catalog,
                 )
-                app.state.agent_preset_resolver = app.state.components.agent_preset_resolver or AgentPresetResolver(
+                app.state.agent_resolver = app.state.components.agent_resolver or AgentResolver(
                     storage.sessions,
                     app.state.accepted_model_selector,
                     plugin_runtime_mode=settings.plugin_runtime_mode,
                     environment_resolver=app.state.agent_environment_selection_resolver,
                     plugin_resolver=app.state.agent_plugin_selection_resolver,
                 )
-                app.state.agent_preset_invocation_resolver = (
-                    app.state.components.agent_preset_invocation_resolver
-                    or AgentPresetInvocationResolver(
+                app.state.agent_invocation_resolver = (
+                    app.state.components.agent_invocation_resolver
+                    or AgentInvocationResolver(
                         storage.sessions,
                         app.state.accepted_model_selector,
                         plugin_runtime_mode=settings.plugin_runtime_mode,
@@ -312,12 +312,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         plugin_resolver=app.state.agent_plugin_selection_resolver,
                     )
                 )
-                app.state.agent_preset_service = AgentPresetService(
+                app.state.agent_service = AgentService(
                     storage.sessions,
-                    app.state.agent_preset_resolver,
-                    app.state.agent_preset_invocation_resolver,
+                    app.state.agent_resolver,
+                    app.state.agent_invocation_resolver,
                 )
-                app.state.model_config_service = ModelConfigService(
+                app.state.model_service = ModelService(
                     storage.sessions,
                     app.state.model_provider_registry,
                     app.state.model_endpoint_policy,
@@ -429,10 +429,10 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         return {"status": "ready", "role": resolved_settings.role.value}
 
     if serves_control_plane:
-        app.include_router(agent_preset_router)
+        app.include_router(agent_router)
         app.include_router(environment_router)
         app.include_router(asset_router)
-        app.include_router(model_config_router)
+        app.include_router(model_router)
         app.include_router(plugin_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)

@@ -11,7 +11,7 @@ from a13n_service.database import Base
 
 
 class SecretRecord(Base):
-    __tablename__ = "managed_secrets"
+    __tablename__ = "secrets"
     __table_args__ = (
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
@@ -27,7 +27,7 @@ class SecretRecord(Base):
         ),
         CheckConstraint("owner_type != 'workspace' OR owner_id = workspace_id", name="workspace_owner_consistent"),
         Index(
-            "uq_managed_secrets_active_owner_key",
+            "uq_secrets_active_owner_key",
             "organization_id",
             "workspace_id",
             "owner_type",
@@ -38,7 +38,7 @@ class SecretRecord(Base):
             sqlite_where=text("deleted_at IS NULL"),
         ),
         Index(
-            "ix_managed_secrets_owner_listing",
+            "ix_secrets_owner_listing",
             "organization_id",
             "workspace_id",
             "owner_type",

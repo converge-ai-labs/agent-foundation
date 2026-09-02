@@ -13,12 +13,13 @@ from a13n_service.environments.catalog import FoundationEnvironmentProviderCatal
 from a13n_service.environments.domain import (
     CreateEnvironmentRequest,
     CreateEnvironmentRevisionRequest,
-    PatchEnvironmentRequest,
     PutEnvironmentProviderSelectionRequest,
+    UpdateEnvironmentRequest,
 )
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.environments.models import EnvironmentRecord, EnvironmentRevisionRecord
 from a13n_service.environments.service import EnvironmentManagementService
+from a13n_service.etags import resource_etag
 from a13n_service.storage import transaction
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import func, select
@@ -100,7 +101,6 @@ async def test_provider_selection_environment_and_revision_lifecycle(
         request=PutEnvironmentProviderSelectionRequest(enabled=True),
     )
     assert selected.enabled
-    assert selected.version == 1
 
     created = await environment_service.create(
         actor=actor(),
@@ -130,7 +130,7 @@ async def test_provider_selection_environment_and_revision_lifecycle(
         environment_id=created.id,
         idempotency_key="revision-noop",
         request=CreateEnvironmentRevisionRequest(
-            expected_environment_version=1,
+            expected_version=1,
             provider=candidate(tmp_path).provider,
             credential_bindings=candidate(tmp_path).credential_bindings,
             access="full",
@@ -144,14 +144,14 @@ async def test_provider_selection_environment_and_revision_lifecycle(
         environment_id=created.id,
         idempotency_key="revision-two",
         request=CreateEnvironmentRevisionRequest(
-            expected_environment_version=1,
+            expected_version=1,
             provider=candidate(tmp_path, environment_id="workspace-local-v2").provider,
             credential_bindings=candidate(tmp_path).credential_bindings,
             access="read_write",
         ),
     )
     assert second_result.created
-    assert second_result.revision.revision_number == 2
+    assert second_result.revision.version == 2
     updated = await environment_service.get(actor=actor(), environment_id=created.id)
     assert updated.current_revision_id == second_result.revision.id
     assert updated.version == 2
@@ -159,7 +159,8 @@ async def test_provider_selection_environment_and_revision_lifecycle(
     archived = await environment_service.patch(
         actor=actor(),
         environment_id=created.id,
-        request=PatchEnvironmentRequest(expected_version=2, archived=True),
+        if_match=resource_etag(updated.id, updated.updated_at),
+        request=UpdateEnvironmentRequest(archived=True),
     )
     assert archived.archived_at is not None
     assert (
@@ -216,7 +217,7 @@ async def test_disabled_provider_and_invalid_configuration_fail_atomically(
 async def test_provider_selection_requires_compare_and_swap(
     environment_service: EnvironmentManagementService,
 ) -> None:
-    first = await environment_service.put_provider_selection(
+    await environment_service.put_provider_selection(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         provider_key=PROVIDER_KEY,
@@ -227,9 +228,10 @@ async def test_provider_selection_requires_compare_and_swap(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             provider_key=PROVIDER_KEY,
-            request=PutEnvironmentProviderSelectionRequest(enabled=False, expected_version=first.version + 1),
+            if_match='"stale"',
+            request=PutEnvironmentProviderSelectionRequest(enabled=False),
         )
-    assert stale.value.code == "environment_provider_version_conflict"
+    assert stale.value.code == "precondition_failed"
 
 
 @pytest.mark.anyio

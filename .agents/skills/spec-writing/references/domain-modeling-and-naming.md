@@ -143,16 +143,18 @@ provider_type
 If both fields identify the same provider catalog entry, choose one canonical
 term and use it across schemas, prose, APIs, events, and SDKs.
 
-### Bad: one term carries several meanings
+### Bad: field names restate context without resolving ambiguity
 
 ```text
-version = mutable resource compare-and-swap version
-version = immutable revision ordinal
-version = external package release
+state_version = the only version on Run
+value_version = the only version on Secret
 ```
 
-Good: use distinct names such as `version`, `revision_number`, and
-`package_version` when these axes can vary independently.
+Good: each model calls its single primary version `version`. Qualify a secondary
+version only when multiple independently meaningful versions coexist at the same
+boundary, such as Thread `version` and `queue_version`. A revisioned resource's
+head and current Revision share the same `version`; mutable head metadata uses a
+strong ETag rather than another counter.
 
 ### Bad: another document copies a shared concept
 

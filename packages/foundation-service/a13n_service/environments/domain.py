@@ -74,7 +74,6 @@ class EnvironmentProviderSelection(DomainModel):
     provider_package_revision_id: ObjectId | None = None
     provider_lock: EnvironmentProviderLock
     enabled: bool
-    version: int = Field(ge=1)
     updated_by: PrincipalRef
     updated_at: datetime
 
@@ -104,7 +103,7 @@ class EnvironmentRevision(DomainModel):
     environment_id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
-    revision_number: int = Field(ge=1)
+    version: int = Field(ge=1)
     provider: EnvironmentProviderSpec
     provider_package_revision_id: ObjectId | None = None
     provider_lock: EnvironmentProviderLock
@@ -129,7 +128,6 @@ class PutEnvironmentProviderSelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool
-    expected_version: int | None = Field(default=None, ge=1)
 
 
 class CreateEnvironmentRequest(BaseModel):
@@ -146,16 +144,15 @@ class CreateEnvironmentRequest(BaseModel):
         return _require_unique_bindings(self)
 
 
-class PatchEnvironmentRequest(BaseModel):
+class UpdateEnvironmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    expected_version: int = Field(ge=1)
     name: EnvironmentName | None = None
     description: EnvironmentDescription | None = None
     archived: bool | None = None
 
     @model_validator(mode="after")
-    def validate_change(self) -> PatchEnvironmentRequest:
+    def validate_change(self) -> UpdateEnvironmentRequest:
         changed = self.model_fields_set.intersection({"name", "description", "archived"})
         if not changed:
             raise ValueError("at least one mutable field must be supplied")
@@ -169,7 +166,7 @@ class PatchEnvironmentRequest(BaseModel):
 class CreateEnvironmentRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    expected_environment_version: int = Field(ge=1)
+    expected_version: int = Field(ge=1)
     provider: EnvironmentProviderSpec
     credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
     access: EnvironmentAccess = EnvironmentAccess.full

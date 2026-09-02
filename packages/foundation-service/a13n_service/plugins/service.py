@@ -13,9 +13,10 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agent_presets.domain import PluginRuntimeMode
-from a13n_service.agent_presets.models import AgentPresetRevisionRecord
+from a13n_service.agents.domain import PluginRuntimeMode
+from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
@@ -35,7 +36,6 @@ from .domain import (
     PLUGIN_VERSION_ID_PREFIX,
     Plugin,
     PluginCollection,
-    PluginLifecycleState,
     PluginSource,
     PluginTaskReceipt,
     PluginVersion,
@@ -44,6 +44,7 @@ from .domain import (
 from .errors import (
     PluginError,
     plugin_artifact_invalid,
+    plugin_etag_mismatch,
     plugin_idempotency_conflict,
     plugin_identity_conflict,
     plugin_not_found,
@@ -100,16 +101,16 @@ class PluginService:
             state = await session.get(PluginRuntimeStateRecord, "runtime", with_for_update=True)
             if state is None:
                 revision_modes = frozenset(
-                    await session.scalars(select(AgentPresetRevisionRecord.plugin_runtime_mode).distinct())
+                    await session.scalars(select(AgentRevisionRecord.plugin_runtime_mode).distinct())
                 )
                 if revision_modes and revision_modes != {self._runtime_mode.value}:
-                    raise RuntimeError("configured Plugin Runtime mode conflicts with retained AgentPresetRevisions")
+                    raise RuntimeError("configured Plugin Runtime mode conflicts with retained AgentRevisions")
                 session.add(
                     PluginRuntimeStateRecord(
                         id="runtime",
                         mode=self._runtime_mode.value,
                         active_lock_digest=None,
-                        version=1,
+                        runtime_generation=1,
                         command_operation_id=None,
                         command_claim_generation=0,
                         command_lease_expires_at=None,
@@ -196,12 +197,10 @@ class PluginService:
         actor: AuthenticatedActor,
         limit: int,
         cursor: str | None,
-        lifecycle_state: PluginLifecycleState | None,
         source: PluginSource | None,
         include_archived: bool,
     ) -> PluginCollection:
         scope: dict[str, object] = {
-            "lifecycle_state": lifecycle_state.value if lifecycle_state is not None else None,
             "source": source.value if source is not None else None,
             "include_archived": include_archived,
         }
@@ -211,10 +210,8 @@ class PluginService:
             raise PluginError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
         await self._authorize(actor, WorkspaceAction.plugin_read)
         query = select(PluginRecord)
-        if lifecycle_state is not None:
-            query = query.where(PluginRecord.lifecycle_state == lifecycle_state.value)
-        elif not include_archived:
-            query = query.where(PluginRecord.lifecycle_state != PluginLifecycleState.archived.value)
+        if not include_archived:
+            query = query.where(PluginRecord.archived_at.is_(None))
         if source is not None:
             query = query.where(PluginRecord.source == source.value)
         if after is not None:
@@ -307,6 +304,7 @@ class PluginService:
         plugin_id: str,
         action: Literal["archive", "unarchive"],
         idempotency_key: str,
+        if_match: str,
     ) -> Plugin:
         organization_id = await self._authorize(actor, WorkspaceAction.plugin_manage)
         operation = f"plugin.{action}"
@@ -332,19 +330,18 @@ class PluginService:
             record = await session.scalar(select(PluginRecord).where(PluginRecord.id == plugin_id).with_for_update())
             if record is None:
                 raise plugin_not_found()
+            if not etag_matches(if_match, resource_etag(record.id, record.updated_at)):
+                raise plugin_etag_mismatch()
             if record.source != PluginSource.uploaded.value:
                 raise plugin_state_conflict()
             if action == "archive":
-                if (
-                    record.lifecycle_state != PluginLifecycleState.available.value
-                    or record.active_version_id is not None
-                ):
+                if record.archived_at is not None or record.active_version_id is not None:
                     raise plugin_state_conflict()
-                record.lifecycle_state = PluginLifecycleState.archived.value
-            elif record.lifecycle_state != PluginLifecycleState.archived.value:
+                record.archived_at = now
+            elif record.archived_at is None:
                 raise plugin_state_conflict()
             else:
-                record.lifecycle_state = PluginLifecycleState.available.value
+                record.archived_at = None
             record.updated_at = now
             session.add(
                 _evidence(
@@ -456,7 +453,10 @@ class PluginService:
             )
             existing = await session.scalar(
                 select(PluginVersionRecord)
-                .where(PluginVersionRecord.plugin_id == plugin.id, PluginVersionRecord.version == inspected.version)
+                .where(
+                    PluginVersionRecord.plugin_id == plugin.id,
+                    PluginVersionRecord.version == inspected.version,
+                )
                 .with_for_update()
             )
             if existing is not None:
@@ -522,10 +522,7 @@ class PluginService:
             record = await session.scalar(select(PluginRecord).where(PluginRecord.id == plugin_id).with_for_update())
             if record is None:
                 raise plugin_not_found()
-            if (
-                record.source != PluginSource.uploaded.value
-                or record.lifecycle_state != PluginLifecycleState.available.value
-            ):
+            if record.source != PluginSource.uploaded.value or record.archived_at is not None:
                 raise plugin_state_conflict()
             if (
                 record.plugin_key != inspected.plugin_key
@@ -539,10 +536,7 @@ class PluginService:
             select(PluginRecord).where(PluginRecord.plugin_key == inspected.plugin_key).with_for_update()
         )
         if record is not None:
-            if (
-                record.source != PluginSource.uploaded.value
-                or record.lifecycle_state != PluginLifecycleState.available.value
-            ):
+            if record.source != PluginSource.uploaded.value or record.archived_at is not None:
                 raise plugin_state_conflict()
             if (
                 record.distribution_name != inspected.distribution_name
@@ -577,7 +571,7 @@ class PluginService:
             distribution_name=inspected.distribution_name,
             top_level_package=inspected.top_level_package,
             active_version_id=None,
-            lifecycle_state=PluginLifecycleState.available.value,
+            archived_at=None,
             required=False,
             created_by_type=actor.principal.principal_type.value,
             created_by_id=actor.principal.principal_id,

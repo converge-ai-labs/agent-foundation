@@ -6,8 +6,8 @@ from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
 ENVIRONMENT_TABLES = {
-    "workspace_environment_providers",
-    "managed_environments",
+    "environment_provider_selections",
+    "environments",
     "environment_revisions",
 }
 

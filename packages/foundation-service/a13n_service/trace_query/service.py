@@ -456,7 +456,7 @@ def _validate_provider_summary(item: ProviderTraceSummary) -> None:
         correlation.thread_id,
         correlation.run_id,
         correlation.run_attempt_id,
-        correlation.agent_preset_id,
+        correlation.agent_id,
     ):
         _provider_text(value, max_bytes=_MAX_PROVIDER_ID_BYTES)
     _provider_json(item.input, max_bytes=_MAX_PROVIDER_CONTENT_BYTES)

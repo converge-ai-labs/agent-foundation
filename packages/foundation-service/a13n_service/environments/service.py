@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.models import SecurityAuditRecord
@@ -39,8 +40,8 @@ from .domain import (
     EnvironmentProviderSelection,
     EnvironmentRevision,
     EnvironmentRevisionCollection,
-    PatchEnvironmentRequest,
     PutEnvironmentProviderSelectionRequest,
+    UpdateEnvironmentRequest,
     environment_logical_digest,
     new_environment_id,
     new_environment_revision_id,
@@ -50,7 +51,6 @@ from .errors import (
     environment_not_found,
     environment_provider_disabled,
     environment_provider_not_found,
-    environment_provider_version_conflict,
     environment_revision_not_found,
     environment_version_conflict,
 )
@@ -127,6 +127,7 @@ class EnvironmentManagementService:
         workspace_id: str,
         provider_key: str,
         request: PutEnvironmentProviderSelectionRequest,
+        if_match: str | None = None,
     ) -> EnvironmentProviderSelection:
         entry = self._catalog.entry(provider_key)
         now = self._clock()
@@ -147,8 +148,8 @@ class EnvironmentManagementService:
                 .with_for_update()
             )
             if record is None:
-                if request.expected_version is not None:
-                    raise environment_provider_version_conflict(None)
+                if if_match is not None:
+                    raise _precondition_failed(None)
                 record = EnvironmentProviderSelectionRecord(
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
@@ -156,7 +157,6 @@ class EnvironmentManagementService:
                     provider_package_revision_id=None,
                     provider_lock=entry.provider_lock.model_dump(mode="json"),
                     enabled=request.enabled,
-                    version=1,
                     updated_by_type=actor.principal.principal_type.value,
                     updated_by_id=actor.principal.principal_id,
                     created_at=now,
@@ -164,15 +164,13 @@ class EnvironmentManagementService:
                 )
                 session.add(record)
             else:
-                if request.expected_version != record.version:
-                    raise environment_provider_version_conflict(record.version)
+                _require_etag(record, if_match, resource_id=f"{workspace_id}:{provider_key}")
                 current_lock = entry.provider_lock.model_dump(mode="json")
                 if record.enabled == request.enabled and record.provider_lock == current_lock:
                     return record.to_resource()
                 record.enabled = request.enabled
                 record.provider_package_revision_id = None
                 record.provider_lock = current_lock
-                record.version += 1
                 record.updated_by_type = actor.principal.principal_type.value
                 record.updated_by_id = actor.principal.principal_id
                 record.updated_at = now
@@ -274,7 +272,7 @@ class EnvironmentManagementService:
                     environment_id=environment_id,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
-                    revision_number=1,
+                    version=1,
                     provider=normalized_provider.model_dump(mode="json"),
                     provider_package_revision_id=selection.provider_package_revision_id,
                     provider_lock=self._catalog.entry(normalized_provider.provider_key).provider_lock.model_dump(
@@ -405,7 +403,8 @@ class EnvironmentManagementService:
         *,
         actor: AuthenticatedActor,
         environment_id: str,
-        request: PatchEnvironmentRequest,
+        if_match: str,
+        request: UpdateEnvironmentRequest,
     ) -> Environment:
         now = self._clock()
         try:
@@ -423,8 +422,7 @@ class EnvironmentManagementService:
                     environment_id=environment_id,
                     for_update=True,
                 )
-                if record.version != request.expected_version:
-                    raise environment_version_conflict(record.version)
+                _require_etag(record, if_match, resource_id=record.id)
                 if "name" in request.model_fields_set and request.name is not None:
                     record.name = request.name
                     record.normalized_name = _normalized_name(request.name)
@@ -432,7 +430,6 @@ class EnvironmentManagementService:
                     record.description = request.description
                 if "archived" in request.model_fields_set:
                     record.archived_at = now if request.archived else None
-                record.version += 1
                 record.updated_by_type = actor.principal.principal_type.value
                 record.updated_by_id = actor.principal.principal_id
                 record.updated_at = now
@@ -507,7 +504,7 @@ class EnvironmentManagementService:
                         "The Environment is archived.",
                         status_code=409,
                     )
-                if environment.version != request.expected_environment_version:
+                if environment.version != request.expected_version:
                     raise environment_version_conflict(environment.version)
                 selection = await _require_selection(
                     session,
@@ -549,7 +546,7 @@ class EnvironmentManagementService:
                         environment_id=environment.id,
                         organization_id=workspace.organization_id,
                         workspace_id=workspace.workspace_id,
-                        revision_number=current.revision_number + 1,
+                        version=current.version + 1,
                         provider=normalized_provider.model_dump(mode="json"),
                         provider_package_revision_id=selection.provider_package_revision_id,
                         provider_lock=lock.model_dump(mode="json"),
@@ -642,9 +639,9 @@ class EnvironmentManagementService:
                 number, revision_id = after
                 query = query.where(
                     or_(
-                        EnvironmentRevisionRecord.revision_number < number,
+                        EnvironmentRevisionRecord.version < number,
                         and_(
-                            EnvironmentRevisionRecord.revision_number == number,
+                            EnvironmentRevisionRecord.version == number,
                             EnvironmentRevisionRecord.id < revision_id,
                         ),
                     )
@@ -653,7 +650,7 @@ class EnvironmentManagementService:
                 (
                     await session.scalars(
                         query.order_by(
-                            EnvironmentRevisionRecord.revision_number.desc(),
+                            EnvironmentRevisionRecord.version.desc(),
                             EnvironmentRevisionRecord.id.desc(),
                         ).limit(limit + 1)
                     )
@@ -663,7 +660,7 @@ class EnvironmentManagementService:
             next_cursor = None
             if len(records) > limit and page:
                 next_cursor = encode_revision_cursor(
-                    revision_number=page[-1].revision_number,
+                    version=page[-1].version,
                     revision_id=page[-1].id,
                     scope=scope,
                 )
@@ -1021,6 +1018,27 @@ def _audit(
 
 def _normalized_name(value: str) -> str:
     return value.casefold()
+
+
+def _require_etag(
+    record: EnvironmentRecord | EnvironmentProviderSelectionRecord,
+    if_match: str | None,
+    *,
+    resource_id: str,
+) -> None:
+    current = resource_etag(resource_id, record.updated_at)
+    if if_match is None or not etag_matches(if_match, current):
+        raise _precondition_failed(current)
+
+
+def _precondition_failed(current_etag: str | None) -> EnvironmentManagementError:
+    details: dict[str, object] = {"current_etag": current_etag} if current_etag is not None else {}
+    return EnvironmentManagementError(
+        "precondition_failed",
+        "The resource changed after it was read.",
+        status_code=412,
+        details=details,
+    )
 
 
 def _invalid_idempotency_key() -> EnvironmentManagementError:

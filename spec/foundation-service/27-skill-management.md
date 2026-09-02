@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation manages Skills as Workspace-owned resources with immutable revisions. A Builder publishes a revision from a staged ZIP package or a typed GitHub selector, then selects exact revisions while authoring an Agent. Package bytes live in object storage; identity, revisions, authorization, provenance, and AgentPresetRevision locks live in Foundation's durable control state.
+Foundation manages Skills as Workspace-owned resources with immutable revisions. A Builder publishes a revision from a staged ZIP package or a typed GitHub selector, then selects exact revisions while authoring an Agent. Package bytes live in object storage; identity, revisions, authorization, provenance, and AgentRevision locks live in Foundation's durable control state.
 
 Foundation follows the shared [Managed Skill Package Contract](../managed-skill-packages.md)
 and never executes from an upload, repository, mutable ref, object URL, or Worker
@@ -35,11 +35,12 @@ class Skill:
     id: SkillId
     organization_id: OrganizationId
     workspace_id: WorkspaceId
-    display_name: str
+    name: str
     version: int
     current_revision_id: SkillRevisionId
     created_at: datetime
     created_by: PrincipalRef
+    updated_by: PrincipalRef
     updated_at: datetime
     deleted_at: datetime | None
 
@@ -48,16 +49,16 @@ class SkillRevision:
     id: SkillRevisionId
     skill_id: SkillId
     workspace_id: WorkspaceId
-    revision_number: int
+    version: int
     manifest: SkillPackageManifest
     imported_from: ZipSkillImportProvenance | GitHubSkillImportProvenance
     created_at: datetime
     created_by: PrincipalRef
 ```
 
-`sk_`, `skr_`, and `sku_` prefix stable Skills, immutable revisions, and staged ZIP receipts. A Skill is created atomically with revision `1`. Publishing a revision appends the next number, selects it as current, and increments the Skill `version`. Changing only `display_name` also increments `version`.
+`sk_`, `skr_`, and `sku_` prefix stable Skills, immutable revisions, and staged ZIP receipts. A Skill is created atomically with revision `1`. Publishing genuinely new content appends the next version and advances the head; a semantic no-op returns the current Revision. Changing only `name` uses strong `ETag`/`If-Match` and does not increment `version`.
 
-`manifest.skill_name` and `manifest.description` are verified projections of `SKILL.md`. A later revision can change them; existing AgentPresetRevisions remain bound to their exact old revision and name. Workspace Skills can share a model-facing name; AgentPreset Revision creation rejects duplicates only within one selected catalog.
+`manifest.skill_name` and `manifest.description` are verified projections of `SKILL.md`. A later revision can change them; existing AgentRevisions remain bound to their exact old revision and name. Workspace Skills can share a model-facing name; Agent Revision creation rejects duplicates only within one selected catalog.
 
 Foundation stores each normalized package as one immutable ZIP object. For package contract version `1`, its internal object key is derived exactly as follows:
 
@@ -67,7 +68,7 @@ tenants/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/{c
 
 The ZIP contains only the files named by the revision manifest. ZIP byte encoding is not content identity; every read verifies the expanded files against the manifest. Foundation derives the key only after an authorized Workspace and revision lookup. It is not stored in `SkillRevision`, accepted from a caller, exposed by the API, or treated as access authority. `imported_from` records source provenance only and is never used to locate package content.
 
-Objects and revisions remain while referenced by a retained AgentPresetRevision, Run, or current Skill head. Tombstoning a Skill prevents new revisions and AgentPreset bindings but does not rewrite retained Agents or Runs.
+Objects and revisions remain while referenced by a retained AgentRevision, Run, or current Skill head. Tombstoning a Skill prevents new revisions and Agent bindings but does not rewrite retained Agents or Runs.
 
 ## Service Bounds
 
@@ -80,7 +81,7 @@ Foundation enforces the shared package maxima. It additionally fixes these publi
 | GitHub acquisition deadline                 |                     60 seconds |
 | Available Skill revisions in one Agent node |                            512 |
 
-Deployments can impose lower quotas on active Skills, revisions, or concurrent uploads. Reaching a quota rejects the operation; it never evicts retained content. `display_name` is NFC, contains 1 through 256 Unicode scalar values, has no leading or trailing whitespace, and contains no control character.
+Deployments can impose lower quotas on active Skills, revisions, or concurrent uploads. Reaching a quota rejects the operation; it never evicts retained content. `name` is NFC, contains 1 through 256 Unicode scalar values, has no leading or trailing whitespace, and contains no control character.
 
 Foundation retains `Idempotency-Key` evidence for ZIP staging, Skill creation, and revision publication for 24 hours after the accepted commit. A replay within that horizon returns the original bounded result before evaluating current resource state. After expiry, Foundation no longer promises replay, and absent evidence does not prove that the earlier request never committed.
 
@@ -140,7 +141,7 @@ SkillRevisionSource = Annotated[
 
 
 class CreateSkillRequest:
-    display_name: str
+    name: str
     source: SkillRevisionSource
 
 
@@ -169,13 +170,12 @@ GET /api/v1/skills/{skill_id}/revisions?limit=50&cursor=opaque
 GET /api/v1/skill-revisions/{skill_revision_id}
 GET /api/v1/skill-revisions/{skill_revision_id}/content
 PATCH /api/v1/skills/{skill_id}
-DELETE /api/v1/skills/{skill_id}?expected_version=3
+DELETE /api/v1/skills/{skill_id}
 ```
 
 ```python
 class UpdateSkillRequest:
-    expected_version: int
-    display_name: str
+    name: str
 
 
 class SkillPublicationReceipt:
@@ -184,9 +184,9 @@ class SkillPublicationReceipt:
     outcome: Literal["published", "already_current"]
 ```
 
-Reads expose safe provenance and manifest metadata, never Secret selectors, object keys, or provider responses. The authorized `/content` route streams a normalized ZIP as `application/zip` with `ETag: W/"sha256:<content_digest>"`; it is not the original upload or a public object-storage URL. Skill collections order by `(display_name, id)` and revision collections by `(revision_number desc, id)` under the shared cursor contract.
+Reads expose safe provenance and manifest metadata, never Secret selectors, object keys, or provider responses. Skill head reads return a strong representation `ETag`. The authorized `/content` route streams a normalized ZIP as `application/zip` with `ETag: W/"sha256:<content_digest>"`; it is not the original upload or a public object-storage URL. Skill collections order by `(name, id)` and revision collections by `(version desc, id)` under the shared cursor contract.
 
-PATCH changes only `display_name` under the expected version. Clients re-import a GitHub source by submitting another revision with the recorded selector. Delete tombstones the Skill under its expected version and returns `204`.
+PATCH changes only `name` and DELETE tombstones the Skill. Both require the current strong `ETag` in `If-Match`; they do not append a revision or advance `Skill.version`. Clients re-import a GitHub source by submitting another revision with the recorded selector.
 
 Stable error codes include `skill_not_found`, `skill_version_conflict`, `skill_upload_not_found`, `skill_upload_expired`, `skill_upload_consumed`, `skill_package_invalid`, `skill_package_limit`, `github_source_invalid`, `github_commit_mismatch`, `github_auth_failed`, `github_rate_limited`, and `github_unavailable`. Invalid inputs use `400`; absent or concealed resources use `404`; version, upload, and idempotency conflicts use `409`; GitHub rate limiting uses `429`; retryable dependencies use `503`. Errors never include package bodies, credentials, object keys, or private paths.
 
@@ -194,13 +194,13 @@ Stable error codes include `skill_not_found`, `skill_version_conflict`, `skill_u
 
 The domain contributes `skill.read`, `skill.create`, `skill.update`, `skill.delete`, and `skill.bind`. Viewer can read safe metadata and content. Builder and Admin can manage and bind Skills. Direct Agent Builder can bind an otherwise readable Skill while authoring that Agent but cannot manage the Workspace resource without a Workspace role.
 
-Every request reauthorizes its Workspace and resource. AgentPreset Revision creation reauthorizes `skill.bind` for every selected revision. Workers read packages under internal Run authority; invoking an Agent does not grant the caller package download permission.
+Every request reauthorizes its Workspace and resource. Agent Revision creation reauthorizes `skill.bind` for every selected revision. Workers read packages under internal Run authority; invoking an Agent does not grant the caller package download permission.
 
 Skill creation, revision publication, metadata update, deletion, and denied management attempts emit bounded [IAM security audit events](10-identity-and-access-management.md#security_audit_events). Common event fields record the actor, Workspace, action, primary Skill resource when known, and success-or-failure outcome. The stable actions are `skill.create`, `skill.revision.publish`, `skill.update`, and `skill.delete`; a denied attempt uses the same action with failure outcome. Action-owned `details` use this additional allowlist:
 
 - Successful Skill creation records `selected_revision_id` and `source_kind`.
 - Successful revision publication records `previous_revision_id`, `selected_revision_id`, `source_kind`, and `publication_outcome`, whose value is `published` or `already_current`. The two revision IDs are equal when the selected content is already current; otherwise they identify the immutable transition that an authorized caller can compare.
-- Successful metadata update records only `changed_fields`; it never records the old or new `display_name`.
+- Successful metadata update records only `changed_fields`; it never records the old or new `name`.
 
 `source_kind` is the submitted source discriminator, `zip_upload` or `github`.
 
@@ -250,7 +250,7 @@ The ZIP upload operation ends when its receipt commits; the later Skill request 
 
 Source acquisition, validation, and object storage occur without a database session. Foundation publishes or verifies the immutable package object before the final short transaction. A failed or unknown commit creates no authoritative revision and is reconciled by the same idempotency key.
 
-## AgentPresetRevision Selection
+## AgentRevision Selection
 
 Agent authoring selects one ordered tuple of exact Skill revisions:
 
@@ -261,9 +261,9 @@ class SkillRevisionLock:
     content_digest: str
 ```
 
-Each `AgentPresetConfig.skills` entry selects one immutable revision ID, including an authorized retained non-current revision. It accepts no `latest`, upload receipt, GitHub selector, object URL, or source path. AgentPreset Revision creation resolves the ordered list, rejects duplicate final model-facing names, and copies the complete locks into the Revision.
+Each `AgentConfig.skills` entry selects one immutable revision ID, including an authorized retained non-current revision. It accepts no `latest`, upload receipt, GitHub selector, object URL, or source path. Agent Revision creation resolves the ordered list, rejects duplicate final model-facing names, and copies the complete locks into the Revision.
 
-Foundation exposes no separate available catalog, `default_mode`, `default_names`, per-item default flag, or caller-selected materialization mount. The selected list is the Preset default. A non-empty list requires one primary Environment with sufficient write access; Foundation materializes Skills into its Runtime-owned Skill directory. Later Skill publication or deletion never mutates the AgentPresetRevision or an accepted Run.
+Foundation exposes no separate available catalog, `default_mode`, `default_names`, per-item default flag, or caller-selected materialization mount. The selected list is the Agent default. A non-empty list requires one primary Environment with sufficient write access; Foundation materializes Skills into its Runtime-owned Skill directory. Later Skill publication or deletion never mutates the AgentRevision or an accepted Run.
 
 A present `AgentRunOverride.skills` replaces the complete list with another ordered tuple of exact authorized SkillRevision IDs; `[]` selects no Skills. The override may add a revision not present in the base Revision, but it cannot select a source, mutable Skill head, or duplicate final name. Omission inherits the Revision list. Waiting feedback and explicit Retry preserve the source Run's complete effective configuration rather than accepting another override.
 
@@ -286,7 +286,7 @@ Materialization outcomes are:
 
 | Outcome                             | Semantics                                                                                                                           |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `skill_materialization_invalid`     | A locked revision, object, digest, or package contract is invalid; fail closed until another AgentPresetRevision is selected        |
+| `skill_materialization_invalid`     | A locked revision, object, digest, or package contract is invalid; fail closed until another AgentRevision is selected              |
 | `skill_materialization_unavailable` | Object storage or Environment access is temporarily unavailable; retry only through a new fenced RunAttempt under ordinary ceilings |
 | `skill_materialization_stale`       | The Environment mount incarnation, Provider generation, or RunAttempt fence changed; abandon the attempt and reacquire authority    |
 | `skill_materialization_cancelled`   | Cancellation or shutdown won; preserve the ordinary cancelled or interrupted lifecycle                                              |
@@ -301,7 +301,7 @@ Stable Skill/revision meaning, source union, shared package contract, public API
 
 1. Every Skill belongs to one immutable Organization and Workspace, and every revision selects one immutable package and provenance record.
 2. Uploads, GitHub refs, object URLs, caches, and package content grant no runtime authority by themselves.
-3. AgentPresetRevisions lock one ordered default Skill list; an optional Run override whole-replaces it with another exact authorized list.
-4. Later Skill mutations do not change AgentPresetRevision locks or an accepted Run's `EffectiveAgentConfig.skills`.
+3. AgentRevisions lock one ordered default Skill list; an optional Run override whole-replaces it with another exact authorized list.
+4. Later Skill mutations do not change AgentRevision locks or an accepted Run's `EffectiveAgentConfig.skills`.
 5. No database transaction spans source acquisition, object storage, Environment I/O, or Harness work.
 6. Harness scanning begins only after the complete materialized root verifies.

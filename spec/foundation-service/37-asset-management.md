@@ -204,7 +204,7 @@ An object published without a committed Asset row is a non-authoritative cleanup
 
 ## Agent Publication Capability
 
-An AgentPresetRevision can explicitly select the trusted Foundation `AssetCapability`. When selected, it exposes one effectful model tool, `publish_asset`, that accepts a logical path in the current default Environment plus optional filename and media-type metadata. It reads only a confined regular file through the active Environment file interface, never a Worker host path. Omitted filename defaults to the source basename, and omitted media type defaults to `application/octet-stream`.
+An AgentRevision can explicitly select the trusted Foundation `AssetCapability`. When selected, it exposes one effectful model tool, `publish_asset`, that accepts a logical path in the current default Environment plus optional filename and media-type metadata. It reads only a confined regular file through the active Environment file interface, never a Worker host path. Omitted filename defaults to the source basename, and omitted media type defaults to `application/octet-stream`.
 
 Publication is explicit. Foundation never turns every created Environment file, command output, model output, Run output, or oversized Item value into an Asset. A Revision without `AssetCapability` cannot publish one through this boundary.
 

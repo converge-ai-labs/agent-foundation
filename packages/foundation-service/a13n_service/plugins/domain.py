@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -21,11 +22,6 @@ class PluginSource(StrEnum):
     uploaded = "uploaded"
 
 
-class PluginLifecycleState(StrEnum):
-    available = "available"
-    archived = "archived"
-
-
 class PluginTaskStatus(StrEnum):
     running = "running"
     succeeded = "succeeded"
@@ -43,7 +39,9 @@ class Plugin(DomainModel):
     distribution_name: str = Field(min_length=1, max_length=256)
     top_level_package: str = Field(min_length=1, max_length=256)
     active_version_id: ObjectId | None
-    lifecycle_state: PluginLifecycleState
+    archived_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class PluginVersion(DomainModel):

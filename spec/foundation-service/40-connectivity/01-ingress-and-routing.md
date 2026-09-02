@@ -20,8 +20,8 @@ class Ingress:
     provider_config_version: str
     provider_config: IngressProviderConfig
     execution_principal_ref: PrincipalRef
-    agents: tuple[AgentPresetId, ...]
-    default_agent_preset_id: AgentPresetId
+    agents: tuple[AgentId, ...]
+    default_agent_id: AgentId
     status: Literal["active", "disabled"]
     version: int
     created_by: PrincipalRef
@@ -35,10 +35,10 @@ class Route:
     name: str
     provider_config_version: str
     match: RouteMatchConfig
-    agent_preset_id: AgentPresetId | None
+    agent_id: AgentId | None
     input_mapping: InputMapping | None
     input_batching: InputBatchingPolicy
-    capability_overlays: Mapping[AgentPresetId, RunCapabilityOverlay]
+    capability_overlays: Mapping[AgentId, RunCapabilityOverlay]
     provider_policy: RouteProviderPolicy
     enabled: bool
     version: int
@@ -124,7 +124,7 @@ The mapping receives one ordered `EventInputBatch`, including a one-element batc
 
 A missing selected path without a configured static default fails the mapping. One mapping owns both single-event and bounded-burst transformation rather than requiring a second batch-to-input contract. An added mapping-language operator cannot expose the protected event envelope or change event authority.
 
-The mapping supports no Jinja, string interpolation, JSONPath, executable code, network call, Secret lookup, or arbitrary expression. It is compiled when the Route changes and its result is validated as canonical `AgentInput` and against the selected Agent input schema again when the single event or completed batch is prepared for submission. A deterministic mapping or validation failure rejects the frozen admission rather than retrying it. Provider data remains untrusted input and cannot add an Agent, Tool, Skill, MCP server, ConnectorConnection, Principal, permission, or Run grant.
+The mapping supports no Jinja, string interpolation, JSONPath, executable code, network call, Secret lookup, or arbitrary expression. It is compiled when the Route changes and its result is validated as canonical `AgentInput` and against the selected Agent input schema again when the single event or completed batch is prepared for submission. A deterministic mapping or validation failure rejects the frozen admission rather than retrying it. Provider data remains untrusted input and cannot add an Agent, Tool, Skill, MCP server, Connection, Principal, permission, or Run grant.
 
 Protected source metadata such as Ingress, Route, event identity, correlation refs, and `raw_ref` is not part of `EventInputView` and remains outside model-controlled input. A mapping can expose safe normalized values to the model, but doing so does not make those values authority. A new Run accepted from this event retains the exact protected [`IngressRunContext`](04-agent-facing-tools.md#ingressruncontext); an event accepted as Steer remains correlated to its durable Ingress admission and Steer receipts without becoming a second Run source.
 
@@ -148,7 +148,7 @@ This mechanism bounds Run and Steer frequency without weakening receipt durabili
 class AgentThreadBinding:
     ingress_id: IngressId
     external_ref: ExternalRef
-    agent_preset_id: AgentPresetId
+    agent_id: AgentId
     agent_thread_id: ThreadId
     version: int
     created_at: datetime

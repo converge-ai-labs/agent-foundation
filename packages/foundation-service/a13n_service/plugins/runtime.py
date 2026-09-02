@@ -72,7 +72,7 @@ class LockedPlugin(BaseModel):
     plugin_version_id: str = Field(min_length=1, max_length=72)
     plugin_key: str = Field(min_length=1, max_length=128)
     distribution_name: str = Field(min_length=1, max_length=256)
-    distribution_version: str = Field(min_length=1, max_length=256)
+    version: str = Field(min_length=1, max_length=256)
     top_level_package: str = Field(min_length=1, max_length=256)
     wheel_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -131,7 +131,7 @@ class RuntimePluginContribution(Protocol):
     def distribution_name(self) -> str: ...
 
     @property
-    def distribution_version(self) -> str: ...
+    def version(self) -> str: ...
 
     @property
     def top_level_package(self) -> str: ...
@@ -201,7 +201,7 @@ class PluginRuntimeLockStore:
                 plugin_version_id=plugin.plugin_version_id,
                 plugin_key=plugin.plugin_key,
                 distribution_name=canonicalize_name(plugin.distribution_name),
-                distribution_version=plugin.distribution_version,
+                version=plugin.version,
                 top_level_package=plugin.top_level_package,
                 wheel_digest=plugin.wheel_digest,
             )
@@ -210,7 +210,7 @@ class PluginRuntimeLockStore:
                 distributions,
                 LockedDistribution(
                     distribution_name=locked.distribution_name,
-                    version=locked.distribution_version,
+                    version=locked.version,
                     source="artifact",
                     artifact_digest=locked.wheel_digest,
                     artifact_ref=plugin.artifact_ref,
@@ -365,7 +365,7 @@ def _locked_plugin(plugin: RuntimePluginContribution) -> LockedPlugin:
         plugin_version_id=plugin.plugin_version_id,
         plugin_key=plugin.plugin_key,
         distribution_name=canonicalize_name(plugin.distribution_name),
-        distribution_version=plugin.distribution_version,
+        version=plugin.version,
         top_level_package=plugin.top_level_package,
         wheel_digest=plugin.wheel_digest,
     )

@@ -63,10 +63,10 @@ class EnvironmentProviderSelection:
     provider_package_revision_id: EnvironmentProviderPackageRevisionId | None
     provider_lock: DependencyLock
     enabled: bool
-    version: int
+    updated_at: datetime
 ```
 
-The versioned Workspace selection is the user-management surface for an uploaded Provider. Users can inspect catalog revisions, enable or disable one exact lock, and later select it from Environment revisions. Selection never mutates or deletes the operator-published package revision.
+The Workspace selection is the user-management surface for an uploaded Provider. GET returns a strong ETag and changes require `If-Match`; it has no generic version counter. Users can inspect catalog revisions, enable or disable one exact lock, and later select it from Environment revisions. Selection never mutates or deletes the operator-published package revision.
 
 Only an enabled selection can create a revision, accept a Run configuration, validate a revision, or reconstruct a RunAttempt. Disabling it does not delete retained desired configuration or current state, but later use and lifecycle operations fail closed without substituting another Provider.
 
@@ -128,7 +128,7 @@ Secret values and value-derived data never enter revisions, Environment state, R
 
 ## Environment Selection and Run State
 
-An `AgentPresetConfig` selects at most one primary exact Environment revision:
+An `AgentConfig` selects at most one primary exact Environment revision:
 
 ```python
 class EnvironmentSelection:
@@ -144,9 +144,9 @@ class InlineEnvironmentSelection:
     access: EnvironmentAccess = "full"
 ```
 
-Inline selection passes the same provider-selection, schema, credential-reference, access, and authorization validation but creates no reusable revision. Foundation exposes no public multi-Environment topology, mount-name map, default-mount selector, mutable Environment-head selector, or per-Preset Environment policy document in the first version.
+Inline selection passes the same provider-selection, schema, credential-reference, access, and authorization validation but creates no reusable revision. Foundation exposes no public multi-Environment topology, mount-name map, default-mount selector, mutable Environment-head selector, or per-Agent Environment policy document in the first version.
 
-AgentPreset Revision creation resolves an exact named selection into the immutable Revision. Run acceptance resolves the final exact or inline selection into `EffectiveAgentConfig.environment`:
+Agent Revision creation resolves an exact named selection into the immutable Revision. Run acceptance resolves the final exact or inline selection into `EffectiveAgentConfig.environment`:
 
 ```python
 class EnvironmentExecutionConfig:
@@ -314,7 +314,7 @@ The pre-release connector, Resource, attachment, runtime-mount object, aggregate
 
 01. Foundation uses only `EnvironmentProvider`, `Environment`, and `EnvironmentState` as shared Environment lifecycle entities.
 02. Workspace Environment revisions contain exact desired Provider configuration, not current target identity or state.
-03. An AgentPresetRevision and accepted Run select at most one primary Environment; Harness receives it as the default `workspace` mount.
+03. An AgentRevision and accepted Run select at most one primary Environment; Harness receives it as the default `workspace` mount.
 04. Provider validation and fresh Environment construction perform no external I/O.
 05. Every independent RunAttempt receives a fresh Environment adapter selected from current Host state.
 06. Current managed Host state, including authoritative `None`, wins over `HarnessState.environment_states`.

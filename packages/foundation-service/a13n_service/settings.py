@@ -11,7 +11,7 @@ from a13n_logging import LogFormat
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from a13n_service.agent_presets.domain import PluginRuntimeMode
+from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.database import MigrationConfig
 from a13n_service.observability import TraceContent
 from a13n_service.secrets import SecretProtectionError, SecretProtector

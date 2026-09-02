@@ -27,7 +27,7 @@ Organize business code by feature and add layers only for a real capability; do 
 
 Use the package and module hierarchy as a namespace instead of repeating it in every identifier.
 
-- Name feature packages after precise domain nouns, such as `assets`, `model_configs`, `secrets`, and `skills`. Do not append generic ownership words such as `_management`, `_manager`, `_service`, or `_system` to a feature namespace.
+- Name feature packages after precise domain nouns, such as `agents`, `assets`, `models`, `secrets`, and `skills`. Do not append generic ownership words such as `_management`, `_manager`, `_service`, or `_system` to a feature namespace.
 - Name a type for what it represents. Do not prefix it with the repository, distribution, service, or containing feature name merely to provide context. Retain a qualifier such as `Workspace`, `Run`, or `Environment` only when it distinguishes real concepts at the same boundary.
 - Use domain suffixes consistently: `Record` is an ORM persistence type, `Request` is inbound command data, `Revision` is immutable lineage content, `Snapshot` is a frozen capture, `Selection` is a choice, `Lock` is an exact frozen dependency, and `Receipt` is bounded operation evidence. Do not add a suffix only to make a name longer or more architectural.
 - Application `Service`, `Resolver`, `Factory`, `Reconciler`, and `Preparer` types must describe one cohesive role that is not already clear from a function. Avoid generic `Manager`, `Helper`, `Common`, and `Utils` abstractions.

@@ -100,24 +100,24 @@ SkillRevisionSource = Annotated[
 ]
 
 
-def _normalize_display_name(value: str) -> str:
+def _normalize_name(value: str) -> str:
     normalized = unicodedata.normalize("NFC", value)
     if not 1 <= len(normalized) <= 256:
-        raise ValueError("display_name must contain between 1 and 256 Unicode scalar values")
+        raise ValueError("name must contain between 1 and 256 Unicode scalar values")
     if normalized[0].isspace() or normalized[-1].isspace():
-        raise ValueError("display_name must not have leading or trailing whitespace")
+        raise ValueError("name must not have leading or trailing whitespace")
     if any(unicodedata.category(character) in {"Cc", "Cs"} for character in normalized):
-        raise ValueError("display_name must not contain control or surrogate characters")
+        raise ValueError("name must not contain control or surrogate characters")
     return normalized
 
 
-DisplayName = Annotated[str, AfterValidator(_normalize_display_name)]
+SkillName = Annotated[str, AfterValidator(_normalize_name)]
 
 
 class CreateSkillRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    display_name: DisplayName
+    name: SkillName
     source: SkillRevisionSource
 
 
@@ -131,8 +131,7 @@ class CreateSkillRevisionRequest(BaseModel):
 class UpdateSkillRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    expected_version: int = Field(ge=1)
-    display_name: DisplayName
+    name: SkillName
 
 
 class Skill(BaseModel):
@@ -141,12 +140,13 @@ class Skill(BaseModel):
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
-    display_name: str
+    name: str
     version: int = Field(ge=1)
     current_revision_id: ObjectId
     created_at: datetime
     created_by: PrincipalRef
     updated_at: datetime
+    updated_by: PrincipalRef
     deleted_at: datetime | None
 
 
@@ -155,8 +155,9 @@ class SkillRevision(BaseModel):
 
     id: ObjectId
     skill_id: ObjectId
+    organization_id: ObjectId
     workspace_id: ObjectId
-    revision_number: int = Field(ge=1)
+    version: int = Field(ge=1)
     manifest: SkillPackageManifest
     imported_from: SkillImportProvenance
     created_at: datetime
@@ -237,7 +238,7 @@ class AgentSkillSelectionRequest(BaseModel):
 
 
 class SkillRevisionLock(BaseModel):
-    """Exact managed Skill identity copied into an immutable AgentPresetRevision."""
+    """Exact managed Skill identity copied into an immutable AgentRevision."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

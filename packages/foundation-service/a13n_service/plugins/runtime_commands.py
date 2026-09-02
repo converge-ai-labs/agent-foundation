@@ -37,7 +37,7 @@ from .commands import (
     PluginRuntimeStagingAuthority,
     PluginRuntimeVersionSpec,
 )
-from .domain import Plugin, PluginLifecycleState, PluginTaskReceipt, PluginTaskStatus, PluginVersion
+from .domain import Plugin, PluginTaskReceipt, PluginTaskStatus, PluginVersion
 from .errors import PluginError, plugin_not_found, plugin_state_conflict, plugin_version_not_found
 from .models import (
     PluginRecord,
@@ -265,7 +265,7 @@ class PluginRuntimeCommandCoordinator:
                 plugin = await session.get(PluginRecord, plugin_id)
                 if plugin is None:
                     raise plugin_not_found()
-                if plugin.lifecycle_state != PluginLifecycleState.available.value:
+                if plugin.archived_at is not None:
                     raise plugin_state_conflict()
                 if command == "activate":
                     version = await session.scalar(
@@ -290,10 +290,10 @@ class PluginRuntimeCommandCoordinator:
                     plugin_version_id=plugin_version_id,
                     status=PluginTaskStatus.running.value,
                     phase="accepted",
-                    expected_runtime_version=None,
+                    expected_runtime_generation=None,
                     candidate_lock_digest=None,
                     staging_token=None,
-                    committed_runtime_version=None,
+                    committed_runtime_generation=None,
                     result_refs=[],
                     error=None,
                     created_at=now,
@@ -440,7 +440,7 @@ class PluginRuntimeCommandCoordinator:
                 )
                 await self._record_candidate(claim, task, catalog, candidate)
                 if candidate.digest == catalog.active_lock_digest:
-                    await self._succeed(claim, committed_runtime_version=catalog.runtime_version)
+                    await self._succeed(claim, committed_runtime_generation=catalog.runtime_generation)
                     return
                 continue
             candidate = await self._candidate_resolver.require_candidate(
@@ -470,15 +470,15 @@ class PluginRuntimeCommandCoordinator:
             if task.phase == "committed":
                 operation_id = task.id
                 staging_token = cast(str, task.staging_token)
-                runtime_version = cast(int, task.committed_runtime_version)
+                runtime_generation = cast(int, task.committed_runtime_generation)
                 await self._with_lease(
                     claim,
-                    lambda operation_id=operation_id, candidate=candidate, staging_token=staging_token, runtime_version=runtime_version: (
+                    lambda operation_id=operation_id, candidate=candidate, staging_token=staging_token, runtime_generation=runtime_generation: (
                         self._staging_authority.activate_candidate(
                             operation_id=operation_id,
                             runtime_lock=candidate,
                             staging_token=staging_token,
-                            runtime_version=runtime_version,
+                            runtime_generation=runtime_generation,
                         )
                     ),
                 )
@@ -510,7 +510,7 @@ class PluginRuntimeCommandCoordinator:
                 raise PluginRuntimeCommandFailure(
                     SafeFailure(code="plugin_not_found", message="The Plugin was not found.")
                 )
-            if target_plugin.lifecycle_state != PluginLifecycleState.available.value:
+            if target_plugin.archived_at is not None:
                 raise PluginRuntimeCommandFailure(
                     SafeFailure(code="plugin_state_conflict", message="The Plugin is not available.")
                 )
@@ -537,7 +537,7 @@ class PluginRuntimeCommandCoordinator:
                 ).all()
             )
             return PluginRuntimeCatalogSnapshot(
-                runtime_version=state.version,
+                runtime_generation=state.runtime_generation,
                 active_lock_digest=state.active_lock_digest,
                 active_versions=tuple(_version_spec(plugin, version) for plugin, version in active_rows),
                 target_plugin=target_plugin.to_resource(),
@@ -554,12 +554,15 @@ class PluginRuntimeCommandCoordinator:
         _validate_candidate(task.command, catalog, candidate)
         async with transaction(self._sessions) as session:
             state, current = await self._locked_claim(session, claim)
-            if state.version != catalog.runtime_version or state.active_lock_digest != catalog.active_lock_digest:
+            if (
+                state.runtime_generation != catalog.runtime_generation
+                or state.active_lock_digest != catalog.active_lock_digest
+            ):
                 raise PluginRuntimeCommandFailure(
                     SafeFailure(code="plugin_runtime_changed", message="The active Plugin Runtime changed."),
                     retryable=True,
                 )
-            current.expected_runtime_version = catalog.runtime_version
+            current.expected_runtime_generation = catalog.runtime_generation
             current.candidate_lock_digest = candidate.digest
             current.phase = "candidate_ready"
             current.updated_at = self._clock()
@@ -580,13 +583,13 @@ class PluginRuntimeCommandCoordinator:
         now = self._clock()
         async with transaction(self._sessions) as session:
             state, current = await self._locked_claim(session, claim)
-            if state.version != current.expected_runtime_version:
+            if state.runtime_generation != current.expected_runtime_generation:
                 raise PluginRuntimeCommandFailure(
                     SafeFailure(code="plugin_runtime_changed", message="The active Plugin Runtime changed."),
                     retryable=True,
                 )
             target = await session.get(PluginRecord, current.plugin_id, with_for_update=True)
-            if target is None or target.lifecycle_state != PluginLifecycleState.available.value:
+            if target is None or target.archived_at is not None:
                 raise PluginRuntimeCommandFailure(
                     SafeFailure(code="plugin_state_conflict", message="The Plugin is not available.")
                 )
@@ -634,17 +637,17 @@ class PluginRuntimeCommandCoordinator:
                 record.active_version_id = desired.get(plugin_id)
                 record.updated_at = now
             state.active_lock_digest = candidate.digest
-            state.version += 1
+            state.runtime_generation += 1
             state.updated_at = now
             current.phase = "committed"
-            current.committed_runtime_version = state.version
+            current.committed_runtime_generation = state.runtime_generation
             current.updated_at = now
 
     async def _succeed(
         self,
         claim: _TaskClaim,
         *,
-        committed_runtime_version: int | None = None,
+        committed_runtime_generation: int | None = None,
     ) -> None:
         now = self._clock()
         async with transaction(self._sessions) as session:
@@ -660,8 +663,8 @@ class PluginRuntimeCommandCoordinator:
             task.phase = "succeeded"
             task.result_refs = result_refs
             task.error = None
-            if committed_runtime_version is not None:
-                task.committed_runtime_version = committed_runtime_version
+            if committed_runtime_generation is not None:
+                task.committed_runtime_generation = committed_runtime_generation
             task.updated_at = now
             task.completed_at = now
             session.add(
@@ -670,7 +673,7 @@ class PluginRuntimeCommandCoordinator:
                     status="succeeded",
                     outcome="success",
                     now=now,
-                    details={"runtime_version": task.committed_runtime_version},
+                    details={"runtime_generation": task.committed_runtime_generation},
                 )
             )
             _clear_claim(state, now=now)

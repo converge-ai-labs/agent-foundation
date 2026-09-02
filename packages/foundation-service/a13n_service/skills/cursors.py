@@ -11,12 +11,12 @@ class SkillCursorError(ValueError):
     pass
 
 
-def encode_skill_cursor(*, display_name: str, skill_id: str, scope: dict[str, object]) -> str:
+def encode_skill_cursor(*, name: str, skill_id: str, scope: dict[str, object]) -> str:
     return _encode(
         {
             "v": "1",
             "kind": "skills",
-            "display_name": display_name,
+            "name": name,
             "id": skill_id,
             "scope": _scope_digest(scope),
         }
@@ -25,19 +25,19 @@ def encode_skill_cursor(*, display_name: str, skill_id: str, scope: dict[str, ob
 
 def decode_skill_cursor(value: str, *, scope: dict[str, object]) -> tuple[str, str]:
     payload = _decode(value, kind="skills", scope=scope)
-    display_name = payload.get("display_name")
+    name = payload.get("name")
     skill_id = payload.get("id")
-    if not isinstance(display_name, str) or not isinstance(skill_id, str) or not skill_id.startswith("sk_"):
+    if not isinstance(name, str) or not isinstance(skill_id, str) or not skill_id.startswith("sk_"):
         raise SkillCursorError("invalid cursor")
-    return display_name, skill_id
+    return name, skill_id
 
 
-def encode_revision_cursor(*, revision_number: int, revision_id: str, scope: dict[str, object]) -> str:
+def encode_revision_cursor(*, version: int, revision_id: str, scope: dict[str, object]) -> str:
     return _encode(
         {
             "v": "1",
             "kind": "revisions",
-            "revision_number": revision_number,
+            "version": version,
             "id": revision_id,
             "scope": _scope_digest(scope),
         }
@@ -46,17 +46,17 @@ def encode_revision_cursor(*, revision_number: int, revision_id: str, scope: dic
 
 def decode_revision_cursor(value: str, *, scope: dict[str, object]) -> tuple[int, str]:
     payload = _decode(value, kind="revisions", scope=scope)
-    revision_number = payload.get("revision_number")
+    version = payload.get("version")
     revision_id = payload.get("id")
     if (
-        not isinstance(revision_number, int)
-        or isinstance(revision_number, bool)
-        or revision_number < 1
+        not isinstance(version, int)
+        or isinstance(version, bool)
+        or version < 1
         or not isinstance(revision_id, str)
         or not revision_id.startswith("skr_")
     ):
         raise SkillCursorError("invalid cursor")
-    return revision_number, revision_id
+    return version, revision_id
 
 
 def _encode(payload: dict[str, object]) -> str:

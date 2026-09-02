@@ -46,7 +46,7 @@ def summary(**updates: object) -> ProviderTraceSummary:
             thread_id="thread-1",
             run_id="run-1",
             run_attempt_id="attempt-1",
-            agent_preset_id="agent-1",
+            agent_id="agent-1",
         ),
         "input": "hello",
         "output": "world",

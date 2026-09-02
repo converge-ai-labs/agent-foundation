@@ -236,10 +236,10 @@ async def test_candidate_resolver_persists_exact_resolution_and_replays_after_ac
                 plugin_version_id=version.id,
                 status="running",
                 phase="accepted",
-                expected_runtime_version=None,
+                expected_runtime_generation=None,
                 candidate_lock_digest=None,
                 staging_token=None,
-                committed_runtime_version=None,
+                committed_runtime_generation=None,
                 result_refs=[],
                 error=None,
                 created_at=NOW,
@@ -265,7 +265,7 @@ async def test_candidate_resolver_persists_exact_resolution_and_replays_after_ac
         clock=lambda: NOW,
     )
     catalog = PluginRuntimeCatalogSnapshot(
-        runtime_version=1,
+        runtime_generation=1,
         active_lock_digest=None,
         active_versions=(),
         target_plugin=target.plugin,

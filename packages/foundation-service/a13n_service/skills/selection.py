@@ -43,7 +43,7 @@ class PreparedSkillSelection:
     actor: AuthenticatedActor
     organization_id: str
     workspace_id: str
-    agent_preset_id: str
+    agent_id: str
     request: AgentSkillSelectionRequest
     selection: AgentSkillSelection
 
@@ -69,7 +69,7 @@ class SkillSelectionResolver:
         *,
         actor: AuthenticatedActor,
         workspace_id: str,
-        agent_preset_id: str,
+        agent_id: str,
         request: AgentSkillSelectionRequest,
         permission_ceiling: EnvironmentPermissionSet | None,
     ) -> PreparedSkillSelection:
@@ -78,7 +78,7 @@ class SkillSelectionResolver:
                 session,
                 actor=actor,
                 workspace_id=workspace_id,
-                agent_preset_id=agent_preset_id,
+                agent_id=agent_id,
             )
             _require_materialization_permissions(request, permission_ceiling)
             records = await _load_revisions(
@@ -93,7 +93,7 @@ class SkillSelectionResolver:
             actor=actor,
             organization_id=authorized.organization_id,
             workspace_id=workspace_id,
-            agent_preset_id=agent_preset_id,
+            agent_id=agent_id,
             request=request,
             selection=selection,
         )
@@ -111,7 +111,7 @@ class SkillSelectionResolver:
             session,
             actor=prepared.actor,
             workspace_id=prepared.workspace_id,
-            agent_preset_id=prepared.agent_preset_id,
+            agent_id=prepared.agent_id,
         )
         _require_materialization_permissions(prepared.request, permission_ceiling)
         if authorized.organization_id != prepared.organization_id:

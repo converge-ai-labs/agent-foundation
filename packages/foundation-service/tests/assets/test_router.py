@@ -78,7 +78,7 @@ async def seed_database(config: ServiceSettings) -> None:
         await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", version=1, created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
@@ -86,7 +86,6 @@ async def seed_database(config: ServiceSettings) -> None:
                 organization_id=ORG_ID,
                 name="Default",
                 normalized_name="default",
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -101,7 +100,6 @@ async def seed_database(config: ServiceSettings) -> None:
                     name=name.title(),
                     status="active",
                     email_verified_at=NOW,
-                    version=1,
                     created_at=NOW,
                     updated_at=NOW,
                 )

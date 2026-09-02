@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from a13n_service.agent_presets.domain import PluginRuntimeMode
+from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
@@ -155,7 +155,7 @@ async def plugin_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmaker[As
         await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", version=1, created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
@@ -163,7 +163,6 @@ async def plugin_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmaker[As
                 organization_id=ORG_ID,
                 name="Default",
                 normalized_name="default",
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -179,7 +178,6 @@ async def plugin_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmaker[As
                     name="Admin",
                     status="active",
                     email_verified_at=NOW,
-                    version=1,
                     created_at=NOW,
                     updated_at=NOW,
                 ),
@@ -190,7 +188,6 @@ async def plugin_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmaker[As
                     name="Builder",
                     status="active",
                     email_verified_at=NOW,
-                    version=1,
                     created_at=NOW,
                     updated_at=NOW,
                 ),

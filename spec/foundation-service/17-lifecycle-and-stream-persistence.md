@@ -151,7 +151,7 @@ Agent Stream Protocol projection assigns stable Item IDs and emits their changes
 tenants/{tenant_id}/runs/{run_id}/replay/version-{schema_version}.json
 ```
 
-For version `1`, this resolves to `tenants/{tenant_id}/runs/{run_id}/replay/version-1.json`; the version segment names the snapshot schema, not a replay sequence or Run version.
+For version `1`, this resolves to `tenants/{tenant_id}/runs/{run_id}/replay/version-1.json`; the version segment names the snapshot schema, not a replay sequence or Run state version.
 
 `RunReplaySnapshot` follows the common [Run object serialization rules](14-run-persistence.md#other-object-storage-schemas). Its content type is `application/vnd.converge.run-replay+json`. Object metadata records `schema-version=1`, `run-id`, and the lowercase SHA-256 digest of the canonical stored bytes; object stat supplies the exact byte size. These values are validated before decoding.
 
