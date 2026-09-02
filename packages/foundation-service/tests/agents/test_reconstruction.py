@@ -17,7 +17,9 @@ from a13n_harness.tools.client import ClientToolsCapability
 from a13n_service.agents.domain import (
     AgentConfig,
     AgentRevision,
+    ConnectorConnectionToolSelection,
     EffectiveAgentConfig,
+    MCPConnectionToolSelection,
     PluginRuntimeMode,
     ResolvedAgentModel,
     ResolvedPluginVersion,
@@ -133,6 +135,8 @@ def _effective(
     config: AgentConfig,
     *,
     plugins: tuple[ResolvedPluginVersion, ...] = (),
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = (),
+    mcp_tools: tuple[MCPConnectionToolSelection, ...] = (),
     subagents: tuple[ResolvedSubagentEdge, ...] = (),
 ) -> EffectiveAgentConfig:
     candidate = EffectiveAgentConfig(
@@ -140,6 +144,8 @@ def _effective(
         resolved_plugin_versions=plugins,
         runtime_lock_digest="a" * 64,
         resolved_skills=(),
+        connector_tools=connector_tools,
+        mcp_tools=mcp_tools,
         resolved_environment=None,
         resolved_subagents=subagents,
         instructions=config.instructions,
@@ -162,6 +168,8 @@ def _revision(
     agent_id: str = CHILD_AGENT_ID,
     config: AgentConfig | None = None,
     plugins: tuple[ResolvedPluginVersion, ...] = (),
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = (),
+    mcp_tools: tuple[MCPConnectionToolSelection, ...] = (),
     subagents: tuple[ResolvedSubagentEdge, ...] = (),
 ) -> AgentRevision:
     selected_config = config or agent_config(instructions="Handle delegated work.")
@@ -170,6 +178,8 @@ def _revision(
         resolved_plugin_versions=plugins,
         runtime_lock_digest="c" * 64,
         resolved_skills=(),
+        connector_tools=connector_tools,
+        mcp_tools=mcp_tools,
         resolved_environment=None,
         resolved_subagents=subagents,
     )
@@ -192,6 +202,8 @@ def _revision(
         resolved_plugin_versions=resolved.resolved_plugin_versions,
         runtime_lock_digest=resolved.runtime_lock_digest,
         resolved_skills=resolved.resolved_skills,
+        connector_tools=resolved.connector_tools,
+        mcp_tools=resolved.mcp_tools,
         resolved_environment=resolved.resolved_environment,
         resolved_subagents=resolved.resolved_subagents,
         content_digest=digest,
@@ -299,6 +311,53 @@ def test_reconstructs_root_model_client_tools_output_and_fresh_capabilities() ->
     assert schema["properties"]["order"]["properties"]["id"]["type"] == "string"
     assert "$ref" not in str(schema)
     HarnessBuilder(configured_plugins_enabled=False).build(definition)
+
+
+def test_reconstruction_preserves_root_and_child_connectivity_selections() -> None:
+    connector = ConnectorConnectionToolSelection(
+        connector_connection_id="cconn_1234567890abcdef",
+        tools=("lookup_order",),
+        exposure="direct",
+    )
+    mcp = MCPConnectionToolSelection(
+        mcp_connection_id="mcpc_1234567890abcdef",
+        tools=("search", "fetch"),
+        exposure="catalog",
+    )
+    child_config = _config(
+        connector_tools={"orders": connector},
+        mcp_tools={"knowledge": mcp},
+    )
+    child = _revision(
+        config=child_config,
+        connector_tools=(connector,),
+        mcp_tools=(mcp,),
+    )
+    root_config = _config(
+        connector_tools={"orders": connector},
+        mcp_tools={"knowledge": mcp},
+    )
+    effective = _effective(
+        root_config,
+        connector_tools=(connector,),
+        mcp_tools=(mcp,),
+        subagents=(_edge("reviewer"),),
+    )
+    contexts: list[AgentDefinitionReconstructionContext] = []
+
+    def capabilities(context: AgentDefinitionReconstructionContext):
+        contexts.append(context)
+        return ()
+
+    _reconstruct(
+        effective,
+        children={child.id: child},
+        capability_provider=capabilities,
+    )
+
+    assert [context.is_root for context in contexts] == [False, True]
+    assert all(context.connector_tools == (connector,) for context in contexts)
+    assert all(context.mcp_tools == (mcp,) for context in contexts)
 
 
 def test_reconstructs_variants_as_distinct_structured_outputs() -> None:

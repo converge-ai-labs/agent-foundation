@@ -41,9 +41,11 @@ from referencing.jsonschema import DRAFT202012
 from .domain import (
     AgentRevision,
     AssetPublicationConfig,
+    ConnectorConnectionToolSelection,
     EffectiveAgentConfig,
     EnvironmentExecutionConfig,
     InputAdapterConfig,
+    MCPConnectionToolSelection,
     OutputSpec,
     ProtocolConfig,
     ResolvedAgentModel,
@@ -81,6 +83,8 @@ class AgentDefinitionReconstructionContext:
     is_root: bool
     input_adapter: InputAdapterConfig
     resolved_skills: tuple[ResolvedSkillSelection, ...]
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
+    mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
     secret_requirements: tuple[SecretRequirement, ...]
     asset_publication: AssetPublicationConfig | None
@@ -104,6 +108,8 @@ class _NodeSnapshot:
     resolved_model: ResolvedAgentModel
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     resolved_skills: tuple[ResolvedSkillSelection, ...]
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
+    mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     instructions: str
@@ -291,6 +297,8 @@ class AgentReconstructor:
             is_root=is_root,
             input_adapter=node.input_adapter,
             resolved_skills=node.resolved_skills,
+            connector_tools=node.connector_tools,
+            mcp_tools=node.mcp_tools,
             resolved_environment=node.resolved_environment,
             secret_requirements=node.secret_requirements,
             asset_publication=node.asset_publication,
@@ -339,6 +347,8 @@ class AgentReconstructor:
             resolved_plugin_versions=revision.resolved_plugin_versions,
             runtime_lock_digest=revision.runtime_lock_digest,
             resolved_skills=revision.resolved_skills,
+            connector_tools=revision.connector_tools,
+            mcp_tools=revision.mcp_tools,
             resolved_environment=revision.resolved_environment,
             resolved_subagents=revision.resolved_subagents,
         )
@@ -367,6 +377,8 @@ def _snapshot_from_effective(
         resolved_model=effective.resolved_model,
         resolved_plugin_versions=effective.resolved_plugin_versions,
         resolved_skills=effective.resolved_skills,
+        connector_tools=effective.connector_tools,
+        mcp_tools=effective.mcp_tools,
         resolved_environment=effective.resolved_environment,
         resolved_subagents=effective.resolved_subagents,
         instructions=effective.instructions,
@@ -389,6 +401,8 @@ def _snapshot_from_revision(revision: AgentRevision) -> _NodeSnapshot:
         resolved_model=revision.resolved_model,
         resolved_plugin_versions=revision.resolved_plugin_versions,
         resolved_skills=revision.resolved_skills,
+        connector_tools=revision.connector_tools,
+        mcp_tools=revision.mcp_tools,
         resolved_environment=revision.resolved_environment,
         resolved_subagents=revision.resolved_subagents,
         instructions=config.instructions,
