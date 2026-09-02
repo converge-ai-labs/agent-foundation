@@ -16,7 +16,8 @@ class WorkspaceAction(StrEnum):
     agent_preset_read = "agent_preset.read"
     agent_preset_create = "agent_preset.create"
     agent_preset_update = "agent_preset.update"
-    agent_preset_publish = "agent_preset.publish"
+    agent_preset_revision_create = "agent_preset.revision.create"
+    agent_preset_default_revision_set = "agent_preset.default_revision.set"
     agent_preset_lifecycle = "agent_preset.lifecycle"
     agent_preset_duplicate = "agent_preset.duplicate"
     agent_preset_invoke = "agent_preset.invoke"
@@ -82,7 +83,8 @@ _DIRECT_AGENT_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
             WorkspaceAction.agent_preset_read,
             WorkspaceAction.agent_preset_invoke,
             WorkspaceAction.agent_preset_update,
-            WorkspaceAction.agent_preset_publish,
+            WorkspaceAction.agent_preset_revision_create,
+            WorkspaceAction.agent_preset_default_revision_set,
             WorkspaceAction.agent_preset_lifecycle,
             WorkspaceAction.skill_bind,
         }

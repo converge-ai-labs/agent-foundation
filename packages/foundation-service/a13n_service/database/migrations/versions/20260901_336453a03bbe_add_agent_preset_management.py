@@ -1,7 +1,7 @@
 """add agent preset management.
 
 Revision ID: 336453a03bbe
-Revises: a1b1e59d7ae3
+Revises: 31693c93eded
 Create Date: 2026-09-01 17:24:38.404711+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "336453a03bbe"
-down_revision: str | Sequence[str] | None = "a1b1e59d7ae3"
+down_revision: str | Sequence[str] | None = "31693c93eded"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

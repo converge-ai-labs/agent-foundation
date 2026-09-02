@@ -24,7 +24,12 @@ from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
 )
+from pydantic import JsonValue, RootModel
 from pydantic_ai.agent.spec import AgentSpec
+
+
+class _ConfiguredPluginConfiguration(RootModel[dict[str, JsonValue]]):
+    pass
 
 
 class _ConfiguredPlugin(AbstractHarnessPlugin):
@@ -44,6 +49,9 @@ class _ConfiguredFactory(HarnessPluginFactory):
     @classmethod
     def plugin_key(cls) -> str:
         return "test.configured"
+
+    def validate_configuration(self, configuration):
+        return _ConfiguredPluginConfiguration(dict(configuration))
 
     def create_plugin(self, context: HarnessPluginFactoryContext) -> AbstractHarnessPlugin:
         plugin = _ConfiguredPlugin(context.plugin_id, str(context.configuration.get("marker", "default")))

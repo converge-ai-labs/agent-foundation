@@ -72,6 +72,18 @@ class ServiceSettings(BaseSettings):
     plugin_max_wheel_bytes: int = Field(default=50 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
     plugin_max_expanded_bytes: int = Field(default=200 * 1024 * 1024, ge=1, le=4 * 1024 * 1024 * 1024)
     plugin_max_archive_members: int = Field(default=20_000, ge=1, le=1_000_000)
+    plugin_runtime_command_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
+    plugin_runtime_command_lease_seconds: float = Field(default=300, gt=3, le=3600)
+    plugin_runtime_resolver_executable: str = Field(default="uv", min_length=1, max_length=1024)
+    plugin_runtime_default_index_url: SecretStr = Field(
+        default=SecretStr("https://pypi.org/simple"),
+        min_length=1,
+        max_length=4096,
+        repr=False,
+    )
+    plugin_runtime_index_urls: tuple[SecretStr, ...] = Field(default=(), repr=False)
+    plugin_runtime_resolver_timeout_seconds: float = Field(default=120, gt=0, le=900)
+    plugin_runtime_resolver_max_packages: int = Field(default=512, ge=1, le=4096)
     environment_provider_builtins: tuple[str, ...] = (
         "a13n.direct-local",
         "a13n.local-envd",

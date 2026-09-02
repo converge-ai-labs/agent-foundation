@@ -14,8 +14,8 @@ class AgentUiError(Exception):
         self.details = details or {}
 
 
-class HostStateError(AgentUiError):
-    """The Host cannot accept the requested operation in its current state."""
+class AppStateError(AgentUiError):
+    """The App cannot accept the requested operation in its current state."""
 
 
 class ConfigurationError(AgentUiError):
@@ -38,6 +38,10 @@ class StoreIntegrityError(StoreError):
     """Stored authority is missing, corrupt, incompatible, or internally inconsistent."""
 
 
+class StoreConflictError(StoreError):
+    """A compare-and-select write observed a different current durable head."""
+
+
 class SessionError(AgentUiError):
     """A Session or continuation operation is invalid."""
 
@@ -58,27 +62,23 @@ class RuntimeResolutionError(AgentUiError):
     """A required Host-native runtime could not be resolved or verified."""
 
 
-class RuntimeGenerationError(AgentUiError):
-    """A runtime Runner generation could not start, promote, drain, or stop safely."""
-
-
 class ObjectIntegrityError(StoreIntegrityError):
     """An immutable object failed codec, identity, or payload validation."""
 
 
 __all__ = [
     "AgentUiError",
+    "AppStateError",
     "CompositionError",
     "ConfigurationError",
     "EnvironmentLifecycleError",
-    "HostStateError",
     "LivePresentationError",
     "ObjectIntegrityError",
     "RunCoordinationError",
-    "RuntimeGenerationError",
     "RuntimeResolutionError",
     "SessionError",
     "SkillManagementError",
+    "StoreConflictError",
     "StoreError",
     "StoreIntegrityError",
 ]

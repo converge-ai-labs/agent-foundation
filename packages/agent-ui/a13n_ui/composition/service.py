@@ -1,127 +1,76 @@
-"""Application service for exact composition resolution and reconstruction."""
+"""Publish and atomically select complete trusted Agent UI snapshot sets."""
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Literal
 
-from a13n_harness import ExecutableAgent
+from a13n_ui.configuration.models import LoadedAgentUiConfiguration
+from a13n_ui.storage import LocalStore, ObjectKind, ObjectRef
 
-from a13n_ui.configuration import CatalogRepository, ConfigurationGeneration
-from a13n_ui.errors import CompositionError
-from a13n_ui.storage import LocalStore
-
-from .models import (
-    AgentEnvironmentCompatibility,
-    ResolvedAgentSnapshot,
-    ResolvedEnvironmentSnapshot,
-    SnapshotReference,
-)
-from .reconstruction import AgentReconstructor, ExecutableCache
-from .repository import SnapshotRepository
-from .resolver import SnapshotResolver, validate_compatibility
+from .resolver import AgentCompositionResolver, ResolvedConfiguration
 
 
-class CompositionService:
-    """Coordinate generation capture, durable snapshots, and native reconstruction."""
+@dataclass(frozen=True, slots=True)
+class AcceptedComposition:
+    """Detached result of one successful accepted-configuration selection."""
 
-    def __init__(self, store: LocalStore, catalog: CatalogRepository) -> None:
-        self._catalog = catalog
-        self._repository = SnapshotRepository(store)
-        self._resolver = SnapshotResolver(catalog, data_root=store.layout.root)
-        self._cache = ExecutableCache()
-        self._reconstructor = AgentReconstructor(self._skill_package, self._cache)
+    source_digest: str
+    snapshots: MappingProxyType[tuple[Literal["agent", "environment"], str], ObjectRef]
+    default_agent: str | None
+    default_environment: str
 
-    async def resolve_agent(
+
+class CompositionAcceptanceService:
+    """Resolve, publish all immutable objects, then select them in one SQLite transaction."""
+
+    def __init__(self, store: LocalStore, resolver: AgentCompositionResolver) -> None:
+        self._store = store
+        self._resolver = resolver
+
+    async def accept(
         self,
-        agent_id: str,
+        source: LoadedAgentUiConfiguration,
         *,
-        generation_id: str | None = None,
-    ) -> SnapshotReference:
-        generation = await self._generation(generation_id)
-        snapshot = await self._resolver.resolve_agent(generation, agent_id)
-        return await self._repository.publish_agent(snapshot)
+        expected_current_digest: str | None,
+    ) -> AcceptedComposition:
+        """Accept one coherent source candidate without disturbing the previous head on failure."""
 
-    async def resolve_environment(
-        self,
-        environment_id: str,
-        *,
-        generation_id: str | None = None,
-    ) -> SnapshotReference:
-        generation = await self._generation(generation_id)
-        settings = await self._catalog.generation_settings(generation.generation_id)
-        snapshot = await self._resolver.resolve_environment(
-            generation,
-            environment_id,
-            settings,
+        resolved = self._resolver.resolve(source)
+        snapshots = await self._publish_snapshots(resolved)
+        await self._store.configurations.accept(
+            source_digest=source.source_digest,
+            yaml_digest=source.yaml_digest,
+            document=source.model_dump(mode="json"),
+            snapshots=snapshots,
+            expected_current_digest=expected_current_digest,
         )
-        return await self._repository.publish_environment(snapshot)
+        return AcceptedComposition(
+            source_digest=source.source_digest,
+            snapshots=MappingProxyType(dict(snapshots)),
+            default_agent=resolved.default_agent,
+            default_environment=resolved.default_environment,
+        )
 
-    async def agent(self, reference: SnapshotReference) -> ResolvedAgentSnapshot:
-        return await self._repository.agent(reference)
-
-    async def environment(
+    async def _publish_snapshots(
         self,
-        reference: SnapshotReference,
-    ) -> ResolvedEnvironmentSnapshot:
-        return await self._repository.environment(reference)
-
-    async def compatibility(
-        self,
-        agent_reference: SnapshotReference,
-        environment_reference: SnapshotReference,
-    ) -> AgentEnvironmentCompatibility:
-        agent = await self.agent(agent_reference)
-        environment = await self.environment(environment_reference)
-        return validate_compatibility(agent, environment)
-
-    async def executable(
-        self,
-        reference: SnapshotReference,
-        environment_reference: SnapshotReference | None = None,
-    ) -> ExecutableAgent[Any]:
-        """Return the process-owned executable for one validated snapshot pairing."""
-
-        agent = await self.agent(reference)
-        environment = None
-        if environment_reference is not None:
-            environment = await self.environment(environment_reference)
-            validate_compatibility(agent, environment)
-        return await self._reconstructor.executable(agent, environment)
-
-    async def validate_executable(
-        self,
-        reference: SnapshotReference,
-        environment_reference: SnapshotReference | None = None,
-    ) -> None:
-        """Build one retained Agent through the ordinary cached reconstruction path."""
-
-        await self.executable(reference, environment_reference)
-
-    async def close(self) -> None:
-        """Release retained process-local executable build outputs."""
-
-        await self._cache.clear()
-
-    async def _skill_package(self, skill) -> Any:
-        package_reference = await self._catalog.skill_package_reference(skill.revision)
-        if package_reference.logical_digest != skill.package_object_digest:
-            raise CompositionError(
-                "A managed Skill package selection changed after snapshot publication.",
-                code="skill_package_mismatch",
-                details={"skill_id": skill.revision.resource_id},
+        resolved: ResolvedConfiguration,
+    ) -> dict[tuple[Literal["agent", "environment"], str], ObjectRef]:
+        snapshots: dict[tuple[Literal["agent", "environment"], str], ObjectRef] = {}
+        for name, snapshot in sorted(resolved.agents.items()):
+            envelope = await self._store.objects.publish_model(
+                object_kind=ObjectKind.agent_snapshot,
+                value=snapshot,
             )
-        return await self._catalog.skill_package(skill.revision)
-
-    async def _generation(self, generation_id: str | None) -> ConfigurationGeneration:
-        if generation_id is not None:
-            return await self._catalog.generation(generation_id)
-        generation = await self._catalog.current_generation()
-        if generation is None:
-            raise CompositionError(
-                "Composition resolution requires an accepted configuration generation.",
-                code="configuration_generation_missing",
+            snapshots[("agent", name)] = envelope.ref
+        for name, snapshot in sorted(resolved.environments.items()):
+            envelope = await self._store.objects.publish_model(
+                object_kind=ObjectKind.environment_snapshot,
+                value=snapshot,
             )
-        return generation
+            snapshots[("environment", name)] = envelope.ref
+        return snapshots
 
 
-__all__ = ["CompositionService"]
+__all__ = ["AcceptedComposition", "CompositionAcceptanceService"]

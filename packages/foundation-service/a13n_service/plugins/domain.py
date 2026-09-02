@@ -5,9 +5,10 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from a13n_harness import SafeFailure
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from a13n_service.iam.domain import ObjectId
+from a13n_service.iam.domain import ObjectId, ResourceRef
 
 PLUGIN_ID_PREFIX = "plg"
 PLUGIN_VERSION_ID_PREFIX = "plgv"
@@ -23,6 +24,12 @@ class PluginSource(StrEnum):
 class PluginLifecycleState(StrEnum):
     available = "available"
     archived = "archived"
+
+
+class PluginTaskStatus(StrEnum):
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
 
 
 class DomainModel(BaseModel):
@@ -57,3 +64,20 @@ class PluginCollection(DomainModel):
 class PluginVersionCollection(DomainModel):
     items: tuple[PluginVersion, ...]
     next_cursor: str | None
+
+
+class PluginTaskReceipt(DomainModel):
+    operation_id: ObjectId
+    status: PluginTaskStatus
+    result_refs: tuple[ResourceRef, ...] = Field(default=(), max_length=8)
+    error: SafeFailure | None = None
+
+    @model_validator(mode="after")
+    def validate_status_shape(self) -> PluginTaskReceipt:
+        if self.status is PluginTaskStatus.running and (self.result_refs or self.error is not None):
+            raise ValueError("running Plugin tasks cannot carry results or errors")
+        if self.status is PluginTaskStatus.failed and (self.result_refs or self.error is None):
+            raise ValueError("failed Plugin tasks require exactly one safe error")
+        if self.status is PluginTaskStatus.succeeded and self.error is not None:
+            raise ValueError("succeeded Plugin tasks cannot carry an error")
+        return self

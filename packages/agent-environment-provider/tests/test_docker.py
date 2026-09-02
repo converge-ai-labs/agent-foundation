@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -18,11 +19,13 @@ from a13n_environment_provider import (
     DockerEnvironment,
     DockerEnvironmentProvider,
     DockerImageInspection,
+    DockerProviderConfiguration,
     DockerProviderRuntime,
     DockerProviderStateData,
     EnvironmentProviderError,
     EnvironmentState,
 )
+from a13n_environment_provider.docker import provider as provider_module
 
 pytestmark = pytest.mark.anyio
 
@@ -171,6 +174,48 @@ def _skip_eip(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(DockerEnvironment, "_open_eip", open_eip)
 
 
+def test_docker_bootstrap_uses_current_envd_file_configuration_contract() -> None:
+    configuration = DockerProviderConfiguration(environment_id="environment-test")
+
+    payload = json.loads(provider_module._envd_configuration(configuration))
+
+    assert set(payload) == {
+        "limits",
+        "mounts",
+        "root_mount_id",
+        "shell_profiles",
+        "trusted_executable_roots",
+    }
+    assert payload["mounts"] == [
+        {
+            "mount_id": "workspace",
+            "native_root": "/workspace",
+            "writable": True,
+            "allow_command_execution": True,
+            "max_file_bytes": 16 * 1024 * 1024,
+        }
+    ]
+    assert payload["shell_profiles"] == [
+        {
+            "profile_id": "bash",
+            "display_name": "bash",
+            "native_executable": "/bin/bash",
+            "fixed_arguments": ["-c"],
+            "safe_base_environment": {},
+            "executable_search_roots": ["/bin"],
+            "max_script_bytes": 1024 * 1024,
+            "allow_login_mode": False,
+        }
+    ]
+    assert payload["limits"] == {
+        "max_output_preview_bytes": 64 * 1024,
+        "max_output_bytes_per_stream": 1024 * 1024 * 1024,
+        "max_spool_bytes": 64 * 1024 * 1024 * 1024,
+    }
+    assert payload["root_mount_id"] == "workspace"
+    assert payload["trusted_executable_roots"] == []
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX filesystem modes are required")
 async def test_directory_bootstrap_store_keeps_host_root_private_across_replacement(tmp_path: Path) -> None:
     root = (tmp_path / "bootstrap").resolve()
@@ -220,6 +265,7 @@ async def test_docker_create_caches_exact_container_state_before_entry_returns(
     assert decoded.container_id in engine.containers
     assert engine.containers[decoded.container_id].status == "running"
     assert len(engine.create_specs) == 1
+    assert engine.create_specs[0].environment["AGENT_ENVD_ENVIRONMENT_ID"] == "environment-test"
     await environment.close()
     assert decoded.container_id in engine.containers
 

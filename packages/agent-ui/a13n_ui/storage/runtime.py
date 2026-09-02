@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 from anyio import to_thread
 from pydantic import JsonValue
@@ -15,6 +14,12 @@ from a13n_ui import __version__
 from .database import Database, open_database
 from .layout import StorageLayout
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
+from .repositories import (
+    ChildExecutionRepository,
+    ConfigurationRepository,
+    EnvironmentStateRepository,
+    SessionRepository,
+)
 
 if TYPE_CHECKING:
     from a13n_ui.settings import StorageSettings
@@ -30,13 +35,15 @@ class LocalStore:
         layout: StorageLayout,
         database: Database,
         objects: ImmutableObjectStore,
-        process_generation: str,
     ) -> None:
         self.settings = settings
         self.layout = layout
         self.database = database
         self.objects = objects
-        self.process_generation = process_generation
+        self.configurations = ConfigurationRepository(database.sessions)
+        self.sessions = SessionRepository(database.sessions)
+        self.child_executions = ChildExecutionRepository(database.sessions)
+        self.environment_states = EnvironmentStateRepository(database.sessions)
 
     async def publish_object(
         self,
@@ -67,18 +74,16 @@ class LocalStore:
 
 @asynccontextmanager
 async def open_local_store(settings: StorageSettings) -> AsyncGenerator[LocalStore]:
-    """Open one Agent UI data root for this Host process."""
+    """Open one verified Agent UI data root."""
 
     layout = StorageLayout.from_root(settings.data_root)
     await to_thread.run_sync(layout.prepare)
-    process_generation = f"process-{uuid4().hex}"
     async with open_database(layout.database, settings) as database:
         yield LocalStore(
             settings=settings,
             layout=layout,
             database=database,
             objects=ImmutableObjectStore(layout, settings, producer_release=__version__),
-            process_generation=process_generation,
         )
 
 

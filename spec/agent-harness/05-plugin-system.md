@@ -48,7 +48,7 @@ plugins:
 | `plugins[].plugin_id`     | Required unique bounded non-blank instance ID; it must equal the created plugin's `plugin_id`                         |
 | `plugins[].plugin_key`    | Required bounded non-blank installed entry-point key; several instances may use the same key                          |
 | `plugins[].enabled`       | Required boolean; a disabled entry is validated structurally but is neither selected, imported, nor created           |
-| `plugins[].configuration` | Required finite JSON object copied into the factory context; package-owned code validates its plugin-specific meaning |
+| `plugins[].configuration` | Required finite JSON object validated and normalized by the selected package-owned factory schema before construction |
 
 Unknown fields, non-finite numbers, non-JSON data values, duplicate plugin IDs, oversized input, excessive nesting, and unsupported versions fail before package discovery. The complete UTF-8 source and each programmatic data value are bounded to 1 MiB. IDs and keys are bounded to 200 characters. Configuration order is significant and becomes the configured-plugin tie-breaker after direct plugins.
 
@@ -187,6 +187,12 @@ class HarnessPluginFactory(ABC):
     def plugin_key(cls) -> str: ...
 
     @abstractmethod
+    def validate_configuration(
+        self,
+        configuration: Mapping[str, JsonValue],
+    ) -> BaseModel: ...
+
+    @abstractmethod
     def create_plugin(
         self,
         context: HarnessPluginFactoryContext,
@@ -196,6 +202,12 @@ class HarnessPluginFactory(ABC):
 class HarnessPluginFactoryCatalog(
     Mapping[str, HarnessPluginFactory]
 ):
+    def validate_configuration(
+        self,
+        plugin_key: str,
+        configuration: Mapping[str, JsonValue],
+    ) -> Mapping[str, JsonValue]: ...
+
     def create_plugin(
         self,
         context: HarnessPluginFactoryContext,
@@ -219,9 +231,9 @@ Discovery and catalog construction evaluate the interpreter's current package-me
 
 Installed metadata is availability, not authorization. The explicit catalog API imports only caller-selected keys. Automatic Builder configuration selects only distinct keys referenced by enabled entries, in first-enabled-entry order. Disabled entries are not authorization and cannot cause target import. An Agent definition, API request, model value, state payload, plugin configuration object, or database row cannot provide an arbitrary `module:object` target.
 
-`HarnessPluginFactoryCatalog.create_plugin()` validates and detaches the complete `HarnessPluginFactoryContext`, requires the context key to select that catalog factory, calls it exactly once, and requires an `AbstractHarnessPlugin` whose exact `plugin_id` equals the requested context ID. It does not bind, order, or globally register the result. Catalog failures use stable `PluginError` codes: `plugin_factory_key_invalid`, `plugin_factory_missing`, `plugin_factory_duplicate`, `plugin_factory_target_invalid`, `plugin_factory_load_failed`, `plugin_factory_context_invalid`, `plugin_factory_failed`, and `plugin_factory_result_invalid`. Safe details contain only bounded keys, IDs, and distribution fields, never configuration or extension values, object representations, credentials, raw exception text, or private installation paths. These catalog errors suppress standard chaining of the raw target, metadata, constructor, and factory exceptions; callers receive the stable stage code rather than a traceback path to untrusted content.
+`HarnessPluginFactoryCatalog.validate_configuration()` detaches one finite JSON object, invokes the selected factory's synchronous side-effect-free typed validator, requires a `BaseModel`, and returns its normalized finite JSON object. This is the trust boundary used by Hosts that accept or persist plugin configuration: unknown fields, unsupported behavior, and credential literals are rejected by the package-owned schema before the configuration becomes accepted state. `create_plugin()` validates and detaches the complete `HarnessPluginFactoryContext`, requires the context key to select that catalog factory, calls it exactly once, and requires an `AbstractHarnessPlugin` whose exact `plugin_id` equals the requested context ID. It does not bind, order, or globally register the result. Catalog failures use stable `PluginError` codes: `plugin_factory_key_invalid`, `plugin_factory_missing`, `plugin_factory_duplicate`, `plugin_factory_target_invalid`, `plugin_factory_load_failed`, `plugin_factory_context_invalid`, `plugin_factory_configuration_invalid`, `plugin_factory_failed`, and `plugin_factory_result_invalid`. Safe details contain only bounded keys, IDs, and distribution fields, never configuration or extension values, object representations, credentials, raw exception text, or private installation paths. These catalog errors suppress standard chaining of raw validation, target, metadata, constructor, and factory exceptions; callers receive the stable stage code rather than a traceback path to untrusted content.
 
-A factory owns its configuration semantics and must return a plugin suitable for ordinary Agent binding and concurrent executable use. Mutable per-Agent or per-run state still follows `for_agent()` and `for_run()`; package construction does not weaken those lifecycle requirements.
+A factory owns its configuration semantics. Validation performs no external I/O, resolves no credential, and returns only normalized serializable configuration. Construction receives that normalized value and must return a plugin suitable for ordinary Agent binding and concurrent executable use. Mutable per-Agent or per-run state still follows `for_agent()` and `for_run()`; package construction does not weaken those lifecycle requirements.
 
 ## Builder Application
 
@@ -231,7 +243,7 @@ The decision is fixed for the resulting executable graph. `run()` and `stream()`
 
 For every root or nested `AgentDefinition` recursively built by the builder:
 
-1. create a fresh concrete plugin for each enabled entry in document order, using a fresh detached `HarnessPluginFactoryContext`;
+1. validate and normalize each enabled entry through its selected factory, then create a fresh concrete plugin in document order using a fresh detached `HarnessPluginFactoryContext`;
 2. append those values after the definition's direct `plugins` tuple;
 3. run the ordinary stable-ID validation, ordering, `for_agent()`, Capability contribution, and executable construction path.
 

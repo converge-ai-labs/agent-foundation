@@ -2,7 +2,7 @@
 
 FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
 SANDBOX_IMAGE ?= agent-foundation-sandbox:local
-EXAMPLE_DIRS := examples/agent-app examples/plugins
+EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
 LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
 
 .PHONY: install
@@ -59,6 +59,8 @@ examples-smoke: examples-sync ## Run every offline example path
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-code)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-code)
+	@workspace_dir=$$(mktemp -d); trap 'rm -rf "$$workspace_dir"' EXIT; \
+		(cd examples/environment-provider && uv run --locked environment-provider-example direct-local --workspace "$$workspace_dir")
 	@state_dir=$$(mktemp -d); trap 'rm -rf "$$state_dir"' EXIT; \
 		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "first turn" "second turn"); \
 		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "turn after restart")

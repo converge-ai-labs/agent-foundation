@@ -6,6 +6,7 @@ from a13n_service.agent_presets.domain import (
     AgentRunOverride,
     CreateAgentPresetRequest,
     ReplaceAgentPresetConfigRequest,
+    SetDefaultAgentPresetRevisionRequest,
 )
 from a13n_service.agent_presets.errors import AgentPresetError
 from a13n_service.agent_presets.invocation import merge_agent_run_override
@@ -84,7 +85,7 @@ def test_duplicate_list_override_is_rejected() -> None:
     assert invalid.value.details == {"path": "skills", "reason": "duplicate_selection"}
 
 
-def test_subagent_patch_is_name_keyed_and_supports_active_selection() -> None:
+def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
     base = preset_config(
         subagents={
             "researcher": {
@@ -141,7 +142,7 @@ def test_invalid_null_or_incomplete_overrides_are_bounded(payload: dict[str, obj
 
 
 @pytest.mark.anyio
-async def test_active_invocation_freezes_complete_effective_config(
+async def test_default_invocation_freezes_complete_effective_config(
     agent_preset_service: AgentPresetService,
     agent_preset_invocation_resolver: AgentPresetInvocationResolver,
     agent_preset_sessions: async_sessionmaker[AsyncSession],
@@ -149,14 +150,23 @@ async def test_active_invocation_freezes_complete_effective_config(
     preset = await agent_preset_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        idempotency_key="create-active-invocation",
-        request=CreateAgentPresetRequest(name="Active Invocation", config=preset_config()),
+        idempotency_key="create-default-invocation",
+        request=CreateAgentPresetRequest(name="Default Invocation", config=preset_config()),
     )
-    published = await agent_preset_service.publish(
+    revision_result = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-active-invocation",
+        idempotency_key="create-revision-default-invocation",
         request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="set-default-invocation",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=revision_result.preset.resource_version,
+            revision_id=revision_result.revision.id,
+        ),
     )
 
     prepared = await agent_preset_invocation_resolver.prepare(
@@ -167,19 +177,19 @@ async def test_active_invocation_freezes_complete_effective_config(
     async with transaction(agent_preset_sessions) as session:
         frozen = await agent_preset_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
 
-    assert frozen.selector_kind is AgentPresetSelectorKind.active
-    assert frozen.agent_preset_revision_id == published.revision.id
+    assert frozen.selector_kind is AgentPresetSelectorKind.default
+    assert frozen.agent_preset_revision_id == revision_result.revision.id
     assert frozen.effective_config.instructions == "One Run only."
     assert frozen.effective_config.retries is not None
     assert frozen.effective_config.retries.tools == 0
     assert frozen.effective_config.retries.output == 1
-    assert frozen.effective_config.resolved_model == published.revision.resolved_model
+    assert frozen.effective_config.resolved_model == revision_result.revision.resolved_model
     assert len(frozen.effective_config.content_digest) == 64
     assert len(frozen.sensitive_values_digest) == 64
 
 
 @pytest.mark.anyio
-async def test_exact_historical_revision_never_falls_back_to_active(
+async def test_exact_historical_revision_never_falls_back_to_default(
     agent_preset_service: AgentPresetService,
     agent_preset_invocation_resolver: AgentPresetInvocationResolver,
     agent_preset_sessions: async_sessionmaker[AsyncSession],
@@ -190,10 +200,10 @@ async def test_exact_historical_revision_never_falls_back_to_active(
         idempotency_key="create-exact-invocation",
         request=CreateAgentPresetRequest(name="Exact Invocation", config=preset_config(instructions="v1")),
     )
-    first = await agent_preset_service.publish(
+    first = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-exact-invocation-v1",
+        idempotency_key="create_revision-exact-invocation-v1",
         request=AgentPresetCommandRequest(expected_resource_version=1),
     )
     edited = await agent_preset_service.replace_config(
@@ -204,10 +214,10 @@ async def test_exact_historical_revision_never_falls_back_to_active(
             config=preset_config(instructions="v2"),
         ),
     )
-    second = await agent_preset_service.publish(
+    second = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-exact-invocation-v2",
+        idempotency_key="create_revision-exact-invocation-v2",
         request=AgentPresetCommandRequest(expected_resource_version=edited.resource_version),
     )
 
@@ -226,7 +236,7 @@ async def test_exact_historical_revision_never_falls_back_to_active(
 
 
 @pytest.mark.anyio
-async def test_expected_active_revision_and_prepare_commit_races_conflict(
+async def test_expected_default_revision_and_prepare_commit_races_conflict(
     agent_preset_service: AgentPresetService,
     agent_preset_invocation_resolver: AgentPresetInvocationResolver,
     agent_preset_sessions: async_sessionmaker[AsyncSession],
@@ -234,80 +244,98 @@ async def test_expected_active_revision_and_prepare_commit_races_conflict(
     preset = await agent_preset_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        idempotency_key="create-active-race",
-        request=CreateAgentPresetRequest(name="Active Race", config=preset_config(instructions="v1")),
+        idempotency_key="create-default-race",
+        request=CreateAgentPresetRequest(name="Default Race", config=preset_config(instructions="v1")),
     )
-    first = await agent_preset_service.publish(
+    first = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-active-race-v1",
+        idempotency_key="create-revision-default-race-v1",
         request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    selected_first = await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="set-default-race-v1",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=first.preset.resource_version,
+            revision_id=first.revision.id,
+        ),
     )
     with pytest.raises(AgentPresetError) as stale_expectation:
         await agent_preset_invocation_resolver.prepare(
             actor=actor(),
             agent_preset_id=preset.id,
-            expected_active_revision_id="apr_1111111111111111",
+            expected_default_revision_id="apr_1111111111111111",
         )
-    assert stale_expectation.value.code == "active_revision_conflict"
+    assert stale_expectation.value.code == "default_revision_conflict"
 
     prepared = await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=preset.id)
     edited = await agent_preset_service.replace_config(
         actor=actor(),
         preset_id=preset.id,
         request=ReplaceAgentPresetConfigRequest(
-            expected_resource_version=first.preset.resource_version,
+            expected_resource_version=selected_first.resource_version,
             config=preset_config(instructions="v2"),
         ),
     )
-    await agent_preset_service.publish(
+    second = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-active-race-v2",
+        idempotency_key="create-revision-default-race-v2",
         request=AgentPresetCommandRequest(expected_resource_version=edited.resource_version),
+    )
+    await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="set-default-race-v2",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=second.preset.resource_version,
+            revision_id=second.revision.id,
+        ),
     )
 
     with pytest.raises(AgentPresetError) as raced:
         async with transaction(agent_preset_sessions) as session:
             await agent_preset_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
-    assert raced.value.code == "active_revision_conflict"
+    assert raced.value.code == "default_revision_conflict"
 
 
 @pytest.mark.anyio
-async def test_unpublished_and_disabled_presets_cannot_start_new_root_work(
+async def test_missing_default_and_disabled_presets_cannot_start_new_root_work(
     agent_preset_service: AgentPresetService,
     agent_preset_invocation_resolver: AgentPresetInvocationResolver,
 ) -> None:
-    unpublished = await agent_preset_service.create(
+    without_default = await agent_preset_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        idempotency_key="create-unpublished-invocation",
-        request=CreateAgentPresetRequest(name="Unpublished Invocation", config=preset_config()),
+        idempotency_key="create-without-default-invocation",
+        request=CreateAgentPresetRequest(name="Without Default Invocation", config=preset_config()),
     )
-    with pytest.raises(AgentPresetError) as missing_active:
-        await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=unpublished.id)
-    assert missing_active.value.code == "preset_not_published"
+    with pytest.raises(AgentPresetError) as missing_default:
+        await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=without_default.id)
+    assert missing_default.value.code == "preset_default_revision_missing"
 
-    published = await agent_preset_service.publish(
+    revision_result = await agent_preset_service.create_revision(
         actor=actor(),
-        preset_id=unpublished.id,
-        idempotency_key="publish-disabled-invocation",
+        preset_id=without_default.id,
+        idempotency_key="create_revision-disabled-invocation",
         request=AgentPresetCommandRequest(expected_resource_version=1),
     )
     await agent_preset_service.change_lifecycle(
         actor=actor(),
-        preset_id=unpublished.id,
+        preset_id=without_default.id,
         action="disable",
         idempotency_key="disable-invocation",
-        request=AgentPresetCommandRequest(expected_resource_version=published.preset.resource_version),
+        request=AgentPresetCommandRequest(expected_resource_version=revision_result.preset.resource_version),
     )
     with pytest.raises(AgentPresetError) as disabled:
-        await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=unpublished.id)
+        await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=without_default.id)
     assert disabled.value.code == "preset_disabled"
 
 
 @pytest.mark.anyio
-async def test_inherited_subagent_keeps_exact_revision_when_child_publishes_again(
+async def test_inherited_subagent_keeps_exact_revision_when_child_default_changes(
     agent_preset_service: AgentPresetService,
     agent_preset_invocation_resolver: AgentPresetInvocationResolver,
     agent_preset_sessions: async_sessionmaker[AsyncSession],
@@ -318,11 +346,20 @@ async def test_inherited_subagent_keeps_exact_revision_when_child_publishes_agai
         idempotency_key="create-invocation-child",
         request=CreateAgentPresetRequest(name="Invocation Child", config=preset_config(instructions="child-v1")),
     )
-    first_child = await agent_preset_service.publish(
+    first_child = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=child.id,
-        idempotency_key="publish-invocation-child-v1",
+        idempotency_key="create_revision-invocation-child-v1",
         request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    selected_child = await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=child.id,
+        idempotency_key="set-default-invocation-child-v1",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=first_child.preset.resource_version,
+            revision_id=first_child.revision.id,
+        ),
     )
     root = await agent_preset_service.create(
         actor=actor(),
@@ -333,11 +370,20 @@ async def test_inherited_subagent_keeps_exact_revision_when_child_publishes_agai
             config=preset_config(subagents={"child": {"agent_preset_id": child.id, "environment": {"mode": "none"}}}),
         ),
     )
-    await agent_preset_service.publish(
+    root_revision = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=root.id,
-        idempotency_key="publish-invocation-root",
+        idempotency_key="create_revision-invocation-root",
         request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=root.id,
+        idempotency_key="set-default-invocation-root",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=root_revision.preset.resource_version,
+            revision_id=root_revision.revision.id,
+        ),
     )
     prepared = await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=root.id)
 
@@ -345,15 +391,24 @@ async def test_inherited_subagent_keeps_exact_revision_when_child_publishes_agai
         actor=actor(),
         preset_id=child.id,
         request=ReplaceAgentPresetConfigRequest(
-            expected_resource_version=first_child.preset.resource_version,
+            expected_resource_version=selected_child.resource_version,
             config=preset_config(instructions="child-v2"),
         ),
     )
-    second_child = await agent_preset_service.publish(
+    second_child = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=child.id,
-        idempotency_key="publish-invocation-child-v2",
+        idempotency_key="create_revision-invocation-child-v2",
         request=AgentPresetCommandRequest(expected_resource_version=edited_child.resource_version),
+    )
+    await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=child.id,
+        idempotency_key="set-default-invocation-child-v2",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=second_child.preset.resource_version,
+            revision_id=second_child.revision.id,
+        ),
     )
     async with transaction(agent_preset_sessions) as session:
         frozen = await agent_preset_invocation_resolver.freeze_in_transaction(session, prepared=prepared)

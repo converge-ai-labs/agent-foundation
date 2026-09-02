@@ -8,7 +8,7 @@ Adding Worker processes or replicas adds competing consumers of the same relatio
 
 Workers are container-role loops, not durable product owners. Under the [Plugin Runtime contract](26-harness-plugin-artifacts-and-runtime-loading.md), the default profile executes in the Worker interpreter and the optional runner profile uses a stable Supervisor plus lock-scoped children. A deployment scales the `worker` role by adding replicas whose selected execution loops compete through the same relational claim contract.
 
-[Durable Thread Persistence](24-thread-persistence.md) owns current-Run and continuation-head selection; [Durable Run State](14-run-persistence.md) owns Run status, scheduling fields, and budget; [Durable Run Attempt Persistence](15-run-attempt-persistence.md) owns the exact claim, takeover, lease, fence, preparation-decision, and Attempt outcome transactions.
+[Durable Thread Persistence](24-thread-persistence.md) owns current-Run and continuation-head selection; [Durable Run State](14-run-persistence.md) owns Run status, scheduling fields, and budget; [Durable Run Attempt Persistence](15-run-attempt-persistence.md) owns the exact claim, takeover, lease, fence, preparation-decision, and Attempt outcome transactions; and [Foundation–Harness Runtime Integration](16a-harness-runtime-integration.md) owns the public Harness calls, awaited hooks, process-local run-control critical section, and safe-boundary handoff sequence.
 
 ## Worker Scan and Claim Contract
 
@@ -50,7 +50,7 @@ sequenceDiagram
         end
     end
     Executor->>Objects: outside transaction, read exact state and frozen artifacts
-    Executor->>Executor: validate state, dependencies, authority, and unknown outcomes
+    Executor->>Executor: validate state, dependencies, budget, and authority
     Executor->>DB: short fenced preparation-decision CAS
     alt continue
         DB-->>Executor: preparation accepted
@@ -101,7 +101,7 @@ Replacement becomes eligible only when one of these conditions holds:
 - the owning Worker commits that its Attempt can no longer produce an authoritative Run result, terminalizes that Attempt as `failed`, clears the current selection, and schedules an in-budget retry through `available_at`;
 - the owning Worker commits `yielded` from a complete safe checkpoint, clears the current selection, and makes the still-running Run immediately available for a planned-handoff successor.
 
-The second case is the precise meaning of losing outcome certainty for an Attempt. It concerns the whole Attempt's ability to finish authoritatively. A single Agent tool call with `unknown_outcome` does not fail the Attempt and does not trigger replacement; it is recovery context only if replacement is already needed for one of the reasons above.
+The second case means that the whole Attempt can no longer finish authoritatively. A process-local Agent tool failure or uncertain result does not by itself create another Attempt; replacement remains controlled by the owning Worker's failure decision, lease expiry, or planned handoff.
 
 Foundation defines no `lost` RunAttempt status. An expired old Attempt becomes `failed` only in the transaction that replaces it or fails the Run, so there is no separate isolation phase or controller-owned intermediate state.
 
@@ -109,17 +109,16 @@ Foundation defines no `lost` RunAttempt status. An expired old Attempt becomes `
 
 The newly created Attempt already owns the lease before recovery checks begin. Its Worker performs all object, artifact, and authority reads outside database transactions and then commits one short fenced preparation decision.
 
-| Check                       | What must be true                                                                                                                                                                                                                                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| State                       | The deterministic `state.json` exists and its key metadata, tenant, Run, Thread, digest, size, checkpoint sequence, outer schema, AgentPresetRevision, Runtime lock, and required Harness, Host, Capability, and Environment-state codecs validate exactly.                                             |
-| Unknown Agent tool outcomes | Every durable prior Agent tool dispatch absent from that exact complete state can be represented as bounded `unknown_outcome` context. The check reads no provider business state and never automatically replays a call.                                                                               |
-| Budget                      | The already-created Attempt remains within the applicable `max_recovery_attempts` or `max_handoffs` count, the fixed `recovery_deadline_at`, and every configured aggregate usage ceiling after all durable known usage charges. Unknown required usage cannot be assumed to be zero.                   |
-| Frozen compatibility        | The exact AgentPresetRevision, `EffectiveAgentConfig`, Runtime lock, managed Skill artifacts, MCP tool snapshot, Connectivity selections, Environment Provider locks, and all other frozen dependencies are present, digest-valid, and compatible.                                                      |
-| Current authority           | Current Workspace and principal policy, RoleBindings, Connection and MCPConnection eligibility, Ingress action authority, Environment provider selection, required Secret metadata, and intended credential uses still authorize reconstruction. Persisted references grant no authority by themselves. |
+| Check                | What must be true                                                                                                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State                | The deterministic `state.json` exists and its key metadata, tenant, Run, Thread, digest, size, checkpoint sequence, outer schema, AgentPresetRevision, Runtime lock, and required Harness, Host, Capability, and Environment-state codecs validate exactly.                                             |
+| Budget               | The already-created Attempt remains within the applicable `max_recovery_attempts` or `max_handoffs` count, the fixed `recovery_deadline_at`, and every configured aggregate usage ceiling after all durable known usage charges. Uncheckpointed tool invocations are not reconstructed as exact usage.  |
+| Frozen compatibility | The exact AgentPresetRevision, `EffectiveAgentConfig`, Runtime lock, managed Skill artifacts, MCP tool snapshot, Connectivity selections, Environment Provider locks, and all other frozen dependencies are present, digest-valid, and compatible.                                                      |
+| Current authority    | Current Workspace and principal policy, RoleBindings, Connection and MCPConnection eligibility, Ingress action authority, Environment provider selection, required Secret metadata, and intended credential uses still authorize reconstruction. Persisted references grant no authority by themselves. |
 
 The decision is complete:
 
-- if every check passes, the fenced transaction stores the bounded `unknown_outcome` projection on the new Attempt and permits reconstruction and Harness entry;
+- if every check passes, the fenced transaction permits reconstruction and Harness entry;
 - if a failed check is explicitly transient and retryable and budget remains, the transaction marks this Attempt `failed`, clears it as current, leaves the Run `running`, and moves `available_at` to a bounded future instant; or
 - if a check is permanent, non-retryable, unrepresentable, or out of budget, the transaction marks this Attempt `failed`, clears it as current, and seals the Run as `failed` while preserving the Thread's prior continuation head.
 
@@ -127,7 +126,7 @@ A confirmed missing or corrupt state, incompatible schema or lock, digest mismat
 
 The same preparation contract applies to a planned-handoff successor. It reads the latest successfully committed complete value at the Run's unchanged `state.json` key and does not require a handoff-specific checkpoint marker or infer `yielded` from object contents. It preserves the exact pinned Runtime lock and accepts a different Foundation Service build only when that build can read the state schemas and serve every frozen dependency named by the Run.
 
-Recovery does not probe model reachability, inspect external tool or Provider business state, validate a backing target, or re-enter a previous Environment. Model reachability and fresh Environment entry from current Host state are ordinary outcomes of the newly owned Attempt.
+Recovery does not probe model reachability, inspect external tool or Provider business state, validate a backing target, or re-enter a previous Environment. It imports only the selected complete Run state; tool work absent from that state is not reconstructed and can be re-driven unless the owning tool protocol suppresses duplicates. Model reachability and fresh Environment entry from current Host state are ordinary outcomes of the newly owned Attempt.
 
 ## Worker Run Boundary
 
@@ -141,7 +140,7 @@ As soon as Harness supplies its Run identity and before the first live observati
 
 ## Thread Inbox and Control Reconciliation
 
-The execution loop owns one process-local control dispatcher for every active RunAttempt. It registers the current `(run_attempt_id, fence)` with the live `HarnessRunStream` and joins the owning Thread's Redis control Stream consumer group under its Worker identity and generation. Claim, takeover, Redis wakeup, and every mandatory execution boundary invoke the complete [unified FIFO delivery](35-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment) and [waiting-successor first-request hook](35-agent-control-active-execution.md#waiting-binding-and-first-request-hook-delivery) contracts; this scheduling contract does not define another inbox ordering, delivery, or completion flow.
+The execution loop owns one process-local control dispatcher and [run-control critical section](16a-harness-runtime-integration.md#meaning-of-the-run-control-barrier) for every active RunAttempt. It registers the current `(run_attempt_id, fence)` with the live `HarnessRunStream` and joins the owning Thread's Redis control Stream consumer group under its Worker identity and generation. Claim, takeover, Redis wakeup, and every mandatory execution boundary invoke the complete [unified FIFO delivery](35-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment) and [waiting-successor first-request hook](35-agent-control-active-execution.md#waiting-binding-and-first-request-hook-delivery) contracts; this scheduling contract does not define another inbox ordering, delivery, or completion flow.
 
 A claim or takeover reconciles PostgreSQL before relying on the Redis group and can then reclaim deliveries from a prior Worker generation. Every signal means only that the dispatcher must re-read the Thread's durable state. Missing, trimmed, expired, duplicated, stale, or already acknowledged signals never change the decision made from PostgreSQL.
 
@@ -171,24 +170,24 @@ Shutdown never extends a lease indefinitely or marks unfinished work successful.
 
 ## Failure Semantics
 
-| Failure                                                            | Durable outcome                                                                                                     |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Concurrent Workers scan the same Run                               | Exactly one claim or takeover transaction creates the next Attempt; losers create nothing.                          |
-| No compatible execution loop can serve the Run's Runtime lock      | Run remains eligible or the claimed Attempt follows bounded preparation failure; no Runtime is substituted.         |
-| Worker crashes before claim commit                                 | The transaction commits no partial Attempt ownership.                                                               |
-| Worker crashes after claim or during preparation                   | Its lease expires; a later Worker's takeover marks it `failed` and creates at most one successor within budget.     |
-| Worker crashes after uncheckpointed Agent tool dispatch            | The successor compares durable dispatch records with exact state and projects unmatched calls as `unknown_outcome`. |
-| Worker drains while a model, tool batch, or inline child is active | It keeps renewing and waits for a complete safe boundary; no second Worker may execute the Run.                     |
-| Checkpoint publication or object reconciliation spans heartbeats   | The selected Attempt keeps renewing throughout; the checkpoint operation does not release authority.                |
-| Yield races with heartbeat renewal                                 | The shared Attempt CAS serializes them; after yield commits, late renewal is rejected.                              |
-| Yield transaction fails while the old owner remains authoritative  | The owner keeps renewing and retries or commits another legal result; the failure alone causes no takeover.         |
-| Drain deadline arrives before yield                                | The owner stops renewal and exits; takeover remains forbidden until lease expiry.                                   |
-| Compatible new-build and old-build Workers see a yielded Run       | New build may claim immediately; same build skips until the preference window elapses.                              |
-| Heartbeat arrives after lease expiry or takeover                   | The old Worker is stale even if it reconnects; every authoritative write is rejected.                               |
-| Preparation finds a retryable dependency outage                    | The claimed Attempt fails; the Run remains `running` with bounded `available_at` while budget remains.              |
-| Preparation finds permanent incompatibility or revoked authority   | The claimed Attempt and Run fail; no Harness model or tool work starts.                                             |
-| Managed Skill materialization stops                                | No partial catalog reaches Harness; the Attempt follows ordinary retry and budget rules.                            |
-| Redis live data flow is unavailable                                | Relational ownership and Thread inbox remain intact; safe-point reconciliation replaces no claim or domain fact.    |
+| Failure                                                            | Durable outcome                                                                                                                         |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Concurrent Workers scan the same Run                               | Exactly one claim or takeover transaction creates the next Attempt; losers create nothing.                                              |
+| No compatible execution loop can serve the Run's Runtime lock      | Run remains eligible or the claimed Attempt follows bounded preparation failure; no Runtime is substituted.                             |
+| Worker crashes before claim commit                                 | The transaction commits no partial Attempt ownership.                                                                                   |
+| Worker crashes after claim or during preparation                   | Its lease expires; a later Worker's takeover marks it `failed` and creates at most one successor within budget.                         |
+| Worker crashes after uncheckpointed Agent tool work                | The successor resumes from the prior complete state; generic recovery cannot determine the external outcome, and work can be re-driven. |
+| Worker drains while a model, tool batch, or inline child is active | It keeps renewing and waits for a complete safe boundary; no second Worker may execute the Run.                                         |
+| Checkpoint publication or object reconciliation spans heartbeats   | The selected Attempt keeps renewing throughout; the checkpoint operation does not release authority.                                    |
+| Yield races with heartbeat renewal                                 | The shared Attempt CAS serializes them; after yield commits, late renewal is rejected.                                                  |
+| Yield transaction fails while the old owner remains authoritative  | The owner keeps renewing and retries or commits another legal result; the failure alone causes no takeover.                             |
+| Drain deadline arrives before yield                                | The owner stops renewal and exits; takeover remains forbidden until lease expiry.                                                       |
+| Compatible new-build and old-build Workers see a yielded Run       | New build may claim immediately; same build skips until the preference window elapses.                                                  |
+| Heartbeat arrives after lease expiry or takeover                   | The old Worker is stale even if it reconnects; every authoritative write is rejected.                                                   |
+| Preparation finds a retryable dependency outage                    | The claimed Attempt fails; the Run remains `running` with bounded `available_at` while budget remains.                                  |
+| Preparation finds permanent incompatibility or revoked authority   | The claimed Attempt and Run fail; no Harness model or tool work starts.                                                                 |
+| Managed Skill materialization stops                                | No partial catalog reaches Harness; the Attempt follows ordinary retry and budget rules.                                                |
+| Redis live data flow is unavailable                                | Relational ownership and Thread inbox remain intact; safe-point reconciliation replaces no claim or domain fact.                        |
 
 ## Invariants
 
@@ -200,7 +199,7 @@ Shutdown never extends a lease indefinitely or marks unfinished work successful.
 06. Attempt `failed` is generation-terminal and does not by itself imply Run `failed`; Foundation defines no Attempt `lost` state.
 07. Object, artifact, authorization, Environment, model, tool, and other external I/O never occurs inside a claim, takeover, or decision transaction.
 08. Recovery checks occur only after the new Attempt owns a lease and commit through one short fenced preparation decision.
-09. Unknown Agent tool outcomes are shown to the next Agent and never trigger replacement or automatic replay by themselves.
+09. Foundation stores no generic tool invocation ledger or recovery projection; replacement imports only complete Run state, while tool-specific protocols own cross-crash duplicate suppression and reconciliation.
 10. Replacement Attempts use fresh process-local values and only complete, conditionally committed Run state.
 11. Foundation persists no generic dispatch phase, Environment connection lease, or Environment resource reconciliation state.
 12. Waiting and terminal Runs are sealed; feedback or retry creates another Run.

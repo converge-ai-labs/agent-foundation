@@ -74,7 +74,7 @@ def _with_protocol(configure: Callable[[dict[str, object]], None]) -> AgentPrese
         ),
     ],
 )
-async def test_create_accepts_authoring_shape_but_publish_applies_protocol_policy(
+async def test_create_accepts_authoring_shape_but_revision_creation_applies_protocol_policy(
     agent_preset_service: AgentPresetService,
     config: AgentPresetConfig,
     reason: str,
@@ -88,14 +88,14 @@ async def test_create_accepts_authoring_shape_but_publish_applies_protocol_polic
     )
 
     with pytest.raises(AgentPresetError) as rejected:
-        await agent_preset_service.publish(
+        await agent_preset_service.create_revision(
             actor=actor(),
             preset_id=preset.id,
-            idempotency_key=f"publish-invalid-protocol-{reason}",
+            idempotency_key=f"create_revision-invalid-protocol-{reason}",
             request=AgentPresetCommandRequest(expected_resource_version=1),
         )
 
-    assert rejected.value.code == "preset_publish_failed"
+    assert rejected.value.code == "preset_revision_create_failed"
     assert rejected.value.details == {"reason": reason, "path": path}
 
 
@@ -146,10 +146,10 @@ async def test_run_override_revalidates_replaced_output_schema(
         idempotency_key="create-run-output-validation",
         request=CreateAgentPresetRequest(name="Run Output Validation", config=preset_config()),
     )
-    await agent_preset_service.publish(
+    revision_result = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-run-output-validation",
+        idempotency_key="create_revision-run-output-validation",
         request=AgentPresetCommandRequest(expected_resource_version=1),
     )
 
@@ -157,6 +157,7 @@ async def test_run_override_revalidates_replaced_output_schema(
         await agent_preset_invocation_resolver.prepare(
             actor=actor(),
             agent_preset_id=preset.id,
+            agent_preset_revision_id=revision_result.revision.id,
             config_override=AgentRunOverride.model_validate(
                 {"output_spec": {"schema": {"type": "not-a-json-schema-type"}}}
             ),
@@ -189,10 +190,10 @@ async def test_run_override_cannot_remove_a_protocol_client_tool(
         idempotency_key="create-client-tool-validation",
         request=CreateAgentPresetRequest(name="Client Tool Validation", config=config),
     )
-    await agent_preset_service.publish(
+    revision_result = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-client-tool-validation",
+        idempotency_key="create_revision-client-tool-validation",
         request=AgentPresetCommandRequest(expected_resource_version=1),
     )
 
@@ -200,6 +201,7 @@ async def test_run_override_cannot_remove_a_protocol_client_tool(
         await agent_preset_invocation_resolver.prepare(
             actor=actor(),
             agent_preset_id=preset.id,
+            agent_preset_revision_id=revision_result.revision.id,
             config_override=AgentRunOverride.model_validate({"client_tools": []}),
         )
 

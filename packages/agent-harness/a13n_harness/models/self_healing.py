@@ -204,11 +204,22 @@ def _is_anthropic_modified_thinking(error: Exception) -> bool:
     if not isinstance(error, ModelAPIError):
         return False
     text = _error_text(error)
-    return (
+    modified_block = (
         "thinking" in text
         and "redacted_thinking" in text
         and ("cannot be modified" in text or "must remain as they were" in text)
     )
+    thinking_block = any(
+        marker in text
+        for marker in (
+            "thinking block",
+            "`thinking` block",
+            "redacted_thinking block",
+            "`redacted_thinking` block",
+        )
+    )
+    invalid_signature = thinking_block and "invalid" in text and "signature" in text
+    return modified_block or invalid_signature
 
 
 def _is_stale_reasoning(error: Exception) -> bool:

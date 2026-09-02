@@ -14,6 +14,7 @@ from a13n_service.agent_presets.domain import PluginRuntimeMode
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
+from a13n_service.plugins.domain import Plugin, PluginTaskReceipt, PluginVersion
 from a13n_service.plugins.objects import PluginObjectStore
 from a13n_service.plugins.service import PluginService
 from a13n_service.plugins.staging import PluginStaging
@@ -28,6 +29,54 @@ ORG_ID = "org_1234567890abcdef"
 WORKSPACE_ID = "ws_1234567890abcdef"
 ADMIN_ID = "usr_admin12345678901"
 BUILDER_ID = "usr_builder123456789"
+
+
+class RecordingRuntimeDispatcher:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+        self.receipts: dict[str, PluginTaskReceipt] = {}
+
+    async def activate(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        organization_id: str,
+        workspace_id: str,
+        plugin: Plugin,
+        plugin_version: PluginVersion,
+        idempotency_key: str,
+    ) -> PluginTaskReceipt:
+        del actor, organization_id, workspace_id, plugin, idempotency_key
+        receipt = PluginTaskReceipt(operation_id="op_activate1234567890", status="running")
+        self.calls.append(("activate", plugin_version.id))
+        self.receipts[receipt.operation_id] = receipt
+        return receipt
+
+    async def deactivate(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        organization_id: str,
+        workspace_id: str,
+        plugin: Plugin,
+        idempotency_key: str,
+    ) -> PluginTaskReceipt:
+        del actor, organization_id, workspace_id, idempotency_key
+        receipt = PluginTaskReceipt(operation_id="op_deactivate12345678", status="running")
+        self.calls.append(("deactivate", plugin.id))
+        self.receipts[receipt.operation_id] = receipt
+        return receipt
+
+    async def get_receipt(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        organization_id: str,
+        workspace_id: str,
+        operation_id: str,
+    ) -> PluginTaskReceipt:
+        del actor, organization_id, workspace_id
+        return self.receipts[operation_id]
 
 
 def actor(user_id: str = ADMIN_ID) -> AuthenticatedActor:
@@ -52,6 +101,7 @@ def build_wheel(
     distribution_name: str = "acme-audit",
     package: str = "acme_audit",
     requires_dist: tuple[str, ...] = (),
+    include_entry_point: bool = True,
     second_entry_point: bool = False,
     corrupt_record: bool = False,
     unsafe_member: bool = False,
@@ -74,8 +124,9 @@ def build_wheel(
         f"{dist_info}/WHEEL": (
             b"Wheel-Version: 1.0\nGenerator: agent-foundation-tests\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n"
         ),
-        f"{dist_info}/entry_points.txt": entry_points.encode(),
     }
+    if include_entry_point:
+        files[f"{dist_info}/entry_points.txt"] = entry_points.encode()
     if unsafe_member:
         files["../escape.py"] = b"pass\n"
     record_name = f"{dist_info}/RECORD"
@@ -212,3 +263,47 @@ async def plugin_service(
     )
     await service.ensure_runtime_mode()
     return service
+
+
+@pytest.fixture
+async def runner_plugin_service(
+    plugin_sessions: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> PluginService:
+    objects = await LocalObjectStore.create(tmp_path / "runner-objects")
+    staging = await PluginStaging.create(tmp_path / "runner-files")
+    service = PluginService(
+        plugin_sessions,
+        PluginObjectStore(objects),
+        staging,
+        runtime_mode=PluginRuntimeMode.runner,
+        max_wheel_bytes=10 * 1024 * 1024,
+        max_expanded_bytes=20 * 1024 * 1024,
+        max_archive_members=1000,
+        clock=lambda: NOW,
+    )
+    await service.ensure_runtime_mode()
+    return service
+
+
+@pytest.fixture
+async def runner_plugin_service_with_dispatcher(
+    plugin_sessions: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> tuple[PluginService, RecordingRuntimeDispatcher]:
+    objects = await LocalObjectStore.create(tmp_path / "runner-dispatched-objects")
+    staging = await PluginStaging.create(tmp_path / "runner-dispatched-files")
+    dispatcher = RecordingRuntimeDispatcher()
+    service = PluginService(
+        plugin_sessions,
+        PluginObjectStore(objects),
+        staging,
+        runtime_mode=PluginRuntimeMode.runner,
+        max_wheel_bytes=10 * 1024 * 1024,
+        max_expanded_bytes=20 * 1024 * 1024,
+        max_archive_members=1000,
+        runtime_command_dispatcher=dispatcher,
+        clock=lambda: NOW,
+    )
+    await service.ensure_runtime_mode()
+    return service, dispatcher

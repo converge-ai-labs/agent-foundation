@@ -58,6 +58,7 @@ Model self-healing remains optional. `SelfHealingModelCapability` installs the `
 | Request content compatibility    | Copy-on-write request Filter over native multimodal content                                                                                         | [Input, Model, and Output](16-input-model-and-output.md)        |
 | Cold-start history reduction     | Copy-on-write Filter over already-consumed ordinary tool returns                                                                                    | [Input, Model, and Output](16-input-model-and-output.md)        |
 | Model self-healing               | Innermost request wrapper installing one exact `SelfHealingModel` around the effective Model                                                        | [Input, Model, and Output](16-input-model-and-output.md)        |
+| Tool-based structured output     | Build-injected innermost request wrapper sending provider-facing auto tool choice while preserving local output validation                          | [Input, Model, and Output](16-input-model-and-output.md)        |
 | Provider-specific Agent behavior | Capability public hooks only when profile/adapter is insufficient                                                                                   | [Input, Model, and Output](16-input-model-and-output.md)        |
 
 Native function tools and Toolsets remain valid code-first Pydantic inputs only inside a Capability. A small native `Capability(tools=[...])` or Toolset Capability is the ordinary one-to-one adapter; it does not require a Harness-specific subclass. The Capability owns feature activation, lifecycle, and Toolset composition; each Toolset owns guidance that describes its model-visible tools. The owning Capability also owns any tool timeout and stable Capability/Toolset identity because top-level `AgentSpec.tool_timeout` does not implicitly configure Capability-owned Toolsets. `DynamicEnvironmentCapability` is richer because it combines stable Toolsets with current-mount projection, mount-change notices, and process-completion readiness. Current-mount projection remains owned by the Harness-internal Environment facade entered from the Run's Environment inputs. Process handles, explicit-offset observations, and watchers remain private to the current Run controller; no process collaborator contributes another Toolset or portable state.
@@ -72,6 +73,7 @@ flowchart LR
     Run[RunBindings capabilities] --> PAI
     Resolver[Mandatory ResolveModelId] --> PAI
     Affinity[Mandatory request affinity] --> PAI
+    Structured[Conditional tool-output compatibility] --> PAI
     Usage[Mandatory usage reporting] --> PAI
     Pricing[One build-time model-cost Capability] --> PAI
     Observation[Conditional native trace or metric instrumentation] --> PAI

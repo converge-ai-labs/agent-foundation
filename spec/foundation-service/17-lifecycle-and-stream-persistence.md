@@ -18,7 +18,7 @@ The Thread-scoped Redis control signal Stream is a separate business-payload-fre
 | Live Agent messages and observations | Redis Stream                         | Bounded transport and replay projection only                              |
 | Retained Items and stream replay     | Immutable `RunReplaySnapshot` object | Presentation projection, never Run-state or lifecycle authority           |
 
-Only `lifecycle_events` is introduced here, under the service-wide [Relational Schema Lifecycle](04-relational-schema.md). Run waiting state and Agent tool-dispatch evidence belong to [Run Persistence](14-run-persistence.md) and [RunAttempt Persistence](15-run-attempt-persistence.md), respectively.
+Only `lifecycle_events` is introduced here, under the service-wide [Relational Schema Lifecycle](04-relational-schema.md). Run waiting state belongs to [Run Persistence](14-run-persistence.md). Tool observations remain presentation or telemetry unless an owning Capability defines its own durable task protocol; this document introduces no generic tool lifecycle authority.
 
 ## Lifecycle Event Model
 

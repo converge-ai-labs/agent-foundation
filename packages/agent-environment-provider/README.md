@@ -92,7 +92,7 @@ Repository developers can optionally copy the `A13N_AGENT_ENVD_EXECUTABLE` entry
 make local-envd-test
 ```
 
-See the [Environment Provider guide](../../docs/agent-environment-provider/index.md) for Harness usage, state re-entry, explicit destruction, and third-party plugin development.
+See the [Environment Provider guide](../../docs/agent-environment-provider/index.md) for Harness usage, state re-entry, explicit destruction, and third-party plugin development. The runnable [built-in Provider example](../../examples/environment-provider/README.md) exercises Direct Local, Local Envd, and Docker from Host code.
 
 ## Versioning
 

@@ -41,7 +41,7 @@ async def test_object_round_trip_is_canonical_and_reuses_exact_content(tmp_path:
         object_kind=ObjectKind.agent_snapshot,
         object_schema_version="1",
         payload={"ordered": {"a": 1, "b": 2}, "unicode": "你好"},
-        created_at=created_at,
+        created_at=created_at.replace(second=6),
     )
 
     assert second == first
@@ -145,7 +145,7 @@ async def test_object_read_rejects_corruption_truncation_and_trailing_data(tmp_p
 async def test_object_read_checks_declared_size_before_decompression(tmp_path: Path) -> None:
     writer, layout = _object_store(tmp_path, max_object_bytes=4096)
     envelope = await writer.publish(
-        object_kind=ObjectKind.provider_state,
+        object_kind=ObjectKind.environment_state,
         object_schema_version="1",
         payload={"value": "x" * 2048},
     )

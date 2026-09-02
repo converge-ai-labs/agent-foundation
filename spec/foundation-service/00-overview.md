@@ -81,7 +81,7 @@ flowchart LR
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, including immutable Asset publication records, eligible external-event admission and deduplication facts, Thread advancement and queue versions, head selection, queued submissions, the durable Thread inbox and its independent delivery-sequence counter, Runs, current RunAttempt generations, Agent tool dispatch evidence, waiting pending summaries, current Thread-associated Environment state, and terminal outcomes. Ordinary steer and asynchronous results use one PostgreSQL acceptance-order FIFO. Each Worker discovers claim, takeover, and pending-inbox work directly from that durable state; control replicas scan pending asynchronous results for inactive-Thread advancement. Redis carries domain-owned live data flow, including each Run's stable bounded-replay message stream and each active Thread's expiring control-signal Stream; Redis publication or consumer-group progress never proves a relational transition or inbox consumption. Shared object storage holds immutable Asset content plus the Run's complete conditionally replaced state, including exact pending requests, consumed inbox receipts, immutable replay snapshot, and bounded large content. The detailed authorities belong to [External Connectivity](40-connectivity/README.md), [Asset Management](37-asset-management.md), [Durable Thread Persistence](24-thread-persistence.md), [Durable Run State](14-run-persistence.md), [Agent Control: Active Execution](35-agent-control-active-execution.md), [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md), [Environment Configuration and Re-entry](19-environment-management.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
+PostgreSQL is the distributed authority for accepted resources, including immutable Asset publication records, eligible external-event admission and deduplication facts, Thread advancement and queue versions, head selection, queued submissions, the durable Thread inbox and its independent delivery-sequence counter, Runs, current RunAttempt generations, waiting pending summaries, current Thread-associated Environment state, and terminal outcomes. Ordinary steer and asynchronous results use one PostgreSQL acceptance-order FIFO. Each Worker discovers claim, takeover, and pending-inbox work directly from that durable state; control replicas scan pending asynchronous results for inactive-Thread advancement. Redis carries domain-owned live data flow, including each Run's stable bounded-replay message stream and each active Thread's expiring control-signal Stream; Redis publication or consumer-group progress never proves a relational transition or inbox consumption. Shared object storage holds immutable Asset content plus the Run's complete conditionally replaced state, including exact pending requests, consumed inbox receipts, immutable replay snapshot, and bounded large content. The detailed authorities belong to [External Connectivity](40-connectivity/README.md), [Asset Management](37-asset-management.md), [Durable Thread Persistence](24-thread-persistence.md), [Durable Run State](14-run-persistence.md), [Agent Control: Active Execution](35-agent-control-active-execution.md), [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md), [Environment Configuration and Re-entry](19-environment-management.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 
 ## Component Boundaries
 
@@ -193,13 +193,12 @@ These facts advance independently:
 1. a caller request is authenticated and authorized;
 2. a Thread creation or versioned advancement, Run, and initial complete state are durably accepted;
 3. a RunAttempt owns a live fenced lease;
-4. an Agent tool dispatch record commits before that tool invocation;
-5. Harness returns a process-local observation or candidate;
-6. Foundation conditionally publishes complete Run state and commits a waiting or terminal outcome;
-7. an Item, lifecycle event, AG-UI envelope, or external result is delivered;
-8. immutable usage records are ingested; an optional external capability can price or bill them without changing their identity.
+4. Harness returns a process-local observation or candidate;
+5. Foundation conditionally publishes complete Run state and commits a waiting or terminal outcome;
+6. an Item, lifecycle event, AG-UI envelope, or external result is delivered;
+7. immutable usage records are ingested; an optional external capability can price or bill them without changing their identity.
 
-No later fact follows merely because an earlier fact occurred. In particular, a Worker scan result is not ownership, Harness completion is not durable completion, a durable Agent tool dispatch without a checkpointed result has unknown outcome, and event delivery is not usage ingestion or external settlement.
+No later fact follows merely because an earlier fact occurred. In particular, a Worker scan result is not ownership, Harness completion is not durable completion, a tool observation or external effect absent from the latest complete checkpoint is not recoverable Run state, and event delivery is not usage ingestion or external settlement.
 
 ## Invariants
 

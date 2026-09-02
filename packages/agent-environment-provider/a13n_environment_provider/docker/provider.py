@@ -752,26 +752,37 @@ def _new_bootstrap_material(
 
 
 def _envd_configuration(configuration: DockerProviderConfiguration) -> bytes:
-    mounts = []
-    for mount in configuration.mounts:
-        mounts.append(
+    mounts = [
+        {
+            "mount_id": mount.mount_id,
+            "native_root": str(mount.container_path),
+            "writable": not mount.read_only,
+            "allow_command_execution": mount.allow_command_execution,
+            "max_file_bytes": configuration.max_file_bytes,
+        }
+        for mount in configuration.mounts
+    ]
+    shell_profiles = []
+    for profile in configuration.shell_profiles:
+        search_roots = tuple(dict.fromkeys((*configuration.trusted_executable_roots, profile.executable.parent)))
+        shell_profiles.append(
             {
-                "mount_id": mount.mount_id,
-                "logical_root": str(mount.container_path),
-                "physical_root": str(mount.container_path),
-                "writable": not mount.read_only,
-                "allow_command_execution": mount.allow_command_execution,
+                "profile_id": profile.profile_id,
+                "display_name": profile.profile_id,
+                "native_executable": str(profile.executable),
+                "fixed_arguments": list(profile.fixed_arguments),
+                "safe_base_environment": {},
+                "executable_search_roots": [str(path) for path in search_roots],
+                "max_script_bytes": profile.max_script_bytes,
+                "allow_login_mode": profile.allow_login,
             }
         )
     value = {
-        "schema_version": "1",
-        "environment_id": configuration.environment_id,
         "mounts": mounts,
         "root_mount_id": configuration.root_mount_id,
         "trusted_executable_roots": [str(path) for path in configuration.trusted_executable_roots],
-        "shell_profiles": [profile.model_dump(mode="json") for profile in configuration.shell_profiles],
+        "shell_profiles": shell_profiles,
         "limits": {
-            "max_file_bytes": configuration.max_file_bytes,
             "max_output_preview_bytes": configuration.max_output_preview_bytes,
             "max_output_bytes_per_stream": configuration.max_output_bytes_per_stream,
             "max_spool_bytes": configuration.max_spool_bytes,

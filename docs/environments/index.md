@@ -212,6 +212,7 @@ The [Harness Environment guide](../agent-harness/environments.md) covers complet
 
 ## Next steps
 
+- [Run the built-in Provider examples](../agent-environment-provider/examples.md)
 - [Use Environments from Agent Harness](../agent-harness/environments.md)
 - [Manage Provider state and implement plugins](../agent-environment-provider/index.md)
 - [Operate and configure `agent-envd`](../agent-envd/index.md)

@@ -9,7 +9,7 @@ The platform consists of:
 - `agent-harness`, distributed as `a13n-harness`, for code-first Pydantic AI execution;
 - `agent-environment-provider`, distributed as `a13n-environment-provider`, for shared Environment Provider specifications, fresh process-local adapters, portable state, and built-ins;
 - `agent-stream-protocol`, distributed as `a13n-stream-protocol`, for shared Harness-to-AG-UI observation;
-- `agent-ui`, distributed as `a13n-ui`, for reloadable local Agent/Environment composition, Sessions, a stable local Host with replaceable runtime Runners, and complete WebUI/CLI interaction;
+- `agent-ui`, distributed as `a13n-ui`, for single-process local Agent composition, continuation-backed Sessions, message-time workspace binding, persisted async child Threads, and complete WebUI/CLI interaction;
 - `agent-envd`, distributed as `agent-envd`, for Environment Interaction Protocol operations;
 - `a13n-envd-client`, the generated low-level Python EIP client;
 - `foundation-service`, distributed as `a13n-service`, for optional durable hosting;
@@ -39,9 +39,8 @@ flowchart TB
     end
 
     subgraph LocalUI[agent-ui]
-        Host[Stable AgentUiHost]
-        Sessions[Local sessions]
-        Runner[Replaceable runtime Runner]
+        App[Process-local AgentUiApp]
+        Sessions[Local Sessions and child Threads]
         WebUI[Bundled WebUI]
         LocalCLI[Interactive and one-shot CLI]
     end
@@ -85,10 +84,10 @@ flowchart TB
     Product --> Gateway --> Control
     FoundationCLI --> RustSDK --> Gateway
     Product -. embedded .-> Definition
-    Product -. local interactive .-> Host
-    Host --> Sessions
-    Host --> Runner --> Definition
-    Host --> StreamProtocol --> WebUI & LocalCLI
+    Product -. local interactive .-> App
+    App --> Sessions
+    App --> Definition
+    App --> StreamProtocol --> WebUI & LocalCLI
     Control --> Definitions & Connectivity
     Definitions & Connectivity --> Lifecycle --> Worker
     Definitions & Connectivity --> Reconstruct --> Definition
@@ -101,7 +100,7 @@ flowchart TB
     Run --> Models
     A13nMCP --> Tools
     Run -. deferred calls .-> Clients
-    Worker & Runner --> ProviderPackage
+    Worker & App --> ProviderPackage
     ProviderPackage --> Local & EIPClient
     ProviderPackage --> Bindings
     Context --> Bound
@@ -120,7 +119,7 @@ Dependency direction is one-way: Hosts embed Harness and can use the shared Envi
 | `agent-harness`              | Process-local Agent construction, trusted plugins, Run context, fresh Environment entry, multi-mount routing/policy, recovery, execution, results, and continuation state                                                                                                                                                                                                                      | Provider discovery, backing-target lifecycle, durable Agent schemas, presentation, delivery, or billing                                                                                                            |
 | `agent-environment-provider` | Provider specifications/catalog, `EnvironmentProvider`, `Environment`, `EnvironmentState`, single-Environment operations, and Direct Local/Local Envd/Docker/E2B built-ins                                                                                                                                                                                                                     | Harness multi-mount routing, Agent execution, durable storage, Host state authority, retention policy, or product APIs                                                                                             |
 | `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                                                                                                                                                                                    | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                                                                                                           |
-| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, continuation-backed Sessions, stable Host authority, replaceable runtime Runners, process-local root and child execution, WebUI, and CLI                                                                                                                                                                  | Durable work acceptance, distributed execution, multi-tenant authorization, or another Agent loop                                                                                                                  |
+| `agent-ui`                   | Compact local Agent configuration, immutable Agent/Environment-profile snapshots, continuation-backed Sessions, message-time workspace binding, Host Environment state, persisted async child Threads, one process-local `AgentUiApp`, WebUI, and CLI                                                                                                                                          | Durable root-input acceptance, distributed execution, worker takeover, multi-tenant authorization, or another Agent loop                                                                                           |
 | `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                                                                                                                                                                                   | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle                                                                                           |
 | `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                                                                                                                                                                                                                 | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                                                                                                                   |
 | Foundation SDKs              | Language-typed access to the public Foundation Service Native `/api` contract, including streams and notifications                                                                                                                                                                                                                                                                             | Service internals, standard-protocol replacement, product policy, or durable lifecycle authority                                                                                                                   |
@@ -147,7 +146,7 @@ The complete design is indexed in [agent-harness/README.md](agent-harness/README
 
 ## Local Agent Interaction
 
-Agent UI is a complete local single-user workstation above the Harness. Human- and agent-editable configuration dynamically publishes validated Model, Prompt, Plugin, local Skill source/package, Agent, and Environment catalogs. Each Session pins immutable Agent and Environment snapshots, exact Skill exposure, Environment assignments, and one latest selected continuation. Every Run starts from that continuation with fresh authority. At each complete or suspended Harness result, Agent UI attempts to store and select one `StoredSessionContinuation` containing the complete `HarnessState`, optional exact `DeferredToolRequests`, Harness release, and creation time. It does not persist accepted input, active Runs, partial output, AG-UI history, or async-child work. Process loss therefore resumes from the latest successfully selected continuation. SQLite owns small mutable indexes and last-write-wins references; immutable files own snapshots, managed Skills, continuation bundles, and provider state. One stable `AgentUiHost` exposes the same product semantics through a bundled WebUI and a normal interactive or one-shot CLI while replaceable child Runners own process-local Harness, plugin, Model, and Provider execution. Multiple local processes can open the same data root without turning Agent UI into a distributed system: there are no leases, fences, stale-writer protocols, or workflow recovery. Neither surface interprets private Harness events, controls a Runner directly, reads storage for authority, operates providers independently, or owns a second Session model.
+Agent UI is a complete local single-user workstation above the Harness. One strict YAML document and canonical sibling Markdown definitions resolve compact Models, trusted Plugin/MCP selections, Agents, and Environment profiles into immutable snapshots. Each Session pins one Agent and Environment-profile snapshot plus its latest selected root continuation; each submitted message supplies an ordered local-folder `WorkspaceBinding`. One process-local `AgentUiApp` reconstructs fresh Model, extension, and Environment authority and runs Harness directly. Root input, active root Runs, partial output, and Run-owned processes remain process-local. Async subagents are persisted child Threads: every delegate or linked resume creates one Harness Run segment, exact `HarnessState` is resume authority, and bounded compact AG-UI display is inspection authority. SQLite owns compact mutable heads, while immutable files own snapshots and root or child checkpoints. CLI and WebUI call the same App operations and never read storage for authority. Agent UI adds no Runner generation, private worker protocol, durable root queue, child lease, takeover, or distributed recovery.
 
 `a13n-harness`, `a13n-environment-provider`, and `a13n-stream-protocol` form the Harness release group. One `release/harness-v<version>` tag assigns the same version to all three distributions. Published Harness metadata pins the exact provider-package version, and published Stream Protocol metadata pins the exact Harness version. Agent UI releases independently through `release/agent-ui-v<version>` and its published artifact pins the reviewed Harness release dependencies. Source checkouts continue to resolve unversioned package dependencies from the shared uv workspace. Each tag version is a stable `X.Y.Z` identity or an RC `X.Y.Z-rc.N` identity as defined by [repository release automation](repository-model.md#release-automation). Source directories omit the distribution prefix (`packages/agent-*`), while Python distribution names use `a13n-` and import packages use `a13n_`.
 
@@ -175,7 +174,7 @@ The shared Environment model has only `EnvironmentProvider`, `Environment`, and 
 
 The Environment Provider package adapts EIP-backed `a13n-envd-client` sessions into fresh Provider-specific `Environment` adapters; Harness receives only those constructed adapters. Other trusted consumers can use the low-level client independently. The client communicates only over a supplied session source and never discovers, downloads, installs, or launches an executable. `agent-envd` carries JSON-RPC control and raw file transfer over trusted stdio, Host-dialed HTTP, or an envd-initiated reverse WebSocket. It owns daemon-generation operation/receipt evidence, process handles, disk-backed command output with explicit-offset reads, session-scoped transfers, and Linux/macOS/Windows command containment. Carrier direction never changes the low-level client's requester role or envd's responder role.
 
-Agent UI exposes `a13n.local-envd` as Local Sandbox. Its release pins one exact agent-envd version and target hashes, lazily downloads only the selected Host binary into an Agent UI-managed runtime cache, and never searches ambient `PATH`; an advanced absolute executable override must pass version, isolation, and EIP compatibility checks. Direct Local, Docker, and E2B do not trigger this Host download.
+Agent UI exposes Direct Local as Native and `a13n.local-envd` as Local EIP. Native is the omission default and explicit unrestricted Host choice. Local EIP pins one exact agent-envd version and target hashes, lazily acquires only the selected Host binary into an Agent UI-managed runtime cache, and never searches ambient `PATH`; an advanced absolute executable override must pass version, isolation, and EIP compatibility checks. Docker, E2B, and other Agent UI Environments require explicitly enabled Provider extensions.
 
 Provider-defined portable data enters only `HarnessState.environment_states`, a direct mapping from mount name to `EnvironmentState`. State is supplied before entry when a Host constructs each adapter; Harness never restores it afterward. Managed Host current state wins, including authoritative `None`; portable fallback is adopted only through an explicit unmanaged/import flow. Live clients, sockets, credentials, PIDs, process handles, readiness, Run-local mutation authority, Host associations, and retention policy do not become Harness state. Optional `DynamicEnvironmentCapability` composes File/Shell tools with dynamic model context but owns no backing-target lifecycle.
 
@@ -207,7 +206,7 @@ flowchart LR
 
 Foundation AgentPresetRevisions are Host-owned serializable documents, not Harness
 `AgentDefinition` wire values. Run acceptance pins the Preset-owned on-demand
-lock or the active runner-profile lock. The selected Worker execution loop verifies that exact lock and the Version's exact
+lock or the active runner-profile lock. The selected Worker execution loop verifies that exact lock and the Revision's exact
 managed-resource references, reconstructs native Pydantic/Harness objects,
 resolves current authorized Connections, Secrets, permissions, and
 operator-approved Environment Providers, and constructs fresh Environment
@@ -226,7 +225,22 @@ manifest last. Upload receipts and GitHub refs never become runtime sources.
 
 Workspace Assets are independent immutable binary publications. Every distinct upload or Agent `publish_asset` invocation creates a new `asset_id`; exact idempotent replay returns the existing publication. Accepted Agent input stores that exact ID, while Run output and Items can retain bounded Asset references in their existing values. Foundation defines no Asset revision, content overwrite, Run-to-Asset link table, or Asset-specific `state.json` namespace.
 
-Every Foundation Agent invocation selects or creates a Session and Thread and accepts one durable Run. One `RunAttempt` starts at most one logical Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Every Worker periodically scans durable Run state. For an expired lease, one short transaction marks the old Attempt `failed` and creates at most one new fenced `RunAttempt`; Foundation defines no separate Scheduler, recovery controller, or Attempt `lost` state. The new owner then compares durable Agent tool dispatch records with the latest complete continuation, projects every unmatched call as `unknown_outcome`, and validates the Run-owned budget, frozen dependencies, and current authority outside the claim transaction. It creates fresh providers, bindings, and a fresh Harness Run only after a fenced preparation decision. It does not inspect or reconcile the prior Sandbox. Every Run owns one deterministic state key; Foundation replaces that key at complete checkpoints and exposes no separate base, result, or checkpoint-history object.
+Every Foundation Agent invocation selects or creates a Session and Thread and
+accepts one durable Run. One `RunAttempt` starts at most one logical Harness
+Run; internal Harness `ModelAttempt` values are not durable worker generations.
+Every Worker periodically scans durable Run state. For an expired lease, one
+short transaction marks the old Attempt `failed` and creates at most one new
+fenced `RunAttempt`; Foundation defines no separate Scheduler, recovery
+controller, or Attempt `lost` state. The new owner validates the latest complete
+continuation, Run-owned budget, frozen dependencies, and current authority
+outside the claim transaction. It creates fresh providers, bindings, and a
+fresh Harness Run only after a fenced preparation decision. It does not inspect
+or reconcile the prior Sandbox, and it cannot reconstruct tool work that never
+entered the selected continuation. Every Run owns one deterministic state key;
+Foundation replaces that key at complete checkpoints and exposes no separate
+base, result, or checkpoint-history object. Tools that require cross-crash
+duplicate suppression or outcome reconciliation own an idempotency key or a
+tool-specific durable task protocol.
 
 Client-side tools use native Pydantic deferred values. Foundation's [Agent control input and continuation contract](foundation-service/34-agent-control-input-and-continuation.md) seals the waiting Run with its complete pending set, atomically normalizes authenticated upstream feedback into a full reject, no-response, or supplied-result batch, and accepts a new Run whose `parent_run_id` names that waiting Run. An explicitly declared waiting Continue instead stores default resolutions and new `AgentInput` in one successor whose first model request receives both. The same contract can explicitly continue from any retained readable completed historical Run while preserving its Thread. [Queued submissions](foundation-service/36-agent-control-queued-submissions.md) give ordinary input queue-if-busy semantics: eligible idle Threads accept a Run immediately, while busy or state-blocked Threads retain editable input outside the Run DAG. Explicit waiting Continue leaves that queue untouched. A completed Run can prepublish its queued successor's state and atomically seal, consume the queue entry, and accept that successor only after its eligible inbox delivery drains; terminal relational scanning recovers paths that do not combine. The new Foundation Run starts a later Harness Run with fresh bindings. [Active Agent control](foundation-service/35-agent-control-active-execution.md) persists steering and asynchronous results in one PostgreSQL acceptance-order FIFO, couples incorporation to complete Run state, rolls pending delivery through waiting, and uses an expiring Thread Redis Stream only as a wakeup optimization. Waiting-derived delivery remains invisible until a Foundation-owned awaited Capability hook runs after the successor's first model request and any resulting tool batch. A failed or cancelled Run suppresses its own pending child results and supersedes other pending delivery bound to it. [Async subagents](foundation-service/18-async-subagents.md) use independent Threads and Runs rather than Pydantic deferred spawn calls. Spawn never waits for child completion: when the spawning Run remains eligible, a terminal child result enters the current active parent-Thread Run as a live Agent message, remains sourced to a waiting head, or automatically accepts an eligible successor Run when the Thread is otherwise inactive; queued submissions retain their independent precedence. If the spawning Run failed or was cancelled first, the result remains queryable but can neither enter nor create another Run, including through Retry.
 
@@ -322,7 +336,7 @@ Run acceptance, ModelAttempt completion, Harness terminal delivery, Host Run com
 04. Keep durable Host schemas outside the Harness library.
 05. Bind Identity and current authority freshly at the Host boundary.
 06. Keep process-local continuation separate from durable lifecycle state.
-07. Preserve unknown Agent tool outcomes and never automatically replay them; a Host that separately persists provider lifecycles owns any provider reconciliation it elects to perform.
+07. Never infer rollback or exactly-once tool execution from a missing checkpoint; tools that require cross-crash reconciliation own idempotency or a durable provider lifecycle.
 08. Use optional typed packages and protocols instead of a universal extension framework.
 09. Use the same Harness API in embedded and hosted modes.
 10. Add enterprise behavior through the same boundaries rather than forks.

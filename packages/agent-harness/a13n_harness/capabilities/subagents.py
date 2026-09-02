@@ -162,13 +162,14 @@ class AsyncExecutionView(BaseModel):
     failure: JsonValue | None = None
     resumable: bool = False
     thread_id: str | None = Field(default=None, min_length=1, max_length=256)
+    child_run_id: str | None = Field(default=None, min_length=1, max_length=256)
+    segment_index: int | None = Field(default=None, ge=0)
 
 
 class SubagentExecutionView(AsyncExecutionView):
     """Bounded current execution view returned by info or wait."""
 
     input: str | None = Field(default=None, max_length=_MAX_PROMPT_LENGTH)
-    output: JsonValue | None = None
     activity: SubagentActivitySnapshot | None = None
 
 

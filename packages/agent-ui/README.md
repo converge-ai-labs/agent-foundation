@@ -1,19 +1,24 @@
 # Agent UI
 
-`a13n-ui` is the local single-user Host for Agent Foundation Harness. The default command and explicit `cli` command run the same ordinary append-only terminal frontend, with one-shot and Web commands alongside it:
+`a13n-ui` is a local single-user workstation for Agent Foundation Harness. CLI and Web adapters share one process-local `AgentUiApp`; Harness execution, async subagents, and live presentation run in that process. Agent UI does not start or supervise a replaceable Runner process and does not hot-reload imported Plugin code.
+
+The interactive CLI starts with either command:
 
 ```console
 a13n-ui
 a13n-ui cli
-a13n-ui run "Summarize this repository"
-a13n-ui sessions list
-a13n-ui runtime status
-a13n-ui web
 ```
 
-Every path opens one stable `AgentUiHost` with local Session authority and runtime Runner supervision. A Session stores immutable composition plus its latest complete Harness continuation. Input, active Runs, partial output, live AG-UI events, and async-child tasks remain process-local; after interruption, a later Run starts from the last continuation that saved successfully.
+Run one message in a fresh process for automation or Plugin debugging:
 
-Runner restart starts a fresh child process, activates it, then drains the previous Runner without restarting the Host or terminal frontend. The bundled WebUI is a complete multi-Session peer over the same Host operations. There is no full-screen TUI, durable input queue, Run ledger, or event replay journal.
+```console
+a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect the Plugin behavior"
+a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect it again" --session session-... --format json
+```
+
+A new one-shot Session uses `defaults.agent` and the selected Agent or global default Environment. `--agent`, `--environment`, repeated `--folder`, and `--title` override creation inputs. An existing `--session` continues its pinned snapshots. Workspace binding defaults to the current directory, and output is bounded human-readable text or JSON.
+
+The current executable surface provides the one-shot `run` command and a minimal interactive process-status shell. Session inspection and control exist at the application-service and root-Agent tool boundaries; the browser adapter and full interactive command family are not yet wired. Plugin authors debug in a fresh headless process or call the Harness library directly rather than rotating code inside a running App.
 
 The repository Make alias starts the interactive CLI:
 
@@ -21,32 +26,24 @@ The repository Make alias starts the interactive CLI:
 make a13n-ui
 ```
 
-After publication, the distribution and console entrypoint share the same name, so the terminal frontend can run without installation:
+After publication, the distribution and console entrypoint share the same name:
 
 ```console
 uvx a13n-ui
 uvx a13n-ui cli
-uvx a13n-ui web
 ```
-
-Asset preparation remains an independent build concern.
 
 The repository directory is `packages/agent-ui`, the Python distribution is `a13n-ui`, and the import package is `a13n_ui`. The private browser source lives in [`apps/harness-ui`](../../apps/harness-ui/README.md).
 
-## YAML Configuration
+## Configuration
 
-Agent UI selects one full process-settings YAML from explicit `--config PATH` or `~/.a13n-ui/settings.yaml`. It does not merge profiles, scan the current project, or apply implicit environment overlays. When the default file is absent, built-in defaults select:
+Agent UI selects one strict YAML document from explicit `--config PATH` or the platform user path, `~/.a13n-ui/a13n-ui.yaml` on Unix-like systems. It does not merge profiles, scan the current project, or walk parent directories. Canonical immediate sibling `subagents/*.md` files are the only live Markdown subagent source.
 
-```text
-~/.a13n-ui/data
-~/.a13n-ui/definitions/{models,prompts,plugins,skill-sources,skills,agents,environments}
-```
-
-Model, Prompt, Agent, Environment, and other product definitions remain separate strict YAML/JSON files under the configured definition roots. SQLite indexes accepted generations but is not configuration authority. Local writes use ordinary last-write-wins behavior; Agent UI does not add distributed leases, fences, or stale-writer coordination.
+SQLite indexes accepted snapshots, Sessions, child Threads, and Environment state, but it is not desired-configuration authority. Existing Sessions retain pinned snapshots after configuration reload.
 
 ## Local Store Development
 
-Agent UI owns its SQLite schema and Alembic history independently from Foundation Service. Generate a reviewed revision from the repository root against a disposable SQLite database:
+Agent UI owns its SQLite schema and Alembic history independently from Foundation Service. Before the first published Agent UI release, an unreleased history may be squashed to one generated base revision because no supported user database depends on its revision IDs. After publication, retain revision identity and generate additive revisions. Generate every reviewed revision from the repository root against a disposable SQLite database:
 
 ```console
 make agent-ui-db-migrate msg="describe the schema change"

@@ -10,17 +10,17 @@ Harness does not turn async children into a general Job, Session child, delivery
 
 ## Ownership
 
-| Concern                                                                          | Owner                                 |
-| -------------------------------------------------------------------------------- | ------------------------------------- |
-| Authored immediate-child topology                                                | Executable-owned `SubagentCollection` |
-| Child resolution, identity and context ceilings, usage intersection              | Harness                               |
-| Standard async tool names, requests, and bounded results                         | `SubagentCapability`                  |
-| Admission, scheduling, and recursive child execution                             | Host `SubagentOperator`               |
-| Child Thread identity, Environment association, and fresh Run authority          | Host                                  |
-| Checkpoints, status, activity, output, steering, cancellation, and linked resume | Host operator                         |
-| Wait, completion observation, wake, cleanup, loss, and retention                 | Host operator                         |
-| Parent portable async projection                                                 | None                                  |
-| Host durable delivery and terminal commit                                        | Host                                  |
+| Concern                                                                                 | Owner                                 |
+| --------------------------------------------------------------------------------------- | ------------------------------------- |
+| Authored immediate-child topology                                                       | Executable-owned `SubagentCollection` |
+| Child resolution, identity and context ceilings, usage intersection                     | Harness                               |
+| Standard async tool names, requests, and bounded results                                | `SubagentCapability`                  |
+| Admission, scheduling, and recursive child execution                                    | Host `SubagentOperator`               |
+| Child Thread identity, Environment association, and fresh Run authority                 | Host                                  |
+| Checkpoints, status, bounded closed activity, steering, cancellation, and linked resume | Host operator                         |
+| Wait, completion observation, wake, cleanup, loss, and retention                        | Host operator                         |
+| Parent portable async projection                                                        | None                                  |
+| Host durable delivery and terminal commit                                               | Host                                  |
 
 An async `execution_id` is a bounded selector, not a credential. Child State, Environment state, Host-private record IDs, adapters, callbacks, storage clients, and credentials never enter model-facing results.
 
@@ -39,7 +39,7 @@ flowchart TB
     Parent --> Operator
     Parent --> ParentState
     Parent -. closes without cancelling accepted child .-> Operator
-    Operator -. status and output are not mirrored .-> ParentState
+    Operator -. status and activity are not mirrored .-> ParentState
 ```
 
 The Host chooses the operator lifetime. The operator can outlive one parent Run, one worker attempt, or one process when its own authority supports that scope. Harness never infers operator lifetime from an execution reference and never stores mutable current-Run authority in the reusable `SubagentCapability`.
@@ -62,7 +62,7 @@ Info and wait query current Host authority. Steering and cancellation return Hos
 
 ## Observation and Wake
 
-The Host operator owns canonical child status, activity, output, and completion observation. It decides what to retain, how to compact it, and whether completion updates a product, enqueues input to an active parent Run, or starts a later Run for the parent Thread.
+The Host operator owns canonical child status, bounded closed activity, and completion observation. It records the ordered public items from each child `HarnessRunStream`; Harness imports no AG-UI or Host display type. It decides what to retain, how to compact it, and whether completion updates a product, enqueues input to an active parent Run, or starts a later Run for the parent Thread. Standard async views contain no raw child output field; final answer text appears as closed activity.
 
 Harness async tools only query and validate bounded operator projections. Parent `HarnessState` contains no async execution mirror, completion receipt, observer, callback, wake fact, or delivery acknowledgement. Completion after parent closure never mutates an already exported continuation.
 
@@ -138,7 +138,7 @@ The Host owns acceptance, exact checkpoint selection, retries, wake, final state
 
 1. Canonical async work belongs to its configured Host operator, never to the parent Run.
 2. Harness provides no default async manager, execution store, observer registry, wake ledger, or shutdown lifecycle.
-3. Async child status, output, activity, and State are queried from Host authority and are not mirrored into parent `HarnessState`.
+3. Async child status, bounded closed activity, and State are queried from Host authority and are not mirrored into parent `HarnessState`.
 4. The operator receives an authorized detached plan and constructs fresh independent child authority and Environment adapters.
 5. Parent closure never cancels accepted async work by implication and never closes its operator.
 6. A later Run restores parent Thread identity but receives fresh bindings and operator authority.

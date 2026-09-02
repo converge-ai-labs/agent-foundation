@@ -37,9 +37,9 @@ from .domain import (
     AgentPresetCommandRequest,
     AgentPresetConfig,
     AgentPresetLifecycleState,
-    AgentPresetPublishResult,
     AgentPresetRevision,
     AgentPresetRevisionCollection,
+    AgentPresetRevisionCreateResult,
     AgentPresetSource,
     CreateAgentPresetRequest,
     DuplicateAgentPresetRequest,
@@ -47,7 +47,7 @@ from .domain import (
     PluginRuntimeMode,
     ReplaceAgentPresetConfigRequest,
     ResolvedRevisionContent,
-    RollbackAgentPresetRequest,
+    SetDefaultAgentPresetRevisionRequest,
     canonical_digest,
     new_agent_preset_id,
     new_agent_preset_revision_id,
@@ -128,7 +128,7 @@ class AgentPresetService:
                     resource_version=1,
                     config=config_payload,
                     config_digest=canonical_digest(request.config),
-                    active_revision_id=None,
+                    default_revision_id=None,
                     config_base_revision_id=None,
                     config_base_digest=None,
                     duplicated_from_preset_id=None,
@@ -355,19 +355,19 @@ class AgentPresetService:
         except AuthorizationError as error:
             raise _authorization_error(error, exact=True) from error
 
-    async def publish(
+    async def create_revision(
         self,
         *,
         actor: AuthenticatedActor,
         preset_id: str,
         idempotency_key: str,
         request: AgentPresetCommandRequest,
-    ) -> AgentPresetPublishResult:
+    ) -> AgentPresetRevisionCreateResult:
         identity = _identity(idempotency_key, request)
-        replay = await self._publish_replay(
+        replay = await self._revision_create_replay(
             actor=actor,
             preset_id=preset_id,
-            operation="agent_preset.publish",
+            operation="agent_preset.revision.create",
             identity=identity,
         )
         if replay is not None:
@@ -379,30 +379,31 @@ class AgentPresetService:
         if current.resource_version != request.expected_resource_version:
             raise resource_version_conflict(current.resource_version)
         prepared = await self._prepare_resolution(actor=actor, preset=current)
-        return await self._commit_publish(
+        return await self._commit_revision_create(
             actor=actor,
             preset_id=preset_id,
             expected_version=request.expected_resource_version,
-            operation="agent_preset.publish",
+            operation="agent_preset.revision.create",
             identity=identity,
             prepared=prepared,
             source_revision_id=None,
         )
 
-    async def rollback(
+    async def set_default_revision(
         self,
         *,
         actor: AuthenticatedActor,
         preset_id: str,
         idempotency_key: str,
-        request: RollbackAgentPresetRequest,
-    ) -> AgentPresetPublishResult:
+        request: SetDefaultAgentPresetRevisionRequest,
+    ) -> AgentPreset:
         identity = _identity(idempotency_key, request)
-        replay = await self._publish_replay(
+        replay = await self._preset_command_replay(
             actor=actor,
             preset_id=preset_id,
-            operation="agent_preset.rollback",
+            operation="agent_preset.default_revision.set",
             identity=identity,
+            action=WorkspaceAction.agent_preset_default_revision_set,
         )
         if replay is not None:
             return replay
@@ -412,21 +413,15 @@ class AgentPresetService:
             raise _archived()
         if current.resource_version != request.expected_resource_version:
             raise resource_version_conflict(current.resource_version)
-        if current.has_unpublished_changes:
-            raise AgentPresetError(
-                "config_has_unpublished_changes",
-                "Rollback would discard unpublished AgentPreset configuration changes.",
-                status_code=409,
-            )
         await self.get_revision(
             actor=actor,
             preset_id=preset_id,
-            revision_id=request.source_revision_id,
+            revision_id=request.revision_id,
         )
         prepared_graph = await self._invocation_resolver.prepare_retained_revision_graph(
             actor=actor,
             agent_preset_id=preset_id,
-            agent_preset_revision_id=request.source_revision_id,
+            agent_preset_revision_id=request.revision_id,
             allow_disabled_root=True,
         )
         now = self._clock()
@@ -436,73 +431,61 @@ class AgentPresetService:
                     session,
                     actor=actor,
                     preset_id=preset_id,
-                    action=WorkspaceAction.agent_preset_publish,
+                    action=WorkspaceAction.agent_preset_default_revision_set,
                 )
                 record = await _locked_preset(session, workspace.organization_id, workspace.workspace_id, preset_id)
                 _require_custom_mutable(record)
                 _require_version(record, request.expected_resource_version)
-                if record.config_digest != record.config_base_digest:
-                    raise AgentPresetError(
-                        "config_has_unpublished_changes",
-                        "Rollback would discard unpublished AgentPreset configuration changes.",
-                        status_code=409,
-                    )
-                source = await _locked_revision(
+                await _locked_revision(
                     session,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace.workspace_id,
                     preset_id=preset_id,
-                    revision_id=request.source_revision_id,
+                    revision_id=request.revision_id,
                 )
                 replay_ref = await _load_replay(
                     session,
                     actor=actor,
-                    operation="agent_preset.rollback",
+                    operation="agent_preset.default_revision.set",
                     scope_id=preset_id,
                     identity=identity,
                     now=now,
                 )
                 if replay_ref is not None:
-                    return await _publish_result_from_revision(session, replay_ref)
+                    return await _load_preset_resource(
+                        session,
+                        organization_id=workspace.organization_id,
+                        workspace_id=workspace.workspace_id,
+                        preset_id=replay_ref,
+                    )
                 await self._invocation_resolver.freeze_retained_revision_graph(
                     session,
                     prepared=prepared_graph,
                 )
-                revision = _copy_revision(
-                    source,
-                    revision_id=new_agent_preset_revision_id(),
-                    revision_number=await _next_revision_number(session, preset_id),
-                    source_revision_id=source.id,
-                    actor=actor,
-                    now=now,
-                )
-                session.add(revision)
-                record.config = source.config
-                record.config_digest = source.config_digest
-                record.active_revision_id = revision.id
-                record.config_base_revision_id = revision.id
-                record.config_base_digest = source.config_digest
+                record.default_revision_id = request.revision_id
                 _touch(record, actor=actor, now=now)
                 _add_command_evidence_and_audit(
                     session,
                     actor=actor,
                     record=record,
-                    operation="agent_preset.rollback",
+                    operation="agent_preset.default_revision.set",
                     identity=identity,
-                    result_ref=revision.id,
+                    result_kind="agent_preset",
+                    result_ref=record.id,
                     now=now,
                 )
                 await session.flush()
-                return AgentPresetPublishResult(preset=record.to_resource(), revision=revision.to_resource())
+                return record.to_resource()
         except AuthorizationError as error:
             raise _authorization_error(error, exact=True) from error
         except IntegrityError as error:
             if _is_idempotency_race(error):
-                replay = await self._publish_replay(
+                replay = await self._preset_command_replay(
                     actor=actor,
                     preset_id=preset_id,
-                    operation="agent_preset.rollback",
+                    operation="agent_preset.default_revision.set",
                     identity=identity,
+                    action=WorkspaceAction.agent_preset_default_revision_set,
                 )
                 if replay is not None:
                     return replay
@@ -525,12 +508,16 @@ class AgentPresetService:
             raise resource_version_conflict(current.resource_version)
         if current.lifecycle_state is AgentPresetLifecycleState.archived:
             raise _archived()
-        if current.active_revision_id is None:
-            raise AgentPresetError("preset_not_published", "The AgentPreset has no active Revision.", status_code=409)
+        if current.default_revision_id is None:
+            raise AgentPresetError(
+                "preset_default_revision_missing",
+                "The AgentPreset has no default Revision.",
+                status_code=409,
+            )
         prepared_graph = await self._invocation_resolver.prepare_retained_revision_graph(
             actor=actor,
             agent_preset_id=preset_id,
-            agent_preset_revision_id=current.active_revision_id,
+            agent_preset_revision_id=current.default_revision_id,
             allow_disabled_root=True,
         )
         now = self._clock()
@@ -572,16 +559,16 @@ class AgentPresetService:
                 _require_version(source, request.expected_resource_version)
                 if source.lifecycle_state == AgentPresetLifecycleState.archived.value:
                     raise _archived()
-                if source.active_revision_id is None:
+                if source.default_revision_id is None:
                     raise AgentPresetError(
-                        "preset_not_published", "The AgentPreset has no active Revision.", status_code=409
+                        "preset_default_revision_missing", "The AgentPreset has no default Revision.", status_code=409
                     )
                 source_revision = await _locked_revision(
                     session,
                     organization_id=source_workspace.organization_id,
                     workspace_id=source_workspace.workspace_id,
                     preset_id=preset_id,
-                    revision_id=source.active_revision_id,
+                    revision_id=source.default_revision_id,
                 )
                 await self._invocation_resolver.freeze_retained_revision_graph(
                     session,
@@ -601,7 +588,7 @@ class AgentPresetService:
                     resource_version=1,
                     config=source_revision.config,
                     config_digest=source_revision.config_digest,
-                    active_revision_id=new_revision_id,
+                    default_revision_id=new_revision_id,
                     config_base_revision_id=new_revision_id,
                     config_base_digest=source_revision.config_digest,
                     duplicated_from_preset_id=source.id,
@@ -714,6 +701,7 @@ class AgentPresetService:
             preset_id=preset_id,
             operation=operation,
             identity=identity,
+            action=WorkspaceAction.agent_preset_lifecycle,
         )
         if replay is not None:
             return replay
@@ -722,17 +710,18 @@ class AgentPresetService:
             current = await self.get(actor=actor, preset_id=preset_id)
             if current.resource_version != request.expected_resource_version:
                 raise resource_version_conflict(current.resource_version)
-            if current.lifecycle_state is not AgentPresetLifecycleState.disabled or current.active_revision_id is None:
+            if current.lifecycle_state is not AgentPresetLifecycleState.disabled:
                 raise AgentPresetError(
                     "preset_state_conflict",
                     "The AgentPreset cannot be enabled from its current state.",
                     status_code=409,
                 )
-            prepared_enable = await self._invocation_resolver.prepare_retained_revision_graph(
-                actor=actor,
-                agent_preset_id=preset_id,
-                allow_disabled_root=True,
-            )
+            if current.default_revision_id is not None:
+                prepared_enable = await self._invocation_resolver.prepare_retained_revision_graph(
+                    actor=actor,
+                    agent_preset_id=preset_id,
+                    allow_disabled_root=True,
+                )
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -787,6 +776,7 @@ class AgentPresetService:
                     preset_id=preset_id,
                     operation=operation,
                     identity=identity,
+                    action=WorkspaceAction.agent_preset_lifecycle,
                 )
                 if replay is not None:
                     return replay
@@ -885,7 +875,7 @@ class AgentPresetService:
         except Exception as error:
             raise resolution_error(error) from error
 
-    async def _commit_publish(
+    async def _commit_revision_create(
         self,
         *,
         actor: AuthenticatedActor,
@@ -895,7 +885,7 @@ class AgentPresetService:
         identity: tuple[str, str],
         prepared: PreparedRevisionResolution,
         source_revision_id: str | None,
-    ) -> AgentPresetPublishResult:
+    ) -> AgentPresetRevisionCreateResult:
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -903,7 +893,7 @@ class AgentPresetService:
                     session,
                     actor=actor,
                     preset_id=preset_id,
-                    action=WorkspaceAction.agent_preset_publish,
+                    action=WorkspaceAction.agent_preset_revision_create,
                 )
                 replay_ref = await _load_replay(
                     session,
@@ -914,7 +904,7 @@ class AgentPresetService:
                     now=now,
                 )
                 if replay_ref is not None:
-                    return await _publish_result_from_revision(session, replay_ref)
+                    return await _revision_create_result_from_revision(session, replay_ref)
                 record = await _locked_preset(session, workspace.organization_id, workspace.workspace_id, preset_id)
                 _require_custom_mutable(record)
                 _require_version(record, expected_version)
@@ -936,7 +926,6 @@ class AgentPresetService:
                     now=now,
                 )
                 session.add(revision)
-                record.active_revision_id = revision.id
                 record.config_base_revision_id = revision.id
                 record.config_base_digest = record.config_digest
                 _touch(record, actor=actor, now=now)
@@ -946,16 +935,17 @@ class AgentPresetService:
                     record=record,
                     operation=operation,
                     identity=identity,
+                    result_kind="agent_preset_revision",
                     result_ref=revision.id,
                     now=now,
                 )
                 await session.flush()
-                return AgentPresetPublishResult(preset=record.to_resource(), revision=revision.to_resource())
+                return AgentPresetRevisionCreateResult(preset=record.to_resource(), revision=revision.to_resource())
         except AuthorizationError as error:
             raise _authorization_error(error, exact=True) from error
         except IntegrityError as error:
             if _is_idempotency_race(error):
-                replay = await self._publish_replay(
+                replay = await self._revision_create_replay(
                     actor=actor,
                     preset_id=preset_id,
                     operation=operation,
@@ -965,24 +955,20 @@ class AgentPresetService:
                     return replay
             raise
 
-    async def _publish_replay(
+    async def _revision_create_replay(
         self,
         *,
         actor: AuthenticatedActor,
         preset_id: str,
         operation: str,
         identity: tuple[str, str],
-    ) -> AgentPresetPublishResult | None:
+    ) -> AgentPresetRevisionCreateResult | None:
         async with transaction(self._sessions) as session:
             await _authorize_preset(
                 session,
                 actor=actor,
                 preset_id=preset_id,
-                action=(
-                    WorkspaceAction.agent_preset_duplicate
-                    if operation == "agent_preset.duplicate"
-                    else WorkspaceAction.agent_preset_publish
-                ),
+                action=WorkspaceAction.agent_preset_revision_create,
             )
             replay_ref = await _load_replay(
                 session,
@@ -992,7 +978,7 @@ class AgentPresetService:
                 identity=identity,
                 now=self._clock(),
             )
-            return None if replay_ref is None else await _publish_result_from_revision(session, replay_ref)
+            return None if replay_ref is None else await _revision_create_result_from_revision(session, replay_ref)
 
     async def _preset_command_replay(
         self,
@@ -1001,13 +987,14 @@ class AgentPresetService:
         preset_id: str,
         operation: str,
         identity: tuple[str, str],
+        action: WorkspaceAction,
     ) -> AgentPreset | None:
         async with transaction(self._sessions) as session:
             workspace = await _authorize_preset(
                 session,
                 actor=actor,
                 preset_id=preset_id,
-                action=WorkspaceAction.agent_preset_lifecycle,
+                action=action,
             )
             replay_ref = await _load_replay(
                 session,
@@ -1230,7 +1217,9 @@ def _copy_revision(
     )
 
 
-async def _publish_result_from_revision(session: AsyncSession, revision_id: str) -> AgentPresetPublishResult:
+async def _revision_create_result_from_revision(
+    session: AsyncSession, revision_id: str
+) -> AgentPresetRevisionCreateResult:
     revision = await session.scalar(
         select(AgentPresetRevisionRecord).where(AgentPresetRevisionRecord.id == revision_id)
     )
@@ -1242,7 +1231,7 @@ async def _publish_result_from_revision(session: AsyncSession, revision_id: str)
         workspace_id=revision.workspace_id,
         preset_id=revision.agent_preset_id,
     )
-    return AgentPresetPublishResult(preset=preset, revision=revision.to_resource())
+    return AgentPresetRevisionCreateResult(preset=preset, revision=revision.to_resource())
 
 
 def _require_custom_resource(preset: AgentPreset) -> None:
@@ -1277,7 +1266,7 @@ def _apply_lifecycle_transition(
 ) -> None:
     current = AgentPresetLifecycleState(record.lifecycle_state)
     if action == "enable":
-        if current is not AgentPresetLifecycleState.disabled or record.active_revision_id is None:
+        if current is not AgentPresetLifecycleState.disabled:
             raise AgentPresetError(
                 "preset_state_conflict", "The AgentPreset cannot be enabled from its current state.", status_code=409
             )
@@ -1305,11 +1294,11 @@ def _apply_lifecycle_transition(
 
 
 async def _require_not_in_use(session: AsyncSession, target: AgentPresetRecord) -> None:
-    active_revisions = tuple(
+    default_revisions = tuple(
         (
             await session.scalars(
                 select(AgentPresetRevisionRecord)
-                .join(AgentPresetRecord, AgentPresetRecord.active_revision_id == AgentPresetRevisionRecord.id)
+                .join(AgentPresetRecord, AgentPresetRecord.default_revision_id == AgentPresetRevisionRecord.id)
                 .where(
                     AgentPresetRecord.organization_id == target.organization_id,
                     AgentPresetRecord.workspace_id == target.workspace_id,
@@ -1319,7 +1308,7 @@ async def _require_not_in_use(session: AsyncSession, target: AgentPresetRecord) 
             )
         ).all()
     )
-    pending = list(active_revisions)
+    pending = list(default_revisions)
     visited: set[str] = set()
     while pending:
         revision = pending.pop()
@@ -1358,6 +1347,7 @@ def _add_command_evidence_and_audit(
     record: AgentPresetRecord,
     operation: str,
     identity: tuple[str, str],
+    result_kind: str,
     result_ref: str,
     now: datetime,
 ) -> None:
@@ -1369,7 +1359,7 @@ def _add_command_evidence_and_audit(
             operation=operation,
             scope_id=record.id,
             identity=identity,
-            result_kind="agent_preset_revision",
+            result_kind=result_kind,
             result_ref=result_ref,
             now=now,
         )

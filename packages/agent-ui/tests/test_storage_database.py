@@ -7,11 +7,9 @@ import pytest
 from a13n_ui.settings import StorageSettings
 from a13n_ui.storage.database import open_database, short_session, transaction
 from a13n_ui.storage.metadata import agent_ui_metadata
-from a13n_ui.storage.migration import MIGRATIONS_PATH, DatabaseMigrator, DatabaseSchemaError
-from a13n_ui.storage.models import ConfigurationDiagnosticRecord
-from alembic import command
+from a13n_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
+from a13n_ui.storage.models import AcceptedConfigurationRecord
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, select, text
 
@@ -29,16 +27,15 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
     engine = create_engine(f"sqlite:///{path}")
     try:
         assert set(inspect(engine).get_table_names()) == {
+            "accepted_configuration",
             "alembic_version",
+            "child_execution",
+            "child_thread",
             "composition_snapshot",
-            "configuration_diagnostic",
-            "configuration_generation",
+            "configuration_snapshot",
             "current_configuration",
-            "generation_resource",
+            "environment_binding",
             "local_session",
-            "resource_revision",
-            "session_environment_resource",
-            "skill_package_reference",
         }
         with engine.connect() as connection:
             context = MigrationContext.configure(
@@ -46,44 +43,6 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
                 opts={"compare_type": True, "compare_server_default": True, "render_as_batch": True},
             )
             assert compare_metadata(context, agent_ui_metadata()) == []
-    finally:
-        engine.dispose()
-
-
-def test_environment_access_migration_upgrades_existing_rows(tmp_path: Path) -> None:
-    path = tmp_path / "metadata.sqlite3"
-    engine = create_engine(f"sqlite:///{path}")
-    try:
-        with engine.connect() as connection:
-            config = Config()
-            config.set_main_option("script_location", str(MIGRATIONS_PATH))
-            config.attributes["connection"] = connection
-            command.upgrade(config, "55b7c7d359aa")
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO session_environment_resource (
-                        session_id, mount_name, model_alias, permission_ceiling_json,
-                        provider_key, provider_schema_version, provider_spec_digest,
-                        provider_parameters_json, resource_allocation, status, updated_at
-                    ) VALUES (
-                        'session-old', 'mount-main', 'workspace', '[\"files\"]',
-                        'a13n.direct-local', '1', :digest, '{}',
-                        'single_from_spec', 'available', :updated_at
-                    )
-                    """
-                ),
-                {"digest": "0" * 64, "updated_at": "2026-08-31 00:00:00"},
-            )
-            connection.commit()
-            command.upgrade(config, "head")
-
-            columns = {column["name"] for column in inspect(connection).get_columns("session_environment_resource")}
-            access = connection.execute(text("SELECT access FROM session_environment_resource")).scalar_one()
-
-        assert "access" in columns
-        assert "permission_ceiling_json" not in columns
-        assert access == "read_write"
     finally:
         engine.dispose()
 
@@ -116,26 +75,27 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
         now = datetime.now(UTC)
         async with transaction(database.sessions) as session:
             session.add(
-                ConfigurationDiagnosticRecord(
-                    process_generation="process-test",
-                    code="committed",
-                    detail="committed transaction",
-                    recorded_at=now,
+                AcceptedConfigurationRecord(
+                    source_digest="1" * 64,
+                    yaml_digest="2" * 64,
+                    document_json="{}",
+                    accepted_at=now,
                 )
             )
 
         with pytest.raises(RuntimeError, match="rollback"):
             async with transaction(database.sessions) as session:
                 session.add(
-                    ConfigurationDiagnosticRecord(
-                        process_generation="process-test",
-                        code="rollback",
-                        detail="rolled back transaction",
-                        recorded_at=now,
+                    AcceptedConfigurationRecord(
+                        source_digest="3" * 64,
+                        yaml_digest="4" * 64,
+                        document_json="{}",
+                        accepted_at=now,
                     )
                 )
                 raise RuntimeError("rollback")
 
         async with short_session(database.sessions) as session:
-            codes = set((await session.execute(select(ConfigurationDiagnosticRecord.code))).scalars())
-            assert codes == {"committed"}
+            records = tuple((await session.execute(select(AcceptedConfigurationRecord))).scalars())
+            assert [record.source_digest for record in records] == ["1" * 64]
+            assert records[0].accepted_at.tzinfo is UTC

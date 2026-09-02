@@ -134,7 +134,7 @@ Foundation canonicalizes the complete accepted value as UTF-8 RFC 8785 JSON. It 
 
 ## Input Adapter and Harness Mapping
 
-Every `AgentPresetConfig` stores one trusted input adapter key and bounded configuration. Publish validates them against the selected Plugin Runtime profile and freezes them in the immutable AgentPresetRevision. The Revision does not carry an input-type declaration or per-input limits.
+Every `AgentPresetConfig` stores one trusted input adapter key and bounded configuration. Revision creation validates them against the selected Plugin Runtime profile and freezes them in the immutable AgentPresetRevision. The Revision does not carry an input-type declaration or per-input limits.
 
 [Agent Management](12-agent-management.md#protocol-configuration) can define an optional `ProtocolConfig.input_data_schema` for non-null `structured_content`. Absent structured content remains valid, and the schema does not restrict text or binary blocks, media types, sources, or deliveries. Acceptance validates the wire, Foundation hard limits, source authority, content policy, delivery feasibility, and any applicable structured-content schema.
 

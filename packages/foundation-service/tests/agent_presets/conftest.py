@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 from a13n_environment_provider import build_environment_provider_catalog
-from a13n_service.agent_presets.domain import AgentPresetConfig, PluginRuntimeMode
+from a13n_service.agent_presets.domain import (
+    AgentPreset,
+    AgentPresetCommandRequest,
+    AgentPresetConfig,
+    AgentPresetRevisionCreateResult,
+    PluginRuntimeMode,
+    SetDefaultAgentPresetRevisionRequest,
+)
 from a13n_service.agent_presets.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.resolution import AgentPresetResolver
@@ -82,6 +89,33 @@ def preset_config(
             },
         }
     )
+
+
+async def create_default_revision(
+    service: AgentPresetService,
+    *,
+    preset_id: str,
+    expected_resource_version: int,
+    key: str,
+) -> tuple[AgentPresetRevisionCreateResult, AgentPreset]:
+    """Create one immutable Revision and explicitly select it as the default."""
+
+    result = await service.create_revision(
+        actor=actor(),
+        preset_id=preset_id,
+        idempotency_key=f"create-revision-{key}",
+        request=AgentPresetCommandRequest(expected_resource_version=expected_resource_version),
+    )
+    selected = await service.set_default_revision(
+        actor=actor(),
+        preset_id=preset_id,
+        idempotency_key=f"set-default-{key}",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=result.preset.resource_version,
+            revision_id=result.revision.id,
+        ),
+    )
+    return result, selected
 
 
 @pytest.fixture

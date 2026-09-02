@@ -13,6 +13,7 @@ from .domain import (
     PluginCollection,
     PluginLifecycleState,
     PluginSource,
+    PluginTaskReceipt,
     PluginVersion,
     PluginVersionCollection,
 )
@@ -112,6 +113,47 @@ async def list_plugin_versions(
 @router.get("/plugin-versions/{plugin_version_id}", response_model=PluginVersion)
 async def get_plugin_version(request: Request, actor: Actor, plugin_version_id: str) -> PluginVersion:
     return await _plugins(request).get_version(actor=actor, version_id=plugin_version_id)
+
+
+@router.post(
+    "/plugin-versions/{plugin_version_id}/activate",
+    response_model=PluginTaskReceipt,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def activate_plugin_version(
+    request: Request,
+    actor: Actor,
+    plugin_version_id: str,
+    idempotency_key: IdempotencyKey,
+) -> PluginTaskReceipt:
+    return await _plugins(request).activate(
+        actor=actor,
+        plugin_version_id=plugin_version_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(
+    "/plugins/{plugin_id}/deactivate",
+    response_model=PluginTaskReceipt,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def deactivate_plugin(
+    request: Request,
+    actor: Actor,
+    plugin_id: str,
+    idempotency_key: IdempotencyKey,
+) -> PluginTaskReceipt:
+    return await _plugins(request).deactivate(
+        actor=actor,
+        plugin_id=plugin_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.get("/operations/{operation_id}", response_model=PluginTaskReceipt)
+async def get_plugin_operation(request: Request, actor: Actor, operation_id: str) -> PluginTaskReceipt:
+    return await _plugins(request).get_operation(actor=actor, operation_id=operation_id)
 
 
 @router.post("/plugins/{plugin_id}/{action}", response_model=Plugin)

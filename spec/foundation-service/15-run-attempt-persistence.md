@@ -10,21 +10,21 @@ Reconciliation or maintenance work that does not invoke an Agent belongs to its 
 
 A Run is the stable logical-work identity and durable recovery boundary for one accepted Agent advancement. A `RunAttempt` is one replaceable generation of execution authority within that boundary. Restarting, migrating, or recovering a worker does not create new logical work. When replacement execution is required, a later Worker claim creates another `RunAttempt` under the same Run.
 
-| Resource     | Responsibilities                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Thread`     | Owns Session membership, origin, version, the current Run (the most recently accepted Run), and selected continuation head. Current-Run status determines whether work is active. The Thread serializes whether another Run can be accepted but does not schedule or execute that Run.                                                                                                                                                    |
-| `Run`        | Owns the accepted Agent-work identity, input, lineage, exact AgentPresetRevision, immutable `EffectiveAgentConfig`, Runtime lock selection, safe model observation, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                                                      |
-| `RunAttempt` | Owns one worker generation's lease, fence, Worker build and Harness Run correlation, safe model observation, bounded dispatch, usage, failure or planned-handoff audit, and generation outcome. It does not own accepted input, lineage, model configuration, state, durable outcome, credentials, live bindings, or presentation data, and it cannot independently authorize a successor. Terminal attempts are immutable audit records. |
+| Resource     | Responsibilities                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Thread`     | Owns Session membership, origin, version, the current Run (the most recently accepted Run), and selected continuation head. Current-Run status determines whether work is active. The Thread serializes whether another Run can be accepted but does not schedule or execute that Run.                                                                                                                                                           |
+| `Run`        | Owns the accepted Agent-work identity, input, lineage, exact AgentPresetRevision, immutable `EffectiveAgentConfig`, Runtime lock selection, safe model observation, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                                                             |
+| `RunAttempt` | Owns one worker generation's lease, fence, Worker build and Harness Run correlation, safe model observation, usage, failure or planned-handoff audit, and generation outcome. It does not own accepted input, lineage, model configuration, state, durable outcome, credentials, live bindings, tool invocation history, or presentation data, and it cannot independently authorize a successor. Terminal attempts are immutable audit records. |
 
 ## Boundaries
 
-| Concern                                    | Owner                                                                      | Contract                                                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Model-loop retries inside one Harness Run  | Agent Harness                                                              | Remain process-local `ModelAttempt` values and never allocate another `RunAttempt`                |
-| Lifecycle history                          | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) | Records ordered facts without becoming Run or attempt authority                                   |
-| Thread inbox acceptance and consumption    | [Agent Control: Active Execution](35-agent-control-active-execution.md)    | Supplies durable steer and asynchronous-result entries plus state-coupled same-Run consumption    |
-| Agent tool dispatch and result correlation | Foundation Host dispatch integration plus selected Harness state           | Durably identifies calls with no recorded result without deciding their external business outcome |
-| Recovery notice shown to the Agent         | Fresh Harness `ModelContextRunBinding` supplied by Foundation              | Projects bounded `unknown_outcome` facts without editing imported Harness messages                |
+| Concern                                           | Owner                                                                        | Contract                                                                                                         |
+| ------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Model-loop retries inside one Harness Run         | Agent Harness                                                                | Remain process-local `ModelAttempt` values and never allocate another `RunAttempt`                               |
+| Harness construction, callbacks, and live control | [Foundation–Harness Runtime Integration](16a-harness-runtime-integration.md) | Uses public Harness APIs, fresh typed collaborators, one mandatory Capability, and a process-local control gate  |
+| Lifecycle history                                 | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)   | Records ordered facts without becoming Run or attempt authority                                                  |
+| Thread inbox acceptance and consumption           | [Agent Control: Active Execution](35-agent-control-active-execution.md)      | Supplies durable steer and asynchronous-result entries plus state-coupled same-Run consumption                   |
+| Agent tool crash behavior                         | Latest complete Run state plus the owning tool or Capability domain          | Defines no generic invocation ledger; effectful tools own cross-crash idempotency or durable task reconciliation |
 
 ## Run and RunAttempt Allocation Boundary
 
@@ -61,37 +61,6 @@ type RunAttemptYieldReason = Literal[
     "service_drain",
     "runner_rotation",
 ]
-type ToolInvocationDisposition = Literal[
-    "dispatch_recorded",
-    "result_recorded",
-]
-
-
-class RunAttemptToolInvocation:
-    schema_version: Literal["1"]
-    invocation_id: str
-    tool_call_id: str
-    tool_id: str
-    tool_name: str
-    provider_type: str | None
-    effect_class: str
-    model_arguments: JsonObject
-    arguments_digest_sha256: str
-    idempotency_key_digest: str | None
-    provider_operation_ref: str | None
-    disposition: ToolInvocationDisposition
-    observed_at: datetime
-
-
-class RunAttemptUnknownOutcome:
-    schema_version: Literal["1"]
-    source_run_attempt_id: str
-    invocation_id: str
-    tool_call_id: str
-    tool_id: str
-    tool_name: str
-    model_arguments: JsonObject
-    arguments_digest_sha256: str
 
 
 class RunAttempt:
@@ -116,8 +85,6 @@ class RunAttempt:
     lease_expires_at: datetime
     heartbeat_at: datetime
 
-    tool_invocations: tuple[RunAttemptToolInvocation, ...]
-    recovery_unknown_outcomes: tuple[RunAttemptUnknownOutcome, ...]
     usage: RecoveryUsage
     yield_reason: RunAttemptYieldReason | None
     failure: SafeFailure | None
@@ -131,13 +98,9 @@ class RunAttempt:
 
 `attempt_number` and `fence` increase monotonically within one Run and are never reused. `replaces_run_attempt_id` names the immediately superseded attempt when the new attempt is a recovery generation. It is null on the first attempt.
 
-`tool_invocations` is the bounded Host dispatch record for Agent tools whose effects can outlive the worker. Before external dispatch, the selected Foundation integration records `dispatch_recorded` under the current attempt fence. `model_arguments` is the exact bounded JSON argument value produced by the model before credential injection, and its digest binds later context to that request. It contains no credential or provider response body.
+`RunAttempt` stores no generic Agent tool invocation collection, dispatch disposition, result-correlation collection, or recovery projection. Foundation performs no synchronous PostgreSQL write solely because Harness is about to dispatch a tool call. Tool-call observations can still carry process-local correlation into streams, traces, logs, or a tool-specific protocol, but none of those values becomes generic RunAttempt recovery authority.
 
-`result_recorded` means the matching tool result is present in a complete state conditionally committed by the current attempt. A replacement Worker also compares all prior dispatch records with the latest complete Run state because a crash can occur between state publication and relational result correlation. Every unmatched record becomes a bounded `RunAttemptUnknownOutcome` on the new attempt before Harness entry. Recording before dispatch deliberately permits a false-positive unknown outcome when the worker dies before the provider call; it never permits an effectful dispatch without durable correlation. An externally effectful tool that cannot provide this Foundation-managed boundary is rejected before dispatch in the durable hosted profile.
-
-`recovery_unknown_outcomes` starts empty. The fenced preparation decision leaves it empty on the first attempt and on replacements with no unmatched calls, or sets it to the bounded result derived from prior attempts and the exact state version selected by the new lease owner. It contains no credentials, provider response body, or claim that the prior operation succeeded or failed.
-
-A provider that needs an authoritative task ledger, idempotency record, or receipt owns that data in its own domain. Foundation stores only the bounded request and correlation needed to inform a later Agent; it defines no generic provider receipt table and does not query provider business state before admitting another attempt.
+A tool call and its result become recoverable only through a complete Run state checkpoint. If a Worker disappears before that checkpoint, the successor cannot distinguish work that never started from work that partially or fully completed without returning. It resumes from the previous complete state and can re-drive model or tool work. A provider or Capability that needs stronger behavior owns an idempotency key, provider operation identity, receipt, or durable task ledger in its own domain; Foundation does not query provider business state before admitting another attempt.
 
 `worker_generation` uniquely identifies one Worker process lifetime. `worker_build_id` identifies the immutable Foundation Service build artifact running that process; replicas of the same artifact therefore share one build ID. Neither value grants authority without the selected lease and fence. `worker_build_id` is distinct from the Run-pinned `PluginRuntimeLock.worker_release`: the former records which service build executed this generation, while the latter remains the historical Worker dependency baseline selected for the Run.
 
@@ -162,7 +125,7 @@ stateDiagram-v2
 
 `succeeded`, `yielded`, `failed`, and `cancelled` are terminal. `yielded` means the Worker voluntarily stopped at a complete recoverable boundary, committed its known usage and released execution authority while the Run remained `running`. It is expected placement change, not failure, cancellation, or a Harness result. `failed` means only that this worker generation can no longer produce an authoritative result. It does not by itself mean that the Run failed: an in-budget retryable failure leaves the Run `running` and allows a later attempt. An owning worker can commit that fact directly; otherwise a later Worker's takeover transaction commits it after the lease expires. Foundation defines no separate `lost` attempt state.
 
-Loss of outcome certainty at the attempt boundary means that the whole attempt can no longer continue and produce an authoritative Run result. One Agent tool call classified as `unknown_outcome` does not cause attempt failure or trigger replacement by itself.
+Loss of outcome certainty at the attempt boundary means that the whole attempt can no longer continue and produce an authoritative Run result. Foundation does not create another Attempt merely because one process-local tool call fails or has an uncertain outcome; replacement still follows the lease, failure, and handoff rules below.
 
 `leased` is the pre-Run preparation state. Worker claim acknowledgement is a transport observation, not another durable phase. While an attempt is `leased`, `harness_run_id` and `started_at` are null. The worker may read and validate state and immutable artifacts, resolve current authority and credentials, and construct fresh run-local dependencies outside database transactions. It cannot dispatch an Agent model or tool call before Harness entry. Entering the Harness Run atomically records `harness_run_id` and `started_at` and changes the attempt to `running`.
 
@@ -179,14 +142,14 @@ Each worker generation is one `run_attempts` row:
 | Worker and run    | `worker_id`, `worker_generation`, `worker_build_id`, `runtime_lock_digest`, `harness_run_id` | Execution-process and immutable service-build correlation, exact Run-pinned Runtime lock, and at most one Harness Run ID after entry |
 | Model observation | `model_execution_observation_json`                                                           | Immutable safe model ID, provider type, and model name copied from the Run at claim                                                  |
 | Lease             | `lease_token_digest`, `lease_expires_at`, `heartbeat_at`                                     | Opaque lease proof, expiry, and last durable renewal                                                                                 |
-| Tool dispatch     | `tool_invocations_json`                                                                      | Bounded dispatch and result-correlation records; not a provider receipt ledger                                                       |
-| Recovery context  | `recovery_unknown_outcomes_json`                                                             | Bounded unmatched prior Agent tool calls selected during fenced preparation                                                          |
 | Usage and outcome | `usage_json`, `yield_reason`, `failure_json`                                                 | Attempt-local accounting plus mutually constrained planned-handoff or safe-failure provenance                                        |
 | Time              | `created_at`, `claimed_at`, `started_at`, `finished_at`, `updated_at`                        | UTC lifecycle observations                                                                                                           |
 
 Once terminal, every attempt column is immutable.
 
 `usage.model_requests` is monotonic durable execution evidence, not only a terminal accounting total. After all required input preparation and immediately before each provider model request, the Worker increments it in a short fenced Attempt update; the provider request does not start unless that update commits. The update does not claim that the provider received or completed the request. When an Attempt is terminalized or replaced, its known usage is charged into `Run.usage_charged` in the same transaction. Consequently, `Run.usage_charged.model_requests > 0` proves that a prior Attempt crossed a model boundary after input preparation without adding a separate input-file materialization field.
+
+`usage.tool_invocations` is aggregate known usage reported by Harness and committed with a complete checkpoint or Attempt outcome. It is not a dispatch authorization record and does not require a PostgreSQL update before each tool call. A crash can therefore omit uncheckpointed tool invocation usage; recovery budgets constrain durable known usage rather than claiming exact accounting of external effects.
 
 ## Current Attempt Authority
 
@@ -222,7 +185,7 @@ A completed outcome can instead use the queued-submission contract's [state-firs
 
 Failed or cancelled Run commits terminalize a current attempt when one exists, atomically suppress every still-pending async result originating from that Run, supersede other still-pending inbox delivery bound to it, retain that terminal Run as current, preserve the prior head, and increment the Thread version. State and payload publication required by the Run, including a combined successor's complete initial state, occurs before the transaction as defined by the Run contract; direct interrupt requires no state publication.
 
-A known attempt failure commits atomically with its Run decision and charges known usage. A retryable in-budget failure terminalizes the current attempt as `failed`, clears `current_run_attempt_id`, leaves the Run `running`, and sets its bounded `available_at`; a later Worker scan may create the next attempt. A non-retryable or exhausted failure additionally seals the Run as `failed` and applies the active-control contract's terminal inbox disposition. Neither path returns the Run to `accepted`. A failure before Harness entry has no attempt-owned tool dispatch and leaves `harness_run_id` and `started_at` null.
+A known attempt failure commits atomically with its Run decision and charges known usage. A retryable in-budget failure terminalizes the current attempt as `failed`, clears `current_run_attempt_id`, leaves the Run `running`, and sets its bounded `available_at`; a later Worker scan may create the next attempt. A non-retryable or exhausted failure additionally seals the Run as `failed` and applies the active-control contract's terminal inbox disposition. Neither path returns the Run to `accepted`. A failure before Harness entry leaves `harness_run_id` and `started_at` null.
 
 ## Graceful Handoff Transaction
 
@@ -251,7 +214,6 @@ Only the Run row authorizes another attempt under its accepted recovery, handoff
 After any new attempt owns the lease, its Worker reads the exact state, attempt history, immutable artifacts, and the Run's immutable `authority_principal` outside a database transaction and satisfies the [active-control recovery contract](35-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment). It admits Harness entry only when all of these conditions hold:
 
 - the latest complete state object passes key, tenant, Run, Thread, digest, size, envelope, checkpoint, AgentPresetRevision, Runtime lock, and required Harness, Capability, Host, and Environment-state codec validation;
-- every prior Agent tool dispatch without a matching result in that exact state can be represented within the bounded `recovery_unknown_outcomes` schema;
 - the applicable fixed recovery or handoff count, elapsed-time, and known-usage ceilings still permit this already-created attempt after all durable usage charges;
 - the exact AgentPresetRevision, `EffectiveAgentConfig`, Runtime lock, managed Harness Plugin and Skill artifacts, accepted MCP tool snapshot and Connectivity selections, Environment Provider locks, and other frozen dependency locks are present, digest-valid, and compatible; and
 - the Run's persisted authority Principal remains active in the same tenant, and its current Workspace and principal policy, RoleBindings, AgentPreset invocation authority, Connection and MCPConnection ownership or eligibility, Ingress action authority, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
@@ -260,7 +222,7 @@ Attempt preparation is an internal operation over already accepted work. It does
 
 The Worker then uses one short fenced compare-and-swap transaction to revalidate that the same Run still selects its unexpired `leased` attempt and to commit exactly one preparation decision:
 
-- **continue**: store the bounded `recovery_unknown_outcomes`, preserve the Run and attempt as active, and permit fresh reconstruction and Harness entry;
+- **continue**: preserve the Run and attempt as active and permit fresh reconstruction and Harness entry;
 - **retry later**: terminalize the attempt as `failed`, charge known usage, clear the current selection, keep the Run `running`, and set a bounded `available_at`, but only for an explicitly retryable condition while budget remains; or
 - **fail the Run**: terminalize the attempt as `failed`, charge known usage, clear the current selection, seal the Run as `failed`, retain it as the Thread's current Run, preserve the prior head, and increment the Thread version.
 
@@ -270,11 +232,9 @@ A permanent state, integrity, schema, codec, artifact, lock, compatibility, or a
 
 Recovery does not probe model reachability, inspect Provider business state, validate a backing target, or re-enter a prior Environment. Model reachability and fresh Environment entry from current Host state are outcomes of the newly owned Attempt, not recovery admission checks.
 
-One representable `unknown_outcome` alone never blocks recovery and does not assert that the operation failed, succeeded, rolled back, or is safe to repeat. A later Attempt receives a new ID, fence, lease, fresh `RunBindings`, fresh Environment adapters selected from current Host state, and a Harness Run, then follows the [Run resume contract](14-run-persistence.md#resume-semantics) against the same Run state key.
+A later Attempt receives a new ID, fence, lease, fresh `RunBindings`, fresh Environment adapters selected from current Host state, and a Harness Run, then follows the [Run resume contract](14-run-persistence.md#resume-semantics) against the same Run state key. Foundation imports only the selected complete state and does not add synthetic results or generic recovery context for tool work absent from that state.
 
-For each eligible model request of the recovered Harness Run, Foundation supplies a fresh bounded `ModelContextRunBinding` projection containing every relevant `unknown_outcome`. Each entry identifies the prior invocation, tool, model arguments and digest, and states that the operation may have fully completed, partially completed, or not executed. It does not edit imported Harness messages or synthesize a provider result.
-
-The Agent decides its next action through ordinary model output. Any subsequent tool call receives a new tool-call and invocation identity under the ordinary Harness dispatch contract. Foundation neither replays the prior request nor guarantees idempotency-key reuse across `RunAttempt` values.
+The Agent decides its next action through ordinary model output. A re-driven or later tool call receives its ordinary tool-call and invocation identity. Foundation does not guarantee cross-Attempt idempotency-key reuse; a tool that requires it must define and persist that key through its own contract.
 
 ## Relational Constraints
 
@@ -294,7 +254,7 @@ The `run_attempts` table follows the [Relational Schema Lifecycle](04-relational
 
 ## Compatibility and Trade-offs
 
-Run row version, relational migration revision, recovery-policy version, Worker build identity format, and tool-invocation-record schema version are independent. Harness and provider compatibility remain governed by their owning contracts. Unknown required policy or invocation-record versions fail closed before dispatch or recovery. After a service-drain yield, a different `worker_build_id` supplies only scheduling preference; it never proves compatibility, grants authority, or replaces the Run-pinned Runtime lock. Runner rotation has no build-preference delay. Relational migrations do not reinterpret terminal attempt records through current defaults.
+Run row version, relational migration revision, recovery-policy version, and Worker build identity format are independent. Harness and provider compatibility remain governed by their owning contracts. Unknown required policy versions fail closed before recovery. After a service-drain yield, a different `worker_build_id` supplies only scheduling preference; it never proves compatibility, grants authority, or replaces the Run-pinned Runtime lock. Runner rotation has no build-preference delay. Relational migrations do not reinterpret terminal attempt records through current defaults.
 
 Keeping attempts as immutable audit rows increases relational retention but preserves worker, lease, usage, failure, and recovery provenance. Folding work identity and scheduling into the Run removes a second one-to-one lifecycle and its coordination transactions.
 
@@ -306,7 +266,7 @@ Keeping attempts as immutable audit rows increases relational retention but pres
 04. A Worker marks same-Run ordinary steer or asynchronous-result entries consumed only under the current Attempt fence and with exact complete-state evidence; waiting/completed sealing can reconcile the same receipts, while failed/cancelled sealing suppresses own-origin async results and supersedes other still-pending entries bound to that Run.
 05. Only a Worker's short Run claim or takeover transaction can authorize a later attempt; after the first claim the same Run remains `running`, and its budget must permit the new generation.
 06. A later attempt receives fresh worker and Harness identities while resuming the same Run state under the Run persistence contract.
-07. A durably dispatched Agent tool call without a result in the exact selected state is preserved as `unknown_outcome` on the replacement attempt and projected to the next Agent. Foundation never replays the prior request or guarantees cross-attempt idempotency-key reuse.
+07. Foundation stores no generic per-invocation dispatch ledger. A replacement Attempt resumes from the exact selected complete state and cannot reconstruct tool work absent from it; tools requiring cross-crash duplicate suppression or reconciliation own that durable protocol.
 08. Attempt `failed` is generation-terminal and does not imply Run `failed`; Run `failed` is sealed and never receives another attempt.
 09. Terminal attempt rows are immutable audit records.
 10. A completion-time combined queue handoff can terminalize the source RunAttempt and accept its already-state-backed successor in one relational transaction, but the successor receives no RunAttempt until a later claim.

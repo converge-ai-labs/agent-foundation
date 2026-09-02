@@ -11,9 +11,13 @@ AGENT_PRESET_TABLES = {"agent_presets", "agent_preset_revisions"}
 def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
     engine = create_engine(sync_database_url(config))
     try:
-        tables = set(inspect(engine).get_table_names())
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
         if present:
             assert AGENT_PRESET_TABLES <= tables
+            columns = {column["name"] for column in inspector.get_columns("agent_presets")}
+            assert "default_revision_id" in columns
+            assert "active_revision_id" not in columns
         else:
             assert AGENT_PRESET_TABLES.isdisjoint(tables)
     finally:

@@ -37,17 +37,28 @@ async def test_complete_agent_preset_http_lifecycle(api_client: httpx2.AsyncClie
     )
     assert created.status_code == 201
     preset = created.json()
-    assert preset["has_unpublished_changes"]
+    assert preset["config_changed_since_revision"]
 
-    published = await api_client.post(
-        f"/api/v1/agent-presets/{preset['id']}/publish",
-        headers={"Idempotency-Key": "http-publish"},
+    revision_result = await api_client.post(
+        f"/api/v1/agent-presets/{preset['id']}/revisions",
+        headers={"Idempotency-Key": "http-create_revision"},
         json={"expected_resource_version": 1},
     )
-    assert published.status_code == 200
-    result = published.json()
+    assert revision_result.status_code == 201
+    result = revision_result.json()
     assert result["revision"]["revision_number"] == 1
-    assert result["preset"]["active_revision_id"] == result["revision"]["id"]
+    assert result["preset"]["default_revision_id"] is None
+
+    selected = await api_client.post(
+        f"/api/v1/agent-presets/{preset['id']}/set-default-revision",
+        headers={"Idempotency-Key": "http-set-default"},
+        json={
+            "expected_resource_version": result["preset"]["resource_version"],
+            "revision_id": result["revision"]["id"],
+        },
+    )
+    assert selected.status_code == 200
+    assert selected.json()["default_revision_id"] == result["revision"]["id"]
 
     listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/agent-presets")
     revisions = await api_client.get(f"/api/v1/agent-presets/{preset['id']}/revisions")
@@ -60,7 +71,7 @@ async def test_complete_agent_preset_http_lifecycle(api_client: httpx2.AsyncClie
     duplicated = await api_client.post(
         f"/api/v1/agent-presets/{preset['id']}/duplicate",
         headers={"Idempotency-Key": "http-duplicate"},
-        json={"expected_resource_version": 2, "name": "HTTP Support Copy"},
+        json={"expected_resource_version": selected.json()["resource_version"], "name": "HTTP Support Copy"},
     )
     assert duplicated.status_code == 201
     assert duplicated.json()["duplicated_from_revision_id"] == result["revision"]["id"]

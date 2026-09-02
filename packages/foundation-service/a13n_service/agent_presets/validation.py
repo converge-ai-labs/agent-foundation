@@ -1,4 +1,4 @@
-"""Authoritative validation for publishable and invocable Agent configuration."""
+"""Authoritative validation for Revision creation and Agent invocation."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ _DEFAULT_EVENT_VISIBILITY = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class AgentProtocolPolicy:
-    """Finite deployment policy applied only by Publish and Run acceptance."""
+    """Finite deployment policy applied only by Create Revision and Run acceptance."""
 
     output_modes: frozenset[str] = _DEFAULT_OUTPUT_MODES
     event_visibility: frozenset[str] = _DEFAULT_EVENT_VISIBILITY

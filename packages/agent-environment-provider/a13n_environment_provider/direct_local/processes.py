@@ -719,12 +719,14 @@ class LocalProcessManager:
     async def _cleanup_group(self, process_group: int) -> None:
         try:
             os.killpg(process_group, os_signal.SIGTERM)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # macOS can report EPERM when concurrent process.wait() reaps the
+            # final member of a session-owned group. No signalable child remains.
             return
         await asyncio.sleep(self._policy.terminate_grace_seconds)
         try:
             os.killpg(process_group, os_signal.SIGKILL)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
 
     def _receipt(self) -> EnvironmentOperationReceipt:

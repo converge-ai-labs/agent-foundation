@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -23,6 +22,7 @@ from a13n_service.model_configs.runtime import (
     PreparedModelSnapshotExecution,
 )
 from a13n_service.model_configs.service import ModelConfigError
+from a13n_service.plugins.runtime import PluginRuntimeLockError
 from a13n_service.skills.domain import SkillPackageManifest
 from a13n_service.skills.models import SkillRecord, SkillRevisionRecord
 from a13n_service.storage import short_session
@@ -45,11 +45,11 @@ from .domain import (
 from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedEnvironmentSelection
 from .errors import (
     AgentPresetError,
-    active_revision_conflict,
+    default_revision_conflict,
     preset_archived,
+    preset_default_revision_missing,
     preset_disabled,
     preset_not_found,
-    preset_not_published,
     preset_revision_not_executable,
     preset_revision_not_found,
 )
@@ -61,7 +61,7 @@ from .validation import AgentConfigValidationError, AgentProtocolPolicy, validat
 
 
 class AgentPresetSelectorKind(StrEnum):
-    active = "active"
+    default = "default"
     exact = "exact"
 
 
@@ -77,6 +77,7 @@ class PreparedInvocationSkill:
 class PreparedInvocationSubagent:
     edge: ResolvedSubagentEdge
     child_revision_digest: str
+    child_runtime_lock_digest: str
 
 
 PreparedInvocationModel = PreparedModelExecution | PreparedModelSnapshotExecution
@@ -90,7 +91,7 @@ class PreparedAgentInvocation:
     agent_preset_id: str
     agent_preset_revision_id: str
     selector_kind: AgentPresetSelectorKind
-    expected_active_revision_id: str | None
+    expected_default_revision_id: str | None
     revision_content_digest: str
     revision: AgentPresetRevision
     merged: MergedAgentRun
@@ -148,7 +149,7 @@ class AgentPresetInvocationResolver:
         actor: AuthenticatedActor,
         agent_preset_id: str,
         agent_preset_revision_id: str | None = None,
-        expected_active_revision_id: str | None = None,
+        expected_default_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
         _allow_disabled_root: bool = False,
     ) -> PreparedAgentInvocation:
@@ -170,16 +171,19 @@ class AgentPresetInvocationResolver:
                     for_update=False,
                 )
                 _require_invocable_preset(preset, allow_disabled=_allow_disabled_root)
-                if expected_active_revision_id is not None and preset.active_revision_id != expected_active_revision_id:
-                    raise active_revision_conflict(preset.active_revision_id)
+                if (
+                    expected_default_revision_id is not None
+                    and preset.default_revision_id != expected_default_revision_id
+                ):
+                    raise default_revision_conflict(preset.default_revision_id)
                 selector_kind = (
                     AgentPresetSelectorKind.exact
                     if agent_preset_revision_id is not None
-                    else AgentPresetSelectorKind.active
+                    else AgentPresetSelectorKind.default
                 )
-                revision_id = agent_preset_revision_id or preset.active_revision_id
+                revision_id = agent_preset_revision_id or preset.default_revision_id
                 if revision_id is None:
-                    raise preset_not_published()
+                    raise preset_default_revision_missing()
                 revision_record = await _load_revision(
                     session,
                     organization_id=authorized.organization_id,
@@ -217,6 +221,7 @@ class AgentPresetInvocationResolver:
                             workspace_id=workspace_id,
                             selections=merged.config.plugins,
                             resolved=revision.resolved_plugin_versions,
+                            runtime_lock_digest=revision.runtime_lock_digest,
                         )
                     except PluginSelectionError as error:
                         raise preset_revision_not_executable(error.reason) from error
@@ -287,7 +292,7 @@ class AgentPresetInvocationResolver:
             agent_preset_id=agent_preset_id,
             agent_preset_revision_id=revision.id,
             selector_kind=selector_kind,
-            expected_active_revision_id=expected_active_revision_id,
+            expected_default_revision_id=expected_default_revision_id,
             revision_content_digest=revision.content_digest,
             revision=revision,
             merged=merged,
@@ -377,15 +382,15 @@ class AgentPresetInvocationResolver:
             )
             _require_invocable_preset(preset, allow_disabled=_allow_disabled_root)
             if (
-                prepared.expected_active_revision_id is not None
-                and preset.active_revision_id != prepared.expected_active_revision_id
+                prepared.expected_default_revision_id is not None
+                and preset.default_revision_id != prepared.expected_default_revision_id
             ):
-                raise active_revision_conflict(preset.active_revision_id)
+                raise default_revision_conflict(preset.default_revision_id)
             if (
-                prepared.selector_kind is AgentPresetSelectorKind.active
-                and preset.active_revision_id != prepared.agent_preset_revision_id
+                prepared.selector_kind is AgentPresetSelectorKind.default
+                and preset.default_revision_id != prepared.agent_preset_revision_id
             ):
-                raise active_revision_conflict(preset.active_revision_id)
+                raise default_revision_conflict(preset.default_revision_id)
             revision_record = await _load_revision(
                 session,
                 organization_id=prepared.organization_id,
@@ -445,7 +450,24 @@ class AgentPresetInvocationResolver:
             raise _authorization_error(error) from error
 
         resolved_subagents = tuple(item.edge for item in subagents)
-        runtime_lock_digest = _runtime_lock_digest(prepared, plugins, resolved_subagents, environment)
+        try:
+            if _runtime_selection_unchanged(prepared, plugins, resolved_subagents):
+                runtime_lock = await self._plugin_resolver.runtime_locks.require(
+                    session,
+                    prepared.revision.runtime_lock_digest,
+                    mode=prepared.revision.plugin_runtime_mode.value,
+                )
+            else:
+                if prepared.plugins is None:
+                    raise PluginRuntimeLockError("plugin_runtime_lock_unavailable")
+                runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
+                    session,
+                    prepared=prepared.plugins,
+                    child_lock_digests=tuple(item.child_runtime_lock_digest for item in subagents),
+                    use_active_catalog=True,
+                )
+        except PluginRuntimeLockError as error:
+            raise preset_revision_not_executable(error.reason) from error
         config_payload = {
             "schema_version": "1",
             "resolved_model": ResolvedAgentModelConfig(
@@ -454,7 +476,7 @@ class AgentPresetInvocationResolver:
                 characteristics=prepared.merged.config.model.characteristics,
             ),
             "resolved_plugin_versions": plugins,
-            "runtime_lock_digest": runtime_lock_digest,
+            "runtime_lock_digest": runtime_lock.digest,
             "resolved_skills": skills,
             "resolved_environment": environment,
             "resolved_subagents": resolved_subagents,
@@ -566,6 +588,7 @@ class AgentPresetInvocationResolver:
                         environment=selection.environment,
                     ),
                     child_revision_digest=child_revision.content_digest,
+                    child_runtime_lock_digest=child_revision.runtime_lock_digest,
                 )
             )
         return tuple(result)
@@ -695,7 +718,10 @@ async def _freeze_subagents(
             revision_id=expected.edge.child_agent_preset_revision_id,
             for_update=True,
         )
-        if revision.content_digest != expected.child_revision_digest:
+        if (
+            revision.content_digest != expected.child_revision_digest
+            or revision.runtime_lock_digest != expected.child_runtime_lock_digest
+        ):
             raise preset_revision_not_executable("subagent_revision_changed")
         result.append(expected)
     return tuple(result)
@@ -762,9 +788,9 @@ async def _select_child_revision_id(
     revision_number: int | None,
 ) -> str:
     if revision_number is None:
-        if child.active_revision_id is None:
-            raise preset_revision_not_executable("subagent_not_published")
-        return child.active_revision_id
+        if child.default_revision_id is None:
+            raise preset_revision_not_executable("subagent_default_revision_missing")
+        return child.default_revision_id
     revision_id = await session.scalar(
         select(AgentPresetRevisionRecord.id).where(
             AgentPresetRevisionRecord.agent_preset_id == child.id,
@@ -836,39 +862,35 @@ def _access_rank(access: str) -> int:
     return {"read_only": 0, "read_write": 1, "full": 2}[access]
 
 
-def _runtime_lock_digest(
+def _runtime_selection_unchanged(
     prepared: PreparedAgentInvocation,
     resolved_plugins: tuple[ResolvedPluginVersion, ...],
     resolved_subagents: tuple[ResolvedSubagentEdge, ...],
-    resolved_environment: EnvironmentExecutionConfig | None,
-) -> str:
-    if (
-        resolved_plugins == prepared.revision.resolved_plugin_versions
-        and resolved_subagents == prepared.revision.resolved_subagents
-        and resolved_environment == prepared.revision.resolved_environment
-    ):
-        return prepared.revision.runtime_lock_digest
-    child_digest_by_id = {
-        item.edge.child_agent_preset_revision_id: item.child_revision_digest for item in prepared.subagents
-    }
-    return canonical_digest(
-        {
-            "schema_version": "1",
-            "mode": prepared.revision.plugin_runtime_mode.value,
-            "plugins": [item.model_dump(mode="json") for item in resolved_plugins],
-            "child_locks": [child_digest_by_id[item.child_agent_preset_revision_id] for item in resolved_subagents],
-            "environment_lock": _environment_lock(resolved_environment),
-        }
+) -> bool:
+    return _plugin_runtime_signature(resolved_plugins) == _plugin_runtime_signature(
+        prepared.revision.resolved_plugin_versions
+    ) and _subagent_runtime_signature(resolved_subagents) == _subagent_runtime_signature(
+        prepared.revision.resolved_subagents
     )
 
 
-def _environment_lock(environment: EnvironmentExecutionConfig | None) -> dict[str, JsonValue] | None:
-    if environment is None:
-        return None
-    return {
-        "provider_lock": environment.provider_lock,
-        "logical_digest_sha256": environment.logical_digest_sha256,
-    }
+def _plugin_runtime_signature(plugins: tuple[ResolvedPluginVersion, ...]) -> frozenset[tuple[str, ...]]:
+    return frozenset(
+        (
+            item.plugin_id,
+            item.plugin_version_id,
+            item.plugin_key,
+            item.distribution_name,
+            item.distribution_version,
+            item.top_level_package,
+            item.wheel_digest,
+        )
+        for item in plugins
+    )
+
+
+def _subagent_runtime_signature(subagents: tuple[ResolvedSubagentEdge, ...]) -> frozenset[str]:
+    return frozenset(item.child_agent_preset_revision_id for item in subagents)
 
 
 def _authorization_error(error: AuthorizationError) -> AgentPresetError:

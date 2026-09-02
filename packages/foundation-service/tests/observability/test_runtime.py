@@ -29,7 +29,7 @@ def correlation() -> RunAttemptCorrelation:
         run_attempt_id="attempt_123",
         run_attempt_number=2,
         agent_preset_id="agent_123",
-        agent_preset_version_id="agentv_123",
+        agent_preset_revision_id="agentr_123",
         model_id="model_123",
         model_provider_type="openai",
         replaces_run_attempt_id="attempt_122",

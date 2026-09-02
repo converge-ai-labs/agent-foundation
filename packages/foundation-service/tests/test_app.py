@@ -6,11 +6,61 @@ import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
 from a13n_service.database import DatabaseMigrator
+from a13n_service.plugins.commands import (
+    PluginRuntimeCatalogSnapshot,
+    PluginRuntimeCommand,
+)
+from a13n_service.plugins.runtime import PluginRuntimeLock
+from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
+from a13n_service.plugins.runtime_resolver import FoundationPluginRuntimeCandidateResolver
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
 from a13n_service.skills import SkillRuntimePreparer, SkillSelectionResolver
 from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 from fastapi import FastAPI
+
+
+class _UnusedPluginRuntimeCandidateResolver:
+    async def resolve_candidate(
+        self,
+        *,
+        operation_id: str,
+        command: PluginRuntimeCommand,
+        catalog: PluginRuntimeCatalogSnapshot,
+    ) -> PluginRuntimeLock:
+        del operation_id, command, catalog
+        raise AssertionError("no Plugin Runtime command was expected")
+
+    async def require_candidate(self, *, runtime_lock_digest: str) -> PluginRuntimeLock:
+        del runtime_lock_digest
+        raise AssertionError("no Plugin Runtime command was expected")
+
+
+class _UnusedPluginRuntimeStagingAuthority:
+    async def stage_candidate(self, *, operation_id: str, runtime_lock: PluginRuntimeLock) -> str:
+        del operation_id, runtime_lock
+        raise AssertionError("no Plugin Runtime command was expected")
+
+    async def activate_candidate(
+        self,
+        *,
+        operation_id: str,
+        runtime_lock: PluginRuntimeLock,
+        staging_token: str,
+        runtime_version: int,
+    ) -> None:
+        del operation_id, runtime_lock, staging_token, runtime_version
+        raise AssertionError("no Plugin Runtime command was expected")
+
+    async def abort_candidate(
+        self,
+        *,
+        operation_id: str,
+        runtime_lock: PluginRuntimeLock,
+        staging_token: str | None,
+    ) -> None:
+        del operation_id, runtime_lock, staging_token
+        raise AssertionError("no Plugin Runtime command was expected")
 
 
 def request(app: FastAPI, path: str, *, method: str = "GET") -> httpx2.Response:
@@ -91,6 +141,9 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/plugins" in document["paths"]
     assert "/api/v1/plugins/{plugin_id}/versions" in document["paths"]
     assert "/api/v1/plugin-versions/{plugin_version_id}" in document["paths"]
+    assert "/api/v1/plugin-versions/{plugin_version_id}/activate" in document["paths"]
+    assert "/api/v1/plugins/{plugin_id}/deactivate" in document["paths"]
+    assert "/api/v1/operations/{operation_id}" in document["paths"]
 
 
 def test_web_application_serves_assets_and_browser_history(tmp_path: Path) -> None:
@@ -160,6 +213,81 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready", "role": "all"}
+
+
+@pytest.mark.anyio
+async def test_lifespan_rejects_partial_plugin_runtime_coordination(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(
+            tmp_path,
+            role=ServiceRole.control,
+            plugin_runtime_mode="runner",
+        ),
+        components=ServiceComponents(
+            plugin_runtime_candidate_resolver=_UnusedPluginRuntimeCandidateResolver(),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="requires both a candidate resolver and staging authority"):
+        async with app.router.lifespan_context(app):
+            pytest.fail("lifespan unexpectedly started")
+
+
+@pytest.mark.anyio
+async def test_lifespan_rejects_runner_coordination_in_on_demand_mode(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(tmp_path, role=ServiceRole.control),
+        components=ServiceComponents(
+            plugin_runtime_candidate_resolver=_UnusedPluginRuntimeCandidateResolver(),
+            plugin_runtime_staging_authority=_UnusedPluginRuntimeStagingAuthority(),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="configured outside runner mode"):
+        async with app.router.lifespan_context(app):
+            pytest.fail("lifespan unexpectedly started")
+
+
+@pytest.mark.anyio
+async def test_lifespan_wires_durable_plugin_runtime_coordinator(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(
+            tmp_path,
+            role=ServiceRole.control,
+            plugin_runtime_mode="runner",
+            plugin_runtime_command_poll_interval_seconds=0.01,
+            plugin_runtime_command_lease_seconds=4,
+        ),
+        components=ServiceComponents(
+            plugin_runtime_candidate_resolver=_UnusedPluginRuntimeCandidateResolver(),
+            plugin_runtime_staging_authority=_UnusedPluginRuntimeStagingAuthority(),
+        ),
+    )
+
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
+        assert app.state.plugin_service is not None
+
+
+@pytest.mark.anyio
+async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(
+            tmp_path,
+            role=ServiceRole.control,
+            plugin_runtime_mode="runner",
+            plugin_runtime_command_poll_interval_seconds=0.01,
+            plugin_runtime_command_lease_seconds=4,
+            plugin_runtime_default_index_url="https://user:index-secret@packages.example/simple",
+        ),
+        components=ServiceComponents(
+            plugin_runtime_staging_authority=_UnusedPluginRuntimeStagingAuthority(),
+        ),
+    )
+
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
+        assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
 
 
 @pytest.mark.anyio

@@ -13,15 +13,15 @@ from .domain import (
     AgentPresetCollection,
     AgentPresetCommandRequest,
     AgentPresetLifecycleState,
-    AgentPresetPublishResult,
     AgentPresetRevision,
     AgentPresetRevisionCollection,
+    AgentPresetRevisionCreateResult,
     AgentPresetSource,
     CreateAgentPresetRequest,
     DuplicateAgentPresetRequest,
     PatchAgentPresetRequest,
     ReplaceAgentPresetConfigRequest,
-    RollbackAgentPresetRequest,
+    SetDefaultAgentPresetRevisionRequest,
 )
 from .errors import AgentPresetError
 from .service import AgentPresetService
@@ -105,15 +105,19 @@ async def replace_agent_preset_config(
     return await _service(request).replace_config(actor=actor, preset_id=agent_preset_id, request=body)
 
 
-@router.post("/agent-presets/{agent_preset_id}/publish", response_model=AgentPresetPublishResult)
-async def publish_agent_preset(
+@router.post(
+    "/agent-presets/{agent_preset_id}/revisions",
+    response_model=AgentPresetRevisionCreateResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_agent_preset_revision(
     request: Request,
     actor: Actor,
     agent_preset_id: str,
     body: AgentPresetCommandRequest,
     idempotency_key: IdempotencyKey,
-) -> AgentPresetPublishResult:
-    return await _service(request).publish(
+) -> AgentPresetRevisionCreateResult:
+    return await _service(request).create_revision(
         actor=actor,
         preset_id=agent_preset_id,
         idempotency_key=idempotency_key,
@@ -121,15 +125,15 @@ async def publish_agent_preset(
     )
 
 
-@router.post("/agent-presets/{agent_preset_id}/rollback", response_model=AgentPresetPublishResult)
-async def rollback_agent_preset(
+@router.post("/agent-presets/{agent_preset_id}/set-default-revision", response_model=AgentPreset)
+async def set_default_agent_preset_revision(
     request: Request,
     actor: Actor,
     agent_preset_id: str,
-    body: RollbackAgentPresetRequest,
+    body: SetDefaultAgentPresetRevisionRequest,
     idempotency_key: IdempotencyKey,
-) -> AgentPresetPublishResult:
-    return await _service(request).rollback(
+) -> AgentPreset:
+    return await _service(request).set_default_revision(
         actor=actor,
         preset_id=agent_preset_id,
         idempotency_key=idempotency_key,

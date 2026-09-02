@@ -404,14 +404,14 @@ class AgentPreset(StrictModel):
     lifecycle_state: AgentPresetLifecycleState
     resource_version: int = Field(ge=1)
     config: AgentPresetConfig
-    active_revision_id: ObjectId | None
+    default_revision_id: ObjectId | None
     config_base_revision_id: ObjectId | None
     duplicated_from_preset_id: ObjectId | None
     duplicated_from_revision_id: ObjectId | None
     created_by: PrincipalRef
     created_at: datetime
     updated_at: datetime
-    has_unpublished_changes: bool
+    config_changed_since_revision: bool
 
 
 class AgentPresetRevision(StrictModel):
@@ -482,8 +482,8 @@ class AgentPresetCommandRequest(BaseModel):
     expected_resource_version: int = Field(ge=1)
 
 
-class RollbackAgentPresetRequest(AgentPresetCommandRequest):
-    source_revision_id: ObjectId
+class SetDefaultAgentPresetRevisionRequest(AgentPresetCommandRequest):
+    revision_id: ObjectId
 
 
 class DuplicateAgentPresetRequest(AgentPresetCommandRequest):
@@ -491,7 +491,7 @@ class DuplicateAgentPresetRequest(AgentPresetCommandRequest):
     description: PresetDescription | None = None
 
 
-class AgentPresetPublishResult(StrictModel):
+class AgentPresetRevisionCreateResult(StrictModel):
     preset: AgentPreset
     revision: AgentPresetRevision
 

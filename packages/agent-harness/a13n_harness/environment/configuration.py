@@ -4,9 +4,12 @@ from pydantic import BaseModel, ConfigDict
 
 
 class DynamicEnvironmentConfiguration(BaseModel):
-    """Configuration marker for the access-derived Environment tool surface."""
+    """Definition-owned narrowing for the access-derived Environment tool surface."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    files_enabled: bool = True
+    shell_enabled: bool = True
 
 
 __all__ = ["DynamicEnvironmentConfiguration"]

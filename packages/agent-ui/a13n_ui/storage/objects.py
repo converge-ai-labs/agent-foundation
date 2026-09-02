@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, TypeVar
 from uuid import uuid4
 
 import zstandard
@@ -27,6 +27,7 @@ _SCHEMA_VERSION = Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[
 _DIGEST = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 _SUPPORTED_OBJECT_SCHEMA_VERSION = "1"
 _SUPPORTED_PAYLOAD_CODEC_VERSION = "1"
+_ObjectModelT = TypeVar("_ObjectModelT", bound=BaseModel)
 
 
 class ObjectKind(StrEnum):
@@ -34,10 +35,9 @@ class ObjectKind(StrEnum):
 
     agent_snapshot = "agent-snapshot"
     environment_snapshot = "environment-snapshot"
-    resource_revision = "resource-revision"
-    skill_package = "skill-package"
     session_continuation = "session-continuation"
-    provider_state = "provider-state"
+    child_checkpoint = "child-checkpoint"
+    environment_state = "environment-state"
 
 
 class ObjectRef(BaseModel):
@@ -135,6 +135,41 @@ class ImmutableObjectStore:
 
         return await to_thread.run_sync(self._read_ref, reference)
 
+    async def publish_model(
+        self,
+        *,
+        object_kind: ObjectKind,
+        value: BaseModel,
+        object_schema_version: str = "1",
+        payload_codec_version: str = "1",
+    ) -> ObjectEnvelope:
+        """Validate and publish one typed immutable payload."""
+
+        payload = value.model_dump(mode="json")
+        return await self.publish(
+            object_kind=object_kind,
+            object_schema_version=object_schema_version,
+            payload=payload,
+            payload_codec_version=payload_codec_version,
+        )
+
+    async def read_model(
+        self,
+        reference: ObjectRef,
+        model_type: type[_ObjectModelT],
+    ) -> _ObjectModelT:
+        """Read an exact object and validate its typed payload contract."""
+
+        envelope = await self.read(reference)
+        try:
+            return model_type.model_validate(envelope.payload)
+        except ValidationError as exc:
+            raise ObjectIntegrityError(
+                "Immutable object payload does not match its expected contract.",
+                code="object_payload_incompatible",
+                details={"object_kind": reference.object_kind.value},
+            ) from exc
+
     async def references(self) -> tuple[ObjectRef, ...]:
         """List object files currently present in the local store."""
 
@@ -181,9 +216,11 @@ class ImmutableObjectStore:
                 code="object_payload_invalid",
                 details={"object_kind": object_kind.value},
             ) from exc
-        digest_input = envelope.model_dump(mode="json", exclude={"logical_digest"})
-        digest = hashlib.sha256(_canonical_json(digest_input)).hexdigest()
+        digest = hashlib.sha256(_canonical_json(_digest_input(envelope))).hexdigest()
         envelope = envelope.model_copy(update={"logical_digest": digest})
+        target = self._path_for(envelope.ref)
+        if target.exists():
+            return self._read_ref(envelope.ref)
         uncompressed = _canonical_json(envelope.model_dump(mode="json"))
         if len(uncompressed) > self._settings.max_object_bytes:
             raise StoreIntegrityError(
@@ -201,8 +238,7 @@ class ImmutableObjectStore:
                     "Staged immutable object did not verify to its source envelope.",
                     code="object_staging_mismatch",
                 )
-            self._publish_stage(stage, envelope.ref)
-            return envelope
+            return self._publish_stage(stage, envelope)
         finally:
             stage.unlink(missing_ok=True)
 
@@ -215,19 +251,25 @@ class ImmutableObjectStore:
             path.unlink(missing_ok=True)
             raise
 
-    def _publish_stage(self, stage: Path, reference: ObjectRef) -> None:
+    def _publish_stage(self, stage: Path, envelope: ObjectEnvelope) -> ObjectEnvelope:
+        reference = envelope.ref
         target = self._path_for(reference)
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.replace(stage, target)
-        if os.name != "nt":
-            target.chmod(0o600)
-        published = self._read_path(target)
+        try:
+            os.link(stage, target)
+        except FileExistsError:
+            published = self._read_ref(reference)
+        else:
+            if os.name != "nt":
+                target.chmod(0o600)
+            published = self._read_path(target)
         if published.ref != reference:
             raise ObjectIntegrityError(
                 "Published immutable object does not match its expected reference.",
                 code="object_publication_mismatch",
                 details={"logical_digest": reference.logical_digest},
             )
+        return published
 
     def _read_ref(self, reference: ObjectRef) -> ObjectEnvelope:
         envelope = self._read_path(self._path_for(reference))
@@ -292,8 +334,7 @@ class ImmutableObjectStore:
                 "Immutable object content is not in canonical form.",
                 code="object_not_canonical",
             )
-        digest_input = envelope.model_dump(mode="json", exclude={"logical_digest"})
-        expected = hashlib.sha256(_canonical_json(digest_input)).hexdigest()
+        expected = hashlib.sha256(_canonical_json(_digest_input(envelope))).hexdigest()
         if expected != envelope.logical_digest:
             raise ObjectIntegrityError(
                 "Immutable object logical digest does not match its content.",
@@ -310,6 +351,13 @@ class ImmutableObjectStore:
             / reference.logical_digest[:2]
             / f"{reference.logical_digest}.json.zst"
         )
+
+
+def _digest_input(envelope: ObjectEnvelope) -> dict[str, JsonValue]:
+    """Return stable object identity; publication time is metadata, not logical content."""
+
+    value = envelope.model_dump(mode="json", exclude={"logical_digest", "created_at"})
+    return value
 
 
 def _canonical_json(value: object) -> bytes:

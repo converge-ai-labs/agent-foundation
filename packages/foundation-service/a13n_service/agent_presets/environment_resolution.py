@@ -1,4 +1,4 @@
-"""Two-phase Environment selection for AgentPreset publication and invocation."""
+"""Two-phase Environment selection for AgentPreset Revision creation and invocation."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ from .domain import (
 
 
 class EnvironmentResolutionPurpose(StrEnum):
-    publish = "publish"
+    create_revision = "create_revision"
     invoke = "invoke"
 
 
@@ -67,7 +67,7 @@ class AgentEnvironmentSelectionResolver:
         self._sessions = sessions
         self._catalog = catalog
 
-    async def prepare_publication(
+    async def prepare_revision_creation(
         self,
         *,
         actor: AuthenticatedActor,
@@ -79,7 +79,7 @@ class AgentEnvironmentSelectionResolver:
             actor=actor,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            purpose=EnvironmentResolutionPurpose.publish,
+            purpose=EnvironmentResolutionPurpose.create_revision,
             selection=selection,
         )
 

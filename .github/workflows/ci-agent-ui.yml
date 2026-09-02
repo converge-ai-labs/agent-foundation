@@ -17,7 +17,9 @@ on:
       - "scripts/check_agent_ui_distribution.py"
       - "scripts/prepare-agent-ui-assets.py"
       - "scripts/prepare_agent_ui_assets.py"
+      - "scripts/release_version.py"
       - "scripts/tests/test_check_agent_ui_distribution.py"
+      - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_prepare_agent_ui_assets.py"
       - "uv.lock"
   push:
@@ -36,7 +38,9 @@ on:
       - "scripts/check_agent_ui_distribution.py"
       - "scripts/prepare-agent-ui-assets.py"
       - "scripts/prepare_agent_ui_assets.py"
+      - "scripts/release_version.py"
       - "scripts/tests/test_check_agent_ui_distribution.py"
+      - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_prepare_agent_ui_assets.py"
       - "uv.lock"
   workflow_dispatch:
@@ -66,6 +70,7 @@ jobs:
           - name: macOS
             runner: macos-15
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -97,8 +102,8 @@ jobs:
           npm --prefix apps/harness-ui ci
           npm --prefix apps/harness-ui run check:all
 
-      - name: Synchronize Python workspace
-        run: uv sync --locked --all-packages
+      - name: Synchronize Agent UI test environment
+        run: uv sync --locked --package a13n-ui --group test --no-default-groups
 
       - name: Prepare bundled Harness UI assets
         if: matrix.name == 'Linux'
@@ -113,6 +118,7 @@ jobs:
           scripts/check_agent_ui_distribution.py
           scripts/prepare-agent-ui-assets.py
           scripts/prepare_agent_ui_assets.py
+          scripts/release_version.py
 
       - name: Test Agent UI
         if: matrix.name == 'Linux'
@@ -121,6 +127,7 @@ jobs:
           packages/agent-ui/tests
           scripts/tests/test_check_agent_ui_distribution.py
           scripts/tests/test_prepare_agent_ui_assets.py
+          scripts/tests/test_prepare_release_version.py
 
       - name: Test Agent UI on Windows and macOS
         if: matrix.name != 'Linux'
