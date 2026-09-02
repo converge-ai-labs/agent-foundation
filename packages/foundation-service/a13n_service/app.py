@@ -99,7 +99,6 @@ from a13n_service.skills.objects import SkillPackageStore
 from a13n_service.skills.publication import SkillPublicationService
 from a13n_service.skills.router import router as skill_router
 from a13n_service.skills.runtime import SkillRuntimePreparer
-from a13n_service.skills.selection import SkillSelectionResolver
 from a13n_service.skills.sources import GitHubCredentialResolver, SkillSourcePreparer
 from a13n_service.skills.uploads import SkillUploadService
 from a13n_service.storage import StorageResources, open_storage, short_session
@@ -432,7 +431,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
                 app.state.skill_publication_service = SkillPublicationService(storage.sessions, source_preparer)
                 app.state.skill_catalog_service = SkillCatalogService(storage.sessions, package_store)
-                app.state.skill_selection_resolver = SkillSelectionResolver(storage.sessions)
                 app.state.accepted_model_selector = AcceptedModelSelector(
                     storage.sessions,
                     app.state.model_provider_registry,

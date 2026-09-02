@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,6 +23,7 @@ from .connector_resolution import AgentConnectorSelectionResolver, PreparedConne
 from .domain import (
     AgentPresetConfig,
     ChildEnvironmentPolicy,
+    EnvironmentExecutionConfig,
     PluginRuntimeMode,
     ResolvedAgentModelConfig,
     ResolvedRevisionContent,
@@ -170,6 +173,7 @@ class AgentPresetResolver:
                 )
             except EnvironmentManagementError as error:
                 raise preset_revision_create_failed(error.code, path="environment") from error
+        _require_writable_skill_environment(config.skills, environment)
         return PreparedRevisionResolution(
             actor=actor,
             organization_id=organization_id,
@@ -224,6 +228,7 @@ class AgentPresetResolver:
             )
         except EnvironmentManagementError as error:
             raise preset_revision_create_failed(error.code, path="environment") from error
+        _require_writable_skill_environment(skills, environment)
         subagents = await self._freeze_subagents(session, prepared)
         try:
             runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
@@ -255,6 +260,8 @@ class AgentPresetResolver:
             raise preset_revision_create_failed("connector_resolution_unavailable", path="connectors")
         if config.environment is not None and self._environment_resolver is None:
             raise preset_revision_create_failed("environment_resolution_unavailable", path="environment")
+        if config.skills and config.environment is None:
+            raise preset_revision_create_failed("skill_environment_required", path="environment")
         for index, skill in enumerate(config.skills):
             if skill.skill_revision_id in {item.skill_revision_id for item in config.skills[:index]}:
                 raise preset_revision_create_failed("skill_revision_duplicate", path=f"skills.{index}")
@@ -303,7 +310,12 @@ class AgentPresetResolver:
         names: set[str] = set()
         for revision_id in requested_ids:
             revision, _skill = by_id[revision_id]
-            manifest = SkillPackageManifest.model_validate(revision.manifest)
+            try:
+                manifest = SkillPackageManifest.model_validate(revision.manifest)
+            except ValidationError as error:
+                raise preset_revision_create_failed("skill_revision_invalid", path="skills") from error
+            if manifest.content_digest != revision.content_digest:
+                raise preset_revision_create_failed("skill_revision_invalid", path="skills")
             if manifest.skill_name in names:
                 raise preset_revision_create_failed("skill_name_duplicate", path="skills")
             names.add(manifest.skill_name)
@@ -433,10 +445,14 @@ class AgentPresetResolver:
             (
                 await session.scalars(
                     select(SkillRevisionRecord)
+                    .join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id)
                     .where(
                         SkillRevisionRecord.organization_id == prepared.organization_id,
                         SkillRevisionRecord.workspace_id == prepared.workspace_id,
                         SkillRevisionRecord.id.in_(ids),
+                        SkillRecord.organization_id == prepared.organization_id,
+                        SkillRecord.workspace_id == prepared.workspace_id,
+                        SkillRecord.deleted_at.is_(None),
                     )
                     .with_for_update()
                 )
@@ -446,7 +462,18 @@ class AgentPresetResolver:
         result: list[ResolvedSkillSelection] = []
         for expected in prepared.skills:
             row = current.get(expected.revision_id)
-            if row is None or row.skill_id != expected.skill_id or row.content_digest != expected.content_digest:
+            try:
+                manifest = SkillPackageManifest.model_validate(row.manifest) if row is not None else None
+            except ValidationError as error:
+                raise preset_revision_create_failed("skill_revision_changed", path="skills") from error
+            if (
+                row is None
+                or manifest is None
+                or row.skill_id != expected.skill_id
+                or row.content_digest != expected.content_digest
+                or manifest.content_digest != expected.content_digest
+                or manifest.skill_name != expected.skill_name
+            ):
                 raise preset_revision_create_failed("skill_revision_changed", path="skills")
             result.append(
                 ResolvedSkillSelection(
@@ -522,6 +549,19 @@ def _validate_child_environment(
             raise preset_revision_create_failed("subagent_environment_incompatible", path=path)
     if policy.mode == "dedicated" and child_environment is None:
         raise preset_revision_create_failed("subagent_environment_required", path=path)
+
+
+def _require_writable_skill_environment(
+    skills: Sequence[object],
+    environment: PreparedEnvironmentSelection | EnvironmentExecutionConfig | None,
+) -> None:
+    if not skills:
+        return
+    resolved = environment.resolved if isinstance(environment, PreparedEnvironmentSelection) else environment
+    if resolved is None:
+        raise preset_revision_create_failed("skill_environment_required", path="environment")
+    if resolved.access == "read_only":
+        raise preset_revision_create_failed("skill_environment_not_writable", path="environment")
 
 
 def resolution_error(error: Exception) -> AgentPresetError:

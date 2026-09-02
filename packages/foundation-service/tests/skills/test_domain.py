@@ -9,10 +9,7 @@ from a13n_service.skills.cursors import (
     encode_skill_cursor,
 )
 from a13n_service.skills.domain import (
-    AgentSkillSelection,
-    AgentSkillSelectionRequest,
     CreateSkillRequest,
-    RunSkillSelectionRequest,
     SkillRevisionLock,
     UpdateSkillRequest,
 )
@@ -75,74 +72,17 @@ def test_skill_and_revision_cursors_are_query_bound() -> None:
         decode_revision_cursor("not-base64", scope=revision_scope)
 
 
-def test_agent_skill_selection_request_enforces_mount_and_defaults() -> None:
-    revision_id = "skr_1234567890abcdef"
-    request = AgentSkillSelectionRequest(
-        available_revision_ids=(revision_id,),
-        materialization_mount="workspace",
-        default_mode="exact",
-        default_names=("deploy",),
-    )
-    assert request.available_revision_ids == (revision_id,)
-
-    invalid_values = (
-        {
-            "available_revision_ids": (revision_id,),
-            "materialization_mount": None,
-            "default_mode": "all",
-            "default_names": (),
-        },
-        {
-            "available_revision_ids": (revision_id, revision_id),
-            "materialization_mount": "workspace",
-            "default_mode": "all",
-            "default_names": (),
-        },
-        {
-            "available_revision_ids": (),
-            "materialization_mount": None,
-            "default_mode": "exact",
-            "default_names": ("deploy",),
-        },
-        {
-            "available_revision_ids": (revision_id,),
-            "materialization_mount": "workspace",
-            "default_mode": "all",
-            "default_names": ("deploy",),
-        },
-    )
-    for value in invalid_values:
-        with pytest.raises(ValidationError):
-            AgentSkillSelectionRequest.model_validate(value)
-
-
-def test_resolved_agent_selection_is_canonical_and_run_null_is_invalid() -> None:
-    deploy = SkillRevisionLock(
+def test_skill_revision_lock_validates_exact_identity_and_name() -> None:
+    lock = SkillRevisionLock(
         skill_revision_id="skr_1234567890abcdef",
         skill_name="deploy",
         content_digest="1" * 64,
     )
-    review = SkillRevisionLock(
-        skill_revision_id="skr_abcdef1234567890",
-        skill_name="review",
-        content_digest="2" * 64,
-    )
-    selection = AgentSkillSelection(
-        available=(deploy, review),
-        materialization_mount="workspace",
-        default_mode="exact",
-        default_names=("review",),
-    )
-    assert selection.default_names == ("review",)
+    assert lock.skill_name == "deploy"
 
     with pytest.raises(ValidationError):
-        AgentSkillSelection(
-            available=(deploy, review),
-            materialization_mount="workspace",
-            default_mode="exact",
-            default_names=("review", "deploy"),
+        SkillRevisionLock(
+            skill_revision_id="skr_1234567890abcdef",
+            skill_name=" ",
+            content_digest="1" * 64,
         )
-    with pytest.raises(ValidationError):
-        RunSkillSelectionRequest.model_validate({"selected_skill_names": None})
-    with pytest.raises(ValidationError):
-        RunSkillSelectionRequest(selected_skill_names=("deploy", "deploy"))

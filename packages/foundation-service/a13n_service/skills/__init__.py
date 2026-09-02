@@ -1,13 +1,10 @@
 """Workspace Skill management domain and application services."""
 
 from .domain import (
-    AgentSkillSelection,
-    AgentSkillSelectionRequest,
     CreateSkillRequest,
     CreateSkillRevisionRequest,
     GitHubRevisionSource,
     GitHubSkillImportProvenance,
-    RunSkillSelectionRequest,
     Skill,
     SkillCollection,
     SkillPackageFile,
@@ -34,17 +31,9 @@ from .package import (
     skill_package_object_key,
 )
 from .runtime import PreparedSkillRuntime, SkillRuntimeError, SkillRuntimePreparer
-from .selection import (
-    PreparedSkillSelection,
-    SkillSelectionResolver,
-    resolve_run_skill_selection,
-    validate_frozen_run_skill_selection,
-)
 
 __all__ = [
     "AcquiredGitHubSkill",
-    "AgentSkillSelection",
-    "AgentSkillSelectionRequest",
     "CreateSkillRequest",
     "CreateSkillRevisionRequest",
     "GitHubAcquisitionError",
@@ -54,8 +43,6 @@ __all__ = [
     "NormalizedSkillFile",
     "NormalizedSkillPackage",
     "PreparedSkillRuntime",
-    "PreparedSkillSelection",
-    "RunSkillSelectionRequest",
     "Skill",
     "SkillAttemptFence",
     "SkillCollection",
@@ -70,7 +57,6 @@ __all__ = [
     "SkillRevisionSource",
     "SkillRuntimeError",
     "SkillRuntimePreparer",
-    "SkillSelectionResolver",
     "SkillUploadReceipt",
     "UpdateSkillRequest",
     "ZipSkillImportProvenance",
@@ -78,7 +64,5 @@ __all__ = [
     "normalize_skill_files",
     "normalize_skill_path",
     "normalize_skill_zip",
-    "resolve_run_skill_selection",
     "skill_package_object_key",
-    "validate_frozen_run_skill_selection",
 ]
