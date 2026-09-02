@@ -8,19 +8,19 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 
 ## Boundaries
 
-| Concern                                          | Owner                                   | Boundary                                                                                  |
-| ------------------------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Native inbound provider identity                 | Ingress                                 | One installed inbound-capable external identity in one Foundation Workspace               |
-| Event authentication and normalization           | Ingress adapter                         | Produces one bounded `InboundEvent`; raw provider data creates no runtime authority       |
-| Event matching, Agent override, and input policy | Route                                   | Selects one allowed Agent and one new or existing Agent Thread destination                |
-| External-to-Agent Thread correlation             | AgentThreadBinding                      | Maps one adapter-declared stable external reference and Agent to one current Agent Thread |
-| Durable Run acceptance and active input          | [Foundation Service](../README.md)      | Owns Run creation, Ingress Steer, deduplication acceptance, and Thread lifecycle          |
-| General outbound connector service               | Connector                               | Configures one OpenConnector, Composio, or another installed Connector adapter            |
-| Safe Connector-managed account reference         | Connection                              | Refers to one account whose real credentials remain in its Connector service              |
-| User-configured remote MCP access                | MCPConnection                           | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle      |
-| Foundation-owned Agent tool server               | a13n MCP                                | Serves authorized Ingress native actions and Connector tools for the current RunAttempt   |
-| Model-facing aggregation                         | Foundation Worker                       | Exposes selected Connector and Remote MCP tools directly or through three catalog tools   |
-| Provider and remote tool names, schemas, result  | Their adapter, Connector, or MCP server | Retain source-specific meaning; Foundation creates no universal action vocabulary         |
+| Concern                                          | Owner                                   | Boundary                                                                                |
+| ------------------------------------------------ | --------------------------------------- | --------------------------------------------------------------------------------------- |
+| Native inbound provider identity                 | Ingress                                 | One installed inbound-capable external identity in one Foundation Workspace             |
+| Event authentication and normalization           | Ingress adapter                         | Produces one bounded `InboundEvent`; raw provider data creates no runtime authority     |
+| Event matching, Agent override, and input policy | Route                                   | Selects one allowed Agent and one new or existing Agent Thread destination              |
+| External-to-Agent Thread correlation             | AgentThreadBinding                      | Fixes one adapter-declared stable external reference to one Agent and Agent Thread      |
+| Durable Run acceptance and active input          | [Foundation Service](../README.md)      | Owns Run creation, Ingress Steer, deduplication acceptance, and Thread lifecycle        |
+| General outbound connector service               | Connector                               | Configures one OpenConnector, Composio, or another installed Connector adapter          |
+| Safe Connector-managed account reference         | Connection                              | Refers to one account whose real credentials remain in its Connector service            |
+| User-configured remote MCP access                | MCPConnection                           | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle    |
+| Foundation-owned Agent tool server               | a13n MCP                                | Serves authorized Ingress native actions and Connector tools for the current RunAttempt |
+| Model-facing aggregation                         | Foundation Worker                       | Exposes selected Connector and Remote MCP tools directly or through three catalog tools |
+| Provider and remote tool names, schemas, result  | Their adapter, Connector, or MCP server | Retain source-specific meaning; Foundation creates no universal action vocabulary       |
 
 ## Core Concepts
 
@@ -28,7 +28,7 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 
 `Route` is provider-specific matching plus Foundation-owned Agent override, safe input mapping, input batching, provider policy, and per-Agent capability policy under one Ingress. A Route can match a Slack channel, Lark chat, Gmail label, GitHub repository event, or another provider-native scope without pretending those resources share one universal conversation model.
 
-`AgentThreadBinding` is exact durable correlation from one adapter-declared stable external reference and Agent to the Agent's current Foundation Thread. It never uses semantic similarity or model inference.
+`AgentThreadBinding` is exact durable correlation from one adapter-declared stable external reference to one fixed Agent and Foundation Thread. It never uses semantic similarity or model inference.
 
 `Connector` is one configured external connector service such as OpenConnector Self-host, OpenConnector Cloud, or Composio. Its adapter, endpoint, access credential, provider coverage, and action schemas are Connector-specific.
 

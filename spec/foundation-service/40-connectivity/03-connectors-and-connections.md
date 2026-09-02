@@ -29,15 +29,19 @@ class Connector:
 
 `driver_key` selects one deployment-registered adapter. Package presence does not authorize a driver; the distribution explicitly registers it. `ConnectorConfig` is the adapter's strong typed configuration rather than an arbitrary JSON dictionary. The core contains no fixed OpenConnector or Composio conditionals. Self-hosted and cloud variants differ through adapter configuration, endpoint, and credentials.
 
+Organization, Workspace, driver, endpoint, and behavior-defining adapter configuration are immutable. Changing one creates another Connector so an accepted Run cannot silently dispatch to a different backend under the same ID. Name, credential rotation, safe observations, and administrative status can change under exact management-version preconditions without changing Connector identity.
+
 `credential_secret_id` authenticates Foundation to the Connector service. It can hold a self-hosted access token or BYOK Connector API key through the [Foundation Secret contract](../11-secret-management.md). It never holds a third-party account OAuth token.
 
-Disabling a Connector prevents new setup, discovery, and dispatch through it. It does not reinterpret or delete retained Connections, Run selections, or audit facts.
+`active` means the Connector is administratively enabled; it is not a continuous health claim. Disabling a Connector prevents new setup, discovery, and dispatch through it without reinterpreting or deleting retained Connections, Run selections, or audit facts. Transient endpoint or credential failures remain bounded safe observations rather than another Connector lifecycle state.
 
 ## Connection
 
 ```python
-class ConnectionOwner:
-    principal_ref: PrincipalRef | None
+type ConnectionStatusReason = Literal[
+    "reauthorization_required",
+    "incompatible",
+]
 
 
 class Connection:
@@ -45,7 +49,7 @@ class Connection:
     organization_id: OrganizationId
     workspace_id: WorkspaceId
     connector_id: ConnectorId
-    owner: ConnectionOwner
+    owner_principal_ref: PrincipalRef | None
     name: str
     provider_key: str
     external_ref: str
@@ -53,10 +57,10 @@ class Connection:
     status: Literal[
         "pending",
         "ready",
-        "attention_required",
+        "action_required",
         "disabled",
-        "revoked",
     ]
+    status_reason: ConnectionStatusReason | None
     version: int
     created_by: PrincipalRef
     created_at: datetime
@@ -67,11 +71,11 @@ class Connection:
 
 `external_ref` is the opaque Connector-issued Connection reference. It is protected metadata: public management reads can expose the Foundation Connection ID and safe account projection but never disclose this reference to the model. It is not a bearer credential and grants no authority by possession.
 
-A non-null owner makes the Connection personal to that Principal. A null owner makes it Workspace-shared. Ownership, tenant, Connector, and provider are immutable. Moving an account between owners or Connectors creates another Connection.
+A non-null `owner_principal_ref` makes the Connection Principal-owned; it can name one same-Workspace User or Service Account. A null value makes the Connection Workspace-shared. An external provider actor, username, or account identifier is never a Foundation owner. Ownership, tenant, Connector, and provider are immutable. Moving an account between owners or Connectors creates another Connection.
 
-A personal Connection is eligible only when the Run's active invoking Foundation Principal exactly matches its owner. An Ingress-triggered Run uses its configured Service Account, not the external provider actor; it can therefore use a personal Connection only when that Service Account owns the Connection. A Workspace-shared Connection remains eligible through current Agent, Route, Principal, Connector, and Connection grants.
+A Principal-owned Connection is eligible only when the Run's active invoking Foundation Principal exactly matches `owner_principal_ref`. An Ingress-triggered Run uses its configured Service Account, not the external provider actor; it can therefore use a Principal-owned Connection only when that Service Account owns it. A Workspace-shared Connection remains eligible through current Agent, Route, Principal, Connector, and Connection grants.
 
-Connection status is Foundation's safe eligibility projection, not a continuous claim that an external account or token is healthy. Connector reconciliation can move `pending` or `attention_required` to `ready`; local disablement is reversible; `revoked` is terminal. Foundation never repairs a Connection by choosing a different external account.
+Connection status is Foundation's safe eligibility projection, not a continuous claim that an external account or token is healthy. `pending` means setup has not produced a usable external Connection, `ready` permits authorized selection and dispatch, `action_required` blocks use until a user repairs authorization or compatibility, and `disabled` is a reversible local decision. `status_reason` is non-null exactly for `action_required` and is one finite safe code; it never contains provider payloads or credentials. Transient Connector or provider failures do not change status. Reconciliation or explicit reconnect can move `pending` or `action_required` to `ready` only while the immutable Connection identity remains the same; otherwise setup creates another Connection. Foundation never repairs a Connection by choosing a different external account.
 
 ## Credential Custody and Setup
 
@@ -81,7 +85,7 @@ The control role loads the explicitly registered Connector client adapter for se
 
 Foundation does not receive, encrypt, proxy, log, or copy the external account's access token, refresh token, cookie, password, or provider API key. Provider OAuth callback state and token refresh remain Connector state. A Connector redirect or setup handle grants no Foundation authority by possession.
 
-Revocation first makes the Foundation Connection unusable, then requests Connector cleanup under a stable operation identity. A lost or unknown Connector response never restores local eligibility. Reconciliation inspects that same external reference instead of creating another Connection blindly.
+Revocation first makes the Foundation Connection unusable, then requests Connector cleanup under a stable operation identity. Confirmed external revocation leaves the Connection in `action_required` with `reauthorization_required` until an identity-preserving reconnect succeeds or the Connection is deleted. A lost or unknown Connector response never restores local eligibility. Reconciliation inspects that same external reference instead of creating another Connection blindly.
 
 ## Assignment and Effective Selection
 
@@ -102,15 +106,13 @@ The exact Connection facts retained by a Run use this conceptual shape:
 ```python
 class ConnectionRunSelection:
     connection_id: ConnectionId
-    connection_version: int
     connector_id: ConnectorId
-    connector_version: int
     exposure: MCPExposureMode
     allowed_tool_keys: tuple[str, ...]
     tool_catalog_digest: str
 ```
 
-This selection is the authorization authority for the exact Connector, Connection, exposure mode, and allowlist accepted by the Run. `tool_catalog_digest` identifies the validated local source catalog from which the model-facing bindings are derived; it is compatibility evidence, not a credential. The [Run persistence contract](../14-run-persistence.md) owns its durable placement, while [`MCPToolSnapshot`](04-agent-facing-tools.md#mcp-toolsnapshot) is only the immutable model projection derived from this selection.
+This selection is the authorization authority for the exact Connector, Connection, exposure mode, and allowlist accepted by the Run. Connector and Connection IDs identify immutable external binding semantics; their mutable management CAS versions are not Run compatibility inputs. `tool_catalog_digest` identifies the validated local source catalog from which the model-facing bindings are derived; it is compatibility evidence, not a credential. The [Run persistence contract](../14-run-persistence.md) owns its durable placement, while [`MCPToolSnapshot`](04-agent-facing-tools.md#mcp-toolsnapshot) is only the immutable model projection derived from this selection.
 
 ## a13n MCP Boundary
 
@@ -142,16 +144,16 @@ Run acceptance fixes the effective tool snapshot and Foundation Connection choic
 
 ## Failure and Compatibility
 
-| Condition                                                   | Outcome                                                                                         |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Connector unavailable before setup or dispatch              | Operation fails safely; no fallback Connector is chosen                                         |
-| Connector response is lost after possible external dispatch | Tool outcome is unknown unless the Connector supplies stable receipt or reconciliation evidence |
-| Connection requires renewed authorization                   | Connection becomes `attention_required`; new calls fail before dispatch                         |
-| Connector tool disappears or its schema is incompatible     | New discovery reflects the Connector; an already accepted incompatible Run fails closed         |
-| Connection or Connector is disabled                         | New discovery, Run acceptance, and dispatch through it are denied                               |
-| Connector reports revocation                                | Foundation terminalizes the same Connection and never reuses its identity                       |
+| Condition                                                   | Outcome                                                                                              |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Connector unavailable before setup or dispatch              | Operation fails safely; no fallback Connector is chosen                                              |
+| Connector response is lost after possible external dispatch | Tool outcome is unknown unless the Connector supplies stable receipt or reconciliation evidence      |
+| Connection requires renewed authorization                   | Connection becomes `action_required` with `reauthorization_required`; new calls fail before dispatch |
+| Connector tool disappears or its schema is incompatible     | New discovery reflects the Connector; an already accepted incompatible Run fails closed              |
+| Connection or Connector is disabled                         | New discovery, Run acceptance, and dispatch through it are denied                                    |
+| Connector reports revocation                                | Connection becomes `action_required`; reconnect must preserve its immutable identity                 |
 
-Connector adapters and provider tool contracts version independently from Foundation's API and Connection CAS version. Adding another Connector or provider tool is additive. Treating one Connector's action as semantically interchangeable with another, changing a retained external reference's meaning, or exposing third-party credentials through Foundation is incompatible.
+Connector adapters and provider tool contracts version independently from Foundation management CAS versions. Adding another Connector or provider tool is additive. Treating one Connector's action as semantically interchangeable with another, changing a retained external reference's meaning, or exposing third-party credentials through Foundation is incompatible.
 
 ## Invariants
 

@@ -14,7 +14,7 @@ Each provider Route can use only its validated configuration and adapter-declare
 
 The common messaging contract does not define Slack, Lark, Discord, or Teams wire payloads, identifier extraction, event subscription configuration, acknowledgement deadlines, retry headers, cursor formats, rate limits, or native thread creation APIs.
 
-Each provider requires an owning adapter contract before its configuration and runtime behavior become part of the platform. That contract must map native channel, group, direct-message, topic, thread, reply-chain, mention, and message semantics into the common Ingress, Route, InboundEvent, DiscussionBinding, and AgentThreadBinding concepts without changing their meaning.
+Each provider requires an owning adapter contract before its configuration and runtime behavior become part of the platform. That contract must map native channel, group, direct-message, topic, thread, reply-chain, mention, and message semantics into the common Ingress, Route, InboundEvent, messaging interaction modes, and AgentThreadBinding concepts without changing their meaning.
 
 The common Ingress contract defines ordered per-Agent-Thread input batching and its two Route controls. It does not define one universal numeric default: each provider supplies bounded defaults, and deployments constrain the accepted interval, batch count, byte, and pending-capacity ranges.
 

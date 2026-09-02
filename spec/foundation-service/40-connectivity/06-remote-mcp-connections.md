@@ -17,9 +17,12 @@ type MCPAuthMode = Literal["none", "bearer", "oauth", "static_headers"]
 type MCPConnectionStatus = Literal[
     "pending",
     "ready",
-    "attention_required",
+    "action_required",
     "disabled",
-    "revoked",
+]
+type MCPConnectionStatusReason = Literal[
+    "reauthorization_required",
+    "incompatible",
 ]
 
 
@@ -32,6 +35,7 @@ class MCPConnection:
     endpoint_url: str
     auth_mode: MCPAuthMode
     status: MCPConnectionStatus
+    status_reason: MCPConnectionStatusReason | None
     version: int
     created_by: PrincipalRef
     created_at: datetime
@@ -40,17 +44,17 @@ class MCPConnection:
 
 `endpoint_url` is one credential-free absolute Streamable HTTP MCP endpoint validated under deployment outbound-network policy. It contains no user info, access token, API key, fragment, or model-controlled component. Redirects and resolved destinations are bounded and revalidated on every discovery, authorization, and runtime request.
 
-Endpoint, owner, Workspace, authentication mode, and the normalized static-header name set are immutable. Changing any of them creates another MCPConnection. Name and enabled state are mutable under exact version preconditions. OAuth token refresh, bearer or static-header value replacement, catalog refresh, health observations, and safe status reconciliation do not reinterpret endpoint or owner identity.
+Endpoint, owner, Workspace, authentication mode, and the normalized static-header name set are immutable. Changing any of them creates another MCPConnection. Name and local disabled state are mutable under exact version preconditions. OAuth token refresh, bearer or static-header value replacement, catalog refresh, health observations, and safe status reconciliation do not reinterpret endpoint or owner identity.
 
 An absent `owner_user_id` makes the MCPConnection Workspace-shared. A present value makes it personal to that Foundation User. Personal and shared scope is explicit at creation and cannot be inferred from the remote account's email or display name.
 
-`pending` means setup has not produced usable authorization and discovery. `ready` means the latest authorized setup and tool discovery succeeded, not that every later request will succeed. `attention_required` means authorization or compatibility requires user action. `disabled` is a reversible Foundation decision that blocks new selection and calls. `revoked` is terminal for that identity; reconnecting creates another MCPConnection.
+`pending` means setup has not produced usable authorization and discovery. `ready` means the latest authorized setup and tool discovery succeeded, not that every later request will succeed. `action_required` blocks use until the user repairs authorization or compatibility. `disabled` is a reversible Foundation decision that blocks new selection and calls. `status_reason` is non-null exactly for `action_required` and is one finite safe code; it never contains remote payloads or credentials. Transient discovery or request failures do not change status. An explicit reconnect can restore `action_required` to `ready` only while the immutable endpoint, owner, Workspace, authentication mode, and header-name identity remain unchanged; otherwise the user creates another MCPConnection.
 
 ## Ownership and Runtime Eligibility
 
 A Workspace-shared MCPConnection can be selected by an Agent default, an authorized direct Run overlay, or an Ingress Route. The Workspace administrator who establishes it explicitly accepts that Runs authorized for those configurations can use the remote account.
 
-A personal MCPConnection is eligible only for a Run whose active invoking Foundation Principal is the same User. An external Slack, Lark, Discord, Teams, GitHub, Gmail, or other provider actor is not a Foundation Principal merely because an ID, username, or email appears to match. Ingress-triggered Runs therefore cannot use personal MCPConnections under this contract. Route configuration cannot override this rule.
+A User-owned MCPConnection is eligible only for a Run whose active invoking Foundation Principal is the same User. An external Slack, Lark, Discord, Teams, GitHub, Gmail, or other provider actor is not a Foundation Principal merely because an ID, username, or email appears to match. Ingress-triggered Runs therefore cannot use User-owned MCPConnections under this contract. Route configuration cannot override this rule.
 
 An MCPConnection does not store mutable Agent or Route assignment lists. Agent authoring and the common [`RunCapabilityOverlay`](../12-agent-management.md#run-capability-overlay) reference the MCPConnection ID and choose exposure plus an exact tool allowlist. Authorized reads can derive reverse-use projections without creating another assignment authority.
 
@@ -100,7 +104,7 @@ The fixed callback uses short-lived, unpredictable, single-use state bound to th
 
 Foundation follows protected-resource and authorization-server discovery, resource indicators, issuer validation, PKCE, scope challenges, and token audience requirements from the selected supported MCP protocol revision. It never treats self-reported server display metadata as authorization identity.
 
-Access tokens, refresh tokens, and any Dynamic Client Registration credential form one MCPConnection-owned encrypted credential bundle. Bearer and static-header modes likewise retain one current encrypted credential bundle under the same owner. Refresh or replacement swaps the applicable current bundle without exposing it or changing the MCPConnection's endpoint identity. An OAuth refresh failure, invalid grant, issuer mismatch, insufficient-scope condition requiring interaction, or confirmed revocation makes the MCPConnection ineligible and moves it to `attention_required` or `revoked` according to the evidence. Agent execution never opens an interactive browser flow.
+Access tokens, refresh tokens, and any Dynamic Client Registration credential form one MCPConnection-owned encrypted credential bundle. Bearer and static-header modes likewise retain one current encrypted credential bundle under the same owner. Refresh or replacement swaps the applicable current bundle without exposing it or changing the MCPConnection's endpoint identity. An OAuth refresh failure, invalid grant, insufficient-scope condition requiring interaction, or confirmed revocation moves the MCPConnection to `action_required` with `reauthorization_required`. An issuer, endpoint, protocol, or tool-discovery incompatibility that needs user repair uses `incompatible`. Agent execution never opens an interactive browser flow.
 
 ## Secret Boundary
 
@@ -119,13 +123,12 @@ The conceptual accepted selection is:
 ```python
 class MCPConnectionRunSelection:
     mcp_connection_id: MCPConnectionId
-    mcp_connection_version: int
     exposure: MCPExposureMode
     allowed_tool_keys: tuple[str, ...]
     tool_catalog_digest: str
 ```
 
-This selection is the authorization authority for the exact MCPConnection, version, exposure mode, and allowlist accepted by the Run. `tool_catalog_digest` selects the validated local source catalog used for that decision. The common [`MCPToolSnapshot`](04-agent-facing-tools.md#mcp-toolsnapshot) is only the immutable model-facing projection derived from this selection.
+This selection is the authorization authority for the exact MCPConnection, exposure mode, and allowlist accepted by the Run. MCPConnection identity-defining fields are immutable, while its mutable management CAS version is not a Run compatibility input. `tool_catalog_digest` selects the validated local source catalog used for that decision. The common [`MCPToolSnapshot`](04-agent-facing-tools.md#mcp-toolsnapshot) is only the immutable model-facing projection derived from this selection.
 
 The Run stores no OAuth scope string or token snapshot. Current authorization is revalidated before each remote call, and revocation takes effect immediately.
 
@@ -138,7 +141,7 @@ The Run stores no OAuth scope string or token snapshot. Current authorization is
 | Neither Client ID Metadata Document nor DCR is supported        | OAuth setup reports an incompatible MCP authorization service                                              |
 | State, issuer, redirect, resource, or PKCE validation fails     | Callback is rejected and no credential or ready transition commits                                         |
 | Callback or token response is lost after a possible commit      | Setup reconciles the same single-use state and MCPConnection; it never creates a second identity blindly   |
-| Refresh token is absent or refresh fails                        | Current call fails; the MCPConnection becomes `attention_required` when user interaction is required       |
+| Refresh token is absent or refresh fails                        | Current call fails; the MCPConnection becomes `action_required` with `reauthorization_required`            |
 | Personal MCPConnection is selected for an Ingress-triggered Run | Run acceptance fails before tool or model work                                                             |
 | Static header name or value violates the bounded policy         | Setup or replacement fails before any credential is stored or sent                                         |
 | Tool catalog changes after Run acceptance                       | Later Runs can use the new catalog; the accepted Run retains its exact snapshot                            |
@@ -151,6 +154,6 @@ Foundation records the selected MCP protocol revision and exact tool snapshot co
 1. One MCPConnection combines one Streamable HTTP endpoint and one authorization identity; Foundation defines no separate MCPServer resource.
 2. Foundation Service never launches user-configured MCP processes.
 3. Foundation implements one standards-based MCP OAuth client using a Client ID Metadata Document when supported and DCR otherwise, without provider-specific branches.
-4. Workspace-shared MCPConnections can be delegated through Agent and Route configuration; personal MCPConnections require the same active Foundation User and are never authorized by an unmatched external actor.
+4. Workspace-shared MCPConnections can be delegated through Agent and Route configuration; User-owned MCPConnections require the same active Foundation User and are never authorized by an unmatched external actor.
 5. OAuth, bearer, and bounded static-header credentials are MCPConnection-owned Secrets and never model-visible data.
 6. Tool catalogs are isolated by MCPConnection authorization identity and become exact immutable Run snapshots before model execution.

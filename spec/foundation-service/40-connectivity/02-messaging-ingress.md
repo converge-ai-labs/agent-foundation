@@ -2,118 +2,121 @@
 
 ## Design Position
 
-Slack, Lark, Discord, and Teams use native messaging Ingresses. One installed App or Bot identity can serve several allowed Agents without requiring one external App per Agent. The user configures the external identity once, then chooses its Agents, aliases, default Agent, and per-channel, group, or direct-message routing.
+Slack, Lark, Discord, and Teams use native messaging Ingresses. One installed App or Bot identity can serve several allowed Agents without requiring one external App per Agent. The user configures the external identity once, then chooses its allowed Agents, default Agent, and per-channel, group, or direct-message Routes.
 
-Messaging terminology remains local to this contract. `Conversation` means the provider's channel, group, or direct-message container. `Discussion` means the provider-declared continuation unit inside it, such as a Slack thread, Lark topic/reply chain, Discord thread, Teams reply chain, or the direct-message container itself. Neither term replaces a Foundation Agent `Thread`.
+Messaging terminology remains local to this contract. `Conversation` means the provider's channel, group, or direct-message container. `Discussion` means the provider-declared continuation unit inside it, such as a Slack thread, Lark topic or reply chain, Discord thread, Teams reply chain, or a direct-message container. Neither term replaces a Foundation Agent `Thread`.
 
 ## Provider-Native Identity
 
-The Ingress represents one concrete App installation or Bot identity in one provider tenant, workspace, or guild. Provider credentials, event subscription, permissions, conversation discovery, and identifiers remain provider-specific. An a13n official App definition can back many customer Ingresses; each customer Ingress has independent Agents, routes, permissions, and lifecycle.
+The Ingress represents one concrete App installation or Bot identity in one provider tenant, workspace, or guild. Provider credentials, event subscription, permissions, conversation discovery, and identifiers remain provider-specific. An a13n official App definition can back many customer Ingresses; each customer Ingress has independent Agents, Routes, permissions, and lifecycle.
 
 Open-source deployments can use a developer-created App. The setup UI can collect App definition and installation data in one flow without merging their identity or lifecycle in the durable model.
 
 Native event receipt and the Bot's basic provider actions belong to this Ingress. Users do not create a second Connector Connection merely so the same Bot can receive or send ordinary messages. A Connector Connection is separate and optional when the Agent needs broader SaaS actions or another account.
 
-## Messaging Policy
+## Interaction Policy
 
-One messaging `Route` stores this provider policy inside its base `provider_policy` field. `MessagingPolicy` is embedded Route configuration, not another resource, matcher, or routing layer:
+One messaging `Route` stores one interaction policy inside its base `provider_policy` field. This is embedded configuration, not another resource, matcher, or routing layer:
 
 ```python
 class MessagingPolicy:
-    start_mode: Literal["explicit", "automatic"]
-    continuation_mode: Literal["explicit", "automatic"]
+    interaction_mode: Literal["mention", "discussion", "chat"]
     reply_mode: Literal["auto", "thread", "main"]
-    new_thread_aliases: tuple[str, ...]
 ```
 
-`start_mode` governs an unbound Discussion. `explicit` requires an App mention or recognized Agent selector; `automatic` admits ordinary messages. A direct message to the App is explicit by construction.
+The three interaction modes are complete alternatives rather than independent start, continuation, and correlation switches:
 
-`continuation_mode` governs a bound Discussion. `explicit` still requires an App mention or recognized selector. `automatic` sends ordinary follow-up messages to the bound Agent Thread without requiring another mention.
+| Mode         | Group activation                                                                            | Agent Thread correlation                                 |
+| ------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `mention`    | Every admitted message requires a provider-authenticated App mention                        | One provider-native Discussion                           |
+| `discussion` | An App mention starts an unbound Discussion; a bound Discussion continues without a mention | One provider-native Discussion                           |
+| `chat`       | Every supported human message in the matched Conversation is admitted                       | The complete provider Conversation uses one Agent Thread |
 
-`reply_mode` is policy for an authorized provider reply action. `auto` permits the Agent and provider action to choose the appropriate placement; `thread` and `main` require the provider-native threaded or main-flow placement respectively. The inbound adapter records this policy but never sends a message.
+A direct message to the App is addressed by construction. In `mention` and `discussion`, its provider container is the stable Discussion unless that provider supplies a narrower native continuation unit. In `chat`, all messages under the matched Conversation use its stable Conversation reference, including messages surfaced from provider-native subthreads when the adapter declares them part of that Conversation.
 
-`new_thread_aliases` are ordinary text recognized by a13n, not provider-native slash-command registrations. A recognized command creates a fresh Agent Thread for the selected Agent and replaces only that Agent's current Thread binding in the Discussion. Providers can still offer native commands independently, but routing correctness does not depend on their registration.
+`chat` is the explicit full-listening mode for a dedicated Agent room, observer, summarizer, or coordinator. It does not force a response. Every admitted message reaches the fixed Chat Agent Thread through the common bounded batching and Run-or-Steer flow, and the Agent can remain silent by making no outbound action call.
 
-## Agent Selection
+An adapter exposes a mode only when the installed App permissions and event transport can supply the required messages and stable correlation reference. Slack channel subscriptions, Discord message-content access, Teams resource-specific consent, and corresponding Lark permissions remain provider-specific setup. Configuration fails explicitly when the selected mode is unsupported and never silently degrades to mention-only delivery.
 
-The router applies exactly this order:
+`reply_mode` is policy for an authorized provider reply action. `thread` and `main` require provider-native threaded or main-flow placement respectively. `auto` uses the bounded provider-native choice; for a top-level group task it defaults to an available Thread, topic, or reply chain, while a direct message remains in its main flow. The inbound adapter records this policy but never sends a message.
 
-1. an explicit Agent selector in the message;
-2. the Agent in the current `DiscussionBinding`;
-3. the matched Route's Agent override; and
-4. the Ingress's default Agent.
+Provider-authenticated App mentions are activation controls, not task content. The normalized event retains the original provider message for protected correlation and audit, while the messaging `EventInputView.text` supplied to Input Mapping excludes the App mention and contains only ordinary content. The remaining message must contain adapter-declared task content, such as non-empty text or a supported attachment. A mention-only message is filtered before durable admission and creates no Binding, Agent Thread, or Run. Every other token is ordinary Agent input; a13n defines no message command, wake word, selector, or Agent-switching grammar.
 
-An App mention without an Agent selector activates routing but does not skip the remaining precedence. A selector resolves only against aliases configured on the Ingress. Unknown, ambiguous, unauthorized, or malformed selectors fail safely and never fall through to a different Agent.
+## Agent and Thread Resolution
 
-One message selects exactly one Agent. There is no automatic Agent fan-out, competition, or background participation. Selecting another Agent changes the Discussion's active Agent, then resumes that Agent's retained Agent Thread or creates one when no Binding exists. A different Agent never continues another Agent's Thread.
+The router resolves one correlation reference from `interaction_mode`, then applies exactly this order:
+
+1. an existing `AgentThreadBinding`, which fixes both the Agent and Agent Thread;
+2. the matched Route's Agent override; and
+3. the Ingress's default Agent.
+
+One message selects exactly one Agent. An existing Binding always wins and message content can neither select nor switch its Agent. Starting another provider-native Discussion creates another correlation target under `mention` or `discussion`; specialist work inside an existing task uses the bound Agent's Skills, Tools, or subagents rather than messaging-level Agent handoff.
 
 ```mermaid
 flowchart TD
-    Message[Normalized message] --> Eligible{Activation policy admits it?}
+    Message[Normalized message] --> Mode[Resolve interaction mode and correlation ref]
+    Mode --> Eligible{Mode admits this message?}
     Eligible -->|no| Ignore[No Agent input]
-    Eligible -->|yes| Selector{Explicit Agent selector?}
-    Selector -->|yes| Explicit[Selected allowed Agent]
-    Selector -->|no| Bound{Discussion bound?}
-    Bound -->|yes| Active[Bound active Agent]
+    Eligible -->|yes| Bound{AgentThreadBinding exists?}
+    Bound -->|yes| Existing[Fixed Agent and Agent Thread]
     Bound -->|no| RouteDefault{Route Agent override?}
     RouteDefault -->|yes| RouteAgent[Route Agent]
     RouteDefault -->|no| AppAgent[Ingress default Agent]
-    Explicit & Active & RouteAgent & AppAgent --> Thread[Resolve Agent Thread]
-    Thread --> Capabilities[Resolve effective capabilities]
-    Capabilities --> Input[Foundation input acceptance]
+    RouteAgent & AppAgent --> Create[Atomically create Agent Thread, first Run, and Binding]
+    Existing & Create --> Capabilities[Resolve effective capabilities]
+    Capabilities --> Input[Batch and accept Foundation Run or Steer]
 ```
 
-## Discussion and Agent Thread Binding
-
-The provider adapter supplies exact Conversation and Discussion references. It can treat a direct-message container as one Discussion and native thread or reply-chain identities as separate Discussions. A provider-specific Route can also treat a dedicated channel as one Discussion when that provider can supply a stable container reference.
-
-Messaging adds one active-Agent pointer above the per-Agent `AgentThreadBinding` owned by [Ingress and Routing](01-ingress-and-routing.md#agent-and-agent-thread-routing):
+The common `AgentThreadBinding` owns the complete fixed mapping:
 
 ```python
-class DiscussionBinding:
+class AgentThreadBinding:
     ingress_id: IngressId
-    discussion_ref: ExternalRef
-    active_agent_preset_id: AgentPresetId
+    external_ref: ExternalRef
+    agent_preset_id: AgentPresetId
+    agent_thread_id: ThreadId
     version: int
     created_at: datetime
     updated_at: datetime
 ```
 
-`(ingress_id, discussion_ref.kind, discussion_ref.id)` is unique. `DiscussionBinding` answers only which Agent is currently active. `AgentThreadBinding` separately maps `(Ingress, external reference, Agent)` to that Agent's current Agent Thread. These facts change independently and do not become a second transcript.
+`(ingress_id, external_ref.kind, external_ref.id)` is unique. In `mention` and `discussion`, `external_ref` is the adapter-declared Discussion reference. In `chat`, it is the Conversation reference. Creating the first Binding, Agent Thread, and Run is atomic from the caller's perspective, and a concurrent duplicate reuses the winning identity.
 
-Selecting another Agent atomically changes `active_agent_preset_id` after resolving its existing Binding or accepting its first Agent Thread. Selecting the previous Agent later resumes its retained Thread. A recognized new-Thread command creates a new Agent Thread for the selected Agent and replaces that Agent's Discussion-level `AgentThreadBinding`; other Agents' bindings remain unchanged. Historical provider message references can remain bound to their earlier Agent Threads.
+A top-level App mention can supply the future provider thread root before the Bot replies, so its first input creates the Foundation Agent Thread without requiring an empty external thread. A later App mention inside the same bound provider Discussion continues the existing Agent Thread. Route edits never silently rebind an existing external reference to another Agent or Thread.
 
-Receiving an event proves only that the App has access to the provider context; it does not prove which Agent Thread should receive it. Discussion and AgentThread bindings supply that exact correlation. Replies to a provider message, topic, or thread can reuse any stable adapter-declared reference already bound to the Agent Thread.
-
-When `continuation_mode="automatic"`, every admitted follow-up is input to the selected Agent. There is no separate hard-coded attention gate. The Agent can decide that no outbound response is appropriate. The Route's common [input batching policy](01-ingress-and-routing.md#input-batching-and-frequency) combines ordered bursts by destination Agent Thread and bounds submission frequency. A compatible current running or current/head waiting Run receives only Steer, and Foundation's Thread inbox remains the only durable active-input authority.
+Every message admitted by `discussion` after binding or by `chat` is input to the fixed Agent. There is no hard-coded attention gate. The Agent can decide that no outbound response is appropriate. The Route's common [input batching policy](01-ingress-and-routing.md#input-batching-and-frequency) combines compatible ordered bursts by destination Agent Thread and bounds submission frequency. A compatible current running or current/head waiting Run receives only Steer, and Foundation's Thread inbox remains the only durable active-input authority.
 
 ## Capability Resolution
 
 Agent selection and capability resolution are independent:
 
 ```text
-select one Agent
+resolve one fixed Agent
     -> resolve Ingress and matched Route capability configuration
     -> accept one exact effective Run capability selection
 ```
 
 The matched base Route can configure different Skills, MCPConnections, Connector Connections, and native Ingress actions for the same Agent in different Conversations through its per-Agent common [Run Capability Overlay](../12-agent-management.md#run-capability-overlay). `inherit_agent`, `include`, and `exclude` are the complete composition controls. An authorized `include` can add a supported managed capability absent from the Agent defaults; message content cannot add one. The accepted Run fixes the resulting effective selection so a replacement RunAttempt cannot observe a different tool surface silently.
 
-Routing a message to another Agent does not copy the prior Agent's capabilities. Changing capabilities does not change which Agent is selected or mutate the Discussion binding.
+Changing capabilities does not change the bound Agent or Agent Thread.
 
 ## Outbound Boundary
 
-Inbound message handling never sends automatically. The Agent responds only by calling the authorized provider-native actions supplied by the [a13n MCP](04-agent-facing-tools.md). Those actions are bound to the accepted Run and current Discussion and expose no model-settable Channel, Chat, Discussion, Thread, Ingress, Connection, or Run identifier. Connector and user Remote MCP tools remain separate from inbound receipt and can fail independently.
+Inbound message handling never sends automatically. The Agent responds only by calling the authorized provider-native actions supplied by the [a13n MCP](04-agent-facing-tools.md). Those actions are bound to the accepted Run and current external target and expose no model-settable Channel, Chat, Conversation, Discussion, Thread, Ingress, Connection, or Run identifier. Connector and user Remote MCP tools remain separate from inbound receipt and can fail independently.
 
-For `reply_mode="thread"` or `reply_mode="main"`, the native action enforces placement and omits a placement argument. For `reply_mode="auto"`, the provider reply action can expose a bounded placement choice without permitting another destination. Slack, Lark, Discord, and Teams retain different provider-native tool names and schemas.
+For `reply_mode="thread"` or `reply_mode="main"`, the native action enforces placement and omits a placement argument. For `reply_mode="auto"`, the provider reply action can expose a bounded provider-appropriate placement choice without permitting another destination. Reply placement never changes, moves, or replaces the inbound AgentThreadBinding. A main-flow message is an outbound notification rather than an implicit migration of the current Discussion; a later provider Discussion follows ordinary inbound binding rules.
 
 ## Invariants
 
-1. One messaging Ingress can expose several allowed Agents; one message activates at most one.
-2. Explicit Agent selection overrides binding and defaults; no other routing rule overrides an explicit valid selector.
-3. Agent selection and capability resolution remain independent.
-4. Automatic continuation admits input but does not force an outbound response.
-5. Conversation and Discussion are provider-facing messaging terms; Agent Thread remains the only Foundation history identity.
-6. Provider-native command registration is not required for a13n text commands.
-7. Reselecting an Agent resumes that Agent's retained Agent Thread for the Discussion; a new-Thread command replaces only its current mapping.
-8. Inbound handling never sends; provider-native outbound actions require an Agent call through the Run-bound a13n MCP.
+01. One messaging Ingress can expose several allowed Agents; one message activates at most one.
+02. `mention`, `discussion`, and `chat` are the complete interaction modes; there is no independent start, continuation, or Agent Thread scope cross-product.
+03. `chat` admits the complete matched Conversation into one fixed Agent Thread, while `mention` and `discussion` correlate by provider-native Discussion.
+04. Message content can neither select nor switch an Agent; only an existing Binding, matched Route, or Ingress default determines it.
+05. One external correlation reference binds exactly one Agent and one Agent Thread.
+06. Agent selection and capability resolution remain independent.
+07. Automatic Discussion continuation and complete Chat listening admit input but do not force an outbound response.
+08. Conversation and Discussion are provider-facing messaging terms; Agent Thread remains the only Foundation history identity.
+09. Inbound handling never sends; provider-native outbound actions require an Agent call through the Run-bound a13n MCP.
+10. Reply placement never changes Agent or Agent Thread correlation.
+11. The provider-authenticated App mention is the only messaging activation control and is excluded from Agent input; every other token remains ordinary input.
+12. A mention-only message creates no input or Binding state.
