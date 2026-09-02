@@ -47,7 +47,6 @@ from .domain import (
     OutputSpec,
     ProtocolConfig,
     ResolvedAgentModelConfig,
-    ResolvedConnectorSelection,
     ResolvedPluginVersion,
     ResolvedRevisionContent,
     ResolvedSkillSelection,
@@ -82,7 +81,6 @@ class AgentDefinitionReconstructionContext:
     is_root: bool
     input_adapter: InputAdapterConfig
     resolved_skills: tuple[ResolvedSkillSelection, ...]
-    resolved_connectors: tuple[ResolvedConnectorSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
     secret_requirements: tuple[SecretRequirement, ...]
     asset_publication: AssetPublicationConfig | None
@@ -106,7 +104,6 @@ class _NodeSnapshot:
     resolved_model: ResolvedAgentModelConfig
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     resolved_skills: tuple[ResolvedSkillSelection, ...]
-    resolved_connectors: tuple[ResolvedConnectorSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     instructions: str
@@ -294,7 +291,6 @@ class AgentPresetReconstructor:
             is_root=is_root,
             input_adapter=node.input_adapter,
             resolved_skills=node.resolved_skills,
-            resolved_connectors=node.resolved_connectors,
             resolved_environment=node.resolved_environment,
             secret_requirements=node.secret_requirements,
             asset_publication=node.asset_publication,
@@ -343,7 +339,6 @@ class AgentPresetReconstructor:
             resolved_plugin_versions=revision.resolved_plugin_versions,
             runtime_lock_digest=revision.runtime_lock_digest,
             resolved_skills=revision.resolved_skills,
-            resolved_connectors=revision.resolved_connectors,
             resolved_environment=revision.resolved_environment,
             resolved_subagents=revision.resolved_subagents,
         )
@@ -372,7 +367,6 @@ def _snapshot_from_effective(
         resolved_model=effective.resolved_model,
         resolved_plugin_versions=effective.resolved_plugin_versions,
         resolved_skills=effective.resolved_skills,
-        resolved_connectors=effective.resolved_connectors,
         resolved_environment=effective.resolved_environment,
         resolved_subagents=effective.resolved_subagents,
         instructions=effective.instructions,
@@ -395,7 +389,6 @@ def _snapshot_from_revision(revision: AgentPresetRevision) -> _NodeSnapshot:
         resolved_model=revision.resolved_model,
         resolved_plugin_versions=revision.resolved_plugin_versions,
         resolved_skills=revision.resolved_skills,
-        resolved_connectors=revision.resolved_connectors,
         resolved_environment=revision.resolved_environment,
         resolved_subagents=revision.resolved_subagents,
         instructions=config.instructions,

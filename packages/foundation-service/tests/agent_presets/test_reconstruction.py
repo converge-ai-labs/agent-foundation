@@ -139,7 +139,6 @@ def _effective(
         resolved_plugin_versions=plugins,
         runtime_lock_digest="a" * 64,
         resolved_skills=(),
-        resolved_connectors=(),
         resolved_environment=None,
         resolved_subagents=subagents,
         instructions=config.instructions,
@@ -170,7 +169,6 @@ def _revision(
         resolved_plugin_versions=plugins,
         runtime_lock_digest="c" * 64,
         resolved_skills=(),
-        resolved_connectors=(),
         resolved_environment=None,
         resolved_subagents=subagents,
     )
@@ -193,7 +191,6 @@ def _revision(
         resolved_plugin_versions=resolved.resolved_plugin_versions,
         runtime_lock_digest=resolved.runtime_lock_digest,
         resolved_skills=resolved.resolved_skills,
-        resolved_connectors=resolved.resolved_connectors,
         resolved_environment=resolved.resolved_environment,
         resolved_subagents=resolved.resolved_subagents,
         content_digest=digest,

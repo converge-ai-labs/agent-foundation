@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectors import ConnectorError
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -30,7 +29,6 @@ from a13n_service.skills.domain import SkillPackageManifest
 from a13n_service.skills.models import SkillRecord, SkillRevisionRecord
 from a13n_service.storage import short_session
 
-from .connector_resolution import AgentConnectorSelectionResolver, PreparedConnectorSelections
 from .domain import (
     AgentPresetLifecycleState,
     AgentPresetRevision,
@@ -100,7 +98,6 @@ class PreparedAgentInvocation:
     revision: AgentPresetRevision
     merged: MergedAgentRun
     model: PreparedInvocationModel
-    connectors: PreparedConnectorSelections | None
     plugins: PreparedPluginSelections | None
     skills: tuple[PreparedInvocationSkill, ...]
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
@@ -134,14 +131,12 @@ class AgentPresetInvocationResolver:
         model_selector: AcceptedModelSelector,
         *,
         plugin_runtime_mode: PluginRuntimeMode,
-        connector_resolver: AgentConnectorSelectionResolver | None = None,
         environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
-        self._connector_resolver = connector_resolver
         self._environment_resolver = environment_resolver
         self._plugin_runtime_mode = plugin_runtime_mode
         self._plugin_resolver = plugin_resolver or AgentPluginSelectionResolver(
@@ -275,28 +270,6 @@ class AgentPresetInvocationResolver:
                     config=merged.config,
                     resolved_environment=resolved_environment,
                 )
-            connectors = None
-            if merged.config.connectors:
-                if self._connector_resolver is None:
-                    raise preset_revision_not_executable("connector_resolution_unavailable")
-                retained = {item.name: item for item in revision.resolved_connectors}
-                reuse_names = frozenset(
-                    name
-                    for name, selection in merged.config.connectors.items()
-                    if revision.config.connectors.get(name) == selection and name in retained
-                )
-                try:
-                    connectors = await self._connector_resolver.prepare_invocation(
-                        actor=actor,
-                        organization_id=authorized.organization_id,
-                        workspace_id=workspace_id,
-                        selections=merged.config.connectors,
-                        retained=retained,
-                        reuse_names=reuse_names,
-                        sensitive_headers=merged.sensitive_values.connector_headers,
-                    )
-                except ConnectorError as error:
-                    raise preset_revision_not_executable(_connector_reason(error)) from error
             try:
                 if merged.config.model.model_config_id == revision.config.model.model_config_id:
                     model: PreparedInvocationModel = await self._model_selector.prepare_snapshot(
@@ -328,7 +301,6 @@ class AgentPresetInvocationResolver:
             revision=revision,
             merged=merged,
             model=model,
-            connectors=connectors,
             plugins=plugins,
             skills=skills,
             resolved_plugin_versions=resolved_plugins,
@@ -454,14 +426,6 @@ class AgentPresetInvocationResolver:
                 raise preset_revision_not_executable(_model_reason(error)) from error
             skills = await _freeze_skills(session, prepared)
             try:
-                connectors = (
-                    await self._connector_resolver.freeze_in_transaction(session, prepared=prepared.connectors)
-                    if self._connector_resolver is not None and prepared.connectors is not None
-                    else ()
-                )
-            except ConnectorError as error:
-                raise preset_revision_not_executable(_connector_reason(error)) from error
-            try:
                 environment = (
                     await self._environment_resolver.freeze_in_transaction(
                         session,
@@ -519,7 +483,6 @@ class AgentPresetInvocationResolver:
             "resolved_plugin_versions": plugins,
             "runtime_lock_digest": runtime_lock.digest,
             "resolved_skills": skills,
-            "resolved_connectors": connectors,
             "resolved_environment": environment,
             "resolved_subagents": resolved_subagents,
             "instructions": prepared.merged.config.instructions,
@@ -1005,19 +968,3 @@ def _model_reason(error: ModelConfigError) -> str:
         "model_configuration_changed": "model_configuration_changed",
         "invalid_model_configuration": "model_incompatible",
     }.get(error.code, "model_unavailable")
-
-
-def _connector_reason(error: ConnectorError) -> str:
-    return {
-        "not_found": "connector_revision_unavailable",
-        "connector_disabled": "connector_disabled",
-        "connection_required": "connector_connection_unavailable",
-        "connection_ambiguous": "connector_connection_ambiguous",
-        "tool_not_found": "connector_tool_unavailable",
-        "tool_contract_incompatible": "connector_tool_contract_invalid",
-        "provider_contract_changed": "connector_provider_incompatible",
-        "runtime_headers_unsupported": "connector_runtime_headers_unsupported",
-        "provider_timeout": "connector_provider_timeout",
-        "connector_changed": "connector_changed",
-        "connection_changed": "connector_connection_changed",
-    }.get(error.code, "connector_resolution_failed")

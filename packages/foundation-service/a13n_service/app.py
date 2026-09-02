@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
@@ -12,14 +12,11 @@ from a13n_environment_provider import EnvironmentProviderCatalog, build_environm
 from anyio import create_task_group, fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
-from starlette.types import Receive, Scope, Send
 
-from a13n_service.agent_presets.connector_resolution import AgentConnectorSelectionResolver
 from a13n_service.agent_presets.domain import PluginRuntimeMode
 from a13n_service.agent_presets.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.plugin_resolution import AgentPluginSelectionResolver
-from a13n_service.agent_presets.references import AgentPresetConnectorReferenceChecker
 from a13n_service.agent_presets.resolution import AgentPresetResolver
 from a13n_service.agent_presets.router import router as agent_preset_router
 from a13n_service.agent_presets.service import AgentPresetService
@@ -29,25 +26,6 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.router import router as asset_router
 from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
-from a13n_service.connectors import (
-    AttemptConnectorMCPAuthenticator,
-    ConnectionService,
-    ConnectorAttemptAuthorizer,
-    ConnectorInvocationAuthorizer,
-    ConnectorMCPGateway,
-    ConnectorProviderCatalog,
-    ConnectorProviderOperations,
-    ConnectorProviderRuntime,
-    ConnectorService,
-    DatabaseConnectorSecretStore,
-    LocalConnectorProviderOperations,
-    PrincipalRef,
-    RemoteConnectorProviderOperations,
-    StandardConnectorMCPAuthenticator,
-    build_connector_provider_catalog,
-    create_connector_provider_operations_app,
-)
-from a13n_service.connectors.router import router as connector_router
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
@@ -116,7 +94,6 @@ logger = logging.getLogger("a13n_service.app")
 _API_METHODS = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
 _CONTROL_PLANE_ROLES = {ServiceRole.all, ServiceRole.control}
 _WORKER_ROLES = {ServiceRole.all, ServiceRole.worker}
-_CONNECTOR_ROLES = {ServiceRole.all, ServiceRole.connector}
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,14 +105,9 @@ class ServiceComponents:
     plugin_runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None
     plugin_runtime_candidate_resolver: PluginRuntimeCandidateResolver | None = None
     plugin_runtime_staging_authority: PluginRuntimeStagingAuthority | None = None
-    agent_connector_selection_resolver: AgentConnectorSelectionResolver | None = None
     model_connection_tester: CandidateConnectionTester | None = None
     model_secret_resolver: RuntimeSecretValueResolver | None = None
-    connector_provider_catalog: ConnectorProviderCatalog | None = None
-    connector_provider_operations: ConnectorProviderOperations | None = None
     environment_provider_catalog: EnvironmentProviderCatalog | None = None
-    connector_invocation_authorizer: ConnectorInvocationAuthorizer | None = None
-    connector_attempt_authorizer: ConnectorAttemptAuthorizer | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None
@@ -196,83 +168,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     authorizer=app.state.components.trace_access_authorizer,
                 )
             secret_protector = settings.secret_protector()
-            app.state.connector_secret_store = DatabaseConnectorSecretStore(storage.sessions, secret_protector)
-            component_catalog = app.state.components.connector_provider_catalog
-            if settings.role in _CONNECTOR_ROLES:
-                app.state.connector_providers = (
-                    component_catalog
-                    if component_catalog is not None
-                    else build_connector_provider_catalog(settings.connector_providers)
-                )
-                invocation_authorizer = app.state.components.connector_invocation_authorizer
-                if invocation_authorizer is None:
-                    invocation_authorizer = _BoundaryAuthorizedConnectorInvocationAuthorizer()
-                app.state.connector_provider_runtime = ConnectorProviderRuntime(
-                    storage.sessions,
-                    app.state.connector_providers,
-                    app.state.connector_secret_store,
-                    invocation_authorizer,
-                )
-                standard_authenticator = None
-                if app.state.request_authenticator is not None:
-                    standard_authenticator = StandardConnectorMCPAuthenticator(
-                        storage.sessions,
-                        app.state.request_authenticator,
-                        app.state.connector_provider_runtime,
-                    )
-                attempt_authenticator = None
-                if app.state.components.connector_attempt_authorizer is not None:
-                    attempt_authenticator = AttemptConnectorMCPAuthenticator(
-                        settings.connector_capability_codec(),
-                        app.state.components.connector_attempt_authorizer,
-                    )
-                app.state.connector_mcp_gateway = ConnectorMCPGateway(
-                    app.state.connector_provider_runtime,
-                    standard_authenticator=standard_authenticator,
-                    attempt_authenticator=attempt_authenticator,
-                    operation_timeout_seconds=settings.connector_mcp_operation_timeout_seconds,
-                )
-                await stack.enter_async_context(app.state.connector_mcp_gateway.run())
-                app.state.local_connector_provider_operations = LocalConnectorProviderOperations(
-                    app.state.connector_providers
-                )
-                if settings.role is ServiceRole.connector and settings.connector_internal_auth_token is None:
-                    raise ValueError("FOUNDATION_CONNECTOR_INTERNAL_AUTH_TOKEN is required for the connector role")
-                if settings.connector_internal_auth_token is not None:
-                    app.state.connector_provider_operations_app = create_connector_provider_operations_app(
-                        app.state.local_connector_provider_operations,
-                        authentication_token=settings.connector_internal_auth_token,
-                    )
-            if settings.role is ServiceRole.all:
-                app.state.connector_provider_operations = app.state.local_connector_provider_operations
-            elif settings.role is ServiceRole.control:
-                configured_operations = app.state.components.connector_provider_operations
-                if configured_operations is not None:
-                    app.state.connector_provider_operations = configured_operations
-                else:
-                    if settings.connector_internal_auth_token is None:
-                        raise ValueError("FOUNDATION_CONNECTOR_INTERNAL_AUTH_TOKEN is required for the control role")
-                    connector_http_client = await stack.enter_async_context(
-                        httpx2.AsyncClient(
-                            base_url=settings.connector_service_base_url,
-                            headers={
-                                "Authorization": (f"Bearer {settings.connector_internal_auth_token.get_secret_value()}")
-                            },
-                            follow_redirects=False,
-                        )
-                    )
-                    app.state.connector_provider_operations = RemoteConnectorProviderOperations(connector_http_client)
-            if settings.role in _CONTROL_PLANE_ROLES:
-                app.state.connector_service = ConnectorService(
-                    storage.sessions,
-                    app.state.connector_provider_operations,
-                    AgentPresetConnectorReferenceChecker(),
-                )
-                app.state.connection_service = ConnectionService(
-                    storage.sessions,
-                    app.state.connector_provider_operations,
-                    app.state.connector_secret_store,
-                )
             model_http_client = await stack.enter_async_context(
                 httpx2.AsyncClient(
                     follow_redirects=False,
@@ -436,14 +331,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     app.state.model_provider_registry,
                     app.state.model_endpoint_policy,
                 )
-                app.state.agent_connector_selection_resolver = (
-                    app.state.components.agent_connector_selection_resolver
-                    or AgentConnectorSelectionResolver(
-                        storage.sessions,
-                        app.state.connector_provider_operations,
-                        app.state.connector_secret_store,
-                    )
-                )
                 app.state.agent_environment_selection_resolver = AgentEnvironmentSelectionResolver(
                     storage.sessions,
                     app.state.environment_provider_catalog,
@@ -452,7 +339,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     storage.sessions,
                     app.state.accepted_model_selector,
                     plugin_runtime_mode=settings.plugin_runtime_mode,
-                    connector_resolver=app.state.agent_connector_selection_resolver,
                     environment_resolver=app.state.agent_environment_selection_resolver,
                     plugin_resolver=app.state.agent_plugin_selection_resolver,
                 )
@@ -462,7 +348,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         storage.sessions,
                         app.state.accepted_model_selector,
                         plugin_runtime_mode=settings.plugin_runtime_mode,
-                        connector_resolver=app.state.agent_connector_selection_resolver,
                         environment_resolver=app.state.agent_environment_selection_resolver,
                         plugin_resolver=app.state.agent_plugin_selection_resolver,
                     )
@@ -527,71 +412,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await observability.aclose()
 
 
-class _BoundaryAuthorizedConnectorInvocationAuthorizer:
-    """Trust the standard or Attempt boundary that already made the policy decision."""
-
-    async def authorize_connector_discovery(
-        self,
-        *,
-        organization_id: str,
-        workspace_id: str,
-        principal: PrincipalRef,
-        connector_id: str,
-        connector_revision_id: str,
-        connection_id: str | None,
-    ) -> None:
-        del organization_id, workspace_id, principal, connector_id, connector_revision_id, connection_id
-
-    async def authorize_connector_tool(
-        self,
-        *,
-        organization_id: str,
-        workspace_id: str,
-        principal: PrincipalRef,
-        connector_id: str,
-        connector_revision_id: str,
-        connection_id: str | None,
-        tool_id: str,
-        effects: Sequence[str],
-        credential_audiences: Sequence[str],
-    ) -> None:
-        del (
-            organization_id,
-            workspace_id,
-            principal,
-            connector_id,
-            connector_revision_id,
-            connection_id,
-            tool_id,
-            effects,
-            credential_audiences,
-        )
-
-
-class _LifespanMCPApp:
-    def __init__(self, app: FastAPI, surface: str) -> None:
-        self._app = app
-        self._surface = surface
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        gateway: ConnectorMCPGateway | None = getattr(self._app.state, "connector_mcp_gateway", None)
-        if gateway is None:
-            raise RuntimeError("Connector MCP Gateway is unavailable")
-        target = gateway.standard_app if self._surface == "standard" else gateway.internal_app
-        await target(scope, receive, send)
-
-
-class _LifespanConnectorProviderOperationsApp:
-    def __init__(self, app: FastAPI) -> None:
-        self._app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        target: FastAPI | None = getattr(self._app.state, "connector_provider_operations_app", None)
-        if target is None:
-            raise RuntimeError("Connector Provider operations are unavailable")
-        await target(scope, receive, send)
-
-
 def create_app(settings: ServiceSettings | None = None, *, components: ServiceComponents | None = None) -> FastAPI:
     """Create an application without opening external resources."""
 
@@ -604,7 +424,6 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         registered_provider_keys=(*trace_query_provider_registry.keys(), "langfuse")
     )
     serves_control_plane = resolved_settings.role in _CONTROL_PLANE_ROLES
-    serves_connector_plane = resolved_settings.role in _CONNECTOR_ROLES
     app = FastAPI(
         title="Agent Foundation Service",
         version=resolved_settings.build_version,
@@ -663,30 +482,8 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
             ) from exc
         return {"status": "ready", "role": resolved_settings.role.value}
 
-    if serves_connector_plane:
-        app.mount("/mcp/connectors", _LifespanMCPApp(app, "standard"))
-        app.mount("/internal/mcp/connectors", _LifespanMCPApp(app, "internal"))
-        if resolved_settings.connector_internal_auth_token is not None:
-            app.mount(
-                "/internal/connector-provider-operations",
-                _LifespanConnectorProviderOperationsApp(app),
-            )
-
-        @app.api_route("/mcp", methods=_API_METHODS, include_in_schema=False)
-        @app.api_route("/mcp/{mcp_path:path}", methods=_API_METHODS, include_in_schema=False)
-        async def unknown_mcp_path(mcp_path: str = "") -> None:
-            del mcp_path
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP route not found")
-
-        @app.api_route("/internal/mcp", methods=_API_METHODS, include_in_schema=False)
-        @app.api_route("/internal/mcp/{mcp_path:path}", methods=_API_METHODS, include_in_schema=False)
-        async def unknown_internal_mcp_path(mcp_path: str = "") -> None:
-            del mcp_path
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP route not found")
-
     if serves_control_plane:
         app.include_router(agent_preset_router)
-        app.include_router(connector_router)
         app.include_router(environment_router)
         app.include_router(asset_router)
         app.include_router(model_config_router)

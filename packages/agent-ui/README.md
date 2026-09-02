@@ -1,24 +1,21 @@
 # Agent UI
 
-`a13n-ui` is a local single-user workstation for Agent Foundation Harness. CLI and Web adapters share one process-local `AgentUiApp`; Harness execution, async subagents, and live presentation run in that process. Agent UI does not start or supervise a replaceable Runner process and does not hot-reload imported Plugin code.
+`a13n-ui` is a local single-user workstation for Agent Foundation Harness. CLI and Web adapters share one process-local `AgentUiApp`; Harness execution, mutable continuation-backed Threads, async subagents, and live presentation run in that process. Agent UI does not start or supervise a replaceable Runner process and does not hot-reload imported Python extension code.
 
-The interactive CLI starts with either command:
+The CLI starts with either command:
 
 ```console
 a13n-ui
 a13n-ui cli
 ```
 
-Run one message in a fresh process for automation or Plugin debugging:
+A one-shot Run can use the same human-editable configuration tree:
 
 ```console
-a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect the Plugin behavior"
-a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect it again" --session session-... --format json
+a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect the Agent behavior"
 ```
 
-A new one-shot Session uses `defaults.agent` and the selected Agent or global default Environment. `--agent`, `--environment`, repeated `--folder`, and `--title` override creation inputs. An existing `--session` continues its pinned snapshots. Workspace binding defaults to the current directory, and output is bounded human-readable text or JSON.
-
-The current executable surface provides the one-shot `run` command and a minimal interactive process-status shell. Session inspection and control exist at the application-service and root-Agent tool boundaries; the browser adapter and full interactive command family are not yet wired. Plugin authors debug in a fresh headless process or call the Harness library directly rather than rotating code inside a running App.
+Projects are the only local-root grouping concept. Every root or child Thread owns sticky mutable selections, while each admitted Run captures an immutable resolved composition. CLI, WebUI, and model-visible Thread tools call the same application boundary. The exact accepted behavior and migration target are owned by the [Agent UI specification](../../spec/agent-ui/README.md).
 
 The repository Make alias starts the interactive CLI:
 
@@ -37,9 +34,9 @@ The repository directory is `packages/agent-ui`, the Python distribution is `a13
 
 ## Configuration
 
-Agent UI selects one strict YAML document from explicit `--config PATH` or the platform user path, `~/.a13n-ui/a13n-ui.yaml` on Unix-like systems. It does not merge profiles, scan the current project, or walk parent directories. Canonical immediate sibling `subagents/*.md` files are the only live Markdown subagent source.
+Agent UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-ui/a13n-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain one YAML resource per Model, extension, MCP server, Agent, or Project, plus one canonical Markdown file per `subagents/` definition. Direct editing remains a complete configuration path; valid changes reload without restarting imported Python code.
 
-SQLite indexes accepted snapshots, Sessions, child Threads, and Environment state, but it is not desired-configuration authority. Existing Sessions retain pinned snapshots after configuration reload.
+CLI and WebUI file mutations require expected source digests and reject stale writes. SQLite stores accepted-generation indexes and mutable Thread/runtime heads, but files remain desired-configuration authority. The data root is resolved before root-YAML parsing from `--data-root`, `A13N_UI_DATA_ROOT`, or the config directory's `data/` default.
 
 ## Local Store Development
 

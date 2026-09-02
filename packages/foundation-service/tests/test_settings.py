@@ -23,7 +23,6 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
 
     assert settings.role is ServiceRole.all
     assert settings.port == 8000
-    assert settings.connector_providers == ()
     assert settings.database_backend is DatabaseBackend.postgresql
     assert settings.asset_max_size_bytes == 100 * 1024 * 1024
     assert settings.plugin_runtime_command_poll_interval_seconds == 1
@@ -40,37 +39,6 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.plugin_runner_max_processes == 8
     assert settings.observability_query_provider == "none"
     assert "foundation:foundation" not in repr(settings)
-
-
-def test_connector_provider_trust_is_typed() -> None:
-    settings = ServiceSettings(
-        _env_file=None,
-        connector_providers=[
-            {
-                "provider_key": "github",
-                "distribution_name": "a13n-connector-github",
-                "distribution_version": "1.2.3",
-            }
-        ],
-    )
-
-    assert settings.connector_providers[0].provider_key == "github"
-    assert settings.connector_providers[0].distribution_name == "a13n-connector-github"
-
-
-def test_connector_role_and_capability_signing_key_are_typed() -> None:
-    encoded = base64.b64encode(b"c" * 32).decode()
-    settings = ServiceSettings(
-        _env_file=None,
-        role="connector",
-        connector_capability_signing_key_base64=encoded,
-        connector_internal_auth_token="internal-token-0123456789abcdef0123456789",
-    )
-
-    assert settings.role is ServiceRole.connector
-    assert settings.connector_capability_codec() is not None
-    assert encoded not in repr(settings)
-    assert "internal-token" not in repr(settings)
 
 
 def test_asset_size_bound_must_be_positive_and_finite() -> None:

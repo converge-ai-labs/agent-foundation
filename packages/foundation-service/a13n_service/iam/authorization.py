@@ -32,14 +32,6 @@ class WorkspaceAction(StrEnum):
     plugin_runtime_manage = "plugin.runtime.manage"
     secrets_read = "secrets.read"
     secrets_manage = "secrets.manage"
-    connector_read = "connector.read"
-    connector_create = "connector.create"
-    connector_configure = "connector.configure"
-    connector_invoke = "connector.invoke"
-    connection_read = "connection.read"
-    connection_manage = "connection.manage"
-    trigger_read = "trigger.read"
-    trigger_configure = "trigger.configure"
     skill_read = "skill.read"
     skill_create = "skill.create"
     skill_update = "skill.update"
@@ -61,9 +53,6 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.models_read,
         WorkspaceAction.plugin_read,
         WorkspaceAction.secrets_read,
-        WorkspaceAction.connector_read,
-        WorkspaceAction.connection_read,
-        WorkspaceAction.trigger_read,
         WorkspaceAction.skill_read,
         WorkspaceAction.environment_provider_read,
         WorkspaceAction.environment_read,
@@ -75,7 +64,6 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
         WorkspaceAction.agent_preset_invoke,
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
-        WorkspaceAction.connector_invoke,
         WorkspaceAction.environment_use,
     }
 )

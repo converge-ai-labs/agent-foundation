@@ -58,7 +58,7 @@ An operator exception before its documented acceptance boundary is rejection. If
 
 The Host independently selects child Environment association, loads current Host state, constructs fresh adapters and `RunBindings`, invokes Harness, stores observations, acknowledges checkpoints, and publishes Environment state. Accepted work never borrows the parent Run's entered Environment, mutable state coordinator, live context, credential, or callback.
 
-Info and wait query current Host authority. Steering and cancellation return Host acknowledgements rather than invented completion. Resume resolves retained execution through the Host, verifies exact child-definition compatibility and resumability in Harness, and then requests one linked continuation from the operator.
+Info and wait query current Host authority. Steering and cancellation return Host acknowledgements rather than invented completion. Resume resolves retained execution through the Host, requires resumability and the same stable roster name in the current parent collection, and then requests one linked continuation from the operator. The Host owns checkpoint-schema compatibility, current child authorization, and any separately authorized retained child-definition selection; Harness does not require equality with either the definition that produced the checkpoint or the current roster definition.
 
 ## Observation and Wake
 

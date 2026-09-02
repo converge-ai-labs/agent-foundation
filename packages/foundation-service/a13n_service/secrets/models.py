@@ -18,7 +18,7 @@ class SecretRecord(Base):
             ("workspaces.id", "workspaces.organization_id"),
             ondelete="CASCADE",
         ),
-        CheckConstraint("owner_type IN ('workspace', 'user', 'connection', 'trigger')", name="owner_type_valid"),
+        CheckConstraint("owner_type IN ('workspace', 'user')", name="owner_type_valid"),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint(
             "(deleted_at IS NULL AND ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL) "
