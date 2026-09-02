@@ -9,7 +9,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError, distributions, version
 from typing import Literal, Protocol
 
 from packaging.requirements import Requirement
@@ -104,6 +104,19 @@ class WorkerReleaseManifest:
         return self.distributions.get(canonicalize_name(name))
 
 
+def installed_distribution_versions() -> dict[str, str]:
+    """Snapshot normalized distribution versions present in this service release."""
+
+    result: dict[str, str] = {}
+    for distribution in distributions():
+        distribution_name = distribution.metadata.get("Name")
+        if distribution_name is None:
+            continue
+        normalized = str(canonicalize_name(distribution_name))
+        result.setdefault(normalized, distribution.version)
+    return result
+
+
 class RuntimePluginContribution(Protocol):
     @property
     def plugin_id(self) -> str: ...
@@ -152,6 +165,7 @@ class PluginRuntimeLockStore:
         mode: PluginRuntimeModeValue,
         plugins: Sequence[RuntimePluginContribution],
         child_lock_digests: Sequence[str] = (),
+        locked_distributions: Sequence[LockedDistribution] = (),
     ) -> PluginRuntimeLock:
         locked_plugins: dict[str, LockedPlugin] = {}
         top_level_packages: dict[str, LockedPlugin] = {}
@@ -172,6 +186,14 @@ class PluginRuntimeLockStore:
                     if current != normalized.version:
                         raise PluginRuntimeLockError("plugin_worker_dependency_missing")
                 _merge_distribution(distributions, normalized)
+
+        for item in locked_distributions:
+            normalized = _normalize_distribution(item)
+            if normalized.source == "worker_release":
+                current = self.manifest.distribution_version(normalized.distribution_name)
+                if current != normalized.version:
+                    raise PluginRuntimeLockError("plugin_worker_dependency_missing")
+            _merge_distribution(distributions, normalized)
 
         for plugin in plugins:
             locked = LockedPlugin(
@@ -194,13 +216,21 @@ class PluginRuntimeLockStore:
                     artifact_ref=plugin.artifact_ref,
                 ),
             )
+
+        for plugin in plugins:
             for raw_requirement in plugin.requires_dist:
                 requirement = Requirement(raw_requirement)
                 if requirement.marker is not None and not requirement.marker.evaluate():
                     continue
                 if requirement.url is not None:
                     raise PluginRuntimeLockError("plugin_platform_incompatible")
-                dependency_version = self.manifest.distribution_version(requirement.name)
+                dependency_name = canonicalize_name(requirement.name)
+                selected = distributions.get(dependency_name)
+                if selected is not None:
+                    if requirement.specifier and Version(selected.version) not in requirement.specifier:
+                        raise PluginRuntimeLockError("plugin_dependency_conflict")
+                    continue
+                dependency_version = self.manifest.distribution_version(dependency_name)
                 if dependency_version is None:
                     raise PluginRuntimeLockError("plugin_worker_dependency_missing")
                 if requirement.specifier and Version(dependency_version) not in requirement.specifier:
@@ -208,7 +238,7 @@ class PluginRuntimeLockStore:
                 _merge_distribution(
                     distributions,
                     LockedDistribution(
-                        distribution_name=canonicalize_name(requirement.name),
+                        distribution_name=dependency_name,
                         version=dependency_version,
                         source="worker_release",
                     ),

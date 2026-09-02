@@ -101,6 +101,7 @@ def build_wheel(
     distribution_name: str = "acme-audit",
     package: str = "acme_audit",
     requires_dist: tuple[str, ...] = (),
+    include_entry_point: bool = True,
     second_entry_point: bool = False,
     corrupt_record: bool = False,
     unsafe_member: bool = False,
@@ -123,8 +124,9 @@ def build_wheel(
         f"{dist_info}/WHEEL": (
             b"Wheel-Version: 1.0\nGenerator: agent-foundation-tests\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n"
         ),
-        f"{dist_info}/entry_points.txt": entry_points.encode(),
     }
+    if include_entry_point:
+        files[f"{dist_info}/entry_points.txt"] = entry_points.encode()
     if unsafe_member:
         files["../escape.py"] = b"pass\n"
     record_name = f"{dist_info}/RECORD"

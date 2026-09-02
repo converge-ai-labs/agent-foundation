@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError, packages_distributions, version
+from importlib.metadata import packages_distributions
 from typing import Final
 
 from packaging.requirements import Requirement
@@ -25,6 +25,7 @@ from a13n_service.plugins.runtime import (
     RuntimeTarget,
     WorkerReleaseManifest,
     default_runtime_target,
+    installed_distribution_versions,
     installed_harness_version,
 )
 
@@ -111,7 +112,7 @@ class AgentPluginSelectionResolver:
         self._sessions = sessions
         self.runtime_mode = runtime_mode
         distribution_versions = (
-            installed_distributions if installed_distributions is not None else _installed_distribution_versions()
+            installed_distributions if installed_distributions is not None else installed_distribution_versions()
         )
         self._installed_distributions = {
             str(canonicalize_name(name)): distribution_version
@@ -471,17 +472,3 @@ def _prepare_item(
         root_is_purelib=plugin_version.root_is_purelib,
         source=PluginSource(plugin.source),
     )
-
-
-def _installed_distribution_versions() -> dict[str, str]:
-    result: dict[str, str] = {}
-    for distributions in packages_distributions().values():
-        for distribution in distributions:
-            normalized = canonicalize_name(distribution)
-            if normalized in result:
-                continue
-            try:
-                result[normalized] = version(distribution)
-            except PackageNotFoundError:
-                continue
-    return result

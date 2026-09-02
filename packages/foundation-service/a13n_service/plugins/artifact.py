@@ -42,6 +42,16 @@ class InspectedPluginWheel:
     root_is_purelib: bool
 
 
+@dataclass(frozen=True, slots=True)
+class InspectedDistributionWheel:
+    distribution_name: str
+    version: str
+    requires_dist: tuple[str, ...]
+    requires_python: str | None
+    wheel_tags: tuple[str, ...]
+    root_is_purelib: bool
+
+
 async def inspect_plugin_wheel(
     path: Path,
     *,
@@ -63,30 +73,30 @@ async def inspect_plugin_wheel(
         raise plugin_artifact_invalid("invalid_archive") from error
 
 
+async def inspect_distribution_wheel(
+    path: Path,
+    *,
+    max_expanded_bytes: int,
+    max_members: int,
+    limiter: CapacityLimiter | None = None,
+) -> InspectedDistributionWheel:
+    try:
+        return await to_thread.run_sync(
+            _inspect_distribution,
+            path,
+            max_expanded_bytes,
+            max_members,
+            limiter=limiter,
+        )
+    except PluginError:
+        raise
+    except (OSError, RuntimeError, zipfile.BadZipFile, UnicodeError) as error:
+        raise plugin_artifact_invalid("invalid_archive") from error
+
+
 def _inspect(path: Path, max_expanded_bytes: int, max_members: int) -> InspectedPluginWheel:
     with zipfile.ZipFile(path) as archive:
-        infos = archive.infolist()
-        if not infos or len(infos) > max_members:
-            raise plugin_artifact_limit()
-        by_name: dict[str, zipfile.ZipInfo] = {}
-        expanded = 0
-        for info in infos:
-            _validate_member(info)
-            if info.filename in by_name:
-                raise plugin_artifact_invalid("duplicate_member")
-            by_name[info.filename] = info
-            expanded += info.file_size
-            if expanded > max_expanded_bytes:
-                raise plugin_artifact_limit()
-
-        dist_info_dirs = {
-            PurePosixPath(name).parts[0]
-            for name in by_name
-            if PurePosixPath(name).parts and PurePosixPath(name).parts[0].endswith(".dist-info")
-        }
-        if len(dist_info_dirs) != 1:
-            raise plugin_artifact_invalid("dist_info_count")
-        dist_info = next(iter(dist_info_dirs))
+        by_name, dist_info = _inspect_archive(archive, max_expanded_bytes, max_members)
         metadata_name = f"{dist_info}/METADATA"
         wheel_name = f"{dist_info}/WHEEL"
         entries_name = f"{dist_info}/entry_points.txt"
@@ -114,6 +124,62 @@ def _inspect(path: Path, max_expanded_bytes: int, max_members: int) -> Inspected
             wheel_tags=wheel_tags,
             root_is_purelib=root_is_purelib,
         )
+
+
+def _inspect_distribution(
+    path: Path,
+    max_expanded_bytes: int,
+    max_members: int,
+) -> InspectedDistributionWheel:
+    with zipfile.ZipFile(path) as archive:
+        by_name, dist_info = _inspect_archive(archive, max_expanded_bytes, max_members)
+        metadata_name = f"{dist_info}/METADATA"
+        wheel_name = f"{dist_info}/WHEEL"
+        record_name = f"{dist_info}/RECORD"
+        for required in (metadata_name, wheel_name, record_name):
+            if required not in by_name:
+                raise plugin_artifact_invalid("wheel_metadata_missing")
+        distribution_name, version, requires_dist, requires_python = _parse_metadata(
+            _read_bounded(archive, metadata_name)
+        )
+        root_is_purelib, wheel_tags = _parse_wheel(_read_bounded(archive, wheel_name))
+        _validate_record(archive, by_name, record_name)
+        return InspectedDistributionWheel(
+            distribution_name=distribution_name,
+            version=version,
+            requires_dist=requires_dist,
+            requires_python=requires_python,
+            wheel_tags=wheel_tags,
+            root_is_purelib=root_is_purelib,
+        )
+
+
+def _inspect_archive(
+    archive: zipfile.ZipFile,
+    max_expanded_bytes: int,
+    max_members: int,
+) -> tuple[dict[str, zipfile.ZipInfo], str]:
+    infos = archive.infolist()
+    if not infos or len(infos) > max_members:
+        raise plugin_artifact_limit()
+    by_name: dict[str, zipfile.ZipInfo] = {}
+    expanded = 0
+    for info in infos:
+        _validate_member(info)
+        if info.filename in by_name:
+            raise plugin_artifact_invalid("duplicate_member")
+        by_name[info.filename] = info
+        expanded += info.file_size
+        if expanded > max_expanded_bytes:
+            raise plugin_artifact_limit()
+    dist_info_dirs = {
+        PurePosixPath(name).parts[0]
+        for name in by_name
+        if PurePosixPath(name).parts and PurePosixPath(name).parts[0].endswith(".dist-info")
+    }
+    if len(dist_info_dirs) != 1:
+        raise plugin_artifact_invalid("dist_info_count")
+    return by_name, next(iter(dist_info_dirs))
 
 
 def _validate_member(info: zipfile.ZipInfo) -> None:
