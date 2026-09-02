@@ -1,6 +1,7 @@
 import asyncio
 from base64 import b64encode
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -11,6 +12,7 @@ from a13n_service.plugins.commands import (
     PluginRuntimeCommand,
 )
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
+from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import PluginRuntimeLock
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
@@ -208,6 +210,7 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         assert app.state.agent_plugin_selection_resolver is not None
         assert app.state.plugin_service is not None
         assert isinstance(app.state.plugin_runtime_materializer, PluginRuntimeMaterializer)
+        assert isinstance(app.state.plugin_on_demand_runtime, OnDemandPluginRuntime)
         assert not hasattr(app.state, "plugin_runner_supervisor")
         assert app.state.trace_query_service is not None
 
@@ -217,6 +220,20 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready", "role": "all"}
+
+
+@pytest.mark.anyio
+async def test_on_demand_import_failure_removes_worker_readiness(tmp_path: Path) -> None:
+    app = create_app(local_settings(tmp_path, role=ServiceRole.worker))
+
+    async with app.router.lifespan_context(app):
+        app.state.plugin_on_demand_runtime = SimpleNamespace(ready=False)
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "plugin runtime unavailable"}
 
 
 @pytest.mark.anyio
@@ -318,6 +335,7 @@ async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(tm
     async with app.router.lifespan_context(app):
         assert isinstance(app.state.plugin_runtime_materializer, PluginRuntimeMaterializer)
         assert isinstance(app.state.plugin_runner_supervisor, PluginRunnerSupervisor)
+        assert not hasattr(app.state, "plugin_on_demand_runtime")
         assert not hasattr(app.state, "plugin_runtime_command_coordinator")
         assert not hasattr(app.state, "plugin_runtime_candidate_resolver")
 

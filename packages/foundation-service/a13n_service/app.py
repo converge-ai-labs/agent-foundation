@@ -52,6 +52,7 @@ from a13n_service.plugins.commands import (
 )
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.objects import PluginObjectStore
+from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.plugins.router import router as plugin_router
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import (
@@ -223,6 +224,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         )
                     )
                     app.state.plugin_runner_supervisor = plugin_runner_supervisor
+                else:
+                    app.state.plugin_on_demand_runtime = OnDemandPluginRuntime(plugin_runtime_materializer)
             if settings.role in _CONTROL_PLANE_ROLES:
                 selected_environment_providers = app.state.components.environment_provider_catalog
                 if selected_environment_providers is None:
@@ -450,6 +453,20 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
     @app.get("/readyz", include_in_schema=False)
     async def readiness(request: Request) -> dict[str, str]:
         storage: StorageResources = request.app.state.storage
+        on_demand_runtime: OnDemandPluginRuntime | None = getattr(
+            request.app.state,
+            "plugin_on_demand_runtime",
+            None,
+        )
+        if on_demand_runtime is not None and not on_demand_runtime.ready:
+            logger.warning(
+                "plugin_runtime_readiness_failed",
+                extra={"event": "plugin_runtime_readiness_failed", "role": resolved_settings.role.value},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="plugin runtime unavailable",
+            )
         try:
             with fail_after(resolved_settings.database_readiness_timeout_seconds):
                 async with short_session(storage.sessions) as session:
