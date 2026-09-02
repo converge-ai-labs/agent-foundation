@@ -1,6 +1,16 @@
 """Durable Session, Thread, Run, and RunAttempt persistence."""
 
 from .acceptance import RunAcceptanceError, RunAcceptanceReceipt, RunAcceptanceService
+from .attempts import (
+    AttemptAuthority,
+    AttemptAuthorityError,
+    AttemptExecutionService,
+    AttemptMutationError,
+    AttemptMutationReceipt,
+    AttemptPreparationAccepted,
+    AttemptPreparationRejected,
+    AttemptPreparationResult,
+)
 from .domain import (
     EncryptedRunConfigPayloadRef,
     MCPToolSnapshotRef,
@@ -47,6 +57,15 @@ from .objects import (
     run_payload_key,
     run_state_key,
 )
+from .outcomes import RunOutcomeError, RunOutcomeReceipt, RunOutcomeService
+from .scheduling import (
+    AttemptScheduler,
+    AttemptSchedulingError,
+    ClaimedAttempt,
+    ClaimResult,
+    SealedClaim,
+    WorkerClaim,
+)
 from .state import (
     CompletedOutcomeCandidate,
     ConsumedThreadInboxEntry,
@@ -58,6 +77,18 @@ from .state import (
 )
 
 __all__ = [
+    "AttemptAuthority",
+    "AttemptAuthorityError",
+    "AttemptExecutionService",
+    "AttemptMutationError",
+    "AttemptMutationReceipt",
+    "AttemptPreparationAccepted",
+    "AttemptPreparationRejected",
+    "AttemptPreparationResult",
+    "AttemptScheduler",
+    "AttemptSchedulingError",
+    "ClaimResult",
+    "ClaimedAttempt",
     "CompletedOutcomeCandidate",
     "ConsumedThreadInboxEntry",
     "DeferredContinuationState",
@@ -80,6 +111,9 @@ __all__ = [
     "RunLineageKind",
     "RunObjectError",
     "RunObjectIntegrityError",
+    "RunOutcomeError",
+    "RunOutcomeReceipt",
+    "RunOutcomeService",
     "RunPayloadEnvelope",
     "RunPayloadObjectRef",
     "RunPayloadStore",
@@ -89,6 +123,7 @@ __all__ = [
     "RunStateStore",
     "RunStatus",
     "RunWaitReason",
+    "SealedClaim",
     "SealedRunState",
     "Session",
     "StaleStateWriter",
@@ -97,6 +132,7 @@ __all__ = [
     "ThreadOriginKind",
     "ThreadRole",
     "WaitingOutcomeCandidate",
+    "WorkerClaim",
     "initialize_completed_continuation_state",
     "initialize_empty_thread_state",
     "initialize_fork_state",

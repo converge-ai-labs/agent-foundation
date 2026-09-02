@@ -3,7 +3,7 @@ from pathlib import Path
 from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 
 INTERACTION_TABLES = {"sessions", "threads", "runs", "run_attempts"}
 
@@ -56,6 +56,29 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         )
         run_foreign_keys = {constraint["name"] for constraint in inspector.get_foreign_keys("runs")}
         assert {"fk_runs_current_attempt_same_run", "fk_runs_sealed_attempt_same_run"} <= run_foreign_keys
+        with engine.connect() as connection:
+            if connection.dialect.name == "postgresql":
+                trigger_names = set(
+                    connection.execute(
+                        text(
+                            "SELECT trigger_name FROM information_schema.triggers "
+                            "WHERE event_object_table IN ('runs', 'run_attempts')"
+                        )
+                    ).scalars()
+                )
+            else:
+                trigger_names = set(
+                    connection.execute(
+                        text(
+                            "SELECT name FROM sqlite_master "
+                            "WHERE type = 'trigger' AND tbl_name IN ('runs', 'run_attempts')"
+                        )
+                    ).scalars()
+                )
+        assert {
+            "reject_sealed_run_update",
+            "reject_terminal_run_attempt_update",
+        } <= trigger_names
     finally:
         engine.dispose()
 

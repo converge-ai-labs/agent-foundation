@@ -18,7 +18,7 @@ from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.interactions import HostContinuationState, RunStateEnvelope
 from a13n_service.models.domain import ModelExecutionSnapshot
 from a13n_service.storage import transaction
-from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -136,6 +136,31 @@ async def interaction_sessions() -> AsyncIterator[async_sessionmaker[AsyncSessio
     async with engine.begin() as connection:
         await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
+    await _seed_interaction_database(sessions)
+    try:
+        yield sessions
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+async def postgres_interaction_sessions(
+    pg_url: str,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(PostgreSQLConfig(url=pg_url))
+    async with engine.begin() as connection:
+        await connection.run_sync(service_metadata().create_all)
+    sessions = create_session_factory(engine)
+    await _seed_interaction_database(sessions)
+    try:
+        yield sessions
+    finally:
+        async with engine.begin() as connection:
+            await connection.run_sync(service_metadata().drop_all)
+        await engine.dispose()
+
+
+async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as database:
         database.add(OrganizationRecord(id=TENANT_ID, name="Test", created_at=NOW, updated_at=NOW))
         database.add(
@@ -199,7 +224,3 @@ async def interaction_sessions() -> AsyncIterator[async_sessionmaker[AsyncSessio
                 created_at=NOW,
             )
         )
-    try:
-        yield sessions
-    finally:
-        await engine.dispose()

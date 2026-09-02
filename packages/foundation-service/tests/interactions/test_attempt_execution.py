@@ -1,0 +1,587 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta
+
+import pytest
+from a13n_harness import SafeFailure
+from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.interactions import (
+    AttemptAuthority,
+    AttemptAuthorityError,
+    AttemptExecutionService,
+    AttemptPreparationAccepted,
+    AttemptPreparationRejected,
+    AttemptScheduler,
+    ClaimedAttempt,
+    CompletedOutcomeCandidate,
+    DeferredContinuationState,
+    HostContinuationState,
+    MCPToolSnapshotRef,
+    PendingCallKind,
+    PendingCallSummary,
+    RecoveryBudget,
+    RecoveryUsage,
+    Run,
+    RunAcceptanceService,
+    RunAttemptYieldReason,
+    RunInputKind,
+    RunLineageKind,
+    RunOutcomeService,
+    RunPendingSummary,
+    RunStateEnvelope,
+    RunStateSeed,
+    RunStateStore,
+    RunStatus,
+    RunWaitReason,
+    SealedClaim,
+    Session,
+    Thread,
+    ThreadOriginKind,
+    ThreadRole,
+    WorkerClaim,
+    initialize_start_state,
+)
+from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
+from a13n_service.storage import ObjectStore, short_session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from .conftest import (
+    AGENT_ID,
+    AGENT_REVISION_ID,
+    NOW,
+    SESSION_ID,
+    TENANT_ID,
+    USER_ID,
+    WORKSPACE_ID,
+    effective_agent_config,
+)
+
+pytestmark = pytest.mark.anyio
+
+
+async def test_claim_execute_checkpoint_and_complete_atomically(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states, run, state = await _accept_root(interaction_sessions, interaction_object_store)
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "lease-secret",
+        attempt_id_factory=lambda: "rat_1111111111111111",
+    )
+    worker = _worker()
+
+    assert await scheduler.scan(worker, queue_name="default") == (run.id,)
+    result = await scheduler.claim(run.id, worker)
+    assert isinstance(result, ClaimedAttempt)
+    claim = result
+    assert claim.attempt.attempt_number == 1
+    assert claim.attempt.fence == 1
+    assert await scheduler.claim(run.id, worker) is None
+
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    authority = _authority(claim)
+    preparation = await execution.commit_preparation_success(authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(
+        authority,
+        preparation=preparation,
+        harness_run_id="harness-run-1",
+    )
+    authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
+    accounted = await execution.increment_model_request(authority)
+    authority = _authority(claim, run_version=accounted.run_version, attempt_version=accounted.attempt_version)
+
+    candidate = _completed_state(state, claim.attempt.id, claim.attempt.fence)
+    stored = await execution.publish_checkpoint(authority, states, await states.read(TENANT_ID, run.id), candidate)
+    outcome = await RunOutcomeService(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+
+    assert outcome.run_status is RunStatus.completed
+    assert outcome.thread_version == 2
+    async with short_session(interaction_sessions) as database:
+        run_record = await database.get(RunRecord, run.id)
+        attempt = await database.get(RunAttemptRecord, claim.attempt.id)
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert run_record is not None and attempt is not None and thread is not None
+        assert run_record.to_resource().status is RunStatus.completed
+        assert run_record.to_resource().output == {"answer": 42}
+        assert run_record.usage_charged_json["model_requests"] == 1
+        assert attempt.status == "succeeded"
+        assert (thread.head_run_id, thread.current_run_id, thread.version) == (run.id, run.id, 2)
+
+
+async def test_expired_attempt_is_failed_charged_and_replaced_with_a_higher_fence(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    ids = iter(("rat_2222222222222222", "rat_3333333333333333"))
+    first_scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "first-token",
+        attempt_id_factory=lambda: next(ids),
+    )
+    first = await first_scheduler.claim(run.id, _worker(lease_seconds=1))
+    assert isinstance(first, ClaimedAttempt)
+    execution = AttemptExecutionService(
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1, milliseconds=100)
+    )
+    authority = _authority(first)
+    preparation = await execution.commit_preparation_success(authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(
+        authority,
+        preparation=preparation,
+        harness_run_id="harness-run-1",
+    )
+    authority = _authority(first, run_version=entered.run_version, attempt_version=entered.attempt_version)
+    await execution.increment_model_request(authority)
+
+    takeover = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+        token_factory=lambda: "second-token",
+        attempt_id_factory=lambda: next(ids),
+    )
+    second = await takeover.claim(run.id, _worker(worker_id="worker-2"))
+
+    assert isinstance(second, ClaimedAttempt)
+    assert (second.attempt.attempt_number, second.attempt.fence) == (2, 2)
+    assert second.attempt.recovery_reason == "lease_expired"
+    async with short_session(interaction_sessions) as database:
+        old = await database.get(RunAttemptRecord, first.attempt.id)
+        current = await database.get(RunRecord, run.id)
+        assert old is not None and current is not None
+        assert old.status == "failed"
+        assert old.failure_json["code"] == "run_attempt_lease_expired"
+        assert current.usage_charged_json["model_requests"] == 1
+        assert current.recovery_attempts_started == 2
+
+
+async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "lease-secret",
+        attempt_id_factory=lambda: "rat_4444444444444444",
+    )
+    claim = await scheduler.claim(run.id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+
+    with pytest.raises(AttemptAuthorityError):
+        await execution.heartbeat(
+            _authority(claim, lease_token="wrong-token"),
+            lease_duration=timedelta(seconds=30),
+        )
+
+    renewed = await execution.heartbeat(
+        _authority(claim),
+        lease_duration=timedelta(seconds=30),
+    )
+    assert renewed.run_version == claim.run_version
+    assert renewed.lease_expires_at == NOW + timedelta(seconds=32)
+    authority = _authority(
+        claim,
+        run_version=renewed.run_version,
+        attempt_version=renewed.attempt_version,
+    )
+
+    failure = SafeFailure(code="dependency_unavailable", message="A dependency is temporarily unavailable.")
+    receipt = await execution.fail(
+        authority,
+        failure,
+        retryable=True,
+        retry_after=timedelta(seconds=5),
+    )
+    assert receipt.run_version == claim.run_version + 1
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        attempt = await database.get(RunAttemptRecord, claim.attempt.id)
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert current is not None and attempt is not None and thread is not None
+        assert (current.status, current.current_run_attempt_id) == ("running", None)
+        assert current.to_resource().available_at == NOW + timedelta(seconds=7)
+        assert attempt.status == "failed"
+        assert thread.version == 1
+
+    recovery = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=8),
+        token_factory=lambda: "recovery-token",
+        attempt_id_factory=lambda: "rat_cccccccccccccccc",
+    )
+    replacement = await recovery.claim(run.id, _worker(worker_id="worker-2"))
+    assert isinstance(replacement, ClaimedAttempt)
+    assert replacement.attempt.recovery_reason == "attempt_failed"
+    assert replacement.attempt.replaces_run_attempt_id == claim.attempt.id
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        assert current is not None
+        assert (current.attempts_started, current.recovery_attempts_started) == (2, 2)
+
+
+async def test_zero_recovery_budget_seals_without_creating_an_attempt(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    _, run, _ = await _accept_root(
+        interaction_sessions,
+        interaction_object_store,
+        max_recovery_attempts=0,
+    )
+    scheduler = AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1))
+
+    result = await scheduler.claim(run.id, _worker())
+
+    assert isinstance(result, SealedClaim)
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        thread = await database.get(ThreadRecord, run.thread_id)
+        attempts = (await database.scalars(select(RunAttemptRecord))).all()
+        assert current is not None and thread is not None
+        assert current.status == "failed"
+        assert current.failure_json["code"] == "recovery_attempts_exhausted"
+        assert thread.version == 2
+        assert attempts == []
+
+
+async def test_preparation_rechecks_fixed_deadline_and_fails_closed(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    _, run, _ = await _accept_root(
+        interaction_sessions,
+        interaction_object_store,
+        recovery_deadline_at=NOW + timedelta(seconds=2),
+    )
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "lease-secret",
+        attempt_id_factory=lambda: "rat_bbbbbbbbbbbbbbbb",
+    )
+    claim = await scheduler.claim(run.id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+
+    preparation = await AttemptExecutionService(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+    ).commit_preparation_success(_authority(claim))
+
+    assert isinstance(preparation, AttemptPreparationRejected)
+    assert preparation.failure.code == "recovery_deadline_exhausted"
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        attempt = await database.get(RunAttemptRecord, claim.attempt.id)
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert current is not None and attempt is not None and thread is not None
+        assert current.status == "failed"
+        assert attempt.status == "failed"
+        assert thread.version == 2
+
+
+async def test_cancel_seals_without_state_replacement(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    before = await states.read(TENANT_ID, run.id)
+    failure = SafeFailure(code="cancelled_by_user", message="The Run was cancelled.")
+
+    receipt = await RunOutcomeService(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+    ).cancel(
+        tenant_id=TENANT_ID,
+        run_id=run.id,
+        expected_run_version=1,
+        expected_thread_version=1,
+        failure=failure,
+    )
+
+    after = await states.read(TENANT_ID, run.id)
+    assert receipt.run_status is RunStatus.cancelled
+    assert after.info.version == before.info.version
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        assert current is not None
+        assert current.status == "cancelled"
+        assert current.sealed_state_digest_sha256 is None
+
+
+async def test_yield_prefers_a_different_build_without_consuming_recovery_budget(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    ids = iter(("rat_6666666666666666", "rat_7777777777777777"))
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "first-token",
+        attempt_id_factory=lambda: next(ids),
+    )
+    first = await scheduler.claim(run.id, _worker())
+    assert isinstance(first, ClaimedAttempt)
+    await AttemptExecutionService(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=2),
+    ).yield_attempt(_authority(first), reason=RunAttemptYieldReason.service_drain)
+
+    same_build = AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
+    assert await same_build.scan(_worker(), queue_name="default") == ()
+    assert await same_build.claim(run.id, _worker()) is None
+
+    new_build = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+        token_factory=lambda: "second-token",
+        attempt_id_factory=lambda: next(ids),
+    )
+    second = await new_build.claim(run.id, _worker(build_id="build-2"))
+    assert isinstance(second, ClaimedAttempt)
+    assert second.attempt.recovery_reason == "planned_handoff"
+    assert second.attempt.replaces_run_attempt_id is None
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        assert current is not None
+        assert (current.attempts_started, current.recovery_attempts_started, current.handoffs_completed) == (2, 1, 1)
+
+
+async def test_waiting_outcome_selects_the_frozen_continuation_head(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states, run, state = await _accept_root(interaction_sessions, interaction_object_store)
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "lease-secret",
+        attempt_id_factory=lambda: "rat_8888888888888888",
+    )
+    claim = await scheduler.claim(run.id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    authority = _authority(claim)
+    preparation = await execution.commit_preparation_success(authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(
+        authority,
+        preparation=preparation,
+        harness_run_id="harness-run-waiting",
+    )
+    authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
+    waiting = _waiting_state(state, claim.attempt.id, claim.attempt.fence)
+    stored = await execution.publish_checkpoint(authority, states, await states.read(TENANT_ID, run.id), waiting)
+
+    receipt = await RunOutcomeService(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+
+    assert receipt.run_status is RunStatus.waiting
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert current is not None and thread is not None
+        assert (current.status, current.wait_reason) == ("waiting", "approval")
+        assert current.pending_json["calls"][0]["call_id"] == "approval-1"
+        assert (thread.head_run_id, thread.current_run_id) == (run.id, run.id)
+
+
+async def test_postgresql_concurrent_claim_has_exactly_one_winner(
+    postgres_interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    _, run, _ = await _accept_root(postgres_interaction_sessions, interaction_object_store)
+    first = AttemptScheduler(
+        postgres_interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "token-1",
+        attempt_id_factory=lambda: "rat_9999999999999999",
+    )
+    second = AttemptScheduler(
+        postgres_interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "token-2",
+        attempt_id_factory=lambda: "rat_aaaaaaaaaaaaaaaa",
+    )
+
+    results = await asyncio.gather(
+        first.claim(run.id, _worker(worker_id="worker-1")),
+        second.claim(run.id, _worker(worker_id="worker-2")),
+    )
+
+    winners = [result for result in results if isinstance(result, ClaimedAttempt)]
+    assert len(winners) == 1
+    async with short_session(postgres_interaction_sessions) as database:
+        attempts = (await database.scalars(select(RunAttemptRecord))).all()
+        current = await database.get(RunRecord, run.id)
+        assert current is not None
+        assert len(attempts) == 1
+        assert current.current_run_attempt_id == attempts[0].id
+
+
+async def _accept_root(
+    sessions: async_sessionmaker[AsyncSession],
+    objects: ObjectStore,
+    *,
+    max_recovery_attempts: int = 3,
+    recovery_deadline_at: datetime | None = None,
+) -> tuple[RunStateStore, Run, RunStateEnvelope]:
+    config = effective_agent_config()
+    seed = RunStateSeed(
+        run_id="run_5555555555555555",
+        agent_id=AGENT_ID,
+        agent_revision_id=AGENT_REVISION_ID,
+        effective_agent_config=config,
+    )
+    state = initialize_start_state(seed)
+    run = Run(
+        id=seed.run_id,
+        version=1,
+        tenant_id=TENANT_ID,
+        authority_principal=PrincipalRef(principal_type=PrincipalType.user, principal_id=USER_ID),
+        session_id=SESSION_ID,
+        thread_id=state.thread_id,
+        lineage_kind=RunLineageKind.root,
+        trigger_type="user_input",
+        agent_id=AGENT_ID,
+        agent_revision_id=AGENT_REVISION_ID,
+        effective_agent_config_digest=config.content_digest,
+        runtime_lock_digest=config.runtime_lock_digest,
+        model_execution_observation=config.resolved_model.execution.observation(),
+        mcp_tool_snapshot=MCPToolSnapshotRef(
+            digest_sha256="d" * 64,
+            size_bytes=2,
+            content_type="application/vnd.a13n.mcp-tool-snapshot+json",
+            schema_version="1",
+        ),
+        priority=0,
+        queue_name="default",
+        available_at=NOW,
+        next_attempt_fence=1,
+        recovery_budget=RecoveryBudget(
+            policy_version="1",
+            max_recovery_attempts=max_recovery_attempts,
+            max_handoffs=2,
+            recovery_deadline_at=recovery_deadline_at,
+        ),
+        attempts_started=0,
+        recovery_attempts_started=0,
+        handoffs_completed=0,
+        usage_charged=RecoveryUsage(),
+        request_fingerprint="1" * 64,
+        status=RunStatus.accepted,
+        input_kind=RunInputKind.agent_input,
+        input={"schema_version": "1", "content": "hello"},
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    states = RunStateStore(objects)
+    await RunAcceptanceService(sessions, states, clock=lambda: NOW).accept_new_thread(
+        session=Session(
+            id=SESSION_ID,
+            tenant_id=TENANT_ID,
+            workspace_id=WORKSPACE_ID,
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+        thread=Thread(
+            id=state.thread_id,
+            version=1,
+            queue_version=0,
+            tenant_id=TENANT_ID,
+            session_id=SESSION_ID,
+            role=ThreadRole.root,
+            origin_kind=ThreadOriginKind.new,
+            current_run_id=run.id,
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+        run=run,
+        state=state,
+    )
+    return states, run, state
+
+
+def _worker(
+    *,
+    worker_id: str = "worker-1",
+    lease_seconds: int = 30,
+    build_id: str = "build-1",
+) -> WorkerClaim:
+    return WorkerClaim(
+        tenant_id=TENANT_ID,
+        worker_id=worker_id,
+        worker_generation=f"{worker_id}-generation",
+        worker_build_id=build_id,
+        runtime_lock_digest="a" * 64,
+        lease_duration=timedelta(seconds=lease_seconds),
+        handoff_preference_window=timedelta(seconds=30),
+    )
+
+
+def _authority(
+    claim: ClaimedAttempt,
+    *,
+    run_version: int | None = None,
+    attempt_version: int | None = None,
+    lease_token: str | None = None,
+) -> AttemptAuthority:
+    return AttemptAuthority(
+        tenant_id=TENANT_ID,
+        run_id=claim.attempt.run_id,
+        run_attempt_id=claim.attempt.id,
+        fence=claim.attempt.fence,
+        lease_token=claim.lease_token if lease_token is None else lease_token,
+        worker_id=claim.attempt.worker_id,
+        worker_generation=claim.attempt.worker_generation,
+        expected_run_version=claim.run_version if run_version is None else run_version,
+        expected_attempt_version=claim.attempt.version if attempt_version is None else attempt_version,
+    )
+
+
+def _completed_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) -> RunStateEnvelope:
+    payload = previous.model_dump(mode="python", by_alias=True)
+    payload.update(
+        checkpoint_seq=1,
+        checkpoint_kind="completed",
+        input_disposition="applied",
+        last_checkpoint_run_attempt_id=run_attempt_id,
+        last_checkpoint_fence=fence,
+        outcome_candidate=CompletedOutcomeCandidate(output={"answer": 42}),
+    )
+    return type(previous).model_validate(payload)
+
+
+def _waiting_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) -> RunStateEnvelope:
+    payload = previous.model_dump(mode="python", by_alias=True)
+    payload.update(
+        checkpoint_seq=1,
+        checkpoint_kind="waiting",
+        input_disposition="applied",
+        last_checkpoint_run_attempt_id=run_attempt_id,
+        last_checkpoint_fence=fence,
+        host=HostContinuationState(deferred=DeferredContinuationState(requests={"approval-1": {"kind": "approval"}})),
+        outcome_candidate={
+            "outcome": "waiting",
+            "wait_reason": RunWaitReason.approval,
+            "pending": RunPendingSummary(
+                calls=(PendingCallSummary(call_id="approval-1", kind=PendingCallKind.approval),)
+            ),
+        },
+    )
+    return RunStateEnvelope.model_validate(payload)
