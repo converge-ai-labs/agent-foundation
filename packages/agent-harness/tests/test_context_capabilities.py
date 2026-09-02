@@ -49,6 +49,15 @@ from a13n_harness.environment.advanced import (
 from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
 )
+from a13n_harness.model_context import (
+    ModelContextBlock,
+    ModelContextInputOrigin,
+    ModelContextPlacement,
+    ModelContextProjection,
+    ModelContextProjectionRequest,
+    ModelContextRequestKind,
+    _commit_projection,
+)
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from pydantic_ai import ModelRetry
 from pydantic_ai.agent.spec import AgentSpec
@@ -57,6 +66,7 @@ from pydantic_ai.messages import (
     BinaryContent,
     FunctionToolResultEvent,
     ModelMessage,
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     TextPart,
@@ -349,13 +359,37 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
             assert "Continue" in _user_text(messages)
             assert "structured notes and tasks are reprojected separately" in _user_text(messages)
             assert "Omit bookkeeping tool calls" in _user_text(messages)
+            assert _user_text(messages).count(historical_overlay) == 1
             yield "Compacted continuation"
         else:
             yield "done"
 
+    historical_overlay = '<runtime-context source="a13n-harness">\n{"stale":true}\n</runtime-context>'
+    original_request = ModelRequest(
+        parts=[
+            UserPromptPart(content="Original long task"),
+            UserPromptPart(content=historical_overlay),
+        ]
+    )
+    committed_request = _commit_projection(
+        [original_request],
+        ModelContextProjectionRequest(
+            kind=ModelContextRequestKind.INPUT,
+            input_origin=ModelContextInputOrigin.USER,
+        ),
+        ModelContextProjection(
+            blocks=(
+                ModelContextBlock(
+                    source_id="test.historical-runtime",
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=historical_overlay,
+                ),
+            )
+        ),
+    )[0]
     previous = HarnessState.new(
         message_history=(
-            ModelRequest(parts=[UserPromptPart(content="Original long task")]),
+            committed_request,
             ModelResponse(
                 parts=[
                     TextPart(content="  "),
@@ -986,7 +1020,8 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
     assert "Explicit file guidance" in input_text
     assert '<context-reminder source="a13n.handoff">' not in input_text
 
-    tool_results_text = _user_text(seen[1])
+    assert seen[1][0] == seen[0][0]
+    tool_results_text = _user_text([seen[1][-1]])
     assert "Workspace file outline (content not loaded)" not in tool_results_text
     assert "Default repository guidance" not in tool_results_text
     assert "Explicit file guidance" not in tool_results_text
@@ -995,7 +1030,7 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
     assert '<context-reminder source="a13n.handoff">' in tool_results_text
 
 
-async def test_runtime_and_file_context_are_bounded_explicit_and_refreshed(tmp_path: Path) -> None:
+async def test_runtime_and_file_context_preserve_history_and_refresh_current_values(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("Repository guidance v1")
     seen: list[list[ModelMessage]] = []
 
@@ -1032,12 +1067,14 @@ async def test_runtime_and_file_context_are_bounded_explicit_and_refreshed(tmp_p
     first_text = _user_text(seen[0])
     second_text = _user_text(seen[1])
     assert "Repository guidance v1" in first_text
+    assert ModelMessagesTypeAdapter.dump_json([seen[1][0]]) == ModelMessagesTypeAdapter.dump_json([seen[0][0]])
+    assert "Repository guidance v1" in second_text
     assert "Repository guidance v2" in second_text
-    assert "Repository guidance v1" not in second_text
+    assert '"tenant":"alpha"' in second_text
     assert '"tenant":"beta"' in second_text
     assert "secret" not in second_text
-    assert second_text.count('<runtime-context source="a13n-harness">') == 1
-    assert second_text.count('<file-context source="a13n-harness">') == 1
+    assert second_text.count('<runtime-context source="a13n-harness">') == 2
+    assert second_text.count('<file-context source="a13n-harness">') == 2
 
 
 def _user_text(messages: list[ModelMessage]) -> str:

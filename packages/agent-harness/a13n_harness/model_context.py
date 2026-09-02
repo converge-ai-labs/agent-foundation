@@ -121,15 +121,6 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
 
-    async def before_model_request(
-        self,
-        ctx: RunContext[AgentContext],
-        request_context: ModelRequestContext,
-    ) -> ModelRequestContext:
-        if _requires_exact_boundary(ctx, request_context.messages) or _is_retry_boundary(request_context.messages):
-            return request_context
-        return _replace_messages(request_context, _remove_owned_overlays(request_context.messages))
-
     async def wrap_model_request(
         self,
         ctx: RunContext[AgentContext],
@@ -176,7 +167,10 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
 
         projection = await projection_handler(request)
         _validate_projection(projection, request)
+        original_request = request_context.messages[-1]
+        assert isinstance(original_request, ModelRequest)
         committed = _commit_projection(request_context.messages, request, projection)
+        _persist_projection(ctx.messages, original_request, committed, request, projection)
         return await handler(_replace_messages(request_context, committed))
 
 
@@ -305,6 +299,25 @@ def _commit_projection(
     return updated
 
 
+def _persist_projection(
+    active_messages: list[ModelMessage],
+    original_request: ModelRequest,
+    committed_messages: list[ModelMessage],
+    request: ModelContextProjectionRequest,
+    projection: ModelContextProjection,
+) -> None:
+    """Record the exact outgoing overlay on its active-history request."""
+    if not projection.blocks:
+        return
+    committed_request = committed_messages[-1]
+    assert isinstance(committed_request, ModelRequest)
+    for index in range(len(active_messages) - 1, -1, -1):
+        if active_messages[index] is original_request:
+            active_messages[index] = committed_request
+            return
+    active_messages[:] = _commit_projection(active_messages, request, projection)
+
+
 def _remove_owned_overlays(messages: Sequence[ModelMessage]) -> list[ModelMessage]:
     updated = list(messages)
     for message_index, message in enumerate(updated):
@@ -353,14 +366,6 @@ def _remove_owned_overlays(messages: Sequence[ModelMessage]) -> list[ModelMessag
 
 def _requires_exact_boundary(ctx: RunContext[AgentContext], messages: list[ModelMessage]) -> bool:
     return _requires_exact_history(messages) or _is_deferred_result_boundary(ctx, messages)
-
-
-def _is_retry_boundary(messages: list[ModelMessage]) -> bool:
-    return bool(
-        messages
-        and isinstance(messages[-1], ModelRequest)
-        and any(isinstance(part, RetryPromptPart) for part in messages[-1].parts)
-    )
 
 
 def _is_deferred_result_boundary(ctx: RunContext[AgentContext], messages: list[ModelMessage]) -> bool:

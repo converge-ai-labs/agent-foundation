@@ -23,7 +23,6 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
     ModelContextRequestKind,
     _commit_projection,
-    _is_retry_boundary,
     _remove_owned_overlays,
     _validate_projection,
 )
@@ -47,9 +46,14 @@ pytestmark = pytest.mark.anyio
 
 
 class _ProjectionDeps:
-    def __init__(self, deferred_resume: Any = None) -> None:
+    def __init__(
+        self,
+        deferred_resume: Any = None,
+        projection: ModelContextProjection | None = None,
+    ) -> None:
         self.deferred_resume = deferred_resume
         self.model_context = None
+        self.projection = projection or ModelContextProjection()
         self.projection_calls = 0
 
     async def project_model_context(
@@ -58,7 +62,7 @@ class _ProjectionDeps:
     ) -> ModelContextProjection:
         del request
         self.projection_calls += 1
-        return ModelContextProjection()
+        return self.projection
 
 
 class _ProjectionCapability(AbstractModelContextCapability):
@@ -296,7 +300,7 @@ async def _assert_exact_coordinator_hooks(
     assert deps.projection_calls == 0
 
 
-async def test_exact_boundaries_skip_projection_and_owned_overlay_cleanup() -> None:
+async def test_exact_boundaries_skip_projection_without_history_mutation() -> None:
     original = ModelRequest(parts=(UserPromptPart("input"),))
     projection_request = ModelContextProjectionRequest(
         kind=ModelContextRequestKind.INPUT,
@@ -323,7 +327,6 @@ async def test_exact_boundaries_skip_projection_and_owned_overlay_cleanup() -> N
             ),
         )
     )
-    assert _is_retry_boundary([committed, retry])
     await _assert_exact_coordinator_hooks([committed, retry])
 
     suspended = ModelResponse(parts=(TextPart("partial"),), state="suspended")
@@ -379,6 +382,74 @@ def test_projection_validation_normalizes_invalid_source_type_to_definition_erro
         _validate_projection(projection, request)
 
     assert exc_info.value.code == "model_context_projection_invalid"
+
+
+async def test_ordinary_preparation_preserves_prior_owned_overlays_for_prompt_cache() -> None:
+    original = ModelRequest(parts=(UserPromptPart("input"),))
+    request = ModelContextProjectionRequest(
+        kind=ModelContextRequestKind.INPUT,
+        input_origin=ModelContextInputOrigin.USER,
+    )
+    projection = ModelContextProjection(
+        blocks=(
+            ModelContextBlock(
+                source_id="test.cache-stable",
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content="historical overlay",
+            ),
+        )
+    )
+    committed = _commit_projection([original], request, projection)[0]
+    assert isinstance(committed, ModelRequest)
+    history = [
+        committed,
+        ModelResponse(parts=(TextPart("response"),)),
+        ModelRequest(parts=(UserPromptPart("next input"),)),
+    ]
+    current_projection = ModelContextProjection(
+        blocks=(
+            ModelContextBlock(
+                source_id="test.current",
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content="current overlay",
+            ),
+        )
+    )
+    deps = _ProjectionDeps(projection=current_projection)
+    model = FunctionModel(lambda messages, info: "unused")
+    ctx = RunContext(
+        deps=cast(AgentContext, deps),
+        model=model,
+        usage=RunUsage(),
+        messages=history,
+        run_id="run-1",
+    )
+    request_context = ModelRequestContext(
+        model=model,
+        messages=history,
+        model_settings=None,
+        model_request_parameters=ModelRequestParameters(),
+    )
+
+    coordinator = ModelContextCoordinatorCapability()
+    prepared = await coordinator.before_model_request(ctx, request_context)
+    handled: list[ModelRequestContext] = []
+
+    async def handler(value: ModelRequestContext) -> ModelResponse:
+        handled.append(value)
+        return ModelResponse(parts=(TextPart("done"),))
+
+    await coordinator.wrap_model_request(ctx, request_context=prepared, handler=handler)
+
+    assert prepared is request_context
+    assert prepared.messages[0] is committed
+    assert ctx.messages[0] is committed
+    assert deps.projection_calls == 1
+    assert len(handled) == 1
+    assert handled[0].messages[:-1] == history[:-1]
+    assert handled[0].messages[-1] is ctx.messages[-1]
+    assert isinstance(ctx.messages[-1], ModelRequest)
+    assert ctx.messages[-1].parts[-1].content == "current overlay"
 
 
 def test_overlay_cleanup_uses_ownership_metadata_not_matching_text() -> None:

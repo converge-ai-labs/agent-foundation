@@ -49,6 +49,7 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
+    _remove_owned_overlays,
     _requires_exact_boundary,
     _requires_exact_history,
 )
@@ -108,7 +109,7 @@ class RuntimeContextConfiguration(BaseModel):
 
 @dataclass(init=False)
 class RuntimeContextCapability(AbstractModelContextCapability):
-    """Replace stale runtime reminders with one bounded current projection."""
+    """Append one bounded current runtime projection at eligible boundaries."""
 
     id = RUNTIME_CONTEXT_CAPABILITY_ID
 
@@ -624,7 +625,7 @@ class HandoffCapability(AbstractModelContextCapability):
         retained_requests = ctx.deps._steering.retained_requests
         try:
             messages = _build_restored_history(
-                request_context.messages,
+                _remove_owned_overlays(request_context.messages),
                 state,
                 original_request=retained_requests[0] if retained_requests else None,
             )
@@ -719,6 +720,10 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         if request_tokens < self.policy.trigger_tokens:
             return request_context
 
+        compaction_context = _replace_messages(
+            request_context,
+            _remove_owned_overlays(request_context.messages),
+        )
         operation_id = f"compaction-{token_urlsafe(9)}"
         await emit_harness_event(
             ctx.deps.events,
@@ -735,9 +740,9 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 capability_id=COMPACTION_CAPABILITY_ID,
                 operation_id=operation_id,
             ):
-                summary = await _compact_with_same_agent(ctx, request_context)
+                summary = await _compact_with_same_agent(ctx, compaction_context)
                 messages = _build_compacted_history(
-                    request_context.messages,
+                    compaction_context.messages,
                     summary,
                     retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
                 )
