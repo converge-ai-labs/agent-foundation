@@ -215,3 +215,18 @@ class PluginRuntimeTaskRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PluginRuntimeResolutionRecord(Base):
+    __tablename__ = "plugin_runtime_resolutions"
+    __table_args__ = (
+        ForeignKeyConstraint(("operation_id",), ("plugin_runtime_tasks.id",), ondelete="RESTRICT"),
+        ForeignKeyConstraint(("runtime_lock_digest",), ("plugin_runtime_locks.digest",), ondelete="RESTRICT"),
+        CheckConstraint("length(request_digest) = 64", name="request_digest_sha256"),
+        Index("ix_plugin_runtime_resolutions_lock", "runtime_lock_digest", "operation_id"),
+    )
+
+    operation_id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

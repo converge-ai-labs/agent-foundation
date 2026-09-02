@@ -75,6 +75,11 @@ from a13n_service.plugins.commands import (
 from a13n_service.plugins.objects import PluginObjectStore
 from a13n_service.plugins.router import router as plugin_router
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
+from a13n_service.plugins.runtime_resolver import (
+    FoundationPluginRuntimeCandidateResolver,
+    HttpRuntimeDependencyArtifactRetainer,
+    UvRuntimeDependencyResolver,
+)
 from a13n_service.plugins.service import PluginService
 from a13n_service.plugins.staging import PluginStaging
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
@@ -297,17 +302,57 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     storage.sessions,
                     app.state.environment_provider_catalog,
                 )
+                app.state.agent_plugin_selection_resolver = (
+                    app.state.components.agent_plugin_selection_resolver
+                    or AgentPluginSelectionResolver(
+                        storage.sessions,
+                        runtime_mode=settings.plugin_runtime_mode,
+                        worker_release=settings.build_version,
+                    )
+                )
                 plugin_staging = await PluginStaging.create(storage.files_root, limiter=storage.file_limiter)
+                plugin_objects = PluginObjectStore(storage.objects)
                 runtime_dispatcher = app.state.components.plugin_runtime_command_dispatcher
                 candidate_resolver = app.state.components.plugin_runtime_candidate_resolver
                 staging_authority = app.state.components.plugin_runtime_staging_authority
-                if (candidate_resolver is None) != (staging_authority is None):
+                if (
+                    candidate_resolver is not None or staging_authority is not None
+                ) and settings.plugin_runtime_mode is not PluginRuntimeMode.runner:
+                    raise RuntimeError("Plugin Runtime coordination is configured outside runner mode")
+                if candidate_resolver is not None and staging_authority is None:
                     raise RuntimeError(
                         "Plugin Runtime coordination requires both a candidate resolver and staging authority"
                     )
+                if candidate_resolver is None and staging_authority is not None:
+                    default_index_url = settings.plugin_runtime_default_index_url.get_secret_value()
+                    index_urls = tuple(value.get_secret_value() for value in settings.plugin_runtime_index_urls)
+                    dependency_resolver = await UvRuntimeDependencyResolver.create(
+                        storage.files_root,
+                        executable=settings.plugin_runtime_resolver_executable,
+                        default_index_url=default_index_url,
+                        index_urls=index_urls,
+                        timeout_seconds=settings.plugin_runtime_resolver_timeout_seconds,
+                        max_packages=settings.plugin_runtime_resolver_max_packages,
+                        limiter=storage.file_limiter,
+                    )
+                    dependency_http_client = await stack.enter_async_context(httpx2.AsyncClient(follow_redirects=False))
+                    artifact_retainer = HttpRuntimeDependencyArtifactRetainer(
+                        dependency_http_client,
+                        plugin_staging,
+                        plugin_objects,
+                        max_wheel_bytes=settings.plugin_max_wheel_bytes,
+                        max_expanded_bytes=settings.plugin_max_expanded_bytes,
+                        max_archive_members=settings.plugin_max_archive_members,
+                        index_urls=(default_index_url, *index_urls),
+                        limiter=storage.file_limiter,
+                    )
+                    candidate_resolver = FoundationPluginRuntimeCandidateResolver(
+                        storage.sessions,
+                        app.state.agent_plugin_selection_resolver.runtime_locks,
+                        dependency_resolver,
+                        artifact_retainer,
+                    )
                 if runtime_dispatcher is None and candidate_resolver is not None and staging_authority is not None:
-                    if settings.plugin_runtime_mode is not PluginRuntimeMode.runner:
-                        raise RuntimeError("Plugin Runtime coordination is configured outside runner mode")
                     plugin_runtime_command_coordinator = PluginRuntimeCommandCoordinator(
                         storage.sessions,
                         candidate_resolver,
@@ -317,9 +362,10 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     )
                     runtime_dispatcher = plugin_runtime_command_coordinator
                     app.state.plugin_runtime_command_coordinator = plugin_runtime_command_coordinator
+                    app.state.plugin_runtime_candidate_resolver = candidate_resolver
                 app.state.plugin_service = PluginService(
                     storage.sessions,
-                    PluginObjectStore(storage.objects),
+                    plugin_objects,
                     plugin_staging,
                     runtime_mode=settings.plugin_runtime_mode,
                     max_wheel_bytes=settings.plugin_max_wheel_bytes,
@@ -356,14 +402,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         storage.sessions,
                         app.state.connector_provider_operations,
                         app.state.connector_secret_store,
-                    )
-                )
-                app.state.agent_plugin_selection_resolver = (
-                    app.state.components.agent_plugin_selection_resolver
-                    or AgentPluginSelectionResolver(
-                        storage.sessions,
-                        runtime_mode=settings.plugin_runtime_mode,
-                        worker_release=settings.build_version,
                     )
                 )
                 app.state.agent_environment_selection_resolver = AgentEnvironmentSelectionResolver(

@@ -13,6 +13,7 @@ from a13n_service.plugins.commands import (
 )
 from a13n_service.plugins.runtime import PluginRuntimeLock
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
+from a13n_service.plugins.runtime_resolver import FoundationPluginRuntimeCandidateResolver
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
 from a13n_service.skills import SkillRuntimePreparer, SkillSelectionResolver
@@ -269,6 +270,27 @@ async def test_lifespan_wires_durable_plugin_runtime_coordinator(tmp_path: Path)
     async with app.router.lifespan_context(app):
         assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
         assert app.state.plugin_service is not None
+
+
+@pytest.mark.anyio
+async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(
+            tmp_path,
+            role=ServiceRole.control,
+            plugin_runtime_mode="runner",
+            plugin_runtime_command_poll_interval_seconds=0.01,
+            plugin_runtime_command_lease_seconds=4,
+            plugin_runtime_default_index_url="https://user:index-secret@packages.example/simple",
+        ),
+        components=ServiceComponents(
+            plugin_runtime_staging_authority=_UnusedPluginRuntimeStagingAuthority(),
+        ),
+    )
+
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
+        assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
 
 
 @pytest.mark.anyio

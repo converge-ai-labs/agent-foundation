@@ -58,6 +58,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
+COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
 COPY --from=web-builder --chown=app:app /web/dist /app/web
 COPY --chown=app:app scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \

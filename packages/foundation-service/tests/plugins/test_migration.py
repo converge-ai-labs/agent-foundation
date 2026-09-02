@@ -11,6 +11,7 @@ PLUGIN_TABLES = {
     "plugin_runtime_state",
     "plugin_runtime_locks",
     "plugin_runtime_tasks",
+    "plugin_runtime_resolutions",
 }
 
 
