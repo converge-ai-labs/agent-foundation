@@ -15,18 +15,18 @@ Backend selection happens once during process startup. A failed network backend 
 
 Control-plane and all-in-one roles expose the accepted Model Management API at `/api/v1`. The service includes the trusted OpenAI, Anthropic, Gemini, Vertex AI, Azure OpenAI, Bedrock, Alibaba Model Studio, DeepSeek, Moonshot, Zhipu, and generic OpenAI-compatible adapters. Provider catalogs are release-owned autocomplete metadata; an unknown bounded model name remains valid and never causes dynamic provider discovery.
 
-`ModelConfig` stores only a credential requirement. To enable the built-in candidate connection tester and runtime Secret resolver, configure an exact 32-byte master key as standard base64 together with its non-secret key identifier:
+`Model` stores only a credential requirement. To enable the built-in candidate connection tester and runtime Secret resolver, configure an exact 32-byte master key as standard base64 together with its non-secret key identifier:
 
 ```bash
 FOUNDATION_SECRET_MASTER_KEY_BASE64='<base64-encoded-32-byte-key>'
 FOUNDATION_SECRET_ENCRYPTION_KEY_ID='master-2026-08'
 ```
 
-The key has no default and is never stored in the database. Values in `managed_secrets` use the `aes_256_gcm_v1` AES-256-GCM profile and are decrypted only after the database session closes. A Host can inject `ServiceComponents.model_secret_resolver` and `model_connection_tester` when its Secret authority is supplied by another trusted composition.
+The key has no default and is never stored in the database. Values in `secrets` use the `aes_256_gcm_v1` AES-256-GCM profile and are decrypted only after the database session closes. A Host can inject `ServiceComponents.model_secret_resolver` and `model_connection_tester` when its Secret authority is supplied by another trusted composition.
 
-Model create is a synchronous mutation protected by Workspace name uniqueness and retains no separate replay record. Update uses the integer `version` and required `expected_version` optimistic-lock contract. Configurations are retired with `enabled=false`; the service exposes no copy, references, or hard-delete route. Custom endpoints are limited to the trusted OpenAI-compatible adapter and are checked against `FOUNDATION_MODEL_PRIVATE_ENDPOINT_DOMAINS` and `FOUNDATION_MODEL_PRIVATE_ENDPOINT_CIDRS`. Redirects are not followed by the built-in tester.
+Model create atomically creates the stable head and immutable revision `1`. Complete provider-configuration changes publish a new `ModelRevision` under the head's integer `version` contract; metadata and enabled-state changes use a strong `ETag` with `If-Match` and do not advance that version. Models are retired with `enabled=false`; the service exposes no copy or hard-delete route. Custom endpoints are limited to the trusted OpenAI-compatible adapter and are checked against `FOUNDATION_MODEL_PRIVATE_ENDPOINT_DOMAINS` and `FOUNDATION_MODEL_PRIVATE_ENDPOINT_CIDRS`. Redirects are not followed by the built-in tester.
 
-Run acceptance integrations use `AcceptedModelSelector.prepare()` before the owning short transaction and `freeze_in_transaction()` while inserting the Run. Workers use `SnapshotRunModelResolver` with the retained non-secret snapshot, current Secret resolver, endpoint policy, and `NativeModelFactory`; they never fall back to the current `ModelConfig` for a replacement attempt.
+Run acceptance integrations use `AcceptedModelSelector.prepare()` before the owning short transaction and `freeze_in_transaction()` while inserting the Run. Workers use `SnapshotRunModelResolver` with the retained non-secret snapshot, current Secret resolver, endpoint policy, and `NativeModelFactory`; they never fall back to the current `Model` for a replacement attempt.
 
 ## Asset Management
 

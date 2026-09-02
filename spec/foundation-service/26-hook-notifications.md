@@ -101,15 +101,23 @@ class WebhookDestinationConfig:
 class HookSubscription:
     id: str
     version: int
+    current_revision_id: str
     workspace_id: str
-    status: Literal["active", "paused"]
+    enabled: bool
+    deleted_at: datetime | None
+
+
+class HookSubscriptionRevision:
+    id: str
+    hook_subscription_id: str
+    version: int
     hook_names: tuple[str, ...]
     session_id: str | None
     thread_id: str | None
     run_id: str | None
     webhook: WebhookDestinationConfig
+    created_by: PrincipalRef
     created_at: datetime
-    updated_at: datetime
 
 
 class CreateHookSubscriptionRequest:
@@ -127,7 +135,7 @@ class InlineHookSubscriptionInput:
 
 `hook_names` is a non-empty bounded set of exact registry names. Scope filters are optional, tenant-consistent, and conjunctive. The authorized subscription read returns the configured endpoint URL and managed Secret reference, never the signing value. A Hook event and an Outbox record contain neither the callback URL nor a Secret value.
 
-Durable Hook subscriptions have two creation paths that produce the same resource and versioned table record:
+Durable Hook subscriptions have two creation paths that produce the same head and immutable Revision record:
 
 1. the Workspace management API accepts `CreateHookSubscriptionRequest` for a long-lived Workspace-, Session-, Thread-, or known-Run-scoped subscription; and
 2. every input-bearing command that can accept a new Run can carry one optional `hook_subscription: InlineHookSubscriptionInput` for that exact new Run; an existing-Thread Run submission that queues retains this input without creating the resource until consumption accepts the Run.
@@ -136,11 +144,11 @@ The inline form does not accept caller-supplied scope IDs. Foundation assigns th
 
 Both forms accept exact `hook_names`, `endpoint_url`, `signing_secret_id`, and `signature_profile`. The signing value itself is never inline: the caller must be authorized to use the referenced managed Secret. The Foundation retry policy and delivery limits are service policy rather than caller-supplied destination parameters.
 
-Foundation validates the inline Hook names, destination, Secret authority, and request bounds before immediate acceptance or queue admission. Queue admission stores the exact inline input as part of the queued Run intent but creates no HookSubscription or Outbox row. Queue editing revalidates the replacement input. At immediate or delayed Run acceptance, Foundation repeats current authorization and validation; in the final short acceptance transaction it inserts the first immutable subscription version before appending `run.accepted` and its matching Outbox row. Failure rolls back the subscription and Run together; no Webhook HTTP request runs in that transaction. The complete inline input participates in the submitting command's idempotency, so same-key replay returns the original immediate or queued outcome, while reuse with different Hook configuration conflicts.
+Foundation validates the inline Hook names, destination, Secret authority, and request bounds before immediate acceptance or queue admission. Queue admission stores the exact inline input as part of the queued Run intent but creates no HookSubscription or Outbox row. Queue editing revalidates the replacement input. At immediate or delayed Run acceptance, Foundation repeats current authorization and validation; in the final short acceptance transaction it inserts the HookSubscription head and Revision v1 before appending `run.accepted` and its matching Outbox row. Failure rolls back the subscription and Run together; no Webhook HTTP request runs in that transaction. The complete inline input participates in the submitting command's idempotency, so same-key replay returns the original immediate or queued outcome, while reuse with different Hook configuration conflicts.
 
 To receive `run.accepted`, a managed subscription must already match when Run acceptance commits, or the command must supply the inline form. A known-Run subscription created through the management API after acceptance receives only later matching events because subscription changes are not retroactive.
 
-Creating, changing, pausing, or deleting a subscription uses ordinary Workspace authorization and optimistic concurrency. Every mutation appends a new immutable version in `hook_subscriptions` and supersedes the prior current version. Workspace limits keep the active matching destination set bounded for every source. For a lifecycle event, the subscription version observed by the source transaction determines which Outbox rows are created. A later change does not alter an already committed Outbox row or retroactively deliver older sources. Authorized redrive reuses the original delivery identity and exact subscription version.
+Creating a subscription atomically creates its head and Revision v1. A configuration change appends an immutable `hook_subscription_revisions` row and advances the head only when canonical content changes. Enablement and deletion are mutable head lifecycle axes guarded by strong `ETag`/`If-Match`; they do not advance `version`. Workspace limits keep the active matching destination set bounded for every source. For a lifecycle event, the exact Revision observed by the source transaction determines which Outbox rows are created. A later change does not alter an already committed Outbox row or retroactively deliver older sources. Authorized redrive reuses the original delivery identity and exact subscription Revision.
 
 Subscription List and Get authorize `hook_subscription.read`; creation
 authorizes `hook_subscription.create`; configuration or pause changes authorize
@@ -150,31 +158,35 @@ only Runner-level create grant and still requires current authority for the
 signing Secret. Long-lived creation and every later mutation require Builder or
 Admin. The IAM
 [stable action registry](33-identity-and-access-management.md#stable-action-registry)
-owns these grants; subscription scope, Secret, destination, version, and source
+owns these grants; subscription scope, Secret, destination, Revision, and source
 eligibility remain additional checks owned here.
 
 Only committed lifecycle events are eligible for durable Webhook subscription delivery. Live-only Run Stream entries, Items, token deltas, diagnostics, Environment-binding observations, and telemetry never create Outbox rows.
 
 ## Storage Model
 
-Hook delivery introduces one Hook-owned relational table, `hook_subscriptions`, and uses the shared `outbox_records` table. It reuses the existing `lifecycle_events` source without redefining that schema. It adds no Hook-specific Redis key, object-storage object, notification table, or caller-owned persistence schema.
+Hook delivery introduces `hook_subscriptions` and `hook_subscription_revisions`, and uses the shared `outbox_records` table. It reuses the existing `lifecycle_events` source without redefining that schema. It adds no Hook-specific Redis key, object-storage object, notification table, or caller-owned persistence schema.
 
 Both tables participate in the service's explicitly assembled [schema and migration graph](04-relational-schema.md). Runtime code never creates them opportunistically, and a Worker-only process verifies but never applies their migrations.
 
-### `hook_subscriptions`
+### `hook_subscriptions` and `hook_subscription_revisions`
 
-One table stores the subscription identity, exact Hook-name set, scope filters, and Webhook configuration. Configuration is versioned so an Outbox row can keep using the exact destination selected when its source event committed.
+The head stores stable identity, `version`, `current_revision_id`, `enabled`, deletion time, actors, and timestamps. The immutable Revision stores the exact Hook-name set, scope filters, and Webhook configuration so an Outbox row can keep using the destination selected when its source event committed.
 
 ```python
-type HookSubscriptionStorageStatus = Literal["active", "paused", "deleted"]
-
-
 class HookSubscriptionRecord:
-    version_id: HookSubscriptionVersionId
     id: HookSubscriptionId
     version: int
+    current_revision_id: HookSubscriptionRevisionId
     workspace_id: WorkspaceId
-    status: HookSubscriptionStorageStatus
+    enabled: bool
+    deleted_at: datetime | None
+
+
+class HookSubscriptionRevisionRecord:
+    id: HookSubscriptionRevisionId
+    hook_subscription_id: HookSubscriptionId
+    version: int
     hook_names: tuple[str, ...]
     session_id: SessionId | None
     thread_id: ThreadId | None
@@ -182,16 +194,14 @@ class HookSubscriptionRecord:
     endpoint_url: str
     signing_secret_id: SecretId
     signature_profile: Literal["hmac_sha256_v1"]
-    subscription_created_at: datetime
-    version_created_at: datetime
-    replaced_at: datetime | None
+    created_at: datetime
 ```
 
-`version_id` is the primary key for one immutable configuration version. `(workspace_id, id, version)` is unique, versions are positive and contiguous, and exactly one row per `(workspace_id, id)` has `replaced_at=null`. Creating a subscription inserts version `1`. Updating Hook names, filters, status, or Webhook configuration sets the prior current row's `replaced_at` and inserts the next version in one short transaction. A `deleted` current version is the retained tombstone and never matches a new event.
+`HookSubscriptionRevision.id` is the immutable destination reference stored by Outbox. `(hook_subscription_id, version)` is unique and versions are positive and contiguous. A deleted head never matches a new event.
 
 `hook_names` is stored as one bounded, duplicate-free JSON array. A GIN index on that field plus partial B-tree indexes over the current active Workspace and non-null Session, Thread, and Run filters support source-transaction matching. All filters are conjunctive and tenant-consistent.
 
-Each version contains the callback URL but no URL user information or plaintext signing value. `signing_secret_id` is resolved through the managed Secret authorization boundary at delivery time. Ordinary reads project the current version as `HookSubscription`, with `created_at` from `subscription_created_at` and `updated_at` from `version_created_at`. Historical versions remain internal and retained while an Outbox row can still reference them.
+Each Revision contains the callback URL but no URL user information or plaintext signing value. `signing_secret_id` is resolved through the managed Secret authorization boundary at delivery time. Ordinary reads return the head and may embed its current Revision. Historical Revisions remain immutable and retained while an Outbox row can still reference them.
 
 ### `outbox_records`
 
@@ -203,7 +213,7 @@ class HookOutboxRecord:
     source_kind: Literal["lifecycle_event"]
     source_id: LifecycleEventId
     destination_kind: Literal["webhook"]
-    destination_ref: HookSubscriptionVersionId
+    destination_ref: HookSubscriptionRevisionId
     status: Literal["pending", "publishing", "published", "dead_lettered"]
     available_at: datetime
     claim_generation: int
@@ -216,11 +226,11 @@ class HookOutboxRecord:
     last_error_code: str | None
 ```
 
-`source_id` references the immutable lifecycle event and `destination_ref` references the exact `hook_subscriptions.version_id` selected by matching. The Outbox row copies neither lifecycle payload nor callback configuration. The publisher derives the envelope from the lifecycle event and resolves the URL, Secret reference, and signature profile from that immutable subscription version.
+`source_id` references the immutable lifecycle event and `destination_ref` references the exact `hook_subscription_revisions.id` selected by matching. The Outbox row copies neither lifecycle payload nor callback configuration. The publisher derives the envelope from the lifecycle event and resolves the URL, Secret reference, and signature profile from that immutable subscription Revision.
 
 `id` is the stable `delivery_id`. The tuple `(source_kind, source_id, destination_kind, destination_ref)` is unique, so a source-transaction retry cannot create a duplicate delivery. An index on `(status, available_at, id)` supports bounded claims. Claim generation, lease, retry, publication, dead-letter, retention, and redrive follow the shared Outbox contract.
 
-The owning Run or RunAttempt mutation, lifecycle event, and one Outbox row per matching current active subscription commit in one short transaction. A managed subscription version exists before that transaction; an inline version is inserted earlier in the same transaction before `run.accepted` matching. A later subscription version does not alter an existing Outbox row. Neither the lifecycle event nor referenced subscription version is removed while a retained Outbox row can still be delivered or redriven.
+The owning Run or RunAttempt mutation, lifecycle event, and one Outbox row per matching current active subscription commit in one short transaction. A managed subscription Revision exists before that transaction; an inline Revision is inserted earlier in the same transaction before `run.accepted` matching. A later subscription Revision does not alter an existing Outbox row. Neither the lifecycle event nor referenced subscription Revision is removed while a retained Outbox row can still be delivered or redriven.
 
 ## Notification Methods
 
@@ -302,7 +312,7 @@ Webhook delivery applies only to a matching active durable subscription. A lifec
 
 The publisher resolves the endpoint and signing configuration from the exact immutable HookSubscription version referenced by the Outbox row. This is identical for subscriptions created through the management API and subscriptions created inline with a Run command; inline creation never performs delivery on the request path.
 
-For this contract, each row uses `source_kind = lifecycle_event`, the stable `source_id`, `destination_kind = webhook`, and `destination_ref = hook_subscriptions.version_id`. It carries routing identity and delivery state, not a copied event payload, callback URL, or Secret. The publisher derives the envelope from the immutable lifecycle event when it delivers the row.
+For this contract, each row uses `source_kind = lifecycle_event`, the stable `source_id`, `destination_kind = webhook`, and `destination_ref = hook_subscription_revisions.id`. It carries routing identity and delivery state, not a copied event payload, callback URL, or Secret. The publisher derives the envelope from the immutable lifecycle event when it delivers the row.
 
 The resulting envelope includes `hook_subscription_id`, `delivery_id`, `resource_type`, `resource_id`, contiguous `resource_seq`, and `resource_version`. Webhook transport does not preserve event order, including for one subscription and resource. Parallel claims and retry backoff can deliver a later `resource_seq` first.
 
@@ -317,7 +327,7 @@ sequenceDiagram
     DB-->>Domain: commit succeeds or all changes roll back
     loop bounded polling
         Publisher->>DB: claim due pending Outbox rows
-        DB-->>Publisher: source IDs and subscription version references
+        DB-->>Publisher: source IDs and subscription Revision references
     end
     Publisher->>DB: load immutable lifecycle event and Webhook configuration
     Publisher->>Caller: signed HTTP POST with DeliveryEnvelope
@@ -393,16 +403,16 @@ All Harness-derived hooks use Run SSE only. A caller that needs a reliable busin
 
 Run hooks originate only from the relational transition that owns the fact. The transition and required lifecycle event commit in the same short transaction. The exact Run state machine and fields remain owned by [Durable Run State](12-run-persistence.md#run-lifecycle).
 
-| Hook name       | Trigger                                                                               | Information                                                                                                                                                                                   |
-| --------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run.accepted`  | A complete Run, accepted input, selections, scheduling data, and initial state commit | Session, Thread, Run, parent and lineage correlation, AgentPresetRevision, effective-config digest and Runtime lock, safe trigger correlation, resource version, availability and commit time |
-| `run.running`   | The first RunAttempt is leased and fenced and the Run leaves `accepted`               | Run version, current RunAttempt, claim time, safe Agent/model observation                                                                                                                     |
-| `run.waiting`   | A deferred result and complete waiting state are sealed                               | Wait reason, bounded pending-action summary, sealed time and authorized resource links; no full deferred payload                                                                              |
-| `run.completed` | Complete state and output are sealed successfully                                     | Output or object reference under content policy, final Item references, usage summary reference, version and sealed time                                                                      |
-| `run.failed`    | A terminal pre-run or running failure seals the Run                                   | Bounded `SafeFailure`, final attempt correlation, version and sealed time                                                                                                                     |
-| `run.cancelled` | Authorized cancellation or normalized run cancellation seals the Run                  | Cancellation actor or source when safe, reason code, final attempt correlation, version and sealed time                                                                                       |
+| Hook name       | Trigger                                                                               | Information                                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run.accepted`  | A complete Run, accepted input, selections, scheduling data, and initial state commit | Session, Thread, Run, parent and lineage correlation, AgentRevision, effective-config digest and Runtime lock, safe trigger correlation, resource version, availability and commit time |
+| `run.running`   | The first RunAttempt is leased and fenced and the Run leaves `accepted`               | Run state version, current RunAttempt, claim time, safe Agent/model observation                                                                                                         |
+| `run.waiting`   | A deferred result and complete waiting state are sealed                               | Wait reason, bounded pending-action summary, sealed time and authorized resource links; no full deferred payload                                                                        |
+| `run.completed` | Complete state and output are sealed successfully                                     | Output or object reference under content policy, final Item references, usage summary reference, version and sealed time                                                                |
+| `run.failed`    | A terminal pre-run or running failure seals the Run                                   | Bounded `SafeFailure`, final attempt correlation, version and sealed time                                                                                                               |
+| `run.cancelled` | Authorized cancellation or normalized run cancellation seals the Run                  | Cancellation actor or source when safe, reason code, final attempt correlation, version and sealed time                                                                                 |
 
-Every accepted asynchronous child is an ordinary child Run. Its `run.*` hooks carry parent AgentPresetRevision, delegation, parent tool-call, Session, Thread, and parent-Run correlation when authorized; Foundation defines no competing `child_run.*` lifecycle.
+Every accepted asynchronous child is an ordinary child Run. Its `run.*` hooks carry parent AgentRevision, delegation, parent tool-call, Session, Thread, and parent-Run correlation when authorized; Foundation defines no competing `child_run.*` lifecycle.
 
 ### Foundation RunAttempt Hooks
 

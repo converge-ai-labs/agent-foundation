@@ -27,7 +27,7 @@ class PluginRuntimeVersionSpec:
 
 @dataclass(frozen=True, slots=True)
 class PluginRuntimeCatalogSnapshot:
-    runtime_version: int
+    runtime_generation: int
     active_lock_digest: str | None
     active_versions: tuple[PluginRuntimeVersionSpec, ...]
     target_plugin: Plugin
@@ -78,7 +78,7 @@ class PluginRuntimeStagingAuthority(Protocol):
         operation_id: str,
         runtime_lock: PluginRuntimeLock,
         staging_token: str,
-        runtime_version: int,
+        runtime_generation: int,
     ) -> None: ...
 
     async def abort_candidate(

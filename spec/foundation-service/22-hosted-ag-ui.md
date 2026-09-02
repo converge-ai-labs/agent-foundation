@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Foundation Service hosts an AG-UI HTTP/SSE adapter for every callable AgentPreset. The adapter accepts standard `RunAgentInput`, maps it to the canonical [`AgentInput`](17-agent-input.md) and the existing Session/Thread/Run control contract, and delivers standard AG-UI `BaseEvent` values derived from the selected Harness release group and durable Foundation facts. It is not another Agent runtime or lifecycle authority.
+Foundation Service hosts an AG-UI HTTP/SSE adapter for every callable Agent. The adapter accepts standard `RunAgentInput`, maps it to the canonical [`AgentInput`](17-agent-input.md) and the existing Session/Thread/Run control contract, and delivers standard AG-UI `BaseEvent` values derived from the selected Harness release group and durable Foundation facts. It is not another Agent runtime or lifecycle authority.
 
-New and continued AG-UI work authorizes the same `agent_preset.invoke`,
+New and continued AG-UI work authorizes the same `agent.invoke`,
 `run.continue`, and, when waiting defaults are selected, `run.feedback` actions
 as the equivalent Native operation. Cancellation authorizes `run.interrupt`, and
 SSE attachment authorizes `run.read`. The IAM
@@ -12,7 +12,7 @@ SSE attachment authorizes `run.read`. The IAM
 owns these action names and grants; external IDs and adapter bindings never
 select or preserve authority.
 
-Hosted AG-UI is always present on `control` and `all` roles. It has no deployment or AgentPreset-level enable switch and does not require a Foundation SDK. A standard AG-UI client can call it using the wire profile defined here.
+Hosted AG-UI is always present on `control` and `all` roles. It has no deployment or Agent-level enable switch and does not require a Foundation SDK. A standard AG-UI client can call it using the wire profile defined here.
 
 ## Boundaries
 
@@ -24,32 +24,32 @@ Hosted AG-UI is always present on `control` and `all` roles. It has no deploymen
 | Durable Run acceptance and waiting feedback                                          | [Agent Control](18-agent-control-input-and-continuation.md)                                  |
 | Durable interruption                                                                 | [Active Execution](19-agent-control-active-execution.md)                                     |
 | Hosted external bindings, input validation, lifecycle projection, retention, and SSE | This document                                                                                |
-| Current Principal and AgentPreset authorization                                      | [Foundation IAM](33-identity-and-access-management.md)                                       |
-| Preset-specific schemas, visibility, and limits                                      | [Protocol configuration](28-agent-management.md#protocol-configuration)                      |
+| Current Principal and Agent authorization                                            | [Foundation IAM](33-identity-and-access-management.md)                                       |
+| Agent-specific schemas, visibility, and limits                                       | [Protocol configuration](28-agent-management.md#protocol-configuration)                      |
 
 The adapter never reconstructs AG-UI events from Native notification envelopes and never implements a second Harness event converter.
 
 ## HTTP Surface
 
 ```http
-POST /ag-ui/v1/agent-presets/{agent_preset_id}/runs
+POST /ag-ui/v1/agents/{agent_id}/runs
 Content-Type: application/json
 Accept: text/event-stream
 Last-Event-ID: <hosted-agui-cursor>
 ```
 
-The request body is one standard `RunAgentInput` under the pinned AG-UI schema. Its `agent_preset_id` comes only from the route. No body field, `context`, or `forwardedProps` value can select another Foundation AgentPreset, Workspace, Model, Secret, ConnectorConnection, or Principal.
+The request body is one standard `RunAgentInput` under the pinned AG-UI schema. Its `agent_id` comes only from the route. No body field, `context`, or `forwardedProps` value can select another Foundation Agent, Workspace, Model, Secret, Connection, or Principal.
 
 The response is SSE. Each AG-UI event is serialized as one standard JSON `BaseEvent` in a `data` field. Foundation can add an SSE `id` for retained delivery and reconnect; that ID is a Hosted AG-UI delivery cursor, not a standard AG-UI identity or Native Run Stream cursor. `Last-Event-ID` resumes exclusively after the last completely applied hosted event.
 
 The adapter also exposes the AG-UI cancellation surface:
 
 ```http
-POST /ag-ui/v1/agent-presets/{agent_preset_id}/cancel
+POST /ag-ui/v1/agents/{agent_id}/cancel
 Content-Type: application/json
 ```
 
-The body names the external `threadId` and `runId`. Cancellation resolves their persisted binding, reauthorizes the current AgentPreset and Run, and invokes the Native durable Run interrupt command. The Foundation Run outcome is `cancelled`; closing the run SSE does not call this command.
+The body names the external `threadId` and `runId`. Cancellation resolves their persisted binding, reauthorizes the current Agent and Run, and invokes the Native durable Run interrupt command. The Foundation Run outcome is `cancelled`; closing the run SSE does not call this command.
 
 ## External Binding
 
@@ -58,7 +58,7 @@ Hosted AG-UI persists a binding with this conceptual meaning:
 ```python
 class AguiThreadBinding:
     client_identity: str
-    agent_preset_id: str
+    agent_id: str
     external_thread_id: str
     session_id: SessionId
     root_thread_id: ThreadId
@@ -67,8 +67,8 @@ class AguiThreadBinding:
 
 class AguiRunBinding:
     client_identity: str
-    agent_preset_id: str
-    agent_preset_revision_id: str
+    agent_id: str
+    agent_revision_id: str
     external_thread_id: str
     external_run_id: str
     run_id: RunId
@@ -76,9 +76,9 @@ class AguiRunBinding:
 
 The schemas are conceptual durable records, not another public resource model. External IDs are opaque bounded correlation chosen by the client. They grant no read, continuation, cancellation, or stream authority.
 
-The first accepted AG-UI run for a previously unbound `(client identity, AgentPreset, threadId)` creates a Session, root Thread, and root Foundation Run through the ordinary application contract. A later AG-UI run continues the binding's current active Thread. `parentRunId` bound to the active completed Foundation Run is an ordinary continuation; one bound to an authorized earlier completed Foundation Run creates an explicit Foundation fork and atomically selects that fork as the binding's active Thread. A new ordinary user tail against the exact current waiting Run has the explicit abandonment meaning defined below. Cross-Preset, cross-client, incomplete, or concealed sources fail.
+The first accepted AG-UI run for a previously unbound `(client identity, Agent, threadId)` creates a Session, root Thread, and root Foundation Run through the ordinary application contract. A later AG-UI run continues the binding's current active Thread. `parentRunId` bound to the active completed Foundation Run is an ordinary continuation; one bound to an authorized earlier completed Foundation Run creates an explicit Foundation fork and atomically selects that fork as the binding's active Thread. A new ordinary user tail against the exact current waiting Run has the explicit abandonment meaning defined below. Cross-Agent, cross-client, incomplete, or concealed sources fail.
 
-`runId` is the idempotency identity within one client, AgentPreset, and external Thread. Repeating the same `runId` and canonical accepted input returns or reattaches to the original Run. Reuse with different input conflicts. A lost HTTP response never causes the client to invent another `runId` for the same intent.
+`runId` is the idempotency identity within one client, Agent, and external Thread. Repeating the same `runId` and canonical accepted input returns or reattaches to the original Run. Reuse with different input conflicts. A lost HTTP response never causes the client to invent another `runId` for the same intent.
 
 ## Input Authority
 
@@ -91,7 +91,7 @@ Hosted input is append-only relative to Foundation history:
 
 An initial call does not import an arbitrary prior transcript. Historical import is a separate Native operation with its own authority and validation.
 
-The adapter maps the accepted new user tail into one canonical `AgentInput`. Text and binary parts retain their order, media type, acquisition, and delivery semantics; structured AG-UI data maps to `structured_content` and follows the selected AgentPresetRevision's optional `ProtocolConfig.input_data_schema`. The common Agent input contract validates the resulting value before the control operation accepts a Run. AG-UI protocol fields that express state, context, client tools, or feedback remain command options or correlated feedback and never enter `AgentInput` implicitly.
+The adapter maps the accepted new user tail into one canonical `AgentInput`. Text and binary parts retain their order, media type, acquisition, and delivery semantics; structured AG-UI data maps to `structured_content` and follows the selected AgentRevision's optional `ProtocolConfig.input_data_schema`. The common Agent input contract validates the resulting value before the control operation accepts a Run. AG-UI protocol fields that express state, context, client tools, or feedback remain command options or correlated feedback and never enter `AgentInput` implicitly.
 
 Standard `state`, `context`, and `tools` plus Foundation extensions are bounded untrusted inputs:
 
@@ -109,7 +109,7 @@ When the binding's current/head Run is waiting, a new ordinary user tail without
 
 The adapter sets `waiting_resolution` only for this declared abandonment case. It never adds the field to an ordinary completed-head continuation or silently converts an extension validation failure into defaults. The server-owned binding supplies current Thread version and sealed digest under the same final concurrency checks; a stale binding conflicts without accepting a Run or rebinding pending inbox delivery.
 
-The normalized client tool surface and exact `agent_preset_revision_id` are frozen with the accepted Run. A feedback run reuses the waiting Run's exact surface; it cannot change tool names, schemas, or pending-call identity.
+The normalized client tool surface and exact `agent_revision_id` are frozen with the accepted Run. A feedback run reuses the waiting Run's exact surface; it cannot change tool names, schemas, or pending-call identity.
 
 ## Lifecycle Projection
 

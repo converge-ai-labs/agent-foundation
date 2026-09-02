@@ -8,9 +8,8 @@ from sqlalchemy import create_engine, inspect
 SKILL_TABLES = {
     "skill_idempotency",
     "skill_uploads",
-    "workspace_skill_heads",
-    "workspace_skill_revisions",
-    "workspace_skills",
+    "skill_revisions",
+    "skills",
 }
 
 

@@ -32,12 +32,12 @@ def decode_environment_cursor(value: str, *, scope: dict[str, object]) -> tuple[
     return _parse_time(payload), environment_id
 
 
-def encode_revision_cursor(*, revision_number: int, revision_id: str, scope: dict[str, object]) -> str:
+def encode_revision_cursor(*, version: int, revision_id: str, scope: dict[str, object]) -> str:
     return _encode(
         {
             "v": "1",
             "kind": "environment_revision",
-            "number": revision_number,
+            "number": version,
             "id": revision_id,
             "scope": _scope(scope),
         }

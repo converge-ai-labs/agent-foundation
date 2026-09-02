@@ -57,43 +57,45 @@ def upgrade() -> None:
     )
     op.create_index("ix_skill_idempotency_expiry", "skill_idempotency", ["expires_at", "id"], unique=False)
     op.create_table(
-        "workspace_skills",
+        "skills",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column("display_name", sa.String(length=1024), nullable=False),
+        sa.Column("name", sa.String(length=1024), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
+        sa.Column("current_revision_id", sa.String(length=72), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
+        sa.Column("updated_by_type", sa.String(length=32), nullable=False),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
-            "created_by_type IN ('user', 'service_account')", name=op.f("ck_workspace_skills_created_by_type_valid")
+            "created_by_type IN ('user', 'service_account')", name=op.f("ck_skills_created_by_type_valid")
         ),
         sa.CheckConstraint(
-            "length(display_name) BETWEEN 1 AND 256", name=op.f("ck_workspace_skills_display_name_bounded")
+            "updated_by_type IN ('user', 'service_account')", name=op.f("ck_skills_updated_by_type_valid")
         ),
-        sa.CheckConstraint("version >= 1", name=op.f("ck_workspace_skills_version_positive")),
+        sa.CheckConstraint("length(name) BETWEEN 1 AND 256", name=op.f("ck_skills_name_bounded")),
+        sa.CheckConstraint("version >= 1", name=op.f("ck_skills_version_positive")),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
-            name=op.f("fk_workspace_skills_workspace_id_workspaces"),
+            name=op.f("fk_skills_workspace_id_workspaces"),
             ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_workspace_skills")),
-        sa.UniqueConstraint("id", "workspace_id", "organization_id", name="uq_workspace_skills_identity_scope"),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_skills")),
+        sa.UniqueConstraint("id", "workspace_id", "organization_id", name="uq_skills_identity_scope"),
     )
-    op.create_index(
-        "ix_workspace_skills_listing", "workspace_skills", ["workspace_id", "display_name", "id"], unique=False
-    )
+    op.create_index("ix_skills_listing", "skills", ["workspace_id", "name", "id"], unique=False)
     op.create_table(
-        "workspace_skill_revisions",
+        "skill_revisions",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("skill_id", sa.String(length=72), nullable=False),
-        sa.Column("revision_number", sa.BigInteger(), nullable=False),
+        sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("content_digest", sa.String(length=64), nullable=False),
         sa.Column("manifest", sa.JSON(), nullable=False),
         sa.Column("imported_from", sa.JSON(), nullable=False),
@@ -102,31 +104,31 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
             "created_by_type IN ('user', 'service_account')",
-            name=op.f("ck_workspace_skill_revisions_created_by_type_valid"),
+            name=op.f("ck_skill_revisions_created_by_type_valid"),
         ),
-        sa.CheckConstraint("revision_number >= 1", name=op.f("ck_workspace_skill_revisions_revision_number_positive")),
+        sa.CheckConstraint("version >= 1", name=op.f("ck_skill_revisions_version_positive")),
         sa.ForeignKeyConstraint(
             ["skill_id", "workspace_id", "organization_id"],
-            ["workspace_skills.id", "workspace_skills.workspace_id", "workspace_skills.organization_id"],
-            name=op.f("fk_workspace_skill_revisions_skill_id_workspace_skills"),
+            ["skills.id", "skills.workspace_id", "skills.organization_id"],
+            name=op.f("fk_skill_revisions_skill_id_skills"),
             ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_workspace_skill_revisions")),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_skill_revisions")),
         sa.UniqueConstraint(
-            "id", "skill_id", "workspace_id", "organization_id", name="uq_workspace_skill_revisions_identity_scope"
+            "id", "skill_id", "workspace_id", "organization_id", name="uq_skill_revisions_identity_scope"
         ),
-        sa.UniqueConstraint("skill_id", "revision_number", name="uq_workspace_skill_revisions_number_per_skill"),
+        sa.UniqueConstraint("skill_id", "version", name="uq_skill_revisions_version_per_skill"),
     )
     op.create_index(
-        "ix_workspace_skill_revisions_digest",
-        "workspace_skill_revisions",
+        "ix_skill_revisions_digest",
+        "skill_revisions",
         ["workspace_id", "content_digest"],
         unique=False,
     )
     op.create_index(
-        "ix_workspace_skill_revisions_listing",
-        "workspace_skill_revisions",
-        ["skill_id", "revision_number", "id"],
+        "ix_skill_revisions_listing",
+        "skill_revisions",
+        ["skill_id", "version", "id"],
         unique=False,
     )
     op.create_table(
@@ -146,8 +148,8 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["consumed_by_revision_id"],
-            ["workspace_skill_revisions.id"],
-            name=op.f("fk_skill_uploads_consumed_by_revision_id_workspace_skill_revisions"),
+            ["skill_revisions.id"],
+            name=op.f("fk_skill_uploads_consumed_by_revision_id_skill_revisions"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
@@ -165,46 +167,20 @@ def upgrade() -> None:
         ["workspace_id", "uploader_type", "uploader_id", "id"],
         unique=False,
     )
-    op.create_table(
-        "workspace_skill_heads",
-        sa.Column("skill_id", sa.String(length=72), nullable=False),
-        sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column("current_revision_id", sa.String(length=72), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["current_revision_id", "skill_id", "workspace_id", "organization_id"],
-            [
-                "workspace_skill_revisions.id",
-                "workspace_skill_revisions.skill_id",
-                "workspace_skill_revisions.workspace_id",
-                "workspace_skill_revisions.organization_id",
-            ],
-            name=op.f("fk_workspace_skill_heads_current_revision_id_workspace_skill_revisions"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["skill_id", "workspace_id", "organization_id"],
-            ["workspace_skills.id", "workspace_skills.workspace_id", "workspace_skills.organization_id"],
-            name=op.f("fk_workspace_skill_heads_skill_id_workspace_skills"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("skill_id", name=op.f("pk_workspace_skill_heads")),
-    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Reverse the schema change when it is safe to do so."""
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_table("workspace_skill_heads")
     op.drop_index("ix_skill_uploads_principal", table_name="skill_uploads")
     op.drop_index("ix_skill_uploads_expiry", table_name="skill_uploads")
     op.drop_table("skill_uploads")
-    op.drop_index("ix_workspace_skill_revisions_listing", table_name="workspace_skill_revisions")
-    op.drop_index("ix_workspace_skill_revisions_digest", table_name="workspace_skill_revisions")
-    op.drop_table("workspace_skill_revisions")
-    op.drop_index("ix_workspace_skills_listing", table_name="workspace_skills")
-    op.drop_table("workspace_skills")
+    op.drop_index("ix_skill_revisions_listing", table_name="skill_revisions")
+    op.drop_index("ix_skill_revisions_digest", table_name="skill_revisions")
+    op.drop_table("skill_revisions")
+    op.drop_index("ix_skills_listing", table_name="skills")
+    op.drop_table("skills")
     op.drop_index("ix_skill_idempotency_expiry", table_name="skill_idempotency")
     op.drop_table("skill_idempotency")
     # ### end Alembic commands ###

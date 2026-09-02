@@ -37,7 +37,7 @@ class _Contribution:
     plugin_version_id: str
     plugin_key: str
     distribution_name: str
-    distribution_version: str
+    version: str
     top_level_package: str
     wheel_digest: str
     artifact_ref: str
@@ -50,7 +50,7 @@ class _Contribution:
             plugin_version_id=spec.version.id,
             plugin_key=spec.plugin.plugin_key,
             distribution_name=spec.plugin.distribution_name,
-            distribution_version=spec.version.version,
+            version=spec.version.version,
             top_level_package=spec.plugin.top_level_package,
             wheel_digest=spec.version.content_digest,
             artifact_ref=spec.version.artifact_ref,
@@ -122,10 +122,10 @@ class _StagingAuthority:
         operation_id: str,
         runtime_lock: PluginRuntimeLock,
         staging_token: str,
-        runtime_version: int,
+        runtime_generation: int,
     ) -> None:
         assert staging_token == f"staged-{operation_id}"
-        self.activated.append((operation_id, runtime_lock.digest, runtime_version))
+        self.activated.append((operation_id, runtime_lock.digest, runtime_generation))
         if self.activate_failures:
             self.activate_failures -= 1
             raise PluginRuntimeCommandFailure(
@@ -241,7 +241,7 @@ async def test_activate_replays_receipt_and_commits_catalog_after_worker_ack(
             ).all()
         )
         assert state is not None and state.active_lock_digest == authority.staged[0][1]
-        assert state.version == 2
+        assert state.runtime_generation == 2
         assert current is not None and current.active_version_id == uploaded.version.id
         assert audit_actions == {
             "plugin_runtime.activate.accepted",
@@ -285,7 +285,7 @@ async def test_reactivating_active_version_reuses_lock_without_worker_staging(
     assert len(authority.activated) == 1
     async with short_session(plugin_sessions) as session:
         state = await session.get(PluginRuntimeStateRecord, "runtime")
-        assert state is not None and state.version == 2
+        assert state is not None and state.runtime_generation == 2
         assert state.active_lock_digest == authority.staged[0][1]
     assert initial.operation_id != repeated.operation_id
 
@@ -523,7 +523,7 @@ async def test_deactivate_commits_empty_catalog_without_rewriting_version(
         current = await session.get(PluginRecord, uploaded.version.plugin_id)
         state = await session.get(PluginRuntimeStateRecord, "runtime")
         assert current is not None and current.active_version_id is None
-        assert state is not None and state.version == 3 and state.active_lock_digest is not None
+        assert state is not None and state.runtime_generation == 3 and state.active_lock_digest is not None
         lock = await resolver.require_candidate(runtime_lock_digest=state.active_lock_digest)
         assert lock.plugins == ()
     assert activated.operation_id != accepted.operation_id
@@ -552,7 +552,6 @@ async def test_receipt_is_scoped_to_original_authorized_caller(
                 name="Other Admin",
                 status="active",
                 email_verified_at=NOW,
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
             )

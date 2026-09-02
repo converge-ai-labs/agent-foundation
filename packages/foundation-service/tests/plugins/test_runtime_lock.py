@@ -23,7 +23,7 @@ class _Plugin:
     plugin_version_id: str
     plugin_key: str
     distribution_name: str
-    distribution_version: str
+    version: str
     top_level_package: str
     wheel_digest: str
     artifact_ref: str
@@ -43,7 +43,7 @@ def _plugin(
         plugin_version_id=f"plgv_{suffix:0<16}",
         plugin_key=f"acme.{suffix}",
         distribution_name=distribution_name or f"acme-{suffix}",
-        distribution_version=version,
+        version=version,
         top_level_package=f"acme_{suffix}",
         wheel_digest=digest,
         artifact_ref=f"plugins/artifacts/v1/sha256/{digest}.whl",

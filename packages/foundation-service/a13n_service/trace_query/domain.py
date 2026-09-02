@@ -102,7 +102,7 @@ class TraceCorrelation:
     thread_id: str
     run_id: str
     run_attempt_id: str
-    agent_preset_id: str
+    agent_id: str
 
 
 @dataclass(frozen=True, slots=True)

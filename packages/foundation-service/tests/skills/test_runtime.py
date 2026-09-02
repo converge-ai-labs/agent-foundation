@@ -98,7 +98,7 @@ async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
     deploy = _package("deploy", "Deploy safely.", (("scripts/deploy.sh", b"#!/bin/sh\n"),))
     review = _package("review", "Review carefully.", (("checklist.md", b"# Checklist\n"),))
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", version=1, created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
@@ -106,7 +106,6 @@ async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
                 organization_id=ORG_ID,
                 name="Default",
                 normalized_name="default",
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -120,7 +119,6 @@ async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
                 name="Builder",
                 status="active",
                 email_verified_at=NOW,
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
             )
@@ -133,7 +131,6 @@ async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
                 name="Direct Builder",
                 status="active",
                 email_verified_at=NOW,
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
             )
@@ -199,7 +196,7 @@ async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
                     workspace_id=WORKSPACE_ID,
                     principal_type="user",
                     principal_id=DIRECT_BUILDER_ID,
-                    resource_type="agent_preset",
+                    resource_type="agent",
                     resource_id=AGENT_PRESET_ID,
                     role_key="builder",
                     created_by_user_id=BUILDER_ID,
@@ -240,7 +237,7 @@ def _add_skill(
     session: AsyncSession,
     skill_id: str,
     revision_id: str,
-    display_name: str,
+    name: str,
     package: NormalizedSkillPackage,
 ) -> None:
     session.add(
@@ -248,10 +245,13 @@ def _add_skill(
             id=skill_id,
             organization_id=ORG_ID,
             workspace_id=WORKSPACE_ID,
-            display_name=display_name,
+            name=name,
             version=1,
+            current_revision_id=revision_id,
             created_by_type="user",
             created_by_id=BUILDER_ID,
+            updated_by_type="user",
+            updated_by_id=BUILDER_ID,
             created_at=NOW,
             updated_at=NOW,
             deleted_at=None,
@@ -263,7 +263,7 @@ def _add_skill(
             organization_id=ORG_ID,
             workspace_id=WORKSPACE_ID,
             skill_id=skill_id,
-            revision_number=1,
+            version=1,
             content_digest=package.manifest.content_digest,
             manifest=package.manifest.model_dump(mode="json"),
             imported_from={"kind": "zip", "archive_sha256": "0" * 64},
@@ -309,7 +309,7 @@ async def test_agent_publish_resolves_exact_locks_and_rechecks_them(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(
             revision_ids=(REVIEW_REVISION_ID, DEPLOY_REVISION_ID),
             mode="exact",
@@ -336,7 +336,7 @@ async def test_direct_agent_builder_can_bind_only_for_its_target_agent(
     prepared = await runtime_fixture.resolver.prepare(
         actor=_direct_actor(),
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -346,7 +346,7 @@ async def test_direct_agent_builder_can_bind_only_for_its_target_agent(
         await runtime_fixture.resolver.prepare(
             actor=_direct_actor(),
             workspace_id=WORKSPACE_ID,
-            agent_preset_id="agt_abcdef1234567890",
+            agent_id="agt_abcdef1234567890",
             request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
             permission_ceiling=_permissions(),
         )
@@ -361,7 +361,7 @@ async def test_agent_publish_rejects_deleted_or_permission_incomplete_selection(
         await runtime_fixture.resolver.prepare(
             actor=runtime_fixture.actor,
             workspace_id=WORKSPACE_ID,
-            agent_preset_id=AGENT_PRESET_ID,
+            agent_id=AGENT_PRESET_ID,
             request=_request(),
             permission_ceiling=incomplete,
         )
@@ -375,7 +375,7 @@ async def test_agent_publish_rejects_deleted_or_permission_incomplete_selection(
         await runtime_fixture.resolver.prepare(
             actor=runtime_fixture.actor,
             workspace_id=WORKSPACE_ID,
-            agent_preset_id=AGENT_PRESET_ID,
+            agent_id=AGENT_PRESET_ID,
             request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
             permission_ceiling=_permissions(),
         )
@@ -389,7 +389,7 @@ async def test_agent_publish_final_transaction_detects_tombstone(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -418,7 +418,7 @@ async def test_agent_publish_rejects_duplicate_final_names(runtime_fixture: Runt
         await runtime_fixture.resolver.prepare(
             actor=runtime_fixture.actor,
             workspace_id=WORKSPACE_ID,
-            agent_preset_id=AGENT_PRESET_ID,
+            agent_id=AGENT_PRESET_ID,
             request=_request(),
             permission_ceiling=_permissions(),
         )
@@ -432,7 +432,7 @@ async def test_run_selection_uses_defaults_and_canonical_available_order(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(mode="exact", names=("review",)),
         permission_ceiling=_permissions(),
     )
@@ -466,7 +466,7 @@ async def test_worker_reads_and_materializes_only_effective_run_selection(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(),
         permission_ceiling=_permissions(),
     )
@@ -505,7 +505,7 @@ async def test_materializer_replaces_tampering_and_keeps_manifest_outside_packag
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -546,7 +546,7 @@ async def test_materializer_rereads_package_without_retaining_run_lifetime_bytes
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -573,7 +573,7 @@ async def test_materializer_stops_writes_when_attempt_fence_expires_mid_package(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -612,7 +612,7 @@ async def test_exact_empty_run_materializes_no_package_and_scans_empty_catalog(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(),
         permission_ceiling=_permissions(),
     )
@@ -634,7 +634,7 @@ async def test_runtime_keeps_retained_deleted_revision_executable(runtime_fixtur
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -661,7 +661,7 @@ async def test_runtime_rejects_tampered_lock_and_stale_fence(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
-        agent_preset_id=AGENT_PRESET_ID,
+        agent_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )

@@ -113,9 +113,9 @@ The Foundation-owned processor projects only validated values from this closed c
 | `a13n.run_attempt.number`          | Positive generation number within the Run                       |
 | `a13n.run_attempt.replaces.id`     | Immediately replaced Attempt, when present                      |
 | `a13n.run_attempt.recovery.reason` | `lease_expired`, `retry_after_failure`, or `planned_handoff`    |
-| `a13n.agent.preset.id`             | Selected AgentPreset identity                                   |
-| `a13n.agent.preset.revision.id`    | Exact selected immutable AgentPresetRevision                    |
-| `a13n.model.id`                    | Exact selected Foundation ModelConfig identity                  |
+| `a13n.agent.agent.id`              | Selected Agent identity                                         |
+| `a13n.agent.agent.revision.id`     | Exact selected immutable AgentRevision                          |
+| `a13n.model.id`                    | Exact selected Foundation Model identity                        |
 | `a13n.model.provider.type`         | Bounded selected provider type                                  |
 
 The root additionally owns `a13n.run_attempt.outcome` with `succeeded`, `yielded`, `failed`, or `cancelled` after a matching authoritative Attempt decision, plus an optional bounded `a13n.run_attempt.failure.code`. An unfinished span or missing outcome does not invent a durable status. Harness retains `a13n.run.id` for its process-local Harness Run; Foundation never overwrites or reinterprets that field as its durable Run identity. Harness and Pydantic AI retain their other existing attributes and remain the sole owners of Harness Run, model, tool, streaming, native usage, and native exception fields.
@@ -136,11 +136,11 @@ The first Attempt has no recovery reason. A replacement caused by expired lease 
 
 Foundation owns exactly these stable direct children of the root when the corresponding phase starts:
 
-| Span                            | Boundary                                                                                                                                                                                                                                                                                                      |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundation.reconstruct`        | Reads and validates complete Run state, exact AgentPresetRevision, `EffectiveAgentConfig`, Run-pinned Runtime lock, immutable Skill/Plugin artifacts, frozen dependencies, current authority, fresh credentials, and process-local Agent values; ends when reconstruction required for Harness entry is ready |
-| `foundation.environment.attach` | Resolves the Environment configuration frozen in effective config plus current Host state and constructs one fresh adapter and default Harness mount; ends when they are ready for Harness entry or preparation fails                                                                                         |
-| `foundation.persist`            | Publishes the Harness outcome's complete state and result objects and performs the short fenced Attempt/Run decision; ends after commit or classified failure                                                                                                                                                 |
+| Span                            | Boundary                                                                                                                                                                                                                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundation.reconstruct`        | Reads and validates complete Run state, exact AgentRevision, `EffectiveAgentConfig`, Run-pinned Runtime lock, immutable Skill/Plugin artifacts, frozen dependencies, current authority, fresh credentials, and process-local Agent values; ends when reconstruction required for Harness entry is ready |
+| `foundation.environment.attach` | Resolves the Environment configuration frozen in effective config plus current Host state and constructs one fresh adapter and default Harness mount; ends when they are ready for Harness entry or preparation fails                                                                                   |
+| `foundation.persist`            | Publishes the Harness outcome's complete state and result objects and performs the short fenced Attempt/Run decision; ends after commit or classified failure                                                                                                                                           |
 
 These spans provide phase duration, outcome, and bounded failure class. They do not duplicate database, object-store, HTTP, provider, or Environment spans and do not keep a database session or transaction open across their full duration. An operation that never starts creates no placeholder span.
 

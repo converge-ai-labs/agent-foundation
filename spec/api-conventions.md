@@ -65,7 +65,7 @@ Every request and response is bounded. The owning API defines tighter limits for
 Ordinary resource collections use one cursor-based shape:
 
 ```http
-GET /api/v1/workspaces/ws_123/agent-presets?limit=50&cursor=opaque-value
+GET /api/v1/workspaces/ws_123/agents?limit=50&cursor=opaque-value
 ```
 
 ```json
@@ -119,15 +119,19 @@ SDKs expose one common API error base carrying HTTP status, `code`, `message`, `
 
 ## Mutations and Retries
 
-A versioned mutation that can lose a concurrent update accepts
-`expected_version` and compares it with the current domain-object `version`. A
-mismatch returns `409`. An owning contract can instead declare an intentionally
-non-versioned mutable representation and require a strong `ETag` plus
-`If-Match`; an absent precondition returns `428` and a stale tag returns `412`.
-The tag changes whenever that complete representation changes and is not an
-addressable version, revision, or history selector. One resource uses exactly
-one of these concurrency contracts. Resources that cannot lose updates do not
-require an artificial concurrency token.
+A revision publication or versioned state-machine mutation that can lose a
+concurrent update accepts `expected_version` and compares it with the model's
+`version`. When one request boundary necessarily exposes multiple independent
+version axes, secondary preconditions are qualified just enough to distinguish
+them, such as `expected_queue_version`. A mismatch returns `409`. A mutable representation without an
+addressable history requires a strong `ETag` plus `If-Match`; an absent
+precondition returns `428` and a stale tag returns `412`. The tag changes
+whenever that complete representation changes and is not an addressable
+version, revision, or history selector. A stable head may therefore use
+`expected_version` to publish a Revision and `If-Match` for an independent
+metadata or lifecycle mutation, but one mutation axis never mixes the two
+contracts. Resources that cannot lose updates do not require an artificial
+concurrency token.
 
 A create or command that callers may safely retry accepts an `Idempotency-Key` header. Within the operation's documented authenticated principal and resource scope, the same key and same canonical request return the original receipt or result; reuse with different content returns `409`. The owning API defines finite evidence retention. Once evidence has expired, absence does not prove that an earlier request was never dispatched.
 
@@ -155,8 +159,8 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 3. JSON wire fields use `snake_case`, presence is explicit, timestamps are UTC, and scalar units appear in field names; an owning binary transfer route declares one exact bounded media type.
 4. Every collection read is bounded, deterministically ordered, and reauthorized; cursors are opaque and non-authoritative.
 5. Clients branch on stable error codes, never message text, and errors disclose no implementation-private or secret data.
-6. Concurrent mutation uses either `version` and `expected_version`, or an
-   owner-declared strong `ETag` and `If-Match` for a non-versioned mutable
-   representation; it never adds a second generic revision counter.
+6. Each concurrent mutation axis uses either its owning counter and expected
+   counter or a strong `ETag` and `If-Match`; it never adds a second generic
+   revision counter or mixes both preconditions on one axis.
 7. A mutation is retried only with idempotency or other authoritative replay evidence; post-dispatch uncertainty remains explicit.
 8. `v1` changes are additive, and unknown response additions do not prevent an older client from decoding the response.

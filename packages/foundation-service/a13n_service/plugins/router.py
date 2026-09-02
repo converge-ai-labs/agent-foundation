@@ -6,12 +6,12 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 
 from .domain import (
     Plugin,
     PluginCollection,
-    PluginLifecycleState,
     PluginSource,
     PluginTaskReceipt,
     PluginVersion,
@@ -80,7 +80,6 @@ async def list_plugins(
     actor: Actor,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
-    lifecycle_state: PluginLifecycleState | None = None,
     source: PluginSource | None = None,
     include_archived: bool = False,
 ) -> PluginCollection:
@@ -88,15 +87,16 @@ async def list_plugins(
         actor=actor,
         limit=limit,
         cursor=cursor,
-        lifecycle_state=lifecycle_state,
         source=source,
         include_archived=include_archived,
     )
 
 
 @router.get("/plugins/{plugin_id}", response_model=Plugin)
-async def get_plugin(request: Request, actor: Actor, plugin_id: str) -> Plugin:
-    return await _plugins(request).get(actor=actor, plugin_id=plugin_id)
+async def get_plugin(request: Request, response: Response, actor: Actor, plugin_id: str) -> Plugin:
+    plugin = await _plugins(request).get(actor=actor, plugin_id=plugin_id)
+    response.headers["ETag"] = resource_etag(plugin.id, plugin.updated_at)
+    return plugin
 
 
 @router.get("/plugins/{plugin_id}/versions", response_model=PluginVersionCollection)
@@ -163,12 +163,14 @@ async def change_plugin_lifecycle(
     plugin_id: str,
     action: Literal["archive", "unarchive"],
     idempotency_key: IdempotencyKey,
+    if_match: Annotated[str, Header(alias="If-Match")],
 ) -> Plugin:
     return await _plugins(request).change_lifecycle(
         actor=actor,
         plugin_id=plugin_id,
         action=action,
         idempotency_key=idempotency_key,
+        if_match=if_match,
     )
 
 

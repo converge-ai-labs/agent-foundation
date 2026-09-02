@@ -107,7 +107,7 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 
 `control`, `worker`, and `connectivity` are independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs Run scan, compatibility preflight, claim, leases, plugin code, and Harness execution in the Worker process. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; lock-scoped Runner children own the execution loop.
 
-The `connectivity` role owns provider event webhooks and long connections, the a13n MCP, Ingress native action adapters, Connector runtime dispatch, and durable external-event admission processing. Control owns Ingress, Route, Connector, ConnectorConnection, and MCPConnection management, loads explicitly registered Connector client adapters for their setup, discovery, revocation, and reconciliation operations, handles MCP OAuth setup callbacks, and owns durable Run acceptance. Control and Connectivity use the same durable resource facts and never call a private cross-pod Foundation API. Worker is the MCP client for the a13n MCP and selected user Remote MCP servers; it never loads or calls Ingress or Connector adapter code. The complete boundary is defined by [External Connectivity](40-connectivity/README.md).
+The `connectivity` role owns provider event webhooks and long connections, the a13n MCP, Ingress native action adapters, Connector runtime dispatch, and durable external-event admission processing. Control owns Ingress, Route, Connector, Connection, and MCPConnection management, loads explicitly registered Connector client adapters for their setup, discovery, revocation, and reconciliation operations, handles MCP OAuth setup callbacks, and owns durable Run acceptance. Control and Connectivity use the same durable resource facts and never call a private cross-pod Foundation API. Worker is the MCP client for the a13n MCP and selected user Remote MCP servers; it never loads or calls Ingress or Connector adapter code. The complete boundary is defined by [External Connectivity](40-connectivity/README.md).
 
 | Capability                                | `control` | `worker` | `connectivity` |   `all` |
 | ----------------------------------------- | --------: | -------: | -------------: | ------: |
@@ -235,7 +235,7 @@ The `gateway.a2a_enabled` field is a common operational compatibility contract; 
 
 The effective configuration is deployment input, not a durable product resource or public API representation. Replicas participating in one deployment use configuration and distribution versions that are compatible with the same schema and data-flow contracts.
 
-`plugin_runtime.mode` defaults to `on_demand`. Control persists the selected value when initializing a deployment and may replace it only while no Plugin, AgentPresetRevision, or Run exists. Every role verifies the resulting value before readiness. A non-empty mode mismatch never performs an in-place migration or starts with weaker semantics.
+`plugin_runtime.mode` defaults to `on_demand`. Control persists the selected value when initializing a deployment and may replace it only while no Plugin, AgentRevision, or Run exists. Every role verifies the resulting value before readiness. A non-empty mode mismatch never performs an in-place migration or starts with weaker semantics.
 
 ## Invariants
 

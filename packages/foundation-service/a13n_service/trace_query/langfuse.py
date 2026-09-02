@@ -193,7 +193,7 @@ class LangfuseTraceQueryProvider:
             thread_id=_attribute(attributes, "a13n.thread.id"),
             run_id=_attribute(attributes, "a13n.foundation.run.id"),
             run_attempt_id=_attribute(attributes, "a13n.run_attempt.id"),
-            agent_preset_id=_attribute(attributes, "a13n.agent.preset.id"),
+            agent_id=_attribute(attributes, "a13n.agent.preset.id"),
         )
         return ProviderTraceSummary(
             id=trace_id,

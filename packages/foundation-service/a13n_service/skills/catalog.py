@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
 
@@ -30,9 +31,8 @@ from .errors import (
     SkillError,
     invalid_skill_cursor,
     package_store_error,
-    skill_version_conflict,
 )
-from .models import SkillHeadRecord, SkillRecord, SkillRevisionRecord
+from .models import SkillRecord, SkillRevisionRecord
 from .objects import SkillPackageStore, SkillPackageStoreError
 from .persistence import lock_active_skill, require_revision, require_skill
 from .support import authorize_skill_workspace, record_failed_skill_attempt, skill_audit_record
@@ -65,7 +65,7 @@ class SkillCatalogService:
                 workspace_id=workspace.workspace_id,
                 skill_id=skill_id,
             )
-            return record.skill.to_resource(current_revision_id=record.head.current_revision_id)
+            return record.to_resource()
 
     async def list(
         self,
@@ -88,35 +88,31 @@ class SkillCatalogService:
                 workspace_id=workspace_id,
                 action=WorkspaceAction.skill_read,
             )
-            query = (
-                select(SkillRecord, SkillHeadRecord)
-                .join(SkillHeadRecord, SkillHeadRecord.skill_id == SkillRecord.id)
-                .where(
-                    SkillRecord.organization_id == workspace.organization_id,
-                    SkillRecord.workspace_id == workspace_id,
-                )
+            query = select(SkillRecord).where(
+                SkillRecord.organization_id == workspace.organization_id,
+                SkillRecord.workspace_id == workspace_id,
             )
             if position is not None:
-                display_name, skill_id = position
+                name, skill_id = position
                 query = query.where(
                     or_(
-                        SkillRecord.display_name > display_name,
-                        and_(SkillRecord.display_name == display_name, SkillRecord.id > skill_id),
+                        SkillRecord.name > name,
+                        and_(SkillRecord.name == name, SkillRecord.id > skill_id),
                     )
                 )
             records = tuple(
-                (await session.execute(query.order_by(SkillRecord.display_name, SkillRecord.id).limit(limit + 1))).all()
+                (await session.scalars(query.order_by(SkillRecord.name, SkillRecord.id).limit(limit + 1))).all()
             )
             page = records[:limit]
             next_cursor = None
             if len(records) > limit and page:
                 next_cursor = encode_skill_cursor(
-                    display_name=page[-1][0].display_name,
-                    skill_id=page[-1][0].id,
+                    name=page[-1].name,
+                    skill_id=page[-1].id,
                     scope=scope,
                 )
             return SkillCollection(
-                items=tuple(record.to_resource(current_revision_id=head.current_revision_id) for record, head in page),
+                items=tuple(record.to_resource() for record in page),
                 next_cursor=next_cursor,
             )
 
@@ -155,12 +151,12 @@ class SkillCatalogService:
                 SkillRevisionRecord.skill_id == skill_id,
             )
             if position is not None:
-                revision_number, revision_id = position
+                version, revision_id = position
                 query = query.where(
                     or_(
-                        SkillRevisionRecord.revision_number < revision_number,
+                        SkillRevisionRecord.version < version,
                         and_(
-                            SkillRevisionRecord.revision_number == revision_number,
+                            SkillRevisionRecord.version == version,
                             SkillRevisionRecord.id < revision_id,
                         ),
                     )
@@ -169,7 +165,7 @@ class SkillCatalogService:
                 (
                     await session.scalars(
                         query.order_by(
-                            SkillRevisionRecord.revision_number.desc(),
+                            SkillRevisionRecord.version.desc(),
                             SkillRevisionRecord.id.desc(),
                         ).limit(limit + 1)
                     )
@@ -179,7 +175,7 @@ class SkillCatalogService:
             next_cursor = None
             if len(records) > limit and page:
                 next_cursor = encode_revision_cursor(
-                    revision_number=page[-1].revision_number,
+                    version=page[-1].version,
                     revision_id=page[-1].id,
                     scope=scope,
                 )
@@ -220,11 +216,18 @@ class SkillCatalogService:
         *,
         actor: AuthenticatedActor,
         skill_id: str,
+        if_match: str,
         request: UpdateSkillRequest,
     ) -> Skill:
         workspace_id = actor.boundary_workspace_id
         try:
-            return await self._update(actor=actor, workspace_id=workspace_id, skill_id=skill_id, request=request)
+            return await self._update(
+                actor=actor,
+                workspace_id=workspace_id,
+                skill_id=skill_id,
+                if_match=if_match,
+                request=request,
+            )
         except Exception as error:
             await self._audit_failure(
                 error,
@@ -241,6 +244,7 @@ class SkillCatalogService:
         actor: AuthenticatedActor,
         workspace_id: str,
         skill_id: str,
+        if_match: str,
         request: UpdateSkillRequest,
     ) -> Skill:
         now = self._clock()
@@ -258,14 +262,14 @@ class SkillCatalogService:
                 workspace_id=workspace_id,
                 skill_id=skill_id,
             )
-            if locked.skill.version != request.expected_version:
-                raise skill_version_conflict(locked.skill.version)
+            _require_etag(locked, if_match)
             changed_fields: list[str] = []
-            if locked.skill.display_name != request.display_name:
-                locked.skill.display_name = request.display_name
-                locked.skill.version += 1
-                locked.skill.updated_at = now
-                changed_fields.append("display_name")
+            if locked.name != request.name:
+                locked.name = request.name
+                locked.updated_by_type = actor.principal.principal_type.value
+                locked.updated_by_id = actor.principal.principal_id
+                locked.updated_at = now
+                changed_fields.append("name")
             session.add(
                 skill_audit_record(
                     actor=actor,
@@ -278,14 +282,14 @@ class SkillCatalogService:
                 )
             )
             await session.flush()
-            return locked.skill.to_resource(current_revision_id=locked.head.current_revision_id)
+            return locked.to_resource()
 
     async def delete(
         self,
         *,
         actor: AuthenticatedActor,
         skill_id: str,
-        expected_version: int,
+        if_match: str,
     ) -> None:
         workspace_id = actor.boundary_workspace_id
         try:
@@ -293,7 +297,7 @@ class SkillCatalogService:
                 actor=actor,
                 workspace_id=workspace_id,
                 skill_id=skill_id,
-                expected_version=expected_version,
+                if_match=if_match,
             )
         except Exception as error:
             await self._audit_failure(
@@ -311,7 +315,7 @@ class SkillCatalogService:
         actor: AuthenticatedActor,
         workspace_id: str,
         skill_id: str,
-        expected_version: int,
+        if_match: str,
     ) -> None:
         now = self._clock()
         async with transaction(self._sessions) as session:
@@ -328,11 +332,11 @@ class SkillCatalogService:
                 workspace_id=workspace_id,
                 skill_id=skill_id,
             )
-            if locked.skill.version != expected_version:
-                raise skill_version_conflict(locked.skill.version)
-            locked.skill.deleted_at = now
-            locked.skill.updated_at = now
-            locked.skill.version += 1
+            _require_etag(locked, if_match)
+            locked.deleted_at = now
+            locked.updated_by_type = actor.principal.principal_type.value
+            locked.updated_by_id = actor.principal.principal_id
+            locked.updated_at = now
             session.add(
                 skill_audit_record(
                     actor=actor,
@@ -401,3 +405,14 @@ def _cursor_scope(*, actor: AuthenticatedActor, workspace_id: str, skill_id: str
 def _validate_limit(limit: int) -> None:
     if limit < 1 or limit > 100:
         raise SkillError("invalid_request", "limit must be between 1 and 100.", status_code=400)
+
+
+def _require_etag(record: SkillRecord, if_match: str) -> None:
+    current = resource_etag(record.id, record.updated_at)
+    if not etag_matches(if_match, current):
+        raise SkillError(
+            "precondition_failed",
+            "The Skill changed after it was read.",
+            status_code=412,
+            details={"current_etag": current},
+        )

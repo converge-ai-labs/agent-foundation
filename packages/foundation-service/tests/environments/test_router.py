@@ -54,7 +54,7 @@ async def seed_database(config: ServiceSettings) -> None:
         await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", version=1, created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
@@ -62,7 +62,6 @@ async def seed_database(config: ServiceSettings) -> None:
                 organization_id=ORG_ID,
                 name="Default",
                 normalized_name="default",
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -77,7 +76,6 @@ async def seed_database(config: ServiceSettings) -> None:
                 name="Router Builder",
                 status="active",
                 email_verified_at=NOW,
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
             )
@@ -139,7 +137,7 @@ async def test_environment_management_http_lifecycle(
     selection_url = f"/api/v1/workspaces/{WORKSPACE_ID}/environment-providers/{PROVIDER_KEY}"
     selected = await environment_api_client.put(selection_url, json={"enabled": True})
     assert selected.status_code == 200
-    assert selected.json()["version"] == 1
+    assert "etag" in selected.headers
 
     create_body = {
         "name": "Local",
@@ -162,7 +160,8 @@ async def test_environment_management_http_lifecycle(
     )
     assert created.status_code == 201
     environment = created.json()
-    assert (await environment_api_client.get(f"/api/v1/environments/{environment['id']}")).json() == environment
+    fetched = await environment_api_client.get(f"/api/v1/environments/{environment['id']}")
+    assert fetched.json() == environment
 
     listed = await environment_api_client.get(collection_url)
     assert [item["id"] for item in listed.json()["items"]] == [environment["id"]]
@@ -176,7 +175,7 @@ async def test_environment_management_http_lifecycle(
         revisions_url,
         headers={"Idempotency-Key": "router-revision-noop"},
         json={
-            "expected_environment_version": 1,
+            "expected_version": 1,
             "provider": create_body["provider"],
             "credential_bindings": [],
             "access": "full",
@@ -186,7 +185,8 @@ async def test_environment_management_http_lifecycle(
 
     archived = await environment_api_client.patch(
         f"/api/v1/environments/{environment['id']}",
-        json={"expected_version": 1, "archived": True},
+        headers={"If-Match": fetched.headers["etag"]},
+        json={"archived": True},
     )
     assert archived.status_code == 200
     assert archived.json()["archived_at"] is not None

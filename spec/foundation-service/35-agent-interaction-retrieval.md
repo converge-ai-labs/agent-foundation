@@ -18,7 +18,7 @@ The Capability is read-only. Its tools call an asynchronous Foundation reader di
 
 ## Definition Policy and Run Grant
 
-The bounded configuration of the built-in `foundation.interaction_read` Plugin instance can contain this conceptual policy; AgentPresetConfig does not define another top-level Capability field:
+The bounded configuration of the built-in `foundation.interaction_read` Plugin instance can contain this conceptual policy; AgentConfig does not define another top-level Capability field:
 
 ```python
 class InteractionReadPolicy:
@@ -161,7 +161,7 @@ Generic argument validation, cancellation, deadlines, redaction, and result-size
 
 ## Compatibility and Trade-offs
 
-Policy version `1`, tool names and arguments, and result semantics form one model-visible compatibility line. Breaking changes require a new policy version and immutable AgentPresetRevision. Additive result fields are compatible only when readers ignore unknown fields. Internal reader and repository code can change without a version when observable behavior and authority stay the same.
+Policy version `1`, tool names and arguments, and result semantics form one model-visible compatibility line. Breaking changes require a new policy version and immutable AgentRevision. Additive result fields are compatible only when readers ignore unknown fields. Internal reader and repository code can change without a version when observable behavior and authority stay the same.
 
 Direct calls avoid self-HTTP latency, transport authentication, and duplicate serialization. Each execution role that enables the Capability must therefore have Foundation authorization and storage dependencies available.
 

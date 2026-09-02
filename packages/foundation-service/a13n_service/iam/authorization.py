@@ -13,14 +13,14 @@ from .models import RoleBindingRecord, ServiceAccountRecord, UserRecord, Workspa
 
 
 class WorkspaceAction(StrEnum):
-    agent_preset_read = "agent_preset.read"
-    agent_preset_create = "agent_preset.create"
-    agent_preset_update = "agent_preset.update"
-    agent_preset_revision_create = "agent_preset.revision.create"
-    agent_preset_default_revision_set = "agent_preset.default_revision.set"
-    agent_preset_lifecycle = "agent_preset.lifecycle"
-    agent_preset_duplicate = "agent_preset.duplicate"
-    agent_preset_invoke = "agent_preset.invoke"
+    agent_read = "agent.read"
+    agent_create = "agent.create"
+    agent_update = "agent.update"
+    agent_revision_create = "agent.revision.create"
+    agent_current_revision_set = "agent.current_revision.set"
+    agent_lifecycle = "agent.lifecycle"
+    agent_duplicate = "agent.duplicate"
+    agent_invoke = "agent.invoke"
     asset_read = "asset.read"
     asset_create = "asset.create"
     asset_use = "asset.use"
@@ -49,7 +49,7 @@ class WorkspaceAction(StrEnum):
 _READ_ACTIONS = frozenset(
     {
         WorkspaceAction.asset_read,
-        WorkspaceAction.agent_preset_read,
+        WorkspaceAction.agent_read,
         WorkspaceAction.models_read,
         WorkspaceAction.plugin_read,
         WorkspaceAction.secrets_read,
@@ -61,7 +61,7 @@ _READ_ACTIONS = frozenset(
 
 _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
     {
-        WorkspaceAction.agent_preset_invoke,
+        WorkspaceAction.agent_invoke,
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
         WorkspaceAction.environment_use,
@@ -76,16 +76,16 @@ _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
 }
 
 _DIRECT_AGENT_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
-    "viewer": frozenset({WorkspaceAction.agent_preset_read}),
-    "runner": frozenset({WorkspaceAction.agent_preset_read, WorkspaceAction.agent_preset_invoke}),
+    "viewer": frozenset({WorkspaceAction.agent_read}),
+    "runner": frozenset({WorkspaceAction.agent_read, WorkspaceAction.agent_invoke}),
     "builder": frozenset(
         {
-            WorkspaceAction.agent_preset_read,
-            WorkspaceAction.agent_preset_invoke,
-            WorkspaceAction.agent_preset_update,
-            WorkspaceAction.agent_preset_revision_create,
-            WorkspaceAction.agent_preset_default_revision_set,
-            WorkspaceAction.agent_preset_lifecycle,
+            WorkspaceAction.agent_read,
+            WorkspaceAction.agent_invoke,
+            WorkspaceAction.agent_update,
+            WorkspaceAction.agent_revision_create,
+            WorkspaceAction.agent_current_revision_set,
+            WorkspaceAction.agent_lifecycle,
             WorkspaceAction.skill_bind,
         }
     ),
@@ -109,9 +109,9 @@ class AuthorizedWorkspace:
 
 
 @dataclass(frozen=True, slots=True)
-class AuthorizedAgentPresetCollection:
+class AuthorizedAgentCollection:
     workspace: AuthorizedWorkspace
-    visible_preset_ids: frozenset[str] | None
+    visible_agent_ids: frozenset[str] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,21 +147,19 @@ async def authorize_agent_skill_binding(
     *,
     actor: AuthenticatedActor,
     workspace_id: str,
-    agent_preset_id: str,
+    agent_id: str,
 ) -> AuthorizedWorkspace:
-    """Authorize Skill binding through broad Workspace or direct AgentPreset Builder authority."""
+    """Authorize Skill binding through broad Workspace or direct Agent Builder authority."""
 
     context = await _load_workspace_authorization(
         session,
         actor=actor,
         workspace_id=workspace_id,
-        agent_preset_id=agent_preset_id,
+        agent_id=agent_id,
     )
     permissions = _workspace_permissions(context.bindings)
     direct_builder = any(
-        binding.resource_type == "agent_preset"
-        and binding.resource_id == agent_preset_id
-        and binding.role_key == "builder"
+        binding.resource_type == "agent" and binding.resource_id == agent_id and binding.role_key == "builder"
         for binding in context.bindings
     )
     if WorkspaceAction.skill_read not in permissions or (
@@ -171,56 +169,56 @@ async def authorize_agent_skill_binding(
     return context.authorized
 
 
-async def authorize_agent_preset(
+async def authorize_agent(
     session: AsyncSession,
     *,
     actor: AuthenticatedActor,
     workspace_id: str,
-    agent_preset_id: str,
+    agent_id: str,
     action: WorkspaceAction,
 ) -> AuthorizedWorkspace:
-    """Authorize one stable AgentPreset through Workspace or direct Preset roles."""
+    """Authorize one stable Agent through Workspace or direct Agent roles."""
 
     context = await _load_workspace_authorization(
         session,
         actor=actor,
         workspace_id=workspace_id,
-        agent_preset_id=agent_preset_id,
+        agent_id=agent_id,
     )
     permissions = set(_workspace_permissions(context.bindings))
     for binding in context.bindings:
-        if binding.resource_type == "agent_preset" and binding.resource_id == agent_preset_id:
+        if binding.resource_type == "agent" and binding.resource_id == agent_id:
             permissions.update(_DIRECT_AGENT_ROLE_ACTIONS.get(binding.role_key, ()))
     if action not in permissions:
         raise AuthorizationError("permission_denied", concealed=True)
     return context.authorized
 
 
-async def authorize_agent_preset_collection(
+async def authorize_agent_collection(
     session: AsyncSession,
     *,
     actor: AuthenticatedActor,
     workspace_id: str,
-) -> AuthorizedAgentPresetCollection:
-    """Authorize a Preset collection and project direct-only visibility."""
+) -> AuthorizedAgentCollection:
+    """Authorize an Agent collection and project direct-only visibility."""
 
     context = await _load_workspace_authorization(
         session,
         actor=actor,
         workspace_id=workspace_id,
-        include_agent_preset_bindings=True,
+        include_agent_bindings=True,
     )
-    if WorkspaceAction.agent_preset_read in _workspace_permissions(context.bindings):
-        return AuthorizedAgentPresetCollection(workspace=context.authorized, visible_preset_ids=None)
+    if WorkspaceAction.agent_read in _workspace_permissions(context.bindings):
+        return AuthorizedAgentCollection(workspace=context.authorized, visible_agent_ids=None)
     visible = frozenset(
         binding.resource_id
         for binding in context.bindings
-        if binding.resource_type == "agent_preset"
-        and WorkspaceAction.agent_preset_read in _DIRECT_AGENT_ROLE_ACTIONS.get(binding.role_key, ())
+        if binding.resource_type == "agent"
+        and WorkspaceAction.agent_read in _DIRECT_AGENT_ROLE_ACTIONS.get(binding.role_key, ())
     )
     if not visible:
         raise AuthorizationError("permission_denied", concealed=True)
-    return AuthorizedAgentPresetCollection(workspace=context.authorized, visible_preset_ids=visible)
+    return AuthorizedAgentCollection(workspace=context.authorized, visible_agent_ids=visible)
 
 
 async def _load_workspace_authorization(
@@ -228,8 +226,8 @@ async def _load_workspace_authorization(
     *,
     actor: AuthenticatedActor,
     workspace_id: str,
-    agent_preset_id: str | None = None,
-    include_agent_preset_bindings: bool = False,
+    agent_id: str | None = None,
+    include_agent_bindings: bool = False,
 ) -> _WorkspaceAuthorizationContext:
     if actor.boundary_workspace_id != workspace_id:
         raise AuthorizationError("credential_boundary_mismatch", concealed=True)
@@ -251,8 +249,8 @@ async def _load_workspace_authorization(
                 _binding_query(
                     actor.principal,
                     workspace,
-                    agent_preset_id=agent_preset_id,
-                    include_agent_preset_bindings=include_agent_preset_bindings,
+                    agent_id=agent_id,
+                    include_agent_bindings=include_agent_bindings,
                 )
             )
         ).all()
@@ -306,8 +304,8 @@ def _binding_query(
     principal: PrincipalRef,
     workspace: WorkspaceRecord,
     *,
-    agent_preset_id: str | None,
-    include_agent_preset_bindings: bool = False,
+    agent_id: str | None,
+    include_agent_bindings: bool = False,
 ) -> Select[tuple[RoleBindingRecord]]:
     resource_scope = or_(
         and_(
@@ -320,20 +318,20 @@ def _binding_query(
             RoleBindingRecord.workspace_id == workspace.id,
         ),
     )
-    if agent_preset_id is not None:
+    if agent_id is not None:
         resource_scope = or_(
             resource_scope,
             and_(
-                RoleBindingRecord.resource_type == "agent_preset",
-                RoleBindingRecord.resource_id == agent_preset_id,
+                RoleBindingRecord.resource_type == "agent",
+                RoleBindingRecord.resource_id == agent_id,
                 RoleBindingRecord.workspace_id == workspace.id,
             ),
         )
-    elif include_agent_preset_bindings:
+    elif include_agent_bindings:
         resource_scope = or_(
             resource_scope,
             and_(
-                RoleBindingRecord.resource_type == "agent_preset",
+                RoleBindingRecord.resource_type == "agent",
                 RoleBindingRecord.workspace_id == workspace.id,
             ),
         )

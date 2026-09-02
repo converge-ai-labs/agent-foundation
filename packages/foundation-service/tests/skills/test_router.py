@@ -70,7 +70,7 @@ async def seed_database(config: ServiceSettings) -> None:
         await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", version=1, created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
@@ -78,7 +78,6 @@ async def seed_database(config: ServiceSettings) -> None:
                 organization_id=ORG_ID,
                 name="Default",
                 normalized_name="default",
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -93,7 +92,6 @@ async def seed_database(config: ServiceSettings) -> None:
                 name="Builder",
                 status="active",
                 email_verified_at=NOW,
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
             )
@@ -161,7 +159,7 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     created = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/skills",
         json={
-            "display_name": "Deploy Helper",
+            "name": "Deploy Helper",
             "source": {"kind": "zip_upload", "upload_id": upload["upload_id"]},
         },
         headers={"Idempotency-Key": "create-http"},
@@ -199,11 +197,12 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
 
     patched = await api_client.patch(
         f"/api/v1/skills/{skill['id']}",
-        json={"expected_version": 1, "display_name": "Renamed"},
+        json={"name": "Renamed"},
+        headers={"If-Match": created.headers["etag"]},
     )
     assert patched.status_code == 200
-    assert patched.json()["version"] == 2
-    deleted = await api_client.delete(f"/api/v1/skills/{skill['id']}?expected_version=2")
+    assert patched.json()["version"] == 1
+    deleted = await api_client.delete(f"/api/v1/skills/{skill['id']}", headers={"If-Match": patched.headers["etag"]})
     assert deleted.status_code == 204
     assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}/content")).status_code == 200
 
@@ -232,7 +231,7 @@ async def test_zip_route_rejects_wrong_media_missing_key_and_unknown_fields(
     unknown = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/skills",
         json={
-            "display_name": "Deploy",
+            "name": "Deploy",
             "source": {"kind": "zip_upload", "upload_id": upload["upload_id"]},
             "object_key": "must-not-be-accepted",
         },

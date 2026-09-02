@@ -22,13 +22,11 @@ from .domain import (
 )
 from .errors import SkillError, skill_version_conflict
 from .models import (
-    SkillHeadRecord,
     SkillRecord,
     SkillRevisionRecord,
     SkillUploadRecord,
 )
 from .persistence import (
-    SkillRecordWithHead,
     lock_active_skill,
     require_owned_upload,
     require_revision,
@@ -180,28 +178,21 @@ class SkillPublicationService:
                 )
                 skill = _new_skill_record(
                     context,
-                    display_name=request.display_name,
+                    name=request.name,
+                    revision_id=revision_id,
                 )
                 revision = _new_revision_record(
                     context,
                     revision_id=revision_id,
-                    revision_number=1,
+                    version=1,
                     prepared=prepared,
                 )
                 session.add_all((skill, revision))
                 await session.flush((skill, revision))
-                head = SkillHeadRecord(
-                    skill_id=skill_id,
-                    organization_id=workspace.organization_id,
-                    workspace_id=workspace_id,
-                    current_revision_id=revision_id,
-                )
-                session.add(head)
-                await session.flush((head,))
                 if upload is not None:
                     upload.consumed_by_revision_id = revision_id
                 result = SkillPublicationReceipt(
-                    skill=skill.to_resource(current_revision_id=revision_id),
+                    skill=skill.to_resource(),
                     revision=revision.to_resource(),
                     outcome="published",
                 )
@@ -335,13 +326,13 @@ class SkillPublicationService:
             )
             if replay is not None:
                 return replay
-            if locked.skill.version != request.expected_version:
-                raise skill_version_conflict(locked.skill.version)
+            if locked.version != request.expected_version:
+                raise skill_version_conflict(locked.version)
             current = await require_revision(
                 session,
                 organization_id=workspace.organization_id,
                 workspace_id=command.workspace_id,
-                revision_id=locked.head.current_revision_id,
+                revision_id=locked.current_revision_id,
             )
             upload = await self._lock_upload(
                 session,
@@ -368,7 +359,7 @@ class SkillPublicationService:
             if upload is not None:
                 upload.consumed_by_revision_id = selected.id
             result = SkillPublicationReceipt(
-                skill=locked.skill.to_resource(current_revision_id=selected.id),
+                skill=locked.to_resource(),
                 revision=selected.to_resource(),
                 outcome=outcome,
             )
@@ -486,7 +477,7 @@ async def _select_revision(
     session: AsyncSession,
     *,
     context: _PublicationContext,
-    locked: SkillRecordWithHead,
+    locked: SkillRecord,
     current: SkillRevisionRecord,
     prepared: PreparedSkillSource,
 ) -> tuple[SkillRevisionRecord, Literal["published", "already_current"], Literal[200, 201]]:
@@ -495,26 +486,31 @@ async def _select_revision(
     selected = _new_revision_record(
         context,
         revision_id=new_skill_revision_id(),
-        revision_number=current.revision_number + 1,
+        version=current.version + 1,
         prepared=prepared,
     )
     session.add(selected)
     await session.flush((selected,))
-    locked.head.current_revision_id = selected.id
-    locked.skill.version += 1
-    locked.skill.updated_at = context.now
+    locked.current_revision_id = selected.id
+    locked.version = selected.version
+    locked.updated_by_type = context.actor.principal.principal_type.value
+    locked.updated_by_id = context.actor.principal.principal_id
+    locked.updated_at = context.now
     return selected, "published", 201
 
 
-def _new_skill_record(context: _PublicationContext, *, display_name: str) -> SkillRecord:
+def _new_skill_record(context: _PublicationContext, *, name: str, revision_id: str) -> SkillRecord:
     return SkillRecord(
         id=context.skill_id,
         organization_id=context.organization_id,
         workspace_id=context.workspace_id,
-        display_name=display_name,
+        name=name,
         version=1,
+        current_revision_id=revision_id,
         created_by_type=context.actor.principal.principal_type.value,
         created_by_id=context.actor.principal.principal_id,
+        updated_by_type=context.actor.principal.principal_type.value,
+        updated_by_id=context.actor.principal.principal_id,
         created_at=context.now,
         updated_at=context.now,
         deleted_at=None,
@@ -525,7 +521,7 @@ def _new_revision_record(
     context: _PublicationContext,
     *,
     revision_id: str,
-    revision_number: int,
+    version: int,
     prepared: PreparedSkillSource,
 ) -> SkillRevisionRecord:
     return SkillRevisionRecord(
@@ -533,7 +529,7 @@ def _new_revision_record(
         organization_id=context.organization_id,
         workspace_id=context.workspace_id,
         skill_id=context.skill_id,
-        revision_number=revision_number,
+        version=version,
         content_digest=prepared.package.manifest.content_digest,
         manifest=prepared.package.manifest.model_dump(mode="json"),
         imported_from=prepared.provenance.model_dump(mode="json"),

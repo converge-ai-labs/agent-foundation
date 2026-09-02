@@ -64,6 +64,10 @@ def plugin_state_conflict() -> PluginError:
     return PluginError("plugin_state_conflict", "The Plugin cannot perform this transition.", status_code=409)
 
 
+def plugin_etag_mismatch() -> PluginError:
+    return PluginError("etag_mismatch", "The Plugin representation has changed.", status_code=412)
+
+
 def plugin_idempotency_conflict() -> PluginError:
     return PluginError(
         "idempotency_conflict",

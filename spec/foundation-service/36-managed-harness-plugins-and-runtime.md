@@ -2,12 +2,12 @@
 
 ## Design Position
 
-Foundation manages trusted Harness plugins through stable `Plugin` resources, immutable `PluginVersion` Wheels, explicit Preset selections, and one deployment-fixed Runtime profile. This document owns their public identity, lifecycle, commands, artifact validation, Runtime locks, Worker materialization, and execution-profile behavior. [Agent Management](28-agent-management.md) only embeds the Plugin selections and exact resolved locks owned here into `AgentPresetConfig` and `AgentPresetRevision`.
+Foundation manages trusted Harness plugins through stable `Plugin` resources, immutable `PluginVersion` Wheels, explicit Agent selections, and one deployment-fixed Runtime profile. This document owns their public identity, lifecycle, commands, artifact validation, Runtime locks, Worker materialization, and execution-profile behavior. [Agent Management](28-agent-management.md) embeds the Plugin selections and exact resolved locks owned here into `AgentConfig` and `AgentRevision`.
 
-Every deployment fixes one `plugin_runtime.mode` before it stores Plugin, AgentPresetRevision, or Run data:
+Every deployment fixes one `plugin_runtime.mode` before it stores Plugin, AgentRevision, or Run data:
 
-- `on_demand` is the default. AgentPresetRevision locks exact PluginVersions, and each Worker imports compatible Plugin artifacts into its own interpreter before claiming a Run. A conflicting Worker declines the Run and leaves it eligible.
-- `runner` uses one deployment-wide active PluginVersion catalog as the resolution source for future Preset Revision creation and runner Plugin overrides. Stable Worker Supervisors stage clean lock-scoped Runner children and atomically cut over after every serviceable Worker is ready.
+- `on_demand` is the default. AgentRevision locks exact PluginVersions, and each Worker imports compatible Plugin artifacts into its own interpreter before claiming a Run. A conflicting Worker declines the Run and leaves it eligible.
+- `runner` uses one deployment-wide active PluginVersion catalog as the resolution source for future Agent Revision creation and runner Plugin overrides. Stable Worker Supervisors stage clean lock-scoped Runner children and atomically cut over after every serviceable Worker is ready.
 
 Both profiles persist immutable Runtime locks and every accepted Run pins one exact lock digest. Neither profile unloads, reloads, silently substitutes, or interprets caller-supplied Python targets. The profiles intentionally have different PluginVersion selection and availability guarantees; mode is not an implementation-private optimization.
 
@@ -15,14 +15,14 @@ Both profiles persist immutable Runtime locks and every accepted Run pins one ex
 
 | Concern                                                                  | Owner                                                               | Contract                                                                     |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Plugin identity, Version, Preset selection, lifecycle, and commands      | This document                                                       | Defines the product, HTTP-visible, and trusted-code deployment behavior      |
-| Preset identity, Revision creation, and effective configuration          | [Agent Management](28-agent-management.md)                          | Embeds exact Plugin selections and resolved locks without owning their model |
+| Plugin identity, Version, Agent selection, lifecycle, and commands       | This document                                                       | Defines the product, HTTP-visible, and trusted-code deployment behavior      |
+| Agent identity, Revision creation, and effective configuration           | [Agent Management](28-agent-management.md)                          | Embeds exact Plugin selections and resolved locks without owning their model |
 | Runtime mode initialization and process lifecycle                        | [Runtime Configuration](01-runtime-configuration-and-deployment.md) | Fixes one durable deployment profile and owns readiness, drain, and shutdown |
 | Wheel shape, digest, Runtime lock, and artifact retention                | This document                                                       | Makes exact trusted Plugin environments identifiable and verifiable          |
 | On-demand registry, import preflight, and conflict behavior              | This document                                                       | Keeps incompatible work unclaimed without another routing authority          |
 | Runner materialization, staging, cutover, and drain                      | This document                                                       | Replaces Python interpreters without replacing the Worker container          |
 | Plugin factory, configuration, construction, and Capability contribution | [Harness plugin system](../agent-harness/05-plugin-system.md)       | Builds fresh plugin instances from an explicitly selected catalog            |
-| Run acceptance and exact lock-digest persistence                         | [Durable Run State](12-run-persistence.md)                          | Pins one Runtime with one accepted Preset Revision                           |
+| Run acceptance and exact lock-digest persistence                         | [Durable Run State](12-run-persistence.md)                          | Pins one Runtime with one accepted Agent Revision                            |
 | Run claim, lease, fence, and recovery                                    | [Run Attempt scheduling](13-run-attempt-scheduling-and-recovery.md) | Applies the profile-specific pre-claim compatibility gate                    |
 | Relational and object capabilities                                       | [Foundation storage](03-storage.md)                                 | Supplies metadata authority and immutable artifact bytes                     |
 
@@ -36,9 +36,6 @@ A `Plugin` is one stable deployment-level trusted-code identity. A `PluginVersio
 
 ```python
 type PluginSource = Literal["builtin", "uploaded"]
-type PluginLifecycleState = Literal["available", "archived"]
-
-
 class Plugin:
     id: PluginId
     source: PluginSource
@@ -46,7 +43,9 @@ class Plugin:
     distribution_name: str
     top_level_package: str
     active_version_id: PluginVersionId | None
-    lifecycle_state: PluginLifecycleState
+    archived_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class PluginVersion:
@@ -61,9 +60,9 @@ class PluginVersion:
 
 The first successful upload establishes the stable `plugin_key`, normalized distribution name, and top-level package and creates the first PluginVersion atomically. Later uploads target that Plugin. `PluginVersion.version` is the normalized PEP 440 version from Wheel metadata, and `(plugin_id, version)` is unique.
 
-`active_version_id` is meaningful only in `runner`; it remains null in `on_demand`, where Presets select exact PluginVersions without a global deployment head. Upload never changes it in either profile.
+`active_version_id` is meaningful only in `runner`; it remains null in `on_demand`, where Agents select exact PluginVersions without a global deployment head. Upload never changes it in either profile.
 
-Built-in and uploaded Plugins use the same keys, Versions, Preset selection, and Runtime behavior. A release manifest registers each built-in identity, exact package version, digest, and whether the Plugin is required or administratively deactivatable. Built-in keys are reserved, uploaded artifacts cannot replace them, and built-in Plugins cannot be uploaded or archived.
+Built-in and uploaded Plugins use the same keys, Versions, Agent selection, and Runtime behavior. A release manifest registers each built-in identity, exact package version, digest, and whether the Plugin is required or administratively deactivatable. Built-in keys are reserved, uploaded artifacts cannot replace them, and built-in Plugins cannot be uploaded or archived.
 
 ## Deployment Mode Contract
 
@@ -74,13 +73,13 @@ The effective configuration contains:
 mode = "on_demand" # or "runner"
 ```
 
-Omitting `mode` selects `on_demand`. Control persists the selected mode as an internal compatibility fact and may replace it only while no Plugin, AgentPresetRevision, or Run exists. Every Control, Worker, and all-in-one process verifies the same value before readiness. A non-empty configuration mismatch fails startup; the service never reinterprets stored Preset Revisions under another profile.
+Omitting `mode` selects `on_demand`. Control persists the selected mode as an internal compatibility fact and may replace it only while no Plugin, AgentRevision, or Run exists. Every Control, Worker, and all-in-one process verifies the same value before readiness. A non-empty configuration mismatch fails startup; the service never reinterprets stored Agent Revisions under another profile.
 
-Changing the persisted mode after any Plugin, AgentPresetRevision, or Run exists is not a configuration update. Foundation exposes no mode mutation or migration API. A migration between profiles requires a separately reviewed data migration that rebinds mutable Preset config, creates new Revisions, establishes their default selections and the runner active set when applicable, and preserves every retained Run lock.
+Changing the persisted mode after any Plugin, AgentRevision, or Run exists is not a configuration update. Foundation exposes no mode mutation or migration API. A migration between profiles requires a separately reviewed data migration that creates replacement Agent Revisions, establishes the runner active set when applicable, and preserves every retained Run lock.
 
-## Preset Selection and Revision Locking
+## Agent Selection and Revision Locking
 
-`AgentPresetConfig.plugins` and the corresponding typed Run override use the following conceptual selection contract:
+`AgentConfig.plugins` and the corresponding typed Run override use the following conceptual selection contract:
 
 ```python
 class OnDemandPluginSelection:
@@ -112,7 +111,7 @@ class ResolvedPluginVersion:
 
 The Plugin list is ordered and `instance_name` is unique within one effective Agent configuration. Several instances may select the same Plugin key or Version with different bounded JSON `config`; omission means the Plugin is not configured. Foundation exposes no second Capability list, enable-flag document, version-binding map, arbitrary import target, or raw Capability upload format.
 
-The deployment's fixed mode determines which selection variant is legal. In `on_demand`, every entry selects one exact authorized `plugin_version_id`. In `runner`, every entry selects one stable `plugin_key`, and Revision creation resolves it through the then-active catalog. Revision creation validates the complete root and child graph, freezes one `ResolvedPluginVersion` for every configured instance, and persists one exact Runtime lock digest. A later upload, archive, activation, or deactivation never rewrites an existing AgentPresetRevision or accepted Run.
+The deployment's fixed mode determines which selection variant is legal. In `on_demand`, every entry selects one exact authorized `plugin_version_id`. In `runner`, every entry selects one stable `plugin_key`, and Revision creation resolves it through the then-active catalog. Revision creation validates the complete root and child graph, freezes one `ResolvedPluginVersion` for every configured instance, and persists one exact Runtime lock digest. A later upload, archive, activation, or deactivation never rewrites an existing AgentRevision or accepted Run.
 
 Foundation supplies the ordered resolved instances to the Harness Plugin factory. A factory may contribute ordinary Pydantic AI Capabilities, Hooks, middleware, or Toolsets through the [Harness Plugin System](../agent-harness/05-plugin-system.md), but those process-local products are not Foundation management resources or generic Agent configuration fields.
 
@@ -167,9 +166,9 @@ The authoritative store retains:
 - each canonical Runtime lock manifest and digest;
 - the runner active lock and active PluginVersion pointers when that profile is selected;
 - bounded runner command receipts and audit facts; and
-- all artifacts required by a retained Preset Revision or non-terminal Run.
+- all artifacts required by a retained Agent Revision or non-terminal Run.
 
-Worker-local files are derived cache only. Plugin Archive, runner Deactivate, Preset default selection, process exit, or local eviction never deletes authoritative artifacts required to reconstruct retained work.
+Worker-local files are derived cache only. Plugin Archive, runner Deactivate, Agent Revision creation, process exit, or local eviction never deletes authoritative artifacts required to reconstruct retained work.
 
 ## Runtime Lock
 
@@ -195,7 +194,7 @@ class LockedPlugin:
     plugin_version_id: str
     plugin_key: str
     distribution_name: str
-    distribution_version: str
+    version: str
     top_level_package: str
     wheel_digest: str
 
@@ -215,19 +214,19 @@ The digest covers the profile, exact Runtime target, Worker release identity, Ha
 
 `PluginRuntimeLock.worker_release` is the immutable dependency baseline used to resolve distributions and reconstruct this lock. It does not identify the Worker process that happens to execute a Run. The latter is recorded on each RunAttempt as `worker_build_id`, derived from the actual Foundation Service artifact. A compatible newer build can execute a historical lock only when it still supplies or materializes every distribution and codec required by that exact lock; it never rewrites `worker_release` to its own build identity.
 
-An `on_demand` AgentPreset Revision creation builds the lock from the complete resolved Preset and subagent graph. Every selected PluginVersion must be a compatible pure-Python Wheel. Every declared dependency must already exist at a compatible exact version in the reviewed Worker release manifest and is recorded with `source=worker_release`; Revision creation never queries a package index. A Plugin top-level package cannot collide with the standard library or a package owned by that Worker release. Conflicting plugin keys, distributions, top-level packages, or dependency requirements reject Revision creation.
+An `on_demand` Agent Revision creation builds the lock from the complete resolved Agent and subagent graph. Every selected PluginVersion must be a compatible pure-Python Wheel. Every declared dependency must already exist at a compatible exact version in the reviewed Worker release manifest and is recorded with `source=worker_release`; Revision creation never queries a package index. A Plugin top-level package cannot collide with the standard library or a package owned by that Worker release. Conflicting plugin keys, distributions, top-level packages, or dependency requirements reject Revision creation.
 
 A `runner` Activate jointly resolves every active PluginVersion plus the candidate. Operator-configured public or private package indexes may supply third-party dependency Wheels. Requirements cannot use direct URLs, Git or other VCS references, local paths, or arbitrary remote Wheel URLs. Foundation, Harness, Pydantic AI, and other platform-owned distributions are fixed by the service release and cannot be upgraded or downgraded by Plugin requirements.
 
 The current runner lock is the preferred solution. A new activation preserves every locked distribution that still satisfies all constraints and changes only the necessary packages. Re-activating the active PluginVersion is idempotent and does not query indexes. Foundation exposes no command that changes dependencies without an explicit PluginVersion activation or deactivation.
 
-## On-demand Revision Validation
+## On-demand Agent Selection
 
-For every configured `on_demand` instance, Revision creation rejects a missing, duplicate, inaccessible, archived, key-mismatched, structurally incompatible, or dependency-ineligible Version.
+The `on_demand` Agent Revision configuration supplies an exact `plugin_version_id` binding for every enabled `plugin_key` in its Harness Plugin Configuration Document. Several instances of one key share one binding. Revision creation rejects a missing, duplicate, inaccessible, archived, key-mismatched, structurally incompatible, or dependency-ineligible Version.
 
-Revision creation resolves the complete transitive subagent graph, verifies one compatible Plugin set, persists its Runtime lock, and stores the exact PluginVersion locks plus lock digest on the immutable AgentPresetRevision. Later Plugin uploads or archives do not mutate that Revision. New Run acceptance copies its lock digest; Worker claim never resolves `latest`, a Plugin head, or another Revision.
+Revision creation resolves the complete transitive subagent graph, verifies one compatible Plugin set, persists its Runtime lock, and stores the exact PluginVersion locks plus lock digest on the immutable AgentRevision. Later Plugin uploads or archives do not mutate that Revision. New Run acceptance copies its lock digest; Worker claim never resolves `latest`, a Plugin head, or another Revision.
 
-`on_demand` has no global Plugin active set. Upload changes no Worker and no Preset. Activate and Deactivate have no successful semantics in this profile, create no receipt, and return `plugin_runtime_mode_unsupported` through the stable command routes.
+`on_demand` has no global Plugin active set. Upload changes no Worker and no Agent. Activate and Deactivate have no successful semantics in this profile, create no receipt, and return `plugin_runtime_mode_unsupported` through the stable command routes.
 
 ## On-demand Worker Loading
 
@@ -243,7 +242,7 @@ For each required Plugin, the Worker:
 6. invalidates import caches, discovers the exact entry point, and verifies factory provenance; and
 7. records the immutable loaded provenance before Agent construction.
 
-The Worker derives import targets only from verified Wheel entry points. It never imports a module path from Preset config, Run data, queue data, or an API field. After preflight succeeds, it claims the Run under the ordinary short transactional lease and fence contract. Agent-specific plugin construction occurs after claim and uses fresh Plugin instances for each reconstructed Agent definition.
+The Worker derives import targets only from verified Wheel entry points. It never imports a module path from Agent config, Run data, queue data, or an API field. After preflight succeeds, it claims the Run under the ordinary short transactional lease and fence contract. Agent-specific plugin construction occurs after claim and uses fresh Plugin instances for each reconstructed Agent definition.
 
 The registry is process-local, monotonic, and cleared by process exit. It is not stored in PostgreSQL, Redis, object storage, telemetry, or a routing table. If import or factory validation fails after import-path publication, the Worker becomes unready and exits; it never continues serving from a partially imported interpreter. Because preflight precedes claim, the Run remains durable and unclaimed.
 
@@ -253,7 +252,7 @@ One Worker can accumulate compatible distinct plugin keys. It cannot serve two l
 
 Runner Activate resolves every active PluginVersion and the candidate as one set. An incompatible platform requirement fails with `plugin_platform_incompatible`; an unsatisfiable joint set fails with `plugin_dependency_conflict`; a missing target artifact fails with `plugin_runtime_incompatible`. Universal Wheels can satisfy compatible targets, while native Wheels must match the deployment target.
 
-Control persists the complete candidate lock and all dependency artifacts before Worker staging. Activate validates that the candidate catalog can be resolved, materialized, imported, and started on every serviceable Worker; it does not reinterpret any created Preset Revision. Future Revision creation or a runner Plugin override resolves against the new catalog and performs its own complete Agent-build validation. Workers never query package indexes or solve dependencies while starting a Runner or claiming work. Activating a historical immutable PluginVersion is the explicit rollback path for that Plugin.
+Control persists the complete candidate lock and all dependency artifacts before Worker staging. Activate validates that the candidate catalog can be resolved, materialized, imported, and started on every serviceable Worker; it does not reinterpret any created Agent Revision. Future Revision creation or a runner Plugin override resolves against the new catalog and performs its own complete Agent-build validation. Workers never query package indexes or solve dependencies while starting a Runner or claiming work. Activating a historical immutable PluginVersion is the explicit rollback path for that Plugin.
 
 ## Worker Supervisor and Runner
 
@@ -318,7 +317,7 @@ A staged Worker that loses its liveness lease after commit leaves the serviceabl
 
 ## Run Pinning and Historical Reconstruction
 
-In both profiles, the selected AgentPresetRevision already owns an immutable Runtime lock digest. A runner Plugin override is resolved and frozen before Run acceptance commits. The Run copies the resulting exact digest, and a RunAttempt never replaces it with another lock.
+In both profiles, the selected AgentRevision already owns an immutable Runtime lock digest. A runner Plugin override is resolved and frozen before Run acceptance commits. The Run copies the resulting exact digest, and a RunAttempt never replaces it with another lock.
 
 An on-demand Worker preflights the lock against its registry before claim. A Runner scans and claims only work whose digest equals its own. The runner Supervisor can observe an eligible historical lock and start a compatible Runner on demand; waiting Runs do not keep a process resident. An on-demand waiting Run similarly keeps no process or cache entry resident and waits for a compatible Worker when it becomes eligible.
 
@@ -330,23 +329,23 @@ Planned handoff changes only the Attempt and Harness Run generation. Recovery pr
 
 Each Worker owns a confined content-addressed cache with a configured byte budget. Downloads use temporary locations and publish verified artifacts and materialized directories atomically.
 
-An imported on-demand artifact is pinned for that process lifetime because another loaded module may import it later. A live Runner pins its materialized directory and artifacts. Eviction removes only entries unused by the on-demand registry and every local Runner. Cache loss never changes Plugin state, a Preset lock, the runner active lock, or a Run's pinned digest.
+An imported on-demand artifact is pinned for that process lifetime because another loaded module may import it later. A live Runner pins its materialized directory and artifacts. Eviction removes only entries unused by the on-demand registry and every local Runner. Cache loss never changes Plugin state, a Agent lock, the runner active lock, or a Run's pinned digest.
 
 ## Plugin Lifecycle and Retention
 
-Archive and Unarchive manage the stable Plugin resource without changing immutable PluginVersions. Archive blocks later upload and new Preset selection, hides the Plugin from default management collections, and blocks runner-profile activation. It does not invalidate retained AgentPresetRevisions or accepted Runs. Only an inactive uploaded Plugin can be archived. Unarchive restores an inactive manageable Plugin and never activates a Version.
+Archive and Unarchive manage the stable Plugin resource without changing immutable PluginVersions. Archive blocks later upload and new Agent selection, hides the Plugin from default management collections, and blocks runner-profile activation. It does not invalidate retained AgentRevisions or accepted Runs. Only an inactive uploaded Plugin can be archived. Unarchive restores an inactive manageable Plugin and never activates a Version.
 
 Deactivate exists only in `runner`. It removes the key from future active-key resolution, builds a candidate lock without that Plugin, and uses the ordinary all-Worker staging flow. Created Revisions and accepted Runs retain exact reconstructible locks, so default or historical Revision references do not block the command. Accepted Runs pinned to an older lock continue or resume through a Runner for that lock. Successful cutover clears `active_version_id` and never mutates or deletes a PluginVersion.
 
-`on_demand` has no successful Activate or Deactivate operation. Its exact Preset bindings make a global active pointer unnecessary; Archive is its only Plugin availability lifecycle command.
+`on_demand` has no successful Activate or Deactivate operation. Its exact Agent bindings make a global active pointer unnecessary; Archive is its only Plugin availability lifecycle command.
 
-Plugin, PluginVersion, every successful Wheel, bounded runner task receipt evidence, and every Runtime lock referenced by an AgentPresetRevision or accepted Run are retained. None exposes hard delete or Version overwrite. A Runner may exit when its lock is not needed, and Worker-local materialization may be evicted when unused, but authoritative artifacts remain reconstructible. Failed upload creates no PluginVersion.
+Plugin, PluginVersion, every successful Wheel, bounded runner task receipt evidence, and every Runtime lock referenced by an AgentRevision or accepted Run are retained. None exposes hard delete or Version overwrite. A Runner may exit when its lock is not needed, and Worker-local materialization may be evicted when unused, but authoritative artifacts remain reconstructible. Failed upload creates no PluginVersion.
 
 ## Plugin Management API
 
 The Plugin `/api/v1` routes are cataloged by [Management API](16-management-api.md). List and Get authorize `plugin.read`; upload, Archive, and Unarchive authorize `plugin.manage`; runner-profile Activate and Deactivate authorize `plugin.runtime.manage`. The IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry) owns role grants.
 
-Upload creates or returns one immutable PluginVersion synchronously. Archive and Unarchive return the committed Plugin. Clients cannot directly write `source`, `plugin_key`, package identity, `active_version_id`, lifecycle state, Version content, digests, or audit fields.
+Upload creates or returns one immutable PluginVersion synchronously. Archive and Unarchive return the committed Plugin. Clients cannot directly write `source`, `plugin_key`, package identity, `active_version_id`, `archived_at`, Version content, digests, or audit fields.
 
 Runner-profile Activate and Deactivate return this conceptual minimal asynchronous receipt because completion depends on artifact resolution and every serviceable Worker:
 
@@ -372,7 +371,7 @@ The route catalog is stable across modes. In `on_demand`, Activate and Deactivat
 | Upload exceeds a bound or Wheel validation fails                | No PluginVersion is created                                                                     |
 | Object publication succeeds but relational commit is unknown    | Retry reconciles by identity and digest                                                         |
 | Package identity or same-version digest conflicts               | Upload fails; existing immutable identity remains authoritative                                 |
-| On-demand Preset selects absent Worker dependency               | Revision creation fails; no AgentPresetRevision or Runtime lock is created                      |
+| On-demand Agent selects absent Worker dependency                | Revision creation fails; no AgentRevision or Runtime lock is created                            |
 | On-demand Worker already imported a conflicting Version         | Worker declines before claim; Run remains eligible for compatible or replacement capacity       |
 | On-demand import or factory verification fails after path use   | Worker becomes unready and exits; Run remains unclaimed                                         |
 | Runner dependency resolution or compatibility fails             | Task receipt fails; old Plugin pointers and lock remain active                                  |
@@ -387,13 +386,13 @@ Normal API and logs expose only bounded safe codes and identities. They never ex
 
 ## Security and Compatibility
 
-Plugin Upload, Archive, and runner runtime commands are executable-code deployment authority. Agent input, model output, Plugin configuration, identifier possession, and Preset editing never grant it. In the singleton-Organization OSS distribution, effective Organization Admin authority supplies that permission. A multi-Organization distribution supplies a separate operator boundary and never lets an ordinary tenant Organization Admin change shared code. A caller authorized to create an on-demand Preset Revision may select an allowed retained PluginVersion but cannot publish or retire Python bytes; Preset editors cannot Activate or Deactivate the runner catalog.
+Plugin Upload, Archive, and runner runtime commands are executable-code deployment authority. Agent input, model output, Plugin configuration, identifier possession, and Agent editing never grant it. In the singleton-Organization OSS distribution, effective Organization Admin authority supplies that permission. A multi-Organization distribution supplies a separate operator boundary and never lets an ordinary tenant Organization Admin change shared code. A caller authorized to create an on-demand Agent Revision may select an allowed retained PluginVersion but cannot publish or retire Python bytes; Agent editors cannot Activate or Deactivate the runner catalog.
 
 Stable Plugin identity, immutable PluginVersion identity, full-byte digest, one-plugin entry-point shape, Runtime lock schema, deployment mode, and Run lock pinning are compatibility facts. On-demand conflict-before-claim and runner all-serviceable-Worker cutover are profile-specific compatibility facts. Cache layout, local directory names, process-control transport, resolver implementation, and object-key layout remain implementation-private when they preserve those contracts.
 
 ## Trade-offs
 
-`on_demand` keeps the default Worker topology small and permits different Presets to lock different PluginVersions. It cannot add third-party distributions outside the reviewed Worker release, and a process that imported one Version cannot serve conflicting work. Multiple clean Workers can coexist, but a single-Worker deployment may require external replacement and provides no bounded liveness for conflicts.
+`on_demand` keeps the default Worker topology small and permits different Agents to lock different PluginVersions. It cannot add third-party distributions outside the reviewed Worker release, and a process that imported one Version cannot serve conflicting work. Multiple clean Workers can coexist, but a single-Worker deployment may require external replacement and provides no bounded liveness for conflicts.
 
 `runner` supports package-index dependencies, deterministic deployment-wide activation, historical lock reconstruction, and online interpreter replacement. It costs additional processes, memory, artifact retention, and an all-serviceable-Worker staging protocol. Its active Plugin set must have one jointly solvable dependency environment.
 
@@ -404,9 +403,9 @@ Stable Plugin identity, immutable PluginVersion identity, full-byte digest, one-
 03. One Plugin identity owns one plugin key, normalized distribution name, and top-level package for all Versions.
 04. One distribution name and version denotes one content digest.
 05. Runtime locks are immutable internal manifests and are not public management resources.
-06. Every accepted Run pins one exact Runtime lock digest in addition to one exact AgentPresetRevision.
+06. Every accepted Run pins one exact Runtime lock digest in addition to one exact AgentRevision.
 07. A RunAttempt never substitutes a current, active, latest, or otherwise available Runtime for its Run's pinned lock.
-08. `on_demand` Preset Revision creation locks exact PluginVersions and uses only dependencies already supplied by the Worker release.
+08. `on_demand` Agent Revision creation locks exact PluginVersions and uses only dependencies already supplied by the Worker release.
 09. An on-demand Worker declines conflicting work before claim; its process-local loaded registry is never durable authority.
 10. `runner` Activate succeeds only after every serviceable Worker stages the candidate and one atomic cutover commits it; future Revision creation or Plugin override resolves that catalog and freezes another exact Runtime lock.
 11. The runner Supervisor imports no Plugin code; every Runner starts from one exact lock in a clean interpreter.
@@ -418,5 +417,5 @@ Stable Plugin identity, immutable PluginVersion identity, full-byte digest, one-
 17. Runner rotation uses the common graceful-yield boundary while preserving lease renewal until commit or deadline and preserving the exact Run-pinned Runtime lock on its successor.
 18. `Plugin` and `PluginVersion` are the only managed Harness Plugin resources; Versions are immutable, and neither resource exposes hard delete or Version overwrite.
 19. Plugin selection is explicit: on-demand authoring selects exact authorized PluginVersions, runner authoring selects active keys, and Revision creation freezes exact PluginVersions in both modes.
-20. Activate changes only future runner key resolution and never rewrites an AgentPresetRevision or accepted Run; adopting another active Version requires another Revision or Run override acceptance.
+20. Activate changes only future runner key resolution and never rewrites an AgentRevision or accepted Run; adopting another active Version requires another Revision or Run override acceptance.
 21. Runtime commands succeed only in `runner`; `on_demand` returns `plugin_runtime_mode_unsupported` before dispatch and creates no task receipt.

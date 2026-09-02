@@ -62,7 +62,7 @@ Bounded queues and explicit overflow handling prevent a slow client from blockin
 
 ## Lifecycle Publication and External Destinations
 
-Every authoritative Run and RunAttempt transition writes the bounded typed lifecycle event required by [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md). Waiting pending data remains owned by its sealed Run and state, while child relationships and Ingress, Route, Connector, ConnectorConnection, or MCPConnection operations retain their owning domain records and outbox intents without extending the lifecycle entity registry implicitly. Event publication follows the atomicity, retry, and duplicate-delivery rules in [Durable Operations and Outbox](06-durable-operations-and-outbox.md).
+Every authoritative Run and RunAttempt transition writes the bounded typed lifecycle event required by [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md). Waiting pending data remains owned by its sealed Run and state, while child relationships and Ingress, Route, Connector, Connection, or MCPConnection operations retain their owning domain records and outbox intents without extending the lifecycle entity registry implicitly. Event publication follows the atomicity, retry, and duplicate-delivery rules in [Durable Operations and Outbox](06-durable-operations-and-outbox.md).
 
 Each lifecycle resource has one contiguous `resource_seq`; the Workspace feed has a separate database-assigned cursor that is monotonic but not a causal order. Duplicate publication preserves one event identity. Event content references owning resources and retained Items rather than copying differently retained payloads. Redis presence, subscriber receipt, and telemetry never manufacture a lifecycle fact.
 
@@ -96,7 +96,7 @@ class DeliveryEnvelope:
 
 The schema is conceptual. `hook_name` is one exact name from the Hook registry, and `hook_schema_version` versions that Hook payload independently from the source storage and Native transport schemas. A lifecycle event uses its stable relational identity. `resource_type`, `resource_id`, `resource_seq`, and `resource_version` are the delivery names for the source lifecycle event's `entity_type`, `entity_id`, `resource_seq`, and `entity_version`. Optional correlation is absent rather than inferred when the source does not own it. Run SSE and Native notification frames never use this envelope.
 
-`resource_seq` is contiguous only within one `(workspace_id, resource_type, resource_id)` lifecycle stream and is the value used to identify stale, duplicate, and missing resource events. `resource_version` identifies the resource state version produced by the source mutation; it can skip and is not used for gap detection.
+`resource_seq` is contiguous only within one `(workspace_id, resource_type, resource_id)` lifecycle stream and is the value used to identify stale, duplicate, and missing resource events. `resource_version` identifies the source resource's version produced by the mutation; it can skip and is not used for gap detection.
 
 Re-delivery of the same source to the same subscription preserves `delivery_id`. Webhook delivery is not ordered, including between consecutive events for the same resource and subscription. Parallel publishers, retry backoff, response loss, and redrive can all deliver a later `resource_seq` before an earlier one. Source commitment, Run Stream append, retained-snapshot publication, destination acknowledgement, and client receipt are separate facts.
 
@@ -115,7 +115,7 @@ that public read action.
 
 - Organization, Workspace, Session, Thread, and Run;
 - originating RunAttempt and Harness Run;
-- stable AgentPreset, exact AgentPresetRevision, effective-config digest, and Runtime lock digest; and
+- stable Agent, exact AgentRevision, effective-config digest, and Runtime lock digest; and
 - accepted `model_id`, provider type, and model name from the RunAttempt observation, plus model/provider identity and measures from the record.
 
 A `usage_report` ID is a delivery identity, not another usage fact. Reports can overlap through retries or chunk delivery. `HarnessRunResult.usage_records` is a complete detached run-local snapshot and can overlap records already delivered incrementally. Foundation deduplicates all paths by immutable `record_id` and rejects conflicting content for the same identity.

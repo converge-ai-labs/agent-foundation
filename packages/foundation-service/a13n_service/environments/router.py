@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 
 from .domain import (
@@ -18,8 +19,8 @@ from .domain import (
     EnvironmentProviderSelection,
     EnvironmentRevision,
     EnvironmentRevisionCollection,
-    PatchEnvironmentRequest,
     PutEnvironmentProviderSelectionRequest,
+    UpdateEnvironmentRequest,
 )
 from .errors import EnvironmentManagementError
 from .service import EnvironmentManagementService
@@ -27,6 +28,7 @@ from .service import EnvironmentManagementService
 router = APIRouter(prefix="/api/v1", tags=["environment-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
+IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
 
 def _service(request: Request) -> EnvironmentManagementService:
@@ -60,15 +62,18 @@ async def get_environment_provider(
 )
 async def get_environment_provider_selection(
     request: Request,
+    response: Response,
     actor: Actor,
     workspace_id: str,
     provider_key: str,
 ) -> EnvironmentProviderSelection:
-    return await _service(request).get_provider_selection(
+    selection = await _service(request).get_provider_selection(
         actor=actor,
         workspace_id=workspace_id,
         provider_key=provider_key,
     )
+    response.headers["ETag"] = resource_etag(f"{workspace_id}:{provider_key}", selection.updated_at)
+    return selection
 
 
 @router.put(
@@ -77,17 +82,22 @@ async def get_environment_provider_selection(
 )
 async def put_environment_provider_selection(
     request: Request,
+    response: Response,
     actor: Actor,
     workspace_id: str,
     provider_key: str,
     body: PutEnvironmentProviderSelectionRequest,
+    if_match: Annotated[str | None, Header(alias="If-Match", max_length=256)] = None,
 ) -> EnvironmentProviderSelection:
-    return await _service(request).put_provider_selection(
+    selection = await _service(request).put_provider_selection(
         actor=actor,
         workspace_id=workspace_id,
         provider_key=provider_key,
+        if_match=if_match,
         request=body,
     )
+    response.headers["ETag"] = resource_etag(f"{workspace_id}:{provider_key}", selection.updated_at)
+    return selection
 
 
 @router.post(
@@ -97,17 +107,20 @@ async def put_environment_provider_selection(
 )
 async def create_environment(
     request: Request,
+    response: Response,
     actor: Actor,
     workspace_id: str,
     body: CreateEnvironmentRequest,
     idempotency_key: IdempotencyKey,
 ) -> Environment:
-    return await _service(request).create(
+    environment = await _service(request).create(
         actor=actor,
         workspace_id=workspace_id,
         idempotency_key=idempotency_key,
         request=body,
     )
+    response.headers["ETag"] = resource_etag(environment.id, environment.updated_at)
+    return environment
 
 
 @router.get("/workspaces/{workspace_id}/environments", response_model=EnvironmentCollection)
@@ -129,18 +142,26 @@ async def list_environments(
 
 
 @router.get("/environments/{environment_id}", response_model=Environment)
-async def get_environment(request: Request, actor: Actor, environment_id: str) -> Environment:
-    return await _service(request).get(actor=actor, environment_id=environment_id)
+async def get_environment(request: Request, response: Response, actor: Actor, environment_id: str) -> Environment:
+    environment = await _service(request).get(actor=actor, environment_id=environment_id)
+    response.headers["ETag"] = resource_etag(environment.id, environment.updated_at)
+    return environment
 
 
 @router.patch("/environments/{environment_id}", response_model=Environment)
 async def patch_environment(
     request: Request,
+    response: Response,
     actor: Actor,
     environment_id: str,
-    body: PatchEnvironmentRequest,
+    body: UpdateEnvironmentRequest,
+    if_match: IfMatch,
 ) -> Environment:
-    return await _service(request).patch(actor=actor, environment_id=environment_id, request=body)
+    environment = await _service(request).patch(
+        actor=actor, environment_id=environment_id, if_match=if_match, request=body
+    )
+    response.headers["ETag"] = resource_etag(environment.id, environment.updated_at)
+    return environment
 
 
 @router.post(

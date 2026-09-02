@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -13,17 +12,10 @@ from a13n_service.iam.authorization import AuthenticatedActor
 from .domain import SkillPackageManifest
 from .errors import SkillError, skill_not_found
 from .models import (
-    SkillHeadRecord,
     SkillRecord,
     SkillRevisionRecord,
     SkillUploadRecord,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class SkillRecordWithHead:
-    skill: SkillRecord
-    head: SkillHeadRecord
 
 
 async def require_owned_upload(
@@ -73,23 +65,20 @@ async def lock_active_skill(
     organization_id: str,
     workspace_id: str,
     skill_id: str,
-) -> SkillRecordWithHead:
-    row = (
-        await session.execute(
-            select(SkillRecord, SkillHeadRecord)
-            .join(SkillHeadRecord, SkillHeadRecord.skill_id == SkillRecord.id)
-            .where(
-                SkillRecord.id == skill_id,
-                SkillRecord.organization_id == organization_id,
-                SkillRecord.workspace_id == workspace_id,
-                SkillRecord.deleted_at.is_(None),
-            )
-            .with_for_update()
+) -> SkillRecord:
+    record = await session.scalar(
+        select(SkillRecord)
+        .where(
+            SkillRecord.id == skill_id,
+            SkillRecord.organization_id == organization_id,
+            SkillRecord.workspace_id == workspace_id,
+            SkillRecord.deleted_at.is_(None),
         )
-    ).one_or_none()
-    if row is None:
+        .with_for_update()
+    )
+    if record is None:
         raise skill_not_found()
-    return SkillRecordWithHead(skill=row[0], head=row[1])
+    return record
 
 
 async def require_skill(
@@ -98,21 +87,17 @@ async def require_skill(
     organization_id: str,
     workspace_id: str,
     skill_id: str,
-) -> SkillRecordWithHead:
-    row = (
-        await session.execute(
-            select(SkillRecord, SkillHeadRecord)
-            .join(SkillHeadRecord, SkillHeadRecord.skill_id == SkillRecord.id)
-            .where(
-                SkillRecord.id == skill_id,
-                SkillRecord.organization_id == organization_id,
-                SkillRecord.workspace_id == workspace_id,
-            )
+) -> SkillRecord:
+    record = await session.scalar(
+        select(SkillRecord).where(
+            SkillRecord.id == skill_id,
+            SkillRecord.organization_id == organization_id,
+            SkillRecord.workspace_id == workspace_id,
         )
-    ).one_or_none()
-    if row is None:
+    )
+    if record is None:
         raise skill_not_found()
-    return SkillRecordWithHead(skill=row[0], head=row[1])
+    return record
 
 
 async def require_revision(

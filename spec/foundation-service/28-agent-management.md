@@ -2,86 +2,78 @@
 
 ## Design Position
 
-Foundation exposes `AgentPreset` as the stable Workspace-owned resource for Agent authoring, authorization, lifecycle, and invocation. An `AgentPreset` contains one mutable complete `config`. Create Revision resolves that config into an immutable executable `AgentPresetRevision`; Set Default Revision independently selects which Revision an invocation uses when it omits an exact Revision. Foundation does not persist a separate product `Agent` or `AgentRevision`.
+Foundation exposes `Agent` as the stable Workspace-owned identity for authoring, authorization, lifecycle, and invocation. Each `AgentRevision` is one immutable executable configuration. The Agent head contains metadata, lifecycle state, a canonical `version`, and `current_revision_id`; it contains no mutable draft configuration.
 
-A Run selects one exact `AgentPresetRevision` at durable acceptance. A Worker reconstructs process-local Harness `AgentDefinition`, `SubagentDefinition`, `ExecutableAgent`, and Plugin objects from the Revision's frozen effective configuration. Those Python values are never management resources or durable payloads.
+Creating an Agent atomically creates Revision v1. Creating a genuinely different Revision appends immutable content and advances the Agent and current Revision to the same next `version`. Metadata and lifecycle mutations use strong ETags and do not change that version. Foundation exposes no `AgentPreset` compatibility resource or independently mutable default-Revision pointer.
 
-[Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) owns the deployment-level Plugin catalog, selection variants, immutable Versions, lifecycle, commands, artifacts, and Runtime behavior. Agent Management only embeds those typed selections and exact resolved locks into Preset configuration and Revisions.
+A Run selects one exact `AgentRevision` at durable acceptance. A Worker reconstructs process-local Harness `AgentDefinition`, `SubagentDefinition`, `ExecutableAgent`, and Plugin objects from the Revision's frozen effective configuration. Those Python values are never management resources or durable payloads.
+
+[Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) owns Plugin and PluginVersion identity, selection, lifecycle, commands, artifacts, and Runtime behavior. Agent Management embeds only typed Plugin selections and exact resolved locks into Agent configuration and Revisions.
 
 ```mermaid
 flowchart LR
-    Config[AgentPreset mutable config] -->|Create and resolve| Revision[Immutable AgentPresetRevision]
-    Revision -->|Set Default Revision| Default[Default Revision pointer]
+    Config[Complete AgentConfig] -->|Create or create Revision| Revision[Immutable AgentRevision]
+    Revision -->|Advance atomically| Current[Agent current Revision]
     Plugins[Managed Plugin selections] --> Revision
-    Default --> Acceptance[Implicit Run selection]
+    Current --> Acceptance[Implicit Run selection]
     Revision --> Acceptance
     Override[Typed AgentRunOverride] --> Acceptance
     Acceptance --> Run[Persisted Run with exact Revision and effective config]
-    Run -->|pins lock digest| Worker[Worker or Runner execution process]
+    Run -->|Pins lock digest| Worker[Worker or Runner execution process]
     Worker --> Definition[Process-local AgentDefinition graph]
     Definition --> Harness[Agent Harness]
 ```
 
 ## Boundaries
 
-| Concern                                                                                              | Owner                                                                                                        | Relationship                                                                |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| Preset identity, config, Revisions, default selection, lifecycle, Duplicate, and typed Run overrides | This document                                                                                                | Defines the durable Agent management model                                  |
-| Plugin identity, Versions, selection, lifecycle, commands, artifacts, and Runtime                    | [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md)                             | Supplies typed selections and exact resolved locks to Presets               |
-| Plugin factories, configured instances, ordering, middleware, and Capability contribution            | [Harness Plugin System](../agent-harness/05-plugin-system.md)                                                | Builds concrete process-local plugins from an explicitly selected catalog   |
-| Agent execution, state, and process-local subagent graph                                             | Agent Harness                                                                                                | Receives reconstructed definitions and fresh run bindings                   |
-| Run acceptance, persistence, recovery, and lineage                                                   | [Interactions and Runs](10-interactions-runs-and-attempts.md) and [Durable Run State](12-run-persistence.md) | Persist the exact selected Revision and effective config                    |
-| Agent input wire, canonicalization, and adapter mapping                                              | [Agent Input](17-agent-input.md)                                                                             | AgentPresetConfig stores adapter configuration and each Revision freezes it |
-| Product authorization and executable-code administration                                             | [Foundation IAM](33-identity-and-access-management.md)                                                       | Separates Preset authoring from deployment code authority                   |
-| Secret values and run-time eligibility                                                               | [Secret Management](27-secret-management.md)                                                                 | Revisions store requirements and references, never plaintext values         |
-| Public HTTP paths and common mutation behavior                                                       | [Management API](16-management-api.md) and [Platform API Conventions](../api-conventions.md)                 | Expose the resources and commands defined here                              |
+| Concern                                                                           | Owner                                                                                                        | Relationship                                                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Agent identity, Revisions, current selection, lifecycle, Duplicate, and overrides | This document                                                                                                | Defines the durable Agent management model                                  |
+| Plugin identity, Versions, selection, lifecycle, commands, artifacts, and Runtime | [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md)                             | Supplies typed selections and exact resolved locks to Agents                |
+| Plugin factories, configured instances, middleware, and Capability contribution   | [Harness Plugin System](../agent-harness/05-plugin-system.md)                                                | Builds concrete process-local plugins from an explicitly selected catalog   |
+| Agent execution, state, and process-local subagent graph                          | Agent Harness                                                                                                | Receives reconstructed definitions and fresh run bindings                   |
+| Run acceptance, persistence, recovery, and lineage                                | [Interactions and Runs](10-interactions-runs-and-attempts.md) and [Durable Run State](12-run-persistence.md) | Persist the exact selected Revision and effective config                    |
+| Agent input wire, canonicalization, and adapter mapping                           | [Agent Input](17-agent-input.md)                                                                             | AgentConfig stores adapter configuration and each Revision freezes it       |
+| Managed capability and Connection schemas                                         | Their owning Skill and [Connectivity](40-connectivity/README.md) contracts                                   | Agent configuration and Run overlays reference them without redefining them |
+| Product authorization and executable-code administration                          | [Foundation IAM](33-identity-and-access-management.md)                                                       | Separates Agent authoring from deployment code authority                    |
+| Secret values and run-time eligibility                                            | [Secret Management](27-secret-management.md)                                                                 | Revisions store requirements and references, never plaintext values         |
+| Public HTTP paths and common mutation behavior                                    | [Management API](16-management-api.md) and [Platform API Conventions](../api-conventions.md)                 | Expose the resources and commands defined here                              |
 
-## AgentPreset Resource Model
+## Agent Resource Model
 
-An `AgentPreset` is the complete user-visible Agent configuration identity:
+The following schemas are conceptual. They define durable field meaning rather than concrete ORM classes.
 
 ```python
-type AgentPresetSource = Literal["builtin", "custom"]
-type AgentPresetLifecycleState = Literal[
-    "enabled",
-    "disabled",
-    "archived",
-]
-
-
-class AgentPreset:
-    id: str
-    organization_id: str
-    workspace_id: str
-    source: AgentPresetSource
+class Agent:
+    id: AgentId
+    organization_id: OrganizationId
+    workspace_id: WorkspaceId
+    source: Literal["builtin", "custom"]
     name: str
     description: str | None
-    lifecycle_state: AgentPresetLifecycleState
-    resource_version: int
-    config: AgentPresetConfig
-    default_revision_id: str | None
-    config_base_revision_id: str | None
-    config_changed_since_revision: bool
-    duplicated_from_preset_id: str | None
-    duplicated_from_revision_id: str | None
-    created_by: PrincipalRef | SystemActorRef
+    version: int
+    current_revision_id: AgentRevisionId
+    enabled: bool
+    archived_at: datetime | None
+    duplicated_from_agent_id: AgentId | None
+    duplicated_from_revision_id: AgentRevisionId | None
+    created_by: PrincipalRef
+    updated_by: PrincipalRef
     created_at: datetime
     updated_at: datetime
 ```
 
-`config` is a complete, mutable authoring document. It is not named Draft and is not independently addressable. Saving it changes neither `default_revision_id` nor running behavior. `resource_version` is the optimistic concurrency token for mutable Preset state; it is distinct from a Revision number, configuration schema version, package version, and content digest.
+`Agent.version` starts at `1` and always equals the current `AgentRevision.version`. It advances only when a genuinely new immutable Revision becomes current. `current_revision_id` is always present; Foundation never exposes an Agent without an executable Revision.
 
-`config_base_revision_id` records the most recent Revision created from `config`. `config_changed_since_revision` is a derived comparison between normalized config and that Revision's authoring content; it is not a validation or test state. Setting another default Revision changes neither field.
+`name` and `description` are mutable head metadata. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
 
-A custom Preset is created as `enabled` with no default Revision. Its complete config is editable immediately. Exact Revision invocation becomes available after Revision creation; invocation that omits an exact Revision fails with `preset_default_revision_missing` until Set Default Revision succeeds.
+## AgentConfig
 
-## AgentPresetConfig
-
-`AgentPresetConfig` is finite Foundation-owned serializable data. The following conceptual types define its public domain boundary; referenced resource schemas remain owned by their management documents:
+`AgentConfig` is finite Foundation-owned serializable data. A caller supplies one complete config when creating an Agent or Agent Revision; Foundation stores no independently editable draft. Referenced resource schemas remain owned by their management documents.
 
 ```python
-class AgentModelConfig:
-    model_config_id: ModelConfigId
+class AgentModel:
+    model_revision_id: ModelRevisionId
     settings: ModelSettings
     characteristics: HarnessModelCharacteristics
 
@@ -90,8 +82,8 @@ class SkillSelection:
     skill_revision_id: SkillRevisionId
 
 
-class ConnectorConnectionToolSelection:
-    connector_connection_id: ConnectorConnectionId
+class ConnectionToolSelection:
+    connection_id: ConnectionId
     tools: tuple[str, ...] | None
     exposure: MCPExposureMode = "direct"
 
@@ -111,8 +103,8 @@ class ChildEnvironmentPolicy:
 
 
 class SubagentSelection:
-    agent_preset_id: AgentPresetId
-    revision: int | None
+    agent_id: AgentId
+    version: int | None
     description: str | None
     context: DelegationContextPolicy
     usage_limits: UsageLimits | None
@@ -124,6 +116,7 @@ class OutputVariant:
     description: str | None
     schema: JsonSchema
     resources: dict[str, JsonSchema]
+
 
 class OutputSpec:
     name: str | None
@@ -162,13 +155,13 @@ class ProtocolConfig:
     limits: ProtocolLimits
 
 
-class AgentPresetConfig:
-    model: AgentModelConfig
+class AgentConfig:
+    model: AgentModel
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
     skills: tuple[SkillSelection, ...]
-    connector_tools: dict[str, ConnectorConnectionToolSelection]
+    connection_tools: dict[str, ConnectionToolSelection]
     mcp_tools: dict[str, MCPConnectionToolSelection]
     environment: EnvironmentSelection | None
     subagents: dict[str, SubagentSelection]
@@ -180,21 +173,19 @@ class AgentPresetConfig:
     protocol: ProtocolConfig
 ```
 
-The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#preset-selection-and-revision-locking) determines which Plugin selection variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. `skills` selects exact Skill Revisions rather than a mutable catalog plus defaults. `environment` selects at most one primary exact EnvironmentRevision. Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent. Each child edge freezes Harness delegation context, usage ceilings, and its Host Environment association policy. `client_tools` stores only serializable declarations; executable handlers and callbacks remain SDK-local.
+The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. Skills select exact Skill Revisions, the model selects one exact ModelRevision, and the primary Environment selects at most one exact EnvironmentRevision. Connection-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
 
-`OutputSpec` permits either one top-level `schema` with optional local `resources`, or at least two mutually exclusive `variants`; it never permits nested variants or runtime retrieval of schema resources. `None` means free-text output. `RetryConfig` contains bounded non-negative tool-argument and structured-output model-correction budgets. It does not configure provider transport retry, Worker recovery, whole-Run retry, or business-workflow retry.
+`OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
-The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, Plugin object, client, credential value, plaintext Secret, Environment adapter, current Environment state, entered facade, live controller, arbitrary artifact URL, or process-local value. Python extension selection and construction follow the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md); Agent Management stores only its typed selection. `asset_publication` is the one dedicated platform Capability selection required by the [Asset publication contract](32-asset-management.md#agent-publication-capability), not an extensible Capability list.
+The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, Plugin object, client, credential value, plaintext Secret, Environment adapter, current Environment state, entered facade, arbitrary artifact URL, or other process-local value. Revision creation is the sole authoritative resolve-and-build validation path.
 
-Saving config performs only request-schema structure, type, size, and bounds validation. Foundation exposes no independent Validate resource, preview state, warning collection, or partially valid config lifecycle. Create Revision is the sole authoritative resolve-and-build validation path.
+`input_adapter` selects one trusted adapter key and bounded configuration. Every Revision accepts the common [`AgentInput`](17-agent-input.md) wire contract. Run acceptance validates and canonicalizes that input, and the Worker verifies the pinned Runtime lock before invoking the adapter. Replacement execution attempts reuse the same Revision, adapter configuration, accepted input, and Runtime lock.
 
-`input_adapter` selects one trusted adapter key and bounded configuration. Revision creation validates and freezes it inside the Revision. The Revision carries no declaration of allowed input block types, media types, sources, deliveries, or per-input limits; every Revision accepts the common [`AgentInput`](17-agent-input.md) wire contract. Run acceptance validates and canonicalizes that input, and the Worker verifies the pinned Runtime lock before invoking the adapter. A replacement execution attempt reuses the same Revision, adapter configuration, accepted input, and Runtime lock.
-
-When `asset_publication` is present, the trusted Foundation `AssetCapability` exposes `publish_asset`. Each execution attempt binds only its current authorized Environment; the tool fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable the tool, and the Capability adds no durable Capability-state schema.
+When `asset_publication` is present, the trusted Foundation `AssetCapability` exposes `publish_asset`. Each execution attempt binds only its current authorized Environment; the tool fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable it.
 
 ## Run Capability Overlay
 
-Agent authoring defines the default model-visible managed capability surface. A direct invocation or trusted input owner such as an Ingress Route can supply one bounded overlay without mutating the AgentPresetRevision:
+Agent authoring defines the default model-visible managed capability surface. A direct invocation or trusted input owner such as an Ingress Route can supply one bounded overlay without mutating the AgentRevision:
 
 ```python
 class RunCapabilityOverlay:
@@ -203,30 +194,26 @@ class RunCapabilityOverlay:
     exclude: tuple[CapabilityKey, ...] = ()
 ```
 
-`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, ConnectorConnection tool, or native Ingress action contract. An MCPConnection or ConnectorConnection selection includes its `direct` or `catalog` exposure and exact tool allowlist; an Ingress native action is always direct. Every selection has one stable `CapabilityKey`, exact configuration or managed-resource references, and all required compatibility evidence. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or unversioned remote schema.
-
-Resolution is deliberately small:
+`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, Connection tool, or native Ingress action contract. A Connection or MCPConnection selection includes its `direct` or `catalog` exposure and exact tool allowlist; an Ingress native action is always direct. Every selection has one stable `CapabilityKey`, exact configuration or managed-resource references, and all required compatibility evidence. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or unversioned remote schema.
 
 ```text
 candidate = (Agent defaults when inherit_agent else empty) + include - exclude
 effective = candidate intersect current authorization and deployment policy
 ```
 
-`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the Agent's selectable managed capability surface; it does not replace the Agent, model, instructions, output contract, Plugins, subagents, Runtime lock, or security ceiling. Duplicate keys, conflicting selections, an unknown exclusion, unavailable compatibility evidence, or an unauthorized addition fail Run acceptance.
+`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, instructions, output contract, Plugins, subagents, Runtime lock, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
 
-The accepted Run retains the complete effective selection and the exact [`MCPToolSnapshot`](40-connectivity/04-agent-facing-tools.md#mcp-toolsnapshot), digests, or revision locks produced from it. Replacement RunAttempts reconstruct that same surface with fresh authority and fail closed instead of silently adding, removing, or substituting a capability. Model input and tool output cannot create or modify an overlay.
+The accepted Run retains the complete effective selection and exact [`MCPToolSnapshot`](40-connectivity/04-agent-facing-tools.md#mcp-toolsnapshot), digests, or revision locks produced from it. Replacement RunAttempts reconstruct that same surface with fresh authority and fail closed instead of silently changing capabilities. Model input and tool output cannot create or modify an overlay.
 
 ## Protocol Configuration
 
-Every `AgentPresetConfig` embeds one finite `protocol` configuration. It is Preset-owned authoring data rather than an independently addressable resource, and it has no separate lifecycle, API, enable switch, or content digest.
+Every `AgentConfig` embeds one finite `protocol` configuration. It is Agent-owned Revision content rather than an independently addressable resource and has no separate lifecycle, API, enable switch, or content digest.
 
-The bounded nested types are Foundation-owned serializable values. Revision creation validates JSON Schemas, public metadata, MIME modes, event names, client-tool policies, A2A projections, and per-protocol limits against finite registries and deployment hard ceilings. Configuration can narrow a permitted surface but cannot expose raw reasoning, credentials, private execution identities, unregistered events, arbitrary code, or a capability that the deployment does not support.
+Revision creation validates JSON Schemas, public metadata, MIME modes, event names, client-tool policies, A2A projections, and per-protocol limits against finite registries and deployment hard ceilings. Configuration can narrow a permitted surface but cannot expose raw reasoning, credentials, private execution identities, unregistered events, arbitrary code, or unavailable capabilities.
 
-`input_data_schema`, when present, is the self-contained JSON Schema Draft 2020-12 contract projected for `AgentInput.structured_content`. Revision creation validates and freezes it. Run acceptance applies it only when `structured_content` is non-null; absent structured content is always valid. The schema does not restrict text or binary blocks, media types, sources, or deliveries.
+`input_data_schema`, when present, is the self-contained JSON Schema Draft 2020-12 contract projected for non-null `AgentInput.structured_content`. Safe defaults impose no structured-content schema, expose bounded text output and standard public event families, accept no protocol client tools, generate a minimal public-safe A2A Agent Card, and expose no extended Card. Native and Hosted AG-UI remain available for every callable Agent; `gateway.a2a_enabled` is the deployment-wide A2A availability switch.
 
-Safe defaults impose no structured-content schema, expose bounded text output and the standard Run, text, and client-visible tool event families, accept no protocol client tools, require empty state and context, generate a minimal public-safe A2A Agent Card, and expose no extended Card. Native and Hosted AG-UI remain available for every callable Preset. The deployment-wide `gateway.a2a_enabled` setting is the only A2A availability switch; ProtocolConfig does not enable or disable a protocol.
-
-Revision creation freezes normalized ProtocolConfig in the immutable Revision, whose `content_digest` covers the complete config. Hosted AG-UI Run and A2A Task acceptance persist the exact `agent_preset_revision_id`; retry, feedback, recovery, and replay therefore use the same protocol configuration without storing a redundant protocol digest. Creating and selecting another default Revision changes Cards and implicit acceptance policy only for later work. Continuation additionally follows the state and input compatibility rules of the selected Revision.
+Revision creation freezes normalized ProtocolConfig in the immutable Revision, whose `content_digest` covers it. Hosted AG-UI Run and A2A Task acceptance persist the exact `agent_revision_id`; retry, feedback, recovery, and replay therefore use the same protocol configuration. Advancing the Agent to another Revision changes Cards and implicit acceptance policy only for later work.
 
 ## AgentRunOverride and Effective Configuration
 
@@ -243,13 +230,13 @@ type EnvironmentOverride = EnvironmentSelection | InlineEnvironmentSelection
 
 
 class ModelOverride:
-    model_config_id: ModelConfigId | None
+    model_revision_id: ModelRevisionId | None
     settings: ModelSettings | None
     characteristics: HarnessModelCharacteristics | None
 
 
-class ConnectorConnectionToolOverride:
-    connector_connection_id: ConnectorConnectionId | None
+class ConnectionToolOverride:
+    connection_id: ConnectionId | None
     tools: tuple[str, ...] | None
     exposure: MCPExposureMode | None
 
@@ -261,8 +248,8 @@ class MCPConnectionToolOverride:
 
 
 class SubagentOverride:
-    agent_preset_id: AgentPresetId | None
-    revision: int | None
+    agent_id: AgentId | None
+    version: int | None
     description: str | None
     context: DelegationContextPolicy | None
     usage_limits: UsageLimits | None
@@ -279,7 +266,7 @@ class AgentRunOverride:
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
     skills: tuple[SkillSelection, ...] | None
-    connector_tools: dict[str, ConnectorConnectionToolOverride | None] | None
+    connection_tools: dict[str, ConnectionToolOverride | None] | None
     mcp_tools: dict[str, MCPConnectionToolOverride | None] | None
     environment: EnvironmentOverride | None
     subagents: dict[str, SubagentOverride | None] | None
@@ -288,26 +275,24 @@ class AgentRunOverride:
     retries: RetryOverride | None
 ```
 
-The wire schema preserves the distinction between an absent field and an explicit null. Top-level absence inherits the selected Revision. Scalar and string fields replace; an empty `instructions` string clears the base prompt. List fields replace as a whole and `[]` clears. `output_spec` replaces as a whole and explicit null selects free text. `environment` replaces the one primary Environment and explicit null clears it. `retries` patches only its explicitly present children, and zero disables the corresponding correction retry.
+The wire schema preserves absent fields separately from explicit nulls. Top-level absence inherits the selected Revision. Scalar and string fields replace; list fields replace as a whole and an empty list clears them. `output_spec` and `environment` can be explicitly cleared. `retries` patches only explicitly present children.
 
-`connector_tools`, `mcp_tools`, and `subagents` are name-keyed patches. An absent map inherits, an explicit null clears all entries, and `{}` changes nothing. A new name adds an entry, an existing object changes only explicitly present typed fields, and a name mapped to null deletes that entry. Tool changes can replace only their managed ConnectorConnection, exposure, or exact allowlist; they cannot supply an endpoint, credential, Connector service, or arbitrary header. Subagent entries may select only managed Presets; inline child Agent definitions are not accepted.
+`connection_tools`, `mcp_tools`, and `subagents` are name-keyed patches. An absent map inherits, explicit null clears all entries, and an empty object changes nothing. A mapped null deletes one entry. Tool changes can replace only a managed Connection, exposure, or exact allowlist; they cannot supply endpoints, credentials, Connector services, or arbitrary headers. Subagent entries select managed Agents only.
 
-Plugin override replacement and exact resolution follow the [managed Plugin selection contract](36-managed-harness-plugins-and-runtime.md#preset-selection-and-revision-locking).
-
-The caller may select resources it is currently authorized to use even when they were not present in the base Revision. Every replacement remains subject to resource authorization, schema validation, deployment compatibility, and platform security ceilings. Typed sensitive leaves may contain inline credential values; acceptance extracts them into a Run-owned encrypted payload and excludes them from ordinary config projections. No generic arbitrary-path secret bag is accepted.
+Plugin override replacement and resolution follow the [managed Plugin selection contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Typed sensitive leaves are extracted into a Run-owned encrypted payload and excluded from ordinary config projections.
 
 The resolved non-secret result has this conceptual shape:
 
 ```python
 class EffectiveAgentConfig:
     schema_version: str
-    model: ResolvedAgentModelConfig
+    model: ResolvedAgentModel
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
     skills: tuple[ResolvedSkillSelection, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
+    connection_tools: tuple[ConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     environment: EnvironmentExecutionConfig | None
     subagents: tuple[ResolvedSubagentEdge, ...]
@@ -320,234 +305,164 @@ class EffectiveAgentConfig:
     content_digest: str
 ```
 
-The resolved types are defined with `AgentPresetRevision` below and use the same exact reconstruction facts. The digest covers the complete normalized snapshot and excludes only sensitive plaintext, which has a separately protected digest in acceptance idempotency evidence.
+Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. Retry, resume, deferred-action completion, and Worker replacement reconstruct from that snapshot and never re-read the Agent head or reapply merge rules. Input, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
 
-The SDK may store one local default override on an Agent Handle and merge it with a one-Run override before submission. Foundation receives only the resulting `config_override`, does not persist the SDK merge layers, and never inherits an override from a previous Run or Thread. Input, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
-
-Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. It does not retain a separately addressable normalized Override. Retry, resume, deferred-action completion, and Worker replacement reconstruct from that exact effective snapshot and never re-read mutable Preset config or reapply merge rules. Serializable client-tool declarations are part of the snapshot; their actual callable handlers remain with the SDK, and a missing handler is surfaced through the durable Action Required contract.
-
-## Immutable AgentPresetRevision
-
-Create Revision creates this immutable resource:
+## Immutable AgentRevision
 
 ```python
 class ResolvedSubagentEdge:
     name: str
-    child_agent_preset_id: AgentPresetId
-    child_agent_preset_revision_id: AgentPresetRevisionId
+    child_agent_id: AgentId
+    child_agent_revision_id: AgentRevisionId
     description: str | None
     context: DelegationContextPolicy
     usage_limits: UsageLimits | None
     environment: ChildEnvironmentPolicy
 
 
-class ResolvedAgentModelConfig:
-    execution: ModelExecutionSnapshot
-    settings: ModelSettings
-    characteristics: HarnessModelCharacteristics
-
-
-class ResolvedSkillSelection:
-    skill_revision_id: SkillRevisionId
-    skill_name: str
-    content_digest: str
-
-
-class AgentPresetRevision:
-    id: str
-    organization_id: str
-    workspace_id: str
-    agent_preset_id: str
-    revision_number: int
+class AgentRevision:
+    id: AgentRevisionId
+    organization_id: OrganizationId
+    workspace_id: WorkspaceId
+    agent_id: AgentId
+    version: int
     plugin_runtime_mode: Literal["on_demand", "runner"]
-    config: AgentPresetConfig
-    resolved_model: ResolvedAgentModelConfig
+    config: AgentConfig
+    config_digest: str
+    resolved_model: ResolvedAgentModel
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
     resolved_skills: tuple[ResolvedSkillSelection, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
+    connection_tools: tuple[ConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: str
-    source_revision_id: str | None
-    created_by: PrincipalRef | SystemActorRef
+    source_revision_id: AgentRevisionId | None
+    created_by: PrincipalRef
     created_at: datetime
 ```
 
-`revision_number` starts at one and increases monotonically within one Preset. It is never reused and is not a CAS token. `content_digest` covers the normalized immutable Revision representation, including every resolved snapshot, lock, exact managed-resource reference, and subagent Revision. `source_revision_id` records Duplicate provenance without creating inheritance.
+Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, exact managed-resource reference, Runtime lock, and subagent Revision. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
 
-A Revision is complete and executable but carries no mutable lifecycle state. It cannot be patched, archived independently, deleted, overwritten, or replaced. Historical Revisions remain readable while their Preset and referencing Run records are retained.
+`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The other resolved fields freeze the non-secret Model execution snapshot, Skill content, Connection and MCPConnection selections, optional primary Environment lock, and complete child Revision graph. Secret values, current authorization, live Connector availability, and remote MCP catalogs remain fresh eligibility facts rather than immutable content.
 
-`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [Managed Harness Plugin selection and locking contract](36-managed-harness-plugins-and-runtime.md#preset-selection-and-revision-locking). They are immutable Revision content; later Plugin lifecycle or Runtime commands never rewrite them. Worker, Harness, and Foundation service versions remain deployment compatibility facts rather than Preset artifacts.
+## Creation, Revision, and Restore
 
-The other `resolved_*` fields freeze the non-secret Model execution snapshot, exact Skill content and materialization facts, managed ConnectorConnection and MCPConnection selections, the optional primary Environment lock, and the complete exact child Revision graph. Secret values, current authorization, live Connector availability, and remote MCP catalogs are deliberately not frozen. Run acceptance derives its authoritative ConnectorConnection and MCPConnection selections plus the immutable model-facing tool snapshot under the [Connectivity contract](40-connectivity/README.md). This separation makes the Revision independently reconstructible without turning credentials or mutable operational eligibility into immutable content.
+Create Agent accepts `name`, optional `description`, and one complete `config`. Foundation authorizes and resolves every referenced dependency, then atomically creates the Agent and Revision v1. It never exposes an Agent without a current Revision.
 
-## Revision Creation and Default Selection
+Create Revision accepts `expected_version` and one complete replacement `config`:
 
-Create Revision synchronously performs the authoritative reconstruction preflight and then atomically:
+1. authorize the operation and every referenced resource;
+2. verify the expected Agent version;
+3. resolve exact Model, Plugin, Skill, Environment, Connection, and subagent dependencies;
+4. verify schemas, the finite acyclic subagent graph, Plugin evidence, and reconstruction compatibility;
+5. canonicalize the frozen content and compute its digests;
+6. return the current Agent and Revision unchanged for a semantic no-op; or
+7. create immutable version `current + 1` and advance the Agent head in the same transaction.
 
-1. verifies authorization and the Preset `resource_version`;
-2. resolves the non-secret Model snapshot, exact managed-resource revisions, managed Plugin selection, and each unpinned child Preset's current default Revision;
-3. verifies the finite acyclic subagent graph, Plugin resolution evidence, schemas, and reconstruction compatibility;
-4. allocates the next `revision_number` and creates the complete immutable Revision;
-5. updates `config_base_revision_id` to that Revision without changing `default_revision_id`; and
-6. increments `resource_version` and records the audit and outbox facts.
+Resolution and process-local build preflight occur outside an open database transaction. The final short transaction rechecks the Agent, selected references, profile-specific Plugin evidence, authorization, and concurrency evidence before committing. Failure creates no Revision and does not advance the head.
 
-Resolution and process-local build preflight occur outside an open database transaction. The final short transaction rechecks the mutable Preset, selected references, profile-specific Plugin evidence, and concurrency evidence before committing all durable facts. A failure creates no Revision, changes no default pointer, and does not rewrite config.
+Restore Revision revalidates retained dependencies and copies the selected historical content into a new later Revision. It never moves the head backward or repoints it to an older row. `source_revision_id` records the restored source.
 
-The [Managed Harness Plugins and Runtime contract](36-managed-harness-plugins-and-runtime.md) owns profile-specific selection, dependency validation, factory configuration, exact Version resolution, and Runtime lock composition. AgentPreset Revision creation consumes that complete result and rechecks its immutable selection and lock evidence in the final transaction so concurrent Plugin commands cannot produce mixed Revision content.
+Duplicate revalidates the exact current Revision and atomically creates an independent custom Agent with its own v1 Revision. The new head records source Agent and Revision IDs. It never follows or merges later source changes.
 
-Set Default Revision takes one exact retained `revision_id`, verifies that it belongs to the Preset, and revalidates its exact dependencies and complete transitive subagent graph under current rules. It then atomically changes only `default_revision_id`, Preset audit metadata, and `resource_version`. It creates no Revision, does not copy or replace mutable config, does not change `config_base_revision_id`, and does not enable a disabled Preset. A historical Revision becomes the default by pointing to that existing Revision directly; Foundation exposes no separate Rollback command and does not clone history to express pointer movement.
+Built-in Agents use the same Revision validation and exact dependency freezing. Distribution registration creates v1 or advances to another Revision only when resolved content changes. Built-ins are invocable and readable but cannot be renamed, duplicated in place, archived, or otherwise mutated by ordinary users; Duplicate creates a custom Agent.
 
-Revision existence is the complete creation fact. A Revision has no published, active, tested, staged, or promoted state. `default_revision_id` is only the fallback selector for invocations that omit an exact Revision; it is not a lifecycle state, health signal, deployment status, or statement that the Revision has been tested.
+## Metadata and Lifecycle
 
-## Built-in Presets and Duplicate
+`name` and `description` are mutable metadata. `enabled` and `archived_at` are independent lifecycle axes:
 
-Every Foundation distribution includes built-in Presets that are immediately executable after registration. A distribution release manifest owns their stable identities and content and supplies Plugin selections valid under the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#preset-selection-and-revision-locking). Registration uses the ordinary Revision-creation validation, then atomically creates and selects the required default Revision. Repeated registration of unchanged resolved content is idempotent; changed content creates the next Revision and selects it as default. Built-in Presets are read-only to users: they cannot edit config, create or select Revisions, or Archive.
+- Disable sets `enabled=false` and blocks new invocation without cancelling accepted Runs.
+- Enable revalidates the current Revision and sets `enabled=true`.
+- Archive requires the Agent to be disabled and sets `archived_at`.
+- Unarchive clears `archived_at` without enabling the Agent.
 
-Duplicate is the customization boundary for either a built-in or custom Preset. In one atomic operation it:
-
-1. reads the source Preset's exact default Revision;
-2. creates a new independent custom Preset with copied config;
-3. creates its immutable Revision 1 with identical resolved content;
-4. selects Revision 1 as default and enables the new Preset; and
-5. records source Preset and Revision provenance.
-
-The duplicate is immediately callable and never follows, overlays, or automatically merges later source changes. A source without a default Revision or an archived source cannot be duplicated.
-
-## Preset Lifecycle
-
-Lifecycle and default Revision selection are independent:
-
-- `enabled` opens the new root invocation gate; an omitted exact Revision additionally requires a default Revision;
-- `disabled` preserves config and the default pointer, blocks new root, Ingress, and Schedule acceptance, and still permits config editing, Revision creation, and default selection;
-- `archived` is read-only, hidden from default collections, and blocks invocation, enablement, config mutation, Revision creation, default selection, Duplicate, and selection by newly authored subagent edges.
-
-Enable revalidates the default Revision's retained exact dependencies and complete transitive subagent graph when a default exists. It does not reinterpret that Revision through the current runner active catalog. A Preset without a default Revision may still be enabled so an authorized caller can select an exact Revision; default selection remains unavailable until the pointer is set. Disable does not cancel or rewrite accepted Runs. Disable fails with `preset_in_use` while an enabled Preset's default transitive graph references the target; accepted historical Runs do not add another lifecycle block.
-
-Only a disabled custom Preset can be archived. Unarchive changes it to `disabled` and never activates or enables it. Built-in Presets cannot be archived. Neither Presets nor Preset Revisions expose hard delete.
+GET returns a strong ETag. Metadata and lifecycle mutations require exact strong `If-Match`; weak validators and `*` are rejected. These mutations never advance `version` or rewrite Revisions. Historical Revisions remain readable and can be invoked while the stable Agent is enabled and unarchived and their exact artifacts remain executable.
 
 ## Subagent Composition
 
-A parent config declares each named child edge with a stable child `agent_preset_id`, optional child-local `revision` number, Harness context and usage policy, and one explicit Host Environment policy. Parent Revision creation resolves an omitted selector to the child's default Revision and stores one exact `child_agent_preset_revision_id`. It rejects a missing, default-less, disabled, archived, unauthorized, unretained, or unexecutable child, duplicate sibling name, excessive graph size or depth, incompatible Environment policy, unbuildable dependency, or any structural cycle. A `shared_root` edge requires the child and root to freeze the same Provider configuration and lock with no wider child access; `dedicated` uses the child's frozen configuration with new Host state; `none` requires the child not to require an Environment.
+A parent config declares each named child edge with a stable `agent_id`, optional child-local `version`, Harness context and usage policy, and one explicit Host Environment policy. Parent Revision creation resolves an omitted version to the child's current Revision and stores one exact `child_agent_revision_id`. It rejects missing, disabled, archived, unauthorized, unretained, unexecutable, cyclic, excessively large, or Environment-incompatible graphs.
 
-Creating or selecting another child Revision later does not change an existing parent Revision. The parent adopts the new child behavior only after another parent Revision is created. A parent Revision may execute its pinned historical child Revision; exact historical selection is also available to authorized root Runs as described below.
+Advancing a child Agent later does not change an existing parent Revision. The parent adopts new child behavior only through another parent Revision. Workers recursively reconstruct the exact finite graph into Harness `SubagentDefinition` values. A Run Override may patch the managed child roster by stable local name; acceptance resolves and freezes the complete resulting graph before work starts.
 
-The Worker recursively reconstructs the exact finite graph into Harness `SubagentDefinition` and `SubagentCollection` values. Root and child definitions use the same Harness build and Plugin contracts. A Run Override may patch the managed child roster by stable local name; acceptance recursively resolves and freezes the complete resulting graph before work starts. An asynchronous hosted child receives its own Thread, Run, RunAttempts, fresh `RunBindings`, fresh Environment adapters selected through its frozen Host association policy, the already selected exact child Revision, and a compatible Runtime lock under [Async Subagents](34-async-subagents.md). An inline child remains process-local Harness execution and borrows the active Environment facade. The first version does not accept inline child Agent definitions in Preset configuration or Run overrides.
+An asynchronous hosted child receives its own Thread, Run, RunAttempts, fresh `RunBindings`, Environment adapters selected through its frozen Host association policy, exact child Revision, and compatible Runtime lock under [Async Subagents](34-async-subagents.md). An inline child remains process-local Harness execution and borrows the active Environment facade.
 
 ## Run Selection and Reconstruction
 
-A new root Run always supplies `agent_preset_id`. Omission of `agent_preset_revision_id` selects the default Revision; supplying it selects that exact Revision even when it is historical. SDKs may expose the Preset-local `revision_number` as a convenience but resolve it to the globally unique Revision ID at the wire boundary. An optional `expected_default_revision_id` is a separate optimistic precondition and never doubles as the exact selector.
+A new root Run supplies an `agent_id` and may supply an exact `agent_revision_id`. Omission selects `current_revision_id`; exact selection never falls back. An optional `expected_current_revision_id` is an independent optimistic precondition rather than the selector itself.
 
 Durable acceptance:
 
-1. authorizes invocation of the stable Preset and use of every selected managed resource;
-2. requires `lifecycle_state=enabled` and, for default selection, a non-null default Revision;
-3. validates that an exact Revision belongs to the Preset, remains retained and executable, and satisfies current authorization and compatibility requirements;
-4. applies the typed `config_override`, resolves every final resource selection and any runner Plugin key, and validates the complete finite subagent graph;
-5. freezes the complete non-secret `EffectiveAgentConfig`, its digest, any encrypted Run-owned sensitive payload, and one exact Runtime lock; and
-6. persists `agent_preset_id`, exact `agent_preset_revision_id`, selector kind, effective-config digest, and internal `runtime_lock_digest` on the accepted execution state.
+1. authorizes invocation of the stable Agent and every selected managed resource;
+2. requires the Agent to be enabled and unarchived;
+3. validates that the exact Revision belongs to the Agent, remains retained and executable, and satisfies current authorization and compatibility requirements;
+4. applies the typed config override and capability overlay and resolves every final selection;
+5. freezes the complete non-secret `EffectiveAgentConfig`, encrypted sensitive payload, and exact Runtime lock; and
+6. persists `agent_id`, exact `agent_revision_id`, selector kind, effective-config digest, and `runtime_lock_digest` on the accepted execution state.
 
-Exact selection never falls back to the default Revision. A retained historical Revision may therefore start new work without duplicating its Preset, but disabling or archiving the stable Preset still blocks new root invocation. Ingress and Schedule definitions store only `agent_preset_id`, accept no direct `config_override`, and resolve the current default Revision for each occurrence. An Ingress Route can instead supply the independently authorized `RunCapabilityOverlay` defined above.
+Historical AgentRevisions remain invocable under the stable Agent's current lifecycle gate. Ingress and Schedule definitions store the stable Agent identity and resolve the current Revision for each occurrence. Retry, waiting feedback, recovery, and accepted child work use the exact Revision and effective configuration pinned by their Run.
 
-Retry, resume after Worker loss, waiting feedback lineage, and already accepted asynchronous child work use the exact Revision graph and `EffectiveAgentConfig` pinned by their owning Run. They never resolve mutable config, a default Revision, an active Plugin pointer, or an SDK Handle again. A new continuation Run follows the state-compatibility contract owned by the execution model; Agent Management does not imply state migration merely because another Revision becomes the default.
-
-For each execution attempt, the Worker or Runner:
-
-1. reads the accepted Run's exact Revision graph and `EffectiveAgentConfig`;
-2. verifies and materializes its exact `runtime_lock_digest` under the [managed Plugin Runtime contract](36-managed-harness-plugins-and-runtime.md);
-3. records that lock digest, Harness version, and bounded selected Plugin distribution identities on the attempt;
-4. reauthorizes current credentials, RoleBindings, invocation grants, Secret eligibility, Provider availability, and current Host Environment state without changing the frozen non-secret configuration;
-5. constructs the optional fresh primary Environment adapter and default Harness mount, reconstructs concrete `HarnessModelCharacteristics`, native `ModelSettings`, fresh native Models, definition-selected Capabilities, Plugins, `AgentDefinition` values, and `RunBindings`, then appends mandatory Foundation Worker infrastructure Capabilities such as the fenced inbox-delivery hook without changing the accepted model or tool surface; and
-6. enters the Harness only after the current execution-attempt fence authorizes effects.
-
-Deployment code can change between attempts, but one accepted Run never silently changes Plugin code, dependencies, managed-resource Revisions, child graph, tool surface, output contract, Environment desired configuration, or retry budgets. The [managed Plugin Runtime contract](36-managed-harness-plugins-and-runtime.md) owns profile-specific claim compatibility and exact lock reconstruction. Current credentials, authorization, Secret eligibility, Provider availability, and Host Environment state remain fresh per attempt; every attempt constructs fresh `RunBindings` and, when selected, one fresh Environment adapter.
+For each execution attempt, the Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes credentials and current resource eligibility, constructs fresh Models, Plugins, `RunBindings`, and Environment adapters, and enters the Harness only after the current attempt fence authorizes effects. Deployment code may change between attempts, but one accepted Run never silently changes Plugin code, dependencies, managed-resource Revisions, child graph, tool surface, output contract, Environment configuration, or retry budgets.
 
 ## Managed Harness Plugin Reference
 
-`AgentPresetConfig.plugins`, `AgentRunOverride.plugins`, `AgentPresetRevision.plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` use the canonical [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) contract. That document exclusively owns Plugin and PluginVersion identity, selection variants, lifecycle, commands, Wheel and dependency artifacts, Runtime locks, loading, activation, and failure semantics. This document owns only where those selections and immutable results are embedded in AgentPreset authoring, Revision creation, Run overrides, and reconstruction.
+`AgentConfig.plugins`, `AgentRunOverride.plugins`, `AgentRevision.plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` use the canonical [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) contract. That document exclusively owns Plugin and PluginVersion identity, selection variants, lifecycle, commands, Wheel and dependency artifacts, Runtime locks, loading, activation, and failure semantics. This document owns only where selections and immutable results are embedded in Agent configuration, Revision creation, Run overrides, and reconstruction.
+
+## Persistence
+
+The `agents` table stores stable identity, tenancy, name, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, normalized_name)` is unique.
+
+The `agent_revisions` table stores complete config, frozen resolution, digests, provenance, actor, and creation time. `(agent_id, version)` is unique. The Agent head and current Revision advance atomically. Runs and downstream records store `agent_revision_id`, not only an Agent ID or version.
 
 ## Agent Management API Contract
 
-The AgentPreset `/api/v1` routes are cataloged by [Management API](16-management-api.md). AgentPreset commands are synchronous and return their committed result:
+- `POST /api/v1/workspaces/{workspace_id}/agents`
+- `GET /api/v1/workspaces/{workspace_id}/agents`
+- `GET /api/v1/agents/{agent_id}`
+- `PATCH /api/v1/agents/{agent_id}`
+- `POST /api/v1/agents/{agent_id}/revisions`
+- `GET /api/v1/agents/{agent_id}/revisions`
+- `GET /api/v1/agent-revisions/{revision_id}`
+- `POST /api/v1/agents/{agent_id}/revisions/{revision_id}/restore`
+- `POST /api/v1/agents/{agent_id}/duplicate`
+- `POST /api/v1/agents/{agent_id}/{enable|disable|archive|unarchive}`
 
-Preset and Revision List or Get authorize `agent_preset.read`; Create authorizes
-`agent_preset.create`; metadata or config replacement authorizes
-`agent_preset.update`; Create Revision authorizes `agent_preset.revision.create`;
-Set Default Revision authorizes `agent_preset.default_revision.set`; Enable,
-Disable, Archive, and Unarchive authorize `agent_preset.lifecycle`;
-Duplicate authorizes `agent_preset.duplicate`; and new Run acceptance authorizes
-`agent_preset.invoke`. The IAM
-[stable action registry](33-identity-and-access-management.md#stable-action-registry)
-owns their role grants. Create Revision additionally authorizes every referenced
-Workspace resource action, such as `skill.bind` or `secrets.bind`, rather than
-treating Preset update permission as ambient access.
+Create, Create Revision, Restore, Duplicate, and lifecycle commands require `Idempotency-Key`. Versioned Revision creation uses `expected_version`; metadata and lifecycle mutations use strong `If-Match`. Agent and Revision collections use opaque cursor pagination, and Revision List defaults to descending `version` with a stable ID tie-breaker.
 
-```python
-class AgentPresetRevisionCreateResult:
-    preset: AgentPreset
-    revision: AgentPresetRevision
-```
-
-| Operation                           | Request fields                                                 | Result                                                           |
-| ----------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Create                              | `name`, optional `description`, complete `config`              | `201` with the complete custom Preset without a default Revision |
-| Patch metadata                      | `expected_resource_version`, optional `name` and `description` | `200` with the complete Preset                                   |
-| Replace config                      | `expected_resource_version`, complete `config`                 | `200` with the complete Preset                                   |
-| Create Revision                     | `expected_resource_version`                                    | `201` with the complete Preset and new complete Revision         |
-| Set Default Revision                | `expected_resource_version`, `revision_id`                     | `200` with the complete Preset                                   |
-| Duplicate                           | `expected_resource_version`, `name`, optional `description`    | `201` with the complete new Preset                               |
-| Enable, Disable, Archive, Unarchive | `expected_resource_version`                                    | `200` with the complete Preset                                   |
-
-Create and every command require `Idempotency-Key`. Clients cannot write `source`, `lifecycle_state`, `default_revision_id`, `revision_number`, Revision content, or server audit fields directly. Preset Revisions support Create, List, and Get; only Set Default Revision changes the Preset pointer.
-
-Preset List and Get use the same complete representation, including the mutable config. Revision List and Get likewise use the same complete immutable representation, including config, resolved snapshots, digests, exact references, and audit fields. Both collections use opaque cursor pagination. Revision List defaults to descending `revision_number` with a stable ID tie-breaker.
-
-## Compatibility
-
-The canonical Foundation v1 resources are `AgentPreset` and `AgentPresetRevision`. Foundation does not expose parallel `/presets`, `/agents`, `/agents/{id}/revisions`, `Agent`, or `AgentRevision` aliases with overlapping meaning. Durable Run and state schemas use `agent_preset_id` and `agent_preset_revision_id` directly. `AgentRunOverride` is accepted request data and `EffectiveAgentConfig` is a Run-owned snapshot; neither creates a second Agent identity. A distribution importing data from another product translates that data before it enters this contract.
+Agent actions are authorized against the stable Agent identity. Role bindings use `resource_type="agent"`. List and Get authorize `agent.read`; Create authorizes `agent.create`; metadata changes authorize `agent.update`; Create and Restore Revision authorize `agent.revision.create`; lifecycle changes authorize `agent.lifecycle`; Duplicate authorizes `agent.duplicate`; and Run acceptance authorizes `agent.invoke`. Every successful mutation records exact Agent and Revision references in security audit and outbox evidence without secret values or resolved credentials.
 
 ## Failure Semantics
 
-AgentPreset operations use this bounded domain code set:
+| Code                            | Meaning                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `agent_not_found`               | Agent is absent or concealed                                            |
+| `agent_revision_not_found`      | Revision is absent, concealed, or does not belong to the required Agent |
+| `agent_disabled`                | New invocation is blocked                                               |
+| `agent_archived`                | The requested operation is unavailable for an archived Agent            |
+| `agent_revision_not_executable` | The exact retained Revision cannot currently execute                    |
+| `current_revision_conflict`     | `expected_current_revision_id` does not match the current Revision      |
+| `agent_version_conflict`        | `expected_version` does not match the Agent version                     |
+| `agent_revision_create_failed`  | Resolve-and-build validation failed before Revision creation commits    |
+| `etag_mismatch`                 | Strong `If-Match` does not match mutable head metadata                  |
 
-| Code                              | Meaning                                                                  |
-| --------------------------------- | ------------------------------------------------------------------------ |
-| `preset_not_found`                | Preset is absent or concealed                                            |
-| `preset_revision_not_found`       | Revision is absent, concealed, or does not belong to the required Preset |
-| `preset_default_revision_missing` | No default Revision exists                                               |
-| `preset_disabled`                 | New root work is blocked                                                 |
-| `preset_archived`                 | The requested operation is unavailable for an archived Preset            |
-| `preset_in_use`                   | A lifecycle mutation would invalidate an enabled default graph           |
-| `preset_revision_not_executable`  | The exact retained Revision cannot currently be executed                 |
-| `default_revision_conflict`       | `expected_default_revision_id` does not match the default Revision       |
-| `preset_revision_create_failed`   | Resolve-and-build validation failed before Revision creation commits     |
-| `preset_state_conflict`           | The requested lifecycle transition is not legal                          |
+Revision-creation failure can expose only a bounded safe reason and config field path. Schema, authorization, and idempotency failures retain the common Platform API codes.
 
-`preset_revision_create_failed` can include only a bounded safe `reason` and config field path. Schema, authorization, concurrent mutation, and idempotency reuse continue to use `validation_error`, `forbidden`, `resource_version_conflict`, and `idempotency_conflict`.
+## Compatibility and Trade-offs
 
-## Trade-offs
+The canonical Foundation v1 resources are `Agent` and `AgentRevision`. Foundation exposes no parallel AgentPreset resources or aliases. Durable Run and state schemas use `agent_id` and `agent_revision_id` directly. `AgentRunOverride` is request data and `EffectiveAgentConfig` is a Run-owned snapshot; neither creates another Agent identity.
 
-### Preset as the Stable Resource
-
-Using one stable Preset plus immutable Revisions removes the otherwise overlapping Agent, Preset, and AgentRevision identities and matches the product's authoring language. It requires the contract to state explicitly that a Preset is complete Agent configuration rather than a partial template.
-
-### Revision Creation Separate from Default Selection
-
-Separating immutable Revision creation from default selection lets clients validate and address a new Revision without changing implicit traffic. It adds one explicit pointer command to the common edit path, while avoiding a second Revision lifecycle or an ambiguous meaning of active.
-
-### Typed Run Overrides
-
-A finite typed override lets an SDK bind application-specific Model, Plugin, Skill, Connector, Environment, subagent, client-tool, output, and correction behavior without creating another managed Agent resource. Persisting only the resolved effective snapshot simplifies recovery but deliberately does not preserve a reversible audit of which SDK layer supplied each field.
+Atomically creating and advancing immutable Revisions removes a mutable draft/default-pointer lifecycle and gives `version` one canonical meaning. It requires callers to submit complete replacement configuration and use Restore to copy historical content into a new head. Finite typed overrides preserve application-specific composition without introducing arbitrary patch paths or a second managed Agent resource.
 
 ## Invariants
 
-1. `AgentPreset` is the only durable Agent authoring, authorization, lifecycle, and invocation resource; Foundation persists no product `Agent` or `AgentRevision`.
-2. Mutable config never executes. Create Revision alone resolves it into an immutable `AgentPresetRevision`, and this operation never changes the default pointer.
-3. Every accepted Run pins one exact Preset Revision and one immutable `EffectiveAgentConfig`; claim, retry, waiting, and recovery never remerge mutable state.
-4. Authorized invocation may select the default Revision or one exact retained executable historical Revision; exact selection never falls back.
-5. Revision and effective-config content contain only serializable Foundation data and exact references, never Python objects, callable handlers, credential values, arbitrary import targets, or Plugin artifacts.
-6. Current credentials, authorization, Secret eligibility, Provider availability, Host Environment state, `RunBindings`, and Environment adapters are resolved or constructed freshly for every execution attempt without changing frozen non-secret configuration.
-7. Preset lifecycle changes never rewrite Revisions or accepted Runs.
-8. ProtocolConfig is Preset-owned authoring data frozen by AgentPresetRevision; it is not another resource, digest, or per-Preset protocol switch.
+01. `Agent` is the only durable Agent authoring, authorization, lifecycle, and invocation identity; every Agent has one current immutable `AgentRevision`.
+02. `Agent.version` always equals its current Revision version and advances only when a genuinely different Revision becomes current.
+03. Metadata and lifecycle mutations use strong ETags and never advance the Agent version or rewrite Revisions.
+04. Every accepted Run pins one exact AgentRevision and one immutable `EffectiveAgentConfig`; retry, waiting, recovery, and Worker replacement never remerge current Agent state.
+05. Revision and effective-config content contain only serializable Foundation data and exact references, never Python objects, callable handlers, credential values, arbitrary import targets, or Plugin artifacts.
+06. Current credentials, authorization, Secret eligibility, Provider availability, Host Environment state, `RunBindings`, and Environment adapters are resolved or constructed freshly for every execution attempt without changing frozen non-secret configuration.
+07. Historical Revision invocation is exact and never falls back or follows a mutable dependency head.
+08. Restore copies retained content into a new later Revision and never moves the Agent head backward.
+09. ProtocolConfig is Agent-owned Revision content rather than another resource, digest, or per-Agent protocol switch.
+10. Plugin identity and lifecycle remain owned exclusively by the managed Plugin contract; Agent Management stores only typed selections and resolved locks.

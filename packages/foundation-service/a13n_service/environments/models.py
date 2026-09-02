@@ -36,16 +36,15 @@ _BINDINGS_ADAPTER = TypeAdapter(tuple[EnvironmentCredentialBinding, ...])
 
 
 class EnvironmentProviderSelectionRecord(Base):
-    __tablename__ = "workspace_environment_providers"
+    __tablename__ = "environment_provider_selections"
     __table_args__ = (
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
             ondelete="CASCADE",
         ),
-        CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
-        Index("ix_workspace_environment_providers_enabled", "workspace_id", "enabled", "provider_key"),
+        Index("ix_environment_provider_selections_enabled", "workspace_id", "enabled", "provider_key"),
     )
 
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -54,7 +53,6 @@ class EnvironmentProviderSelectionRecord(Base):
     provider_package_revision_id: Mapped[str | None] = mapped_column(String(72))
     provider_lock: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     updated_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     updated_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -68,14 +66,13 @@ class EnvironmentProviderSelectionRecord(Base):
             provider_package_revision_id=self.provider_package_revision_id,
             provider_lock=_LOCK_ADAPTER.validate_python(self.provider_lock),
             enabled=self.enabled,
-            version=self.version,
             updated_by=_principal(self.updated_by_type, self.updated_by_id),
             updated_at=_utc(self.updated_at),
         )
 
 
 class EnvironmentRecord(Base):
-    __tablename__ = "managed_environments"
+    __tablename__ = "environments"
     __table_args__ = (
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
@@ -86,9 +83,9 @@ class EnvironmentRecord(Base):
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
-        Index("uq_managed_environments_id_tenant", "id", "organization_id", "workspace_id", unique=True),
-        Index("uq_managed_environments_workspace_name", "workspace_id", "normalized_name", unique=True),
-        Index("ix_managed_environments_workspace_updated", "workspace_id", "updated_at", "id"),
+        Index("uq_environments_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_environments_workspace_name", "workspace_id", "normalized_name", unique=True),
+        Index("ix_environments_workspace_updated", "workspace_id", "updated_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -129,24 +126,24 @@ class EnvironmentRevisionRecord(Base):
     __table_args__ = (
         ForeignKeyConstraint(
             ("environment_id", "organization_id", "workspace_id"),
-            ("managed_environments.id", "managed_environments.organization_id", "managed_environments.workspace_id"),
+            ("environments.id", "environments.organization_id", "environments.workspace_id"),
             ondelete="RESTRICT",
         ),
-        CheckConstraint("revision_number >= 1", name="revision_number_positive"),
+        CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("access IN ('read_only', 'read_write', 'full')", name="access_valid"),
         CheckConstraint("length(logical_digest_sha256) = 64", name="logical_digest_sha256"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
-        UniqueConstraint("environment_id", "revision_number", name="uq_environment_revisions_number"),
+        UniqueConstraint("environment_id", "version", name="uq_environment_revisions_number"),
         UniqueConstraint("id", "environment_id", name="uq_environment_revisions_id_environment"),
         Index("uq_environment_revisions_id_tenant", "id", "organization_id", "workspace_id", unique=True),
-        Index("ix_environment_revisions_environment_desc", "environment_id", "revision_number", "id"),
+        Index("ix_environment_revisions_environment_desc", "environment_id", "version", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     environment_id: Mapped[str] = mapped_column(String(72), nullable=False)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    revision_number: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     provider: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     provider_package_revision_id: Mapped[str | None] = mapped_column(String(72))
     provider_lock: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
@@ -165,7 +162,7 @@ class EnvironmentRevisionRecord(Base):
             environment_id=self.environment_id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
-            revision_number=self.revision_number,
+            version=self.version,
             provider=EnvironmentProviderSpec.model_validate(self.provider),
             provider_package_revision_id=self.provider_package_revision_id,
             provider_lock=_LOCK_ADAPTER.validate_python(self.provider_lock),

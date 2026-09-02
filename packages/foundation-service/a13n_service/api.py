@@ -8,11 +8,11 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from a13n_service.agent_presets import AgentPresetError
+from a13n_service.agents import AgentError
 from a13n_service.assets.errors import AssetError
 from a13n_service.environments import EnvironmentManagementError
 from a13n_service.iam import AuthenticationError
-from a13n_service.model_configs.service import ModelConfigError
+from a13n_service.models.service import ModelError
 from a13n_service.plugins import PluginError
 from a13n_service.skills.errors import SkillError
 from a13n_service.trace_query import TraceQueryError
@@ -32,16 +32,16 @@ def install_api_conventions(app: FastAPI) -> None:
     async def authentication_error(request: Request, _error: AuthenticationError) -> JSONResponse:
         return _error_response(request, 401, "authentication_required", "Authentication is required.")
 
-    @app.exception_handler(AgentPresetError)
-    async def agent_preset_error_handler(request: Request, error: AgentPresetError) -> JSONResponse:
+    @app.exception_handler(AgentError)
+    async def agent_error_handler(request: Request, error: AgentError) -> JSONResponse:
         return _error_response(request, error.status_code, error.code, error.message, error.details)
 
     @app.exception_handler(AssetError)
     async def asset_error_handler(request: Request, error: AssetError) -> JSONResponse:
         return _error_response(request, error.status_code, error.code, error.message, error.details)
 
-    @app.exception_handler(ModelConfigError)
-    async def model_config_error_handler(request: Request, error: ModelConfigError) -> JSONResponse:
+    @app.exception_handler(ModelError)
+    async def model_config_error_handler(request: Request, error: ModelError) -> JSONResponse:
         return _error_response(request, error.status_code, error.code, error.message, error.details)
 
     @app.exception_handler(EnvironmentManagementError)

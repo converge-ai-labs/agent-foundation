@@ -118,7 +118,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     schemas = document["components"]["schemas"]
     assert {
         "Asset",
-        "ModelConfig",
+        "Model",
         "Plugin",
         "PluginVersion",
         "Skill",
@@ -129,7 +129,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert {
         "FoundationAgentSkillSelection",
         "ManagedSkillPackageManifest",
-        "ModelConfigResource",
+        "ModelResource",
         "WorkspaceSkill",
     }.isdisjoint(schemas)
     assert request(app, "/api/docs").status_code == 200

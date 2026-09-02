@@ -444,7 +444,7 @@ class _PluginContribution:
     plugin_version_id: str
     plugin_key: str
     distribution_name: str
-    distribution_version: str
+    version: str
     top_level_package: str
     wheel_digest: str
     artifact_ref: str
@@ -457,7 +457,7 @@ class _PluginContribution:
             plugin_version_id=spec.version.id,
             plugin_key=spec.plugin.plugin_key,
             distribution_name=spec.plugin.distribution_name,
-            distribution_version=spec.version.version,
+            version=spec.version.version,
             top_level_package=spec.plugin.top_level_package,
             wheel_digest=spec.version.content_digest,
             artifact_ref=spec.version.artifact_ref,
@@ -692,7 +692,7 @@ def _resolution_request_digest(
 ) -> str:
     payload = {
         "command": command,
-        "runtime_version": catalog.runtime_version,
+        "runtime_generation": catalog.runtime_generation,
         "active_lock_digest": catalog.active_lock_digest,
         "plugins": [
             {

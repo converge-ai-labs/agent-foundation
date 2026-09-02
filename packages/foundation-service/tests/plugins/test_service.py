@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from a13n_service.plugins.domain import PluginLifecycleState
+from a13n_service.etags import resource_etag
 from a13n_service.plugins.errors import PluginError
 from a13n_service.plugins.service import PluginService
 
@@ -79,22 +79,23 @@ async def test_upload_rejects_version_overwrite_and_identity_changes(plugin_serv
 async def test_plugin_lifecycle_hides_archived_and_blocks_upload(plugin_service: PluginService) -> None:
     uploaded = await _upload(plugin_service, build_wheel(), key="first")
     plugin_id = uploaded.version.plugin_id
+    uploaded_plugin = await plugin_service.get(actor=actor(), plugin_id=plugin_id)
 
     archived = await plugin_service.change_lifecycle(
         actor=actor(),
         plugin_id=plugin_id,
         action="archive",
         idempotency_key="archive",
+        if_match=resource_etag(plugin_id, uploaded_plugin.updated_at),
     )
     default_page = await plugin_service.list(
         actor=actor(),
         limit=50,
         cursor=None,
-        lifecycle_state=None,
         source=None,
         include_archived=False,
     )
-    assert archived.lifecycle_state is PluginLifecycleState.archived
+    assert archived.archived_at is not None
     assert default_page.items == ()
     with pytest.raises(PluginError) as rejected:
         await _upload(plugin_service, build_wheel(version="2.0"), key="blocked", plugin_id=plugin_id)
@@ -105,8 +106,9 @@ async def test_plugin_lifecycle_hides_archived_and_blocks_upload(plugin_service:
         plugin_id=plugin_id,
         action="unarchive",
         idempotency_key="unarchive",
+        if_match=resource_etag(plugin_id, archived.updated_at),
     )
-    assert restored.lifecycle_state is PluginLifecycleState.available
+    assert restored.archived_at is None
 
 
 @pytest.mark.anyio
@@ -128,7 +130,6 @@ async def test_plugin_collections_are_complete_and_paginated(plugin_service: Plu
         actor=actor(),
         limit=1,
         cursor=None,
-        lifecycle_state=None,
         source=None,
         include_archived=False,
     )

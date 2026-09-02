@@ -3,7 +3,6 @@
 from .domain import (
     Plugin,
     PluginCollection,
-    PluginLifecycleState,
     PluginSource,
     PluginTaskReceipt,
     PluginTaskStatus,
@@ -16,7 +15,6 @@ __all__ = [
     "Plugin",
     "PluginCollection",
     "PluginError",
-    "PluginLifecycleState",
     "PluginSource",
     "PluginTaskReceipt",
     "PluginTaskStatus",

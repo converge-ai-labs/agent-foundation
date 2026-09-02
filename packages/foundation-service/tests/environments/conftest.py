@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from a13n_environment_provider import build_environment_provider_catalog
-from a13n_service.agent_presets.environment_resolution import AgentEnvironmentSelectionResolver
+from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.database.metadata import service_metadata
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.service import EnvironmentManagementService
@@ -42,7 +42,7 @@ async def environment_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmak
         await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", version=1, created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
@@ -50,7 +50,6 @@ async def environment_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmak
                 organization_id=ORG_ID,
                 name="Default",
                 normalized_name="default",
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -65,7 +64,6 @@ async def environment_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmak
                 name="Environment Builder",
                 status="active",
                 email_verified_at=NOW,
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
             )

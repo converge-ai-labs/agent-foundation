@@ -6,7 +6,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
-    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -22,11 +21,9 @@ from a13n_service.database import Base
 
 class OrganizationRecord(Base):
     __tablename__ = "organizations"
-    __table_args__ = (CheckConstraint("version >= 1", name="version_positive"),)
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
-    version: Mapped[int] = mapped_column(BigInteger, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -34,7 +31,6 @@ class OrganizationRecord(Base):
 class WorkspaceRecord(Base):
     __tablename__ = "workspaces"
     __table_args__ = (
-        CheckConstraint("version >= 1", name="version_positive"),
         Index(
             "uq_workspaces_active_organization_normalized_name",
             "organization_id",
@@ -50,7 +46,6 @@ class WorkspaceRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), ForeignKey("organizations.id", ondelete="RESTRICT"))
     name: Mapped[str] = mapped_column(String(128))
     normalized_name: Mapped[str] = mapped_column(String(128))
-    version: Mapped[int] = mapped_column(BigInteger, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -58,10 +53,7 @@ class WorkspaceRecord(Base):
 
 class UserRecord(Base):
     __tablename__ = "users"
-    __table_args__ = (
-        CheckConstraint("status IN ('active', 'disabled')", name="status_valid"),
-        CheckConstraint("version >= 1", name="version_positive"),
-    )
+    __table_args__ = (CheckConstraint("status IN ('active', 'disabled')", name="status_valid"),)
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     email: Mapped[str] = mapped_column(String(320))
@@ -69,7 +61,6 @@ class UserRecord(Base):
     name: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    version: Mapped[int] = mapped_column(BigInteger, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -83,7 +74,6 @@ class ServiceAccountRecord(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint("status IN ('active', 'disabled')", name="status_valid"),
-        CheckConstraint("version >= 1", name="version_positive"),
         Index(
             "uq_service_accounts_active_workspace_normalized_name",
             "workspace_id",
@@ -101,7 +91,6 @@ class ServiceAccountRecord(Base):
     normalized_name: Mapped[str] = mapped_column(String(128))
     description: Mapped[str | None] = mapped_column(String(2048))
     status: Mapped[str] = mapped_column(String(16))
-    version: Mapped[int] = mapped_column(BigInteger, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -112,7 +101,7 @@ class RoleBindingRecord(Base):
     __table_args__ = (
         CheckConstraint("principal_type IN ('user', 'service_account')", name="principal_type_valid"),
         CheckConstraint(
-            "resource_type IN ('organization', 'workspace', 'agent_preset')",
+            "resource_type IN ('organization', 'workspace', 'agent')",
             name="resource_type_valid",
         ),
         CheckConstraint("role_key IN ('member', 'viewer', 'runner', 'builder', 'admin')", name="role_key_valid"),

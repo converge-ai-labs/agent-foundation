@@ -22,7 +22,7 @@ The Gateway does not own Agent execution, Run scheduling, persistence, or author
 | SDK, CLI, and browser consumption                     | [Service SDKs and Clients](37-service-sdks-and-clients.md)                                                               | Clients consume public protocols only                                                                           |
 | Durable acceptance and lifecycle                      | [Interactions](10-interactions-runs-and-attempts.md)                                                                     | Protocol responses report but never replace durable facts                                                       |
 | Stream sources and retained projection                | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md)                                               | Protocol delivery reads authorized projections                                                                  |
-| Agent protocol metadata and policy                    | [Agent Management](28-agent-management.md#protocol-configuration)                                                        | Acceptance freezes the selected Preset Revision and protocol configuration                                      |
+| Agent protocol metadata and policy                    | [Agent Management](28-agent-management.md#protocol-configuration)                                                        | Acceptance freezes the selected Agent Revision and protocol configuration                                       |
 | Managed Environment configuration and Host lifecycle  | [Environment Management](29-environment-management.md) and the shared Environment Provider contracts                     | Gateway can expose Foundation management APIs but owns no current state, finalization, destroy, or prune policy |
 
 The Gateway never calls ORM repositories, Redis keys, object keys, Worker private interfaces, or Harness execution directly from a transport adapter. Application use cases own short transactions, current authorization, durable mutation, and subscription selection.
@@ -31,13 +31,13 @@ The Gateway never calls ORM repositories, Redis keys, object keys, Worker privat
 
 Only `control` and `all` roles expose the protocols owned by this Gateway. A `worker` exposes no Native, AG-UI, A2A, browser, or product-stream route.
 
-| Surface      | Namespace                                                                | Availability                                                               | Primary callers                                  |
-| ------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------ |
-| Native API   | `/api/v1`                                                                | Always present on `control` and `all`                                      | SDKs, Foundation Web, and remote CLI             |
-| Hosted AG-UI | `/ag-ui/v1`                                                              | Always present on `control` and `all`                                      | Standard AG-UI clients and third-party frontends |
-| A2A          | direct `/a2a/v1/agent-presets/{agent_preset_id}` plus hostname discovery | Controlled only by deployment-wide `a2a_enabled`, which defaults to `true` | Remote Agents and Agent platforms                |
+| Surface      | Namespace                                                  | Availability                                                               | Primary callers                                  |
+| ------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------ |
+| Native API   | `/api/v1`                                                  | Always present on `control` and `all`                                      | SDKs, Foundation Web, and remote CLI             |
+| Hosted AG-UI | `/ag-ui/v1`                                                | Always present on `control` and `all`                                      | Standard AG-UI clients and third-party frontends |
+| A2A          | direct `/a2a/v1/agents/{agent_id}` plus hostname discovery | Controlled only by deployment-wide `a2a_enabled`, which defaults to `true` | Remote Agents and Agent platforms                |
 
-There is no AgentPreset-level enable switch for Native, AG-UI, or A2A. Every callable AgentPreset has Native and Hosted AG-UI surfaces. When `a2a_enabled=true`, every callable AgentPreset also has a direct A2A base URL and direct Agent Card URL. Preset protocol configuration controls bounded metadata, input schema, client tool surface, visibility, media modes, and limits; it does not run a protocol on or off.
+There is no Agent-level enable switch for Native, AG-UI, or A2A. Every callable Agent has Native and Hosted AG-UI surfaces. When `a2a_enabled=true`, every callable Agent also has a direct A2A base URL and direct Agent Card URL. Agent protocol configuration controls bounded metadata, input schema, client tool surface, visibility, media modes, and limits; it does not run a protocol on or off.
 
 When `a2a_enabled=false`, the process does not mount A2A discovery, runtime, streaming, or push-notification routes and does not start A2A delivery components. The setting is immutable effective runtime configuration and does not select another distribution. Native and Hosted AG-UI remain unchanged.
 
@@ -84,7 +84,7 @@ External protocol identifiers provide correlation only. They never grant authori
 
 Every new command authenticates its caller, resolves the current resource, and authorizes the owning action. Every subscription attachment and continuation reauthorizes its current scope. A persisted external binding narrows lookup but does not preserve an earlier authorization decision.
 
-Run acceptance freezes the exact `agent_preset_revision_id`, whose content includes the normalized protocol configuration, plus the normalized client tool surface, canonical accepted `AgentInput`, and other owning-domain inputs required by the selected protocol. Later Preset edits, Revision creation, or default selection do not rewrite an accepted Run or Task. Worker replacement changes RunAttempt and Harness Run identity without changing the accepted protocol correlation.
+Run acceptance freezes the exact `agent_revision_id`, whose content includes the normalized protocol configuration, plus the normalized client tool surface, canonical accepted `AgentInput`, and other owning-domain inputs required by the selected protocol. Later Agent edits, Revision creation, or default selection do not rewrite an accepted Run or Task. Worker replacement changes RunAttempt and Harness Run identity without changing the accepted protocol correlation.
 
 ## Security and Admission
 
@@ -121,7 +121,7 @@ Native compatibility follows `/api/v1`. Hosted AG-UI compatibility follows the A
 
 1. Protocol Gateway is a Foundation Service boundary, not another service or lifecycle authority.
 2. Native, Hosted AG-UI, and A2A adapters call the same Foundation application commands, queries, and subscriptions.
-3. Native and Hosted AG-UI are always present on `control` and `all`; A2A has exactly one deployment-wide switch, defaults on, and has no AgentPreset-level enable switch.
+3. Native and Hosted AG-UI are always present on `control` and `all`; A2A has exactly one deployment-wide switch, defaults on, and has no Agent-level enable switch.
 4. External IDs, cursors, URLs, and protocol receipts grant no authority.
 5. Transport delivery, durable acceptance, execution, and terminal commitment remain independent facts.
 6. A streaming dependency graph contains no yielded database session.

@@ -4,7 +4,7 @@
 
 Connectivity is Foundation-owned configuration and authorization around provider-specific adapters. It preserves provider-native behavior at the edge and standardizes only the minimum concepts required to admit external input, select one Agent, freeze a safe tool surface, and dispatch authorized external actions.
 
-Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Ingress can receive and reply as its Bot identity without a second OpenConnector or Composio ConnectorConnection. A separate ConnectorConnection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `MCPConnection`.
+Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Ingress can receive and reply as its Bot identity without a second OpenConnector or Composio Connection. A separate Connection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `MCPConnection`.
 
 ## Boundaries
 
@@ -16,7 +16,7 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 | External-to-Agent Thread correlation             | AgentThreadBinding                      | Fixes one adapter-declared stable external reference to one Agent and Agent Thread      |
 | Durable Run acceptance and active input          | [Foundation Service](../README.md)      | Owns Run creation, Ingress Steer, deduplication acceptance, and Thread lifecycle        |
 | General outbound connector service               | Connector                               | Configures one OpenConnector, Composio, or another installed Connector adapter          |
-| Safe Connector-managed account reference         | ConnectorConnection                     | Refers to one account whose real credentials remain in its Connector service            |
+| Safe Connector-managed account reference         | Connection                              | Refers to one account whose real credentials remain in its Connector service            |
 | User-configured remote MCP access                | MCPConnection                           | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle    |
 | Foundation-owned Agent tool server               | a13n MCP                                | Serves authorized Ingress native actions and Connector tools for the current RunAttempt |
 | Model-facing aggregation                         | Foundation Worker                       | Exposes selected Connector and Remote MCP tools directly or through three catalog tools |
@@ -32,7 +32,7 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 
 `Connector` is one configured external connector service such as OpenConnector Self-host, OpenConnector Cloud, or Composio. Its adapter, endpoint, access credential, provider coverage, and action schemas are Connector-specific.
 
-`ConnectorConnection` is Foundation's safe reference to one external account held by one Connector. It is not that account's credential.
+`Connection` is Foundation's safe reference to one external account held by one Connector. It is not that account's credential.
 
 `MCPConnection` is one configured authorization identity for one user-supplied Remote MCP endpoint. The same endpoint used with two different identities creates two MCPConnections rather than a separate server resource and another connection layer.
 
@@ -71,9 +71,9 @@ Inbound completion means that an event was rejected safely, ignored by policy, o
 
 1. Provider adapters can differ completely before `InboundEvent`; Connector services and Remote MCP servers can differ completely behind their own boundaries.
 2. Foundation standardizes identity, authorization, routing, input acceptance, and model exposure, not provider business APIs.
-3. Raw external data never creates an Agent, Tool, ConnectorConnection, MCPConnection, Secret, Principal, Route, or Run grant.
+3. Raw external data never creates an Agent, Tool, Connection, MCPConnection, Secret, Principal, Route, or Run grant.
 4. One Ingress can route to several allowed Agents; one inbound event activates at most one.
-5. Agent selection and effective Skills, Tools, MCPConnections, ConnectorConnections, and native actions are independent decisions.
-6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected Ingress context, ConnectorConnection choices, MCPConnection choices, and exact tool snapshot. Recovery never silently substitutes another Agent, target, account, endpoint, or tool contract.
+5. Agent selection and effective Skills, Tools, MCPConnections, Connections, and native actions are independent decisions.
+6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected Ingress context, Connection choices, MCPConnection choices, and exact tool snapshot. Recovery never silently substitutes another Agent, target, account, endpoint, or tool contract.
 7. Connectivity retains only bounded event-admission, deduplication, correlation, and external-resource facts; it persists no transcript, Agent inbox, or execution state beside Foundation Threads, Runs, and the Thread inbox.
 8. Provider credentials are typed and owned at the edge; the common model never forces Slack, Lark, GitHub, Gmail, Connector, and MCP authorization into one credential schema.

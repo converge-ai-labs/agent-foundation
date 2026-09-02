@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
+from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 
 from .catalog import SkillCatalogService
@@ -30,6 +31,7 @@ from .uploads import SkillUploadService
 router = APIRouter(prefix="/api/v1", tags=["skill-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
+IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 _CONTENT_CHUNK_BYTES = 1024 * 1024
 
 
@@ -120,6 +122,7 @@ async def create_skill(
         idempotency_key=idempotency_key,
     )
     response.status_code = result.status_code
+    response.headers["ETag"] = resource_etag(result.result.skill.id, result.result.skill.updated_at)
     return result.result
 
 
@@ -163,8 +166,10 @@ async def list_skills(
 
 
 @router.get("/skills/{skill_id}", response_model=Skill)
-async def get_skill(request: Request, actor: Actor, skill_id: str) -> Skill:
-    return await _catalog(request).get(actor=actor, skill_id=skill_id)
+async def get_skill(request: Request, response: Response, actor: Actor, skill_id: str) -> Skill:
+    skill = await _catalog(request).get(actor=actor, skill_id=skill_id)
+    response.headers["ETag"] = resource_etag(skill.id, skill.updated_at)
+    return skill
 
 
 @router.get("/skills/{skill_id}/revisions", response_model=SkillRevisionCollection)
@@ -209,11 +214,15 @@ async def get_skill_revision_content(
 @router.patch("/skills/{skill_id}", response_model=Skill)
 async def update_skill(
     request: Request,
+    response: Response,
     actor: Actor,
     skill_id: str,
     body: UpdateSkillRequest,
+    if_match: IfMatch,
 ) -> Skill:
-    return await _catalog(request).update(actor=actor, skill_id=skill_id, request=body)
+    skill = await _catalog(request).update(actor=actor, skill_id=skill_id, if_match=if_match, request=body)
+    response.headers["ETag"] = resource_etag(skill.id, skill.updated_at)
+    return skill
 
 
 @router.delete("/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -221,9 +230,9 @@ async def delete_skill(
     request: Request,
     actor: Actor,
     skill_id: str,
-    expected_version: Annotated[int, Query(ge=1)],
+    if_match: IfMatch,
 ) -> Response:
-    await _catalog(request).delete(actor=actor, skill_id=skill_id, expected_version=expected_version)
+    await _catalog(request).delete(actor=actor, skill_id=skill_id, if_match=if_match)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

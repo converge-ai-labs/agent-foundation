@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from a13n_service.database.metadata import service_metadata
+from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.domain import PrincipalRef
@@ -100,7 +101,7 @@ async def skill_services(
         await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", version=1, created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
@@ -108,7 +109,6 @@ async def skill_services(
                 organization_id=ORG_ID,
                 name="Default",
                 normalized_name="default",
-                version=1,
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -124,7 +124,6 @@ async def skill_services(
                     name=user_id,
                     status="active",
                     email_verified_at=NOW,
-                    version=1,
                     created_at=NOW,
                     updated_at=NOW,
                 )
@@ -222,7 +221,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
     catalog = skill_services.catalog
     engine = skill_services.engine
     source = await staged_source(uploads, key="upload-create", content=archive())
-    request = CreateSkillRequest(display_name="Deploy Helper", source=source)
+    request = CreateSkillRequest(name="Deploy Helper", source=source)
 
     created = await publication.create(
         actor=actor(),
@@ -234,7 +233,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
     assert created.status_code == 201
     assert created.result.outcome == "published"
     assert created.result.skill.version == 1
-    assert created.result.revision.revision_number == 1
+    assert created.result.revision.version == 1
     sessions = create_session_factory(engine)
     async with short_session(sessions) as session:
         assert await session.scalar(select(func.count()).select_from(SkillRecord)) == 1
@@ -248,9 +247,10 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
     updated = await catalog.update(
         actor=actor(),
         skill_id=created.result.skill.id,
-        request=UpdateSkillRequest(expected_version=1, display_name="Renamed"),
+        if_match=resource_etag(created.result.skill.id, created.result.skill.updated_at),
+        request=UpdateSkillRequest(name="Renamed"),
     )
-    assert updated.version == 2
+    assert updated.version == 1
     replay = await publication.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -263,40 +263,31 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
     same = await publication.publish_revision(
         actor=actor(),
         skill_id=created.result.skill.id,
-        request=CreateSkillRevisionRequest(expected_version=2, source=same_source),
+        request=CreateSkillRevisionRequest(expected_version=1, source=same_source),
         idempotency_key="revision-same",
     )
     assert same.status_code == 200
     assert same.result.outcome == "already_current"
-    assert same.result.skill.version == 2
+    assert same.result.skill.version == 1
     assert same.result.revision.id == created.result.revision.id
 
     new_source = await staged_source(uploads, key="upload-new", content=archive(body="# New workflow"))
-    with pytest.raises(SkillError) as stale:
-        await publication.publish_revision(
-            actor=actor(),
-            skill_id=created.result.skill.id,
-            request=CreateSkillRevisionRequest(expected_version=1, source=new_source),
-            idempotency_key="revision-new",
-        )
-    assert stale.value.code == "skill_version_conflict"
-    assert stale.value.details == {"current_version": 2}
     published = await publication.publish_revision(
         actor=actor(),
         skill_id=created.result.skill.id,
-        request=CreateSkillRevisionRequest(expected_version=2, source=new_source),
+        request=CreateSkillRevisionRequest(expected_version=1, source=new_source),
         idempotency_key="revision-new",
     )
     assert published.status_code == 201
-    assert published.result.skill.version == 3
-    assert published.result.revision.revision_number == 2
+    assert published.result.skill.version == 2
+    assert published.result.revision.version == 2
     revision_page = await catalog.list_revisions(
         actor=actor(),
         skill_id=created.result.skill.id,
         limit=1,
         cursor=None,
     )
-    assert [item.revision_number for item in revision_page.items] == [2]
+    assert [item.version for item in revision_page.items] == [2]
     assert revision_page.next_cursor is not None
     older_page = await catalog.list_revisions(
         actor=actor(),
@@ -304,7 +295,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
         limit=1,
         cursor=revision_page.next_cursor,
     )
-    assert [item.revision_number for item in older_page.items] == [1]
+    assert [item.version for item in older_page.items] == [1]
     assert older_page.next_cursor is None
 
     async with short_session(sessions) as session:
@@ -333,7 +324,7 @@ async def test_read_content_tombstone_and_viewer_authorization(
     created = await publication.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateSkillRequest(display_name="Deploy", source=source),
+        request=CreateSkillRequest(name="Deploy", source=source),
         idempotency_key="create-read",
     )
     skill = created.result.skill
@@ -347,14 +338,19 @@ async def test_read_content_tombstone_and_viewer_authorization(
         await catalog.update(
             actor=actor(VIEWER_ID),
             skill_id=skill.id,
-            request=UpdateSkillRequest(expected_version=1, display_name="Denied"),
+            if_match=resource_etag(skill.id, skill.updated_at),
+            request=UpdateSkillRequest(name="Denied"),
         )
     assert denied.value.status_code == 404
 
-    await catalog.delete(actor=actor(), skill_id=skill.id, expected_version=1)
+    await catalog.delete(
+        actor=actor(),
+        skill_id=skill.id,
+        if_match=resource_etag(skill.id, skill.updated_at),
+    )
     tombstone = await catalog.get(actor=actor(), skill_id=skill.id)
     assert tombstone.deleted_at == NOW
-    assert tombstone.version == 2
+    assert tombstone.version == 1
     assert (await catalog.get_revision(actor=actor(), revision_id=revision.id)).id == revision.id
     assert (await catalog.content(actor=actor(), revision_id=revision.id))[1] == digest
     with pytest.raises(SkillError) as cannot_publish:
@@ -362,7 +358,7 @@ async def test_read_content_tombstone_and_viewer_authorization(
             actor=actor(),
             skill_id=skill.id,
             request=CreateSkillRevisionRequest(
-                expected_version=2,
+                expected_version=1,
                 source=await staged_source(uploads, key="after-delete", content=archive(body="# Later")),
             ),
             idempotency_key="revision-after-delete",
@@ -416,7 +412,7 @@ async def test_upload_delete_rejects_consumed_receipt_and_removes_unconsumed_rec
     await skill_services.publication.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateSkillRequest(display_name="Consumed", source=consumed),
+        request=CreateSkillRequest(name="Consumed", source=consumed),
         idempotency_key="consumed-create",
     )
     with pytest.raises(SkillError) as conflict:
@@ -431,10 +427,10 @@ async def test_upload_delete_rejects_consumed_receipt_and_removes_unconsumed_rec
 
 
 @pytest.mark.anyio
-async def test_skill_collection_cursor_preserves_display_name_order(
+async def test_skill_collection_cursor_preserves_name_order(
     skill_services: SkillTestServices,
 ) -> None:
-    for index, display_name in enumerate(("Bravo", "Alpha", "Charlie"), start=1):
+    for index, name in enumerate(("Bravo", "Alpha", "Charlie"), start=1):
         source = await staged_source(
             skill_services.uploads,
             key=f"page-upload-{index}",
@@ -443,7 +439,7 @@ async def test_skill_collection_cursor_preserves_display_name_order(
         await skill_services.publication.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
-            request=CreateSkillRequest(display_name=display_name, source=source),
+            request=CreateSkillRequest(name=name, source=source),
             idempotency_key=f"page-create-{index}",
         )
 
@@ -453,7 +449,7 @@ async def test_skill_collection_cursor_preserves_display_name_order(
         limit=2,
         cursor=None,
     )
-    assert [item.display_name for item in first.items] == ["Alpha", "Bravo"]
+    assert [item.name for item in first.items] == ["Alpha", "Bravo"]
     assert first.next_cursor is not None
     second = await skill_services.catalog.list(
         actor=actor(),
@@ -461,7 +457,7 @@ async def test_skill_collection_cursor_preserves_display_name_order(
         limit=2,
         cursor=first.next_cursor,
     )
-    assert [item.display_name for item in second.items] == ["Charlie"]
+    assert [item.name for item in second.items] == ["Charlie"]
     assert second.next_cursor is None
 
 
@@ -531,7 +527,7 @@ async def test_github_publication_uses_secret_without_persisting_selector_or_val
     created = await publication.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateSkillRequest(display_name="GitHub", source=source),
+        request=CreateSkillRequest(name="GitHub", source=source),
         idempotency_key="github-create",
     )
 
