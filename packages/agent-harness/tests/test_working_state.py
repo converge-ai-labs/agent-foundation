@@ -312,18 +312,27 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
     )
 
     assert result.output_or_raise() == "resumed"
-    context = "\n".join(
+    historical_context = "\n".join(
         part.content
-        for message in resumed_messages
+        for message in resumed_messages[:-1]
         if isinstance(message, ModelRequest)
         for part in message.parts
         if isinstance(part, UserPromptPart) and isinstance(part.content, str)
     )
-    assert '<task id="task-1"' not in context
-    assert "Review &lt;unsafe&gt;" not in context
-    assert '<notes source="a13n-harness">' in context
-    assert '<note key="review&lt;&amp;">Remember details</note>' in context
-    assert "<note-ref" not in context
+    latest_request = resumed_messages[-1]
+    assert isinstance(latest_request, ModelRequest)
+    current_context = "\n".join(
+        part.content
+        for part in latest_request.parts
+        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+    )
+    assert '<task id="task-1"' in historical_context
+    assert "Review &lt;unsafe&gt;" in historical_context
+    assert '<task id="task-1"' not in current_context
+    assert "Review &lt;unsafe&gt;" not in current_context
+    assert '<notes source="a13n-harness">' in current_context
+    assert '<note key="review&lt;&amp;">Remember details</note>' in current_context
+    assert "<note-ref" not in current_context
 
 
 async def test_note_tools_report_semantic_mutation_actions_and_list_count() -> None:

@@ -97,7 +97,7 @@ def _metric_map(reader: InMemoryMetricReader) -> dict[str, Any]:
     }
 
 
-async def test_auto_recall_is_once_per_logical_run_and_only_an_input_overlay() -> None:
+async def test_auto_recall_is_once_per_logical_run_and_persists_input_overlays() -> None:
     client = _FakeMem0Client()
     calls: list[list[ModelMessage]] = []
 
@@ -157,7 +157,7 @@ async def test_auto_recall_is_once_per_logical_run_and_only_an_input_overlay() -
     }
     assert len(calls) == 2
     assert all("The user prefers tea." in str(messages) for messages in calls)
-    assert "The user prefers tea." not in str(result.all_messages())
+    assert "The user prefers tea." in str(result.all_messages())
     assert client.entered == 0
     assert client.exited == 0
 
