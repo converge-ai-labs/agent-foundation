@@ -1,216 +1,195 @@
-# Configuration and Trusted Catalogs
+# Configuration Sources and Resources
 
 ## Design Position
 
-Agent UI reads one strict `a13n-ui.yaml` and its sibling canonical `subagents/*.md` directory. The YAML document owns reusable Models, globally configured Plugins and MCP servers, reusable Agents, Environment profiles, defaults, and local process settings. Markdown supplies portable leaf subagent definitions. Together they form one validated configuration snapshot source.
+Agent UI uses a small multi-file configuration tree so people can configure and inspect the workstation with an ordinary editor when no browser is available. Files own desired Models, configured extensions, MCP servers, Agents, Markdown subagents, Projects, and global defaults. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
 
-Agent UI deliberately does not expose the complete Harness Agent, Capability, or Environment Provider object graph. Installed packages contribute trusted catalog entries; package presence alone grants no enablement. Configuration selects only supported keys and credential-free behavior plus explicit local credential sources.
+A stable valid read of the complete tree produces one accepted configuration generation. A malformed, incomplete, or changing tree leaves the previous accepted generation active. Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
 
-Configuration reload is all-or-nothing. A valid reload publishes a new selectable snapshot set, while existing Sessions retain their pinned snapshots. A failed reload leaves the previous accepted configuration active.
+## Configuration Tree
 
-## Source Selection
+An explicit `--config <path>` selects the root YAML. Otherwise Agent UI selects `~/.a13n-ui/a13n-ui.yaml`. The root file's parent owns fixed immediate resource directories:
 
-An explicit `--config <path>` selects the YAML document. Otherwise Agent UI selects its platform user configuration path. It does not search the current directory, walk parent directories, merge profiles, process includes, or discover ambient Claude, Cursor, Codex, YAACLI, or `.agents` subagent directories.
+```text
+~/.a13n-ui/
+  a13n-ui.yaml
+  models/
+    <resource>.yaml
+  extensions/
+    <resource>.yaml
+  mcp/
+    <resource>.yaml
+  agents/
+    <resource>.yaml
+  subagents/
+    <resource>.md
+  projects/
+    <resource>.yaml
+```
 
-Only immediate non-README `*.md` files under the selected YAML document's sibling `subagents` directory enter live configuration. The loader does not recurse or follow a symlinked directory. Foreign subagent formats enter through the explicit [migration boundary](02-agent-composition-and-snapshots.md#cross-tool-subagent-migration), which writes ordinary canonical Markdown before reload.
+Each resource file defines exactly one resource. Agent UI scans immediate lower-case `.yaml` files in the YAML directories and immediate non-README `.md` files in `subagents/`. It does not recurse, follow a symlinked directory, follow file symlinks, walk parent directories, process YAML includes, or discover ambient product configuration as a live layer.
 
-A missing default configuration can be created by onboarding. An explicitly selected missing path is an error. File reads are bounded and reject duplicate YAML keys, every YAML anchor or alias, non-finite values, malformed text, and unknown fields.
-
-## Serialized Configuration
-
-The stable serialized shape is intentionally small. The following example is illustrative but uses the normative field names:
+The root file owns restart-bound process settings and global defaults:
 
 ```yaml
-schema_version: "1"
+schema_version: "2"
 
 process:
-  storage:
-    data_root: ~/.a13n-ui/data
   log_level: INFO
   log_format: pretty
 
 defaults:
-  agent: assistant
-  environment: native
-
-models:
-  primary:
-    model: openai:gpt-5
-    api_key:
-      env: OPENAI_API_KEY
-    settings: {}
-    model_cfg: {}
-
-plugins:
-  memory:
-    plugin: vendor.memory
-    enabled: true
-    configuration: {}
-
-mcp_servers:
-  github:
-    enabled: true
-    transport:
-      command: npx
-      arguments: ["-y", "@modelcontextprotocol/server-github"]
-
-agents:
-  assistant:
-    model: primary
-    instructions: |
-      Work directly and explain material decisions.
-    plugins: null
-    mcp_servers: null
-    subagents:
-      - markdown: explorer
-      - agent: reviewer
-
-environments:
-  native:
-    kind: native
-  sandbox:
-    kind: local_eip
-
-environment_providers: {}
+  project: project-agent-foundation
+  agent: agent-assistant
+  environment_profile: environment-native
+  harness_plugins: []
+  environment_run_extensions: []
+  mcp_servers: []
 ```
 
-Unknown top-level or nested fields fail validation. Empty mappings are valid where shown. Names are bounded stable configuration identities within their namespace; they are not database IDs or security tokens.
+The data root is a bootstrap locator resolved before parsing this tree: explicit `--data-root`, then `A13N_UI_DATA_ROOT`, then `<config-directory>/data`. It is deliberately absent from `a13n-ui.yaml`, so an invalid root edit cannot hide the SQLite database that retains the prior accepted generation. Selecting another data root opens a distinct local workstation dataset and never implies migration.
 
-`process` contains restart-bound App settings such as the data root, bounded local runtime behavior, shutdown timeout, and logging. It is optional as a whole and has platform-user defaults. Relative paths inside it resolve from the selected YAML file's directory; they are never resolved from the current working directory.
+Relative process paths resolve from the root file's directory. Resource paths that represent Project roots must be explicit absolute paths after user expansion; their stored meaning never depends on the App's current working directory.
 
-### Models and Credentials
+## Common Resource Envelope
 
-A Model entry selects one Pydantic AI model route plus non-secret settings and model construction configuration:
+YAML resources use a small common envelope followed by a kind-owned body:
 
 ```python
-class ModelConfig(BaseModel):
-    model: str
-    api_key: ApiKeySource | None = None
-    settings: dict[str, JsonValue] = {}
-    model_cfg: dict[str, JsonValue] = {}
-
-
-class ApiKeySource(BaseModel):
-    env: str
+class ResourceDocument(BaseModel):
+    schema_version: Literal["1"]
+    kind: ResourceKind
+    id: ResourceId
+    name: str
 ```
 
-`env` names an environment variable; credential material is not a configuration value. The reference can enter a snapshot, but resolved secret bytes never enter configuration, snapshots, SQLite, immutable objects, model context, diagnostics, or telemetry. A Run resolves current credential material immediately before native Model construction.
+`ResourceId` is a stable concise kind-prefixed identity such as `agent-reviewer`, `mcp-github`, or `project-foundation`. A filename is presentation only and need not equal the ID. IDs are unique within one resource kind. Renaming a file or display name does not change identity. Changing `id` creates a different logical resource and can leave existing Thread selections unresolved.
 
-Model settings are validated through the selected installed adapter. Unknown or unsupported behavior is rejected rather than forwarded to an arbitrary constructor. Omitting child Model fields means inheritance as defined by [Agent composition](02-agent-composition-and-snapshots.md).
+Unknown fields, duplicate IDs, duplicate YAML keys, aliases, anchors, merge keys, custom tags, non-finite values, excessive nesting, oversized sources, invalid UTF-8, and unsupported schema versions fail the candidate generation.
 
-### Plugins and MCP Servers
+The owning contracts define the bodies:
 
-A configured Plugin entry names one trusted Harness plugin catalog key, normalized configuration, and a global `enabled` flag. An MCP entry contains one supported local command or remote transport definition and its global `enabled` flag. Arbitrary Python import paths, callables, preconstructed clients, and ambient entry points are not configuration values.
+| Kind                                               | Owner                                                                                                                                                |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model                                              | [Agent and MCP Composition](02-agent-composition-and-snapshots.md#models) and [Model Authentication](02a-model-authentication-and-account-stores.md) |
+| Harness Plugin, Environment profile, Run Extension | [Extension Discovery and Management](01a-extension-discovery-and-management.md)                                                                      |
+| MCP server                                         | [Agent and MCP Composition](02-agent-composition-and-snapshots.md#mcp-servers)                                                                       |
+| Agent                                              | [Agent and MCP Composition](02-agent-composition-and-snapshots.md#agent-resources)                                                                   |
+| Markdown subagent                                  | [Agent and MCP Composition](02-agent-composition-and-snapshots.md#canonical-markdown-subagents)                                                      |
+| Project                                            | [Projects, Threads, and Environments](04-projects-threads-and-environments.md#projects)                                                              |
 
-Agent selection uses the same three-state rule for Plugins and MCP servers:
-
-| Agent field       | Meaning                                     |
-| ----------------- | ------------------------------------------- |
-| omitted or `null` | Select every globally enabled entry         |
-| empty list        | Select none                                 |
-| non-empty list    | Select exactly those globally enabled names |
-
-Selecting an unknown or globally disabled entry is an error. Plugin and MCP order is deterministic. Native objects and clients are fresh process-local values and never enter a resolved snapshot.
-
-### Agents
-
-An Agent entry selects:
-
-- one Model name;
-- user `instructions` appended after the package-owned default system prompt;
-- Plugin and MCP selections;
-- zero or more portable Markdown children or exact reusable Agent references;
-- optional default Environment-profile name.
-
-The detailed schema, inheritance, graph validation, and snapshot contract live in [Agent Composition and Snapshots](02-agent-composition-and-snapshots.md).
-
-### Environments and Provider Extensions
-
-An Environment profile chooses how submitted local folders execute:
-
-```python
-class EnvironmentProfile(BaseModel):
-    kind: Literal["native", "local_eip", "provider"]
-    provider: str | None = None
-    configuration: dict[str, JsonValue] = {}
-```
-
-`native` and `local_eip` are built-in. If neither the Session request, selected Agent, nor `defaults.environment` selects a profile, Agent UI chooses `native`; sandboxing is never implied by omission. `provider` selects one explicitly enabled entry from `environment_providers`; Docker, E2B, and other products use this extension path. A profile contains no workspace path, mount list, current target identity, `EnvironmentState`, credential bytes, or live Provider object.
-
-Provider extension configuration selects a trusted Provider factory and a compatible workspace binder. Installed metadata is availability, not authority. The detailed execution and state contract lives in [Sessions, Environments, and State](04-sessions-environments-and-state.md).
-
-## Accepted Configuration and Snapshot Resolution
-
-Reload follows one coherent path:
+## Accepted Generation
 
 ```mermaid
 sequenceDiagram
-    participant Files as YAML and canonical Markdown
+    participant Sources as Configuration tree
     participant Loader
-    participant Resolver
-    participant Objects as Immutable object store
-    participant DB as SQLite metadata
-    participant App as AgentUiApp
+    participant Catalogs
+    participant Objects as Immutable objects
+    participant DB as SQLite
 
-    Files-->>Loader: explicit reload or watched change
-    Loader->>Loader: stable bounded read and strict validation
-    Loader->>Resolver: normalized configuration
-    Resolver->>Resolver: resolve references, catalogs, graphs, and locks
-    Resolver->>Objects: publish missing immutable snapshots
-    Resolver->>DB: select accepted configuration digest
-    DB-->>App: new configuration available
+    Loader->>Sources: scan and stable-read bounded files
+    Loader->>Loader: parse strict documents and resolve IDs
+    Loader->>Catalogs: validate selected Capability and extension keys
+    Loader->>Loader: validate Agent graphs, defaults, and Projects
+    Loader->>Objects: publish normalized resource generation
+    Loader->>DB: compare-and-select accepted generation digest
 ```
 
-One reload captures a stable read of every selected file. If a file changes during the read, the loader retries within a bound. A graph-valid source set becomes one accepted configuration. External multi-file edits have no implicit transaction; an invalid intermediate set leaves the previous configuration active until a later complete set validates.
+The loader captures directory membership and each file's identity, size, modification time, bytes, and digest. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the ordered source-relative identities and exact source digests, not timestamps. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
 
-The accepted configuration retains:
+Acceptance is all-or-nothing. Publishing immutable content can leave harmless unreferenced objects, but SQLite selects a generation only after every selected resource, catalog key, graph, credential reference, and default validates. A failed candidate never removes or partially updates the previous accepted generation.
 
-- normalized behavior and source digests;
-- exact Agent and Environment-profile snapshots;
-- selected trusted adapter, plugin, MCP, Provider, and binder provenance.
+The accepted generation contains normalized credential-free definitions and exact source digests. It contains no resolved credential value, native Capability, Plugin, MCP client, Provider, Environment adapter, active Thread, or Environment state.
 
-It retains no credential value, native runtime object, active Session, workspace folder, Environment state, or Run state.
+## File Mutation and Compare-and-Set
 
-## Dynamic and Pinned Values
+Manual editing is always supported. A valid external save enters the next accepted generation; an invalid or incomplete save produces diagnostics while the previous generation remains active.
 
-| Value                                                                      | Change effect                                                                         |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Agent, Model, Plugin, MCP, Markdown child, or Environment-profile behavior | New snapshots become selectable; existing Sessions remain pinned                      |
-| Secret value behind the same source                                        | Later Runs resolve the current value without changing the snapshot                    |
-| Newly installed, not-yet-imported trusted catalog entry                    | A later successful reload can select it; active runtime objects are not replaced      |
-| Updated package whose Plugin code is already imported                      | Requires a new App process; Agent UI does not reload modules or supervise replacement |
-| Data root, listener, logging, or credential backend                        | Applies to a later App lifetime when restart-bound                                    |
-| Workspace folders                                                          | Supplied with a message and never participate in configuration reload                 |
-| Foreign subagent source files                                              | No effect until an explicit migration writes canonical Markdown and reload succeeds   |
+CLI and WebUI mutation operations use source-content preconditions:
 
-A new Session can select newly accepted Agent and Environment-profile snapshots. Configuration reload never rewrites an existing Session, active executable, or child Thread. Reusing retained history with different snapshots is outside the current Agent UI contract. Plugin code loaded into one interpreter is immutable for that App lifetime; installing another release does not prove that the new code replaced the object already present in `sys.modules`. Agent UI requires process restart and provides no supervisor, candidate generation, drain, or hot-reload protocol.
+```python
+class ResourceMutationRequest(BaseModel):
+    expected_source_digest: str | None
+    content: str
+```
 
-## Diagnostics and Failure Semantics
+Rules:
 
-Load and acceptance diagnostics identify the selected file, bounded field location, stable code, and safe explanation. They are returned to the caller and never include credential values or whole prompt bodies. Failed candidates do not become retained configuration records.
+1. Creation requires `expected_source_digest=None` and uses a no-clobber destination operation. An existing destination or resource ID rejects the create.
+2. Update and deletion require the exact source digest returned by the latest read.
+3. Before publication the App performs a fresh stable read and rejects a missing, replaced, or differently digested source.
+4. New content is validated as part of a complete candidate generation before it is published to the source path.
+5. Publication uses a same-directory temporary file and atomic replacement; the App verifies the final bytes and generation afterward.
+6. A stale mutation returns the latest digest and does not intentionally overwrite the newer observed source.
+7. Direct editor writes do not need an Agent UI token or command. They participate through the same stable-read and generation-validation path.
 
-| Failure                                                         | Outcome                                                                      |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Malformed or unstable source                                    | Candidate rejected; previous accepted configuration remains active           |
-| Unknown field or duplicate identity                             | Candidate rejected                                                           |
-| Missing Model, child, Plugin, MCP, profile, Provider, or binder | Candidate rejected with reference diagnostics                                |
-| Agent cycle or duplicate final child name                       | Candidate rejected before snapshot publication                               |
-| Trusted catalog provenance mismatch                             | Candidate rejected; no similarly named fallback is selected                  |
-| Secret lookup failure                                           | Current Run fails before model dispatch; configuration remains accepted      |
-| Provider runtime unavailability                                 | The selected Run or diagnostic fails; Native is never substituted implicitly |
-| Object publication or SQLite selection failure                  | Previous accepted configuration remains selected                             |
+Filesystem editors do not participate in an application transaction, so Agent UI does not claim distributed linearizability against an uncooperative write racing the final filesystem replacement. Stable rereads, expected digests, atomic replacement, and post-publication verification provide local no-stale-write behavior without process lock files or a proprietary file format.
+
+## Global Defaults
+
+Global defaults initialize a new root Thread. The App resolves omitted create fields in this order:
+
+```text
+explicit Thread creation selection
+then selected Agent default, where that Agent owns the axis
+then root YAML global default
+then the release-owned Native Environment profile
+```
+
+The resulting Thread stores exact resource IDs. Later global-default or file changes do not rewrite an existing Thread's selections. A Thread Run with no configuration patch therefore uses that Thread's previous sticky values.
+
+Collection defaults are ordered exact resource IDs. Empty means select none. A missing, wrong-kind, or duplicate default rejects the candidate generation.
+
+## Credentials
+
+Resource files contain credential references, never credential bytes:
+
+```python
+class EnvironmentVariableSource(BaseModel):
+    env: str
+```
+
+Model API-key authentication, MCP headers, MCP command environments, and Provider adapter credentials can name environment variables. Subscription Model authentication names a provider-compatible account-store kind under the rules in [Model Authentication and Compatible Account Stores](02a-model-authentication-and-account-stores.md). A Run resolves current credential material immediately before or during native use. Resolved values never enter configuration files, accepted generations, SQLite, immutable compositions, model context, diagnostics, or telemetry.
+
+## Dynamic Values
+
+| Change                                               | Effect                                                                                       |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Valid resource file edit                             | Later Runs resolve the new accepted content; an active Run is unchanged                      |
+| Invalid or partial multi-file edit                   | Previous accepted generation remains active                                                  |
+| Global default edit                                  | Affects newly created root Threads only                                                      |
+| Thread configuration patch                           | Affects the admitted Run and subsequent Runs; omitted axes retain prior Thread values        |
+| Project root edit                                    | Affects later Runs of Threads selecting that Project                                         |
+| Secret value behind an unchanged reference           | Later native construction resolves the current value                                         |
+| Compatible Codex or Grok account-store change        | The next subscription-backed Model request resolves the current shared account               |
+| Newly installed extension or Capability contribution | Becomes available after catalog refresh and a successful generation; it is not auto-selected |
+| Updated already imported Python extension code       | Requires a new App process                                                                   |
+
+## Failure Semantics
+
+| Failure                                             | Outcome                                                                            |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Missing root file selected explicitly               | Startup or reload fails explicitly                                                 |
+| Malformed, unstable, or duplicate resource source   | Candidate generation is rejected                                                   |
+| Unknown resource reference                          | Candidate generation is rejected with the owning source location                   |
+| Catalog key unavailable or ambiguous                | Candidate generation is rejected; no similarly named fallback is chosen            |
+| Stale CLI or WebUI write                            | Mutation is rejected with the current source digest                                |
+| Credential lookup failure                           | Current Run fails before the dependent external dispatch                           |
+| Atomic publication fails before source replacement  | Previous accepted source and generation remain authoritative                       |
+| Generation selection fails after source publication | Previous accepted generation remains selected; reload retries the published source |
 
 ## Compatibility
 
-The selected YAML document's `schema_version` governs both its fields and the sibling canonical Markdown field meanings; Markdown does not repeat a version field. Unknown YAML versions fail explicitly. Behavior-affecting changes create new snapshot digests; readers either support an older snapshot codec or reject it. A migration creates inspectable new source content and never changes the meaning of an existing content digest.
+The root `schema_version` governs tree layout and global fields. Every resource carries its own kind schema version. A format migration writes ordinary inspectable files through the same expected-digest/no-clobber boundary. Existing content is never reinterpreted under a new version.
 
 ## Invariants
 
-1. One YAML document and its canonical sibling Markdown directory own desired Agent UI behavior.
-2. Foreign product directories are migration inputs, never live configuration layers.
-3. Installed packages grant availability only; configuration must enable and select behavior explicitly.
-4. Credentials are resolved fresh and never enter immutable snapshots or Session history.
-5. A successful reload is atomic at the accepted-configuration boundary.
-6. Existing Sessions remain pinned across reload.
-7. Workspace paths are message input, not configuration resources.
-8. Imported Plugin code is never hot-replaced inside an App process.
+1. Files are the only editable desired-resource authority.
+2. One resource file defines one stable resource ID.
+3. One accepted generation is complete and coherent across the whole tree.
+4. Invalid intermediate edits never partially replace the accepted generation.
+5. CLI and WebUI writes require expected source content and never knowingly clobber a newer observed revision.
+6. Global defaults initialize new Threads and never live-update existing Threads.
+7. Credentials remain references until fresh Run construction.
+8. Installed package availability never grants selection.

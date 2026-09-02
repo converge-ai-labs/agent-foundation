@@ -25,27 +25,27 @@ The package root is a closed primary code-first facade. It exports only the valu
 
 `a13n_harness.__all__` is exactly this table. Feature-family APIs remain public through their owning stable modules rather than being duplicated at the package root. Important routes include:
 
-| Module                              | Owned surface                                                                               |
-| ----------------------------------- | ------------------------------------------------------------------------------------------- |
-| `a13n_harness.capabilities`         | First-party Capability families and public Host boundaries, including the subagent operator |
-| `a13n_harness.capability_types`     | `CapabilityTypeCatalog` and declarative Capability registration                             |
-| `a13n_harness.context`              | Advanced run context, built-subagent, Skill-path, and tool-metadata values                  |
-| `a13n_harness.environment`          | Lightweight mount policy plus provider-neutral Run-local routing and operation values       |
-| `a13n_harness.events`               | Event emission helpers and typed first-party payloads                                       |
-| `a13n_harness.filters`              | First-party content and integrity filters                                                   |
-| `a13n_harness.mcp`                  | MCP context-header integration                                                              |
-| `a13n_harness.model_catalog`        | Official model catalog values                                                               |
-| `a13n_harness.model_context`        | Model-context middleware and projection contracts                                           |
-| `a13n_harness.models`               | Provider inference, request headers, transport, settings, and self-healing                  |
-| `a13n_harness.observation`          | Observation configuration constants and advanced instrumentation values                     |
-| `a13n_harness.plugin_configuration` | Ambient YAML, JSON, and environment configuration plus Build Context                        |
-| `a13n_harness.plugin_factories`     | Plugin factory discovery and catalogs                                                       |
-| `a13n_harness.plugins`              | Complete plugin middleware protocol                                                         |
-| `a13n_harness.pricing`              | Default pricing catalog and model-cost Capability family                                    |
-| `a13n_harness.state`                | Advanced context and Capability state values                                                |
-| `a13n_harness.tools`                | Managed tool invocation and event helpers                                                   |
-| `a13n_harness.toolsets`             | First-party reusable Toolsets, including the standard async subagent dispatcher             |
-| `a13n_harness.usage`                | Usage attribution records and ledger                                                        |
+| Module                              | Owned surface                                                                                |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| `a13n_harness.capabilities`         | First-party Capability families and public Host boundaries, including the subagent operator  |
+| `a13n_harness.capability_types`     | `CapabilityTypeCatalog` and declarative Capability registration                              |
+| `a13n_harness.context`              | Advanced run context, built-subagent, Skill-path, and tool-metadata values                   |
+| `a13n_harness.environment`          | Mount policy, provider-neutral Run-local operations, and Environment Run Extension contracts |
+| `a13n_harness.events`               | Event emission helpers and typed first-party payloads                                        |
+| `a13n_harness.filters`              | First-party content and integrity filters                                                    |
+| `a13n_harness.mcp`                  | MCP context-header integration                                                               |
+| `a13n_harness.model_catalog`        | Official model catalog values                                                                |
+| `a13n_harness.model_context`        | Model-context middleware and projection contracts                                            |
+| `a13n_harness.models`               | Provider inference, request headers, transport, settings, and self-healing                   |
+| `a13n_harness.observation`          | Observation configuration constants and advanced instrumentation values                      |
+| `a13n_harness.plugin_configuration` | Ambient YAML, JSON, and environment configuration plus Build Context                         |
+| `a13n_harness.plugin_factories`     | Plugin factory discovery and catalogs                                                        |
+| `a13n_harness.plugins`              | Complete plugin middleware protocol                                                          |
+| `a13n_harness.pricing`              | Default pricing catalog and model-cost Capability family                                     |
+| `a13n_harness.state`                | Advanced context and Capability state values                                                 |
+| `a13n_harness.tools`                | Managed tool invocation and event helpers                                                    |
+| `a13n_harness.toolsets`             | First-party reusable Toolsets, including the standard async subagent dispatcher              |
+| `a13n_harness.usage`                | Usage attribution records and ledger                                                         |
 
 A value is not private merely because it is absent from the root facade. Its owning module and that module's documented exports are the canonical import route. Removing duplicate root re-exports keeps discovery bounded and prevents unrelated feature families from becoming one coupled compatibility surface. The public Mem0 integration is imported as `from a13n_harness.capabilities import Mem0Capability, Mem0Scope`; its run replacement and Toolset implementation remain package-private. The public async-subagent boundary is imported from `a13n_harness.capabilities`: `SubagentCapability`, `SubagentOperator`, `SubagentOperatorContext`, `SubagentDelegationPlan`, and the standard request/result/view models. `AsyncSubagentToolset` and the standard Environment Shell Toolset are available from `a13n_harness.toolsets`; the private inline executor and Run process controller are not public operator implementations.
 
@@ -157,7 +157,7 @@ class RunBindings:
 
 `AgentIdentityRef` accepts fixed `issuer` and `subject` values plus arbitrary non-blank string claims supplied as keyword arguments. Its immutable `claims` view, `get_claim()`, and `require_claim()` are the public generic access surface; `user_id` and `agent_id` are conventional claim keys rather than fixed fields. Claim order does not affect identity equality. Claims contain no credential and are not restored from `HarnessState`.
 
-`RunBindings` values are fresh trusted inputs for one logical Harness Run. Collection and metadata values are copied into immutable views. Environment adapters are supplied through the explicit `run()`/`stream()` Environment arguments rather than retained in reusable bindings. Async subagent mode and its stable `SubagentOperator` remain definition-selected by `SubagentCapability`; the operator receives only an immutable authorized plan and detached parent correlation. Run-owned shell requires no operator and accepts no process collaborator through bindings. `observation` is the optional bounded `HarnessObservationContext` projected only onto the logical-run span under the [Observation contract](19-observation-model.md#attribute-model); it is distinct from arbitrary model-facing or integration metadata. `RunBindings.embedded()` creates an embedded identity and optional advanced integrations; when a Run supplies no Environment input, normalization creates an empty bound facade and exposes no Environment tools. `toolset_instructions` is the optional runtime override for the Harness `AgentSpec.toolset_instructions` default; it controls only Toolset-owned instructions as defined by [Context and Memory](09-context-and-memory.md#toolset-instruction-enablement). `model_resolver` is the explicit run-scoped model-selection seam. It accepts an async callable conforming structurally to `RunModelResolver`; no subclass or registration is required. The callable resolves a logical string to a native Model or raises, and when absent the thin resolver calls Harness `infer_model()` with the builder's optional gateway Provider factory. `model_context` is the optional fresh Host wrapper around this run's model-context projection chain defined by [Context and Memory](09-context-and-memory.md#model-context-projection-contract).
+`RunBindings` values are fresh trusted inputs for one logical Harness Run. Collection and metadata values are copied into immutable views. Environment adapters and ordered Environment Run Extensions are supplied through explicit `run()`/`stream()` arguments rather than retained in reusable bindings. Async subagent mode and its stable `SubagentOperator` remain definition-selected by `SubagentCapability`; the operator receives only an immutable authorized plan and detached parent correlation. Run-owned shell requires no operator and accepts no process collaborator through bindings. `observation` is the optional bounded `HarnessObservationContext` projected only onto the logical-run span under the [Observation contract](19-observation-model.md#attribute-model); it is distinct from arbitrary model-facing or integration metadata. `RunBindings.embedded()` creates an embedded identity and optional advanced integrations; when a Run supplies no Environment input, normalization creates an empty bound facade and exposes no Environment tools. `toolset_instructions` is the optional runtime override for the Harness `AgentSpec.toolset_instructions` default; it controls only Toolset-owned instructions as defined by [Context and Memory](09-context-and-memory.md#toolset-instruction-enablement). `model_resolver` is the explicit run-scoped model-selection seam. It accepts an async callable conforming structurally to `RunModelResolver`; no subclass or registration is required. The callable resolves a logical string to a native Model or raises, and when absent the thin resolver calls Harness `infer_model()` with the builder's optional gateway Provider factory. `model_context` is the optional fresh Host wrapper around this run's model-context projection chain defined by [Context and Memory](09-context-and-memory.md#model-context-projection-contract).
 
 `RunBindings.capabilities` are passed to every internal `ModelAttempt`. Feature-specific fresh collaborators use documented public Capability types and stable IDs, and the Harness exposes each to its owning definition-selected Capability at the earliest lifecycle phase required by that feature. A stable definition-selected operator cannot be replaced by a run Capability or change its Toolset. A policy value that changes run-specific instruction construction is captured before Capability preparation; live collaborators used only by tools resolve from Pydantic's finalized run Capability mapping. Missing, duplicate, or incompatible typed collaborators fail in the owner before dependent behavior. The Harness does not expose a second class-free registry or require role-name lookups. Identity and model resolution remain explicit typed fields because they are universal Run construction inputs rather than optional feature collaborators. Environment adapters remain explicit Run arguments and cannot be moved into `RunBindings.capabilities`; `DynamicEnvironmentCapability` can be omitted without changing adapter entry or trusted Run-local routing.
 
@@ -181,6 +181,7 @@ class ExecutableAgent[OutputT]:
         environment: Environment | EnvironmentMount | None = None,
         environments: Mapping[str, Environment | EnvironmentMount] | None = None,
         default_environment: str | None = None,
+        environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
         previous_state: HarnessState | None = None,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
@@ -196,6 +197,7 @@ class ExecutableAgent[OutputT]:
         environment: Environment | EnvironmentMount | None = None,
         environments: Mapping[str, Environment | EnvironmentMount] | None = None,
         default_environment: str | None = None,
+        environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
         previous_state: HarnessState | None = None,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,

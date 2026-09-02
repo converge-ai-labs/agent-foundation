@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`AgentInput` is Foundation's versioned JSON submission and accepted-value protocol for one unit of ordinary semantic Agent input. Root invocation, continuation, queued submission, fork, active-Run steering, managed Trigger acceptance, and input submitted to an asynchronous child use the same protocol. A result returning from that child uses the distinct Host-owned [`AsyncSubagentResultInboxPayload`](18-async-subagents.md#asynchronous-child-runs), preserving Agent provenance instead of impersonating caller input or waiting feedback. Control preconditions, AgentPreset Revision selection, typed config override, authorization, and trigger metadata remain outside `AgentInput`.
+`AgentInput` is Foundation's versioned JSON submission and accepted-value protocol for one unit of ordinary semantic Agent input. Root invocation, continuation, queued submission, fork, active-Run steering, Ingress acceptance, and input submitted to an asynchronous child use the same protocol. A result returning from that child uses the distinct Host-owned [`AsyncSubagentResultInboxPayload`](18-async-subagents.md#asynchronous-child-runs), preserving Agent provenance instead of impersonating caller input or waiting feedback. Control preconditions, AgentPreset Revision selection, typed config or capability override, authorization, and Ingress metadata remain outside `AgentInput`.
 
 This contract owns content blocks, structured content, binary acquisition and delivery, accepted canonicalization, input adapter configuration, and deterministic mapping to the Harness native input boundary. [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md) owns Run acceptance, lineage, retry, and deferred feedback; [Agent Control: Active Execution](35-agent-control-active-execution.md) owns durable steering through the Thread inbox and interrupt of already accepted work; [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md) owns editable future input before Run acceptance. None defines another ordinary input protocol.
 
@@ -150,7 +150,7 @@ The adapter returns `None` only for accepted empty input. It receives no credent
 | Continuation          | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                                      |
 | Thread Run submission | Accepts input immediately when the Thread is eligible; otherwise stores the complete editable Run intent until consumption accepts a Run.                |
 | Fork                  | Stores new accepted input on the new Thread's first Run.                                                                                                 |
-| Managed Trigger       | Places bounded machine data in `structured_content`, validating its optional protocol schema.                                                            |
+| Ingress               | Places mapped bounded external data in `text` and `structured_content`, validating the optional protocol schema.                                         |
 | Asynchronous child    | Stores parent- or Host-supplied input on the child Run.                                                                                                  |
 | Async child result    | Uses the separate Host-owned inbox payload and active-or-successor delivery contract; it is not `AgentInput`.                                            |
 | Steer                 | Stores accepted input in the Thread inbox without creating a Run; it binds to the current running Run or records the current/head waiting Run as source. |
@@ -178,7 +178,7 @@ The adapter returns `None` only for accepted empty input. It receives no credent
 
 ## Invariants
 
-1. `AgentInput` is the single ordinary caller- or Host-submitted semantic-input protocol for root invocation, continuation, queued submission, fork, active steering, managed Trigger input, and input sent to an asynchronous child; a returning child result retains its separate typed Agent provenance.
+1. `AgentInput` is the single ordinary caller- or Host-submitted semantic-input protocol for root invocation, continuation, queued submission, fork, active steering, Ingress input, and input sent to an asynchronous child; a returning child result retains its separate typed Agent provenance.
 2. Accepted binary input persists only a normalized caller URL, authorized Environment-path description, or exact immutable `asset_id`; it never persists inline bytes or an object-storage key.
 3. `structured_content` is bounded JSON, follows the optional frozen protocol schema when non-null, carries no authority, and never becomes implicit model JSON.
 4. Harness mapping uses the pinned Revision and Runtime lock and fails closed rather than substituting input representation.

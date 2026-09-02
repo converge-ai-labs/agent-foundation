@@ -85,7 +85,7 @@ resume_subagent(execution_id: str, prompt: str)
 - `subagent_info` queries one execution or one bounded Host page;
 - `wait_subagent` performs one bounded wait for one execution or one bounded Host fan-in query;
 - `steer_subagent` and `cancel_subagent` return Host acknowledgements without inventing completion;
-- async `resume_subagent` first resolves the retained execution through the operator, verifies exact child-definition compatibility and resumability, and asks the Host to create a linked continuation.
+- async `resume_subagent` first resolves the retained execution through the operator, requires resumability and the same stable child roster name in the current collection, then asks the Host to create a linked continuation under the current resolved plan.
 
 The two surfaces use distinct internal Toolset identities and never register duplicate external names in one Agent. Tool descriptions state whether `delegate` blocks for completion or returns after admission. `timeout_seconds` bounds one wait call and never implies cancellation.
 
@@ -119,7 +119,11 @@ class SubagentDelegationPlan:
     parent: SubagentOperatorContext
 ```
 
-The plan contains the exact built child, derived child Identity, already-applied child input and context policy, intersection of parent Run limits, child definition limits, and authored edge limits, plus detached parent correlation. The Host may apply narrower admission or runtime policy but cannot select another child or broaden these ceilings.
+The plan contains the exact currently built roster child, derived child Identity, already-applied child input and context policy, intersection of parent Run limits, child definition limits, and authored edge limits, plus detached parent correlation. Initial `delegate` executes that exact child; the Host may narrow policy but cannot substitute another definition.
+
+On async resume, the current roster child can differ from the definition recorded by the prior execution. A Host that exposes a separately authorized mutable child-Thread configuration may resolve that retained Thread's current Agent definition instead of the roster child's definition. That selection comes only from Host authority, never from model arguments, and the stable roster name remains the parent-side admission gate.
+
+The replacement uses the plan's already-resolved child input and context policy. The Host reapplies the current roster edge's `SubagentIdentityPolicy` to the replacement definition: inherited `agent_id` remains inherited, while a definition-derived `agent_id` names the replacement definition. Final usage limits intersect the plan ceiling with the replacement definition's own limits. The Host can narrow these values further but cannot broaden them. It validates checkpoint-schema compatibility and current authorization, then returns the replacement definition ID in `AsyncExecutionView`. A Host without mutable child definitions resumes with the exact current roster child.
 
 Neither the plan nor operator context contains a live `AgentContext`, `RunContext`, entered `BoundEnvironment`, mutable parent state coordinator, model client, credential, or Run-scoped callback. Accepted async work therefore does not retain parent Run authority after parent closure. `host_refs` are immutable correlation selected by the Host; they are not authorization by themselves.
 
@@ -168,14 +172,15 @@ class SubagentOperator(ABC):
     ) -> AsyncExecutionView: ...
 ```
 
-Each standard tool validates its bounded request, invokes the corresponding complete Host use case, validates the exact standard result type and addressed execution, and applies Harness output policy. Harness does not decompose the operator into `open_child`, task-start, observer-attach, checkpoint-store, or forced-cleanup callbacks.
+Each standard tool validates its bounded request, invokes the corresponding complete Host use case, validates the exact standard result type and addressed execution, and applies Harness output policy. Delegate results must identify the plan child definition. Resume results may identify the Host-authorized replacement definition described above; they still require the exact stable roster name and `resumed_from` correlation. Harness does not decompose the operator into `open_child`, task-start, observer-attach, checkpoint-store, or forced-cleanup callbacks.
 
 The operator owns:
 
 - async execution and child Thread IDs;
+- retained-checkpoint lookup, current authorization, optional Host-managed child-definition selection, and compatibility for linked resume across child-definition changes;
 - admission, scheduling, recursive Harness invocation, and runtime location;
 - Environment association selection, current state loading, and fresh adapter construction;
-- child `RunBindings`, Host credentials, provider runtimes, and Host metadata within the plan ceilings;
+- child `RunBindings`, Host credentials, provider runtimes, and Host metadata within the plan ceilings, including replacement Identity and usage-limit derivation;
 - execution storage, checkpoint acknowledgement, and bounded activity projection;
 - wait and wake behavior, steering, cancellation, linked resume, loss, cleanup, and retention;
 - Host shutdown policy and any background task or worker lifecycle.
@@ -225,7 +230,7 @@ Calls for different inline IDs may run concurrently. Competing calls for the sam
 
 ### Child Usage Limits
 
-Harness intersects every non-`None` ceiling from the current parent Run, the child Agent definition, and the authored child edge. Each numeric field uses the smallest present value, and `count_tokens_before_request` is enabled when any contributing limit enables it. Inline execution passes the result directly to the nested child. Async execution places the same detached ceiling in `SubagentDelegationPlan`; the Host can narrow but not broaden it.
+Harness intersects every non-`None` ceiling from the current parent Run, the current roster child Agent definition, and the authored child edge. Each numeric field uses the smallest present value, and `count_tokens_before_request` is enabled when any contributing limit enables it. Inline execution passes the result directly to the nested child. Async execution places the same detached ceiling in `SubagentDelegationPlan`; when a Host-authorized resume replacement is selected, its definition limits are intersected once more. The Host can narrow but not broaden the result.
 
 ## Context, Identity, and State Authority
 
@@ -269,16 +274,18 @@ For async work, the Host owns observation storage, subscriptions, wake policy, a
 | Steer or cancel race                           | Not applicable                                                             | Operator acknowledgement is authoritative; Harness invents no terminal state |
 | Host process or worker loss                    | Parent and inline child are lost together                                  | Host defines loss, recovery, and retention                                   |
 | Parent Run close                               | Child is already complete or cancelled with the stack                      | Does not close operator or accepted execution                                |
+| Child definition changed before resume         | Exact stored definition ID is required                                     | Current roster name resolves; Host validates checkpoint compatibility        |
 
 ## Invariants
 
 01. `SubagentCapability()` provides inline delegate and resume without a Host scheduler or store.
 02. Async mode requires an explicit `SubagentOperator` and never falls back to inline execution.
 03. Inline and async standard Toolsets are mutually exclusive.
-04. Harness resolves child definition, context, Identity, and usage ceilings before Host admission.
+04. Harness resolves the current roster child, context, Identity policy, and usage ceilings before Host admission; an authorized async resume replacement must derive its own definition identity and intersect its own limits within those ceilings.
 05. Operator inputs contain detached correlation, never live parent Run or Environment authority.
 06. Inline continuation is stored only under the Subagent Capability namespace in parent Agent state.
 07. Async child state and current execution status remain Host-owned and are not projected into parent Harness state.
 08. Inline Environment borrowing cannot mutate mounts, close parent adapters, or publish independent Environment state.
 09. Parent Run closure does not cancel or force-close Host-owned async work.
-10. Harness contains no concrete async manager, execution-store lifecycle, background child registry, or Host shutdown policy.
+10. Async linked resume does not require equality with the prior child definition ID; the Host owns checkpoint compatibility, current authorization, and any retained child-definition selection.
+11. Harness contains no concrete async manager, execution-store lifecycle, background child registry, or Host shutdown policy.
