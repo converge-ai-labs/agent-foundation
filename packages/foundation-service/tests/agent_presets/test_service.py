@@ -69,6 +69,8 @@ async def test_create_revision_is_independent_from_default_selection(
     assert not revision_result.preset.config_changed_since_revision
     assert revision_result.revision.resolved_model.execution.model_id == preset_config().model.model_config_id
     assert len(revision_result.revision.runtime_lock_digest) == 64
+    assert revision_result.revision.connector_tools == ()
+    assert revision_result.revision.mcp_tools == ()
 
     selected = await agent_preset_service.set_default_revision(
         actor=actor(),
@@ -93,6 +95,48 @@ async def test_create_revision_is_independent_from_default_selection(
 
     revisions = await agent_preset_service.list_revisions(actor=actor(), preset_id=created.id, limit=10, cursor=None)
     assert revisions.items == (revision_result.revision,)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("config_field", "selection", "reason"),
+    [
+        (
+            "connector_tools",
+            {"orders": {"connector_connection_id": "cconn_1234567890abcdef"}},
+            "connector_tool_resolution_unavailable",
+        ),
+        (
+            "mcp_tools",
+            {"docs": {"mcp_connection_id": "mcpc_1234567890abcdef"}},
+            "mcp_tool_resolution_unavailable",
+        ),
+    ],
+)
+async def test_revision_creation_fails_closed_until_connectivity_resolution_is_available(
+    agent_preset_service: AgentPresetService,
+    config_field: str,
+    selection: dict[str, object],
+    reason: str,
+) -> None:
+    config = preset_config(**{config_field: selection})
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key=f"create-{config_field}",
+        request=CreateAgentPresetRequest(name=f"Preset {config_field}", config=config),
+    )
+
+    with pytest.raises(AgentPresetError) as rejected:
+        await agent_preset_service.create_revision(
+            actor=actor(),
+            preset_id=preset.id,
+            idempotency_key=f"create-revision-{config_field}",
+            request=AgentPresetCommandRequest(expected_resource_version=1),
+        )
+
+    assert rejected.value.code == "preset_revision_create_failed"
+    assert rejected.value.details == {"reason": reason, "path": config_field}
 
 
 @pytest.mark.anyio

@@ -119,6 +119,55 @@ def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
     assert merged.config.subagents["writer"].environment.mode == "none"
 
 
+def test_connection_tool_patches_are_name_keyed() -> None:
+    base = preset_config(
+        connector_tools={
+            "orders": {
+                "connector_connection_id": "cconn_1234567890abcdef",
+                "tools": ["orders.lookup"],
+            },
+            "legacy": {"connector_connection_id": "cconn_abcdef1234567890"},
+        },
+        mcp_tools={
+            "docs": {"mcp_connection_id": "mcpc_1234567890abcdef", "tools": ["search"]},
+        },
+    )
+    override = AgentRunOverride.model_validate(
+        {
+            "connector_tools": {
+                "orders": {"tools": None, "exposure": "catalog"},
+                "legacy": None,
+                "billing": {"connector_connection_id": "cconn_1111111111111111", "tools": []},
+            },
+            "mcp_tools": {},
+        }
+    )
+
+    merged = merge_agent_run_override(base, override)
+
+    assert tuple(merged.config.connector_tools) == ("orders", "billing")
+    assert merged.config.connector_tools["orders"].connector_connection_id == "cconn_1234567890abcdef"
+    assert merged.config.connector_tools["orders"].tools is None
+    assert merged.config.connector_tools["orders"].exposure == "catalog"
+    assert merged.config.connector_tools["billing"].tools == ()
+    assert merged.config.mcp_tools == base.mcp_tools
+
+
+def test_null_connection_tool_map_clears_all_entries() -> None:
+    base = preset_config(
+        connector_tools={"orders": {"connector_connection_id": "cconn_1234567890abcdef"}},
+        mcp_tools={"docs": {"mcp_connection_id": "mcpc_1234567890abcdef"}},
+    )
+
+    merged = merge_agent_run_override(
+        base,
+        AgentRunOverride.model_validate({"connector_tools": None, "mcp_tools": None}),
+    )
+
+    assert merged.config.connector_tools == {}
+    assert merged.config.mcp_tools == {}
+
+
 @pytest.mark.parametrize(
     ("payload", "path", "reason"),
     [
@@ -129,6 +178,12 @@ def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
         ({"model": {"settings": None}}, "model.settings", "null_not_allowed"),
         ({"retries": {"tools": None}}, "retries.tools", "null_not_allowed"),
         ({"subagents": {"new": {}}}, "subagents.new.agent_preset_id", "required"),
+        (
+            {"connector_tools": {"new": {}}},
+            "connector_tools.new.connector_connection_id",
+            "required",
+        ),
+        ({"mcp_tools": {"new": {}}}, "mcp_tools.new.mcp_connection_id", "required"),
     ],
 )
 def test_invalid_null_or_incomplete_overrides_are_bounded(payload: dict[str, object], path: str, reason: str) -> None:
@@ -186,6 +241,51 @@ async def test_default_invocation_freezes_complete_effective_config(
     assert frozen.effective_config.resolved_model == revision_result.revision.resolved_model
     assert len(frozen.effective_config.content_digest) == 64
     assert len(frozen.sensitive_values_digest) == 64
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("override", "reason"),
+    [
+        (
+            {"connector_tools": {"orders": {"connector_connection_id": "cconn_1234567890abcdef"}}},
+            "connector_tool_resolution_unavailable",
+        ),
+        (
+            {"mcp_tools": {"docs": {"mcp_connection_id": "mcpc_1234567890abcdef"}}},
+            "mcp_tool_resolution_unavailable",
+        ),
+    ],
+)
+async def test_invocation_fails_closed_until_connectivity_resolution_is_available(
+    agent_preset_service: AgentPresetService,
+    agent_preset_invocation_resolver: AgentPresetInvocationResolver,
+    override: dict[str, object],
+    reason: str,
+) -> None:
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key=f"create-invocation-{reason}",
+        request=CreateAgentPresetRequest(name=f"Invocation {reason}", config=preset_config()),
+    )
+    revision_result = await agent_preset_service.create_revision(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key=f"create-revision-{reason}",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+
+    with pytest.raises(AgentPresetError) as rejected:
+        await agent_preset_invocation_resolver.prepare(
+            actor=actor(),
+            agent_preset_id=preset.id,
+            agent_preset_revision_id=revision_result.revision.id,
+            config_override=AgentRunOverride.model_validate(override),
+        )
+
+    assert rejected.value.code == "preset_revision_not_executable"
+    assert rejected.value.details == {"reason": reason}
 
 
 @pytest.mark.anyio

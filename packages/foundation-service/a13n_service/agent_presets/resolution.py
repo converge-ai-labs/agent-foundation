@@ -221,6 +221,8 @@ class AgentPresetResolver:
             resolved_plugin_versions=plugins,
             runtime_lock_digest=runtime_lock.digest,
             resolved_skills=skills,
+            connector_tools=tuple(prepared.config.connector_tools.values()),
+            mcp_tools=tuple(prepared.config.mcp_tools.values()),
             resolved_environment=environment,
             resolved_subagents=subagents,
         )
@@ -232,6 +234,10 @@ class AgentPresetResolver:
             raise preset_revision_create_failed("environment_resolution_unavailable", path="environment")
         if config.skills and config.environment is None:
             raise preset_revision_create_failed("skill_environment_required", path="environment")
+        if config.connector_tools:
+            raise preset_revision_create_failed("connector_tool_resolution_unavailable", path="connector_tools")
+        if config.mcp_tools:
+            raise preset_revision_create_failed("mcp_tool_resolution_unavailable", path="mcp_tools")
         for index, skill in enumerate(config.skills):
             if skill.skill_revision_id in {item.skill_revision_id for item in config.skills[:index]}:
                 raise preset_revision_create_failed("skill_revision_duplicate", path=f"skills.{index}")

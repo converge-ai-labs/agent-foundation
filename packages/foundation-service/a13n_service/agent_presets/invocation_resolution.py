@@ -202,6 +202,7 @@ class AgentPresetInvocationResolver:
                     validate_agent_config(merged.config, protocol_policy=self._protocol_policy)
                 except AgentConfigValidationError as error:
                     raise preset_revision_not_executable(error.reason) from error
+                _require_connectivity_resolution(merged)
                 await authorize_workspace(
                     session,
                     actor=actor,
@@ -483,6 +484,8 @@ class AgentPresetInvocationResolver:
             "resolved_plugin_versions": plugins,
             "runtime_lock_digest": runtime_lock.digest,
             "resolved_skills": skills,
+            "connector_tools": tuple(prepared.merged.config.connector_tools.values()),
+            "mcp_tools": tuple(prepared.merged.config.mcp_tools.values()),
             "resolved_environment": environment,
             "resolved_subagents": resolved_subagents,
             "instructions": prepared.merged.config.instructions,
@@ -609,6 +612,13 @@ def _require_writable_skill_environment(
         raise preset_revision_not_executable("skill_environment_required")
     if environment.access == "read_only":
         raise preset_revision_not_executable("skill_environment_not_writable")
+
+
+def _require_connectivity_resolution(merged: MergedAgentRun) -> None:
+    if merged.config.connector_tools:
+        raise preset_revision_not_executable("connector_tool_resolution_unavailable")
+    if merged.config.mcp_tools:
+        raise preset_revision_not_executable("mcp_tool_resolution_unavailable")
 
 
 async def _prepare_skills(
