@@ -2,6 +2,7 @@
 
 from .domain import (
     EncryptedRunConfigPayloadRef,
+    MCPToolSnapshotRef,
     PendingCallKind,
     PendingCallSummary,
     RecoveryBudget,
@@ -52,6 +53,7 @@ __all__ = [
     "DeferredContinuationState",
     "EncryptedRunConfigPayloadRef",
     "HostContinuationState",
+    "MCPToolSnapshotRef",
     "PendingCallKind",
     "PendingCallSummary",
     "RecoveryBudget",

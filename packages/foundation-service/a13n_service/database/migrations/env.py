@@ -3,6 +3,7 @@
 from alembic import context
 from sqlalchemy import Connection
 
+from a13n_service.database.default_comparison import compare_server_default
 from a13n_service.database.metadata import service_metadata
 
 config = context.config
@@ -17,7 +18,7 @@ def run_migrations_online() -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
-        compare_server_default=True,
+        compare_server_default=compare_server_default,
         render_as_batch=connection.dialect.name == "sqlite",
         transaction_per_migration=True,
     )

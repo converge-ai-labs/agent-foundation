@@ -5,6 +5,7 @@ from shutil import copyfile
 import anyio
 import pytest
 from a13n_service.database.config import MigrationConfig
+from a13n_service.database.default_comparison import compare_server_default
 from a13n_service.database.migration import (
     MIGRATIONS_PATH,
     DatabaseMigrator,
@@ -12,7 +13,7 @@ from a13n_service.database.migration import (
 )
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import JSON, Column, Integer, create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
 
@@ -158,6 +159,14 @@ def test_empty_accepted_history_is_a_valid_base(tmp_path: Path) -> None:
 def test_migrations_reject_in_memory_sqlite() -> None:
     with pytest.raises(ValueError, match="file-backed SQLite"):
         DatabaseMigrator(SQLiteConfig(path=Path(":memory:")))
+
+
+def test_json_server_defaults_compare_without_database_json_equality() -> None:
+    column = Column("payload", JSON)
+
+    assert compare_server_default(None, column, column, "('[]'::json)", None, "'[]'") is False
+    assert compare_server_default(None, column, column, "'{}'::jsonb", None, "'[]'") is True
+    assert compare_server_default(None, Column("value", Integer), Column("value", Integer), "1", None, "1") is None
 
 
 def test_revision_autogenerates_from_upgraded_postgresql(
