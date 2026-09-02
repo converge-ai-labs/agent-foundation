@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,14 +21,43 @@ from a13n_harness.model_auth import (
     build_codex_model,
     build_grok_model,
 )
+from a13n_harness.model_auth import runtime as model_auth_runtime
+from pydantic_ai import RunContext
 from pydantic_ai.exceptions import UserError
+from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.openai import OpenAIResponsesModelSettings
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
 
 _CODEX_ORIGIN = "https://chatgpt.com"
 _CODEX_BASE_URL = f"{_CODEX_ORIGIN}/backend-api/codex"
 _GROK_BASE_URL = "https://api.x.ai/v1"
+_CODEX_ROUTING_HINT_HEADER = "x-codex-routing-hint"
+_CODEX_TURN_STATE_HEADER = "x-codex-turn-state"
+
+
+def _response(status: str) -> dict[str, object]:
+    return {
+        "id": "resp_1",
+        "created_at": 1,
+        "model": "gpt-5",
+        "object": "response",
+        "output": [],
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+        "status": status,
+    }
+
+
+def _responses_sse() -> bytes:
+    events = [
+        {"type": "response.created", "sequence_number": 0, "response": _response("in_progress")},
+        {"type": "response.completed", "sequence_number": 1, "response": _response("completed")},
+    ]
+    return "".join(f"data: {json.dumps(event)}\n\n" for event in events).encode()
 
 
 def _codex_credentials(*, marker: str, expires_at: datetime) -> CodexCredentials:
@@ -71,6 +102,21 @@ class _CodexSource:
         if self.fail_save:
             raise OSError("credential store unavailable")
         self.current = credentials
+
+
+class _RepeatedValueHeaders(Mapping[str, str]):
+    def __getitem__(self, name: str) -> str:
+        if name == "set-cookie":
+            raise LookupError("multiple values")
+        if name == _CODEX_TURN_STATE_HEADER:
+            return "turn-state"
+        raise KeyError(name)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("set-cookie", _CODEX_TURN_STATE_HEADER))
+
+    def __len__(self) -> int:
+        return 2
 
 
 class _GrokSource:
@@ -149,15 +195,30 @@ async def test_per_request_redirect_override_cannot_forward_protected_headers() 
             authorization=request.headers.get("authorization"),
             account=request.headers.get("chatgpt-account-id"),
             originator=request.headers.get("originator"),
+            routing_hint=request.headers.get(_CODEX_ROUTING_HINT_HEADER),
+            turn_state=request.headers.get(_CODEX_TURN_STATE_HEADER),
         )
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
         build_codex_model("gpt-5", credential_source=source, http_client=client)
-        response = await client.get(f"{_CODEX_BASE_URL}/responses", follow_redirects=True)
+        response = await client.get(
+            f"{_CODEX_BASE_URL}/responses",
+            headers={
+                _CODEX_ROUTING_HINT_HEADER: "model=caller-stale",
+                _CODEX_TURN_STATE_HEADER: "caller-stale-state",
+            },
+            follow_redirects=True,
+        )
 
     assert response.status_code == 200
-    assert redirected_headers == {"authorization": None, "account": None, "originator": None}
+    assert redirected_headers == {
+        "authorization": None,
+        "account": None,
+        "originator": None,
+        "routing_hint": None,
+        "turn_state": None,
+    }
     assert source.loads == 1
 
 
@@ -603,6 +664,188 @@ def test_codex_pkce_authorization_url_contains_challenge_but_not_verifier() -> N
     assert query["code_challenge"] == [expected_challenge]
     assert query["redirect_uri"] == [flow.redirect_uri]
     assert flow.code_verifier not in flow.authorization_url()
+
+
+def test_codex_turn_state_capture_skips_unrelated_repeated_headers() -> None:
+    state = model_auth_runtime._CodexTurnState()  # pyright: ignore[reportPrivateUsage]
+
+    state.capture(_RepeatedValueHeaders())
+
+    assert state.value == "turn-state"
+
+
+async def test_codex_routing_hint_and_turn_state_follow_effective_run() -> None:
+    source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    request_headers: list[httpx2.Headers] = []
+    response_states = iter(
+        ("turn-one", "ignored", "ignored-again", "turn-two", "reused-one", "direct-one", "direct-two")
+    )
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        request_headers.append(request.headers.copy())
+        return httpx2.Response(
+            200,
+            headers={
+                "content-type": "text/event-stream",
+                _CODEX_TURN_STATE_HEADER: next(response_states),
+            },
+            content=_responses_sse(),
+        )
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(handle),
+        headers={
+            _CODEX_ROUTING_HINT_HEADER: "model=client-stale",
+            _CODEX_TURN_STATE_HEADER: "client-stale-state",
+        },
+    ) as client:
+        model = build_codex_model("gpt-5", credential_source=source, http_client=client)
+        run_one_usage = RunUsage()
+        contexts = [
+            RunContext(deps=object(), model=model, usage=run_one_usage, run_id="run-one"),
+            RunContext(deps=object(), model=model, usage=run_one_usage, run_id="run-one"),
+            RunContext(deps=object(), model=model, usage=run_one_usage, run_id="run-one"),
+            RunContext(deps=object(), model=model, usage=RunUsage(), run_id="run-two"),
+            RunContext(deps=object(), model=model, usage=RunUsage(), run_id="run-one"),
+        ]
+        settings_by_request = [
+            OpenAIResponsesModelSettings(
+                service_tier="flex",
+                openai_service_tier="priority",
+                extra_headers={
+                    "X-Codex-Routing-Hint": "model=caller-stale",
+                    "X-Codex-Turn-State": "caller-stale-state",
+                },
+            ),
+            OpenAIResponsesModelSettings(service_tier="flex"),
+            OpenAIResponsesModelSettings(),
+            OpenAIResponsesModelSettings(),
+            OpenAIResponsesModelSettings(),
+        ]
+        for context, settings in zip(contexts, settings_by_request, strict=True):
+            async with model.request_stream([], settings, ModelRequestParameters(), context) as response:
+                async for _ in response:
+                    pass
+        for _ in range(2):
+            async with model.request_stream([], None, ModelRequestParameters()) as response:
+                async for _ in response:
+                    pass
+
+    assert [headers[_CODEX_ROUTING_HINT_HEADER] for headers in request_headers] == [
+        "model=gpt-5;tier=priority",
+        "model=gpt-5;tier=flex",
+        "model=gpt-5",
+        "model=gpt-5",
+        "model=gpt-5",
+        "model=gpt-5",
+        "model=gpt-5",
+    ]
+    assert [headers.get(_CODEX_TURN_STATE_HEADER) for headers in request_headers] == [
+        None,
+        "turn-one",
+        "turn-one",
+        None,
+        None,
+        None,
+        None,
+    ]
+
+
+async def test_codex_turn_state_ignores_401_and_captures_successful_replay() -> None:
+    source = _CodexSource(_codex_credentials(marker="old", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    refreshed = _codex_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
+    request_headers: list[httpx2.Headers] = []
+
+    async def refresh(credentials: CodexCredentials) -> CodexCredentials:
+        assert credentials.access_token == "codex-access-old"
+        return refreshed
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        request_headers.append(request.headers.copy())
+        if len(request_headers) == 1:
+            return httpx2.Response(401, headers={_CODEX_TURN_STATE_HEADER: "unauthorized-state"})
+        state = "valid-state" if len(request_headers) == 2 else "ignored-state"
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream", _CODEX_TURN_STATE_HEADER: state},
+            content=_responses_sse(),
+        )
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(handle),
+        headers={_CODEX_TURN_STATE_HEADER: "client-stale-state"},
+    ) as client:
+        model = build_codex_model(
+            "gpt-5",
+            credential_source=source,
+            refresh=refresh,
+            http_client=client,
+        )
+        usage = RunUsage()
+        context = RunContext(deps=object(), model=model, usage=usage, run_id="run-one")
+        settings = OpenAIResponsesModelSettings(extra_headers={_CODEX_TURN_STATE_HEADER: "request-stale-state"})
+        for _ in range(2):
+            async with model.request_stream([], settings, ModelRequestParameters(), context) as response:
+                async for _ in response:
+                    pass
+
+    assert [headers["authorization"] for headers in request_headers] == [
+        "Bearer codex-access-old",
+        "Bearer codex-access-new",
+        "Bearer codex-access-new",
+    ]
+    assert [headers[_CODEX_ROUTING_HINT_HEADER] for headers in request_headers] == ["model=gpt-5"] * 3
+    assert [headers.get(_CODEX_TURN_STATE_HEADER) for headers in request_headers] == [
+        None,
+        None,
+        "valid-state",
+    ]
+    assert source.saved == [refreshed]
+
+
+async def test_codex_turn_state_is_isolated_between_concurrent_runs() -> None:
+    source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    first_started = {"one": anyio.Event(), "two": anyio.Event()}
+    seen: dict[tuple[str, str], httpx2.Headers] = {}
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        run = request.headers["x-test-run"]
+        phase = request.headers["x-test-phase"]
+        seen[(run, phase)] = request.headers.copy()
+        if phase == "first":
+            first_started[run].set()
+            other = "two" if run == "one" else "one"
+            await first_started[other].wait()
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream", _CODEX_TURN_STATE_HEADER: f"state-{run}"},
+            content=_responses_sse(),
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        model = build_codex_model("gpt-5", credential_source=source, http_client=client)
+        contexts = {
+            run: RunContext(deps=object(), model=model, usage=RunUsage(), run_id=f"run-{run}") for run in ("one", "two")
+        }
+
+        async def consume(run: str, phase: str) -> None:
+            settings = OpenAIResponsesModelSettings(extra_headers={"x-test-run": run, "x-test-phase": phase})
+            async with model.request_stream([], settings, ModelRequestParameters(), contexts[run]) as response:
+                async for _ in response:
+                    pass
+
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(consume, "one", "first")
+            tasks.start_soon(consume, "two", "first")
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(consume, "one", "continuation")
+            tasks.start_soon(consume, "two", "continuation")
+
+    assert seen[("one", "first")].get(_CODEX_TURN_STATE_HEADER) is None
+    assert seen[("two", "first")].get(_CODEX_TURN_STATE_HEADER) is None
+    assert seen[("one", "continuation")][_CODEX_TURN_STATE_HEADER] == "state-one"
+    assert seen[("two", "continuation")][_CODEX_TURN_STATE_HEADER] == "state-two"
+    assert all(headers[_CODEX_ROUTING_HINT_HEADER] == "model=gpt-5" for headers in seen.values())
 
 
 def test_codex_subscription_settings_use_harness_thread_affinity() -> None:

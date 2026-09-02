@@ -101,13 +101,28 @@ An HTTP 401 triggers at most one reload-or-refresh and one replay. The second re
 
 ## Request Isolation and Affinity
 
-OAuth headers are attached only to the exact HTTPS origin owned by the selected Model integration. Codex requests carry bearer authorization, the ChatGPT account identifier, and the Harness originator. Grok requests carry only their supported bearer authorization. Redirects or reuse of a client for another origin cannot forward these credentials.
+OAuth headers are attached only to the exact HTTPS origin owned by the selected Model integration. Codex requests carry bearer authorization, the ChatGPT account identifier, and the Harness originator. Grok requests carry only their supported bearer authorization. Codex routing and turn-state headers follow the same exact-origin restriction. Redirects or reuse of a client for another origin cannot forward these values.
 
 A caller-supplied HTTP client must be dedicated to the Model integration and have no existing authentication; the builder installs its request authentication and does not close that client. When the builder creates the client, the native Model lifecycle closes it and can recreate it on a later entry.
 
 Codex uses the native Responses streaming dialect, disables provider storage, removes settings the subscription endpoint does not support, and does not claim local token counting. It derives Codex `session-id`, `thread-id`, and `x-client-request-id` defaults from the effective Harness Thread affinity already supplied as `x-session-id`; explicit case-insensitive header values win. The standard `openai_prompt_cache_key` remains owned by the Harness request-affinity Capability. Root and child Threads therefore receive different provider thread affinity while each Thread retains stable affinity across its own continuation.
 
-No OAuth token, authorization code, PKCE verifier, raw identity claim, or complete source record enters Model messages, `HarnessState`, event payloads, logs, or telemetry.
+### Codex Routing and Turn State
+
+Every OAuth Codex Model request derives one backend routing hint from the effective request:
+
+```http
+x-codex-routing-hint: model=<model>
+x-codex-routing-hint: model=<model>;tier=<service-tier>
+```
+
+The `tier` segment is present only when effective `openai_service_tier` or the unified `service_tier` is non-empty; the provider-specific setting has precedence, matching Pydantic AI's OpenAI request rendering. Caller-supplied values for `x-codex-routing-hint` are discarded case-insensitively so the selected Model and effective tier remain authoritative. This header belongs only to the ChatGPT Codex OAuth backend and is not added to generic OpenAI Responses Models.
+
+For each Pydantic AI run, the Codex Model maintains one process-local first-write-wins `x-codex-turn-state` value. The initial request sends no turn state. The first non-empty value returned in a successful streaming response header is retained unchanged, and every later request with the same Pydantic run ID and `RunUsage` identity sends it as `x-codex-turn-state`. Later response values cannot replace it. A different run or reuse of the same run ID with a different `RunUsage` starts without state; a direct Model call without `RunContext` neither retains nor replays state. Caller-supplied turn-state headers are discarded so stale state cannot cross turns.
+
+Thread affinity and turn state have separate lifetimes: Thread-derived headers remain stable across continuation, while `x-codex-turn-state` exists only for one live Pydantic run. The turn state is not persisted into `HarnessState`, messages, events, logs, or telemetry.
+
+No OAuth token, authorization code, PKCE verifier, raw identity claim, complete source record, or Codex turn-state value enters Model messages, `HarnessState`, event payloads, logs, or telemetry.
 
 ## OAuth Flows
 
@@ -127,6 +142,7 @@ Grok OIDC refresh follows the issuer and client identity in `GrokCredentials`, v
 | Another actor wins during `save()`                        | The Host source's conflict or coordination behavior determines the failure; Harness does not claim distributed exclusion |
 | First Model request receives 401                          | Reload or refresh is attempted, then the request is replayed once                                                        |
 | Replayed request receives 401                             | The second response is returned without another replay                                                                   |
+| Codex response omits a usable turn state                  | The current Pydantic run remains stateless until a later successful response supplies one                                |
 
 ## Compatibility
 
@@ -143,4 +159,5 @@ Adding another provider is additive only when it has an explicit credential type
 5. A rotated credential is saved successfully before it can authenticate a Model request.
 6. Credentials are sent only to the selected provider's exact HTTPS origin.
 7. A Model request never starts interactive login or silently changes account identity.
-8. Credential bytes never enter Harness continuation, Model context, events, logs, or telemetry.
+8. Credential bytes and Codex turn state never enter Harness continuation, Model context, events, logs, or telemetry.
+9. Codex routing is derived from the effective Model and tier, while turn state is first-write-wins and isolated to one live Pydantic run.
