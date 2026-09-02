@@ -580,6 +580,48 @@ async def test_self_healing_retries_once_after_an_exact_history_repair() -> None
     assert all(not isinstance(part, ThinkingPart) for message in history for part in message.parts)
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "messages.1.content.0: thinking block has an invalid signature",
+        "messages.1.content.0: `thinking` block signature is invalid",
+        "messages.1.content.0: redacted_thinking block has an invalid signature",
+    ),
+)
+async def test_self_healing_recovers_anthropic_thinking_signature_failures(message: str) -> None:
+    wrapped = FailingModel(
+        ModelHTTPError(
+            status_code=400,
+            model_name="claude-fable-5-1",
+            body={"error": {"message": message}},
+        )
+    )
+    model = SelfHealingModel(wrapped)
+    history = _stale_reasoning_history()
+
+    response = await model.request(history, None, ModelRequestParameters())
+
+    assert response.parts == [TextPart(content="ok")]
+    assert wrapped.calls == 2
+    assert all(not isinstance(part, ThinkingPart) for message in history for part in message.parts)
+
+
+async def test_self_healing_does_not_match_unrelated_signature_failures() -> None:
+    error = ModelHTTPError(
+        status_code=400,
+        model_name="failing",
+        body={"message": "request signature is invalid"},
+    )
+    wrapped = FailingModel(error)
+    model = SelfHealingModel(wrapped)
+
+    with pytest.raises(ModelHTTPError) as exc_info:
+        await model.request(_stale_reasoning_history(), None, ModelRequestParameters())
+
+    assert exc_info.value is error
+    assert wrapped.calls == 1
+
+
 async def test_self_healing_clears_provider_native_ids_without_breaking_tool_pairing() -> None:
     error = ModelHTTPError(
         status_code=400,

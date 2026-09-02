@@ -399,6 +399,14 @@ def built_in_provider_registry() -> ProviderRegistry:
                 official_base_url="https://api.anthropic.com",
                 model_catalog=(
                     _catalog(
+                        "claude-fable-5-1",
+                        "Claude Fable 5.1",
+                        context_window_tokens=1_000_000,
+                        max_output_tokens=128_000,
+                        modalities=("text", "image"),
+                        reasoning=True,
+                    ),
+                    _catalog(
                         "claude-fable-5",
                         "Claude Fable 5",
                         context_window_tokens=1_000_000,
