@@ -226,11 +226,11 @@ class AgentPresetResolver:
             raise preset_publish_failed(error.code, path="environment") from error
         subagents = await self._freeze_subagents(session, prepared)
         try:
-            runtime_lock = await self._plugin_resolver.runtime_locks.build_and_persist(
+            runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
                 session,
-                mode=self.plugin_runtime_mode.value,
-                plugins=prepared.plugins.items,
+                prepared=prepared.plugins,
                 child_lock_digests=tuple(item.child_runtime_lock_digest for item in prepared.subagents),
+                use_active_catalog=True,
             )
         except PluginRuntimeLockError as error:
             raise preset_publish_failed(error.reason, path=error.path) from error

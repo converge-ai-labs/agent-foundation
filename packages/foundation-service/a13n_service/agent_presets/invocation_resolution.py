@@ -223,6 +223,7 @@ class AgentPresetInvocationResolver:
                             workspace_id=workspace_id,
                             selections=merged.config.plugins,
                             resolved=revision.resolved_plugin_versions,
+                            runtime_lock_digest=revision.runtime_lock_digest,
                         )
                     except PluginSelectionError as error:
                         raise preset_revision_not_executable(error.reason) from error
@@ -492,11 +493,11 @@ class AgentPresetInvocationResolver:
             else:
                 if prepared.plugins is None:
                     raise PluginRuntimeLockError("plugin_runtime_lock_unavailable")
-                runtime_lock = await self._plugin_resolver.runtime_locks.build_and_persist(
+                runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
                     session,
-                    mode=prepared.revision.plugin_runtime_mode.value,
-                    plugins=prepared.plugins.items,
+                    prepared=prepared.plugins,
                     child_lock_digests=tuple(item.child_runtime_lock_digest for item in subagents),
+                    use_active_catalog=True,
                 )
         except PluginRuntimeLockError as error:
             raise preset_revision_not_executable(error.reason) from error

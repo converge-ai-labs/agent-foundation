@@ -248,6 +248,24 @@ class PluginRuntimeLockStore:
             raise PluginRuntimeLockError("plugin_runtime_mode_mismatch")
         return runtime_lock
 
+    async def require_runner_catalog(
+        self,
+        session: AsyncSession,
+        digest: str,
+        *,
+        plugins: Sequence[RuntimePluginContribution],
+        child_lock_digests: Sequence[str] = (),
+    ) -> PluginRuntimeLock:
+        runtime_lock = await self.require(session, digest, mode="runner")
+        catalog_plugins = {item.plugin_key: item for item in runtime_lock.plugins}
+        for plugin in plugins:
+            expected = _locked_plugin(plugin)
+            if catalog_plugins.get(expected.plugin_key) != expected:
+                raise PluginRuntimeLockError("plugin_version_changed")
+        if any(child_digest != runtime_lock.digest for child_digest in child_lock_digests):
+            raise PluginRuntimeLockError("plugin_dependency_conflict", path="subagents")
+        return runtime_lock
+
     async def _load_many(self, session: AsyncSession, digests: Sequence[str]) -> tuple[PluginRuntimeLock, ...]:
         unique = tuple(dict.fromkeys(digests))
         if not unique:
@@ -309,6 +327,18 @@ def installed_harness_version() -> str:
 
 def _normalize_distribution(item: LockedDistribution) -> LockedDistribution:
     return item.model_copy(update={"distribution_name": canonicalize_name(item.distribution_name)})
+
+
+def _locked_plugin(plugin: RuntimePluginContribution) -> LockedPlugin:
+    return LockedPlugin(
+        plugin_id=plugin.plugin_id,
+        plugin_version_id=plugin.plugin_version_id,
+        plugin_key=plugin.plugin_key,
+        distribution_name=canonicalize_name(plugin.distribution_name),
+        distribution_version=plugin.distribution_version,
+        top_level_package=plugin.top_level_package,
+        wheel_digest=plugin.wheel_digest,
+    )
 
 
 def _merge_plugin(
