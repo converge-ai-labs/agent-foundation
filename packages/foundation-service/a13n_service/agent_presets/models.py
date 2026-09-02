@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -153,8 +154,16 @@ class AgentPresetRevisionRecord(Base):
     resolved_plugin_versions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     resolved_skills: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    connector_tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    mcp_tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    connector_tools: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=False,
+        server_default=text("'[]'"),
+    )
+    mcp_tools: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=False,
+        server_default=text("'[]'"),
+    )
     resolved_environment: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     resolved_subagents: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)

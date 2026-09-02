@@ -19,18 +19,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Apply the schema change."""
     with op.batch_alter_table("agent_preset_revisions") as batch_op:
-        batch_op.add_column(sa.Column("connector_tools", sa.JSON(), nullable=True))
-        batch_op.add_column(sa.Column("mcp_tools", sa.JSON(), nullable=True))
-    op.execute(
-        sa.text(
-            "UPDATE agent_preset_revisions "
-            "SET connector_tools = '[]', mcp_tools = '[]' "
-            "WHERE connector_tools IS NULL OR mcp_tools IS NULL"
-        )
-    )
-    with op.batch_alter_table("agent_preset_revisions") as batch_op:
-        batch_op.alter_column("connector_tools", existing_type=sa.JSON(), nullable=False)
-        batch_op.alter_column("mcp_tools", existing_type=sa.JSON(), nullable=False)
+        batch_op.add_column(sa.Column("connector_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False))
+        batch_op.add_column(sa.Column("mcp_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False))
 
 
 def downgrade() -> None:

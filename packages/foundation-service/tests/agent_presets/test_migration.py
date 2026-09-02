@@ -18,8 +18,10 @@ def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             columns = {column["name"] for column in inspector.get_columns("agent_presets")}
             assert "default_revision_id" in columns
             assert "active_revision_id" not in columns
-            revision_columns = {column["name"] for column in inspector.get_columns("agent_preset_revisions")}
-            assert {"connector_tools", "mcp_tools"} <= revision_columns
+            revision_columns = {column["name"]: column for column in inspector.get_columns("agent_preset_revisions")}
+            assert {"connector_tools", "mcp_tools"} <= revision_columns.keys()
+            assert revision_columns["connector_tools"]["default"] is not None
+            assert revision_columns["mcp_tools"]["default"] is not None
         else:
             assert AGENT_PRESET_TABLES.isdisjoint(tables)
     finally:
