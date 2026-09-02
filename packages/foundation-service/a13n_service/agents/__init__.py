@@ -5,6 +5,7 @@ from .domain import (
     AgentConfig,
     AgentRevision,
     AgentRunOverride,
+    BuiltinAgentRegistration,
     EffectiveAgentConfig,
 )
 from .errors import AgentError
@@ -35,6 +36,7 @@ __all__ = [
     "AgentRunOverride",
     "AgentRunSensitiveValues",
     "AgentSelectorKind",
+    "BuiltinAgentRegistration",
     "EffectiveAgentConfig",
     "FrozenAgentInvocation",
     "MergedAgentRunConfig",

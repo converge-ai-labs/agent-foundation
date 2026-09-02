@@ -486,6 +486,16 @@ class AgentRevisionCollection(StrictModel):
     next_cursor: str | None
 
 
+class BuiltinAgentRegistration(StrictModel):
+    """One distribution-owned Agent definition resolved for a specific Workspace."""
+
+    agent_id: ObjectId
+    system_actor_id: ObjectId
+    name: AgentName
+    description: AgentDescription | None = None
+    config: AgentConfig
+
+
 class CreateAgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
