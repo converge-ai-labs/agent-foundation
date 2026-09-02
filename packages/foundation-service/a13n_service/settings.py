@@ -76,6 +76,8 @@ class ServiceSettings(BaseSettings):
     plugin_max_wheel_bytes: int = Field(default=50 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
     plugin_max_expanded_bytes: int = Field(default=200 * 1024 * 1024, ge=1, le=4 * 1024 * 1024 * 1024)
     plugin_max_archive_members: int = Field(default=20_000, ge=1, le=1_000_000)
+    plugin_runtime_command_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
+    plugin_runtime_command_lease_seconds: float = Field(default=300, gt=3, le=3600)
     environment_provider_builtins: tuple[str, ...] = (
         "a13n.direct-local",
         "a13n.local-envd",

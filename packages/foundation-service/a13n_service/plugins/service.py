@@ -110,6 +110,9 @@ class PluginService:
                         mode=self._runtime_mode.value,
                         active_lock_digest=None,
                         version=1,
+                        command_operation_id=None,
+                        command_claim_generation=0,
+                        command_lease_expires_at=None,
                         created_at=now,
                         updated_at=now,
                     )

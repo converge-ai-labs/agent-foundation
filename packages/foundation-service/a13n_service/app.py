@@ -15,6 +15,7 @@ from sqlalchemy import text
 from starlette.types import Receive, Scope, Send
 
 from a13n_service.agent_presets.connector_resolution import AgentConnectorSelectionResolver
+from a13n_service.agent_presets.domain import PluginRuntimeMode
 from a13n_service.agent_presets.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.plugin_resolution import AgentPluginSelectionResolver
@@ -66,9 +67,14 @@ from a13n_service.model_configs.service import (
     ModelConfigService,
 )
 from a13n_service.observability import build_observability_runtime
-from a13n_service.plugins.commands import PluginRuntimeCommandDispatcher
+from a13n_service.plugins.commands import (
+    PluginRuntimeCandidateResolver,
+    PluginRuntimeCommandDispatcher,
+    PluginRuntimeStagingAuthority,
+)
 from a13n_service.plugins.objects import PluginObjectStore
 from a13n_service.plugins.router import router as plugin_router
+from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
 from a13n_service.plugins.service import PluginService
 from a13n_service.plugins.staging import PluginStaging
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
@@ -107,6 +113,8 @@ class ServiceComponents:
     agent_preset_invocation_resolver: AgentPresetInvocationResolver | None = None
     agent_plugin_selection_resolver: AgentPluginSelectionResolver | None = None
     plugin_runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None
+    plugin_runtime_candidate_resolver: PluginRuntimeCandidateResolver | None = None
+    plugin_runtime_staging_authority: PluginRuntimeStagingAuthority | None = None
     agent_connector_selection_resolver: AgentConnectorSelectionResolver | None = None
     model_connection_tester: CandidateConnectionTester | None = None
     model_secret_resolver: RuntimeSecretValueResolver | None = None
@@ -274,6 +282,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             asset_staging = await AssetStaging.create(storage.files_root, limiter=storage.file_limiter)
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
+            plugin_runtime_command_coordinator: PluginRuntimeCommandCoordinator | None = None
             if settings.role in _CONTROL_PLANE_ROLES:
                 selected_environment_providers = app.state.components.environment_provider_catalog
                 if selected_environment_providers is None:
@@ -289,6 +298,25 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     app.state.environment_provider_catalog,
                 )
                 plugin_staging = await PluginStaging.create(storage.files_root, limiter=storage.file_limiter)
+                runtime_dispatcher = app.state.components.plugin_runtime_command_dispatcher
+                candidate_resolver = app.state.components.plugin_runtime_candidate_resolver
+                staging_authority = app.state.components.plugin_runtime_staging_authority
+                if (candidate_resolver is None) != (staging_authority is None):
+                    raise RuntimeError(
+                        "Plugin Runtime coordination requires both a candidate resolver and staging authority"
+                    )
+                if runtime_dispatcher is None and candidate_resolver is not None and staging_authority is not None:
+                    if settings.plugin_runtime_mode is not PluginRuntimeMode.runner:
+                        raise RuntimeError("Plugin Runtime coordination is configured outside runner mode")
+                    plugin_runtime_command_coordinator = PluginRuntimeCommandCoordinator(
+                        storage.sessions,
+                        candidate_resolver,
+                        staging_authority,
+                        poll_interval_seconds=settings.plugin_runtime_command_poll_interval_seconds,
+                        lease_seconds=settings.plugin_runtime_command_lease_seconds,
+                    )
+                    runtime_dispatcher = plugin_runtime_command_coordinator
+                    app.state.plugin_runtime_command_coordinator = plugin_runtime_command_coordinator
                 app.state.plugin_service = PluginService(
                     storage.sessions,
                     PluginObjectStore(storage.objects),
@@ -297,7 +325,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     max_wheel_bytes=settings.plugin_max_wheel_bytes,
                     max_expanded_bytes=settings.plugin_max_expanded_bytes,
                     max_archive_members=settings.plugin_max_archive_members,
-                    runtime_command_dispatcher=app.state.components.plugin_runtime_command_dispatcher,
+                    runtime_command_dispatcher=runtime_dispatcher,
                 )
                 await app.state.plugin_service.ensure_runtime_mode()
                 github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)
@@ -394,6 +422,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             async with create_task_group() as background_tasks:
                 if asset_cleanup_reconciler is not None:
                     background_tasks.start_soon(asset_cleanup_reconciler.run)
+                if plugin_runtime_command_coordinator is not None:
+                    background_tasks.start_soon(plugin_runtime_command_coordinator.run)
                 logger.info(
                     "service_started",
                     extra={

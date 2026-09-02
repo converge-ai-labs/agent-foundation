@@ -26,6 +26,8 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.connector_providers == ()
     assert settings.database_backend is DatabaseBackend.postgresql
     assert settings.asset_max_size_bytes == 100 * 1024 * 1024
+    assert settings.plugin_runtime_command_poll_interval_seconds == 1
+    assert settings.plugin_runtime_command_lease_seconds == 300
     assert settings.observability_query_provider == "none"
     assert "foundation:foundation" not in repr(settings)
 
@@ -64,6 +66,20 @@ def test_connector_role_and_capability_signing_key_are_typed() -> None:
 def test_asset_size_bound_must_be_positive_and_finite() -> None:
     with pytest.raises(ValueError):
         ServiceSettings(_env_file=None, asset_max_size_bytes=0)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"plugin_runtime_command_poll_interval_seconds": 0},
+        {"plugin_runtime_command_poll_interval_seconds": 61},
+        {"plugin_runtime_command_lease_seconds": 3},
+        {"plugin_runtime_command_lease_seconds": 3601},
+    ],
+)
+def test_plugin_runtime_command_timing_is_bounded(values: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        ServiceSettings(_env_file=None, **values)
 
 
 def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
