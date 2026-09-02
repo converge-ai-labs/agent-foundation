@@ -40,8 +40,8 @@ def test_worker_role_never_migrates(tmp_path: Path) -> None:
     ]
 
 
-def test_connector_role_never_migrates(tmp_path: Path) -> None:
-    assert _run_entrypoint(tmp_path, role="connector", auto_migrate="true") == [
+def test_connectivity_role_never_migrates(tmp_path: Path) -> None:
+    assert _run_entrypoint(tmp_path, role="connectivity", auto_migrate="true") == [
         "db current --check-heads",
         "serve",
     ]

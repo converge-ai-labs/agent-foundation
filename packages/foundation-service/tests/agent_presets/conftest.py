@@ -57,7 +57,6 @@ def preset_config(
     *,
     instructions: str = "Be helpful.",
     plugins: list[object] | None = None,
-    connectors: dict[str, object] | None = None,
     subagents: dict[str, object] | None = None,
     environment: dict[str, object] | None = None,
 ) -> AgentPresetConfig:
@@ -72,7 +71,6 @@ def preset_config(
             "input_adapter": {"adapter_key": "native", "config": {}},
             "plugins": plugins or [],
             "skills": [],
-            "connectors": connectors or {},
             "environment": environment,
             "subagents": subagents or {},
             "client_tools": [],

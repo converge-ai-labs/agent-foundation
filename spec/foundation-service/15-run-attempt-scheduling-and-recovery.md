@@ -179,7 +179,7 @@ There is no separate scheduler claim, recovery controller, or Redis ownership ha
 5. otherwise allocates `attempt_number=attempts_started+1` and the next monotonic fence, inserts the new `leased` attempt, increments `attempts_started`, increments `recovery_attempts_started` only for the first generation or a failure or expiry replacement, and selects it as `current_run_attempt_id`; a successor to `yielded` records `recovery_reason="planned_handoff"`, and every new Attempt copies the claimant's immutable `worker_build_id`;
 6. changes an initially `accepted` Run to `running`, leaves a replacement Run `running`, and appends the corresponding lifecycle facts.
 
-The Run row lock or equivalent compare-and-swap plus attempt-number and fence uniqueness admits exactly one winner. A competing Worker that observes a changed Run version, current attempt, or lease condition creates nothing and resumes its scan. The transaction performs no object, artifact, policy-provider, or other external read.
+The Run row lock or equivalent compare-and-swap plus attempt-number and fence uniqueness admits exactly one winner. A competing Worker that observes a changed Run version, current attempt, or lease condition creates nothing and resumes its scan. The transaction performs no object, artifact, policy-provider, model, Ingress, Connector, MCP, Secret-store, Environment, or other external I/O.
 
 Operational admission control, queue names, priority, and fairness may order or delay scans. They never form another ownership authority. Redis may carry domain-owned Run-stream data and Thread-control wakeups, but no Redis value discovers, creates, transfers, or completes a RunAttempt or consumes a Thread inbox entry.
 
@@ -268,8 +268,8 @@ After any new attempt owns the lease, its Worker reads the exact state, attempt 
 
 - the latest complete state object passes key, tenant, Run, Thread, digest, size, envelope, checkpoint, AgentPresetRevision, Runtime lock, and required Harness, Capability, Host, and Environment-state codec validation;
 - the applicable fixed recovery or handoff count, elapsed-time, and known-usage ceilings still permit this already-created attempt after all durable usage charges;
-- the exact AgentPresetRevision, `EffectiveAgentConfig`, Runtime lock, managed Harness Plugin and Skill artifacts, Connector contracts, Environment Provider locks, and other frozen dependency locks are present, digest-valid, and compatible; and
-- the Run's persisted authority Principal remains active in the same tenant, and its current Workspace and principal policy, RoleBindings, AgentPreset invocation authority, Connection ownership or eligibility, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
+- the exact AgentPresetRevision, `EffectiveAgentConfig`, Runtime lock, managed Harness Plugin and Skill artifacts, accepted MCP tool snapshot and Connectivity selections, Environment Provider locks, and other frozen dependency locks are present, digest-valid, and compatible; and
+- the Run's persisted authority Principal remains active in the same tenant, and its current Workspace and principal policy, RoleBindings, AgentPreset invocation authority, ConnectorConnection and MCPConnection ownership or eligibility, Ingress action authority, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
 
 Attempt preparation is an internal operation over already accepted work. It does not replay the accepting browser session or API key and does not substitute the claiming Worker, queue consumer, administrator, or `system` audit actor as the Run Principal. Revoking the original request credential blocks later requests made with that credential but does not erase the accepted Run; disabling the persisted Principal or removing its required current grants fails the Attempt closed.
 

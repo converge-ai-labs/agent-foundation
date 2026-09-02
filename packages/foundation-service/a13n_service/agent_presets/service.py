@@ -1172,7 +1172,6 @@ def _new_revision(
         resolved_plugin_versions=[item.model_dump(mode="json") for item in resolved.resolved_plugin_versions],
         runtime_lock_digest=resolved.runtime_lock_digest,
         resolved_skills=[item.model_dump(mode="json") for item in resolved.resolved_skills],
-        resolved_connectors=[item.model_dump(mode="json") for item in resolved.resolved_connectors],
         resolved_environment=(
             resolved.resolved_environment.model_dump(mode="json") if resolved.resolved_environment is not None else None
         ),
@@ -1208,7 +1207,6 @@ def _copy_revision(
         resolved_plugin_versions=source.resolved_plugin_versions,
         runtime_lock_digest=source.runtime_lock_digest,
         resolved_skills=source.resolved_skills,
-        resolved_connectors=source.resolved_connectors,
         resolved_environment=source.resolved_environment,
         resolved_subagents=source.resolved_subagents,
         content_digest=source.content_digest,

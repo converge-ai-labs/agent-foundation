@@ -2,12 +2,7 @@
 
 ## Design Position
 
-Foundation Service is the optional modular durable Host for Agent Foundation. It
-keeps one product schema, authorization boundary, executable package, and
-container image while assigning control, worker, and Connector data-plane work
-to separately scalable process roles under the shared [runtime
-contract](01-runtime-configuration-and-deployment.md). It does not split durable
-lifecycle ownership across microservices.
+Foundation Service is the optional modular durable Host for Agent Foundation. It keeps one product schema, authorization boundary, executable package, and container image while assigning control, worker, and Connectivity data-plane work to separately scalable process roles under the shared [runtime contract](01-runtime-configuration-and-deployment.md). It does not split durable lifecycle ownership across microservices.
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Run`, and `Item`. Foundation persists each hosted Thread as an independent versioned relational resource, uses `Run` as the durable Agent-work, scheduling, recovery, state, outcome, and authority-Principal boundary, and uses `RunAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Run with one immutable User or Service Account Principal whose current authority is re-evaluated for execution; Foundation defines no separate durable Execution resource.
 
@@ -18,8 +13,7 @@ The worker embeds the public Harness Python API through the deployment's selecte
 ```mermaid
 flowchart LR
     Client[Web, SDK, CLI, AG-UI, A2A, or schedule trigger]
-    StandardMCPClient[Standard MCP client]
-    ConnectorWebhook[Connector webhook]
+    ProviderEvent[Provider webhook, gateway, or poll result]
 
     subgraph Control[Control role]
         Gateway[Protocol Gateway]
@@ -28,7 +22,7 @@ flowchart LR
         A2A[A2A discovery and runtime]
         Auth[Resource authorization]
         Authoring[Agent, Skill, Asset, model, and Environment authoring]
-        ConnectorControl[Connector and Trigger control]
+        ConnectivityControl[Ingress, Route, Connector, ConnectorConnection, and MCPConnection control]
         Interaction[Session, Thread, Run, and Item]
         Lifecycle[Run lifecycle]
         Feedback[Deferred feedback]
@@ -50,16 +44,16 @@ flowchart LR
         Runtime[On-demand loop or Runner]
         Reconstruct[Trusted reconstruction]
         EnvProvider[Environment Provider adapter construction]
-        MCPClient[Connector MCP Client]
+        MCPClients[a13n and user Remote MCP clients]
         Observer[HarnessAguiObserver]
         Harness[agent-harness]
     end
 
-    subgraph ConnectorRole[Connector role]
-        MCPGateway[Connector MCP Gateway]
-        ConnectorOps[Connector internal operations]
-        Provider[ConnectorProvider execution]
-        EventIngress[Connector event ingress and polling]
+    subgraph ConnectivityRole[Connectivity role]
+        MCPGateway[a13n MCP]
+        ConnectivityOps[Connectivity application adapter]
+        Adapters[Ingress and Connector adapters]
+        EventIngress[Provider event ingress and polling]
     end
 
     Envd[agent-envd]
@@ -68,27 +62,26 @@ flowchart LR
     Client --> Gateway
     Gateway --> Native & Agui & A2A
     Native & Agui & A2A --> Auth
-    Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback & Queue & ActiveControl
-    Authoring & Interaction & Lifecycle & ConnectorControl & Feedback & Queue & ActiveControl --> Database
+    Auth --> Authoring & Interaction & Lifecycle & ConnectivityControl & Feedback & Queue & ActiveControl
+    Authoring & Interaction & Lifecycle & ConnectivityControl & Feedback & Queue & ActiveControl --> Database
     AsyncResult -->|scan pending results and accept eligible Runs| Database
     ActiveControl -. best-effort wakeup .-> ControlBus --> Runtime
     Runtime -->|scan, preflight, claim, and takeover| Database
     Runtime --> Reconstruct --> Harness
-    Runtime --> EnvConnector --> Harness
-    EnvConnector --> Envd
-    Harness --> MCPClient --> MCPGateway --> Provider --> External
-    StandardMCPClient --> MCPGateway
-    ConnectorWebhook --> EventIngress
-    ConnectorControl -. authenticated internal operation .-> ConnectorOps
-    ConnectorOps --> Provider
-    EventIngress -->|verified occurrence| ConnectorControl
+    Runtime --> EnvProvider --> Harness
+    EnvProvider --> Envd
+    Harness --> MCPClients
+    MCPClients --> MCPGateway --> Adapters --> External
+    MCPClients --> External
+    ProviderEvent --> EventIngress --> ConnectivityOps
+    ConnectivityOps -->|same Foundation application operations| Database
     Harness --> Observer --> Runtime
     Runtime -. live AG-UI .-> LiveBus -. authorized subscription .-> API
     Runtime --> Database & Objects
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, including immutable Asset publication records, Thread advancement and queue versions, head selection, queued submissions, the durable Thread inbox and its independent delivery-sequence counter, Runs, current RunAttempt generations, waiting pending summaries, current Thread-associated Environment state, and terminal outcomes. Ordinary steer and asynchronous results use one PostgreSQL acceptance-order FIFO. Each Worker discovers claim, takeover, and pending-inbox work directly from that durable state; control replicas scan pending asynchronous results for inactive-Thread advancement. Redis carries domain-owned live data flow, including each Run's stable bounded-replay message stream and each active Thread's expiring control-signal Stream; Redis publication or consumer-group progress never proves a relational transition or inbox consumption. Shared object storage holds immutable Asset content plus the Run's complete conditionally replaced state, including exact pending requests, consumed inbox receipts, immutable replay snapshot, and bounded large content. The detailed authorities belong to [Asset Management](37-asset-management.md), [Durable Thread Persistence](24-thread-persistence.md), [Durable Run State](14-run-persistence.md), [Agent Control: Active Execution](35-agent-control-active-execution.md), [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md), [Environment Configuration and Re-entry](19-environment-management.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
+PostgreSQL is the distributed authority for accepted resources, including immutable Asset publication records, eligible external-event admission and deduplication facts, Thread advancement and queue versions, head selection, queued submissions, the durable Thread inbox and its independent delivery-sequence counter, Runs, current RunAttempt generations, waiting pending summaries, current Thread-associated Environment state, and terminal outcomes. Ordinary steer and asynchronous results use one PostgreSQL acceptance-order FIFO. Each Worker discovers claim, takeover, and pending-inbox work directly from that durable state; control replicas scan pending asynchronous results for inactive-Thread advancement. Redis carries domain-owned live data flow, including each Run's stable bounded-replay message stream and each active Thread's expiring control-signal Stream; Redis publication or consumer-group progress never proves a relational transition or inbox consumption. Shared object storage holds immutable Asset content plus the Run's complete conditionally replaced state, including exact pending requests, consumed inbox receipts, immutable replay snapshot, and bounded large content. The detailed authorities belong to [External Connectivity](40-connectivity/README.md), [Asset Management](37-asset-management.md), [Durable Thread Persistence](24-thread-persistence.md), [Durable Run State](14-run-persistence.md), [Agent Control: Active Execution](35-agent-control-active-execution.md), [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md), [Environment Configuration and Re-entry](19-environment-management.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 
 ### Simplified Architecture Overview
 
@@ -194,7 +187,7 @@ flowchart LR
 | AgentPresets, immutable Versions, managed Skill revisions, and ModelConfigs | Foundation control plane                                                                              | Selects exact Agent inputs and freezes current model configuration per Run                                         |
 | Immutable Workspace Assets                                                  | [Asset Management](37-asset-management.md)                                                            | Publishes exact binary identity and supplies authorized Run input, output, and protocol references                 |
 | Managed Harness plugin artifacts and Runtime locks                          | Foundation control plane and Worker runtime                                                           | Preflights on demand or stages exact trusted Runner environments                                                   |
-| Connector MCP, Provider execution, and Connector event ingress              | [Connector Service](23-connectors-connections-and-triggers.md)                                        | Runs in the `connector` role without moving durable management or Run authority                                    |
+| Native event ingress, a13n MCP, and Connector dispatch                      | [External Connectivity](40-connectivity/README.md)                                                    | Run in the `connectivity` role without moving durable management or Run authority                                  |
 | Durable Thread resource                                                     | Foundation                                                                                            | Owns Session membership, origin, current Run, continuation head, and version                                       |
 | Run and RunAttempt                                                          | Foundation                                                                                            | Own durable scheduling, state, fencing, recovery, and outcome                                                      |
 | Queue-if-busy existing-Thread Run intent                                    | [Queued Submissions](36-agent-control-queued-submissions.md)                                          | Accepts immediately when eligible or remains editable outside the Run DAG                                          |
@@ -217,18 +210,12 @@ Foundation depends on the public Harness, Environment Provider, Agent Stream Pro
 
 One artifact supports three independently deployable roles and their all-in-one composition:
 
-- `all` owns control, worker, and Connector Service components in one process;
-- `control` owns product APIs, authorization, domain-owned control work, deferred feedback, and outbox publication;
+- `all` owns control, worker, and Connectivity components in one process;
+- `control` owns product APIs, authorization, domain-owned control work including Connectivity management operations, deferred feedback, and outbox publication;
 - `worker` owns periodic Run scanning, transactional claim and expired-lease takeover, Agent reconstruction, fresh Environment construction and finalization, Harness invocation, observation consumption, and fenced publication; and
-- `connector` owns the Connector MCP Gateway, ConnectorProvider execution, Connection credential materialization, and Connector event ingress or polling.
+- `connectivity` owns provider event ingress and polling, the a13n MCP, Ingress native action adapters, and Connector runtime dispatch.
 
-These names describe deployment roles, not product resources. `Connector Service` is the name of the `connector` role's runtime responsibility, not a
-database model. A `Run` remains the durable scheduled-work resource regardless
-of which role processes it. The [runtime
-contract](01-runtime-configuration-and-deployment.md) owns the complete
-component matrix, deployment profiles, readiness, and drain behavior. Worker-
-and Connector-only processes expose operational probes but no `/api/v1` product
-surface and never migrate the schema.
+These names describe deployment roles, not product resources. Connectivity remains an internal Foundation Service module and process role, not a separate service or database. A `Run` remains the durable scheduled-work resource regardless of which role processes it. The [runtime contract](01-runtime-configuration-and-deployment.md) owns the complete component matrix, deployment profiles, readiness, and drain behavior. Worker- and Connectivity-only processes expose operational probes but no `/api/v1` product surface and never migrate the schema.
 
 ## End-to-End Interactive Run
 
@@ -274,14 +261,15 @@ flowchart LR
     Applications --> Domain[Foundation domain contracts]
     Applications --> Ports[Authorization, storage, coordination, and reconstruction ports]
     Adapters[Database, Redis, object store, and ingress adapters] --> Ports
-    Applications --> ConnectorService[Connector Service operations]
+    Applications --> Connectivity[Connectivity application operations]
     Applications --> EnvProvider[Construct fresh Environments]
     Applications --> HostedHarness[Hosted Harness adapter]
     HostedHarness --> Harness[agent-harness]
-    HostedHarness --> MCPClient[Connector MCP Client]
-    MCPClient --> MCPGateway[Connector Service MCP Gateway]
-    ConnectorService --> MCPGateway
-    MCPGateway --> Provider[ConnectorProvider]
+    HostedHarness --> MCPClients[a13n and user Remote MCP clients]
+    MCPClients --> A13nMCP[a13n MCP]
+    MCPClients --> UserMCP[User Remote MCP]
+    Connectivity --> A13nMCP
+    A13nMCP --> ConnectivityAdapters[Ingress and Connector adapters]
     EnvProvider --> EnvironmentAdapter[Process-local Environment adapter]
     EnvironmentAdapter --> Harness
     HostedHarness --> Observer[HarnessAguiObserver]
@@ -307,7 +295,7 @@ No later fact follows merely because an earlier fact occurred. In particular, a 
 
 ## Invariants
 
-01. Foundation has one domain and authorization model across `all`, `control`, `worker`, and `connector` roles.
+01. Foundation has one domain and authorization model across `all`, `control`, `worker`, and `connectivity` roles.
 02. Session, Thread, Run, and Item follow the shared platform meanings; Thread owns versioned advancement selection, while Run and RunAttempt directly own durable scheduling and recovery.
 03. PostgreSQL is accepted lifecycle authority; Redis carries coordination and bounded Run replay without becoming lifecycle authority.
 04. One RunAttempt starts at most one logical Harness Run.

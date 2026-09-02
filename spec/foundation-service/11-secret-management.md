@@ -4,7 +4,7 @@
 
 Foundation Service owns a durable managed Secret resource for opaque values supplied by an authorized caller. The public management API accepts a Secret value on creation or replacement and never returns that value after acceptance, including in the mutation response. It exposes only identity, ownership, key, version, and timestamps.
 
-Secret management is distinct from login credentials, credential selection, resolution, and injection. A ModelConfig or another Agent input can bind an exact Workspace-owned Secret reference or declare a User-owned Secret key that is resolved for the invoking User, but it contains no Secret value. [Connections and Triggers](23-connectors-connections-and-triggers.md) can also own lifecycle-managed credential material. This contract owns each referenced Secret's scope and use eligibility; Model Management, Agent authoring, and Connector contracts own how non-secret requirements and internal credentials enter their resources. The management API exposes no public plaintext-read or comparison operation.
+Secret management is distinct from login credentials, credential selection, resolution, and injection. A ModelConfig or another Agent input can bind an exact Workspace-owned Secret reference or declare a User-owned Secret key that is resolved for the invoking User, but it contains no Secret value. Ingresses, Connectors, and MCPConnections can own lifecycle-managed credentials under the [Connectivity subsystem](40-connectivity/README.md). A Connector-managed third-party account token never enters Foundation Secrets, while the credential used to call the Connector service does. MCPConnection bearer values, bounded static-header values, and OAuth credential bundles are Foundation-owned because Foundation acts as the MCP client. This contract owns each accepted Secret's scope and use eligibility; Model Management, Agent authoring, and Connectivity contracts own how non-secret requirements and Foundation-to-provider credentials enter their resources. The management API exposes no public plaintext-read or comparison operation.
 
 A typed `AgentRunOverride` may contain sensitive values only at leaves explicitly declared by a trusted Provider schema, such as bounded runtime Connector headers. Acceptance removes those values from `EffectiveAgentConfig`, encrypts them into one Run-owned payload under the same protection profile, and records only protected binding keys and a protected digest in ordinary state. This payload is not a `Secret`, has no management lifecycle or plaintext-read route, and is reused exactly for retry or resume of that accepted Run. Foundation accepts no generic secret bag, arbitrary sensitive path, or untyped provider dictionary.
 
@@ -22,20 +22,21 @@ class SecretOwnerRef:
     owner_type: Literal[
         "workspace",
         "user",
-        "connection",
-        "trigger",
+        "ingress",
+        "connector",
+        "mcp_connection",
         "a2a_push_configuration",
     ]
     owner_id: str
 ```
 
-`SecretOwnerType` is a string enum owned by Foundation IAM and serialized as lowercase `snake_case`. OSS supports `workspace`, `user`, `connection`, `trigger`, and `a2a_push_configuration`. Adding another enum value is additive; removing, renaming, or repurposing one is incompatible while durable data refers to it.
+`SecretOwnerType` is a string enum owned by Foundation IAM and serialized as lowercase `snake_case`. OSS supports `workspace`, `user`, `ingress`, `connector`, `mcp_connection`, and `a2a_push_configuration`. Adding another enum value is additive; removing, renaming, or repurposing one is incompatible while durable data refers to it.
 
-`owner_id` is interpreted according to `owner_type`. A Workspace-owned Secret uses the stored `workspace_id` as `owner_id`. A User-owned Secret uses the User ID and remains bounded to the stored Organization and Workspace. A Connection-, Trigger-, or A2A push-configuration-owned Secret uses that exact resource ID and the resource's stored tenant boundary. The pair determines ownership and key uniqueness, while the explicit tenant fields determine isolation and routing. Foundation validates the owner, Organization, Workspace, current RoleBindings, and lifecycle before accepting a mutation. An owner reference grants no authority, and the service infers no tenant or routing fact from the identifier string.
+`owner_id` is interpreted according to `owner_type`. A Workspace-owned Secret uses the stored `workspace_id` as `owner_id`. A User-owned Secret uses the User ID and remains bounded to the stored Organization and Workspace. An Ingress-, Connector-, MCPConnection-, or A2A push-configuration-owned Secret uses that exact resource ID and the resource's stored tenant boundary. The pair determines ownership and key uniqueness, while the explicit tenant fields determine isolation and routing. Foundation validates the owner, Organization, Workspace, current RoleBindings, and lifecycle before accepting a mutation. An owner reference grants no authority, and the service infers no tenant or routing fact from the identifier string.
 
 A Workspace Builder or Admin manages Workspace-owned Secrets. Only the owning User manages a User-owned Secret; another Builder or Admin cannot list, inspect, replace, transfer, or delete it. Workspace deletion still performs tenant-owned cleanup. A User-owned Secret is eligible for run-time use only when the active invoking Principal is that User, the User currently has access to the Workspace, and the selected ModelConfig or other Agent input declares the matching User Secret key. A Service Account cannot use a User-owned Secret.
 
-Connection-, Trigger-, and A2A push-configuration-owned Secrets are internal lifecycle data. Generic Secret routes never create, enumerate, replace, or delete them. The owning operation creates or rotates their values and returns only its safe resource projection. Runtime resolution permits a Connection-owned Secret only for that exact currently authorized Connection, a Trigger-owned Secret only for its inbound source operation, and an A2A push Secret only for the exact active configuration and fenced delivery generation. Trigger and push credentials never become Agent input or satisfy a tool Connection.
+Ingress-, Connector-, MCPConnection-, and A2A push-configuration-owned Secrets are internal lifecycle data. Generic Secret routes never create, enumerate, replace, or delete them. The owning operation creates or rotates their values and returns only its safe resource projection. Runtime resolution permits an Ingress-owned Secret only for that exact authorized native provider operation, a Connector-owned Secret only for calls to that Connector service, an MCPConnection-owned Secret only for the exact selected Remote MCP endpoint and authorization identity, and an A2A push Secret only for the exact active configuration and fenced delivery generation. Connector and Ingress credentials never satisfy a third-party account ConnectorConnection, and none of these values becomes Agent input.
 
 Secret keys, owner references, timestamps, and versions are protected metadata even though they are not plaintext Secret values. Management operations disclose them only after current authorization. Management authority and runtime resolution authority remain separate.
 
@@ -91,11 +92,7 @@ The request `value` is a non-empty JSON string whose UTF-8 encoding is at most 6
 
 ## Public Management API
 
-All routes use the shared `/api/v1` JSON contract and are exposed only by
-`control` and `all` service roles. A `worker` or `connector` role never serves
-the public management API. Secret values appear only in authenticated request
-bodies; they never appear in a URL, query parameter, header, or multipart
-filename.
+All routes use the shared `/api/v1` JSON contract and are exposed only by `control` and `all` service roles. A `worker` or `connectivity` role never serves the public management API. Secret values appear only in authenticated request bodies; they never appear in a URL, query parameter, header, or multipart filename.
 
 Metadata Get and List authorize `secrets.read`. Workspace-owned create,
 replace, and delete authorize `secrets.manage`; selecting an existing Secret in
@@ -191,7 +188,7 @@ The row enforces these consistency rules:
 - a tombstone has `deleted_at IS NOT NULL` and null `ciphertext`, `nonce`, and `encryption_key_id`;
 - one partial unique index covers `(organization_id, workspace_id, owner_type, owner_id, key)` only for active rows;
 - owner-scoped listing uses an index beginning with `(organization_id, workspace_id, owner_type, owner_id, key, id)`;
-- a Workspace owner has `owner_id = workspace_id`, a User owner must be a current platform User eligible for the stored Workspace, and a Connection, Trigger, or A2A push configuration owner must be that active resource in the same stored tenant boundary;
+- a Workspace owner has `owner_id = workspace_id`, a User owner must be a current platform User eligible for the stored Workspace, and an Ingress, Connector, MCPConnection, or A2A push configuration owner must be that active resource in the same stored tenant boundary;
 - no update can change `id`, `organization_id`, `workspace_id`, `owner_type`, `owner_id`, `key`, or `created_at`.
 
 Bounded text columns preserve the validated public limits. `version` uses a non-overflowing positive integer domain, timestamps preserve UTC instants, and `ciphertext` and `nonce` use binary columns rather than text or JSON encoding. `encryption_key_id` is bounded and non-blank; it identifies key material but never contains that material.
@@ -208,14 +205,7 @@ Every active Secret value is encrypted directly under one operator-configured 25
 
 Authenticated additional data uses a stable length-prefixed encoding that binds the exact `id`, `organization_id`, `workspace_id`, `owner_type`, `owner_id`, `key`, `version`, and `encryption_key_id`. Copying ciphertext to another tenant, row, owner, key, version, or key identifier therefore fails authentication rather than returning another Secret's plaintext.
 
-Every role that includes Secret management or runtime Secret resolution loads
-the configured master key. A `control` process uses it for accepted Secret
-writes and key migration. A `worker` process uses it only to resolve authorized
-non-Connector Secret bindings for a fenced RunAttempt. A `connector` process
-uses it only for exact authorized Connection credentials or Trigger-source
-credential material. An `all` process owns all three paths. Worker and
-Connector processes expose no Secret management route, and no role receives
-decryption authority merely from a public API permission.
+Every role that includes Secret management or runtime Secret resolution loads the configured master key. A `control` process uses it for accepted Secret writes, MCP OAuth setup and refresh, exact Connector credentials required by authorized management adapter operations, and key migration. A `worker` process uses it only to resolve authorized Agent inputs and exact MCPConnection credentials for a fenced RunAttempt. A `connectivity` process uses it only for exact authorized Ingress credentials and Connector runtime dispatch. An `all` process owns all three paths. Worker and Connectivity processes expose no Secret management route, and no role receives decryption authority merely from a public API permission.
 
 Possessing the symmetric key gives each such process cryptographic decryption capability. The distinction between management and runtime resolution is therefore an API, authorization, and code-path boundary rather than cryptographic separation.
 
@@ -266,7 +256,7 @@ sequenceDiagram
 
 Direct deletion locks the active row, rechecks authorization and `expected_version`, nulls `ciphertext`, `nonce`, and `encryption_key_id`, sets `deleted_at`, and commits the tombstone and security audit event atomically. It performs no cryptographic operation.
 
-Owner deletion first makes the owner ineligible for Secret creation and replacement. It then tombstones owned Secrets in bounded, restartable batches. Durable batch progress makes interruption and replay safe. Owner deletion is complete only after an authoritative query finds no active owned Secret, and reconciliation repeats cleanup after interruption. Connection revocation, Trigger source cleanup, and A2A push-configuration fencing apply their owning lifecycle before tombstoning associated Secrets. Secret resolution denies as soon as any owner is disabled, revoked, deleting, or otherwise ineligible even if physical cleanup has not completed.
+Owner deletion first makes the owner ineligible for Secret creation and replacement. It then tombstones owned Secrets in bounded, restartable batches. Durable batch progress makes interruption and replay safe. Owner deletion is complete only after an authoritative query finds no active owned Secret, and reconciliation repeats cleanup after interruption. Ingress, Connector, or MCPConnection deletion and A2A push-configuration fencing apply their owning lifecycle before tombstoning associated Secrets. Secret resolution denies as soon as any owner is disabled, revoked, deleting, or otherwise ineligible even if physical cleanup has not completed.
 
 ## Failure, Cancellation, and Retry Semantics
 
@@ -304,7 +294,7 @@ The `aes_256_gcm_v1` ciphertext layout, nonce size, authentication-tag size, add
 
 ## Trade-offs
 
-Polymorphic `(owner_type, owner_id)` ownership supports Workspace-shared, User-personal, Connection, and Trigger values without parallel Secret tables. Explicit Organization and Workspace columns preserve tenant filtering and relational tenant consistency, while Foundation domain logic and each owner lifecycle enforce polymorphic owner existence, visibility, cleanup, and reconciliation.
+Polymorphic `(owner_type, owner_id)` ownership supports Workspace-shared, User-personal, Ingress, Connector, MCPConnection, and A2A push values without parallel Secret tables. Explicit Organization and Workspace columns preserve tenant filtering and relational tenant consistency, while Foundation domain logic and each owner lifecycle enforce polymorphic owner existence, visibility, cleanup, and reconciliation.
 
 Write-only management sharply limits accidental human and API disclosure but cannot prove that a process or operator holding the master key never accesses the value. Direct AES-256-GCM encryption avoids an external key-service dependency and keeps the row and write path small. In exchange, compromise of both the database and master key exposes every active Secret, a compromised process holding the key can decrypt stored values, and master-key replacement requires decrypting and re-encrypting all active rows rather than rewrapping small per-Secret keys.
 

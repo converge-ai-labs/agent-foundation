@@ -126,19 +126,6 @@ class SkillSelection(StrictModel):
     skill_revision_id: ObjectId
 
 
-class ConnectorSelection(StrictModel):
-    connector_revision_id: ObjectId
-    connection_id: ObjectId | None = None
-    tools: tuple[BoundedKey, ...] | None = Field(default=None, max_length=256)
-
-    @field_validator("tools")
-    @classmethod
-    def validate_tools(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
-        if value is not None and (not value or len(value) != len(set(value))):
-            raise ValueError("tools must be a non-empty unique tuple or null")
-        return value
-
-
 class EnvironmentSelection(StrictModel):
     environment_revision_id: ObjectId
 
@@ -261,7 +248,6 @@ class AgentPresetConfig(StrictModel):
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
-    connectors: dict[BoundedKey, ConnectorSelection] = Field(default_factory=dict, max_length=128)
     environment: EnvironmentSelection | None = None
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
@@ -313,13 +299,6 @@ class ModelOverride(StrictModel):
         return None if value is None else _validate_model_settings(value)
 
 
-class ConnectorOverride(StrictModel):
-    connector_revision_id: ObjectId | None = None
-    connection_id: ObjectId | None = None
-    tools: tuple[BoundedKey, ...] | None = Field(default=None, max_length=256)
-    headers: dict[str, str] | None = Field(default=None, max_length=64, repr=False)
-
-
 class SubagentOverride(StrictModel):
     agent_preset_id: ObjectId | None = None
     revision: int | None = Field(default=None, ge=1)
@@ -339,7 +318,6 @@ class AgentRunOverride(StrictModel):
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
-    connectors: dict[BoundedKey, ConnectorOverride | None] | None = Field(default=None, max_length=128)
     environment: EnvironmentOverride | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
@@ -373,31 +351,6 @@ class ResolvedSkillSelection(StrictModel):
     content_digest: Sha256Digest
 
 
-class FrozenConnectorTool(StrictModel):
-    name: BoundedKey
-    tool_id: str = Field(min_length=1, max_length=256)
-    description: str = Field(max_length=16 * 1024)
-    parameters_json_schema: JsonObject
-    effects: tuple[str, ...] = Field(default=(), max_length=64)
-    credential_audiences: tuple[str, ...] = Field(default=(), max_length=64)
-    idempotency: str = Field(default="none", min_length=1, max_length=64)
-    output_policy: JsonObject = Field(default_factory=dict)
-
-
-class ConnectorProviderContractLock(StrictModel):
-    provider_key: str = Field(min_length=1, max_length=200)
-    contract_version: str = Field(min_length=1, max_length=200)
-
-
-class ResolvedConnectorSelection(StrictModel):
-    name: BoundedKey
-    connector_revision_id: ObjectId
-    connection_id: ObjectId | None = None
-    tools: tuple[FrozenConnectorTool, ...] = Field(min_length=1, max_length=256)
-    provider_lock: ConnectorProviderContractLock
-    sensitive_binding_keys: tuple[str, ...] = Field(default=(), max_length=64)
-
-
 class EnvironmentExecutionConfig(StrictModel):
     schema_version: Literal["1"] = "1"
     source_environment_revision_id: ObjectId | None = None
@@ -424,7 +377,6 @@ class ResolvedRevisionContent(StrictModel):
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...] = ()
     runtime_lock_digest: Sha256Digest
     resolved_skills: tuple[ResolvedSkillSelection, ...] = ()
-    resolved_connectors: tuple[ResolvedConnectorSelection, ...] = ()
     resolved_environment: EnvironmentExecutionConfig | None = None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...] = ()
 
@@ -474,7 +426,6 @@ class AgentPresetRevision(StrictModel):
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: Sha256Digest
     resolved_skills: tuple[ResolvedSkillSelection, ...]
-    resolved_connectors: tuple[ResolvedConnectorSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: Sha256Digest

@@ -175,7 +175,6 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
         filesystem_root=tmp_path / "files",
         secret_master_key_base64=base64.b64encode(b"0123456789abcdef0123456789abcdef").decode(),
         secret_encryption_key_id="trace-integration-test",
-        connector_internal_auth_token="trace-integration-connector-token",
         observability_tracing=False,
         observability_query_provider="langfuse",
         observability_query_langfuse_base_url=_BASE_URL,

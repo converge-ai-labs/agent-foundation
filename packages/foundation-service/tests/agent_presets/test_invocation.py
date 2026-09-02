@@ -27,7 +27,6 @@ def test_absent_override_inherits_complete_preset_config() -> None:
     merged = merge_agent_run_override(base, None)
 
     assert merged.config.model_dump(mode="json", by_alias=True) == base.model_dump(mode="json", by_alias=True)
-    assert merged.sensitive_values.connector_headers == {}
 
 
 def test_scalar_and_list_overrides_replace_and_clear() -> None:
@@ -86,44 +85,6 @@ def test_duplicate_list_override_is_rejected() -> None:
     assert invalid.value.details == {"path": "skills", "reason": "duplicate_selection"}
 
 
-def test_connector_patch_add_update_delete_and_extract_headers() -> None:
-    base_payload = preset_config().model_dump(mode="python")
-    base_payload["connectors"] = {
-        "orders": {
-            "connector_revision_id": "conrev_1234567890abcdef",
-            "connection_id": "conn_1234567890abcdef",
-            "tools": ("lookup", "refund"),
-        },
-        "legacy": {
-            "connector_revision_id": "conrev_abcdef1234567890",
-            "tools": ("read",),
-        },
-    }
-    base = type(preset_config()).model_validate(base_payload)
-    override = AgentRunOverride.model_validate(
-        {
-            "connectors": {
-                "orders": {
-                    "connection_id": None,
-                    "tools": ["lookup"],
-                    "headers": {"X-Tenant": "top-secret-value"},
-                },
-                "legacy": None,
-                "catalog": {"connector_revision_id": "conrev_1111111111111111"},
-            }
-        }
-    )
-
-    merged = merge_agent_run_override(base, override)
-
-    assert tuple(merged.config.connectors) == ("orders", "catalog")
-    assert merged.config.connectors["orders"].connection_id is None
-    assert merged.config.connectors["orders"].tools == ("lookup",)
-    assert merged.config.connectors["catalog"].tools is None
-    assert merged.sensitive_values.connector_headers == {"orders": {"X-Tenant": "top-secret-value"}}
-    assert "top-secret-value" not in merged.config.model_dump_json()
-
-
 def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
     base = preset_config(
         subagents={
@@ -167,7 +128,6 @@ def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
         ({"retries": None}, "retries", "null_not_allowed"),
         ({"model": {"settings": None}}, "model.settings", "null_not_allowed"),
         ({"retries": {"tools": None}}, "retries.tools", "null_not_allowed"),
-        ({"connectors": {"new": {}}}, "connectors.new.connector_revision_id", "required"),
         ({"subagents": {"new": {}}}, "subagents.new.agent_preset_id", "required"),
     ],
 )
