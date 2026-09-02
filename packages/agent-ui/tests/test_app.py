@@ -37,7 +37,6 @@ async def test_application_starts_publishes_reopens_and_closes(tmp_path: Path) -
 
     async with open_agent_ui_app(settings) as app:
         retained_app = app
-        first_instance = (await app.status()).instance_id
         assert app.state is AppState.ready
         assert (await app.status()).object_count == 0
         reference = await app._store.publish_object(
@@ -55,11 +54,10 @@ async def test_application_starts_publishes_reopens_and_closes(tmp_path: Path) -
 
     async with open_agent_ui_app(settings) as reopened:
         assert (await reopened._store.read_object(reference)).payload == {"agent": "root"}
-        assert (await reopened.status()).instance_id != first_instance
 
 
 async def test_application_accepts_configuration_and_runs_roster_with_app_owned_operator(tmp_path: Path) -> None:
-    config_path = tmp_path / "agent-ui.yaml"
+    config_path = tmp_path / "a13n-ui.yaml"
     config_path.write_text(
         """
 schema_version: "1"
@@ -114,7 +112,7 @@ async def test_production_app_exposes_fixed_release_tool_families(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_path = tmp_path / "agent-ui.yaml"
+    config_path = tmp_path / "a13n-ui.yaml"
     config_path.write_text(
         """
 schema_version: "1"
@@ -176,7 +174,7 @@ environments:
 
 
 async def test_root_control_targets_live_stream_and_session_is_readmitted_after_cancel(tmp_path: Path) -> None:
-    config_path = tmp_path / "agent-ui.yaml"
+    config_path = tmp_path / "a13n-ui.yaml"
     config_path.write_text(
         """
 schema_version: "1"
@@ -347,7 +345,6 @@ async def test_concurrent_apps_share_one_data_root(tmp_path: Path) -> None:
         async with open_agent_ui_app(settings) as second:
             assert first.state is AppState.ready
             assert second.state is AppState.ready
-            assert (await first.status()).instance_id != (await second.status()).instance_id
 
 
 async def test_missing_unselected_object_does_not_block_startup_but_fails_on_read(tmp_path: Path) -> None:

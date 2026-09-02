@@ -19,11 +19,8 @@ class Session(BaseModel):
     created_at: datetime
     updated_at: datetime
     title: str | None
-    archived_at: datetime | None
-    pinned: bool
     agent_snapshot: SnapshotRef
     environment_snapshot: SnapshotRef
-    parent_fork: SessionForkRef | None
     continuation: ContinuationRef
 ```
 
@@ -106,7 +103,7 @@ Session ID
 + normalized bound folder
 ```
 
-State lookup, supplied-state comparison, publication, cleanup, destroy, and prune use exactly that key. The key prevents accidental cross-Session or cross-profile target sharing. It does not create a Workspace identity.
+State lookup, supplied-state comparison, and publication use exactly that key. The key prevents accidental cross-Session or cross-profile target sharing. It does not create a Workspace identity.
 
 For each key, the stored current value is authoritative `EnvironmentState | None`. Existing authoritative `None` does not permit fallback from root or child `HarnessState.environment_states`. Continuation state is a portable observation only and can be adopted only through an explicit unmanaged import operation.
 
@@ -146,37 +143,11 @@ Agent UI releases select one exact `agent-envd` release manifest and target hash
 
 Before first Local EIP use, Agent UI verifies the executable identity, required isolation, and EIP compatibility. The executable cache carries no Session, folder, or Environment authority. A daemon, transport, process handle, and output cursor are process-local to the fresh adapter and never enter `EnvironmentState` or Session storage.
 
-## Forking and Profile Changes
-
-Changing Agent or Environment-profile snapshots creates a fork:
-
-- the source root history transfers through compatible `HarnessState.fork()` or an explicit readable-history seed;
-- the fork receives a new root Thread and Session identity;
-- it pins the selected current Agent and Environment-profile snapshots;
-- it starts with no Host-authoritative state associations;
-- it copies no workspace binding, Provider target, child Thread, live Run, credential, adapter, process, or subscriber.
-
-A caller supplies a new binding when submitting the first message to the fork. Existing Sessions are never mutated in place by configuration reload.
-
 ## Session Tools and Workspace Authority
 
 Model-visible root Session tools can list and inspect Sessions, start or continue work in another Session, and steer an active Run. They call App commands and receive detached bounded projections.
 
 `run_session` inherits the caller's captured `WorkspaceBinding`; its arguments contain no local paths. `steer_session` targets an already active Run and therefore keeps that Run's existing binding. Same-active-Session recursive run or steer calls are rejected.
-
-## Deletion, Destroy, and Prune
-
-Session deletion:
-
-1. prevents new root and child admissions for the Session;
-2. cancels active process-local root and child Runs owned by the App;
-3. invokes explicit Provider `destroy()` for each retained stateful binding through a fresh adapter;
-4. publishes the resulting cached state or cleanup failure;
-5. removes Session, child Thread, and current-state indexes.
-
-Destroy is idempotent where Provider evidence permits. Unknown outcome retains cleanup bookkeeping for explicit retry. Agent UI never deletes a user's Native or Local EIP source folder, Docker bind source, external named volume, or unrelated Provider target.
-
-Explicit prune handles displaced or deleted-Session Provider states that remain safely attributable to Agent UI. Agent UI adds no global target scanner, distributed lock, or exactly-once destruction guarantee.
 
 ## Failure Semantics
 
@@ -189,7 +160,6 @@ Explicit prune handles displaced or deleted-Session Provider states that remain 
 | Cleanup or close fails              | Failure is reported; final cached state is still compared when available    |
 | State publication fails             | Continuation selection proceeds independently                               |
 | Root continuation publication fails | Changed Environment state remains published                                 |
-| Destroy outcome unknown             | Cleanup bookkeeping remains for retry or prune                              |
 
 ## Invariants
 
@@ -200,6 +170,6 @@ Explicit prune handles displaced or deleted-Session Provider states that remain 
 05. Every independent root or async child Run receives fresh adapters.
 06. Host state is keyed by Session, profile digest, binder key, and normalized folder.
 07. Cleanup precedes final cached-state comparison and changed-only publication.
-08. Harness close is non-destructive; Agent UI alone decides destroy and prune.
+08. Harness and fallback close are non-destructive; destructive Environment lifecycle is outside this contract.
 09. Steering cannot change an active Run's binding.
 10. Workspace folders never become a Session, Agent, or Environment-profile resource.

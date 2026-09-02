@@ -7,7 +7,6 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
@@ -18,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .metadata import Base
+from .utc_datetime import UtcDateTime
 
 _DIGEST_LENGTH = 64
 _SCHEMA_VERSION_LENGTH = 64
@@ -34,8 +34,7 @@ class AcceptedConfigurationRecord(Base):
     source_digest: Mapped[str] = mapped_column(String(_DIGEST_LENGTH), primary_key=True)
     yaml_digest: Mapped[str] = mapped_column(String(_DIGEST_LENGTH), nullable=False)
     document_json: Mapped[str] = mapped_column(Text, nullable=False)
-    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    restart_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class CurrentConfigurationRecord(Base):
@@ -49,7 +48,6 @@ class CurrentConfigurationRecord(Base):
         String(_DIGEST_LENGTH),
         ForeignKey("accepted_configuration.source_digest", ondelete="RESTRICT"),
         nullable=False,
-        unique=True,
     )
 
 
@@ -57,25 +55,19 @@ class CompositionSnapshotRecord(Base):
     """Index for one immutable resolved Agent or Environment-profile snapshot."""
 
     __tablename__ = "composition_snapshot"
-    __table_args__ = (
-        CheckConstraint("snapshot_kind IN ('agent', 'environment')", name="snapshot_kind"),
-        UniqueConstraint("snapshot_kind", "logical_digest", name="identity"),
-    )
+    __table_args__ = (CheckConstraint("snapshot_kind IN ('agent', 'environment')", name="snapshot_kind"),)
 
     logical_digest: Mapped[str] = mapped_column(String(_DIGEST_LENGTH), primary_key=True)
     snapshot_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     object_schema_version: Mapped[str] = mapped_column(String(_SCHEMA_VERSION_LENGTH), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class ConfigurationSnapshotRecord(Base):
     """Named exact snapshot selected by one accepted configuration."""
 
     __tablename__ = "configuration_snapshot"
-    __table_args__ = (
-        CheckConstraint("snapshot_kind IN ('agent', 'environment')", name="snapshot_kind"),
-        UniqueConstraint("source_digest", "snapshot_kind", "name", name="selection"),
-    )
+    __table_args__ = (CheckConstraint("snapshot_kind IN ('agent', 'environment')", name="snapshot_kind"),)
 
     source_digest: Mapped[str] = mapped_column(
         String(_DIGEST_LENGTH),
@@ -91,32 +83,16 @@ class ConfigurationSnapshotRecord(Base):
     )
 
 
-class ConfigurationDiagnosticRecord(Base):
-    """Bounded path-free evidence from configuration acceptance attempts."""
-
-    __tablename__ = "configuration_diagnostic"
-
-    diagnostic_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    app_instance_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    code: Mapped[str] = mapped_column(String(64), nullable=False)
-    detail: Mapped[str] = mapped_column(Text, nullable=False)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
 class SessionRecord(Base):
     """Session metadata, pinned composition, and selected root continuation."""
 
     __tablename__ = "local_session"
-    __table_args__ = (CheckConstraint("status IN ('active', 'deleting')", name="status"),)
 
     session_id: Mapped[str] = mapped_column(String(_SESSION_ID_LENGTH), primary_key=True)
     root_thread_id: Mapped[str] = mapped_column(String(_THREAD_ID_LENGTH), nullable=False, unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False, index=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", index=True)
     agent_snapshot_digest: Mapped[str] = mapped_column(
         String(_DIGEST_LENGTH),
         ForeignKey("composition_snapshot.logical_digest", ondelete="RESTRICT"),
@@ -127,7 +103,6 @@ class SessionRecord(Base):
         ForeignKey("composition_snapshot.logical_digest", ondelete="RESTRICT"),
         nullable=False,
     )
-    parent_fork_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     continuation_schema_version: Mapped[str] = mapped_column(String(_SCHEMA_VERSION_LENGTH), nullable=False)
     continuation_digest: Mapped[str] = mapped_column(String(_DIGEST_LENGTH), nullable=False)
 
@@ -148,7 +123,7 @@ class ChildThreadRecord(Base):
     subagent_name: Mapped[str] = mapped_column(String(63), nullable=False)
     child_definition_id: Mapped[str] = mapped_column(String(256), nullable=False)
     child_definition_digest: Mapped[str] = mapped_column(String(_DIGEST_LENGTH), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class ChildExecutionRecord(Base):
@@ -166,13 +141,18 @@ class ChildExecutionRecord(Base):
             name="resume_link",
         ),
         CheckConstraint(
-            "selected_checkpoint_digest IS NOT NULL OR "
-            "(selected_checkpoint_schema_version IS NULL AND selected_checkpoint_terminal = 0 AND resumable = 0)",
+            "(selected_checkpoint_digest IS NULL AND selected_checkpoint_schema_version IS NULL "
+            "AND selected_checkpoint_terminal = 0 AND resumable = 0) OR "
+            "(selected_checkpoint_digest IS NOT NULL AND selected_checkpoint_schema_version IS NOT NULL)",
             name="checkpoint_fields",
         ),
         CheckConstraint(
             "status != 'succeeded' OR (selected_checkpoint_digest IS NOT NULL AND selected_checkpoint_terminal = 1)",
             name="success_checkpoint",
+        ),
+        CheckConstraint(
+            "resumable = 0 OR (status = 'succeeded' AND selected_checkpoint_terminal = 1)",
+            name="resumable_terminal_success",
         ),
         UniqueConstraint("child_thread_id", "segment_index", name="segment"),
     )
@@ -207,14 +187,13 @@ class ChildExecutionRecord(Base):
         unique=True,
     )
     failure_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    owner_app_instance_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
 class EnvironmentBindingRecord(Base):
-    """Host-authoritative state and cleanup facts for one complete folder binding key."""
+    """Host-authoritative state for one complete folder binding key."""
 
     __tablename__ = "environment_binding"
     __table_args__ = (
@@ -224,11 +203,8 @@ class EnvironmentBindingRecord(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint(
-            "cleanup_status IN ('none', 'required', 'in_progress', 'failed')",
-            name="cleanup_status",
-        ),
-        CheckConstraint(
-            "state_digest IS NOT NULL OR state_schema_version IS NULL",
+            "(state_digest IS NULL AND state_schema_version IS NULL) OR "
+            "(state_digest IS NOT NULL AND state_schema_version IS NOT NULL)",
             name="state_reference",
         ),
     )
@@ -239,9 +215,7 @@ class EnvironmentBindingRecord(Base):
     normalized_folder: Mapped[str] = mapped_column(Text, primary_key=True)
     state_schema_version: Mapped[str | None] = mapped_column(String(_SCHEMA_VERSION_LENGTH), nullable=True)
     state_digest: Mapped[str | None] = mapped_column(String(_DIGEST_LENGTH), nullable=True)
-    cleanup_status: Mapped[str] = mapped_column(String(16), nullable=False, default="none", index=True)
-    cleanup_failure_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 __all__ = [
@@ -249,7 +223,6 @@ __all__ = [
     "ChildExecutionRecord",
     "ChildThreadRecord",
     "CompositionSnapshotRecord",
-    "ConfigurationDiagnosticRecord",
     "ConfigurationSnapshotRecord",
     "CurrentConfigurationRecord",
     "EnvironmentBindingRecord",

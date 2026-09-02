@@ -84,7 +84,7 @@ class _FakeAgentReconstructor:
 
 
 async def _service(tmp_path: Path, executable: Any):
-    source_path = tmp_path / "agent-ui.yaml"
+    source_path = tmp_path / "a13n-ui.yaml"
     source_path.write_text(
         """
 schema_version: "1"

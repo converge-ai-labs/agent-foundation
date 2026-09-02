@@ -8,7 +8,7 @@ from a13n_ui.settings import StorageSettings
 from a13n_ui.storage.database import open_database, short_session, transaction
 from a13n_ui.storage.metadata import agent_ui_metadata
 from a13n_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
-from a13n_ui.storage.models import ConfigurationDiagnosticRecord
+from a13n_ui.storage.models import AcceptedConfigurationRecord
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, select, text
@@ -32,7 +32,6 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "child_execution",
             "child_thread",
             "composition_snapshot",
-            "configuration_diagnostic",
             "configuration_snapshot",
             "current_configuration",
             "environment_binding",
@@ -76,26 +75,27 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
         now = datetime.now(UTC)
         async with transaction(database.sessions) as session:
             session.add(
-                ConfigurationDiagnosticRecord(
-                    app_instance_id="app-test",
-                    code="committed",
-                    detail="committed transaction",
-                    recorded_at=now,
+                AcceptedConfigurationRecord(
+                    source_digest="1" * 64,
+                    yaml_digest="2" * 64,
+                    document_json="{}",
+                    accepted_at=now,
                 )
             )
 
         with pytest.raises(RuntimeError, match="rollback"):
             async with transaction(database.sessions) as session:
                 session.add(
-                    ConfigurationDiagnosticRecord(
-                        app_instance_id="app-test",
-                        code="rollback",
-                        detail="rolled back transaction",
-                        recorded_at=now,
+                    AcceptedConfigurationRecord(
+                        source_digest="3" * 64,
+                        yaml_digest="4" * 64,
+                        document_json="{}",
+                        accepted_at=now,
                     )
                 )
                 raise RuntimeError("rollback")
 
         async with short_session(database.sessions) as session:
-            codes = set((await session.execute(select(ConfigurationDiagnosticRecord.code))).scalars())
-            assert codes == {"committed"}
+            records = tuple((await session.execute(select(AcceptedConfigurationRecord))).scalars())
+            assert [record.source_digest for record in records] == ["1" * 64]
+            assert records[0].accepted_at.tzinfo is UTC

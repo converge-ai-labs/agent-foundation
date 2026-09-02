@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Literal, Self
 
-from a13n_environment_provider import EnvironmentProviderSafeError, EnvironmentState
+from a13n_environment_provider import EnvironmentState
 from a13n_harness import HarnessState, SafeFailure
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai.tools import DeferredToolRequests
@@ -150,13 +150,16 @@ class Session(StoredContract):
     created_at: datetime
     updated_at: datetime
     title: str | None
-    archived_at: datetime | None
-    pinned: bool
-    status: Literal["active", "deleting"]
     agent_snapshot: SnapshotRef
     environment_snapshot: SnapshotRef
-    parent_fork: JsonValue | None
     continuation: ObjectRef
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def _aware_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Session timestamps must include a UTC offset")
+        return value.astimezone(UTC)
 
 
 class ChildExecutionHead(StoredContract):
@@ -178,20 +181,33 @@ class ChildExecutionHead(StoredContract):
     resumable: bool
     resumed_from: str | None
     failure: SafeFailure | None
-    owner_app_instance_id: str
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
 
+    @field_validator("created_at", "updated_at", "completed_at")
+    @classmethod
+    def _aware_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("child execution timestamps must include a UTC offset")
+        return value.astimezone(UTC)
+
 
 class EnvironmentBindingHead(StoredContract):
-    """Detached current Environment-state selection and cleanup facts."""
+    """Detached current Environment-state selection."""
 
     key: EnvironmentBindingKey
     state: ObjectRef | None
-    cleanup_status: Literal["none", "required", "in_progress", "failed"]
-    cleanup_failure: EnvironmentProviderSafeError | None
     updated_at: datetime
+
+    @field_validator("updated_at")
+    @classmethod
+    def _aware_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Environment binding updated_at must include a UTC offset")
+        return value.astimezone(UTC)
 
 
 __all__ = [

@@ -81,9 +81,6 @@ class AgentUiSessionCapability(AbstractCapability[AgentContext]):
                         "title": item.title,
                         "created_at": item.created_at.isoformat(),
                         "updated_at": item.updated_at.isoformat(),
-                        "archived": item.archived_at is not None,
-                        "pinned": item.pinned,
-                        "status": item.status,
                     }
                     for item in sessions
                 ],
@@ -116,9 +113,6 @@ class AgentUiSessionCapability(AbstractCapability[AgentContext]):
                     "title": session.title,
                     "created_at": session.created_at.isoformat(),
                     "updated_at": session.updated_at.isoformat(),
-                    "archived": session.archived_at is not None,
-                    "pinned": session.pinned,
-                    "status": session.status,
                 },
                 "history": history,
                 "history_total": total,

@@ -42,7 +42,6 @@ class AppStatus(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     state: AppState
-    instance_id: str = Field(min_length=1, max_length=64)
     object_count: int = Field(ge=0)
 
 
@@ -77,7 +76,6 @@ class AgentUiApp:
         async with self._operation():
             return AppStatus(
                 state=self._state,
-                instance_id=self._store.app_instance_id,
                 object_count=await self._store.object_count(),
             )
 

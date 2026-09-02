@@ -238,8 +238,6 @@ class SessionService:
         await self._claim(session_id)
         try:
             session = await self.get(session_id)
-            if session.status != "active":
-                raise SessionError("Session is not active.", code="session_not_active")
             stored = await self._load_continuation(session)
             if stored.deferred_requests is not None:
                 raise RunCoordinationError(

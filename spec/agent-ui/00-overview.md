@@ -12,7 +12,7 @@ Agent UI persists complete continuation boundaries, not accepted-work intent. Pr
 
 ```mermaid
 flowchart TB
-    Config[agent-ui.yaml]
+    Config[a13n-ui.yaml]
     Markdown[Canonical subagents Markdown]
     Snapshot[Resolved Agent and Environment snapshots]
     Session[Root Session]
@@ -164,12 +164,12 @@ Agent UI stores:
 - complete root continuation objects;
 - child Thread and execution heads;
 - immutable child checkpoints containing exact child `HarnessState` and compact display;
-- Host-authoritative Environment state and cleanup bookkeeping.
+- Host-authoritative Environment state references.
 
 It does not store:
 
 - pending root input or active root Run records;
-- a child scheduler, lease, worker attempt, or takeover protocol;
+- a child scheduler, process-liveness record, lock file, lease, worker attempt, or takeover protocol;
 - Run-owned process handles or output cursors;
 - live Model, Provider, adapter, plugin, MCP, credential, task, callback, or stream objects;
 - AG-UI as a substitute for continuation state.
@@ -194,7 +194,7 @@ It provides interactive Session use plus focused configuration, Agent, subagent 
 04. Every independent Run receives fresh runtime authority and Environment adapters.
 05. Root input and active work are not durably accepted.
 06. Root continuation, Environment state, and child checkpoint publication remain independent facts.
-07. Async children are persisted child Threads without becoming a general Job system.
+07. Async children are persisted child Threads without becoming a general Job system; saved nonterminal status does not prove runtime liveness.
 08. Compact display is inspection authority only; `HarnessState` is resume authority.
 09. Shell processes belong to one Harness Run and have no Agent UI persistence or wake path.
 10. CLI, WebUI, and model-visible Session tools use the same App commands and queries.

@@ -67,7 +67,7 @@ async def test_default_settings_use_one_fixed_user_root(tmp_path: Path, monkeypa
     source = await load_agent_ui_settings()
 
     assert source.exists is False
-    assert source.path == tmp_path / ".a13n-ui/agent-ui.yaml"
+    assert source.path == tmp_path / ".a13n-ui/a13n-ui.yaml"
     assert source.settings.storage.data_root == tmp_path / ".a13n-ui/data"
 
     ensure_default_directories(source)

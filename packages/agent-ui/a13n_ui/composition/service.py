@@ -34,7 +34,6 @@ class CompositionAcceptanceService:
         source: LoadedAgentUiConfiguration,
         *,
         expected_current_digest: str | None,
-        restart_required: bool = False,
     ) -> AcceptedComposition:
         """Accept one coherent source candidate without disturbing the previous head on failure."""
 
@@ -45,7 +44,6 @@ class CompositionAcceptanceService:
             yaml_digest=source.yaml_digest,
             document=source.model_dump(mode="json"),
             snapshots=snapshots,
-            restart_required=restart_required,
             expected_current_digest=expected_current_digest,
         )
         return AcceptedComposition(

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Agent UI reads one strict `agent-ui.yaml` and its sibling canonical `subagents/*.md` directory. The YAML document owns reusable Models, globally configured Plugins and MCP servers, reusable Agents, Environment profiles, defaults, and local process settings. Markdown supplies portable leaf subagent definitions. Together they form one validated configuration snapshot source.
+Agent UI reads one strict `a13n-ui.yaml` and its sibling canonical `subagents/*.md` directory. The YAML document owns reusable Models, globally configured Plugins and MCP servers, reusable Agents, Environment profiles, defaults, and local process settings. Markdown supplies portable leaf subagent definitions. Together they form one validated configuration snapshot source.
 
 Agent UI deliberately does not expose the complete Harness Agent, Capability, or Environment Provider object graph. Installed packages contribute trusted catalog entries; package presence alone grants no enablement. Configuration selects only supported keys and credential-free behavior plus explicit local credential sources.
 
@@ -167,8 +167,7 @@ The accepted configuration retains:
 
 - normalized behavior and source digests;
 - exact Agent and Environment-profile snapshots;
-- selected trusted adapter, plugin, MCP, Provider, and binder provenance;
-- bounded diagnostics and restart-required facts.
+- selected trusted adapter, plugin, MCP, Provider, and binder provenance.
 
 It retains no credential value, native runtime object, active Session, workspace folder, Environment state, or Run state.
 
@@ -184,11 +183,11 @@ It retains no credential value, native runtime object, active Session, workspace
 | Workspace folders                                                          | Supplied with a message and never participate in configuration reload                 |
 | Foreign subagent source files                                              | No effect until an explicit migration writes canonical Markdown and reload succeeds   |
 
-A Session changes Agent or Environment-profile behavior only by an explicit fork that pins new snapshots. Configuration reload never rewrites an active executable or child Thread. Plugin code loaded into one interpreter is immutable for that App lifetime; installing another release does not prove that the new code replaced the object already present in `sys.modules`. Agent UI requires process restart and provides no supervisor, candidate generation, drain, or hot-reload protocol.
+A new Session can select newly accepted Agent and Environment-profile snapshots. Configuration reload never rewrites an existing Session, active executable, or child Thread. Reusing retained history with different snapshots is outside the current Agent UI contract. Plugin code loaded into one interpreter is immutable for that App lifetime; installing another release does not prove that the new code replaced the object already present in `sys.modules`. Agent UI requires process restart and provides no supervisor, candidate generation, drain, or hot-reload protocol.
 
 ## Diagnostics and Failure Semantics
 
-Diagnostics identify the selected file, bounded field location, stable code, and safe explanation. They never include credential values or whole prompt bodies.
+Load and acceptance diagnostics identify the selected file, bounded field location, stable code, and safe explanation. They are returned to the caller and never include credential values or whole prompt bodies. Failed candidates do not become retained configuration records.
 
 | Failure                                                         | Outcome                                                                      |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------- |

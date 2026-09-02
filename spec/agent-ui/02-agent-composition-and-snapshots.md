@@ -144,7 +144,7 @@ Migration never overwrites or silently renames content:
 - each valid file is staged and committed with a no-clobber operation;
 - a late filesystem error returns an explicit partial result, and rerunning safely completes remaining items.
 
-This makes migration idempotent without a migration manifest or database record. Newly written Markdown affects only a later successful configuration reload and newly created or explicitly forked Session snapshots.
+This makes migration idempotent without a migration manifest or database record. Newly written Markdown affects only a later successful configuration reload and newly created Sessions.
 
 ## Resolution and Snapshot
 
@@ -177,7 +177,7 @@ At invocation, Agent UI reconstructs the complete native graph, creates fresh Mo
 
 ## Session Pinning
 
-A Session pins one Agent snapshot. Configuration reload or migration output does not alter it. Applying another Agent graph to retained history requires a Session fork that creates a new root Thread and pins the newly selected snapshot.
+A Session pins one Agent snapshot. Configuration reload or migration output does not alter it. Applying another Agent graph to retained history is outside the current Agent UI contract; callers create a new Session for newly accepted behavior.
 
 Child Threads also retain the exact child definition digest used at admission. `resume_subagent` verifies compatibility with that digest before starting another segment. It never retargets a retained execution reference to a similarly named latest child.
 

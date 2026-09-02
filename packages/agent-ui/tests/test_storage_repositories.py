@@ -4,14 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from a13n_environment_provider import (
-    EnvironmentProviderErrorCategory,
-    EnvironmentProviderErrorContext,
-    EnvironmentProviderOutcomeCertainty,
-    EnvironmentProviderRecoveryHint,
-    EnvironmentProviderSafeError,
-    EnvironmentState,
-)
+from a13n_environment_provider import EnvironmentState
 from a13n_harness import HarnessState
 from a13n_ui.errors import StoreConflictError, StoreIntegrityError
 from a13n_ui.settings import StorageSettings
@@ -59,7 +52,6 @@ async def _create_session(root: Path):
             ("agent", "root"): agent.ref,
             ("environment", "native"): environment.ref,
         },
-        restart_required=False,
         expected_current_digest=None,
         accepted_at=_NOW,
     )
@@ -210,27 +202,6 @@ async def test_environment_state_uses_complete_key_and_compare_select(tmp_path: 
         assert retained is not None
         assert retained.state == first.ref
 
-        cleanup_failure = EnvironmentProviderSafeError(
-            code="cleanup_failed",
-            category=EnvironmentProviderErrorCategory.CLEANUP,
-            certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-            message="The test resource could not be removed.",
-            recovery_hint=EnvironmentProviderRecoveryHint.RECONCILE,
-            context=EnvironmentProviderErrorContext(
-                provider_key="vendor.provider",
-                action="delete",
-            ),
-        )
-        cleanup = await store.environment_states.set_cleanup(
-            key=key,
-            status="failed",
-            failure=cleanup_failure,
-        )
-        assert cleanup.cleanup_failure == cleanup_failure
-        retained_cleanup = await store.environment_states.get(key)
-        assert retained_cleanup is not None
-        assert retained_cleanup.cleanup_failure == cleanup_failure
-
         other_key = key.model_copy(update={"normalized_folder": str((tmp_path / "other").resolve())})
         other = await store.environment_states.ensure(other_key)
         assert other.state is None
@@ -252,7 +223,6 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
             child_definition_id=f"agent-ui:{'3' * 64}",
             child_definition_digest="3" * 64,
             input="Review the change",
-            owner_app_instance_id=store.app_instance_id,
             created_at=_NOW,
         )
         assert execution.segment_index == 0
@@ -298,7 +268,6 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
                 child_run_id="run-1",
                 child_definition_digest="3" * 64,
                 input="Continue the review",
-                owner_app_instance_id=store.app_instance_id,
             )
         assert not_resumable.value.code == "child_execution_not_resumable"
 
@@ -313,7 +282,6 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
             child_definition_id=f"agent-ui:{'4' * 64}",
             child_definition_digest="4" * 64,
             input="Research the topic",
-            owner_app_instance_id=store.app_instance_id,
         )
         terminal_value = StoredChildCheckpoint(
             harness_release="test-harness",
@@ -347,7 +315,6 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
             child_run_id="run-b",
             child_definition_digest=succeeded.child_definition_digest,
             input="Continue the research",
-            owner_app_instance_id=store.app_instance_id,
         )
         assert linked.child_thread_id == succeeded.child_thread_id
         assert linked.segment_index == 1
@@ -356,38 +323,83 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
         await context.__aexit__(None, None, None)
 
 
-async def test_store_reconciles_only_running_children_with_confirmed_dead_owners(tmp_path: Path) -> None:
+async def test_lost_child_progress_checkpoint_is_not_resumable(tmp_path: Path) -> None:
+    context, store, session, _baseline = await _create_session(tmp_path)
+    try:
+        state = HarnessState.new()
+        execution = await store.child_executions.create(
+            execution_id="execution-lost",
+            session_id=session.session_id,
+            parent_thread_id=session.root_thread_id,
+            child_thread_id=state.thread_id,
+            child_run_id="run-lost",
+            subagent_name="reviewer",
+            child_definition_id=f"agent-ui:{'5' * 64}",
+            child_definition_digest="5" * 64,
+            input="Inspect before shutdown",
+        )
+        checkpoint = await store.objects.publish_model(
+            object_kind=ObjectKind.child_checkpoint,
+            value=StoredChildCheckpoint(
+                harness_release="test-harness",
+                execution_id=execution.execution_id,
+                child_thread_id=execution.child_thread_id,
+                child_run_id=execution.child_run_id,
+                segment_index=0,
+                harness_state=state,
+                display=CompactChildDisplay(),
+                terminal=False,
+                created_at=_NOW,
+            ),
+        )
+        await store.child_executions.select_checkpoint(
+            execution_id=execution.execution_id,
+            expected=None,
+            checkpoint=checkpoint.ref,
+            child_run_id=execution.child_run_id,
+        )
+        lost = await store.child_executions.finish_without_checkpoint(
+            execution_id=execution.execution_id,
+            status="lost",
+        )
+        assert not lost.selected_checkpoint_terminal
+        assert not lost.resumable
+        with pytest.raises(StoreIntegrityError) as rejected:
+            await store.child_executions.resume(
+                previous_execution_id=execution.execution_id,
+                execution_id="execution-after-loss",
+                child_run_id="run-after-loss",
+                child_definition_digest=execution.child_definition_digest,
+                input="Do not replay",
+            )
+        assert rejected.value.code == "child_execution_not_resumable"
+    finally:
+        await context.__aexit__(None, None, None)
+
+
+async def test_reopen_retains_saved_nonterminal_child_without_inferring_liveness(tmp_path: Path) -> None:
     context, store, session, _baseline = await _create_session(tmp_path)
     execution = await store.child_executions.create(
-        execution_id="execution-crashed",
+        execution_id="execution-interrupted",
         session_id=session.session_id,
         parent_thread_id=session.root_thread_id,
         child_thread_id=HarnessState.new().thread_id,
-        child_run_id="run-crashed",
+        child_run_id="run-interrupted",
         subagent_name="reviewer",
         child_definition_id=f"agent-ui:{'5' * 64}",
         child_definition_digest="5" * 64,
         input="Inspect after a crash",
-        owner_app_instance_id=store.app_instance_id,
     )
-
-    concurrent_context = open_local_store(StorageSettings(data_root=tmp_path))
-    concurrent = await concurrent_context.__aenter__()
-    try:
-        still_running = await concurrent.child_executions.get(execution.execution_id)
-        assert still_running is not None
-        assert still_running.status == "running"
-    finally:
-        await concurrent_context.__aexit__(None, None, None)
-
     await context.__aexit__(None, None, None)
 
-    recovered_context = open_local_store(StorageSettings(data_root=tmp_path))
-    recovered = await recovered_context.__aenter__()
+    reopened_context = open_local_store(StorageSettings(data_root=tmp_path))
+    reopened = await reopened_context.__aenter__()
     try:
-        lost = await recovered.child_executions.get(execution.execution_id)
-        assert lost is not None
-        assert lost.status == "lost"
-        assert lost.completed_at is not None
+        retained = await reopened.child_executions.get(execution.execution_id)
+        assert retained is not None
+        assert retained.status == "running"
+        assert retained.completed_at is None
+        assert not (tmp_path / "process-locks").exists()
+        assert not (tmp_path / "sessions").exists()
     finally:
-        await recovered_context.__aexit__(None, None, None)
+        await reopened_context.__aexit__(None, None, None)

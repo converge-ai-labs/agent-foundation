@@ -12,8 +12,8 @@ a13n-ui cli
 Run one message in a fresh process for automation or Plugin debugging:
 
 ```console
-a13n-ui --config ~/.a13n-ui/agent-ui.yaml run "Inspect the Plugin behavior"
-a13n-ui --config ~/.a13n-ui/agent-ui.yaml run "Inspect it again" --session session-... --format json
+a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect the Plugin behavior"
+a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect it again" --session session-... --format json
 ```
 
 A new one-shot Session uses `defaults.agent` and the selected Agent or global default Environment. `--agent`, `--environment`, repeated `--folder`, and `--title` override creation inputs. An existing `--session` continues its pinned snapshots. Workspace binding defaults to the current directory, and output is bounded human-readable text or JSON.
@@ -37,7 +37,7 @@ The repository directory is `packages/agent-ui`, the Python distribution is `a13
 
 ## Configuration
 
-Agent UI selects one strict YAML document from explicit `--config PATH` or the platform user path, `~/.a13n-ui/agent-ui.yaml` on Unix-like systems. It does not merge profiles, scan the current project, or walk parent directories. Canonical immediate sibling `subagents/*.md` files are the only live Markdown subagent source.
+Agent UI selects one strict YAML document from explicit `--config PATH` or the platform user path, `~/.a13n-ui/a13n-ui.yaml` on Unix-like systems. It does not merge profiles, scan the current project, or walk parent directories. Canonical immediate sibling `subagents/*.md` files are the only live Markdown subagent source.
 
 SQLite indexes accepted snapshots, Sessions, child Threads, and Environment state, but it is not desired-configuration authority. Existing Sessions retain pinned snapshots after configuration reload.
 

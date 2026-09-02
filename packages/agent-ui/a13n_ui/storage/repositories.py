@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from a13n_environment_provider import EnvironmentProviderSafeError
 from pydantic import JsonValue
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -49,7 +48,6 @@ class ConfigurationRepository:
         yaml_digest: str,
         document: JsonValue,
         snapshots: Mapping[tuple[Literal["agent", "environment"], str], ObjectRef],
-        restart_required: bool,
         expected_current_digest: str | None,
         accepted_at: datetime | None = None,
     ) -> None:
@@ -71,14 +69,9 @@ class ConfigurationRepository:
                         yaml_digest=yaml_digest,
                         document_json=document_json,
                         accepted_at=now,
-                        restart_required=restart_required,
                     )
                 )
-            elif (
-                accepted.yaml_digest != yaml_digest
-                or accepted.document_json != document_json
-                or accepted.restart_required != restart_required
-            ):
+            elif accepted.yaml_digest != yaml_digest or accepted.document_json != document_json:
                 raise StoreIntegrityError(
                     "Accepted configuration digest maps to different normalized content.",
                     code="configuration_digest_collision",
@@ -171,8 +164,6 @@ class SessionRepository:
         environment_snapshot: SnapshotRef,
         continuation: ObjectRef,
         title: str | None = None,
-        parent_fork: JsonValue | None = None,
-        pinned: bool = False,
         created_at: datetime | None = None,
     ) -> Session:
         _require_snapshot_ref(agent_snapshot, "agent")
@@ -188,12 +179,8 @@ class SessionRepository:
                 created_at=now,
                 updated_at=now,
                 title=title,
-                archived_at=None,
-                pinned=pinned,
-                status="active",
                 agent_snapshot_digest=agent_snapshot.object.logical_digest,
                 environment_snapshot_digest=environment_snapshot.object.logical_digest,
-                parent_fork_json=None if parent_fork is None else _json(parent_fork),
                 continuation_schema_version=continuation.object_schema_version,
                 continuation_digest=continuation.logical_digest,
             )
@@ -236,7 +223,6 @@ class SessionRepository:
             records = (
                 await session.execute(
                     statement.order_by(
-                        SessionRecord.pinned.desc(),
                         SessionRecord.updated_at.desc(),
                         SessionRecord.session_id.desc(),
                     )
@@ -270,8 +256,6 @@ class SessionRepository:
             actual = _continuation_ref(record)
             if actual != expected:
                 _conflict("session_continuation_conflict", expected.logical_digest, actual.logical_digest)
-            if record.status != "active":
-                raise StoreIntegrityError("Session is not active.", code="session_not_active")
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.updated_at = now
@@ -299,14 +283,13 @@ class ChildExecutionRepository:
         child_definition_id: str,
         child_definition_digest: str,
         input: str,
-        owner_app_instance_id: str,
         created_at: datetime | None = None,
     ) -> ChildExecutionHead:
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
             root = await session.get(SessionRecord, session_id)
-            if root is None or root.status != "active":
-                raise StoreIntegrityError("Session is unavailable for child admission.", code="session_not_active")
+            if root is None:
+                raise StoreIntegrityError("Session is unavailable for child admission.", code="session_missing")
             if root.root_thread_id != parent_thread_id:
                 parent = await session.get(ChildThreadRecord, parent_thread_id)
                 if parent is None or parent.session_id != session_id:
@@ -337,7 +320,6 @@ class ChildExecutionRepository:
                 resumable=False,
                 resumed_from=None,
                 failure_json=None,
-                owner_app_instance_id=owner_app_instance_id,
                 created_at=now,
                 updated_at=now,
                 completed_at=None,
@@ -356,7 +338,6 @@ class ChildExecutionRepository:
         child_run_id: str,
         child_definition_digest: str,
         input: str,
-        owner_app_instance_id: str,
         session_id: str | None = None,
         parent_thread_id: str | None = None,
         created_at: datetime | None = None,
@@ -370,8 +351,8 @@ class ChildExecutionRepository:
             if thread is None:
                 raise StoreIntegrityError("Child Thread index is missing.", code="child_thread_missing")
             root = await session.get(SessionRecord, previous.session_id)
-            if root is None or root.status != "active":
-                raise StoreIntegrityError("Session is unavailable for child resume.", code="session_not_active")
+            if root is None:
+                raise StoreIntegrityError("Session is unavailable for child resume.", code="session_missing")
             if session_id is not None and previous.session_id != session_id:
                 raise StoreIntegrityError(
                     "Child execution is outside the parent Session.", code="child_execution_scope_mismatch"
@@ -380,7 +361,12 @@ class ChildExecutionRepository:
                 raise StoreIntegrityError(
                     "Child execution is outside the parent Thread.", code="child_execution_scope_mismatch"
                 )
-            if previous.status == "running" or not previous.resumable or previous.selected_checkpoint_digest is None:
+            if (
+                previous.status != "succeeded"
+                or not previous.selected_checkpoint_terminal
+                or not previous.resumable
+                or previous.selected_checkpoint_digest is None
+            ):
                 raise StoreIntegrityError(
                     "Child execution does not have a resumable selected checkpoint.",
                     code="child_execution_not_resumable",
@@ -406,7 +392,6 @@ class ChildExecutionRepository:
                 resumable=False,
                 resumed_from=previous.execution_id,
                 failure_json=None,
-                owner_app_instance_id=owner_app_instance_id,
                 created_at=now,
                 updated_at=now,
                 completed_at=None,
@@ -494,48 +479,6 @@ class ChildExecutionRepository:
             )
         return tuple(_child_value(execution, thread) for execution, thread in rows), total
 
-    async def running_owner_instance_ids(self) -> tuple[str, ...]:
-        """List App instances that still own a persisted running segment."""
-
-        async with short_session(self._sessions) as session:
-            rows = await session.execute(
-                select(ChildExecutionRecord.owner_app_instance_id)
-                .where(ChildExecutionRecord.status == "running")
-                .distinct()
-                .order_by(ChildExecutionRecord.owner_app_instance_id)
-            )
-            return tuple(rows.scalars())
-
-    async def mark_owner_lost(
-        self,
-        *,
-        owner_app_instance_id: str,
-        updated_at: datetime | None = None,
-    ) -> int:
-        """Mark only this App instance's still-running child segments as lost."""
-
-        now = _utc(updated_at)
-        async with transaction(self._sessions) as session:
-            records = (
-                await session.execute(
-                    select(ChildExecutionRecord).where(
-                        ChildExecutionRecord.owner_app_instance_id == owner_app_instance_id,
-                        ChildExecutionRecord.status == "running",
-                    )
-                )
-            ).scalars()
-            count = 0
-            for execution in records:
-                execution.status = "lost"
-                execution.selected_checkpoint_terminal = False
-                execution.resumable = execution.selected_checkpoint_digest is not None
-                execution.failure_json = None
-                execution.updated_at = now
-                execution.completed_at = now
-                count += 1
-            await session.flush()
-            return count
-
     async def select_checkpoint(
         self,
         *,
@@ -591,7 +534,6 @@ class ChildExecutionRepository:
         execution_id: str,
         status: Literal["failed", "cancelled", "lost"],
         failure: SafeFailure | None = None,
-        resumable: bool = False,
         updated_at: datetime | None = None,
     ) -> ChildExecutionHead:
         if status == "failed" and failure is None:
@@ -610,7 +552,7 @@ class ChildExecutionRepository:
                 return _child_value(execution, thread)
             execution.status = status
             execution.selected_checkpoint_terminal = False
-            execution.resumable = resumable and execution.selected_checkpoint_digest is not None
+            execution.resumable = False
             execution.failure_json = None if failure is None else _json(failure.model_dump(mode="json"))
             execution.updated_at = now
             execution.completed_at = now
@@ -672,8 +614,6 @@ class EnvironmentStateRepository:
                     normalized_folder=key.normalized_folder,
                     state_schema_version=None,
                     state_digest=None,
-                    cleanup_status="none",
-                    cleanup_failure_json=None,
                     updated_at=now,
                 )
                 session.add(record)
@@ -714,29 +654,6 @@ class EnvironmentStateRepository:
                 )
             record.state_schema_version = None if replacement is None else replacement.object_schema_version
             record.state_digest = None if replacement is None else replacement.logical_digest
-            record.updated_at = now
-            await session.flush()
-            return _binding_value(record)
-
-    async def set_cleanup(
-        self,
-        *,
-        key: EnvironmentBindingKey,
-        status: Literal["none", "required", "in_progress", "failed"],
-        failure: EnvironmentProviderSafeError | None = None,
-        updated_at: datetime | None = None,
-    ) -> EnvironmentBindingHead:
-        if status == "failed" and failure is None:
-            raise ValueError("failed cleanup requires a safe failure")
-        if status != "failed" and failure is not None:
-            raise ValueError("only failed cleanup may retain a failure")
-        now = _utc(updated_at)
-        async with transaction(self._sessions) as session:
-            record = await session.get(EnvironmentBindingRecord, _binding_identity(key))
-            if record is None:
-                raise StoreIntegrityError("Environment binding does not exist.", code="environment_binding_missing")
-            record.cleanup_status = status
-            record.cleanup_failure_json = None if failure is None else _json(failure.model_dump(mode="json"))
             record.updated_at = now
             await session.flush()
             return _binding_value(record)
@@ -843,25 +760,14 @@ def _session_value(
     agent_snapshot: SnapshotRef,
     environment_snapshot: SnapshotRef,
 ) -> Session:
-    status: Literal["active", "deleting"]
-    if record.status == "active":
-        status = "active"
-    elif record.status == "deleting":
-        status = "deleting"
-    else:
-        raise StoreIntegrityError("Stored Session status is invalid.", code="session_status_invalid")
     return Session(
         session_id=record.session_id,
         root_thread_id=record.root_thread_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
         title=record.title,
-        archived_at=record.archived_at,
-        pinned=record.pinned,
-        status=status,
         agent_snapshot=agent_snapshot,
         environment_snapshot=environment_snapshot,
-        parent_fork=_parse_json(record.parent_fork_json),
         continuation=_continuation_ref(record),
     )
 
@@ -900,7 +806,6 @@ def _child_value(record: ChildExecutionRecord, thread: ChildThreadRecord) -> Chi
         resumable=record.resumable,
         resumed_from=record.resumed_from,
         failure=_failure(record.failure_json),
-        owner_app_instance_id=record.owner_app_instance_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
         completed_at=record.completed_at,
@@ -935,36 +840,16 @@ def _environment_state_ref(record: EnvironmentBindingRecord) -> ObjectRef | None
 
 
 def _binding_value(record: EnvironmentBindingRecord) -> EnvironmentBindingHead:
-    key = EnvironmentBindingKey(
-        session_id=record.session_id,
-        profile_digest=record.profile_digest,
-        binder_key=record.binder_key,
-        normalized_folder=record.normalized_folder,
-    )
-    status: Literal["none", "required", "in_progress", "failed"]
-    if record.cleanup_status in {"none", "required", "in_progress", "failed"}:
-        status = record.cleanup_status  # type: ignore[assignment]
-    else:
-        raise StoreIntegrityError("Stored cleanup status is invalid.", code="cleanup_status_invalid")
     return EnvironmentBindingHead(
-        key=key,
+        key=EnvironmentBindingKey(
+            session_id=record.session_id,
+            profile_digest=record.profile_digest,
+            binder_key=record.binder_key,
+            normalized_folder=record.normalized_folder,
+        ),
         state=_environment_state_ref(record),
-        cleanup_status=status,
-        cleanup_failure=_provider_failure(record.cleanup_failure_json),
         updated_at=record.updated_at,
     )
-
-
-def _provider_failure(value: str | None) -> EnvironmentProviderSafeError | None:
-    if value is None:
-        return None
-    try:
-        return EnvironmentProviderSafeError.model_validate_json(value)
-    except ValueError as exc:
-        raise StoreIntegrityError(
-            "Stored Environment cleanup failure is invalid.",
-            code="stored_failure_invalid",
-        ) from exc
 
 
 def _conflict(code: str, expected: object, actual: object) -> None:

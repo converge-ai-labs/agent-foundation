@@ -44,7 +44,7 @@ flowchart TB
 The App owns:
 
 - configuration loading, snapshot selection, and trusted reconstruction;
-- Session create, list, inspect, fork, archive, delete, root admission, cancel, and steer;
+- Session create, list, inspect, root admission, cancel, and steer;
 - root continuation publication and selection;
 - message-time Workspace binding and Environment-state lifecycle;
 - async child admission, execution, checkpointing, queries, wait, steering, cancellation, and linked resume;
@@ -101,7 +101,7 @@ The Harness resolves the exact child definition, Identity, context, and usage ce
 
 `resume_subagent` resolves one retained execution in the same parent Session scope, requires a selected compatible child checkpoint, preserves `child_thread_id`, increments `segment_index`, creates a new execution and `child_run_id`, and commits it before returning.
 
-An accepted execution can outlive the parent root Run. Parent closure never cancels it by implication. Session deletion and App shutdown are explicit child ownership boundaries.
+An accepted execution can outlive the parent root Run. Parent closure never cancels it by implication. App shutdown is the explicit process-local child ownership boundary.
 
 ### Child Run Construction
 
@@ -137,7 +137,7 @@ The public single-execution view contains:
 
 - execution ID, child Thread ID, latest child Run ID, and segment index;
 - subagent name and exact definition identity;
-- running, succeeded, failed, cancelled, or lost status;
+- running, succeeded, failed, cancelled, or lost saved status;
 - bounded failure and resumability facts;
 - saved compact activity for that segment.
 
@@ -145,15 +145,15 @@ It contains no raw `output` field. The final answer is represented by closed tex
 
 `subagent_info(execution_id)` and single-execution `wait_subagent(execution_id)` return the same view shape. Wait performs one bounded wait and then reads the authoritative head. No-ID list and fan-in forms return bounded summaries with offset pagination; they do not concatenate full activity.
 
-Steering and cancellation operate only on a currently active process-owned segment and return acknowledgements, not invented completion. They are not durable queues. A race with terminal checkpoint selection returns the selected terminal truth.
+Steering, cancellation, and bounded live waiting operate only when the current App has the segment in its process-local execution registry. They return acknowledgements, not invented completion, and are not durable queues. A saved `running` status without a matching local runtime is inspectable but grants no control. A race with terminal checkpoint selection returns the selected terminal truth.
 
-Execution references are scoped to the originating root Session and parent Thread. A forked Session or copied message text grants no authority over source child Threads.
+Execution references are scoped to the originating root Session and parent Thread. Another Session or copied message text grants no authority over source child Threads.
 
 ### Loss and Retention
 
-Process loss never restarts or retargets an active segment. Once owner loss is established, its head becomes `lost`; any selected checkpoint remains inspectable. Explicit linked resume is permitted only when the execution head remains resumable, the exact saved checkpoint and child definition are compatible, and current policy authorizes it. A failed terminal checkpoint attempt leaves earlier progress readable but non-resumable.
+An orderly App shutdown requests cancellation for segments in its process-local execution registry. A durably completed cancellation becomes `cancelled`; a segment that cannot reach a terminal checkpoint becomes `lost`. Abrupt process loss can leave a saved `running` head; that value means only that no terminal checkpoint was selected. Agent UI does not inspect PIDs, hold process lock files, or use heartbeats to convert a saved head into liveness truth. Another App serves the saved projection without steering, cancelling, resuming, or taking over the segment.
 
-Session deletion cascades child indexes after owned work is cancelled and Environment cleanup is attempted. Retention never becomes a scheduler, job lease, worker claim, delivery ledger, or takeover protocol.
+Explicit linked resume is permitted only from a successful terminal execution whose head remains resumable, whose exact selected terminal checkpoint and child definition are compatible, and whose current policy authorizes it. A progress checkpoint, `lost` execution, or failed terminal checkpoint remains readable but non-resumable. Retention never becomes a scheduler, job lease, worker claim, delivery ledger, or takeover protocol.
 
 ## Root-only Session Capability
 
@@ -212,7 +212,7 @@ First-run onboarding:
 1. selects a Model route and API-key source;
 2. selects the default Agent;
 3. explains the full-control Native default and lets the user select explicit Local EIP sandboxing;
-4. writes the smallest valid `agent-ui.yaml` without implicit overwrite;
+4. writes the smallest valid `a13n-ui.yaml` without implicit overwrite;
 5. creates the canonical sibling `subagents` directory when absent;
 6. detects selected Claude/Cursor/Codex sources and offers, but never silently performs, migration;
 7. validates configuration and Local EIP readiness.
@@ -229,16 +229,16 @@ Unknown API or health routes do not fall back to browser HTML. The Web adapter o
 
 ## Failure and Shutdown Semantics
 
-| Condition                                              | Outcome                                                                                                         |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| Root reconstruction or credential failure              | Message fails before model dispatch; prior continuation remains selected                                        |
-| Root process loss                                      | Active input and partial output disappear; prior continuation remains selected                                  |
-| Child admission persistence fails                      | `delegate` or resume is rejected before acceptance                                                              |
-| Child execution succeeds but terminal checkpoint fails | Execution is failed, never falsely succeeded                                                                    |
-| Live delivery fails                                    | Execution and persistence continue; saved projections remain authoritative                                      |
-| Steering/cancellation races terminal completion        | Selected terminal head wins; acknowledgement does not rewrite it                                                |
-| App shutdown                                           | New work stops, owned root/child Runs are cancelled, bounded cleanup runs, shell processes end with owning Runs |
-| Cleanup exceeds bound                                  | Remaining process-local tasks are cancelled; no synthetic successful continuation is created                    |
+| Condition                                              | Outcome                                                                                                                 |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Root reconstruction or credential failure              | Message fails before model dispatch; prior continuation remains selected                                                |
+| Root process loss                                      | Active input and partial output disappear; prior continuation remains selected                                          |
+| Child admission persistence fails                      | `delegate` or resume is rejected before acceptance                                                                      |
+| Child execution succeeds but terminal checkpoint fails | Execution is failed, never falsely succeeded                                                                            |
+| Live delivery fails                                    | Execution and persistence continue; saved projections remain authoritative                                              |
+| Steering/cancellation races terminal completion        | Selected terminal head wins; acknowledgement does not rewrite it                                                        |
+| App shutdown                                           | New work stops, process-local root/child Runs are cancelled, bounded cleanup runs, shell processes end with owning Runs |
+| Cleanup exceeds bound                                  | Remaining process-local tasks are cancelled; no synthetic successful continuation is created                            |
 
 ## Invariants
 

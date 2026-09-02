@@ -31,7 +31,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def _accepted_native_session(tmp_path: Path):
-    source_path = tmp_path / "agent-ui.yaml"
+    source_path = tmp_path / "a13n-ui.yaml"
     source_path.write_text(
         """
 schema_version: "1"
@@ -184,7 +184,7 @@ async def test_environment_reconstruction_rejects_pinned_provenance_change(tmp_p
 
 
 async def test_local_eip_requires_explicit_or_managed_runtime(tmp_path: Path) -> None:
-    source_path = tmp_path / "agent-ui.yaml"
+    source_path = tmp_path / "a13n-ui.yaml"
     source_path.write_text(
         """
 schema_version: "1"

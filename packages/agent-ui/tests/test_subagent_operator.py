@@ -100,7 +100,7 @@ def _child_plan(
 
 
 async def _runtime(tmp_path: Path):
-    source_path = tmp_path / "agent-ui.yaml"
+    source_path = tmp_path / "a13n-ui.yaml"
     source_path.write_text(
         """
 schema_version: "1"

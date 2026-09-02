@@ -1,8 +1,8 @@
-"""create agent ui local store.
+"""create a13n ui local store.
 
-Revision ID: 18bbcf4b7955
+Revision ID: 41ec8abea31a
 Revises:
-Create Date: 2026-09-02 02:27:26.531215+00:00
+Create Date: 2026-09-02 06:17:35.912840+00:00
 """
 
 from collections.abc import Sequence
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "18bbcf4b7955"
+revision: str = "41ec8abea31a"
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -24,8 +24,7 @@ def upgrade() -> None:
         sa.Column("source_digest", sa.String(length=64), nullable=False),
         sa.Column("yaml_digest", sa.String(length=64), nullable=False),
         sa.Column("document_json", sa.Text(), nullable=False),
-        sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("restart_required", sa.Boolean(), nullable=False),
+        sa.Column("accepted_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("source_digest", name=op.f("pk_accepted_configuration")),
     )
     op.create_table(
@@ -33,27 +32,12 @@ def upgrade() -> None:
         sa.Column("logical_digest", sa.String(length=64), nullable=False),
         sa.Column("snapshot_kind", sa.String(length=16), nullable=False),
         sa.Column("object_schema_version", sa.String(length=64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
             "snapshot_kind IN ('agent', 'environment')", name=op.f("ck_composition_snapshot_snapshot_kind")
         ),
         sa.PrimaryKeyConstraint("logical_digest", name=op.f("pk_composition_snapshot")),
-        sa.UniqueConstraint("snapshot_kind", "logical_digest", name="identity"),
     )
-    op.create_table(
-        "configuration_diagnostic",
-        sa.Column("diagnostic_id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("app_instance_id", sa.String(length=64), nullable=False),
-        sa.Column("code", sa.String(length=64), nullable=False),
-        sa.Column("detail", sa.Text(), nullable=False),
-        sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("diagnostic_id", name=op.f("pk_configuration_diagnostic")),
-    )
-    with op.batch_alter_table("configuration_diagnostic", schema=None) as batch_op:
-        batch_op.create_index(
-            batch_op.f("ix_configuration_diagnostic_app_instance_id"), ["app_instance_id"], unique=False
-        )
-
     op.create_table(
         "configuration_snapshot",
         sa.Column("source_digest", sa.String(length=64), nullable=False),
@@ -76,7 +60,6 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("source_digest", "snapshot_kind", "name", name=op.f("pk_configuration_snapshot")),
-        sa.UniqueConstraint("source_digest", "snapshot_kind", "name", name="selection"),
     )
     op.create_table(
         "current_configuration",
@@ -90,24 +73,18 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("singleton_id", name=op.f("pk_current_configuration")),
-        sa.UniqueConstraint("source_digest", name=op.f("uq_current_configuration_source_digest")),
     )
     op.create_table(
         "local_session",
         sa.Column("session_id", sa.String(length=80), nullable=False),
         sa.Column("root_thread_id", sa.String(length=80), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("title", sa.String(length=512), nullable=True),
-        sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("pinned", sa.Boolean(), nullable=False),
-        sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("agent_snapshot_digest", sa.String(length=64), nullable=False),
         sa.Column("environment_snapshot_digest", sa.String(length=64), nullable=False),
-        sa.Column("parent_fork_json", sa.Text(), nullable=True),
         sa.Column("continuation_schema_version", sa.String(length=64), nullable=False),
         sa.Column("continuation_digest", sa.String(length=64), nullable=False),
-        sa.CheckConstraint("status IN ('active', 'deleting')", name=op.f("ck_local_session_status")),
         sa.ForeignKeyConstraint(
             ["agent_snapshot_digest"],
             ["composition_snapshot.logical_digest"],
@@ -124,9 +101,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("root_thread_id", name=op.f("uq_local_session_root_thread_id")),
     )
     with op.batch_alter_table("local_session", schema=None) as batch_op:
-        batch_op.create_index(batch_op.f("ix_local_session_archived_at"), ["archived_at"], unique=False)
-        batch_op.create_index(batch_op.f("ix_local_session_pinned"), ["pinned"], unique=False)
-        batch_op.create_index(batch_op.f("ix_local_session_status"), ["status"], unique=False)
         batch_op.create_index(batch_op.f("ix_local_session_updated_at"), ["updated_at"], unique=False)
 
     op.create_table(
@@ -137,7 +111,7 @@ def upgrade() -> None:
         sa.Column("subagent_name", sa.String(length=63), nullable=False),
         sa.Column("child_definition_id", sa.String(length=256), nullable=False),
         sa.Column("child_definition_digest", sa.String(length=64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(
             ["session_id"],
             ["local_session.session_id"],
@@ -158,15 +132,9 @@ def upgrade() -> None:
         sa.Column("normalized_folder", sa.Text(), nullable=False),
         sa.Column("state_schema_version", sa.String(length=64), nullable=True),
         sa.Column("state_digest", sa.String(length=64), nullable=True),
-        sa.Column("cleanup_status", sa.String(length=16), nullable=False),
-        sa.Column("cleanup_failure_json", sa.Text(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
-            "cleanup_status IN ('none', 'required', 'in_progress', 'failed')",
-            name=op.f("ck_environment_binding_cleanup_status"),
-        ),
-        sa.CheckConstraint(
-            "state_digest IS NOT NULL OR state_schema_version IS NULL",
+            "(state_digest IS NULL AND state_schema_version IS NULL) OR (state_digest IS NOT NULL AND state_schema_version IS NOT NULL)",
             name=op.f("ck_environment_binding_state_reference"),
         ),
         sa.ForeignKeyConstraint(
@@ -179,9 +147,6 @@ def upgrade() -> None:
             "session_id", "profile_digest", "binder_key", "normalized_folder", name=op.f("pk_environment_binding")
         ),
     )
-    with op.batch_alter_table("environment_binding", schema=None) as batch_op:
-        batch_op.create_index(batch_op.f("ix_environment_binding_cleanup_status"), ["cleanup_status"], unique=False)
-
     op.create_table(
         "child_execution",
         sa.Column("execution_id", sa.String(length=80), nullable=False),
@@ -197,10 +162,13 @@ def upgrade() -> None:
         sa.Column("resumable", sa.Boolean(), nullable=False),
         sa.Column("resumed_from", sa.String(length=80), nullable=True),
         sa.Column("failure_json", sa.Text(), nullable=True),
-        sa.Column("owner_app_instance_id", sa.String(length=64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("completed_at", sa.DateTime(), nullable=True),
+        sa.CheckConstraint(
+            "resumable = 0 OR (status = 'succeeded' AND selected_checkpoint_terminal = 1)",
+            name=op.f("ck_child_execution_resumable_terminal_success"),
+        ),
         sa.CheckConstraint(
             "status != 'succeeded' OR (selected_checkpoint_digest IS NOT NULL AND selected_checkpoint_terminal = 1)",
             name=op.f("ck_child_execution_success_checkpoint"),
@@ -212,11 +180,11 @@ def upgrade() -> None:
             "(segment_index = 0 AND resumed_from IS NULL) OR (segment_index > 0 AND resumed_from IS NOT NULL)",
             name=op.f("ck_child_execution_resume_link"),
         ),
-        sa.CheckConstraint("segment_index >= 0", name=op.f("ck_child_execution_segment_index")),
         sa.CheckConstraint(
-            "selected_checkpoint_digest IS NOT NULL OR (selected_checkpoint_schema_version IS NULL AND selected_checkpoint_terminal = 0 AND resumable = 0)",
+            "(selected_checkpoint_digest IS NULL AND selected_checkpoint_schema_version IS NULL AND selected_checkpoint_terminal = 0 AND resumable = 0) OR (selected_checkpoint_digest IS NOT NULL AND selected_checkpoint_schema_version IS NOT NULL)",
             name=op.f("ck_child_execution_checkpoint_fields"),
         ),
+        sa.CheckConstraint("segment_index >= 0", name=op.f("ck_child_execution_segment_index")),
         sa.ForeignKeyConstraint(
             ["child_thread_id"],
             ["child_thread.child_thread_id"],
@@ -241,9 +209,6 @@ def upgrade() -> None:
     )
     with op.batch_alter_table("child_execution", schema=None) as batch_op:
         batch_op.create_index(batch_op.f("ix_child_execution_child_thread_id"), ["child_thread_id"], unique=False)
-        batch_op.create_index(
-            batch_op.f("ix_child_execution_owner_app_instance_id"), ["owner_app_instance_id"], unique=False
-        )
         batch_op.create_index(batch_op.f("ix_child_execution_session_id"), ["session_id"], unique=False)
         batch_op.create_index(batch_op.f("ix_child_execution_status"), ["status"], unique=False)
 
@@ -256,13 +221,9 @@ def downgrade() -> None:
     with op.batch_alter_table("child_execution", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_child_execution_status"))
         batch_op.drop_index(batch_op.f("ix_child_execution_session_id"))
-        batch_op.drop_index(batch_op.f("ix_child_execution_owner_app_instance_id"))
         batch_op.drop_index(batch_op.f("ix_child_execution_child_thread_id"))
 
     op.drop_table("child_execution")
-    with op.batch_alter_table("environment_binding", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_environment_binding_cleanup_status"))
-
     op.drop_table("environment_binding")
     with op.batch_alter_table("child_thread", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_child_thread_session_id"))
@@ -271,17 +232,10 @@ def downgrade() -> None:
     op.drop_table("child_thread")
     with op.batch_alter_table("local_session", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_local_session_updated_at"))
-        batch_op.drop_index(batch_op.f("ix_local_session_status"))
-        batch_op.drop_index(batch_op.f("ix_local_session_pinned"))
-        batch_op.drop_index(batch_op.f("ix_local_session_archived_at"))
 
     op.drop_table("local_session")
     op.drop_table("current_configuration")
     op.drop_table("configuration_snapshot")
-    with op.batch_alter_table("configuration_diagnostic", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_configuration_diagnostic_app_instance_id"))
-
-    op.drop_table("configuration_diagnostic")
     op.drop_table("composition_snapshot")
     op.drop_table("accepted_configuration")
     # ### end Alembic commands ###

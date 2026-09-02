@@ -221,7 +221,7 @@ class AgentUiDefaults(StrictModel):
 
 
 class AgentUiDocument(StrictModel):
-    """The complete desired configuration loaded from one agent-ui.yaml."""
+    """The complete desired configuration loaded from one a13n-ui.yaml."""
 
     schema_version: Literal["1"] = "1"
     process: AgentUiSettings = Field(default_factory=AgentUiSettings)

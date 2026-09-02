@@ -207,9 +207,8 @@ class AgentUiSubagentOperator(SubagentOperator):
             task_group.cancel_scope.cancel()
         await context.__aexit__(None, None, None)
         with CancelScope(shield=True):
-            await self._store.child_executions.mark_owner_lost(
-                owner_app_instance_id=self._store.app_instance_id,
-            )
+            for segment in active:
+                await self._lose_after_acceptance(segment.execution_id)
         async with self._lock:
             self._task_group_context = None
             self._task_group = None
@@ -295,7 +294,6 @@ class AgentUiSubagentOperator(SubagentOperator):
                 child_definition_id=definition_id,
                 child_definition_digest=definition_digest,
                 input=request.prompt,
-                owner_app_instance_id=self._store.app_instance_id,
             )
         except BaseException as exc:
             await _finalize_rejected(
@@ -372,9 +370,10 @@ class AgentUiSubagentOperator(SubagentOperator):
             offset=request.execution_offset,
             limit=request.execution_limit,
         )
-        if any(head.status == "running" for head in heads):
-            async with self._lock:
-                changed = self._changed
+        async with self._lock:
+            active_execution_ids = frozenset(self._active)
+            changed = self._changed
+        if any(head.status == "running" and head.execution_id in active_execution_ids for head in heads):
             with move_on_after(timeout):
                 await changed.wait()
         info = await self.info(
@@ -470,7 +469,6 @@ class AgentUiSubagentOperator(SubagentOperator):
                 child_run_id=stream.run_id,
                 child_definition_digest=definition_digest,
                 input=request.prompt,
-                owner_app_instance_id=self._store.app_instance_id,
                 session_id=scope.session_id,
                 parent_thread_id=scope.thread_id,
             )
@@ -797,7 +795,6 @@ class AgentUiSubagentOperator(SubagentOperator):
             await self._store.child_executions.finish_without_checkpoint(
                 execution_id=execution_id,
                 status="lost",
-                resumable=True,
             )
         except StoreError:
             return
@@ -830,7 +827,7 @@ class AgentUiSubagentOperator(SubagentOperator):
 
     async def _require_session(self, session_id: str) -> Session:
         session = await self._store.sessions.get(session_id)
-        if session is None or session.status != "active":
+        if session is None:
             raise RunCoordinationError("The parent Session is unavailable.", code="subagent_session_unavailable")
         return session
 
@@ -898,7 +895,7 @@ class AgentUiSubagentOperator(SubagentOperator):
             return event
 
     async def _active_segment(self, head: ChildExecutionHead) -> _ActiveSegment | None:
-        if head.status != "running" or head.owner_app_instance_id != self._store.app_instance_id:
+        if head.status != "running":
             return None
         async with self._lock:
             return self._active.get(head.execution_id)

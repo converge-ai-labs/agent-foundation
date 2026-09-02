@@ -30,7 +30,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config",
         type=Path,
-        help="explicit Agent UI settings YAML (default: ~/.a13n-ui/agent-ui.yaml)",
+        help="explicit Agent UI settings YAML (default: ~/.a13n-ui/a13n-ui.yaml)",
     )
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("cli", help="run the interactive terminal frontend")

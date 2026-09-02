@@ -14,9 +14,7 @@ class StorageLayout:
     root: Path
     database: Path
     objects: Path
-    sessions: Path
     runtimes: Path
-    process_locks: Path
     staging: Path
 
     @classmethod
@@ -25,16 +23,14 @@ class StorageLayout:
             root=root,
             database=root / "metadata.sqlite3",
             objects=root / "objects",
-            sessions=root / "sessions",
             runtimes=root / "runtimes",
-            process_locks=root / "process-locks",
             staging=root / "staging",
         )
 
     def prepare(self) -> None:
         """Create private storage directories without creating source configuration."""
 
-        for path in (self.root, self.objects, self.sessions, self.runtimes, self.process_locks, self.staging):
+        for path in (self.root, self.objects, self.runtimes, self.staging):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
             if os.name != "nt":
                 path.chmod(0o700)

@@ -24,18 +24,12 @@ class _FakeSessionService:
                 title="New work",
                 created_at=now,
                 updated_at=now,
-                archived_at=None,
-                pinned=True,
-                status="active",
             ),
             SimpleNamespace(
                 session_id="session-old",
                 title="Old work",
                 created_at=now,
                 updated_at=now,
-                archived_at=now,
-                pinned=False,
-                status="archived",
             ),
         )
         self.run_folders: tuple[Path, ...] | None = None

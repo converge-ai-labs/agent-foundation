@@ -12,7 +12,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_loads_one_document_and_canonical_markdown_set(tmp_path: Path) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text(
         """
 schema_version: "1"
@@ -141,7 +141,7 @@ agents:
     ],
 )
 async def test_rejects_invalid_document_behavior(tmp_path: Path, body: str) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text(body.lstrip())
 
     with pytest.raises(ConfigurationError) as invalid:
@@ -152,7 +152,7 @@ async def test_rejects_invalid_document_behavior(tmp_path: Path, body: str) -> N
 
 
 async def test_rejects_missing_markdown_reference(tmp_path: Path) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text(
         """
 schema_version: "1"
@@ -173,7 +173,7 @@ agents:
 
 
 async def test_rejects_symlinked_canonical_directory(tmp_path: Path) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text('schema_version: "1"\n')
     actual = tmp_path / "actual"
     actual.mkdir()
@@ -189,7 +189,7 @@ async def test_retries_when_final_yaml_fingerprint_changes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text('schema_version: "1"\n')
     original = configuration_loader._regular_file_fingerprint
     calls = 0
@@ -211,7 +211,7 @@ async def test_retries_when_final_yaml_fingerprint_changes(
 
 
 async def test_validates_deep_agent_reference_graph_without_python_recursion(tmp_path: Path) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     count = 600
     agents: dict[str, object] = {}
     for index in range(count):
@@ -235,7 +235,7 @@ async def test_validates_deep_agent_reference_graph_without_python_recursion(tmp
 
 
 async def test_long_markdown_filename_has_bounded_file_diagnostic(tmp_path: Path) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text('schema_version: "1"\n')
     subagents = tmp_path / "subagents"
     subagents.mkdir()

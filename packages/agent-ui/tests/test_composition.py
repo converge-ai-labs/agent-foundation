@@ -90,7 +90,7 @@ def _plugin_catalog():
 
 
 async def _write_complete_source(tmp_path: Path) -> Path:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text(
         """
 schema_version: "1"
@@ -206,7 +206,7 @@ async def test_rejects_unsupported_model_behavior(
     model_cfg: dict[str, JsonValue],
     code: str,
 ) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text(
         """
 schema_version: "1"
@@ -229,7 +229,7 @@ agents:
 
 
 async def test_plugin_package_schema_rejects_unknown_configuration(tmp_path: Path) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text(
         """
 schema_version: "1"
@@ -280,7 +280,7 @@ async def test_reconstructs_exact_graph_without_resolving_runtime_credentials(tm
 
 
 async def test_markdown_children_narrow_environment_tool_families_exactly(tmp_path: Path) -> None:
-    config = tmp_path / "agent-ui.yaml"
+    config = tmp_path / "a13n-ui.yaml"
     config.write_text(
         """
 schema_version: "1"

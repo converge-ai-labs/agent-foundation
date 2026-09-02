@@ -13,7 +13,7 @@ from a13n_ui.configuration import (
 from a13n_ui.errors import ConfigurationError
 from a13n_ui.settings import AgentUiSettings, default_agent_ui_root
 
-_DEFAULT_SETTINGS_NAME = "agent-ui.yaml"
+_DEFAULT_SETTINGS_NAME = "a13n-ui.yaml"
 
 
 @dataclass(frozen=True, slots=True)
