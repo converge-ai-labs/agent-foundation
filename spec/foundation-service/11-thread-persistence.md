@@ -86,11 +86,18 @@ Foundation never derives either value from timestamps, event order, object listi
 
 The current Run's status supplies the Thread's current execution and latest outcome projection. A current Run in `accepted` or `running` is the Thread's sole active Run. A current Run in `waiting`, `completed`, `failed`, or `cancelled` is sealed and the Thread has no active Run. The Thread stores no separate status or active-Run pointer. Intermediate claim and recovery transitions remain Run lifecycle facts and do not advance the Thread state version.
 
-Existing-Thread acceptance sets `current_run_id` to the new Run. Ordinary Continue, Feedback, waiting Continue, eligible automatic asynchronous-result acceptance, Retry, and queued-submission consumption preserve the prior head. When that head is null after a failed or cancelled current Run, explicit or queued ordinary input can accept a root-like Run, and Retry can repeat the failed root intent; either preserves the null head until the successor seals. A result originating from that terminal root lineage is suppressed and cannot take either path. Continue From instead sets `head_run_id` to its explicit completed source in the same transaction that creates the new Run; ordinary Continue, Feedback, waiting Continue, and asynchronous-result acceptance already use the selected head, so applying the same rule would not change their visible head selection. A `waiting` or `completed` outcome requires that the sealing Run is still current at transaction entry and selects it as `head_run_id`. An ordinary seal also retains it as `current_run_id` and advances the Thread version once. A completed outcome using the queued-submission contract's [state-first combined handoff](20-agent-control-queued-submissions.md#completion-time-combined-handoff) instead inserts an already-state-backed successor, leaves the completed source as head, selects the successor as current, advances the Thread version twice, and advances the queue version once in the same transaction. A `failed` or `cancelled` outcome likewise requires the current Run, retains it as `current_run_id`, preserves the prior head, and advances the Thread version.
+Thread mutations apply these resource-local effects. The linked operation contract owns eligibility, authorization, lineage, and the complete transaction flow.
 
-`head_run_id` selects an eligible frozen state base, not a generic permission to submit any input. A completed head can serve ordinary continuation or eligible automatic asynchronous-result acceptance. A null head after a failed or cancelled current Run permits root-like acceptance with empty state in the same Thread for ordinary explicit or queued input and permits Retry to repeat the terminal root intent; it never admits an asynchronous result. A waiting head can serve exact authenticated feedback, explicit waiting Continue with defaults, or another explicit operation allowed by its pending-state contract; inbox delivery records that waiting source instead of advancing it independently. Authorization, consumed pending facts, compatibility, and operation-specific policy remain independently required.
+| Durable mutation                                                                                         | Operation owner                                                                                                                                                                                | Thread effect                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Accept a Run in an existing Thread                                                                       | [Agent Control: Input and Continuation](18-agent-control-input-and-continuation.md), [Queued Submissions](20-agent-control-queued-submissions.md), or [Async Subagents](34-async-subagents.md) | Select the new Run as current and increment `version`; preserve the prior head except when Continue From explicitly selects its completed source |
+| Seal the current Run as `waiting` or `completed`                                                         | [Durable Run State](12-run-persistence.md#run-acceptance-checkpoint-and-outcome-commit)                                                                                                        | Retain the Run as current, select it as head, and increment `version`                                                                            |
+| Seal the current Run as `failed` or `cancelled`                                                          | [Durable Run State](12-run-persistence.md#run-acceptance-checkpoint-and-outcome-commit) and [Active Execution](19-agent-control-active-execution.md)                                           | Retain the Run as current, preserve the prior head, and increment `version`                                                                      |
+| Complete the current Run and consume the first queued submission atomically                              | [Queued Submissions](20-agent-control-queued-submissions.md#completion-time-combined-handoff)                                                                                                  | Select the completed source as head and its accepted successor as current; increment `version` twice and `queue_version` once                    |
+| Add, edit, delete, or reorder queued intent                                                              | [Queued Submissions](20-agent-control-queued-submissions.md)                                                                                                                                   | Increment `queue_version` without changing `version`, current, or head                                                                           |
+| Claim or recover a RunAttempt, publish a checkpoint, mutate the Thread inbox, or advance a stream cursor | The corresponding RunAttempt, Run state, active-control, or stream contract                                                                                                                    | Do not change Thread current, head, or `version`                                                                                                 |
 
-This separation lets the [terminal-intent retry contract](18-agent-control-input-and-continuation.md#retry-of-terminal-intent) use the current failed or cancelled Run as its intent source while copying that Run's exact eligible `parent_run_id` and lineage transformation. The selected head normally names that same state base; an initial failed root or fork can have no local head. The terminal source never becomes an eligible parent.
+`head_run_id` selects a frozen state base; it does not itself authorize an operation. The [input and continuation contract](18-agent-control-input-and-continuation.md#acceptance-and-lineage) owns completed-head, waiting-head, null-head, Continue From, Feedback, waiting Continue, and terminal-intent Retry eligibility. The [Async Subagents contract](34-async-subagents.md) independently owns whether a retained result may advance an inactive Thread.
 
 ## Relational Thread Table
 
@@ -132,31 +139,9 @@ Run-table indexes for Worker claims, Run listing, search, and DAG traversal rema
 
 ## Thread Creation
 
-Thread creation is part of Run acceptance and has no standalone empty-resource operation.
+Thread creation is part of Run acceptance and has no standalone empty-resource operation. The owning root, fork, or child acceptance contract creates the complete initial Run state before one short relational transaction inserts the Thread and first Run together with the required facts, evidence, relationships, and outbox intents. The transaction sets `version=1`, `queue_version=0`, selects the first Run as current, and leaves the head null.
 
-```mermaid
-sequenceDiagram
-    participant Control
-    participant Harness as Harness state adapter
-    participant Objects as Object storage
-    participant DB as Relational database
-
-    Control->>Control: Authorize Session, origin, and stable Agent
-    Control->>Control: Resolve or retain exact Agent Revision, effective config, and Runtime lock
-    Control->>Harness: Create new or forked HarnessState
-    Harness-->>Control: Complete state with thread_id
-    Control->>Objects: Publish initial Run state create-only
-    Control->>DB: Insert Thread, first Run, facts, evidence, and outbox
-    alt transaction commits
-        DB-->>Control: Thread state version 1 and accepted Run
-    else transaction rolls back
-        DB-->>Control: No Thread or Run exists
-    end
-```
-
-Root creation validates Session policy and creates the Session root Thread. Fork creation authorizes and reads one exact completed source Run, applies the Harness fork transformation outside a database transaction, and records the source in both Thread origin and the first fork Run's `parent_run_id`. Child creation validates the current parent Run and RunAttempt fence, creates a distinct child Thread, and commits the child relationship with its first Run. Every creation sets `current_run_id` to that first accepted Run and leaves `head_run_id` null until the first waiting or completed outcome seals.
-
-The initial state object and any object-backed input publish before the relational transaction. The transaction revalidates the exact state digest, Thread ID, Session, origin, idempotency evidence, and source Run state version. If it rolls back, published objects are non-authoritative cleanup candidates.
+The [input and continuation contract](18-agent-control-input-and-continuation.md) owns root and fork authorization, state transformation, and acceptance flow. [Async Subagents](34-async-subagents.md) owns child creation and its parent fence. This contract requires only that the committed Thread and first Run become visible together with valid Session membership, origin, and matching `thread_id`; a failed relational commit leaves any prepared objects non-authoritative.
 
 ## Reads and History Selection
 
@@ -209,7 +194,7 @@ The independent Thread row duplicates relationships that are also present on Run
 05. `current_run_id` always names the most recently accepted Run and is never inferred from time or event order; it is the sole active Run exactly while its status is `accepted` or `running`.
 06. `head_run_id` is null until the Thread selects a sealed waiting or completed Run and never names a failed or cancelled Run.
 07. Thread `version` changes once on accepted advancement and once whenever the current Run seals; a combined completed seal and queued acceptance applies both increments in one transaction, while claim, execution, worker recovery, and queue-only mutation do not change it.
-08. Ordinary continuation and eligible automatic asynchronous-result acceptance use the exact selected completed head as `parent_run_id`; ordinary explicit or queued input can use the null-head root-like rule after a failed or cancelled current Run, and Retry can repeat that terminal root intent. Continue From atomically reselects its exact completed historical source as head while creating the successor; feedback and waiting Continue use the exact waiting head, retry copies its terminal source's eligible state-parent edge without its child results, and fork and child creation apply their explicit owning contracts.
+08. Accepted advancement and Run sealing update current, head, and Thread versions exactly as defined by this contract; the owning input, queue, or asynchronous-subagent contract determines operation eligibility and Run lineage.
 09. Idempotency replay resolves before `expected_thread_version`, and a losing concurrency check changes neither Thread nor Run state.
 10. No Thread mutation transaction spans Harness execution, object I/O, provider calls, Redis, streaming, sleeps, or other external work.
 11. Thread identity, origin, Run references, cursors, and object locators grant no authority by possession.

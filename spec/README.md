@@ -384,7 +384,7 @@ Run acceptance, ModelAttempt completion, Harness terminal delivery, Host Run com
 | Foundation Service boundary                   | [foundation-service/README.md](foundation-service/README.md)                                                                                             |
 | Foundation runtime and deployment             | [foundation-service/01-runtime-configuration-and-deployment.md](foundation-service/01-runtime-configuration-and-deployment.md)                           |
 | Foundation distribution composition           | [foundation-service/02-distribution-composition-and-extensions.md](foundation-service/02-distribution-composition-and-extensions.md)                     |
-| Foundation interaction/runtime mapping        | [foundation-service/10-interactions-runs-and-attempts.md](foundation-service/10-interactions-runs-and-attempts.md)                                       |
+| Foundation Agent interaction/execution model  | [foundation-service/10-agent-interaction-and-execution-model.md](foundation-service/10-agent-interaction-and-execution-model.md)                         |
 | Foundation Run persistence                    | [foundation-service/12-run-persistence.md](foundation-service/12-run-persistence.md)                                                                     |
 | Foundation RunAttempt scheduling and recovery | [foundation-service/13-run-attempt-scheduling-and-recovery.md](foundation-service/13-run-attempt-scheduling-and-recovery.md)                             |
 | Foundation Protocol Gateway                   | [foundation-service/15-protocol-gateway.md](foundation-service/15-protocol-gateway.md)                                                                   |
