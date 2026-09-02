@@ -97,7 +97,7 @@ class ConfigurationDiagnosticRecord(Base):
     __tablename__ = "configuration_diagnostic"
 
     diagnostic_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    process_generation: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    app_instance_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -207,7 +207,7 @@ class ChildExecutionRecord(Base):
         unique=True,
     )
     failure_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    owner_process_generation: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    owner_app_instance_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

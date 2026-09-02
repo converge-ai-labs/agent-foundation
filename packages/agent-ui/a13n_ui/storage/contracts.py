@@ -178,7 +178,7 @@ class ChildExecutionHead(StoredContract):
     resumable: bool
     resumed_from: str | None
     failure: SafeFailure | None
-    owner_process_generation: str
+    owner_app_instance_id: str
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None

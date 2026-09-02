@@ -21,7 +21,7 @@ async def run(app: AgentUiApp) -> None:
             return
         if line == "/status":
             status = await app.status()
-            print(f"{status.state.value} pid={status.process_id} objects={status.object_count}")
+            print(f"{status.state.value} instance={status.instance_id} objects={status.object_count}")
         elif line:
             print("Use the headless run command for Session execution.")
 

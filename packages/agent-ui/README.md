@@ -18,7 +18,7 @@ a13n-ui --config ~/.a13n-ui/agent-ui.yaml run "Inspect it again" --session sessi
 
 A new one-shot Session uses `defaults.agent` and the selected Agent or global default Environment. `--agent`, `--environment`, repeated `--folder`, and `--title` override creation inputs. An existing `--session` continues its pinned snapshots. Workspace binding defaults to the current directory, and output is bounded human-readable text or JSON.
 
-The completed command family also provides Session management, configuration migration, and the browser surface. Plugin authors debug in a fresh headless process or call the Harness library directly rather than rotating code inside a running App.
+The current executable surface provides the one-shot `run` command and a minimal interactive process-status shell. Session inspection and control exist at the application-service and root-Agent tool boundaries; the browser adapter and full interactive command family are not yet wired. Plugin authors debug in a fresh headless process or call the Harness library directly rather than rotating code inside a running App.
 
 The repository Make alias starts the interactive CLI:
 
@@ -43,7 +43,7 @@ SQLite indexes accepted snapshots, Sessions, child Threads, and Environment stat
 
 ## Local Store Development
 
-Agent UI owns its SQLite schema and Alembic history independently from Foundation Service. Generate a reviewed revision from the repository root against a disposable SQLite database:
+Agent UI owns its SQLite schema and Alembic history independently from Foundation Service. Before the first published Agent UI release, an unreleased history may be squashed to one generated base revision because no supported user database depends on its revision IDs. After publication, retain revision identity and generate additive revisions. Generate every reviewed revision from the repository root against a disposable SQLite database:
 
 ```console
 make agent-ui-db-migrate msg="describe the schema change"

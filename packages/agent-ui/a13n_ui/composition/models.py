@@ -140,7 +140,7 @@ class ResolvedAgentSnapshot(SnapshotModel):
 
     schema_version: Literal["1"] = "1"
     harness_release: str = Field(min_length=1, max_length=128)
-    package_prompt_version: str = Field(min_length=1, max_length=128)
+    package_prompt_revision: str = Field(min_length=1, max_length=128)
     package_prompt_digest: str = Field(pattern=_DIGEST_PATTERN)
     dependencies: tuple[DependencyLock, ...]
     root: ResolvedAgentNode

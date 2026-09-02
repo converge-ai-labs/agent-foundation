@@ -171,7 +171,7 @@ Resolution:
 6. canonicalizes the complete finite graph and computes its digest;
 7. publishes the immutable snapshot before a Session references it.
 
-The conceptual snapshot contains normalized Agent nodes, Model definitions, selected extension configuration, child edges, package prompt version, trusted dependency locks, and the selected Harness release. It contains no credential value, native Model, Plugin/MCP object, Environment profile or adapter, workspace path, `HarnessState`, child checkpoint, or Session authority.
+The conceptual snapshot contains normalized Agent nodes, Model definitions, selected extension configuration, child edges, package prompt revision, trusted dependency locks, and the selected Harness release. It contains no credential value, native Model, Plugin/MCP object, Environment profile or adapter, workspace path, `HarnessState`, child checkpoint, or Session authority.
 
 At invocation, Agent UI reconstructs the complete native graph, creates fresh Model/Plugin/MCP collaborators, and supplies the stable App-owned subagent operator. The executable can be cached by exact snapshot digest and compatible trusted runtime provenance, but the cache grants no Session or Run authority.
 

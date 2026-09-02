@@ -1,4 +1,4 @@
-"""Cross-process liveness leases for local child execution owners."""
+"""Cross-process liveness locks for local child execution owners."""
 
 from __future__ import annotations
 
@@ -14,43 +14,46 @@ else:
     import fcntl
 
 
-class ProcessLease:
-    """One OS-held exclusive lease identified by a process generation."""
+class ProcessInstanceLock:
+    """One OS-held exclusive lock identified by an App instance ID."""
 
     def __init__(self, path: Path, file: BinaryIO) -> None:
         self._path = path
         self._file: BinaryIO | None = file
+        self._locked = False
 
     @classmethod
-    def acquire(cls, directory: Path, process_generation: str) -> Self:
-        """Acquire a new lease or raise when the generation is already live."""
+    def acquire(cls, directory: Path, app_instance_id: str) -> Self:
+        """Acquire a new lock or raise when the App instance is already live."""
 
-        lease = cls._open(directory, process_generation)
+        process_lock = cls._open(directory, app_instance_id)
         try:
-            _lock(lease._require_file())
+            _lock(process_lock._require_file())
+            process_lock._locked = True
         except BaseException:
-            lease.close(delete=False)
+            process_lock.close(delete=False)
             raise
-        return lease
+        return process_lock
 
     @classmethod
-    def try_acquire(cls, directory: Path, process_generation: str) -> Self | None:
-        """Acquire a generation lease only when no live process holds it."""
+    def try_acquire(cls, directory: Path, app_instance_id: str) -> Self | None:
+        """Acquire an App instance lock only when no live process holds it."""
 
-        lease = cls._open(directory, process_generation)
+        process_lock = cls._open(directory, app_instance_id)
         try:
-            _lock(lease._require_file())
+            _lock(process_lock._require_file())
+            process_lock._locked = True
         except OSError as exc:
-            lease.close(delete=False)
+            process_lock.close(delete=False)
             if exc.errno in {errno.EACCES, errno.EAGAIN}:
                 return None
             raise
-        return lease
+        return process_lock
 
     @classmethod
-    def _open(cls, directory: Path, process_generation: str) -> Self:
-        digest = hashlib.sha256(process_generation.encode("utf-8")).hexdigest()
-        path = directory / f"{digest}.lease"
+    def _open(cls, directory: Path, app_instance_id: str) -> Self:
+        digest = hashlib.sha256(app_instance_id.encode("utf-8")).hexdigest()
+        path = directory / f"{digest}.lock"
         file = path.open("a+b")
         if os.name == "nt" and file.seek(0, os.SEEK_END) == 0:
             file.write(b"\0")
@@ -58,15 +61,17 @@ class ProcessLease:
         return cls(path, file)
 
     def close(self, *, delete: bool = True) -> None:
-        """Release the lease and remove its now-stale marker when possible."""
+        """Release the lock and remove its now-stale marker when possible."""
 
         file = self._file
         if file is None:
             return
         self._file = None
         try:
-            _unlock(file)
+            if self._locked:
+                _unlock(file)
         finally:
+            self._locked = False
             file.close()
         if delete:
             try:
@@ -77,7 +82,7 @@ class ProcessLease:
     def _require_file(self) -> BinaryIO:
         file = self._file
         if file is None:
-            raise RuntimeError("process lease is closed")
+            raise RuntimeError("process instance lock is closed")
         return file
 
 
@@ -97,4 +102,4 @@ def _unlock(file: BinaryIO) -> None:
         fcntl.flock(file.fileno(), fcntl.LOCK_UN)
 
 
-__all__ = ["ProcessLease"]
+__all__ = ["ProcessInstanceLock"]

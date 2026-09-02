@@ -165,7 +165,7 @@ class AgentUiSubagentOperator(SubagentOperator):
         self._lock = Lock()
         self._parents: dict[tuple[str, str, str], ParentRunScope] = {}
         self._active: dict[str, _ActiveSegment] = {}
-        self._revision = Event()
+        self._changed = Event()
         self._task_group_context: Any | None = None
         self._task_group: TaskGroup | None = None
         self._accepting = False
@@ -208,14 +208,14 @@ class AgentUiSubagentOperator(SubagentOperator):
         await context.__aexit__(None, None, None)
         with CancelScope(shield=True):
             await self._store.child_executions.mark_owner_lost(
-                owner_process_generation=self._store.process_generation,
+                owner_app_instance_id=self._store.app_instance_id,
             )
         async with self._lock:
             self._task_group_context = None
             self._task_group = None
             self._parents.clear()
             self._active.clear()
-            self._signal_revision_locked()
+            self._signal_change_locked()
 
     @asynccontextmanager
     async def bind_parent_run(
@@ -295,7 +295,7 @@ class AgentUiSubagentOperator(SubagentOperator):
                 child_definition_id=definition_id,
                 child_definition_digest=definition_digest,
                 input=request.prompt,
-                owner_process_generation=self._store.process_generation,
+                owner_app_instance_id=self._store.app_instance_id,
             )
         except BaseException as exc:
             await _finalize_rejected(
@@ -374,9 +374,9 @@ class AgentUiSubagentOperator(SubagentOperator):
         )
         if any(head.status == "running" for head in heads):
             async with self._lock:
-                revision = self._revision
+                changed = self._changed
             with move_on_after(timeout):
-                await revision.wait()
+                await changed.wait()
         info = await self.info(
             context,
             SubagentInfoRequest(
@@ -470,7 +470,7 @@ class AgentUiSubagentOperator(SubagentOperator):
                 child_run_id=stream.run_id,
                 child_definition_digest=definition_digest,
                 input=request.prompt,
-                owner_process_generation=self._store.process_generation,
+                owner_app_instance_id=self._store.app_instance_id,
                 session_id=scope.session_id,
                 parent_thread_id=scope.thread_id,
             )
@@ -617,7 +617,7 @@ class AgentUiSubagentOperator(SubagentOperator):
                 async with self._lock:
                     self._active.pop(current.head.execution_id, None)
                     active.done.set()
-                    self._signal_revision_locked()
+                    self._signal_change_locked()
 
     async def _consume_run(
         self,
@@ -767,7 +767,7 @@ class AgentUiSubagentOperator(SubagentOperator):
             resumable=resumable,
         )
         async with self._lock:
-            self._signal_revision_locked()
+            self._signal_change_locked()
         return published.ref
 
     async def _fail_terminal_persistence(self, execution_id: str, exc: BaseException) -> SafeFailure:
@@ -898,7 +898,7 @@ class AgentUiSubagentOperator(SubagentOperator):
             return event
 
     async def _active_segment(self, head: ChildExecutionHead) -> _ActiveSegment | None:
-        if head.status != "running" or head.owner_process_generation != self._store.process_generation:
+        if head.status != "running" or head.owner_app_instance_id != self._store.app_instance_id:
             return None
         async with self._lock:
             return self._active.get(head.execution_id)
@@ -910,9 +910,9 @@ class AgentUiSubagentOperator(SubagentOperator):
                 code="subagent_operator_unavailable",
             )
 
-    def _signal_revision_locked(self) -> None:
-        self._revision.set()
-        self._revision = Event()
+    def _signal_change_locked(self) -> None:
+        self._changed.set()
+        self._changed = Event()
 
 
 class _DisplayCompactor:

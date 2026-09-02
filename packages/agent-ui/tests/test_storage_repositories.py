@@ -252,7 +252,7 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
             child_definition_id=f"agent-ui:{'3' * 64}",
             child_definition_digest="3" * 64,
             input="Review the change",
-            owner_process_generation=store.process_generation,
+            owner_app_instance_id=store.app_instance_id,
             created_at=_NOW,
         )
         assert execution.segment_index == 0
@@ -298,7 +298,7 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
                 child_run_id="run-1",
                 child_definition_digest="3" * 64,
                 input="Continue the review",
-                owner_process_generation=store.process_generation,
+                owner_app_instance_id=store.app_instance_id,
             )
         assert not_resumable.value.code == "child_execution_not_resumable"
 
@@ -313,7 +313,7 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
             child_definition_id=f"agent-ui:{'4' * 64}",
             child_definition_digest="4" * 64,
             input="Research the topic",
-            owner_process_generation=store.process_generation,
+            owner_app_instance_id=store.app_instance_id,
         )
         terminal_value = StoredChildCheckpoint(
             harness_release="test-harness",
@@ -347,7 +347,7 @@ async def test_child_segments_are_contiguous_and_terminal_persistence_fails_clos
             child_run_id="run-b",
             child_definition_digest=succeeded.child_definition_digest,
             input="Continue the research",
-            owner_process_generation=store.process_generation,
+            owner_app_instance_id=store.app_instance_id,
         )
         assert linked.child_thread_id == succeeded.child_thread_id
         assert linked.segment_index == 1
@@ -368,7 +368,7 @@ async def test_store_reconciles_only_running_children_with_confirmed_dead_owners
         child_definition_id=f"agent-ui:{'5' * 64}",
         child_definition_digest="5" * 64,
         input="Inspect after a crash",
-        owner_process_generation=store.process_generation,
+        owner_app_instance_id=store.app_instance_id,
     )
 
     concurrent_context = open_local_store(StorageSettings(data_root=tmp_path))

@@ -22,7 +22,7 @@ from .models import (
 from .reconstruction import AgentReconstructor, PortableCapabilityFactory, ReconstructedAgent
 from .resolver import (
     IMPLICIT_NATIVE_PROFILE,
-    PACKAGE_PROMPT_VERSION,
+    PACKAGE_PROMPT_REVISION,
     PACKAGE_SYSTEM_PROMPT,
     AgentCompositionResolver,
     ResolvedConfiguration,
@@ -31,7 +31,7 @@ from .service import AcceptedComposition, CompositionAcceptanceService
 
 __all__ = [
     "IMPLICIT_NATIVE_PROFILE",
-    "PACKAGE_PROMPT_VERSION",
+    "PACKAGE_PROMPT_REVISION",
     "PACKAGE_SYSTEM_PROMPT",
     "AcceptedComposition",
     "AgentCompositionResolver",

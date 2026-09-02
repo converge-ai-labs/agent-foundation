@@ -53,7 +53,7 @@ from .models import (
     resolved_agent_node,
 )
 
-PACKAGE_PROMPT_VERSION = "1"
+PACKAGE_PROMPT_REVISION = "1"
 PACKAGE_SYSTEM_PROMPT = "You are an AI assistant running in Agent UI."
 IMPLICIT_NATIVE_PROFILE = "__native__"
 _MAX_RESOLVED_NODES = 1024
@@ -122,7 +122,7 @@ class AgentCompositionResolver:
             dependencies = tuple(sorted(_node_dependencies(root), key=dependency_sort_key))
             agents[name] = ResolvedAgentSnapshot(
                 harness_release=harness_version,
-                package_prompt_version=PACKAGE_PROMPT_VERSION,
+                package_prompt_revision=PACKAGE_PROMPT_REVISION,
                 package_prompt_digest=_prompt_digest(),
                 dependencies=dependencies,
                 root=root,
@@ -502,7 +502,7 @@ def _prompt_digest() -> str:
 
 __all__ = [
     "IMPLICIT_NATIVE_PROFILE",
-    "PACKAGE_PROMPT_VERSION",
+    "PACKAGE_PROMPT_REVISION",
     "PACKAGE_SYSTEM_PROMPT",
     "AgentCompositionResolver",
     "ResolvedConfiguration",

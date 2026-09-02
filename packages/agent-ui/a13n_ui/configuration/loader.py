@@ -205,6 +205,8 @@ def _regular_file_fingerprint(path: Path) -> tuple[int, int, int, int]:
 
 
 def _fingerprint(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    if os.name == "nt":
+        return (0, 0, metadata.st_size, metadata.st_mtime_ns)
     return (metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns)
 
 
@@ -244,7 +246,7 @@ def _scan_subagent_directory(directory: Path) -> tuple[tuple[Path, int, int, int
                         directory,
                     )
                 item = entry.stat(follow_symlinks=False)
-                selected.append((Path(entry.path), item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns))
+                selected.append((Path(entry.path), *_fingerprint(item)))
     except ConfigurationError:
         raise
     except OSError as exc:

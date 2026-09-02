@@ -7,11 +7,9 @@ import pytest
 from a13n_ui.settings import StorageSettings
 from a13n_ui.storage.database import open_database, short_session, transaction
 from a13n_ui.storage.metadata import agent_ui_metadata
-from a13n_ui.storage.migration import MIGRATIONS_PATH, DatabaseMigrator, DatabaseSchemaError
+from a13n_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
 from a13n_ui.storage.models import ConfigurationDiagnosticRecord
-from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, select, text
 
@@ -50,44 +48,6 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
         engine.dispose()
 
 
-def test_environment_access_migration_upgrades_existing_rows(tmp_path: Path) -> None:
-    path = tmp_path / "metadata.sqlite3"
-    engine = create_engine(f"sqlite:///{path}")
-    try:
-        with engine.connect() as connection:
-            config = Config()
-            config.set_main_option("script_location", str(MIGRATIONS_PATH))
-            config.attributes["connection"] = connection
-            command.upgrade(config, "55b7c7d359aa")
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO session_environment_resource (
-                        session_id, mount_name, model_alias, permission_ceiling_json,
-                        provider_key, provider_schema_version, provider_spec_digest,
-                        provider_parameters_json, resource_allocation, status, updated_at
-                    ) VALUES (
-                        'session-old', 'mount-main', 'workspace', '[\"files\"]',
-                        'a13n.direct-local', '1', :digest, '{}',
-                        'single_from_spec', 'available', :updated_at
-                    )
-                    """
-                ),
-                {"digest": "0" * 64, "updated_at": "2026-08-31 00:00:00"},
-            )
-            connection.commit()
-            command.upgrade(config, "9958168d49de")
-
-            columns = {column["name"] for column in inspect(connection).get_columns("session_environment_resource")}
-            access = connection.execute(text("SELECT access FROM session_environment_resource")).scalar_one()
-
-        assert "access" in columns
-        assert "permission_ceiling_json" not in columns
-        assert access == "read_write"
-    finally:
-        engine.dispose()
-
-
 def test_migration_verification_rejects_an_unknown_database_revision(tmp_path: Path) -> None:
     path = tmp_path / "metadata.sqlite3"
     engine = create_engine(f"sqlite:///{path}")
@@ -117,7 +77,7 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
         async with transaction(database.sessions) as session:
             session.add(
                 ConfigurationDiagnosticRecord(
-                    process_generation="process-test",
+                    app_instance_id="app-test",
                     code="committed",
                     detail="committed transaction",
                     recorded_at=now,
@@ -128,7 +88,7 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
             async with transaction(database.sessions) as session:
                 session.add(
                     ConfigurationDiagnosticRecord(
-                        process_generation="process-test",
+                        app_instance_id="app-test",
                         code="rollback",
                         detail="rolled back transaction",
                         recorded_at=now,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -36,7 +37,7 @@ async def test_application_starts_publishes_reopens_and_closes(tmp_path: Path) -
 
     async with open_agent_ui_app(settings) as app:
         retained_app = app
-        first_process = (await app.status()).process_id
+        first_instance = (await app.status()).instance_id
         assert app.state is AppState.ready
         assert (await app.status()).object_count == 0
         reference = await app._store.publish_object(
@@ -54,7 +55,7 @@ async def test_application_starts_publishes_reopens_and_closes(tmp_path: Path) -
 
     async with open_agent_ui_app(settings) as reopened:
         assert (await reopened._store.read_object(reference)).payload == {"agent": "root"}
-        assert (await reopened.status()).process_id != first_process
+        assert (await reopened.status()).instance_id != first_instance
 
 
 async def test_application_accepts_configuration_and_runs_roster_with_app_owned_operator(tmp_path: Path) -> None:
@@ -156,7 +157,7 @@ environments:
         )
 
     assert outcome.result.output_or_raise() == "tool surface ready"
-    assert {
+    expected = {
         "search",
         "scrape",
         "fetch",
@@ -164,12 +165,14 @@ environments:
         "pdf_convert",
         "office_to_markdown",
         "view",
-        "shell_exec",
         "list_sessions",
         "get_session",
         "run_session",
         "steer_session",
-    } <= observed
+    }
+    if os.name != "nt":
+        expected.add("shell_exec")
+    assert expected <= observed
 
 
 async def test_root_control_targets_live_stream_and_session_is_readmitted_after_cancel(tmp_path: Path) -> None:
@@ -344,7 +347,7 @@ async def test_concurrent_apps_share_one_data_root(tmp_path: Path) -> None:
         async with open_agent_ui_app(settings) as second:
             assert first.state is AppState.ready
             assert second.state is AppState.ready
-            assert (await first.status()).process_id != (await second.status()).process_id
+            assert (await first.status()).instance_id != (await second.status()).instance_id
 
 
 async def test_missing_unselected_object_does_not_block_startup_but_fails_on_read(tmp_path: Path) -> None:

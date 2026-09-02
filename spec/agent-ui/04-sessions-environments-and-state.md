@@ -95,7 +95,7 @@ The profile and binder contain no current workspace list. A binder receives one 
 
 ## Host-authoritative Environment State
 
-Native and Local EIP use the submitted folders directly and retain no re-entry state across adapter generations. A stateful extension Provider can return portable `EnvironmentState` for one bound folder.
+Native and Local EIP use the submitted folders directly and retain no re-entry state across adapter instances. A stateful extension Provider can return portable `EnvironmentState` for one bound folder.
 
 Agent UI uses one complete private binding key everywhere:
 
@@ -110,7 +110,7 @@ State lookup, supplied-state comparison, publication, cleanup, destroy, and prun
 
 For each key, the stored current value is authoritative `EnvironmentState | None`. Existing authoritative `None` does not permit fallback from root or child `HarnessState.environment_states`. Continuation state is a portable observation only and can be adopted only through an explicit unmanaged import operation.
 
-State payloads are bounded and validated against Provider key, version, codec, profile digest, and binder provenance before adapter construction. A missing codec or incompatible state fails admission rather than silently creating a new target.
+State payloads are bounded and validated against Provider key, state schema version, codec, profile digest, and binder provenance before adapter construction. A missing codec or incompatible state fails admission rather than silently creating a new target.
 
 ## Root Run Environment Flow
 

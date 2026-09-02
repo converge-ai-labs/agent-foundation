@@ -299,7 +299,7 @@ class ChildExecutionRepository:
         child_definition_id: str,
         child_definition_digest: str,
         input: str,
-        owner_process_generation: str,
+        owner_app_instance_id: str,
         created_at: datetime | None = None,
     ) -> ChildExecutionHead:
         now = _utc(created_at)
@@ -337,7 +337,7 @@ class ChildExecutionRepository:
                 resumable=False,
                 resumed_from=None,
                 failure_json=None,
-                owner_process_generation=owner_process_generation,
+                owner_app_instance_id=owner_app_instance_id,
                 created_at=now,
                 updated_at=now,
                 completed_at=None,
@@ -356,7 +356,7 @@ class ChildExecutionRepository:
         child_run_id: str,
         child_definition_digest: str,
         input: str,
-        owner_process_generation: str,
+        owner_app_instance_id: str,
         session_id: str | None = None,
         parent_thread_id: str | None = None,
         created_at: datetime | None = None,
@@ -406,7 +406,7 @@ class ChildExecutionRepository:
                 resumable=False,
                 resumed_from=previous.execution_id,
                 failure_json=None,
-                owner_process_generation=owner_process_generation,
+                owner_app_instance_id=owner_app_instance_id,
                 created_at=now,
                 updated_at=now,
                 completed_at=None,
@@ -494,32 +494,32 @@ class ChildExecutionRepository:
             )
         return tuple(_child_value(execution, thread) for execution, thread in rows), total
 
-    async def running_owner_generations(self) -> tuple[str, ...]:
-        """List process generations that still own a persisted running segment."""
+    async def running_owner_instance_ids(self) -> tuple[str, ...]:
+        """List App instances that still own a persisted running segment."""
 
         async with short_session(self._sessions) as session:
             rows = await session.execute(
-                select(ChildExecutionRecord.owner_process_generation)
+                select(ChildExecutionRecord.owner_app_instance_id)
                 .where(ChildExecutionRecord.status == "running")
                 .distinct()
-                .order_by(ChildExecutionRecord.owner_process_generation)
+                .order_by(ChildExecutionRecord.owner_app_instance_id)
             )
             return tuple(rows.scalars())
 
     async def mark_owner_lost(
         self,
         *,
-        owner_process_generation: str,
+        owner_app_instance_id: str,
         updated_at: datetime | None = None,
     ) -> int:
-        """Mark only this process generation's still-running child segments as lost."""
+        """Mark only this App instance's still-running child segments as lost."""
 
         now = _utc(updated_at)
         async with transaction(self._sessions) as session:
             records = (
                 await session.execute(
                     select(ChildExecutionRecord).where(
-                        ChildExecutionRecord.owner_process_generation == owner_process_generation,
+                        ChildExecutionRecord.owner_app_instance_id == owner_app_instance_id,
                         ChildExecutionRecord.status == "running",
                     )
                 )
@@ -900,7 +900,7 @@ def _child_value(record: ChildExecutionRecord, thread: ChildThreadRecord) -> Chi
         resumable=record.resumable,
         resumed_from=record.resumed_from,
         failure=_failure(record.failure_json),
-        owner_process_generation=record.owner_process_generation,
+        owner_app_instance_id=record.owner_app_instance_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
         completed_at=record.completed_at,

@@ -29,7 +29,7 @@ def test_terminal_frontend_uses_process_local_app(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "ready pid=process-" in result.stdout
+    assert "ready instance=app-" in result.stdout
     assert "runtime-" not in result.stdout
 
 
