@@ -15,12 +15,22 @@ from .invocation_resolution import (
     FrozenAgentInvocation,
     PreparedAgentInvocation,
 )
+from .reconstruction import (
+    AgentDefinitionCapabilityProvider,
+    AgentDefinitionReconstructionContext,
+    AgentDefinitionReconstructionError,
+    AgentReconstructor,
+)
 
 __all__ = [
     "Agent",
     "AgentConfig",
+    "AgentDefinitionCapabilityProvider",
+    "AgentDefinitionReconstructionContext",
+    "AgentDefinitionReconstructionError",
     "AgentError",
     "AgentInvocationResolver",
+    "AgentReconstructor",
     "AgentRevision",
     "AgentRunOverride",
     "AgentRunSensitiveValues",
