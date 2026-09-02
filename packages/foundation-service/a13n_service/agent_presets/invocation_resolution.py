@@ -59,6 +59,7 @@ from .invocation import AgentRunSensitiveValues, MergedAgentRun, merge_agent_run
 from .models import AgentPresetRecord, AgentPresetRevisionRecord
 from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
+from .validation import AgentConfigValidationError, AgentProtocolPolicy, validate_agent_config
 
 
 class AgentPresetSelectorKind(StrEnum):
@@ -133,6 +134,7 @@ class AgentPresetInvocationResolver:
         connector_resolver: AgentConnectorSelectionResolver | None = None,
         environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
+        protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
@@ -143,6 +145,7 @@ class AgentPresetInvocationResolver:
             sessions,
             runtime_mode=plugin_runtime_mode,
         )
+        self._protocol_policy = protocol_policy or AgentProtocolPolicy()
 
     async def prepare(
         self,
@@ -194,6 +197,10 @@ class AgentPresetInvocationResolver:
                 if revision.plugin_runtime_mode is not self._plugin_runtime_mode:
                     raise preset_revision_not_executable("plugin_runtime_mode_mismatch")
                 merged = merge_agent_run_override(revision.config, config_override)
+                try:
+                    validate_agent_config(merged.config, protocol_policy=self._protocol_policy)
+                except AgentConfigValidationError as error:
+                    raise preset_revision_not_executable(error.reason) from error
                 await authorize_workspace(
                     session,
                     actor=actor,

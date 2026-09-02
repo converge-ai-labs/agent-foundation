@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError
 from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -37,6 +34,7 @@ from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedE
 from .errors import AgentPresetError, preset_publish_failed
 from .models import AgentPresetRecord, AgentPresetRevisionRecord
 from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
+from .validation import AgentConfigValidationError, AgentProtocolPolicy, validate_agent_config
 
 MAX_SUBAGENT_DEPTH = 16
 MAX_SUBAGENT_NODES = 256
@@ -85,6 +83,7 @@ class AgentPresetResolver:
         connector_resolver: AgentConnectorSelectionResolver | None = None,
         environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
+        protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
@@ -95,6 +94,7 @@ class AgentPresetResolver:
             runtime_mode=plugin_runtime_mode,
         )
         self.plugin_runtime_mode = plugin_runtime_mode
+        self._protocol_policy = protocol_policy or AgentProtocolPolicy()
 
     async def prepare(
         self,
@@ -259,7 +259,10 @@ class AgentPresetResolver:
         for index, skill in enumerate(config.skills):
             if skill.skill_revision_id in {item.skill_revision_id for item in config.skills[:index]}:
                 raise preset_publish_failed("skill_revision_duplicate", path=f"skills.{index}")
-        _validate_json_schemas(config)
+        try:
+            validate_agent_config(config, protocol_policy=self._protocol_policy)
+        except AgentConfigValidationError as error:
+            raise preset_publish_failed(error.reason, path=error.path) from error
 
     async def _prepare_skills(
         self,
@@ -498,30 +501,6 @@ def _environment_lock(environment: EnvironmentExecutionConfig | None) -> dict[st
         "provider_lock": environment.provider_lock,
         "logical_digest_sha256": environment.logical_digest_sha256,
     }
-
-
-def _validate_json_schemas(config: AgentPresetConfig) -> None:
-    schemas: list[tuple[str, Mapping[str, object]]] = []
-    if config.output_spec is not None:
-        if config.output_spec.schema_ is not None:
-            schemas.append(("output_spec.schema", config.output_spec.schema_))
-            schemas.extend(
-                (f"output_spec.resources.{name}", schema) for name, schema in config.output_spec.resources.items()
-            )
-        for index, variant in enumerate(config.output_spec.variants or ()):
-            schemas.append((f"output_spec.variants.{index}.schema", variant.schema_))
-            schemas.extend(
-                (f"output_spec.variants.{index}.resources.{name}", schema) for name, schema in variant.resources.items()
-            )
-    for name in ("input_data_schema", "state_schema", "context_schema"):
-        schema = getattr(config.protocol, name)
-        if schema is not None:
-            schemas.append((f"protocol.{name}", schema))
-    for path, schema in schemas:
-        try:
-            Draft202012Validator.check_schema(schema)
-        except SchemaError as error:
-            raise preset_publish_failed("json_schema_invalid", path=path) from error
 
 
 def _validate_child_environment(
