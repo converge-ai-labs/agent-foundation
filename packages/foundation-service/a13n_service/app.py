@@ -50,8 +50,16 @@ from a13n_service.plugins.commands import (
     PluginRuntimeCommandDispatcher,
     PluginRuntimeStagingAuthority,
 )
+from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.objects import PluginObjectStore
 from a13n_service.plugins.router import router as plugin_router
+from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
+from a13n_service.plugins.runtime import (
+    WorkerReleaseManifest,
+    default_runtime_target,
+    installed_distribution_versions,
+    installed_harness_version,
+)
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
 from a13n_service.plugins.runtime_resolver import (
     FoundationPluginRuntimeCandidateResolver,
@@ -181,8 +189,40 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             package_store = SkillPackageStore(storage.objects)
             asset_staging = await AssetStaging.create(storage.files_root, limiter=storage.file_limiter)
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
+            plugin_objects = PluginObjectStore(storage.objects)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
             plugin_runtime_command_coordinator: PluginRuntimeCommandCoordinator | None = None
+            plugin_runner_supervisor: PluginRunnerSupervisor | None = None
+            if settings.role in _WORKER_ROLES:
+                plugin_runtime_materializer = await PluginRuntimeMaterializer.create(
+                    storage.files_root,
+                    plugin_objects,
+                    WorkerReleaseManifest(
+                        worker_release=settings.build_version,
+                        harness_version=installed_harness_version(),
+                        runtime_target=default_runtime_target(),
+                        distributions=installed_distribution_versions(),
+                    ),
+                    executable=settings.plugin_runtime_resolver_executable,
+                    max_wheel_bytes=settings.plugin_max_wheel_bytes,
+                    max_expanded_bytes=settings.plugin_max_expanded_bytes,
+                    max_archive_members=settings.plugin_max_archive_members,
+                    max_runtime_bytes=settings.plugin_runtime_max_materialized_bytes,
+                    timeout_seconds=settings.plugin_runtime_resolver_timeout_seconds,
+                    limiter=storage.file_limiter,
+                )
+                app.state.plugin_runtime_materializer = plugin_runtime_materializer
+                if settings.plugin_runtime_mode is PluginRuntimeMode.runner:
+                    plugin_runner_supervisor = await stack.enter_async_context(
+                        PluginRunnerSupervisor(
+                            plugin_runtime_materializer,
+                            ready_timeout_seconds=settings.plugin_runner_ready_timeout_seconds,
+                            command_timeout_seconds=settings.plugin_runner_command_timeout_seconds,
+                            shutdown_timeout_seconds=settings.plugin_runner_shutdown_timeout_seconds,
+                            max_processes=settings.plugin_runner_max_processes,
+                        )
+                    )
+                    app.state.plugin_runner_supervisor = plugin_runner_supervisor
             if settings.role in _CONTROL_PLANE_ROLES:
                 selected_environment_providers = app.state.components.environment_provider_catalog
                 if selected_environment_providers is None:
@@ -206,10 +246,9 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     )
                 )
                 plugin_staging = await PluginStaging.create(storage.files_root, limiter=storage.file_limiter)
-                plugin_objects = PluginObjectStore(storage.objects)
                 runtime_dispatcher = app.state.components.plugin_runtime_command_dispatcher
                 candidate_resolver = app.state.components.plugin_runtime_candidate_resolver
-                staging_authority = app.state.components.plugin_runtime_staging_authority
+                staging_authority = app.state.components.plugin_runtime_staging_authority or plugin_runner_supervisor
                 if (
                     candidate_resolver is not None or staging_authority is not None
                 ) and settings.plugin_runtime_mode is not PluginRuntimeMode.runner:

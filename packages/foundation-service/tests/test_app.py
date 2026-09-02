@@ -10,6 +10,8 @@ from a13n_service.plugins.commands import (
     PluginRuntimeCatalogSnapshot,
     PluginRuntimeCommand,
 )
+from a13n_service.plugins.materialization import PluginRuntimeMaterializer
+from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import PluginRuntimeLock
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
 from a13n_service.plugins.runtime_resolver import FoundationPluginRuntimeCandidateResolver
@@ -205,6 +207,8 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         assert isinstance(app.state.skill_runtime_preparer, SkillRuntimePreparer)
         assert app.state.agent_plugin_selection_resolver is not None
         assert app.state.plugin_service is not None
+        assert isinstance(app.state.plugin_runtime_materializer, PluginRuntimeMaterializer)
+        assert not hasattr(app.state, "plugin_runner_supervisor")
         assert app.state.trace_query_service is not None
 
         transport = httpx2.ASGITransport(app=app)
@@ -288,6 +292,34 @@ async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(tmp_pat
     async with app.router.lifespan_context(app):
         assert isinstance(app.state.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
         assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
+
+
+@pytest.mark.anyio
+async def test_all_in_one_runner_mode_uses_local_supervisor_as_staging_authority(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(
+            tmp_path,
+            plugin_runtime_mode="runner",
+            plugin_runtime_command_poll_interval_seconds=0.01,
+            plugin_runtime_command_lease_seconds=4,
+        )
+    )
+
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.plugin_runner_supervisor, PluginRunnerSupervisor)
+        assert isinstance(app.state.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
+        assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
+
+
+@pytest.mark.anyio
+async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(tmp_path: Path) -> None:
+    app = create_app(local_settings(tmp_path, role=ServiceRole.worker, plugin_runtime_mode="runner"))
+
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.plugin_runtime_materializer, PluginRuntimeMaterializer)
+        assert isinstance(app.state.plugin_runner_supervisor, PluginRunnerSupervisor)
+        assert not hasattr(app.state, "plugin_runtime_command_coordinator")
+        assert not hasattr(app.state, "plugin_runtime_candidate_resolver")
 
 
 @pytest.mark.anyio

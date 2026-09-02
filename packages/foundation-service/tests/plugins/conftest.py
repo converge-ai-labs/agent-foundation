@@ -102,6 +102,7 @@ def build_wheel(
     package: str = "acme_audit",
     requires_dist: tuple[str, ...] = (),
     include_entry_point: bool = True,
+    factory_source: bytes | None = None,
     second_entry_point: bool = False,
     corrupt_record: bool = False,
     unsafe_member: bool = False,
@@ -113,7 +114,7 @@ def build_wheel(
         entry_points += f"other.plugin = {package}.factory:OtherFactory\n"
     files: dict[str, bytes] = {
         f"{package}/__init__.py": b"",
-        f"{package}/factory.py": b"class Factory:\n    pass\n",
+        f"{package}/factory.py": factory_source or b"class Factory:\n    pass\n",
         f"{dist_info}/METADATA": (
             "Metadata-Version: 2.4\n"
             f"Name: {distribution_name}\n"

@@ -135,6 +135,7 @@ def _inspect_distribution(
         by_name, dist_info = _inspect_archive(archive, max_expanded_bytes, max_members)
         metadata_name = f"{dist_info}/METADATA"
         wheel_name = f"{dist_info}/WHEEL"
+        entries_name = f"{dist_info}/entry_points.txt"
         record_name = f"{dist_info}/RECORD"
         for required in (metadata_name, wheel_name, record_name):
             if required not in by_name:
@@ -143,6 +144,8 @@ def _inspect_distribution(
             _read_bounded(archive, metadata_name)
         )
         root_is_purelib, wheel_tags = _parse_wheel(_read_bounded(archive, wheel_name))
+        if entries_name in by_name:
+            _reject_foundation_entry_points(_read_bounded(archive, entries_name))
         _validate_record(archive, by_name, record_name)
         return InspectedDistributionWheel(
             distribution_name=distribution_name,
@@ -284,6 +287,17 @@ def _parse_entry_points(raw: bytes) -> tuple[str, str]:
     ):
         raise plugin_artifact_invalid("entry_point_target_invalid")
     return plugin_key, target
+
+
+def _reject_foundation_entry_points(raw: bytes) -> None:
+    parser = configparser.ConfigParser(interpolation=None, strict=True)
+    parser.optionxform = _identity_option
+    try:
+        parser.read_string(raw.decode("utf-8"))
+    except (configparser.Error, UnicodeError) as error:
+        raise plugin_artifact_invalid("entry_points_invalid") from error
+    if any(section.startswith(("a13n_", "agent_foundation.")) for section in parser.sections()):
+        raise plugin_artifact_invalid("dependency_extension_entry_point")
 
 
 def _identity_option(optionstr: str) -> str:

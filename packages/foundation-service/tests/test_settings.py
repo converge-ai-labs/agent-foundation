@@ -32,6 +32,11 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.plugin_runtime_index_urls == ()
     assert settings.plugin_runtime_resolver_timeout_seconds == 120
     assert settings.plugin_runtime_resolver_max_packages == 512
+    assert settings.plugin_runtime_max_materialized_bytes == 4 * 1024 * 1024 * 1024
+    assert settings.plugin_runner_ready_timeout_seconds == 60
+    assert settings.plugin_runner_command_timeout_seconds == 30
+    assert settings.plugin_runner_shutdown_timeout_seconds == 30
+    assert settings.plugin_runner_max_processes == 8
     assert settings.observability_query_provider == "none"
     assert "foundation:foundation" not in repr(settings)
 
@@ -52,6 +57,16 @@ def test_asset_size_bound_must_be_positive_and_finite() -> None:
         {"plugin_runtime_resolver_timeout_seconds": 901},
         {"plugin_runtime_resolver_max_packages": 0},
         {"plugin_runtime_resolver_max_packages": 4097},
+        {"plugin_runtime_max_materialized_bytes": 0},
+        {"plugin_runtime_max_materialized_bytes": 128 * 1024 * 1024 * 1024 + 1},
+        {"plugin_runner_ready_timeout_seconds": 0},
+        {"plugin_runner_ready_timeout_seconds": 301},
+        {"plugin_runner_command_timeout_seconds": 0},
+        {"plugin_runner_command_timeout_seconds": 301},
+        {"plugin_runner_shutdown_timeout_seconds": 0},
+        {"plugin_runner_shutdown_timeout_seconds": 301},
+        {"plugin_runner_max_processes": 0},
+        {"plugin_runner_max_processes": 257},
     ],
 )
 def test_plugin_runtime_command_timing_is_bounded(values: dict[str, object]) -> None:

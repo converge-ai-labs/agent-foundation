@@ -40,6 +40,17 @@ async def test_inspects_dependency_wheel_without_requiring_plugin_entry_point(tm
 
 
 @pytest.mark.anyio
+async def test_dependency_wheel_cannot_register_foundation_plugin_entry_point(tmp_path: Path) -> None:
+    path = tmp_path / "dependency.whl"
+    path.write_bytes(build_wheel(include_entry_point=True))
+
+    with pytest.raises(PluginError) as captured:
+        await inspect_distribution_wheel(path, max_expanded_bytes=1024 * 1024, max_members=100)
+
+    assert captured.value.details == {"reason": "dependency_extension_entry_point"}
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("wheel", "reason"),
     (
