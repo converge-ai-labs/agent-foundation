@@ -93,6 +93,9 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/plugins" in document["paths"]
     assert "/api/v1/plugins/{plugin_id}/versions" in document["paths"]
     assert "/api/v1/plugin-versions/{plugin_version_id}" in document["paths"]
+    assert "/api/v1/plugin-versions/{plugin_version_id}/activate" in document["paths"]
+    assert "/api/v1/plugins/{plugin_id}/deactivate" in document["paths"]
+    assert "/api/v1/operations/{operation_id}" in document["paths"]
 
 
 def test_web_application_serves_assets_and_browser_history(tmp_path: Path) -> None:

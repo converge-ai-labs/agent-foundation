@@ -66,6 +66,7 @@ from a13n_service.model_configs.service import (
     ModelConfigService,
 )
 from a13n_service.observability import build_observability_runtime
+from a13n_service.plugins.commands import PluginRuntimeCommandDispatcher
 from a13n_service.plugins.objects import PluginObjectStore
 from a13n_service.plugins.router import router as plugin_router
 from a13n_service.plugins.service import PluginService
@@ -105,6 +106,7 @@ class ServiceComponents:
     agent_preset_resolver: AgentPresetResolver | None = None
     agent_preset_invocation_resolver: AgentPresetInvocationResolver | None = None
     agent_plugin_selection_resolver: AgentPluginSelectionResolver | None = None
+    plugin_runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None
     agent_connector_selection_resolver: AgentConnectorSelectionResolver | None = None
     model_connection_tester: CandidateConnectionTester | None = None
     model_secret_resolver: RuntimeSecretValueResolver | None = None
@@ -295,6 +297,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     max_wheel_bytes=settings.plugin_max_wheel_bytes,
                     max_expanded_bytes=settings.plugin_max_expanded_bytes,
                     max_archive_members=settings.plugin_max_archive_members,
+                    runtime_command_dispatcher=app.state.components.plugin_runtime_command_dispatcher,
                 )
                 await app.state.plugin_service.ensure_runtime_mode()
                 github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)

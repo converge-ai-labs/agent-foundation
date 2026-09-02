@@ -22,6 +22,7 @@ from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session, transaction
 
 from .artifact import InspectedPluginWheel, inspect_plugin_wheel
+from .commands import PluginRuntimeCommandDispatcher
 from .cursors import (
     PluginCursorError,
     decode_plugin_cursor,
@@ -36,6 +37,7 @@ from .domain import (
     PluginCollection,
     PluginLifecycleState,
     PluginSource,
+    PluginTaskReceipt,
     PluginVersion,
     PluginVersionCollection,
 )
@@ -45,6 +47,9 @@ from .errors import (
     plugin_idempotency_conflict,
     plugin_identity_conflict,
     plugin_not_found,
+    plugin_operation_not_found,
+    plugin_runtime_control_unavailable,
+    plugin_runtime_mode_unsupported,
     plugin_state_conflict,
     plugin_version_conflict,
     plugin_version_not_found,
@@ -74,6 +79,7 @@ class PluginService:
         max_wheel_bytes: int,
         max_expanded_bytes: int,
         max_archive_members: int,
+        runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None,
         clock=None,
     ) -> None:
         self._sessions = sessions
@@ -83,6 +89,7 @@ class PluginService:
         self._max_wheel_bytes = max_wheel_bytes
         self._max_expanded_bytes = max_expanded_bytes
         self._max_archive_members = max_archive_members
+        self._runtime_command_dispatcher = runtime_command_dispatcher
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def ensure_runtime_mode(self) -> None:
@@ -355,6 +362,69 @@ class PluginService:
             await session.flush()
             return record.to_resource()
 
+    async def activate(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        plugin_version_id: str,
+        idempotency_key: str,
+    ) -> PluginTaskReceipt:
+        dispatcher = self._require_runtime_command_dispatcher()
+        organization_id = await self._authorize(actor, WorkspaceAction.plugin_runtime_manage)
+        async with short_session(self._sessions) as session:
+            row = await session.execute(
+                select(PluginVersionRecord, PluginRecord)
+                .join(PluginRecord, PluginRecord.id == PluginVersionRecord.plugin_id)
+                .where(PluginVersionRecord.id == plugin_version_id)
+            )
+            current = row.one_or_none()
+        if current is None:
+            raise plugin_version_not_found()
+        plugin_version, plugin = current
+        return await dispatcher.activate(
+            actor=actor,
+            organization_id=organization_id,
+            workspace_id=actor.boundary_workspace_id,
+            plugin=plugin.to_resource(),
+            plugin_version=plugin_version.to_resource(),
+            idempotency_key=idempotency_key,
+        )
+
+    async def deactivate(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        plugin_id: str,
+        idempotency_key: str,
+    ) -> PluginTaskReceipt:
+        dispatcher = self._require_runtime_command_dispatcher()
+        organization_id = await self._authorize(actor, WorkspaceAction.plugin_runtime_manage)
+        async with short_session(self._sessions) as session:
+            plugin = await session.get(PluginRecord, plugin_id)
+        if plugin is None:
+            raise plugin_not_found()
+        return await dispatcher.deactivate(
+            actor=actor,
+            organization_id=organization_id,
+            workspace_id=actor.boundary_workspace_id,
+            plugin=plugin.to_resource(),
+            idempotency_key=idempotency_key,
+        )
+
+    async def get_operation(self, *, actor: AuthenticatedActor, operation_id: str) -> PluginTaskReceipt:
+        organization_id = await self._authorize(actor, WorkspaceAction.plugin_runtime_manage)
+        if self._runtime_mode is PluginRuntimeMode.on_demand:
+            raise plugin_operation_not_found()
+        dispatcher = self._runtime_command_dispatcher
+        if dispatcher is None:
+            raise plugin_runtime_control_unavailable()
+        return await dispatcher.get_receipt(
+            actor=actor,
+            organization_id=organization_id,
+            workspace_id=actor.boundary_workspace_id,
+            operation_id=operation_id,
+        )
+
     async def _commit_upload(
         self,
         *,
@@ -527,6 +597,13 @@ class PluginService:
             return workspace.organization_id
         except AuthorizationError as error:
             raise PluginError("forbidden", "The operation is not allowed.", status_code=403) from error
+
+    def _require_runtime_command_dispatcher(self) -> PluginRuntimeCommandDispatcher:
+        if self._runtime_mode is PluginRuntimeMode.on_demand:
+            raise plugin_runtime_mode_unsupported()
+        if self._runtime_command_dispatcher is None:
+            raise plugin_runtime_control_unavailable()
+        return self._runtime_command_dispatcher
 
     async def _load_version_replay(
         self,
