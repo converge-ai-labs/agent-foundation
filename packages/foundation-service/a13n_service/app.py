@@ -45,6 +45,7 @@ from a13n_service.models.service import (
     ModelService,
 )
 from a13n_service.observability import build_observability_runtime
+from a13n_service.plugins.builtins import BuiltinPluginArtifact
 from a13n_service.plugins.commands import (
     PluginRuntimeCandidateResolver,
     PluginRuntimeCommandDispatcher,
@@ -112,6 +113,7 @@ class ServiceComponents:
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None
     trace_query_provider_registry: TraceQueryProviderRegistry | None = None
+    builtin_plugin_artifacts: tuple[BuiltinPluginArtifact, ...] = ()
 
 
 @asynccontextmanager
@@ -310,6 +312,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     runtime_command_dispatcher=runtime_dispatcher,
                 )
                 await app.state.plugin_service.ensure_runtime_mode()
+                for artifact in app.state.components.builtin_plugin_artifacts:
+                    await app.state.plugin_service.register_builtin(
+                        registration=artifact.registration,
+                        body=artifact.body_factory(),
+                        content_length=artifact.content_length,
+                    )
                 github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)
                 credential_resolver = app.state.components.skill_credential_resolver
                 if credential_resolver is None:

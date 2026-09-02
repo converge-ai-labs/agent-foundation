@@ -530,6 +530,40 @@ async def test_deactivate_commits_empty_catalog_without_rewriting_version(
 
 
 @pytest.mark.anyio
+async def test_required_plugin_cannot_be_deactivated(
+    runner_plugin_service: PluginService,
+    runtime_coordinator: tuple[PluginRuntimeCommandCoordinator, _CandidateResolver, _StagingAuthority],
+    plugin_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    coordinator, _resolver, _authority = runtime_coordinator
+    uploaded, _activated = await _activate(
+        runner_plugin_service,
+        coordinator,
+        version="1.0.0",
+        key="activate-required-plugin",
+    )
+    assert await coordinator.reconcile_once() is True
+    async with transaction(plugin_sessions) as session:
+        record = await session.get(PluginRecord, uploaded.version.plugin_id, with_for_update=True)
+        assert record is not None
+        record.required = True
+    plugin = await runner_plugin_service.get(actor=actor(), plugin_id=uploaded.version.plugin_id)
+    with pytest.raises(PluginError) as rejected:
+        await coordinator.deactivate(
+            actor=actor(),
+            organization_id="org_1234567890abcdef",
+            workspace_id="ws_1234567890abcdef",
+            plugin=plugin,
+            idempotency_key="deactivate-required-plugin",
+        )
+
+    assert rejected.value.code == "plugin_state_conflict"
+    async with short_session(plugin_sessions) as session:
+        current = await session.get(PluginRecord, uploaded.version.plugin_id)
+        assert current is not None and current.active_version_id == uploaded.version.id
+
+
+@pytest.mark.anyio
 async def test_receipt_is_scoped_to_original_authorized_caller(
     runner_plugin_service: PluginService,
     runtime_coordinator: tuple[PluginRuntimeCommandCoordinator, _CandidateResolver, _StagingAuthority],

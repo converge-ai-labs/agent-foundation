@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from base64 import b64encode
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,11 +8,13 @@ import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
 from a13n_service.database import DatabaseMigrator
+from a13n_service.plugins import BuiltinPluginArtifact, BuiltinPluginRegistration
 from a13n_service.plugins.commands import (
     PluginRuntimeCatalogSnapshot,
     PluginRuntimeCommand,
 )
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
+from a13n_service.plugins.models import PluginRecord, PluginVersionRecord
 from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import PluginRuntimeLock
@@ -20,8 +23,11 @@ from a13n_service.plugins.runtime_resolver import FoundationPluginRuntimeCandida
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
 from a13n_service.skills import SkillRuntimePreparer
+from a13n_service.storage import short_session
 from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 from fastapi import FastAPI
+
+from .plugins.conftest import build_wheel, wheel_body
 
 
 class _UnusedPluginRuntimeCandidateResolver:
@@ -219,6 +225,43 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready", "role": "all"}
+
+
+@pytest.mark.anyio
+async def test_control_lifespan_registers_distribution_builtin_plugins(tmp_path: Path) -> None:
+    wheel = build_wheel()
+    registration = BuiltinPluginRegistration(
+        plugin_id="plg_builtinaudit0001",
+        plugin_version_id="plgv_builtinauditv100",
+        system_actor_id="sa_pluginrelease0001",
+        plugin_key="acme.audit",
+        distribution_name="acme-audit",
+        top_level_package="acme_audit",
+        version="1.0.0",
+        content_digest=hashlib.sha256(wheel).hexdigest(),
+        required=True,
+    )
+    app = create_app(
+        local_settings(tmp_path, role=ServiceRole.control),
+        components=ServiceComponents(
+            builtin_plugin_artifacts=(
+                BuiltinPluginArtifact(
+                    registration=registration,
+                    body_factory=lambda: wheel_body(wheel),
+                    content_length=len(wheel),
+                ),
+            ),
+        ),
+    )
+
+    async with app.router.lifespan_context(app):
+        async with short_session(app.state.storage.sessions) as session:
+            plugin = await session.get(PluginRecord, registration.plugin_id)
+            version = await session.get(PluginVersionRecord, registration.plugin_version_id)
+
+        assert plugin is not None and plugin.required is True
+        assert plugin.source == "builtin"
+        assert version is not None and version.content_digest == registration.content_digest
 
 
 @pytest.mark.anyio

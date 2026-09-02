@@ -34,6 +34,7 @@ from .cursors import (
 from .domain import (
     PLUGIN_ID_PREFIX,
     PLUGIN_VERSION_ID_PREFIX,
+    BuiltinPluginRegistration,
     Plugin,
     PluginCollection,
     PluginSource,
@@ -120,6 +121,51 @@ class PluginService:
                 )
             elif state.mode != self._runtime_mode.value:
                 raise RuntimeError("configured Plugin Runtime mode conflicts with persisted Plugin Runtime state")
+
+    async def register_builtin(
+        self,
+        *,
+        registration: BuiltinPluginRegistration,
+        body: AsyncIterable[bytes],
+        content_length: int | None,
+    ) -> PluginVersion:
+        """Publish and idempotently register one distribution-owned PluginVersion."""
+
+        staged = await self._staging.stage(
+            body,
+            max_size_bytes=self._max_wheel_bytes,
+            content_length=content_length,
+        )
+        try:
+            if staged.content_digest != registration.content_digest:
+                raise plugin_artifact_invalid("builtin_manifest_digest_mismatch")
+            inspected = await inspect_plugin_wheel(
+                staged.path,
+                max_expanded_bytes=self._max_expanded_bytes,
+                max_members=self._max_archive_members,
+            )
+            if not _builtin_manifest_matches(registration, inspected):
+                raise plugin_artifact_invalid("builtin_manifest_identity_mismatch")
+            artifact_ref = await self._objects.publish(staged)
+            try:
+                return await self._commit_builtin_registration(
+                    registration=registration,
+                    inspected=inspected,
+                    artifact_ref=artifact_ref,
+                    size_bytes=staged.size_bytes,
+                )
+            except IntegrityError:
+                replay = await self._load_builtin_registration(
+                    registration=registration,
+                    inspected=inspected,
+                    artifact_ref=artifact_ref,
+                    size_bytes=staged.size_bytes,
+                )
+                if replay is not None:
+                    return replay
+                raise plugin_identity_conflict() from None
+        finally:
+            await staged.remove()
 
     async def upload(
         self,
@@ -509,6 +555,139 @@ class PluginService:
             await session.flush()
             return PluginUploadResult(version=version.to_resource(), created=created)
 
+    async def _commit_builtin_registration(
+        self,
+        *,
+        registration: BuiltinPluginRegistration,
+        inspected: InspectedPluginWheel,
+        artifact_ref: str,
+        size_bytes: int,
+    ) -> PluginVersion:
+        now = self._clock()
+        async with transaction(self._sessions) as session:
+            plugins = tuple(
+                (
+                    await session.scalars(
+                        select(PluginRecord)
+                        .where(
+                            or_(
+                                PluginRecord.id == registration.plugin_id,
+                                PluginRecord.plugin_key == registration.plugin_key,
+                                PluginRecord.distribution_name == registration.distribution_name,
+                                PluginRecord.top_level_package == registration.top_level_package,
+                            )
+                        )
+                        .with_for_update()
+                    )
+                ).all()
+            )
+            if len(plugins) > 1:
+                raise plugin_identity_conflict()
+            if plugins:
+                plugin = plugins[0]
+                if not _builtin_plugin_matches(plugin, registration):
+                    raise plugin_identity_conflict()
+                if plugin.archived_at is not None:
+                    raise plugin_state_conflict()
+                if plugin.required != registration.required:
+                    plugin.required = registration.required
+                    plugin.updated_at = now
+            else:
+                plugin = PluginRecord(
+                    id=registration.plugin_id,
+                    source=PluginSource.builtin.value,
+                    plugin_key=registration.plugin_key,
+                    distribution_name=registration.distribution_name,
+                    top_level_package=registration.top_level_package,
+                    active_version_id=None,
+                    archived_at=None,
+                    required=registration.required,
+                    created_by_type="service_account",
+                    created_by_id=registration.system_actor_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(plugin)
+                await session.flush()
+
+            versions = tuple(
+                (
+                    await session.scalars(
+                        select(PluginVersionRecord)
+                        .where(
+                            or_(
+                                PluginVersionRecord.id == registration.plugin_version_id,
+                                and_(
+                                    PluginVersionRecord.plugin_id == registration.plugin_id,
+                                    PluginVersionRecord.version == registration.version,
+                                ),
+                            )
+                        )
+                        .with_for_update()
+                    )
+                ).all()
+            )
+            if len(versions) > 1:
+                raise plugin_version_conflict()
+            if versions:
+                version = versions[0]
+                if not _builtin_version_matches(
+                    version,
+                    registration=registration,
+                    inspected=inspected,
+                    artifact_ref=artifact_ref,
+                    size_bytes=size_bytes,
+                ):
+                    raise plugin_version_conflict()
+            else:
+                version = PluginVersionRecord(
+                    id=registration.plugin_version_id,
+                    plugin_id=registration.plugin_id,
+                    version=registration.version,
+                    content_digest=registration.content_digest,
+                    artifact_ref=artifact_ref,
+                    size_bytes=size_bytes,
+                    requires_dist=list(inspected.requires_dist),
+                    requires_python=inspected.requires_python,
+                    wheel_tags=list(inspected.wheel_tags),
+                    root_is_purelib=inspected.root_is_purelib,
+                    entry_point_target=inspected.entry_point_target,
+                    status="ready",
+                    created_by_type="service_account",
+                    created_by_id=registration.system_actor_id,
+                    created_at=now,
+                )
+                session.add(version)
+            await session.flush()
+            return version.to_resource()
+
+    async def _load_builtin_registration(
+        self,
+        *,
+        registration: BuiltinPluginRegistration,
+        inspected: InspectedPluginWheel,
+        artifact_ref: str,
+        size_bytes: int,
+    ) -> PluginVersion | None:
+        async with short_session(self._sessions) as session:
+            plugin = await session.get(PluginRecord, registration.plugin_id)
+            version = await session.get(PluginVersionRecord, registration.plugin_version_id)
+        if plugin is None or version is None:
+            return None
+        if (
+            not _builtin_plugin_matches(plugin, registration)
+            or plugin.required != registration.required
+            or not _builtin_version_matches(
+                version,
+                registration=registration,
+                inspected=inspected,
+                artifact_ref=artifact_ref,
+                size_bytes=size_bytes,
+            )
+        ):
+            return None
+        return version.to_resource()
+
     async def _select_upload_plugin(
         self,
         session: AsyncSession,
@@ -761,3 +940,49 @@ def _idempotency_key_digest(value: str) -> str:
 def _request_digest(value: dict[str, object]) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _builtin_manifest_matches(
+    registration: BuiltinPluginRegistration,
+    inspected: InspectedPluginWheel,
+) -> bool:
+    return (
+        registration.plugin_key == inspected.plugin_key
+        and registration.distribution_name == inspected.distribution_name
+        and registration.top_level_package == inspected.top_level_package
+        and registration.version == inspected.version
+    )
+
+
+def _builtin_plugin_matches(plugin: PluginRecord, registration: BuiltinPluginRegistration) -> bool:
+    return (
+        plugin.id == registration.plugin_id
+        and plugin.source == PluginSource.builtin.value
+        and plugin.plugin_key == registration.plugin_key
+        and plugin.distribution_name == registration.distribution_name
+        and plugin.top_level_package == registration.top_level_package
+    )
+
+
+def _builtin_version_matches(
+    version: PluginVersionRecord,
+    *,
+    registration: BuiltinPluginRegistration,
+    inspected: InspectedPluginWheel,
+    artifact_ref: str,
+    size_bytes: int,
+) -> bool:
+    return (
+        version.id == registration.plugin_version_id
+        and version.plugin_id == registration.plugin_id
+        and version.version == registration.version
+        and version.content_digest == registration.content_digest
+        and version.artifact_ref == artifact_ref
+        and version.size_bytes == size_bytes
+        and tuple(version.requires_dist) == inspected.requires_dist
+        and version.requires_python == inspected.requires_python
+        and tuple(version.wheel_tags) == inspected.wheel_tags
+        and version.root_is_purelib == inspected.root_is_purelib
+        and version.entry_point_target == inspected.entry_point_target
+        and version.status == "ready"
+    )
