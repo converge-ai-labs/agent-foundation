@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Foundation owns durable lifecycle publication, optional retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Run authority. [Lifecycle and Stream Persistence](23-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Run-scoped Redis Stream, Redis replay cursors, retained Items, and the immutable `RunReplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and the authority boundary between those records and telemetry. [Observability](38-observability.md) owns trace topology, content and scope policy, OTLP export, backend ownership, and hot-backend mapping.
+Foundation owns durable lifecycle publication, optional retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Run authority. [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Run-scoped Redis Stream, Redis replay cursors, retained Items, and the immutable `RunReplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and the authority boundary between those records and telemetry. [Observability](38-observability.md) owns trace topology, content and scope policy, OTLP export, backend ownership, and hot-backend mapping.
 
-[Foundation Hook Notifications](25-hook-notifications.md) owns the public Hook-name registry, durable subscription matching, external channel eligibility, and Webhook flow. Hook routing reuses the records and delivery envelope defined here rather than creating another event log or transport authority. Native Run SSE, lifecycle reads, and best-effort notifications remain owned by [Native Streaming and Notifications](21-native-streaming-and-notifications.md).
+[Foundation Hook Notifications](26-hook-notifications.md) owns the public Hook-name registry, durable subscription matching, external channel eligibility, and Webhook flow. Hook routing reuses the records and delivery envelope defined here rather than creating another event log or transport authority. Native Run SSE, lifecycle reads, and best-effort notifications remain owned by [Native Streaming and Notifications](21-native-streaming-and-notifications.md).
 
 Harness observations follow the accepted Agent Stream Protocol path. Foundation consumes `HarnessAguiObserver` output and does not implement another Harness-to-AG-UI mapping. The separate [Trace Query](39-trace-query.md) contract reads authorized backend telemetry without turning it into a retained interaction or usage source. A live message or delivered envelope becomes authoritative only through the owning Run, lifecycle-event, retained-Item, or usage commit.
 
@@ -62,7 +62,7 @@ Bounded queues and explicit overflow handling prevent a slow client from blockin
 
 ## Lifecycle Publication and External Destinations
 
-Every authoritative Run and RunAttempt transition writes the bounded typed lifecycle event required by [Lifecycle and Stream Persistence](23-lifecycle-and-stream-persistence.md). Waiting pending data remains owned by its sealed Run and state, while child relationships and Ingress, Route, Connector, ConnectorConnection, or MCPConnection operations retain their owning domain records and outbox intents without extending the lifecycle entity registry implicitly. Event publication follows the atomicity, retry, and duplicate-delivery rules in [Durable Operations and Outbox](06-durable-operations-and-outbox.md).
+Every authoritative Run and RunAttempt transition writes the bounded typed lifecycle event required by [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md). Waiting pending data remains owned by its sealed Run and state, while child relationships and Ingress, Route, Connector, ConnectorConnection, or MCPConnection operations retain their owning domain records and outbox intents without extending the lifecycle entity registry implicitly. Event publication follows the atomicity, retry, and duplicate-delivery rules in [Durable Operations and Outbox](06-durable-operations-and-outbox.md).
 
 Each lifecycle resource has one contiguous `resource_seq`; the Workspace feed has a separate database-assigned cursor that is monotonic but not a causal order. Duplicate publication preserves one event identity. Event content references owning resources and retained Items rather than copying differently retained payloads. Redis presence, subscriber receipt, and telemetry never manufacture a lifecycle fact.
 
@@ -109,7 +109,7 @@ The old combined Workspace SSE/WebSocket delivery surface does not exist. Durabl
 The Harness owns native `RunUsage`, the run-local attribution ledger, immutable `UsageRecord` values, and bounded `usage_report` delivery. Foundation ingests immutable `UsageRecord` values idempotently by `record_id` and adds durable attribution:
 
 Public Workspace UsageRecord List authorizes `usage.read` from the IAM
-[stable action registry](32-identity-and-access-management.md#stable-action-registry).
+[stable action registry](33-identity-and-access-management.md#stable-action-registry).
 Internal ingestion is fenced RunAttempt authority and does not require or grant
 that public read action.
 
@@ -140,7 +140,7 @@ This exception prevents lease loss from silently dropping attributable usage wit
 
 Large model, tool, command, file, or child outputs use object storage only after bounded staging, digest verification, authorization through the owning Run or Item, and durable selection. They remain content of that owning record and have no independent product identity. Object keys, file paths, digests, and signed URLs grant no product authority by possession.
 
-An explicitly published [Asset](31-asset-management.md) is the distinct exception: its accepted publication creates an independent immutable `asset_id`, and Run output or an Item can retain the resulting `AssetRef`. Automatic spill, output compaction, replay retention, command capture, or object staging never upgrades content into an Asset. Asset deletion and retention remain independent from the referencing Run or Item.
+An explicitly published [Asset](32-asset-management.md) is the distinct exception: its accepted publication creates an independent immutable `asset_id`, and Run output or an Item can retain the resulting `AssetRef`. Automatic spill, output compaction, replay retention, command capture, or object staging never upgrades content into an Asset. Asset deletion and retention remain independent from the referencing Run or Item.
 
 For example, a command result that exceeds the inline Item limit is staged as an object and selected before the immutable Run replay snapshot references it. An unselected upload is a cleanup candidate. A selected missing object produces an explicit content-read failure; Foundation does not reinterpret it as a missing Item or use it as continuation state.
 

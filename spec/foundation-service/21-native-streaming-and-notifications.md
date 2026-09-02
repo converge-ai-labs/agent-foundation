@@ -14,19 +14,19 @@ These surfaces do not share an envelope, cursor, replay promise, or authority. T
 
 | Concern                                                 | Owner                                                                      |
 | ------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Run Stream entries, Redis cursor, and retained snapshot | [Lifecycle and Stream Persistence](23-lifecycle-and-stream-persistence.md) |
-| Durable lifecycle facts and retention floor             | [Lifecycle and Stream Persistence](23-lifecycle-and-stream-persistence.md) |
+| Run Stream entries, Redis cursor, and retained snapshot | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) |
+| Durable lifecycle facts and retention floor             | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) |
 | Resource and lifecycle collection authorization         | [Management API](16-management-api.md) and the owning domain               |
 | HTTP and streaming resource safety                      | [HTTP ingress](05-http-ingress-and-request-contract.md)                    |
 | SSE framing and Native notification WebSocket           | This document                                                              |
 
-A transport cursor or notification identity grants no resource access. Every attachment authenticates and authorizes the selected resource under current [IAM](32-identity-and-access-management.md).
+A transport cursor or notification identity grants no resource access. Every attachment authenticates and authorizes the selected resource under current [IAM](33-identity-and-access-management.md).
 
 Run SSE authorizes `run.read`; Workspace and resource lifecycle collections
 authorize `lifecycle_event.read` plus current resource-read authority; and each
 WebSocket subscription change authorizes `notification.subscribe` plus every
 selected resource's read action. These actions are registered centrally by
-[IAM](32-identity-and-access-management.md#stable-action-registry). A connection
+[IAM](33-identity-and-access-management.md#stable-action-registry). A connection
 opened under an earlier allow does not preserve authority for a later subscribe
 frame or stream continuation.
 

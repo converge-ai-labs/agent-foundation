@@ -102,7 +102,7 @@ require exact authenticated User equality. Internal owner lifecycle and runtime
 resolution use their owning resource authority plus the run grant `secret.use`;
 they do not turn `secrets.read` or `secrets.manage` into a plaintext-read action.
 The action names and built-in grants are owned by the IAM
-[stable action registry](32-identity-and-access-management.md#stable-action-registry).
+[stable action registry](33-identity-and-access-management.md#stable-action-registry).
 
 ### Create
 
@@ -197,7 +197,7 @@ A deleted key may be used for a newly generated Secret ID under the same owner. 
 
 Replacement updates the active row in place under a row lock. The new ciphertext, nonce, encryption-key identifier, incremented version, and `value_updated_at` commit atomically; the previous encrypted value is not retained as an application-visible version.
 
-Secret creation, replacement, deletion, master-key re-encryption, and denied management attempts emit bounded [IAM security audit events](32-identity-and-access-management.md#security_audit_events). These events contain no Secret key, value-derived data, request body, ciphertext, nonce, master-key material, or raw authorization claims. Their persistence, retention, and export are not part of the Secret relational schema.
+Secret creation, replacement, deletion, master-key re-encryption, and denied management attempts emit bounded [IAM security audit events](33-identity-and-access-management.md#security_audit_events). These events contain no Secret key, value-derived data, request body, ciphertext, nonce, master-key material, or raw authorization claims. Their persistence, retention, and export are not part of the Secret relational schema.
 
 ## Protection Boundary
 

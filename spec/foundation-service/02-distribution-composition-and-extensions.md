@@ -20,7 +20,7 @@ A distribution identifies the product release composition, not where or for whom
 
 Distribution composition does not define generic extension hooks for arbitrary Python code. A common capability exposes a narrow port only where an accepted distribution difference exists. Internal classes, module discovery, installation order, and package naming are not part of the product contract.
 
-Foundation's [managed Harness plugins and Runtime](35-managed-harness-plugins-and-runtime.md) are a separate Host execution input. They can supply trusted Harness middleware selected by a Run-pinned internal Runtime lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
+Foundation's [managed Harness plugins and Runtime](36-managed-harness-plugins-and-runtime.md) are a separate Host execution input. They can supply trusted Harness middleware selected by a Run-pinned internal Runtime lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
 
 ## Dependency Direction
 
@@ -75,7 +75,7 @@ The OSS distribution includes the common durable Run/RunAttempt kernel and the O
 
 The OSS capability set includes the complete [Protocol Gateway](15-protocol-gateway.md). Its `control` and `all` roles always compose Native and Hosted AG-UI routers. It also contains the A2A adapter; the common runtime's single default-on `gateway.a2a_enabled` setting determines whether that adapter's routes and components are mounted. This operational setting neither installs a capability nor selects a distribution.
 
-The OSS capability set also includes [Asset Management](31-asset-management.md): its Native router, authorization actions and role grants, `assets` relational model and migration contribution, object-cleanup control component, Worker-side input resolver, and trusted `AssetCapability` reconstruction. Asset availability is not selected by plugin installation, tenant data, or an Agent-provided import target.
+The OSS capability set also includes [Asset Management](32-asset-management.md): its Native router, authorization actions and role grants, `assets` relational model and migration contribution, object-cleanup control component, Worker-side input resolver, and trusted `AssetCapability` reconstruction. Asset availability is not selected by plugin installation, tenant data, or an Agent-provided import target.
 
 The common package contains the OSS composition and common capability implementations. It contains no empty EE or Cloud package tree, placeholder feature, license branch, or generic plugin administration surface.
 

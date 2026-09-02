@@ -31,7 +31,7 @@ class Connector:
 
 Organization, Workspace, driver, endpoint, and behavior-defining adapter configuration are immutable. Changing one creates another Connector so an accepted Run cannot silently dispatch to a different backend under the same ID. Name, credential rotation, safe observations, and administrative status can change under exact management-version preconditions without changing Connector identity.
 
-`credential_secret_id` authenticates Foundation to the Connector service. It can hold a self-hosted access token or BYOK Connector API key through the [Foundation Secret contract](../26-secret-management.md). It never holds a third-party account OAuth token.
+`credential_secret_id` authenticates Foundation to the Connector service. It can hold a self-hosted access token or BYOK Connector API key through the [Foundation Secret contract](../27-secret-management.md). It never holds a third-party account OAuth token.
 
 `active` means the Connector is administratively enabled; it is not a continuous health claim. Disabling a Connector prevents new setup, discovery, and dispatch through it without reinterpreting or deleting retained ConnectorConnections, Run selections, or audit facts. Transient endpoint or credential failures remain bounded safe observations rather than another Connector lifecycle state.
 
@@ -91,7 +91,7 @@ Revocation first makes the Foundation ConnectorConnection unusable, then request
 
 A ConnectorConnection does not carry mutable lists of Agent or Route IDs. The owning Agent or Route capability configuration references the Foundation ConnectorConnection ID; ConnectorConnection reads can expose authorized reverse-assignment projections. This keeps capability configuration authoritative and avoids a second assignment resource that could disagree with it.
 
-Agent-wide configuration makes a ConnectorConnection eligible wherever that Agent runs. A Route uses the common [Run Capability Overlay](../27-agent-management.md#run-capability-overlay) to inherit Agent defaults, include another authorized ConnectorConnection-backed tool selection, or exclude one exact selectable key. Reusable capability configuration can also reference ConnectorConnections under its own owning contract. Effective use always intersects:
+Agent-wide configuration makes a ConnectorConnection eligible wherever that Agent runs. A Route uses the common [Run Capability Overlay](../28-agent-management.md#run-capability-overlay) to inherit Agent defaults, include another authorized ConnectorConnection-backed tool selection, or exclude one exact selectable key. Reusable capability configuration can also reference ConnectorConnections under its own owning contract. Effective use always intersects:
 
 - the selected Agent and exact Run capability configuration;
 - the current Route when the Run originated from an Ingress;

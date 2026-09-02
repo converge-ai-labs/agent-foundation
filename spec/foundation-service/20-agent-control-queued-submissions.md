@@ -17,7 +17,7 @@ This contract keeps the queue intentionally small. A queued submission has only 
 | Thread advancement and queue revisions                                       | [Durable Thread Persistence](11-thread-persistence.md)                                                                             | Supplies `version`, `queue_version`, current Run, and selected head                      |
 | Accepted Run input, state, and lineage                                       | [Agent Control: Input and Continuation](18-agent-control-input-and-continuation.md) and [Durable Run State](12-run-persistence.md) | Canonicalizes input and creates a continuation or root-like Run                          |
 | Worker claim, lease, and recovery                                            | [Run Attempts, Scheduling, and Recovery](13-run-attempt-scheduling-and-recovery.md)                                                | Begins only after the consumed Run is durably accepted                                   |
-| Steer, async-result delivery, and interrupt                                  | [Agent Control: Active Execution](19-agent-control-active-execution.md) and [Async Subagents](33-async-subagents.md)               | Thread inbox entries are not queued submissions; existing queue order retains precedence |
+| Steer, async-result delivery, and interrupt                                  | [Agent Control: Active Execution](19-agent-control-active-execution.md) and [Async Subagents](34-async-subagents.md)               | Thread inbox entries are not queued submissions; existing queue order retains precedence |
 | API and mutation evidence                                                    | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)         | Own common version, idempotency, retry, and unknown-commit behavior                      |
 
 ## Queued Submission Model
@@ -70,7 +70,7 @@ Principal; DELETE authorizes `queued_submission.delete`; Reorder authorizes
 `queued_submission.reorder`; and explicit Consume authorizes
 `queued_submission.consume`. Consumption also reauthorizes the stored authority
 Principal for the accepted Run. The IAM
-[stable action registry](32-identity-and-access-management.md#stable-action-registry)
+[stable action registry](33-identity-and-access-management.md#stable-action-registry)
 owns built-in grants; this contract owns queue state, ordering, identity, and
 the additional stored-Principal checks.
 

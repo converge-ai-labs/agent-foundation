@@ -63,7 +63,7 @@ flowchart LR
 
 The shared-domain box is a logical code layer, not an independently deployed service. A `control` process invokes the Run and RunAttempt domain services in-process for Run acceptance and caller control commands, and invokes the Hook subscription service for subscription mutations. Inline creation composes both domain services inside the same short Run-acceptance transaction. A `worker` process invokes the same Run and RunAttempt contracts in-process for claim, fencing, Attempt transitions, and Run outcome commits. Separate roles coordinate through authoritative PostgreSQL records and do not call a Domain network endpoint. The `all` role loads both call paths in one process.
 
-The Worker invokes Harness through its public process-local API rather than a Foundation SDK or network hop. The Hook source adapter assigns Foundation correlation and routing names without changing the meaning of an AG-UI event. The [Lifecycle and Stream Persistence](23-lifecycle-and-stream-persistence.md) contract owns PostgreSQL lifecycle facts and the Run-scoped Redis Stream. [Events, Interaction Projection, Usage, and Delivery](24-events-usage-and-delivery.md) owns the common delivery envelope and source-authority separation. [Durable Operations and Outbox](06-durable-operations-and-outbox.md) owns reliable external publication. [Native Streaming and Notifications](21-native-streaming-and-notifications.md) owns Run SSE, Workspace lifecycle event reads, and the best-effort Native notification WebSocket. Those three surfaces keep their own envelopes, filters, cursors, and delivery guarantees.
+The Worker invokes Harness through its public process-local API rather than a Foundation SDK or network hop. The Hook source adapter assigns Foundation correlation and routing names without changing the meaning of an AG-UI event. The [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) contract owns PostgreSQL lifecycle facts and the Run-scoped Redis Stream. [Events, Interaction Projection, Usage, and Delivery](25-events-usage-and-delivery.md) owns the common delivery envelope and source-authority separation. [Durable Operations and Outbox](06-durable-operations-and-outbox.md) owns reliable external publication. [Native Streaming and Notifications](21-native-streaming-and-notifications.md) owns Run SSE, Workspace lifecycle event reads, and the best-effort Native notification WebSocket. Those three surfaces keep their own envelopes, filters, cursors, and delivery guarantees.
 
 The diagram contains no database-to-caller push path. Control reads `lifecycle_events` only when a caller invokes the event API. It does not poll the lifecycle table for new hooks. The only PostgreSQL polling loop shown is the Webhook publisher claiming `pending` Outbox rows. Ordinary resource or large-content retrieval is outside this Hook contract.
 
@@ -149,7 +149,7 @@ redrive authorizes `hook_subscription.redrive`. Exact Run-inline creation is the
 only Runner-level create grant and still requires current authority for the
 signing Secret. Long-lived creation and every later mutation require Builder or
 Admin. The IAM
-[stable action registry](32-identity-and-access-management.md#stable-action-registry)
+[stable action registry](33-identity-and-access-management.md#stable-action-registry)
 owns these grants; subscription scope, Secret, destination, version, and source
 eligibility remain additional checks owned here.
 
@@ -443,7 +443,7 @@ Foundation owns current state, finalization, and backing-target cleanup, while e
 | `environment.state.publication_failed` | Unconditional finalization cannot publish a known changed state                                           | Correlation, bounded safe failure, and independent RunAttempt classification                |
 | `environment.adapter.closed`           | Non-destructive local close finishes or fails after success, cancellation, lease loss, or Worker shutdown | Correlation and bounded close outcome; no claim that a backing target was destroyed         |
 
-These hooks are live Run SSE observations only. They are not current-state, cleanup, or prune authority. Explicit Host destruction and prune use Foundation lifecycle jobs and do not follow Harness close automatically. A missing, incompatible, or unavailable backing target appears through `environment.entry.failed` and the authoritative RunAttempt outcome. The boundary remains owned by [Environment Configuration and Re-entry](28-environment-management.md#runattempt-construction-and-finalization).
+These hooks are live Run SSE observations only. They are not current-state, cleanup, or prune authority. Explicit Host destruction and prune use Foundation lifecycle jobs and do not follow Harness close automatically. A missing, incompatible, or unavailable backing target appears through `environment.entry.failed` and the authoritative RunAttempt outcome. The boundary remains owned by [Environment Configuration and Re-entry](29-environment-management.md#runattempt-construction-and-finalization).
 
 ## Execution, Backpressure, and Blocking
 

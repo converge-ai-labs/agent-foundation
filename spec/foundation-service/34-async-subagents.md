@@ -131,7 +131,7 @@ When Feedback or explicit waiting Continue binds a result from a waiting source,
 
 ## Result Content and Retention
 
-Result content is bounded and authorized at publication, read, and incorporation time. Larger content uses an authorized Item-owned reference under the [large-content contract](24-events-usage-and-delivery.md#large-content). Delivery never transfers the child's credentials, current Environment state, live Environment adapter, private Capability state, or complete trace.
+Result content is bounded and authorized at publication, read, and incorporation time. Larger content uses an authorized Item-owned reference under the [large-content contract](25-events-usage-and-delivery.md#large-content). Delivery never transfers the child's credentials, current Environment state, live Environment adapter, private Capability state, or complete trace.
 
 While pending, the inbox entry remains the delivery authority after the originating parent Run seals as `waiting` or `completed`, another Run advances the Thread under an owning binding rule, a Worker is replaced, or a Redis signal is lost. Origin failure or cancellation instead suppresses every not-yet-consumed result from that Run. Expiry, explicit discard, suppression, and supersession follow relationship, binding, visibility, and retention policy and never rewrite the sealed child outcome.
 

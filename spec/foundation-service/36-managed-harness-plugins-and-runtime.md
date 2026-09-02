@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation manages trusted Harness plugins through stable `Plugin` resources, immutable `PluginVersion` Wheels, explicit Preset selections, and one deployment-fixed Runtime profile. This document owns their public identity, lifecycle, commands, artifact validation, Runtime locks, Worker materialization, and execution-profile behavior. [Agent Management](27-agent-management.md) only embeds the Plugin selections and exact resolved locks owned here into `AgentPresetConfig` and `AgentPresetRevision`.
+Foundation manages trusted Harness plugins through stable `Plugin` resources, immutable `PluginVersion` Wheels, explicit Preset selections, and one deployment-fixed Runtime profile. This document owns their public identity, lifecycle, commands, artifact validation, Runtime locks, Worker materialization, and execution-profile behavior. [Agent Management](28-agent-management.md) only embeds the Plugin selections and exact resolved locks owned here into `AgentPresetConfig` and `AgentPresetRevision`.
 
 Every deployment fixes one `plugin_runtime.mode` before it stores Plugin, AgentPresetRevision, or Run data:
 
@@ -16,7 +16,7 @@ Both profiles persist immutable Runtime locks and every accepted Run pins one ex
 | Concern                                                                  | Owner                                                               | Contract                                                                     |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Plugin identity, Version, Preset selection, lifecycle, and commands      | This document                                                       | Defines the product, HTTP-visible, and trusted-code deployment behavior      |
-| Preset identity, Revision creation, and effective configuration          | [Agent Management](27-agent-management.md)                          | Embeds exact Plugin selections and resolved locks without owning their model |
+| Preset identity, Revision creation, and effective configuration          | [Agent Management](28-agent-management.md)                          | Embeds exact Plugin selections and resolved locks without owning their model |
 | Runtime mode initialization and process lifecycle                        | [Runtime Configuration](01-runtime-configuration-and-deployment.md) | Fixes one durable deployment profile and owns readiness, drain, and shutdown |
 | Wheel shape, digest, Runtime lock, and artifact retention                | This document                                                       | Makes exact trusted Plugin environments identifiable and verifiable          |
 | On-demand registry, import preflight, and conflict behavior              | This document                                                       | Keeps incompatible work unclaimed without another routing authority          |
@@ -344,7 +344,7 @@ Plugin, PluginVersion, every successful Wheel, bounded runner task receipt evide
 
 ## Plugin Management API
 
-The Plugin `/api/v1` routes are cataloged by [Management API](16-management-api.md). List and Get authorize `plugin.read`; upload, Archive, and Unarchive authorize `plugin.manage`; runner-profile Activate and Deactivate authorize `plugin.runtime.manage`. The IAM [stable action registry](32-identity-and-access-management.md#stable-action-registry) owns role grants.
+The Plugin `/api/v1` routes are cataloged by [Management API](16-management-api.md). List and Get authorize `plugin.read`; upload, Archive, and Unarchive authorize `plugin.manage`; runner-profile Activate and Deactivate authorize `plugin.runtime.manage`. The IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry) owns role grants.
 
 Upload creates or returns one immutable PluginVersion synchronously. Archive and Unarchive return the committed Plugin. Clients cannot directly write `source`, `plugin_key`, package identity, `active_version_id`, lifecycle state, Version content, digests, or audit fields.
 

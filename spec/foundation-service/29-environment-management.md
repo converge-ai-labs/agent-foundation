@@ -24,7 +24,7 @@ Harness receives already constructed adapters as lightweight mounts. It enters a
 | Provider configuration schema and deterministic validation | Environment Provider                         | No external I/O during validation or Environment construction                               |
 | Provider catalog and exact package lock                    | Foundation distribution or operator boundary | Trusted code selection; catalog presence grants no Workspace authority                      |
 | Workspace Provider selection                               | Foundation authorization                     | Enables one exact trusted Provider package lock                                             |
-| Secret storage and current eligibility                     | [Secret Management](26-secret-management.md) | Resolves fresh values without persisting them in Provider configuration or state            |
+| Secret storage and current eligibility                     | [Secret Management](27-secret-management.md) | Resolves fresh values without persisting them in Provider configuration or state            |
 | Current state and root/child Thread association            | Foundation Host                              | Current managed value, including authoritative `None`, wins over portable continuation data |
 | Fresh runtime collaborators and Environment adapters       | Worker                                       | Constructed for one independent RunAttempt and never persisted                              |
 | Multi-mount routing, entry, portable snapshots, and close  | Harness                                      | Run-local bound facade; close never destroys backing targets                                |
@@ -39,7 +39,7 @@ Provider discovery, package upload, schema validity, state possession, or identi
 
 Foundation exposes a safe catalog of deployment-trusted Environment Providers. Each entry contains bounded display metadata, supported configuration versions and JSON Schemas, non-secret runtime credential requirements, operation families, and an exact dependency lock. Reading the catalog performs no import, credential, filesystem, daemon, network, or provider-target I/O.
 
-Provider code comes from fixed [distribution composition](02-distribution-composition-and-extensions.md) or an immutable managed Environment Provider package revision. Managed revisions reuse the upload, hashing, immutable object storage, dependency validation, content-addressed cache, and conflict handling defined for [managed Harness plugins](35-managed-harness-plugins-and-runtime.md), but remain a separate extension kind with their own identities, entry point, locks, authorization, and runtime contract.
+Provider code comes from fixed [distribution composition](02-distribution-composition-and-extensions.md) or an immutable managed Environment Provider package revision. Managed revisions reuse the upload, hashing, immutable object storage, dependency validation, content-addressed cache, and conflict handling defined for [managed Harness plugins](36-managed-harness-plugins-and-runtime.md), but remain a separate extension kind with their own identities, entry point, locks, authorization, and runtime contract.
 
 Foundation reuses the artifact substrate, not the `HarnessPluginPackage` product identity or Harness plugin SPI. One managed Provider package contributes exactly one `EnvironmentProvider` through the standard `a13n_environment_provider.providers` entry-point group. Publication validates non-executing metadata without importing code. A Worker loads only the exact verified artifact on demand and rejects conflicting Provider keys, distributions, or top-level packages; a process never reloads a Provider implementation.
 
@@ -120,7 +120,7 @@ class EnvironmentCredentialBinding:
     credential: SecretCredentialSource
 ```
 
-`SecretCredentialSource` is the shared non-secret selector defined by the [Secret credential-reference contract](26-secret-management.md#credential-references). Environment bindings add only the Provider requirement key; they do not create Environment-specific variants of the same Secret reference.
+`SecretCredentialSource` is the shared non-secret selector defined by the [Secret credential-reference contract](27-secret-management.md#credential-references). Environment bindings add only the Provider requirement key; they do not create Environment-specific variants of the same Secret reference.
 
 Every RunAttempt and Host lifecycle operation reauthorizes the Workspace selection, Environment use, credential source, owning principal, and current Secret eligibility. Foundation decrypts values only after closing the authorization transaction and supplies them to one process-local runtime builder. Secret rotation therefore affects the next independent operation without creating another revision or changing current Environment state.
 
@@ -267,7 +267,7 @@ revision publication, and archive mutation authorize `environment.manage`; a
 configuration test authorizes `environment.test`; and an explicit Run selection
 authorizes `environment.use` in addition to Agent invocation. These stable
 actions and built-in grants are owned by the IAM
-[registry](32-identity-and-access-management.md#stable-action-registry).
+[registry](33-identity-and-access-management.md#stable-action-registry).
 
 The synchronous `test` endpoint reauthorizes the exact revision and current credential sources, validates configuration, resolves required runtime collaborators, constructs and immediately discards a fresh Environment without external I/O. It reports bounded schema, package, credential, and construction diagnostics. It does not enter, warm, create, re-enter, destroy, publish state, or retain health. Runtime readiness is established only by an authorized warmup or RunAttempt.
 

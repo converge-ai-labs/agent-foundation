@@ -13,7 +13,7 @@ The Capability is read-only. Its tools call an asynchronous Foundation reader di
 | Interaction identity    | The [Platform Interaction Model](../interaction-model.md) defines Session, Thread, Run, and Item. Their identifiers select data but grant no access.   |
 | Thread resource         | [Durable Thread Persistence](11-thread-persistence.md) owns Session membership, origin, version, current Run, and selected continuation head.          |
 | Run history             | [Durable Run State](12-run-persistence.md) owns Run lineage, status, exact input, and exact output.                                                    |
-| Retained Items          | [Lifecycle and Stream Persistence](23-lifecycle-and-stream-persistence.md) owns complete `RunReplaySnapshot` objects. They are projections, not state. |
+| Retained Items          | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) owns complete `RunReplaySnapshot` objects. They are projections, not state. |
 | Read access and shaping | The Foundation reader applies current authorization, filters queries, verifies retained objects, and returns a safe bounded projection.                |
 
 ## Definition Policy and Run Grant

@@ -8,7 +8,7 @@ New and continued AG-UI work authorizes the same `agent_preset.invoke`,
 `run.continue`, and, when waiting defaults are selected, `run.feedback` actions
 as the equivalent Native operation. Cancellation authorizes `run.interrupt`, and
 SSE attachment authorizes `run.read`. The IAM
-[stable action registry](32-identity-and-access-management.md#stable-action-registry)
+[stable action registry](33-identity-and-access-management.md#stable-action-registry)
 owns these action names and grants; external IDs and adapter bindings never
 select or preserve authority.
 
@@ -24,8 +24,8 @@ Hosted AG-UI is always present on `control` and `all` roles. It has no deploymen
 | Durable Run acceptance and waiting feedback                                          | [Agent Control](18-agent-control-input-and-continuation.md)                                  |
 | Durable interruption                                                                 | [Active Execution](19-agent-control-active-execution.md)                                     |
 | Hosted external bindings, input validation, lifecycle projection, retention, and SSE | This document                                                                                |
-| Current Principal and AgentPreset authorization                                      | [Foundation IAM](32-identity-and-access-management.md)                                       |
-| Preset-specific schemas, visibility, and limits                                      | [Protocol configuration](27-agent-management.md#protocol-configuration)                      |
+| Current Principal and AgentPreset authorization                                      | [Foundation IAM](33-identity-and-access-management.md)                                       |
+| Preset-specific schemas, visibility, and limits                                      | [Protocol configuration](28-agent-management.md#protocol-configuration)                      |
 
 The adapter never reconstructs AG-UI events from Native notification envelopes and never implements a second Harness event converter.
 
@@ -160,7 +160,7 @@ The selected Revision's ProtocolConfig can select supported state, message snaps
 
 Each custom `value` contains its own `schema_version`. ProtocolConfig can select from this finite registry but cannot invent an event name or schema.
 
-When `a13n.foundation.artifact` projects an [Asset](31-asset-management.md), the hosted binding retains the exact `asset_id` and reauthorizes the current caller before metadata or content delivery. The custom event does not create another Asset identity, pin Asset retention, or make an AG-UI cursor a content credential. A deleted Asset remains unavailable even when the hosted event is still replayable.
+When `a13n.foundation.artifact` projects an [Asset](32-asset-management.md), the hosted binding retains the exact `asset_id` and reauthorizes the current caller before metadata or content delivery. The custom event does not create another Asset identity, pin Asset retention, or make an AG-UI cursor a content credential. A deleted Asset remains unavailable even when the hosted event is still replayable.
 
 ## Replay and Failure
 
