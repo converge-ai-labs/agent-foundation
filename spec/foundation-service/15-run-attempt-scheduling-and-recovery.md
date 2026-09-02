@@ -20,15 +20,15 @@ A Run is the stable logical-work identity and durable recovery boundary for one 
 
 ## Boundaries
 
-| Concern                                            | Owner                                                                        | Contract                                                                                                         |
-| -------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Run status, scheduling fields, and recovery budget | [Durable Run State](14-run-persistence.md)                                   | Defines the stable Run lifecycle and the limits consumed by Attempt generations                                  |
-| Plugin Runtime preflight and execution profile     | [Plugin Runtime](26-harness-plugin-artifacts-and-runtime-loading.md)         | Defines on-demand import compatibility and lock-scoped Runner materialization                                    |
-| Model-loop retries inside one Harness Run          | Agent Harness                                                                | Remain process-local `ModelAttempt` values and never allocate another `RunAttempt`                               |
-| Harness construction, callbacks, and live control  | [Foundation–Harness Runtime Integration](16a-harness-runtime-integration.md) | Uses public Harness APIs, fresh typed collaborators, one mandatory Capability, and a process-local control gate  |
-| Lifecycle history                                  | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)   | Records ordered facts without becoming Run or attempt authority                                                  |
-| Thread inbox acceptance and consumption            | [Agent Control: Active Execution](35-agent-control-active-execution.md)      | Supplies durable steer and asynchronous-result entries plus state-coupled same-Run consumption                   |
-| Agent tool crash behavior                          | Latest complete Run state plus the owning tool or Capability domain          | Defines no generic invocation ledger; effectful tools own cross-crash idempotency or durable task reconciliation |
+| Concern                                            | Owner                                                                            | Contract                                                                                                         |
+| -------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Run status, scheduling fields, and recovery budget | [Durable Run State](14-run-persistence.md)                                       | Defines the stable Run lifecycle and the limits consumed by Attempt generations                                  |
+| Plugin Runtime preflight and execution profile     | [Managed Harness Plugins and Runtime](26-managed-harness-plugins-and-runtime.md) | Defines on-demand import compatibility and lock-scoped Runner materialization                                    |
+| Model-loop retries inside one Harness Run          | Agent Harness                                                                    | Remain process-local `ModelAttempt` values and never allocate another `RunAttempt`                               |
+| Harness construction, callbacks, and live control  | [Foundation–Harness Runtime Integration](16a-harness-runtime-integration.md)     | Uses public Harness APIs, fresh typed collaborators, one mandatory Capability, and a process-local control gate  |
+| Lifecycle history                                  | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)       | Records ordered facts without becoming Run or attempt authority                                                  |
+| Thread inbox acceptance and consumption            | [Agent Control: Active Execution](35-agent-control-active-execution.md)          | Supplies durable steer and asynchronous-result entries plus state-coupled same-Run consumption                   |
+| Agent tool crash behavior                          | Latest complete Run state plus the owning tool or Capability domain              | Defines no generic invocation ledger; effectful tools own cross-crash idempotency or durable task reconciliation |
 
 ## Run and RunAttempt Allocation Boundary
 

@@ -20,7 +20,7 @@ A distribution identifies the product release composition, not where or for whom
 
 Distribution composition does not define generic extension hooks for arbitrary Python code. A common capability exposes a narrow port only where an accepted distribution difference exists. Internal classes, module discovery, installation order, and package naming are not part of the product contract.
 
-Foundation's [managed Harness plugin artifacts](26-harness-plugin-artifacts-and-runtime-loading.md) are a separate Host execution input. They can supply trusted Harness middleware selected by a Run-pinned internal Runtime lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
+Foundation's [managed Harness plugins and Runtime](26-managed-harness-plugins-and-runtime.md) are a separate Host execution input. They can supply trusted Harness middleware selected by a Run-pinned internal Runtime lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
 
 ## Dependency Direction
 

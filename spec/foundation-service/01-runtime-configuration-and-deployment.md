@@ -8,16 +8,16 @@ Runtime owns process behavior, not domain behavior. It loads the distribution fi
 
 ## Boundaries
 
-| Concern                                                             | Owner                                                                        | Relationship                                                        |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Configuration sources, precedence, role, and deployment profile     | Runtime                                                                      | Produces one immutable effective configuration                      |
-| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md)    | Supplies the explicit application composition fixed by the artifact |
-| Backend construction and capability semantics                       | [Storage](03-storage.md)                                                     | Constructs the selected typed clients and roots                     |
-| Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                                 | Prepares or verifies the final distribution schema before readiness |
-| Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                      | Exposes only the surfaces owned by the selected role                |
-| Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                    | Declare role ownership and durable failure semantics                |
-| Plugin Runtime profile and loading behavior                         | [Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Defines on-demand import or Supervisor/Runner execution             |
-| Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                   | Supplies external resources without changing service semantics      |
+| Concern                                                             | Owner                                                                            | Relationship                                                        |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Configuration sources, precedence, role, and deployment profile     | Runtime                                                                          | Produces one immutable effective configuration                      |
+| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md)        | Supplies the explicit application composition fixed by the artifact |
+| Backend construction and capability semantics                       | [Storage](03-storage.md)                                                         | Constructs the selected typed clients and roots                     |
+| Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                                     | Prepares or verifies the final distribution schema before readiness |
+| Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                          | Exposes only the surfaces owned by the selected role                |
+| Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                        | Declare role ownership and durable failure semantics                |
+| Plugin Runtime profile and loading behavior                         | [Managed Harness Plugins and Runtime](26-managed-harness-plugins-and-runtime.md) | Defines on-demand import or Supervisor/Runner execution             |
+| Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                       | Supplies external resources without changing service semantics      |
 
 The runtime does not define a general plugin loader, dependency-injection container, process manager, or dynamic configuration service. Domain code does not read process environment variables, choose a deployment role, run migrations, or start unowned background tasks.
 
