@@ -76,8 +76,9 @@ class RecordingSubagentOperator(SubagentOperator):
             resumed_from=resumed_from,
             resumable=resumable,
             thread_id="thread-child",
+            child_run_id="run-child",
+            segment_index=0,
             input="inspect",
-            output=("complete" if status == "succeeded" else None),
         )
 
     async def delegate(

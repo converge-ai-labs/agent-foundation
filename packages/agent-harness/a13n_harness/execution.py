@@ -886,7 +886,10 @@ class HarnessBuilder:
                 HarnessPluginFactoryContext(
                     plugin_key=entry.plugin_key,
                     plugin_id=entry.plugin_id,
-                    configuration=entry.configuration,
+                    configuration=catalog.validate_configuration(
+                        entry.plugin_key,
+                        entry.configuration,
+                    ),
                     extensions=self._build_context.extensions,
                 )
             )

@@ -152,11 +152,12 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         del ctx
         mounts = self._environment.snapshot.mounts
         operations = frozenset(action for mount in mounts for action in mount.permission_ceiling.operations)
-        has_file_reads = bool(operations & _FILE_READ_ACTIONS)
-        has_file_mutations = bool(operations & _FILE_MUTATION_ACTIONS)
-        has_full_access = EnvironmentAction.SHELL_EXEC in operations
+        has_file_reads = self.configuration.files_enabled and bool(operations & _FILE_READ_ACTIONS)
+        has_file_mutations = self.configuration.files_enabled and bool(operations & _FILE_MUTATION_ACTIONS)
+        has_full_access = self.configuration.shell_enabled and EnvironmentAction.SHELL_EXEC in operations
         shell_supersedes_mutations = (
-            len(mounts) == 1
+            self.configuration.shell_enabled
+            and len(mounts) == 1
             and has_file_mutations
             and EnvironmentAction.SHELL_EXEC in mounts[0].permission_ceiling.operations
         )

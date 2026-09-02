@@ -22,6 +22,7 @@ from urllib.parse import unquote, urlsplit
 DISTRIBUTION_STEM = "a13n_ui"
 MANIFEST_NAME = "asset-manifest.json"
 PACKAGE_PREFIX = PurePosixPath("a13n_ui/static")
+RUNTIME_MANIFEST_PATH = PurePosixPath("a13n_ui/assets/agent-envd-release.json")
 INTERNAL_PACKAGES = (
     "a13n-environment-provider",
     "a13n-harness",
@@ -128,6 +129,25 @@ def _validate_assets(read: Callable[[str], bytes], names: set[str], prefix: Pure
             raise DistributionError(f"Agent UI shell references an undeclared or missing asset: {value}")
 
 
+def _validate_runtime_manifest(read: Callable[[str], bytes], names: set[str], path: PurePosixPath) -> None:
+    manifest_path = path.as_posix()
+    if manifest_path not in names:
+        raise DistributionError(f"Agent UI artifact is missing {manifest_path}")
+    try:
+        manifest = json.loads(read(manifest_path))
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise DistributionError(f"Invalid agent-envd release manifest: {error}") from error
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != "1"
+        or not isinstance(manifest.get("release"), str)
+        or not isinstance(manifest.get("base_url"), str)
+        or not isinstance(manifest.get("targets"), dict)
+        or not manifest["targets"]
+    ):
+        raise DistributionError("Unsupported agent-envd release manifest")
+
+
 def _validate_internal_requirements(requirements: list[str]) -> str:
     versions: set[str] = set()
     for package_name in INTERNAL_PACKAGES:
@@ -150,6 +170,7 @@ def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) 
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
         _validate_assets(archive.read, names, PACKAGE_PREFIX)
+        _validate_runtime_manifest(archive.read, names, RUNTIME_MANIFEST_PATH)
         metadata_paths = [name for name in names if name.endswith(".dist-info/METADATA")]
         if len(metadata_paths) != 1:
             raise DistributionError(f"Expected one METADATA file in {path}, found {len(metadata_paths)}")
@@ -178,6 +199,7 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
             return file.read()
 
         _validate_assets(read, names, PurePosixPath(root) / PACKAGE_PREFIX)
+        _validate_runtime_manifest(read, names, PurePosixPath(root) / RUNTIME_MANIFEST_PATH)
         if any("apps/harness-ui" in name for name in names):
             raise DistributionError("Agent UI sdist must not require the Harness UI source tree")
         pyproject_path = f"{root}/pyproject.toml"

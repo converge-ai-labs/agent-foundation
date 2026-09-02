@@ -38,6 +38,7 @@ HARNESS_PACKAGES = (
 AGENT_UI_MANIFEST = Path("packages/agent-ui/pyproject.toml")
 AGENT_UI_PACKAGE = "a13n-ui"
 AGENT_UI_RELEASE_TOOL = "tool.a13n.agent-ui-release"
+AGENT_UI_ENVD_RELEASE_MANIFEST = Path("packages/agent-ui/a13n_ui/assets/agent-envd-release.json")
 FOUNDATION_MANIFESTS = (
     Path("pyproject.toml"),
     Path("packages/logging/pyproject.toml"),
@@ -181,22 +182,34 @@ def _project_dependency_requirement(root: Path, relative_path: Path, package_nam
     return matches[0]
 
 
-def _agent_ui_harness_release(root: Path) -> ReleaseVersion:
+def _agent_ui_release_selection(root: Path, key: str, label: str) -> ReleaseVersion:
     data = _load_toml(root, AGENT_UI_MANIFEST)
-    tool = _mapping(data.get("tool"), f"{AGENT_UI_RELEASE_TOOL}.harness-version in {AGENT_UI_MANIFEST}")
-    a13n = _mapping(tool.get("a13n"), f"{AGENT_UI_RELEASE_TOOL}.harness-version in {AGENT_UI_MANIFEST}")
+    tool = _mapping(data.get("tool"), f"{AGENT_UI_RELEASE_TOOL}.{key} in {AGENT_UI_MANIFEST}")
+    a13n = _mapping(tool.get("a13n"), f"{AGENT_UI_RELEASE_TOOL}.{key} in {AGENT_UI_MANIFEST}")
     release = _mapping(
         a13n.get("agent-ui-release"),
-        f"{AGENT_UI_RELEASE_TOOL}.harness-version in {AGENT_UI_MANIFEST}",
+        f"{AGENT_UI_RELEASE_TOOL}.{key} in {AGENT_UI_MANIFEST}",
     )
-    version = _string(
-        release.get("harness-version"),
-        f"{AGENT_UI_RELEASE_TOOL}.harness-version in {AGENT_UI_MANIFEST}",
-    )
+    version = _string(release.get(key), f"{AGENT_UI_RELEASE_TOOL}.{key} in {AGENT_UI_MANIFEST}")
     selected = parse_release_version(version)
     if selected.canonical == "0.0.0":
         raise ReleaseVersionError(
-            f"Select a published Harness release in {AGENT_UI_MANIFEST} before releasing Agent UI"
+            f"Select a published {label} release in {AGENT_UI_MANIFEST} before releasing Agent UI"
+        )
+    return selected
+
+
+def _agent_ui_harness_release(root: Path) -> ReleaseVersion:
+    return _agent_ui_release_selection(root, "harness-version", "Harness")
+
+
+def _agent_ui_envd_release(root: Path) -> ReleaseVersion:
+    selected = _agent_ui_release_selection(root, "envd-version", "agent-envd")
+    manifest = _load_json(root, AGENT_UI_ENVD_RELEASE_MANIFEST)
+    actual = _string(manifest.get("release"), f"release in {AGENT_UI_ENVD_RELEASE_MANIFEST}")
+    if actual != selected.canonical:
+        raise ReleaseVersionError(
+            f"Expected {AGENT_UI_ENVD_RELEASE_MANIFEST} release {selected.canonical}, found {actual}"
         )
     return selected
 
@@ -399,6 +412,7 @@ def validate_component_version(root: Path, component: str, version: str) -> None
                 raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
     elif component == "agent-ui":
         selected = _agent_ui_harness_release(root).python_package
+        _agent_ui_envd_release(root)
         for package_name in HARNESS_PACKAGES:
             expected = f"{package_name}=={selected}"
             actual = _project_dependency_requirement(root, AGENT_UI_MANIFEST, package_name)
@@ -586,6 +600,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         planned[ROOT_UV_LOCK] = lock_content
     elif component == "agent-ui":
         selected_harness_version = _agent_ui_harness_release(root).python_package
+        _agent_ui_envd_release(root)
         ui_content = _replace_table_version(
             _read_text(root, AGENT_UI_MANIFEST),
             "project",

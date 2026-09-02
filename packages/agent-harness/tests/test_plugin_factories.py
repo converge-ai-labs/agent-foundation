@@ -21,7 +21,12 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
+from pydantic import JsonValue, RootModel
 from pydantic_ai.agent.spec import AgentSpec
+
+
+class _Configuration(RootModel[dict[str, JsonValue]]):
+    pass
 
 
 class _HarnessPlugin(AbstractHarnessPlugin):
@@ -40,6 +45,9 @@ class _Factory(HarnessPluginFactory):
     @classmethod
     def plugin_key(cls) -> str:
         return "test.plugin"
+
+    def validate_configuration(self, configuration):
+        return _Configuration(dict(configuration))
 
     def create_plugin(self, context: HarnessPluginFactoryContext):
         detached = dict(context.configuration)
@@ -161,6 +169,11 @@ def test_new_builder_finds_completed_distribution_added_to_import_path(
     (package / "__init__.py").write_text(
         f'''from a13n_harness import AbstractHarnessPlugin
 from a13n_harness.plugin_factories import HarnessPluginFactory
+from pydantic import RootModel
+
+
+class Configuration(RootModel[dict[str, object]]):
+    pass
 
 
 class RuntimeAddedPlugin(AbstractHarnessPlugin):
@@ -176,6 +189,9 @@ class RuntimeAddedFactory(HarnessPluginFactory):
     @classmethod
     def plugin_key(cls) -> str:
         return "{plugin_key}"
+
+    def validate_configuration(self, configuration):
+        return Configuration(dict(configuration))
 
     def create_plugin(self, context):
         return RuntimeAddedPlugin(context.plugin_id)

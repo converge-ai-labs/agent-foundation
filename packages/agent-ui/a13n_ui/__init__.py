@@ -1,4 +1,4 @@
-"""Stable local Host boundary for Agent Foundation WebUI and CLI surfaces."""
+"""Process-local Agent UI application for CLI and Web surfaces."""
 
 from importlib.metadata import version
 

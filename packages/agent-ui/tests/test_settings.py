@@ -11,7 +11,7 @@ from pydantic import ValidationError
 pytestmark = pytest.mark.anyio
 
 
-def test_settings_normalize_restart_bound_values(tmp_path: Path) -> None:
+def test_settings_normalize_process_values(tmp_path: Path) -> None:
     settings = AgentUiSettings(
         storage=StorageSettings(data_root=tmp_path / "nested" / ".." / "store"),
         log_level="debug",
@@ -41,20 +41,13 @@ def test_settings_remain_strict(tmp_path: Path) -> None:
 async def test_loads_one_strict_full_settings_yaml(tmp_path: Path) -> None:
     settings_path = tmp_path / "settings.yaml"
     data_root = tmp_path / "data"
-    definitions = tmp_path / "definitions"
     settings_path.write_text(
         f"""
-storage:
-  data_root: {data_root.as_posix()}
-configuration:
-  schema_version: "1"
-  definition_roots:
-    - root_id: root-user
-      path: {definitions.as_posix()}
-      writable: true
-runtime:
-  startup_timeout_seconds: 7.0
-log_level: debug
+schema_version: "1"
+process:
+  storage:
+    data_root: {data_root.as_posix()}
+  log_level: debug
 """.strip()
         + "\n"
     )
@@ -64,8 +57,6 @@ log_level: debug
     assert source.explicit is True
     assert source.exists is True
     assert source.settings.storage.data_root == data_root
-    assert source.settings.configuration.definition_roots[0].path == definitions
-    assert source.settings.runtime.startup_timeout_seconds == 7.0
     assert source.settings.log_level == "DEBUG"
 
 
@@ -76,22 +67,11 @@ async def test_default_settings_use_one_fixed_user_root(tmp_path: Path, monkeypa
     source = await load_agent_ui_settings()
 
     assert source.exists is False
-    assert source.path == tmp_path / ".a13n-ui/settings.yaml"
+    assert source.path == tmp_path / ".a13n-ui/agent-ui.yaml"
     assert source.settings.storage.data_root == tmp_path / ".a13n-ui/data"
-    definitions = tmp_path / ".a13n-ui/definitions"
-    assert source.settings.configuration.definition_roots[0].path == definitions
 
     ensure_default_directories(source)
     assert (tmp_path / ".a13n-ui/data").is_dir()
-    assert {path.name for path in definitions.iterdir()} == {
-        "agents",
-        "environments",
-        "models",
-        "plugins",
-        "prompts",
-        "skill-sources",
-        "skills",
-    }
 
 
 async def test_settings_yaml_rejects_excessive_depth_with_bounded_error(tmp_path: Path) -> None:

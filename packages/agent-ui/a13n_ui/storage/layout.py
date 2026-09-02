@@ -16,6 +16,7 @@ class StorageLayout:
     objects: Path
     sessions: Path
     runtimes: Path
+    leases: Path
     staging: Path
 
     @classmethod
@@ -26,13 +27,14 @@ class StorageLayout:
             objects=root / "objects",
             sessions=root / "sessions",
             runtimes=root / "runtimes",
+            leases=root / "leases",
             staging=root / "staging",
         )
 
     def prepare(self) -> None:
         """Create private storage directories without creating source configuration."""
 
-        for path in (self.root, self.objects, self.sessions, self.runtimes, self.staging):
+        for path in (self.root, self.objects, self.sessions, self.runtimes, self.leases, self.staging):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
             if os.name != "nt":
                 path.chmod(0o700)

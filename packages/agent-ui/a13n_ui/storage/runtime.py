@@ -14,7 +14,14 @@ from a13n_ui import __version__
 
 from .database import Database, open_database
 from .layout import StorageLayout
+from .leases import ProcessLease
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
+from .repositories import (
+    ChildExecutionRepository,
+    ConfigurationRepository,
+    EnvironmentStateRepository,
+    SessionRepository,
+)
 
 if TYPE_CHECKING:
     from a13n_ui.settings import StorageSettings
@@ -37,6 +44,10 @@ class LocalStore:
         self.database = database
         self.objects = objects
         self.process_generation = process_generation
+        self.configurations = ConfigurationRepository(database.sessions)
+        self.sessions = SessionRepository(database.sessions)
+        self.child_executions = ChildExecutionRepository(database.sessions)
+        self.environment_states = EnvironmentStateRepository(database.sessions)
 
     async def publish_object(
         self,
@@ -67,19 +78,39 @@ class LocalStore:
 
 @asynccontextmanager
 async def open_local_store(settings: StorageSettings) -> AsyncGenerator[LocalStore]:
-    """Open one Agent UI data root for this Host process."""
+    """Open one Agent UI data root and reconcile confirmed-dead child owners."""
 
     layout = StorageLayout.from_root(settings.data_root)
     await to_thread.run_sync(layout.prepare)
     process_generation = f"process-{uuid4().hex}"
-    async with open_database(layout.database, settings) as database:
-        yield LocalStore(
-            settings=settings,
-            layout=layout,
-            database=database,
-            objects=ImmutableObjectStore(layout, settings, producer_release=__version__),
-            process_generation=process_generation,
-        )
+    lease = await to_thread.run_sync(ProcessLease.acquire, layout.leases, process_generation)
+    try:
+        async with open_database(layout.database, settings) as database:
+            store = LocalStore(
+                settings=settings,
+                layout=layout,
+                database=database,
+                objects=ImmutableObjectStore(layout, settings, producer_release=__version__),
+                process_generation=process_generation,
+            )
+            await _reconcile_dead_child_owners(store)
+            yield store
+    finally:
+        await to_thread.run_sync(lease.close)
+
+
+async def _reconcile_dead_child_owners(store: LocalStore) -> None:
+    owners = await store.child_executions.running_owner_generations()
+    for owner in owners:
+        if owner == store.process_generation:
+            continue
+        lease = await to_thread.run_sync(ProcessLease.try_acquire, store.layout.leases, owner)
+        if lease is None:
+            continue
+        try:
+            await store.child_executions.mark_owner_lost(owner_process_generation=owner)
+        finally:
+            await to_thread.run_sync(lease.close)
 
 
 __all__ = ["LocalStore", "open_local_store"]

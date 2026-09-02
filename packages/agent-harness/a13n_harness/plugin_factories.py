@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import cast
 
-from pydantic import JsonValue
+from pydantic import BaseModel, JsonValue
 
 from a13n_harness.errors import PluginError
 from a13n_harness.plugin_configuration import (
@@ -73,12 +73,16 @@ class HarnessPluginFactoryContext:
 
 
 class HarnessPluginFactory(ABC):
-    """Trusted package boundary that creates concrete Harness plugins."""
+    """Trusted package boundary that validates configuration and creates plugins."""
 
     @classmethod
     @abstractmethod
     def plugin_key(cls) -> str:
         """Return the stable configuration-facing factory key."""
+
+    @abstractmethod
+    def validate_configuration(self, configuration: Mapping[str, JsonValue]) -> BaseModel:
+        """Validate and normalize credential-free plugin configuration without I/O."""
 
     @abstractmethod
     def create_plugin(
@@ -134,6 +138,30 @@ class HarnessPluginFactoryCatalog(Mapping[str, HarnessPluginFactory]):
                 details={"plugin_key": key},
             )
         return factory
+
+    def validate_configuration(
+        self,
+        plugin_key: str,
+        configuration: Mapping[str, JsonValue],
+    ) -> Mapping[str, JsonValue]:
+        """Validate one selected factory configuration and return detached normalized JSON."""
+
+        key = _validate_factory_key(plugin_key)
+        factory = self.require(key)
+        try:
+            normalized = factory.validate_configuration(
+                _detach_json_object(configuration, field_name="factory configuration")
+            )
+            if not isinstance(normalized, BaseModel):
+                raise TypeError("plugin configuration validator must return a BaseModel")
+            dumped = normalized.model_dump(mode="json")
+            return _detach_json_object(dumped, field_name="validated factory configuration")
+        except Exception:
+            raise PluginError(
+                "Harness plugin factory configuration is invalid.",
+                code="plugin_factory_configuration_invalid",
+                details={"plugin_key": key},
+            ) from None
 
     def create_plugin(
         self,

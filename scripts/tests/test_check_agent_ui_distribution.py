@@ -21,6 +21,7 @@ def _write_wheel(
     provider_version: str | None = "1.2.3",
     harness_version: str | None = "1.2.3",
     protocol_version: str | None = "1.2.3",
+    include_runtime_manifest: bool = True,
     extra_packaged_files: dict[str, bytes] | None = None,
 ) -> None:
     files = {
@@ -40,6 +41,18 @@ def _write_wheel(
             "a13n_ui/static/asset-manifest.json",
             json.dumps(manifest),
         )
+        if include_runtime_manifest:
+            archive.writestr(
+                "a13n_ui/assets/agent-envd-release.json",
+                json.dumps(
+                    {
+                        "schema_version": "1",
+                        "release": "0.0.3",
+                        "base_url": "https://example.test/releases/0.0.3",
+                        "targets": {"test-target": {}},
+                    }
+                ),
+            )
         archive.writestr(
             "a13n_ui-9.8.7.dist-info/METADATA",
             "\n".join(
@@ -81,6 +94,18 @@ def test_development_validation_allows_unpinned_workspace_dependencies(tmp_path:
     )
 
     validate_wheel(wheel)
+
+
+def test_rejects_missing_agent_envd_manifest(tmp_path: Path) -> None:
+    wheel = tmp_path / "agent-ui.whl"
+    _write_wheel(
+        wheel,
+        index=b'<script src="/assets/main.js"></script>',
+        include_runtime_manifest=False,
+    )
+
+    with pytest.raises(DistributionError, match=r"missing a13n_ui/assets/agent-envd-release\.json"):
+        validate_wheel(wheel)
 
 
 def test_rejects_undeclared_shell_reference(tmp_path: Path) -> None:

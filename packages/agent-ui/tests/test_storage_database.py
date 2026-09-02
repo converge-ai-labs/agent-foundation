@@ -29,16 +29,16 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
     engine = create_engine(f"sqlite:///{path}")
     try:
         assert set(inspect(engine).get_table_names()) == {
+            "accepted_configuration",
             "alembic_version",
+            "child_execution",
+            "child_thread",
             "composition_snapshot",
             "configuration_diagnostic",
-            "configuration_generation",
+            "configuration_snapshot",
             "current_configuration",
-            "generation_resource",
+            "environment_binding",
             "local_session",
-            "resource_revision",
-            "session_environment_resource",
-            "skill_package_reference",
         }
         with engine.connect() as connection:
             context = MigrationContext.configure(
@@ -76,7 +76,7 @@ def test_environment_access_migration_upgrades_existing_rows(tmp_path: Path) -> 
                 {"digest": "0" * 64, "updated_at": "2026-08-31 00:00:00"},
             )
             connection.commit()
-            command.upgrade(config, "head")
+            command.upgrade(config, "9958168d49de")
 
             columns = {column["name"] for column in inspect(connection).get_columns("session_environment_resource")}
             access = connection.execute(text("SELECT access FROM session_environment_resource")).scalar_one()
