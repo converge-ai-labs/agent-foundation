@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -207,6 +209,7 @@ class AgentInvocationResolver:
                     organization_id=authorized.organization_id,
                     workspace_id=workspace_id,
                     selections=merged.config.skills,
+                    retained=(revision.resolved_skills if merged.config.skills == revision.config.skills else None),
                 )
                 if merged.config.plugins == revision.config.plugins:
                     try:
@@ -250,6 +253,7 @@ class AgentInvocationResolver:
                 except EnvironmentManagementError as error:
                     raise agent_revision_not_executable(error.code) from error
                 resolved_environment = environment.resolved
+            _require_writable_skill_environment(merged.config.skills, resolved_environment)
             async with short_session(self._sessions) as session:
                 subagents = await self._prepare_subagents(
                     session,
@@ -427,6 +431,7 @@ class AgentInvocationResolver:
                 )
             except EnvironmentManagementError as error:
                 raise agent_revision_not_executable(error.code) from error
+            _require_writable_skill_environment(skills, environment)
             try:
                 plugins = (
                     await self._plugin_resolver.freeze_in_transaction(
@@ -587,6 +592,18 @@ class AgentInvocationResolver:
         return tuple(result)
 
 
+def _require_writable_skill_environment(
+    skills: Sequence[object],
+    environment: EnvironmentExecutionConfig | None,
+) -> None:
+    if not skills:
+        return
+    if environment is None:
+        raise agent_revision_not_executable("skill_environment_required")
+    if environment.access == "read_only":
+        raise agent_revision_not_executable("skill_environment_not_writable")
+
+
 async def _prepare_skills(
     session: AsyncSession,
     *,
@@ -594,6 +611,7 @@ async def _prepare_skills(
     organization_id: str,
     workspace_id: str,
     selections: tuple[SkillSelection, ...],
+    retained: tuple[ResolvedSkillSelection, ...] | None,
 ) -> tuple[PreparedInvocationSkill, ...]:
     if not selections:
         return ()
@@ -604,29 +622,62 @@ async def _prepare_skills(
         action=WorkspaceAction.skill_read,
     )
     ids = tuple(item.skill_revision_id for item in selections)
-    rows = tuple(
-        (
-            await session.execute(
-                select(SkillRevisionRecord, SkillRecord)
-                .join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id)
-                .where(
-                    SkillRevisionRecord.organization_id == organization_id,
-                    SkillRevisionRecord.workspace_id == workspace_id,
-                    SkillRevisionRecord.id.in_(ids),
-                    SkillRecord.deleted_at.is_(None),
+    if retained is not None:
+        if tuple(item.skill_revision_id for item in retained) != ids:
+            raise agent_revision_not_executable("skill_revision_invalid")
+        revisions = tuple(
+            (
+                await session.scalars(
+                    select(SkillRevisionRecord).where(
+                        SkillRevisionRecord.organization_id == organization_id,
+                        SkillRevisionRecord.workspace_id == workspace_id,
+                        SkillRevisionRecord.id.in_(ids),
+                    )
                 )
-            )
-        ).all()
-    )
-    by_id = {revision.id: (revision, skill) for revision, skill in rows}
+            ).all()
+        )
+        by_id = {revision.id: revision for revision in revisions}
+    else:
+        revisions = tuple(
+            (
+                await session.scalars(
+                    select(SkillRevisionRecord)
+                    .join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id)
+                    .where(
+                        SkillRevisionRecord.organization_id == organization_id,
+                        SkillRevisionRecord.workspace_id == workspace_id,
+                        SkillRevisionRecord.id.in_(ids),
+                        SkillRecord.organization_id == organization_id,
+                        SkillRecord.workspace_id == workspace_id,
+                        SkillRecord.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        by_id = {revision.id: revision for revision in revisions}
     if set(by_id) != set(ids):
         raise agent_revision_not_executable("skill_revision_unavailable")
     result: list[PreparedInvocationSkill] = []
     names: set[str] = set()
+    retained_by_id = {item.skill_revision_id: item for item in retained or ()}
     for revision_id in ids:
-        skill_revision, _skill = by_id[revision_id]
-        manifest = SkillPackageManifest.model_validate(skill_revision.manifest)
-        if manifest.skill_name in names or manifest.content_digest != skill_revision.content_digest:
+        skill_revision = by_id[revision_id]
+        try:
+            manifest = SkillPackageManifest.model_validate(skill_revision.manifest)
+        except ValidationError as error:
+            raise agent_revision_not_executable("skill_revision_invalid") from error
+        retained_lock = retained_by_id.get(revision_id)
+        if (
+            manifest.skill_name in names
+            or manifest.content_digest != skill_revision.content_digest
+            or (
+                retained_lock is not None
+                and (
+                    retained_lock.skill_name != manifest.skill_name
+                    or retained_lock.content_digest != manifest.content_digest
+                )
+            )
+        ):
             raise agent_revision_not_executable("skill_revision_invalid")
         names.add(manifest.skill_name)
         result.append(
@@ -653,24 +704,34 @@ async def _freeze_skills(
         action=WorkspaceAction.skill_read,
     )
     ids = tuple(item.revision_id for item in prepared.skills)
-    rows = tuple(
-        (
-            await session.scalars(
-                select(SkillRevisionRecord)
-                .where(
-                    SkillRevisionRecord.organization_id == prepared.organization_id,
-                    SkillRevisionRecord.workspace_id == prepared.workspace_id,
-                    SkillRevisionRecord.id.in_(ids),
-                )
-                .with_for_update()
-            )
-        ).all()
+    statement = select(SkillRevisionRecord).where(
+        SkillRevisionRecord.organization_id == prepared.organization_id,
+        SkillRevisionRecord.workspace_id == prepared.workspace_id,
+        SkillRevisionRecord.id.in_(ids),
     )
+    if prepared.merged.config.skills != prepared.revision.config.skills:
+        statement = statement.join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id).where(
+            SkillRecord.organization_id == prepared.organization_id,
+            SkillRecord.workspace_id == prepared.workspace_id,
+            SkillRecord.deleted_at.is_(None),
+        )
+    rows = tuple((await session.scalars(statement.with_for_update())).all())
     current = {item.id: item for item in rows}
     result: list[ResolvedSkillSelection] = []
     for expected in prepared.skills:
         row = current.get(expected.revision_id)
-        if row is None or row.skill_id != expected.skill_id or row.content_digest != expected.content_digest:
+        try:
+            manifest = SkillPackageManifest.model_validate(row.manifest) if row is not None else None
+        except ValidationError as error:
+            raise agent_revision_not_executable("skill_revision_changed") from error
+        if (
+            row is None
+            or manifest is None
+            or row.skill_id != expected.skill_id
+            or row.content_digest != expected.content_digest
+            or manifest.content_digest != expected.content_digest
+            or manifest.skill_name != expected.skill_name
+        ):
             raise agent_revision_not_executable("skill_revision_changed")
         result.append(
             ResolvedSkillSelection(

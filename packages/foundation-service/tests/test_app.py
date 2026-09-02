@@ -19,7 +19,7 @@ from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinato
 from a13n_service.plugins.runtime_resolver import FoundationPluginRuntimeCandidateResolver
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
-from a13n_service.skills import SkillRuntimePreparer, SkillSelectionResolver
+from a13n_service.skills import SkillRuntimePreparer
 from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 from fastapi import FastAPI
 
@@ -205,7 +205,6 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         storage = app.state.storage
         assert app.state.db_engine is storage.engine
         assert app.state.db_session_factory is storage.sessions
-        assert isinstance(app.state.skill_selection_resolver, SkillSelectionResolver)
         assert isinstance(app.state.skill_runtime_preparer, SkillRuntimePreparer)
         assert app.state.agent_plugin_selection_resolver is not None
         assert app.state.plugin_service is not None
@@ -344,12 +343,10 @@ async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(tm
 async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_path: Path) -> None:
     control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control))
     async with control.router.lifespan_context(control):
-        assert isinstance(control.state.skill_selection_resolver, SkillSelectionResolver)
         assert not hasattr(control.state, "skill_runtime_preparer")
 
     worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker))
     async with worker.router.lifespan_context(worker):
-        assert not hasattr(worker.state, "skill_selection_resolver")
         assert isinstance(worker.state.skill_runtime_preparer, SkillRuntimePreparer)
         assert not hasattr(worker.state, "trace_query_service")
 

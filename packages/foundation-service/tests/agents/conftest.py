@@ -56,6 +56,7 @@ def agent_config(
     *,
     instructions: str = "Be helpful.",
     plugins: list[object] | None = None,
+    skills: list[object] | None = None,
     subagents: dict[str, object] | None = None,
     environment: dict[str, object] | None = None,
 ) -> AgentConfig:
@@ -69,7 +70,7 @@ def agent_config(
             "instructions": instructions,
             "input_adapter": {"adapter_key": "native", "config": {}},
             "plugins": plugins or [],
-            "skills": [],
+            "skills": skills or [],
             "environment": environment,
             "subagents": subagents or {},
             "client_tools": [],
