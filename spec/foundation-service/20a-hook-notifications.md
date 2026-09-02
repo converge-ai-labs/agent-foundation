@@ -370,7 +370,7 @@ The Worker consumes each public Harness stream item once through `HarnessAguiObs
 | `agui.run_error`                                                    | Harness emits a failed or cancelled terminal result after run cleanup   | Harness Run identity and bounded public failure or cancellation code                        |
 | `agui.custom`                                                       | A public Harness or Pydantic observation has no direct standard mapping | Exact custom name, source correlation, source sequence, occurrence time, and public payload |
 
-`agui.tool_call_start` describes the standard AG-UI presentation lifecycle of a fully assembled model request. It does not mean that Foundation has authorized or dispatched the tool. Durable dispatch evidence remains owned by the current RunAttempt. Likewise, `agui.run_finished` and `agui.run_error` are process-local Harness outcomes until Foundation commits the owning Run and RunAttempt transitions.
+`agui.tool_call_start` describes the standard AG-UI presentation lifecycle of a fully assembled model request. It does not mean that Foundation has authorized or dispatched the tool, and Foundation creates no generic relational dispatch evidence from this observation. Likewise, `agui.run_finished` and `agui.run_error` are process-local Harness outcomes until Foundation commits the owning Run and RunAttempt transitions.
 
 Important `agui.custom` names include:
 
@@ -406,7 +406,7 @@ Every accepted asynchronous child is an ordinary child Run. Its `run.*` hooks ca
 
 ### Foundation RunAttempt Hooks
 
-RunAttempt hooks describe one fenced Worker generation. Attempt failure does not imply Run failure. A replacement attempt emits another `run_attempt.leased` while the Run can remain `running`. The exact authority, lease, fence, dispatch, and recovery behavior remain owned by [Durable RunAttempt Persistence](15-run-attempt-persistence.md#runattempt-lifecycle).
+RunAttempt hooks describe one fenced Worker generation. Attempt failure does not imply Run failure. A replacement attempt emits another `run_attempt.leased` while the Run can remain `running`. The exact authority, lease, fence, usage, and recovery behavior remain owned by [Durable RunAttempt Persistence](15-run-attempt-persistence.md#runattempt-lifecycle).
 
 | Hook name               | Trigger                                                                                          | Information                                                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -414,10 +414,10 @@ RunAttempt hooks describe one fenced Worker generation. Attempt failure does not
 | `run_attempt.running`   | Harness Run entry atomically binds `harness_run_id` and start time                               | Attempt version, Harness Run identity, safe model observation and start time                                                   |
 | `run_attempt.succeeded` | The current attempt commits the owning Run outcome                                               | Attempt and Run correlation, bounded usage summary, finish time and resulting Run hook identity when available                 |
 | `run_attempt.yielded`   | The owner confirms a complete safe checkpoint and voluntarily releases execution authority       | Yield reason, prior `worker_build_id`, bounded usage summary, finish time, and planned-handoff replacement eligibility         |
-| `run_attempt.failed`    | Preparation, run, lease replacement, or fenced publication failure makes the generation terminal | Bounded `SafeFailure`, recovery reason, unknown-outcome count, replacement eligibility and finish time                         |
+| `run_attempt.failed`    | Preparation, run, lease replacement, or fenced publication failure makes the generation terminal | Bounded `SafeFailure`, recovery reason, replacement eligibility and finish time                                                |
 | `run_attempt.cancelled` | Cancellation makes the current generation terminal                                               | Bounded cancellation reason, Run cancellation correlation and finish time                                                      |
 
-Agent tool dispatch and result-correlation records remain bounded evidence on the owning RunAttempt. They can appear through Harness live observations and authorized RunAttempt reads, but Foundation does not create another generic durable tool lifecycle or provider-receipt hook. An unmatched dispatched call is reported as `unknown_outcome` in replacement-attempt context and never replayed automatically.
+Agent tool calls and results can appear through Harness live observations, but Foundation does not convert those observations into a generic RunAttempt invocation ledger, durable tool lifecycle, or provider-receipt hook. A Capability that owns a durable task or provider receipt exposes its lifecycle through that domain's explicit hooks rather than this generic family.
 
 ### Item Projection Hooks
 
@@ -488,7 +488,7 @@ The following table is the public Foundation hook routing registry. Subscription
 | `run_attempt.running`                  | Foundation RunAttempt domain          | Harness Run identity commits                              | Native wake-up, Webhook | Attempt/Harness Run correlation, model observation and start time        |
 | `run_attempt.succeeded`                | Foundation RunAttempt domain          | Attempt commits owning Run outcome                        | Native wake-up, Webhook | Usage summary, finish time and Run correlation                           |
 | `run_attempt.yielded`                  | Foundation RunAttempt domain          | Planned handoff commits from a complete safe boundary     | Native wake-up, Webhook | Yield reason, prior `worker_build_id`, usage and replacement eligibility |
-| `run_attempt.failed`                   | Foundation RunAttempt domain          | Attempt generation becomes terminal failed                | Native wake-up, Webhook | Safe failure, recovery and unknown-outcome summary                       |
+| `run_attempt.failed`                   | Foundation RunAttempt domain          | Attempt generation becomes terminal failed                | Native wake-up, Webhook | Safe failure, recovery reason, usage and replacement eligibility         |
 | `run_attempt.cancelled`                | Foundation RunAttempt domain          | Attempt generation becomes terminal cancelled             | Native wake-up, Webhook | Safe cancellation and finish time                                        |
 | `item.completed`                       | Foundation Item projection            | Semantic Item closes successfully                         | Run SSE                 | Item identity, kind, parent, cursors and bounded content/reference       |
 | `item.failed`                          | Foundation Item projection            | Semantic Item closes failed                               | Run SSE                 | Item correlation and safe failure projection                             |

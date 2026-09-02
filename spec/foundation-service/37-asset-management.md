@@ -10,19 +10,19 @@ An Asset is an independent product resource, not an oversized Run payload, Envir
 
 ## Boundaries
 
-| Concern                                                                     | Owner                                                                                                                      | Contract                                                                                  |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Asset identity, immutable metadata, publication, content read, and deletion | This document                                                                                                              | Defines one exact binary publication and its Workspace lifecycle                          |
-| Object streaming, create-only publication, and deletion                     | [Foundation Storage](03-storage.md#object-storage)                                                                         | Supplies opaque-key binary persistence without product authority                          |
-| Public upload, read, and delete conventions                                 | This document and [Platform API Conventions](../api-conventions.md)                                                        | Defines the Asset routes and their one exact binary transfer media type                   |
-| Atomic publication, idempotency evidence, audit, and cleanup intent         | [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                                                       | Commits relational authority without holding a transaction across binary I/O              |
-| Product authorization and security audit                                    | [Foundation IAM](10-identity-and-access-management.md)                                                                     | Applies current Workspace roles and records bounded security events                       |
-| Asset-backed Agent input                                                    | [Agent Input](33-agent-input.md)                                                                                           | Stores one immutable `asset_id` as a binary source and controls Worker delivery           |
-| Run input, output, state, and retry                                         | [Durable Run State](14-run-persistence.md)                                                                                 | Retains Asset references inside the values that already own them                          |
-| Agent-originated publication                                                | This document and [durable Agent tool dispatch](13-interactions-runs-and-attempts.md#durable-agent-tool-dispatch-boundary) | Publishes through an explicitly selected Capability under the current RunAttempt fence    |
-| Items and retained presentation                                             | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                                                 | Can retain bounded `AssetRef` values without becoming Asset authority                     |
-| Hosted AG-UI and A2A projection                                             | [Hosted AG-UI](30-hosted-ag-ui.md) and [A2A](31-a2a.md)                                                                    | Bind protocol-specific result values to an authorized Asset without exposing storage keys |
-| Automatic oversized-content spill                                           | [Events, Usage, and Delivery](20-events-usage-and-delivery.md#large-content)                                               | Remains content of its Run or Item and does not create an Asset implicitly                |
+| Concern                                                                     | Owner                                                                                                                    | Contract                                                                                   |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Asset identity, immutable metadata, publication, content read, and deletion | This document                                                                                                            | Defines one exact binary publication and its Workspace lifecycle                           |
+| Object streaming, create-only publication, and deletion                     | [Foundation Storage](03-storage.md#object-storage)                                                                       | Supplies opaque-key binary persistence without product authority                           |
+| Public upload, read, and delete conventions                                 | This document and [Platform API Conventions](../api-conventions.md)                                                      | Defines the Asset routes and their one exact binary transfer media type                    |
+| Atomic publication, idempotency evidence, audit, and cleanup intent         | [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                                                     | Commits relational authority without holding a transaction across binary I/O               |
+| Product authorization and security audit                                    | [Foundation IAM](10-identity-and-access-management.md)                                                                   | Applies current Workspace roles and records bounded security events                        |
+| Asset-backed Agent input                                                    | [Agent Input](33-agent-input.md)                                                                                         | Stores one immutable `asset_id` as a binary source and controls Worker delivery            |
+| Run input, output, state, and retry                                         | [Durable Run State](14-run-persistence.md)                                                                               | Retains Asset references inside the values that already own them                           |
+| Agent-originated publication                                                | This document and [Agent tool recovery](13-interactions-runs-and-attempts.md#agent-tool-execution-and-recovery-boundary) | Publishes through an explicitly selected Capability and a tool-specific fenced transaction |
+| Items and retained presentation                                             | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                                               | Can retain bounded `AssetRef` values without becoming Asset authority                      |
+| Hosted AG-UI and A2A projection                                             | [Hosted AG-UI](30-hosted-ag-ui.md) and [A2A](31-a2a.md)                                                                  | Bind protocol-specific result values to an authorized Asset without exposing storage keys  |
+| Automatic oversized-content spill                                           | [Events, Usage, and Delivery](20-events-usage-and-delivery.md#large-content)                                             | Remains content of its Run or Item and does not create an Asset implicitly                 |
 
 Foundation defines no `RunAssetLink` resource or table. A Run input stores the exact `asset_id` in its accepted `AgentInput`; a Run output or retained Item can store an `AssetRef` in its existing JSON value; and an Asset created by Agent work stores its creation provenance on the Asset. Those references are correlation, not ownership, retention pins, or authority.
 
@@ -72,7 +72,7 @@ class AssetRef:
 
 `filename` is immutable bounded display metadata. It is NFC-normalized, contains 1 through 256 Unicode scalar values, has no leading or trailing whitespace, path separator, NUL, or control character, and never becomes a storage or Environment path. `media_type` is a lowercase MIME media-type essence without parameters or wildcards and defaults to `application/octet-stream`. It is a declared content hint, not proof that arbitrary bytes conform to that type. `size_bytes` is non-negative.
 
-`source` records creation provenance only. An upload records the authenticated Principal that accepted the binary create. A Run output records the exact fenced Attempt and durable tool invocation that published it. It does not enumerate Runs, Items, protocol Artifacts, or external deliveries that later reference the Asset.
+`source` records creation provenance only. An upload records the authenticated Principal that accepted the binary create. A Run output records the exact fenced Attempt and trusted runtime invocation identity that published it. It does not enumerate Runs, Items, protocol Artifacts, or external deliveries that later reference the Asset.
 
 `AssetRef` is the bounded safe value returned by Asset publication and usable in Run output, Items, and protocol projections. It contains no object key, Environment path, credential, signed URL, or bearer capability. Every dereference resolves the current Asset row and reauthorizes the caller.
 
@@ -80,29 +80,29 @@ class AssetRef:
 
 The conceptual model materializes as one `assets` row per publication. The table uses the portable relational subset defined by [Relational Schema Lifecycle](04-relational-schema.md): identifiers and bounded strings are text, `size_bytes` is a signed 64-bit integer constrained to the non-negative domain, and timestamps preserve UTC instants.
 
-| Column                  | Nullability and key                   | Durable meaning                                                                                    |
-| ----------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `id`                    | Not null; primary key                 | Immutable `ast`-prefixed Asset ID                                                                  |
-| `organization_id`       | Not null                              | Owning Organization; immutable                                                                     |
-| `workspace_id`          | Not null                              | Owning Workspace; immutable                                                                        |
-| `filename`              | Not null; bounded Unicode text        | Immutable normalized display filename                                                              |
-| `media_type`            | Not null; bounded ASCII text          | Immutable normalized media-type essence                                                            |
-| `size_bytes`            | Not null; non-negative 64-bit integer | Exact published content length                                                                     |
-| `content_sha256`        | Not null; 64-character lowercase hex  | Exact published-content digest                                                                     |
-| `source_kind`           | Not null; `upload` or `run_output`    | Selects exactly one normalized provenance shape                                                    |
-| `source_principal_type` | Nullable; `user` or `service_account` | Uploading Principal kind; present only for `upload`                                                |
-| `source_principal_id`   | Nullable; bounded text                | Uploading Principal ID; present only for `upload`                                                  |
-| `source_run_attempt_id` | Nullable; same-Workspace foreign key  | Exact RunAttempt that executed `publish_asset`; present only for `run_output`                      |
-| `source_invocation_id`  | Nullable; bounded text                | Exact durable tool-dispatch invocation within the source RunAttempt; present only for `run_output` |
-| `created_at`            | Not null; UTC timestamp               | Relational publication commit time                                                                 |
-| `deleted_at`            | Nullable; UTC timestamp               | Terminal logical deletion time; the only column that can change after insert                       |
+| Column                  | Nullability and key                   | Durable meaning                                                                                       |
+| ----------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `id`                    | Not null; primary key                 | Immutable `ast`-prefixed Asset ID                                                                     |
+| `organization_id`       | Not null                              | Owning Organization; immutable                                                                        |
+| `workspace_id`          | Not null                              | Owning Workspace; immutable                                                                           |
+| `filename`              | Not null; bounded Unicode text        | Immutable normalized display filename                                                                 |
+| `media_type`            | Not null; bounded ASCII text          | Immutable normalized media-type essence                                                               |
+| `size_bytes`            | Not null; non-negative 64-bit integer | Exact published content length                                                                        |
+| `content_sha256`        | Not null; 64-character lowercase hex  | Exact published-content digest                                                                        |
+| `source_kind`           | Not null; `upload` or `run_output`    | Selects exactly one normalized provenance shape                                                       |
+| `source_principal_type` | Nullable; `user` or `service_account` | Uploading Principal kind; present only for `upload`                                                   |
+| `source_principal_id`   | Nullable; bounded text                | Uploading Principal ID; present only for `upload`                                                     |
+| `source_run_attempt_id` | Nullable; same-Workspace foreign key  | Exact RunAttempt that executed `publish_asset`; present only for `run_output`                         |
+| `source_invocation_id`  | Nullable; bounded text                | Exact trusted-runtime invocation identity within the source RunAttempt; present only for `run_output` |
+| `created_at`            | Not null; UTC timestamp               | Relational publication commit time                                                                    |
+| `deleted_at`            | Nullable; UTC timestamp               | Terminal logical deletion time; the only column that can change after insert                          |
 
 The table preserves these constraints:
 
 1. `(workspace_id, organization_id)` references `workspaces(id, organization_id)`, proving that both tenant columns describe the same immutable owner.
 2. One row satisfies exactly one source shape. `upload` requires both Principal columns and requires both Run-output columns to be null. `run_output` requires both Run-output columns and requires both Principal columns to be null. Unknown `source_kind` and `source_principal_type` values fail closed.
-3. `(workspace_id, source_run_attempt_id)` for a Run output references `run_attempts(tenant_id, id)`. Run persistence uses `tenant_id` for this Workspace scope. The immutable Attempt supplies its `run_id`, so `assets` does not duplicate `source_run_id`; the domain projection and `source_run_id` filter join through that Attempt. The fenced create transaction also requires the Attempt's bounded `tool_invocations_json` to contain the exact dispatched `source_invocation_id` for `AssetCapability`.
-4. A partial unique index on `(source_run_attempt_id, source_invocation_id)` for `source_kind = 'run_output'` admits at most one Asset for one durable tool invocation. Logical deletion does not release this identity. Reconciliation returns the existing row only when its immutable metadata and content evidence match; a different candidate under the same invocation fails closed and never replaces the original.
+3. `(workspace_id, source_run_attempt_id)` for a Run output references `run_attempts(tenant_id, id)`. Run persistence uses `tenant_id` for this Workspace scope. The immutable Attempt supplies its `run_id`, so `assets` does not duplicate `source_run_id`; the domain projection and `source_run_id` filter join through that Attempt. The fenced create transaction requires the current trusted `AssetCapability` runtime to supply `source_invocation_id` together with the selected Attempt's lease and fence; the invocation identity is not accepted from model arguments and is not looked up in a generic RunAttempt ledger.
+4. A partial unique index on `(source_run_attempt_id, source_invocation_id)` for `source_kind = 'run_output'` admits at most one Asset for one invocation within that Attempt. Logical deletion does not release this identity. Reconciliation returns the existing row only when its immutable metadata and content evidence match; a different candidate under the same invocation fails closed and never replaces the original.
 5. `filename`, `media_type`, `size_bytes`, and `content_sha256` satisfy the Asset-model bounds. `deleted_at`, when present, is not earlier than `created_at`.
 6. Every column except `deleted_at` is immutable. The table has no `version` or `updated_at`: content and metadata do not support compare-and-swap mutation, and deletion is a conditional update constrained by `deleted_at IS NULL`.
 
@@ -198,7 +198,7 @@ sequenceDiagram
     Foundation-->>Publisher: Asset or AssetRef
 ```
 
-No relational transaction spans body transfer, Environment reads, object publication, scanning, or other external I/O. The final short transaction creates the Asset row and its required idempotency, provenance, and audit facts. For Agent publication it additionally verifies the current Run, RunAttempt, lease, fence, and matching durable tool-dispatch identity.
+No relational transaction spans body transfer, Environment reads, object publication, scanning, or other external I/O. The final short transaction creates the Asset row and its required idempotency, provenance, and audit facts. For Agent publication it additionally verifies the current Run, RunAttempt, lease, fence, selected `AssetCapability`, and trusted runtime-supplied invocation identity.
 
 An object published without a committed Asset row is a non-authoritative cleanup candidate. A committed row whose response was lost is reconciled through the same upload idempotency key or the same Agent tool-invocation identity. Object listing, timestamp, digest equality, or caller possession never authorizes adoption.
 
@@ -208,7 +208,9 @@ An AgentPresetRevision can explicitly select the trusted Foundation `AssetCapabi
 
 Publication is explicit. Foundation never turns every created Environment file, command output, model output, Run output, or oversized Item value into an Asset. A Revision without `AssetCapability` cannot publish one through this boundary.
 
-The tool uses the ordinary durable Agent tool-dispatch contract. One `(run_attempt_id, invocation_id)` can publish at most one Asset and returns the same `AssetRef` when the exact invocation is reconciled within its owning attempt. A later model-issued tool invocation always creates a new Asset, even for the same path and bytes. Worker replacement never automatically replays the invocation; if publication committed but its result did not enter a complete checkpoint, recovery preserves the ordinary `unknown_outcome` and the Asset remains independently readable by authorized source-Run queries.
+The tool-specific Asset publication transaction uses `(run_attempt_id, invocation_id)` as its idempotency identity. One invocation can publish at most one Asset and returns the same `AssetRef` when the live owning Attempt reconciles that exact invocation. A later model-issued invocation, including one re-driven after Worker replacement, receives a new identity and creates a new Asset even for the same path and bytes.
+
+If publication commits but its tool result does not enter a complete checkpoint, generic Run recovery cannot recover that invocation identity or reattach its `AssetRef`. The Asset remains independently readable through authorized source-Run queries, while resumed model execution can publish another Asset. `AssetCapability` therefore prevents duplicates only for replay of the same invocation inside its owning Attempt; it does not provide cross-Attempt exactly-once publication.
 
 `AssetCapability` owns no detached Capability state. The Asset row and its selected object are publication authority. After a successful tool result enters a complete checkpoint, its `AssetRef` is present only as ordinary Harness message history. Foundation adds no Asset receipt, publication ledger, or Asset-specific namespace to Run `state.json`.
 
@@ -245,17 +247,17 @@ Successful and denied upload or Agent publication uses the stable security actio
 
 ## Failure Semantics
 
-| Failure                                                                                       | Durable outcome                                                     | Retry or reconciliation                                                           |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Upload or Environment source is invalid, unsafe, unavailable, oversize, or rejected by policy | No Asset row commits                                                | Correct the source or policy and make a new create request                        |
-| Object publication fails before the final transaction                                         | No Asset row commits                                                | Retry the same logical request while its deadline and idempotency evidence permit |
-| Object publishes but the Asset transaction rolls back                                         | Candidate object exists without authority                           | Cleanup proves no Asset row owns the key before deletion                          |
-| Asset transaction commits but acknowledgement is lost                                         | Asset exists with unknown caller outcome                            | Replay the same upload key or reconcile the same Agent invocation identity        |
-| RunAttempt fence is stale before Agent publication commits                                    | No Asset row commits                                                | Current RunAttempt decides subsequent work; the candidate object is cleaned up    |
-| Agent publication commits but no complete tool result checkpoint exists                       | Asset remains committed and the tool outcome is unknown to recovery | Preserve `unknown_outcome`; never automatically publish again                     |
-| Active Asset object is missing or fails integrity checks                                      | Asset metadata remains authoritative but content is unavailable     | Return `asset_content_unavailable`; never substitute equal-digest content         |
-| Asset is deleted before pending Run input is read                                             | Accepted Run keeps the same ID but cannot acquire bytes             | Fail execution before the Model or Environment delivery boundary                  |
-| Physical cleanup fails after deletion                                                         | Tombstone remains authoritative                                     | Retry idempotent cleanup without restoring access                                 |
+| Failure                                                                                       | Durable outcome                                                                 | Retry or reconciliation                                                                                                                   |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Upload or Environment source is invalid, unsafe, unavailable, oversize, or rejected by policy | No Asset row commits                                                            | Correct the source or policy and make a new create request                                                                                |
+| Object publication fails before the final transaction                                         | No Asset row commits                                                            | Retry the same logical request while its deadline and idempotency evidence permit                                                         |
+| Object publishes but the Asset transaction rolls back                                         | Candidate object exists without authority                                       | Cleanup proves no Asset row owns the key before deletion                                                                                  |
+| Asset transaction commits but acknowledgement is lost                                         | Asset exists with unknown caller outcome                                        | Replay the same upload key or reconcile the same Agent invocation identity                                                                |
+| RunAttempt fence is stale before Agent publication commits                                    | No Asset row commits                                                            | Current RunAttempt decides subsequent work; the candidate object is cleaned up                                                            |
+| Agent publication commits but no complete tool result checkpoint exists                       | Asset remains committed but its `AssetRef` is absent from recoverable Run state | Resume from the prior checkpoint; a re-driven invocation can create another Asset, while authorized source-Run queries can find the first |
+| Active Asset object is missing or fails integrity checks                                      | Asset metadata remains authoritative but content is unavailable                 | Return `asset_content_unavailable`; never substitute equal-digest content                                                                 |
+| Asset is deleted before pending Run input is read                                             | Accepted Run keeps the same ID but cannot acquire bytes                         | Fail execution before the Model or Environment delivery boundary                                                                          |
+| Physical cleanup fails after deletion                                                         | Tombstone remains authoritative                                                 | Retry idempotent cleanup without restoring access                                                                                         |
 
 ## Compatibility and Trade-offs
 
@@ -273,7 +275,7 @@ Creating a new ID for every distinct publication can duplicate bytes and metadat
 04. The relational Asset row is publication authority; object presence, key, digest, ETag, URL, or reference possession grants no authority.
 05. Run input stores only the exact immutable `asset_id` plus ordinary `BinaryContent` presentation and delivery fields; it stores no body or Asset snapshot.
 06. Run output and Items retain `AssetRef` only inside their existing owning values, while Asset source records only creation provenance.
-07. `AssetCapability` publication is explicit, fenced, idempotent per dispatched invocation, and has no Asset-specific Run-state namespace.
+07. `AssetCapability` publication is explicit, fenced, and idempotent for one trusted-runtime invocation within one Attempt; it provides no cross-Attempt exactly-once guarantee or Asset-specific Run-state namespace.
 08. Automatic large-content spill never creates an Asset.
 09. Deletion immediately removes new logical access and asynchronously removes bytes; it cannot recall an already delivered external effect.
 10. A producing Run's later outcome or retention never changes the independently published Asset lifecycle.

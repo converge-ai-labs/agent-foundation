@@ -242,14 +242,16 @@ Run; internal Harness `ModelAttempt` values are not durable worker generations.
 Every Worker periodically scans durable Run state. For an expired lease, one
 short transaction marks the old Attempt `failed` and creates at most one new
 fenced `RunAttempt`; Foundation defines no separate Scheduler, recovery
-controller, or Attempt `lost` state. The new owner then compares durable Agent
-tool dispatch records with the latest complete continuation, projects every
-unmatched call as `unknown_outcome`, and validates the Run-owned budget, frozen
-dependencies, and current authority outside the claim transaction. It creates
-fresh providers, bindings, and a fresh Harness Run only after a fenced
-preparation decision. It does not inspect or reconcile the prior Sandbox. Every
-Run owns one deterministic state key; Foundation replaces that key at complete
-checkpoints and exposes no separate base, result, or checkpoint-history object.
+controller, or Attempt `lost` state. The new owner validates the latest complete
+continuation, Run-owned budget, frozen dependencies, and current authority
+outside the claim transaction. It creates fresh providers, bindings, and a
+fresh Harness Run only after a fenced preparation decision. It does not inspect
+or reconcile the prior Sandbox, and it cannot reconstruct tool work that never
+entered the selected continuation. Every Run owns one deterministic state key;
+Foundation replaces that key at complete checkpoints and exposes no separate
+base, result, or checkpoint-history object. Tools that require cross-crash
+duplicate suppression or outcome reconciliation own an idempotency key or a
+tool-specific durable task protocol.
 
 Client-side tools use native Pydantic deferred values. Foundation's [Agent control input and continuation contract](foundation-service/34-agent-control-input-and-continuation.md) seals the waiting Run with its complete pending set, atomically normalizes authenticated upstream feedback into a full reject, no-response, or supplied-result batch, and accepts a new Run whose `parent_run_id` names that waiting Run. An explicitly declared waiting Continue instead stores default resolutions and new `AgentInput` in one successor whose first model request receives both. The same contract can explicitly continue from any retained readable completed historical Run while preserving its Thread. [Queued submissions](foundation-service/36-agent-control-queued-submissions.md) give ordinary input queue-if-busy semantics: eligible idle Threads accept a Run immediately, while busy or state-blocked Threads retain editable input outside the Run DAG. Explicit waiting Continue leaves that queue untouched. A completed Run can prepublish its queued successor's state and atomically seal, consume the queue entry, and accept that successor only after its eligible inbox delivery drains; terminal relational scanning recovers paths that do not combine. The new Foundation Run starts a later Harness Run with fresh bindings. [Active Agent control](foundation-service/35-agent-control-active-execution.md) persists steering and asynchronous results in one PostgreSQL acceptance-order FIFO, couples incorporation to complete Run state, rolls pending delivery through waiting, and uses an expiring Thread Redis Stream only as a wakeup optimization. Waiting-derived delivery remains invisible until a Foundation-owned awaited Capability hook runs after the successor's first model request and any resulting tool batch. A failed or cancelled Run suppresses its own pending child results and supersedes other pending delivery bound to it. [Async subagents](foundation-service/18-async-subagents.md) use independent Threads and Runs rather than Pydantic deferred spawn calls. Spawn never waits for child completion: when the spawning Run remains eligible, a terminal child result enters the current active parent-Thread Run as a live Agent message, remains sourced to a waiting head, or automatically accepts an eligible successor Run when the Thread is otherwise inactive; queued submissions retain their independent precedence. If the spawning Run failed or was cancelled first, the result remains queryable but can neither enter nor create another Run, including through Retry.
 
@@ -365,7 +367,7 @@ Run acceptance, ModelAttempt completion, Harness terminal delivery, Host Run com
 04. Keep durable Host schemas outside the Harness library.
 05. Bind Identity and current authority freshly at the Host boundary.
 06. Keep process-local continuation separate from durable lifecycle state.
-07. Preserve unknown Agent tool outcomes and never automatically replay them; a Host that separately persists provider lifecycles owns any provider reconciliation it elects to perform.
+07. Never infer rollback or exactly-once tool execution from a missing checkpoint; tools that require cross-crash reconciliation own idempotency or a durable provider lifecycle.
 08. Use optional typed packages and protocols instead of a universal extension framework.
 09. Use the same Harness API in embedded and hosted modes.
 10. Add enterprise behavior through the same boundaries rather than forks.

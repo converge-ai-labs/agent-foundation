@@ -223,7 +223,7 @@ Managed Skill materialization is Host preparation, not an Agent tool call. It us
 
 A replacement RunAttempt re-enters from current Host state and derives whether to rewrite the path from the Run's existing charged model-request usage. Zero prior model requests causes another bounded source read and deterministic replacement; a positive total assumes that input preparation already wrote the path and performs no file inspection or rewrite. Foundation stores no separate materialization status. A pending steer follows its existing inbox status and receipt: it can be reacquired and rewritten until consumption commits, while a consumed steer is not materialized again.
 
-External Environment effects before durable Run or continuation publication can be unknown and can repeat according to the ordinary Agent tool `unknown_outcome` contract. Foundation does not infer rollback from RunAttempt cancellation or reconstruct external effects from message history.
+External Environment effects absent from the latest complete Run or continuation publication are not recoverable execution state and can repeat after replacement. Foundation does not infer rollback from RunAttempt cancellation, reconstruct external effects from message history, or maintain a generic tool invocation ledger. Environment operations that require stronger cross-crash behavior own idempotency or durable receipts in their provider contract.
 
 ## Warmup, Cleanup, and Prune
 
@@ -284,21 +284,21 @@ Unavailable, inaccessible, incompatible, or unknown target evidence is not autho
 
 ## Failure Semantics
 
-| Failure                                                          | Foundation outcome                                                                               |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Invalid Provider key, schema, lock, primary selection, or access | No Environment revision or Run is accepted                                                       |
-| Archived, disabled, denied, or raced selection                   | Acceptance, Attempt reconstruction, or lifecycle operation fails closed without substitution     |
-| Missing, inactive, or denied credential                          | Attempt or lifecycle operation records a bounded credential failure                              |
-| Invalid or incompatible current state                            | Fail before target mutation; do not adopt continuation state                                     |
-| Target missing with authoritative absence                        | Provider can create a replacement when its contract permits                                      |
-| Target unavailable, inaccessible, or outcome unknown             | Attempt fails without speculative replacement                                                    |
-| Entry creates state then later fails                             | Finalization still attempts changed-state publication                                            |
-| Harness checkpoint or continuation publication fails             | Environment state finalization still runs; prior selected continuation remains current           |
-| Adapter close fails                                              | State publication is still attempted and close failure is reported independently                 |
-| Concurrent changed publications                                  | Last write wins; displaced targets become explicit prune candidates                              |
-| Worker disappears                                                | Last published Host state remains current; undisclosed creation can become a discoverable orphan |
-| Explicit destroy has unknown outcome                             | Preserve last state and cleanup eligibility for inspection or retry                              |
-| Agent Environment result is missing after dispatch               | Invocation becomes `unknown_outcome`; Foundation does not replay it automatically                |
+| Failure                                                          | Foundation outcome                                                                                                  |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Invalid Provider key, schema, lock, primary selection, or access | No Environment revision or Run is accepted                                                                          |
+| Archived, disabled, denied, or raced selection                   | Acceptance, Attempt reconstruction, or lifecycle operation fails closed without substitution                        |
+| Missing, inactive, or denied credential                          | Attempt or lifecycle operation records a bounded credential failure                                                 |
+| Invalid or incompatible current state                            | Fail before target mutation; do not adopt continuation state                                                        |
+| Target missing with authoritative absence                        | Provider can create a replacement when its contract permits                                                         |
+| Target unavailable, inaccessible, or outcome unknown             | Attempt fails without speculative replacement                                                                       |
+| Entry creates state then later fails                             | Finalization still attempts changed-state publication                                                               |
+| Harness checkpoint or continuation publication fails             | Environment state finalization still runs; prior selected continuation remains current                              |
+| Adapter close fails                                              | State publication is still attempted and close failure is reported independently                                    |
+| Concurrent changed publications                                  | Last write wins; displaced targets become explicit prune candidates                                                 |
+| Worker disappears                                                | Last published Host state remains current; undisclosed creation can become a discoverable orphan                    |
+| Explicit destroy has unknown outcome                             | Preserve last state and cleanup eligibility for inspection or retry                                                 |
+| Agent Environment result is absent from the latest checkpoint    | Recovery cannot classify the external outcome; re-driven work can repeat unless the provider protocol is idempotent |
 
 ## Security and Compatibility
 
