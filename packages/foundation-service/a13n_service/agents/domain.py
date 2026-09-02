@@ -462,6 +462,7 @@ class AgentRevision(StrictModel):
     version: int = Field(ge=1)
     plugin_runtime_mode: PluginRuntimeMode
     config: AgentConfig
+    config_digest: Sha256Digest
     resolved_model: ResolvedAgentModel
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: Sha256Digest

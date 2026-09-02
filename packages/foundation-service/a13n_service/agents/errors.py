@@ -1,4 +1,4 @@
-"""Stable safe errors for Agent Agent management."""
+"""Stable safe errors for Agent management."""
 
 from __future__ import annotations
 
@@ -56,9 +56,9 @@ def agent_revision_not_executable(reason: str | None = None) -> AgentError:
 def current_revision_conflict(current_revision_id: str | None) -> AgentError:
     return AgentError(
         "current_revision_conflict",
-        "The default AgentRevision has changed.",
+        "The current AgentRevision has changed.",
         status_code=409,
-        details={"current_current_revision_id": current_revision_id},
+        details={"current_revision_id": current_revision_id},
     )
 
 

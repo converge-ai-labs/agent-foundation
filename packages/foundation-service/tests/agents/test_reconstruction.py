@@ -198,6 +198,7 @@ def _revision(
         version=1,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
         config=selected_config,
+        config_digest=canonical_digest(selected_config),
         resolved_model=resolved.resolved_model,
         resolved_plugin_versions=resolved.resolved_plugin_versions,
         runtime_lock_digest=resolved.runtime_lock_digest,

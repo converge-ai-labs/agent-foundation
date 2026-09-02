@@ -57,9 +57,9 @@ class _UnusedPluginRuntimeStagingAuthority:
         operation_id: str,
         runtime_lock: PluginRuntimeLock,
         staging_token: str,
-        runtime_version: int,
+        runtime_generation: int,
     ) -> None:
-        del operation_id, runtime_lock, staging_token, runtime_version
+        del operation_id, runtime_lock, staging_token, runtime_generation
         raise AssertionError("no Plugin Runtime command was expected")
 
     async def abort_candidate(

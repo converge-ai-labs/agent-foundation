@@ -159,7 +159,7 @@ For an already terminal Thread, the final short transaction:
 1. locks the Thread, current or selected head Run and every referenced async-result spawning Run in stable ID order, inbox counter and pending entries in `delivery_sequence`, and selected queued submission;
 2. resolves idempotent replay, then verifies `expected_thread_version`, `expected_queue_version`, command-actor authorization, the stored authority Principal's current status and complete Run authority, and that the entry remains queued in the same Thread;
 3. requires no current `accepted` or `running` Run and rejects a current or selected waiting state;
-4. repeats all ordinary Continue input, Agent, Revision, default-Revision, effective-config, Runtime, inline-Hook, parent-state, empty-state, and digest preconditions;
+4. repeats all ordinary Continue input, Agent, Revision, current-Revision, effective-config, Runtime, inline-Hook, parent-state, empty-state, and digest preconditions;
 5. when `head_run_id` names a completed Run, inserts one `accepted` Run with `authority_principal` copied from the queue entry, `lineage_kind="continue"`, `input_kind="agent_input"`, and `parent_run_id=head_run_id`;
 6. when `head_run_id=null` and the current Run is `failed` or `cancelled`, inserts one root-like `accepted` Run with `authority_principal` copied from the queue entry, `lineage_kind="root"`, `input_kind="agent_input"`, and `parent_run_id=null`; the trusted state adapter initializes empty state under the existing Thread ID;
 7. marks every unbound async result whose spawning Run is failed or cancelled `suppressed`, then binds every remaining eligible result to the new Run in `delivery_sequence`; no pending entry is injected into initial Run input or consumed by this binding;

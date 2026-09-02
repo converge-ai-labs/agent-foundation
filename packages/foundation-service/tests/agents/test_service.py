@@ -7,6 +7,7 @@ from a13n_service.agents.domain import (
     DuplicateAgentRequest,
     RestoreAgentRevisionRequest,
     UpdateAgentRequest,
+    canonical_digest,
 )
 from a13n_service.agents.errors import AgentError
 from a13n_service.agents.service import AgentService
@@ -30,6 +31,7 @@ async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_service: Agent
     assert created.agent.version == created.revision.version == 1
     assert created.agent.current_revision_id == created.revision.id
     assert created.revision.config == request.config
+    assert created.revision.config_digest == canonical_digest(request.config)
     assert len(created.revision.runtime_lock_digest) == 64
     assert created.revision.connector_tools == ()
     assert created.revision.mcp_tools == ()

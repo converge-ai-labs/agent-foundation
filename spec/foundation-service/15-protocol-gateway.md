@@ -84,7 +84,7 @@ External protocol identifiers provide correlation only. They never grant authori
 
 Every new command authenticates its caller, resolves the current resource, and authorizes the owning action. Every subscription attachment and continuation reauthorizes its current scope. A persisted external binding narrows lookup but does not preserve an earlier authorization decision.
 
-Run acceptance freezes the exact `agent_revision_id`, whose content includes the normalized protocol configuration, plus the normalized client tool surface, canonical accepted `AgentInput`, and other owning-domain inputs required by the selected protocol. Later Agent edits, Revision creation, or default selection do not rewrite an accepted Run or Task. Worker replacement changes RunAttempt and Harness Run identity without changing the accepted protocol correlation.
+Run acceptance freezes the exact `agent_revision_id`, whose content includes the normalized protocol configuration, plus the normalized client tool surface, canonical accepted `AgentInput`, and other owning-domain inputs required by the selected protocol. Later Agent metadata edits or Revision creation do not rewrite an accepted Run or Task. Worker replacement changes RunAttempt and Harness Run identity without changing the accepted protocol correlation.
 
 ## Security and Admission
 

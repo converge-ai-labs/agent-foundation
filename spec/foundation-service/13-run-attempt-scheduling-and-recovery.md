@@ -291,7 +291,7 @@ The Agent decides its next action through ordinary model output. A re-driven or 
 
 ## Worker Execution Boundary
 
-After preparation succeeds, the owning execution loop reconstructs process-local Agent values from the exact AgentRevision, immutable `EffectiveAgentConfig`, Run-pinned Runtime lock, and fresh authorized credentials. It never re-resolves mutable Agent config, current Model, managed-resource heads, or the active Runtime catalog. Managed Plugin factories create fresh Agent-specific instances, and managed Skill packages are verified and materialized before model exposure.
+After preparation succeeds, the owning execution loop reconstructs process-local Agent values from the exact AgentRevision, immutable `EffectiveAgentConfig`, Run-pinned Runtime lock, and fresh authorized credentials. It never re-resolves the Agent head, a newer Revision, current Model, managed-resource heads, or the active Runtime catalog. Managed Plugin factories create fresh Agent-specific instances, and managed Skill packages are verified and materialized before model exposure.
 
 When the accepted configuration selects a primary Environment, the execution loop loads current Host state for that exact desired configuration, resolves its trusted `EnvironmentProvider`, and constructs one fresh process-local adapter. Harness enters and closes that adapter non-destructively. During unconditional finalization, the Worker dumps its latest known Environment state and publishes only a value changed from the one supplied; only separate Host cleanup policy invokes `destroy()`.
 

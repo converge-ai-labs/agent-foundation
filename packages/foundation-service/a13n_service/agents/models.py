@@ -171,6 +171,7 @@ class AgentRevisionRecord(Base):
             version=self.version,
             plugin_runtime_mode=PluginRuntimeMode(self.plugin_runtime_mode),
             config=_CONFIG_ADAPTER.validate_python(self.config),
+            config_digest=self.config_digest,
             resolved_model=_MODEL_ADAPTER.validate_python(self.resolved_model),
             resolved_plugin_versions=_PLUGINS_ADAPTER.validate_python(self.resolved_plugin_versions),
             runtime_lock_digest=self.runtime_lock_digest,

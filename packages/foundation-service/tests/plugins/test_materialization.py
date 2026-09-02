@@ -277,13 +277,13 @@ async def test_supervisor_stages_and_activates_fresh_runner_process(tmp_path: Pa
             operation_id="op_stage1234567890",
             runtime_lock=runtime_lock,
             staging_token=token,
-            runtime_version=2,
+            runtime_generation=2,
         )
         await supervisor.activate_candidate(
             operation_id="op_stage1234567890",
             runtime_lock=runtime_lock,
             staging_token=token,
-            runtime_version=2,
+            runtime_generation=2,
         )
 
         assert supervisor.catalog_active_digest == runtime_lock.digest
@@ -365,7 +365,7 @@ async def test_supervisor_recovers_committed_activation_after_restart(tmp_path: 
             operation_id="op_recover12345678",
             runtime_lock=runtime_lock,
             staging_token=token,
-            runtime_version=7,
+            runtime_generation=7,
         )
 
         assert restarted.runtime_lock_digests == (runtime_lock.digest,)

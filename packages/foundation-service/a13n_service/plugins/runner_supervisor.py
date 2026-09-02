@@ -135,7 +135,7 @@ class PluginRunnerSupervisor:
         operation_id: str,
         runtime_lock: PluginRuntimeLock,
         staging_token: str,
-        runtime_version: int,
+        runtime_generation: int,
     ) -> None:
         async with self._lock:
             self._require_open()
@@ -151,13 +151,13 @@ class PluginRunnerSupervisor:
             runner = self._runners.get(runtime_lock.digest)
             if runner is None:
                 raise _failure("plugin_runtime_staging_invalid", "The staged Plugin Runtime is unavailable.")
-            if runner.active_runtime_version != runtime_version:
+            if runner.active_runtime_version != runtime_generation:
                 try:
                     response = await runner.request(
                         "ACTIVATE",
                         "ACTIVE",
                         timeout_seconds=self._command_timeout_seconds,
-                        runtime_version=runtime_version,
+                        runtime_version=runtime_generation,
                     )
                 except PluginRunnerProtocolError as error:
                     raise _failure(
@@ -167,13 +167,13 @@ class PluginRunnerSupervisor:
                     ) from error
                 if (
                     response.get("runtime_lock_digest") != runtime_lock.digest
-                    or response.get("runtime_version") != runtime_version
+                    or response.get("runtime_version") != runtime_generation
                 ):
                     raise _failure(
                         "plugin_runtime_staging_invalid",
                         "The staged Plugin Runtime acknowledged different content.",
                     )
-                runner.active_runtime_version = runtime_version
+                runner.active_runtime_version = runtime_generation
             self._catalog_active_digest = runtime_lock.digest
             self._operations.pop(operation_id, None)
 
