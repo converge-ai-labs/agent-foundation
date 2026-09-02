@@ -4,13 +4,14 @@ This directory contains runnable, tested examples of public Agent Foundation ext
 
 ## Start Here
 
-| Goal                                        | Example                                                                          | What it demonstrates                                                                                           |
-| ------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                                 | Offline streaming turns, successful-turn state persistence, restart recovery, and a fresh Environment per turn |
-| Extend Agent-loop behavior                  | [Custom Capability example](plugins/README.md#custom-capability)                 | Host-authorized `AgentSpec` reconstruction and direct code composition of one custom Capability                |
-| Wrap the complete Harness run               | [Harness plugin example](plugins/README.md#harness-plugin)                       | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation        |
-| Span the complete Environment lifecycle     | [Environment run-extension example](plugins/README.md#environment-run-extension) | Explicit factory selection, public Harness execution, aggregate setup, and reverse-order cleanup               |
-| Publish and compose an Environment Provider | [Environment Provider example](plugins/README.md#environment-provider)           | Entry-point and explicit Provider catalogs, strict configuration, fresh adapters, and multi-mount routing      |
+| Goal                                        | Example                                                                          | What it demonstrates                                                                                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                                 | Offline streaming turns, successful-turn state persistence, restart recovery, and a fresh Environment per turn    |
+| Use the built-in Environment Providers      | [Environment Provider example](environment-provider/README.md)                   | Direct Local, Local Envd, and Docker Host lifecycles, state re-entry, non-destructive close, and explicit destroy |
+| Extend Agent-loop behavior                  | [Custom Capability example](plugins/README.md#custom-capability)                 | Host-authorized `AgentSpec` reconstruction and direct code composition of one custom Capability                   |
+| Wrap the complete Harness run               | [Harness plugin example](plugins/README.md#harness-plugin)                       | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation           |
+| Span the complete Environment lifecycle     | [Environment run-extension example](plugins/README.md#environment-run-extension) | Explicit factory selection, public Harness execution, aggregate setup, and reverse-order cleanup                  |
+| Publish and compose an Environment Provider | [Environment Provider example](plugins/README.md#environment-provider)           | Entry-point and explicit Provider catalogs, strict configuration, fresh adapters, and multi-mount routing         |
 
 Run every example and its focused checks from the repository root:
 
@@ -27,6 +28,11 @@ uv run agent-app-example
 uv run agent-app-example "first turn" "second turn"
 uv run pytest
 
+cd ../environment-provider
+uv sync --locked
+uv run environment-provider-example direct-local
+uv run pytest
+
 cd ../plugins
 uv sync --locked
 uv run plugin-example-capability-agent-spec
@@ -40,7 +46,7 @@ uv run plugin-example-harness-code
 uv run pytest
 ```
 
-No example needs a model API key or network access after dependencies are installed.
+The default smoke paths need no model API key or network access after dependencies are installed. Local Envd and Docker examples are explicit opt-in paths because they require provisioned external runtimes; Docker may also pull the selected sandbox image.
 
 ## How to Use These Examples
 

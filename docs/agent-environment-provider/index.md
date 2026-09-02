@@ -176,6 +176,8 @@ The entry-point name and constructed `provider.key` must match. Preconstructed P
 
 The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates both installed entry-point and explicit-object composition with the same immutable catalog, validation, construction, and Harness path.
 
+For complete Host-side built-in lifecycles, including Docker state re-entry and explicit destruction, follow the [Built-in Provider Examples](examples.md).
+
 ## Built-in Providers
 
 | Provider key        | Target and state                                                                | Cleanup boundary                                                                                        |
@@ -207,7 +209,7 @@ runtime = LocalEnvdProviderRuntime(
 
 `resolve_agent_envd_executable()` checks an explicit argument, then `A13N_AGENT_ENVD_EXECUTABLE`, then `agent-envd` or `agent-envd.exe` on `PATH`. The library does not load `.env`, install a native binary, or silently fall back to Direct Local. Entry validates exact daemon/client compatibility and the required native-isolation probe.
 
-Run the real provider path with `make local-envd-test`.
+Run the real provider path with `make local-envd-test`, or follow the [Local Envd example](examples.md#local-envd).
 
 ## Docker runtime
 
@@ -234,7 +236,7 @@ The built-in directory store keeps its POSIX Host root private with mode `0700`.
 
 Docker publishes EIP only on a Docker-assigned `127.0.0.1` Host port. It can use existing Host bind directories and external named volumes, but it never creates or deletes those sources. Registry authentication, credential helpers, mirrors, and proxies remain Docker client configuration.
 
-Run the real image and Harness lifecycle check with `make docker-provider-test`.
+Run the real image and Harness lifecycle check with `make docker-provider-test`, or follow the [Docker state lifecycle example](examples.md#docker).
 
 ## Environment operations and tools
 
