@@ -107,8 +107,8 @@ class SkillSelection:
     skill_revision_id: SkillRevisionId
 
 
-class ConnectionToolSelection:
-    connection_id: ConnectionId
+class ConnectorConnectionToolSelection:
+    connector_connection_id: ConnectorConnectionId
     tools: tuple[str, ...] | None
     exposure: MCPExposureMode = "direct"
 
@@ -185,7 +185,7 @@ class AgentPresetConfig:
     input_adapter: InputAdapterConfig
     plugins: tuple[OnDemandPluginSelection | RunnerPluginSelection, ...]
     skills: tuple[SkillSelection, ...]
-    connection_tools: dict[str, ConnectionToolSelection]
+    connector_tools: dict[str, ConnectorConnectionToolSelection]
     mcp_tools: dict[str, MCPConnectionToolSelection]
     environment: EnvironmentSelection | None
     subagents: dict[str, SubagentSelection]
@@ -197,7 +197,7 @@ class AgentPresetConfig:
     protocol: ProtocolConfig
 ```
 
-The deployment's fixed Plugin Runtime profile determines which Plugin selection variant is legal. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. `skills` selects exact Skill Revisions rather than a mutable catalog plus defaults. `environment` selects at most one primary exact EnvironmentRevision. Connection-tool, MCP-tool, and subagent map keys are stable local names within the Agent. Each child edge freezes Harness delegation context, usage ceilings, and its Host Environment association policy. `client_tools` stores only serializable declarations; executable handlers and callbacks remain SDK-local.
+The deployment's fixed Plugin Runtime profile determines which Plugin selection variant is legal. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. `skills` selects exact Skill Revisions rather than a mutable catalog plus defaults. `environment` selects at most one primary exact EnvironmentRevision. Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent. Each child edge freezes Harness delegation context, usage ceilings, and its Host Environment association policy. `client_tools` stores only serializable declarations; executable handlers and callbacks remain SDK-local.
 
 `OutputSpec` permits either one top-level `schema` with optional local `resources`, or at least two mutually exclusive `variants`; it never permits nested variants or runtime retrieval of schema resources. `None` means free-text output. `RetryConfig` contains bounded non-negative tool-argument and structured-output model-correction budgets. It does not configure provider transport retry, Worker recovery, whole-Run retry, or business-workflow retry.
 
@@ -220,7 +220,7 @@ class RunCapabilityOverlay:
     exclude: tuple[CapabilityKey, ...] = ()
 ```
 
-`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, Connector Connection tool, or native Ingress action contract. An MCPConnection or Connector selection includes its `direct` or `catalog` exposure and exact tool allowlist; an Ingress native action is always direct. Every selection has one stable `CapabilityKey`, exact configuration or managed-resource references, and all required compatibility evidence. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or unversioned remote schema.
+`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, ConnectorConnection tool, or native Ingress action contract. An MCPConnection or ConnectorConnection selection includes its `direct` or `catalog` exposure and exact tool allowlist; an Ingress native action is always direct. Every selection has one stable `CapabilityKey`, exact configuration or managed-resource references, and all required compatibility evidence. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or unversioned remote schema.
 
 Resolution is deliberately small:
 
@@ -265,8 +265,8 @@ class ModelOverride:
     characteristics: HarnessModelCharacteristics | None
 
 
-class ConnectionToolOverride:
-    connection_id: ConnectionId | None
+class ConnectorConnectionToolOverride:
+    connector_connection_id: ConnectorConnectionId | None
     tools: tuple[str, ...] | None
     exposure: MCPExposureMode | None
 
@@ -296,7 +296,7 @@ class AgentRunOverride:
     instructions: str | None
     plugins: tuple[OnDemandPluginSelection | RunnerPluginSelection, ...] | None
     skills: tuple[SkillSelection, ...] | None
-    connection_tools: dict[str, ConnectionToolOverride | None] | None
+    connector_tools: dict[str, ConnectorConnectionToolOverride | None] | None
     mcp_tools: dict[str, MCPConnectionToolOverride | None] | None
     environment: EnvironmentOverride | None
     subagents: dict[str, SubagentOverride | None] | None
@@ -307,7 +307,7 @@ class AgentRunOverride:
 
 The wire schema preserves the distinction between an absent field and an explicit null. Top-level absence inherits the selected Revision. Scalar and string fields replace; an empty `instructions` string clears the base prompt. List fields replace as a whole and `[]` clears. `output_spec` replaces as a whole and explicit null selects free text. `environment` replaces the one primary Environment and explicit null clears it. `retries` patches only its explicitly present children, and zero disables the corresponding correction retry.
 
-`connection_tools`, `mcp_tools`, and `subagents` are name-keyed patches. An absent map inherits, an explicit null clears all entries, and `{}` changes nothing. A new name adds an entry, an existing object changes only explicitly present typed fields, and a name mapped to null deletes that entry. Tool changes can replace only their managed Connection, exposure, or exact allowlist; they cannot supply an endpoint, credential, Connector service, or arbitrary header. Subagent entries may select only managed Presets; inline child Agent definitions are not accepted.
+`connector_tools`, `mcp_tools`, and `subagents` are name-keyed patches. An absent map inherits, an explicit null clears all entries, and `{}` changes nothing. A new name adds an entry, an existing object changes only explicitly present typed fields, and a name mapped to null deletes that entry. Tool changes can replace only their managed ConnectorConnection, exposure, or exact allowlist; they cannot supply an endpoint, credential, Connector service, or arbitrary header. Subagent entries may select only managed Presets; inline child Agent definitions are not accepted.
 
 An `on_demand` Plugin override selects exact PluginVersion IDs. A `runner` Plugin override selects stable Plugin keys, which acceptance resolves through the active deployment catalog. The final list always resolves to exact PluginVersions and one Runtime lock before acceptance commits.
 
@@ -324,7 +324,7 @@ class EffectiveAgentConfig:
     plugins: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
     skills: tuple[ResolvedSkillSelection, ...]
-    connection_tools: tuple[ConnectionToolSelection, ...]
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     environment: EnvironmentExecutionConfig | None
     subagents: tuple[ResolvedSubagentEdge, ...]
@@ -394,7 +394,7 @@ class AgentPresetRevision:
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
     resolved_skills: tuple[ResolvedSkillSelection, ...]
-    connection_tools: tuple[ConnectionToolSelection, ...]
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
@@ -410,7 +410,7 @@ A Revision is complete and executable but carries no mutable lifecycle state. It
 
 `plugin_runtime_mode` records the deployment profile under which Revision creation interpreted the config. In both profiles, `resolved_plugin_versions` contains every configured instance and its exact PluginVersion, artifact identity, and configuration; `runtime_lock_digest` names the exact immutable lock produced or selected by Revision creation. In `runner`, Revision creation resolves every configured `plugin_key` through the deployment's then-active catalog. Later Activate commands never rewrite either field. Worker, Harness, and Foundation service versions remain deployment compatibility facts rather than Preset artifacts.
 
-The other `resolved_*` fields freeze the non-secret Model execution snapshot, exact Skill content and materialization facts, managed Connection and MCPConnection selections, the optional primary Environment lock, and the complete exact child Revision graph. Secret values, current authorization, live Connector availability, and remote MCP catalogs are deliberately not frozen. Run acceptance derives its authoritative Connection and MCPConnection selections plus the immutable model-facing tool snapshot under the [Connectivity contract](40-connectivity/README.md). This separation makes the Revision independently reconstructible without turning credentials or mutable operational eligibility into immutable content.
+The other `resolved_*` fields freeze the non-secret Model execution snapshot, exact Skill content and materialization facts, managed ConnectorConnection and MCPConnection selections, the optional primary Environment lock, and the complete exact child Revision graph. Secret values, current authorization, live Connector availability, and remote MCP catalogs are deliberately not frozen. Run acceptance derives its authoritative ConnectorConnection and MCPConnection selections plus the immutable model-facing tool snapshot under the [Connectivity contract](40-connectivity/README.md). This separation makes the Revision independently reconstructible without turning credentials or mutable operational eligibility into immutable content.
 
 ## Revision Creation and Default Selection
 
