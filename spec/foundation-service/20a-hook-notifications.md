@@ -406,7 +406,7 @@ Every accepted asynchronous child is an ordinary child Run. Its `run.*` hooks ca
 
 ### Foundation RunAttempt Hooks
 
-RunAttempt hooks describe one fenced Worker generation. Attempt failure does not imply Run failure. A replacement attempt emits another `run_attempt.leased` while the Run can remain `running`. The exact authority, lease, fence, usage, and recovery behavior remain owned by [Durable RunAttempt Persistence](15-run-attempt-persistence.md#runattempt-lifecycle).
+RunAttempt hooks describe one fenced Worker generation. Attempt failure does not imply Run failure. A replacement attempt emits another `run_attempt.leased` while the Run can remain `running`. The exact authority, lease, fence, usage, and recovery behavior remain owned by [Run Attempts, Scheduling, and Recovery](15-run-attempt-scheduling-and-recovery.md#runattempt-lifecycle).
 
 | Hook name               | Trigger                                                                                          | Information                                                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |

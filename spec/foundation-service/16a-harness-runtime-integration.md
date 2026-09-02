@@ -6,7 +6,7 @@ Foundation Service embeds Agent Harness in the selected Worker execution loop. T
 
 Foundation invokes Harness only through its public construction, run, state, and stream APIs. Harness invokes Foundation-owned behavior through explicit fresh typed collaborators and one mandatory Foundation-owned Pydantic Capability. That Capability is direct trusted Worker composition, not a managed Harness plugin and not caller-selectable Agent content.
 
-This contract owns the concrete integration profile. The generic public Harness surfaces remain owned by [Public API and Packaging](../agent-harness/14-public-api-and-packaging.md), [Execution Context and Lifecycle](../agent-harness/06-execution-context-and-lifecycle.md), and [Harness State and Resume](../agent-harness/10-snapshot-and-resume.md). Foundation persistence and scheduling remain owned by [Durable Run State](14-run-persistence.md), [Durable Run Attempt Persistence](15-run-attempt-persistence.md), and [Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md).
+This contract owns the concrete integration profile. The generic public Harness surfaces remain owned by [Public API and Packaging](../agent-harness/14-public-api-and-packaging.md), [Execution Context and Lifecycle](../agent-harness/06-execution-context-and-lifecycle.md), and [Harness State and Resume](../agent-harness/10-snapshot-and-resume.md). Foundation persistence and scheduling remain owned by [Durable Run State](14-run-persistence.md) and [Run Attempts, Scheduling, and Recovery](15-run-attempt-scheduling-and-recovery.md).
 
 ## Boundaries
 

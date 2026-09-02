@@ -259,9 +259,10 @@ owns one independent versioned relational Thread resource, its Session
 membership, current Run, and selected continuation head. [Run
 persistence](foundation-service/14-run-persistence.md) owns
 durable Agent-work identity, scheduling, the recovery budget, the interactive
-recovery boundary, and complete Run-state object schema. [Run Attempt
-persistence](foundation-service/15-run-attempt-persistence.md) owns the
-`run_attempts` table, worker leases, and fences. [Lifecycle and stream
+recovery boundary, and complete Run-state object schema. [Run Attempt scheduling
+and recovery](foundation-service/15-run-attempt-scheduling-and-recovery.md) owns
+the `run_attempts` table, Worker scans, claims, leases, fences, and replacement
+generation recovery. [Lifecycle and stream
 persistence](foundation-service/17-lifecycle-and-stream-persistence.md) owns
 one lifecycle-event table and Redis Agent-message transport with object-backed
 retained replay. Active Agent control separately owns the `thread_inbox` table,
@@ -402,8 +403,7 @@ Run acceptance, ModelAttempt completion, Harness terminal delivery, Host Run com
 | Foundation Agent management            | [foundation-service/12-agent-management.md](foundation-service/12-agent-management.md)                                                               |
 | Foundation interaction/runtime mapping | [foundation-service/13-interactions-runs-and-attempts.md](foundation-service/13-interactions-runs-and-attempts.md)                                   |
 | Foundation Run persistence             | [foundation-service/14-run-persistence.md](foundation-service/14-run-persistence.md)                                                                 |
-| Foundation RunAttempt persistence      | [foundation-service/15-run-attempt-persistence.md](foundation-service/15-run-attempt-persistence.md)                                                 |
-| Foundation scheduling and recovery     | [foundation-service/16-scheduling-workers-and-recovery.md](foundation-service/16-scheduling-workers-and-recovery.md)                                 |
+| Foundation RunAttempt scheduling       | [foundation-service/15-run-attempt-scheduling-and-recovery.md](foundation-service/15-run-attempt-scheduling-and-recovery.md)                         |
 | Foundation lifecycle and Run streams   | [foundation-service/17-lifecycle-and-stream-persistence.md](foundation-service/17-lifecycle-and-stream-persistence.md)                               |
 | Foundation Hook notifications          | [foundation-service/20a-hook-notifications.md](foundation-service/20a-hook-notifications.md)                                                         |
 | Foundation public API                  | [foundation-service/21-management-api.md](foundation-service/21-management-api.md)                                                                   |

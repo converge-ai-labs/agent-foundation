@@ -90,6 +90,99 @@ flowchart LR
 
 PostgreSQL is the distributed authority for accepted resources, including immutable Asset publication records, Thread advancement and queue versions, head selection, queued submissions, the durable Thread inbox and its independent delivery-sequence counter, Runs, current RunAttempt generations, waiting pending summaries, current Thread-associated Environment state, and terminal outcomes. Ordinary steer and asynchronous results use one PostgreSQL acceptance-order FIFO. Each Worker discovers claim, takeover, and pending-inbox work directly from that durable state; control replicas scan pending asynchronous results for inactive-Thread advancement. Redis carries domain-owned live data flow, including each Run's stable bounded-replay message stream and each active Thread's expiring control-signal Stream; Redis publication or consumer-group progress never proves a relational transition or inbox consumption. Shared object storage holds immutable Asset content plus the Run's complete conditionally replaced state, including exact pending requests, consumed inbox receipts, immutable replay snapshot, and bounded large content. The detailed authorities belong to [Asset Management](37-asset-management.md), [Durable Thread Persistence](24-thread-persistence.md), [Durable Run State](14-run-persistence.md), [Agent Control: Active Execution](35-agent-control-active-execution.md), [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md), [Environment Configuration and Re-entry](19-environment-management.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 
+### Simplified Architecture Overview
+
+```mermaid
+flowchart TB
+    User["User"]
+    Upstream["Upstream Application"]
+    Control["Foundation Control"]
+
+    subgraph Workers["Foundation Worker Cluster"]
+        direction LR
+
+        subgraph Worker1["Foundation Worker 1"]
+            Harness1["Agent Harness"]
+        end
+
+        subgraph Worker2["Foundation Worker 2"]
+            Harness2["Agent Harness"]
+        end
+
+        subgraph Worker3["Foundation Worker 3"]
+            Harness3["Agent Harness"]
+        end
+    end
+
+    subgraph Dependencies["External Dependencies"]
+        direction LR
+
+        PG[("PostgreSQL")]
+        S3[("S3 / Object Storage")]
+        Redis[["Redis"]]
+    end
+
+    User <-->|"Request / Response"| Upstream
+
+    Upstream -->|"API: Submit Run / Control / Query"| Control
+    Control -.->|"SSE: Events / Status / Results<br/>(Control consumes Redis Stream)"| Upstream
+
+    Control ~~~ Worker1
+    Control ~~~ Worker2
+    Control ~~~ Worker3
+
+    Worker1 ~~~ PG
+    Worker2 ~~~ S3
+    Worker3 ~~~ Redis
+
+    Control <-->|"Persist Runs / Read State"| PG
+
+    Control <-...->|"Control and Wake-up Signals ↓<br/>↑ Consume Run Events"| Redis
+
+    Workers <-...->|"Publish Run Events ↓<br/>↑ Wake an Available Worker<br/>to Process Control Commands"| Redis
+
+    Workers <-->|"Scan / Atomic Claim<br/>Lease / Fence / Commit Results"| PG
+
+    Workers <-->|"Read / Write Agent State Checkpoints"| S3
+```
+
+- Workers coordinate Run execution ownership non-cooperatively through PostgreSQL
+- Workers share Agent state through S3
+
+### Foundation Worker-Harness Interaction
+
+```mermaid
+flowchart LR
+    subgraph Worker["Foundation Worker"]
+        direction LR
+
+        subgraph Integration["Foundation–Harness Integration"]
+            direction TB
+
+            Hooks["Capability / Plugin Hooks<br/>(Injected into Harness through public APIs)"]
+        end
+
+        subgraph Harness["Agent Harness"]
+            direction TB
+
+            HarnessRuntime["Harness Runtime<br/>Build · Run · Plugin<br/>Environment · State"]
+
+            subgraph PydanticAI["Pydantic AI"]
+                AgentLoop["Agent Loop<br/>Capabilities · Toolsets · Model"]
+            end
+
+            AsyncQueue[["Async Event Queue<br/>HarnessStreamEvent"]]
+
+            HarnessRuntime <-->|"Build Agent / Drive Execution"| AgentLoop
+            HarnessRuntime -->|"Emit Events and Results"| AsyncQueue
+        end
+
+        Integration -->|"Public API Calls<br/>Capability · Plugin · Collaborators<br/>Environment · State"| Harness
+        Harness -->|"Capability / Plugin Hook Calls"| Hooks
+        AsyncQueue -.->|"Async Notification"| Integration
+    end
+```
+
 ## Component Boundaries
 
 | Concern                                                                     | Owner                                                                                                 | Relationship                                                                                                       |

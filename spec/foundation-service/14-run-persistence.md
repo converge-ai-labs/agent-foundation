@@ -17,11 +17,11 @@ Foundation Service persists each accepted Thread advancement as one relational `
 
 Each Run also owns one complete state object at a tenant- and Run-derived key. The control plane initializes it from a new root state or the selected parent's frozen state. The current fenced `RunAttempt` conditionally replaces it at complete Harness state boundaries, and sealing makes it immutable. Foundation stores no separate `base_state`, `result_state`, or selectable checkpoint history.
 
-Worker recovery can resume the same Run from its latest valid state object; `continue` and `fork` instead initialize a new Run from frozen parent state. The [Run Attempt contract](15-run-attempt-persistence.md#run-and-runattempt-allocation-boundary) owns the complete identity-allocation boundary. No state write for the new Run mutates the parent.
+Worker recovery can resume the same Run from its latest valid state object; `continue` and `fork` instead initialize a new Run from frozen parent state. The [Run Attempt contract](15-run-attempt-scheduling-and-recovery.md#run-and-runattempt-allocation-boundary) owns the complete identity-allocation boundary. No state write for the new Run mutates the parent.
 
 This is a Foundation Host policy above the Harness state API. Harness exports complete detached state but does not select or authorize a durable recovery point; Foundation selects only the conditionally committed value at the Run's deterministic state key.
 
-The shared [interaction model](../interaction-model.md) owns `Session`, `Thread`, `Run`, and `Item` meaning. Every Foundation-managed Agent invocation, including schedules, webhooks, and asynchronous children, accepts a Run; non-Agent maintenance uses its owning domain's work model. [`RunAttempt`](15-run-attempt-persistence.md) remains a subordinate worker generation, and Foundation defines no generic `Execution` resource.
+The shared [interaction model](../interaction-model.md) owns `Session`, `Thread`, `Run`, and `Item` meaning. Every Foundation-managed Agent invocation, including schedules, webhooks, and asynchronous children, accepts a Run; non-Agent maintenance uses its owning domain's work model. [`RunAttempt`](15-run-attempt-scheduling-and-recovery.md) remains a subordinate worker generation, and Foundation defines no generic `Execution` resource.
 
 ## Boundaries
 
@@ -37,7 +37,7 @@ The shared [interaction model](../interaction-model.md) owns `Session`, `Thread`
 | Effective managed Skill selection                                           | [Foundation Skill Management](27-skill-management.md#agentpresetrevision-selection)        | Defines the exact ordered Skill locks inside effective config                                           |
 | Managed Asset identity, content, publication, and deletion                  | [Asset Management](37-asset-management.md)                                                 | Supplies immutable `asset_id` references used inside accepted input, output, or retained presentation   |
 | Scheduling, recovery budget, and current-attempt selection                  | Foundation Run domain                                                                      | Authorizes initial dispatch, bounded recovery, and one sealed outcome                                   |
-| Worker generation, lease, and stale-writer fencing                          | [Run Attempt Persistence](15-run-attempt-persistence.md)                                   | Authorizes one worker generation and preserves its immutable attempt audit                              |
+| Worker generation, lease, and stale-writer fencing                          | [Run Attempt scheduling](15-run-attempt-scheduling-and-recovery.md)                        | Authorizes one worker generation and preserves its immutable attempt audit                              |
 | Current complete Run state                                                  | One deterministic Run state object                                                         | Stores active Harness and Host state; waiting or completed sealing selects its exact frozen identity    |
 | Object storage operations                                                   | [Object storage](03-storage.md#object-storage)                                             | Supplies atomic whole-object publication and expected-version replacement                               |
 | Lifecycle events, stream messages, and Items                                | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                 | Stores ordered facts, transports live observations, and retains presentation projections                |
@@ -228,7 +228,7 @@ The [Connector contract](23-connectors-connections-and-triggers.md#connection-se
 
 `sealed_state` is absent while the Run is active. A `waiting` or `completed` sealing transaction always records the exact digest, size, schema versions, and checkpoint sequence of the state object frozen with the Run. A Worker-originated `failed` Run can record a complete state prepared under its fence or leave `sealed_state` null. An interrupt-driven `cancelled` Run always leaves it null because interrupt performs no object I/O. After any seal, no later object value is authoritative; only a recorded `sealed_state` selects bytes as part of the Run outcome. When a sealed state is present, its fields identify the exact terminal bytes without introducing a second base or result object. `committed_by_run_attempt_id` is null only when a relational fail-closed decision seals a Run without an attempt-originated state change.
 
-Every Run can own zero or more immutable `RunAttempt` values over its lifetime, with at most one current and lease-authorized attempt. The [allocation contract](15-run-attempt-persistence.md#run-and-runattempt-allocation-boundary) owns when those attempts are created.
+Every Run can own zero or more immutable `RunAttempt` values over its lifetime, with at most one current and lease-authorized attempt. The [allocation contract](15-run-attempt-scheduling-and-recovery.md#run-and-runattempt-allocation-boundary) owns when those attempts are created.
 
 `RecoveryBudget` is the accepted recovery-policy snapshot. `max_recovery_attempts` includes the first Attempt and every successor created after retryable failure or expired-lease takeover; a successor created after a planned handoff does not consume it. `max_handoffs` bounds successful planned handoffs independently. `attempts_started` counts every Attempt for audit, `recovery_attempts_started` counts only Attempts charged to the recovery budget, and `handoffs_completed` counts committed `yielded` transitions. `recovery_deadline_at` is a fixed UTC deadline, and `usage_charged` aggregates every Attempt, including known usage from yielded or failed work. Every counter and limit is non-negative. Missing required usage is never treated as zero; if durable usage evidence is insufficient to prove that a configured ceiling remains, no new Attempt is admitted. The Run row is the sole authority for whether another Attempt or planned handoff is permitted.
 
@@ -269,7 +269,7 @@ stateDiagram-v2
 
 `waiting`, `completed`, `failed`, and `cancelled` are sealed outcomes. `sealed_at` and any available `sealed_state` are selected in the same relational transaction. A sealed Run never changes any column and its state key is never overwritten.
 
-The Run remains the budget and lifecycle authority after attempt failure or lease expiry. The [Run Attempt recovery contract](15-run-attempt-persistence.md#recovery-and-budget-enforcement) keeps structurally resumable, in-budget work `running` across replacement attempts and seals invalid, incompatible, non-retryable, or exhausted work as `failed`.
+The Run remains the budget and lifecycle authority after attempt failure or lease expiry. The [Run Attempt recovery contract](15-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement) keeps structurally resumable, in-budget work `running` across replacement attempts and seals invalid, incompatible, non-retryable, or exhausted work as `failed`.
 
 ### Key Entity Relationships
 
@@ -288,7 +288,7 @@ flowchart LR
     Attempt -->|"conditionally replaces while current"| State
 ```
 
-The complete identity-allocation decision table is owned by [Run Attempt Persistence](15-run-attempt-persistence.md#run-and-runattempt-allocation-boundary).
+The complete identity-allocation decision table is owned by [Run Attempts, Scheduling, and Recovery](15-run-attempt-scheduling-and-recovery.md#run-and-runattempt-allocation-boundary).
 
 ## Relational Run Table
 
@@ -474,7 +474,7 @@ Foundation exposes no checkpoint object ID and never selects an older object ver
 
 Foundation writes state only after `HarnessRunStream.export_state()` produces a complete structurally valid state and Host continuation has been serialized under its bounds. Raw token deltas, incomplete private graph nodes, live `RunBindings`, Environment adapters, entered facades, and process-local handles never enter the object.
 
-After the [Run Attempt allocation contract](15-run-attempt-persistence.md#run-and-runattempt-allocation-boundary) authorizes a later attempt for the same Run, the Worker claims the existing state key, validates the envelope and its owned state codecs, reconstructs fresh `RunBindings` and Environment adapters from current Host state, and resumes:
+After the [Run Attempt allocation contract](15-run-attempt-scheduling-and-recovery.md#run-and-runattempt-allocation-boundary) authorizes a later attempt for the same Run, the Worker claims the existing state key, validates the envelope and its owned state codecs, reconstructs fresh `RunBindings` and Environment adapters from current Host state, and resumes:
 
 - `input_disposition=pending` starts from the initialized state and supplies the Run's exact accepted input; for `waiting_continue`, that one application supplies both the normalized default `DeferredToolResume` and the accepted `AgentInput` to the first model request;
 - `input_disposition=applied` resumes from the checkpoint without supplying the accepted input again;
@@ -484,7 +484,7 @@ The same resume rule applies after a predecessor Attempt commits `yielded`. Reco
 
 `input_disposition` governs only whether accepted semantic input crosses the Harness input boundary again. It is not evidence that an `environment_path` file should be rewritten. Same-Run file rematerialization is derived from existing charged model-request usage under the [Agent Input contract](33-agent-input.md#binary-source-and-delivery).
 
-The resume point is the current state object, not an event cursor, latest object listing result, lifecycle timestamp, retained Item, or state from another Run. If work occurred after the last successful conditional write, that work is not part of the resume point. The [Run Attempt recovery contract](15-run-attempt-persistence.md#recovery-and-budget-enforcement) owns unresolved tool-call handling after that boundary.
+The resume point is the current state object, not an event cursor, latest object listing result, lifecycle timestamp, retained Item, or state from another Run. If work occurred after the last successful conditional write, that work is not part of the resume point. The [Run Attempt recovery contract](15-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement) owns unresolved tool-call handling after that boundary.
 
 ## Object Storage Schemas
 
@@ -656,7 +656,7 @@ Fork, continuation, automatic asynchronous-result acceptance, feedback, retry, a
 | Worker disappears after a committed checkpoint                                           | Latest state remains at the same key                                                                     | After lease expiry, a Worker's transactional takeover creates a later fenced attempt that reconstructs fresh `RunBindings` and Environment adapters from current Host state and resumes |
 | Worker disappears after uncheckpointed work                                              | Only the prior checkpoint is recoverable                                                                 | The replacement attempt resumes from that checkpoint; absent model or tool work can be re-driven, and generic recovery cannot determine its external outcome                            |
 | Handoff checkpoint commits but the yield transaction does not                            | The new value remains the active Run's latest complete checkpoint                                        | The current Attempt can retry yield while its lease remains valid; after process loss, ordinary lease-expiry recovery uses the same state                                               |
-| Recovery budget is exhausted                                                             | Run seals as `failed`                                                                                    | The sealed Run receives no later attempt; see the [allocation boundary](15-run-attempt-persistence.md#run-and-runattempt-allocation-boundary)                                           |
+| Recovery budget is exhausted                                                             | Run seals as `failed`                                                                                    | The sealed Run receives no later attempt; see the [allocation boundary](15-run-attempt-scheduling-and-recovery.md#run-and-runattempt-allocation-boundary)                               |
 | Required state, schema, or codec is permanently incompatible                             | No model or tool work starts                                                                             | Apply an explicit compatible reader or fail the Run                                                                                                                                     |
 | Frozen artifact or dependency is temporarily unavailable                                 | Selected state remains unchanged                                                                         | Apply bounded backoff only when policy classifies the condition retryable and budget remains                                                                                            |
 | State object is confirmed missing or fails integrity validation                          | Run seals as `failed` without selecting invalid state bytes                                              | Freeze the exact deterministic key, record a bounded failure, and never substitute listing results                                                                                      |
@@ -693,7 +693,7 @@ Relational migrations never reinterpret state bytes through current defaults. Ad
 
 One stable state key removes the duplicated base/result state model and makes a Run's current recovery value direct. It also introduces durable writes during execution and makes conditional-write fencing part of recovery correctness.
 
-Each new Run owns a complete state copy, so initialization cost grows with the retained Thread state. Checkpointing reduces repeated model and tool work but cannot make external effects exactly once; unresolved calls follow the [Run Attempt recovery contract](15-run-attempt-persistence.md#recovery-and-budget-enforcement).
+Each new Run owns a complete state copy, so initialization cost grows with the retained Thread state. Checkpointing reduces repeated model and tool work but cannot make external effects exactly once; unresolved calls follow the [Run Attempt recovery contract](15-run-attempt-scheduling-and-recovery.md#recovery-and-budget-enforcement).
 
 ## Invariants
 

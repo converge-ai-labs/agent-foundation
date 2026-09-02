@@ -22,7 +22,7 @@ Both profiles persist immutable Runtime locks and every accepted Run pins one ex
 | Runner materialization, staging, cutover, and drain                      | This document                                                       | Replaces Python interpreters without replacing the Worker container          |
 | Plugin factory, configuration, construction, and Capability contribution | [Harness plugin system](../agent-harness/05-plugin-system.md)       | Builds fresh plugin instances from an explicitly selected catalog            |
 | Run acceptance and exact lock-digest persistence                         | [Durable Run State](14-run-persistence.md)                          | Pins one Runtime with one accepted Preset Revision                           |
-| Run claim, lease, fence, and recovery                                    | [Scheduling](16-scheduling-workers-and-recovery.md)                 | Applies the profile-specific pre-claim compatibility gate                    |
+| Run claim, lease, fence, and recovery                                    | [Run Attempt scheduling](15-run-attempt-scheduling-and-recovery.md) | Applies the profile-specific pre-claim compatibility gate                    |
 | Relational and object capabilities                                       | [Foundation storage](03-storage.md)                                 | Supplies metadata authority and immutable artifact bytes                     |
 
 `PluginRuntime` means the Python, Harness, Pydantic AI, Plugin Wheels, and third-party distributions selected by one Runtime lock. It contains no Prompt, Secret value, Run state, Agent work files, shell workspace, browser, or Agent `Environment`.
