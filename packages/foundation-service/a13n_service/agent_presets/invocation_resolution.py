@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,6 +23,7 @@ from a13n_service.model_configs.runtime import (
     PreparedModelSnapshotExecution,
 )
 from a13n_service.model_configs.service import ModelConfigError
+from a13n_service.plugins.runtime import PluginRuntimeLockError
 from a13n_service.skills.domain import SkillPackageManifest
 from a13n_service.skills.models import SkillRecord, SkillRevisionRecord
 from a13n_service.storage import short_session
@@ -79,6 +79,7 @@ class PreparedInvocationSkill:
 class PreparedInvocationSubagent:
     edge: ResolvedSubagentEdge
     child_revision_digest: str
+    child_runtime_lock_digest: str
 
 
 PreparedInvocationModel = PreparedModelExecution | PreparedModelSnapshotExecution
@@ -481,7 +482,24 @@ class AgentPresetInvocationResolver:
             raise _authorization_error(error) from error
 
         resolved_subagents = tuple(item.edge for item in subagents)
-        runtime_lock_digest = _runtime_lock_digest(prepared, plugins, resolved_subagents, environment)
+        try:
+            if _runtime_selection_unchanged(prepared, plugins, resolved_subagents):
+                runtime_lock = await self._plugin_resolver.runtime_locks.require(
+                    session,
+                    prepared.revision.runtime_lock_digest,
+                    mode=prepared.revision.plugin_runtime_mode.value,
+                )
+            else:
+                if prepared.plugins is None:
+                    raise PluginRuntimeLockError("plugin_runtime_lock_unavailable")
+                runtime_lock = await self._plugin_resolver.runtime_locks.build_and_persist(
+                    session,
+                    mode=prepared.revision.plugin_runtime_mode.value,
+                    plugins=prepared.plugins.items,
+                    child_lock_digests=tuple(item.child_runtime_lock_digest for item in subagents),
+                )
+        except PluginRuntimeLockError as error:
+            raise preset_revision_not_executable(error.reason) from error
         config_payload = {
             "schema_version": "1",
             "resolved_model": ResolvedAgentModelConfig(
@@ -490,7 +508,7 @@ class AgentPresetInvocationResolver:
                 characteristics=prepared.merged.config.model.characteristics,
             ),
             "resolved_plugin_versions": plugins,
-            "runtime_lock_digest": runtime_lock_digest,
+            "runtime_lock_digest": runtime_lock.digest,
             "resolved_skills": skills,
             "resolved_connectors": connectors,
             "resolved_environment": environment,
@@ -603,6 +621,7 @@ class AgentPresetInvocationResolver:
                         environment=selection.environment,
                     ),
                     child_revision_digest=child_revision.content_digest,
+                    child_runtime_lock_digest=child_revision.runtime_lock_digest,
                 )
             )
         return tuple(result)
@@ -732,7 +751,10 @@ async def _freeze_subagents(
             revision_id=expected.edge.child_agent_preset_revision_id,
             for_update=True,
         )
-        if revision.content_digest != expected.child_revision_digest:
+        if (
+            revision.content_digest != expected.child_revision_digest
+            or revision.runtime_lock_digest != expected.child_runtime_lock_digest
+        ):
             raise preset_revision_not_executable("subagent_revision_changed")
         result.append(expected)
     return tuple(result)
@@ -873,39 +895,35 @@ def _access_rank(access: str) -> int:
     return {"read_only": 0, "read_write": 1, "full": 2}[access]
 
 
-def _runtime_lock_digest(
+def _runtime_selection_unchanged(
     prepared: PreparedAgentInvocation,
     resolved_plugins: tuple[ResolvedPluginVersion, ...],
     resolved_subagents: tuple[ResolvedSubagentEdge, ...],
-    resolved_environment: EnvironmentExecutionConfig | None,
-) -> str:
-    if (
-        resolved_plugins == prepared.revision.resolved_plugin_versions
-        and resolved_subagents == prepared.revision.resolved_subagents
-        and resolved_environment == prepared.revision.resolved_environment
-    ):
-        return prepared.revision.runtime_lock_digest
-    child_digest_by_id = {
-        item.edge.child_agent_preset_revision_id: item.child_revision_digest for item in prepared.subagents
-    }
-    return canonical_digest(
-        {
-            "schema_version": "1",
-            "mode": prepared.revision.plugin_runtime_mode.value,
-            "plugins": [item.model_dump(mode="json") for item in resolved_plugins],
-            "child_locks": [child_digest_by_id[item.child_agent_preset_revision_id] for item in resolved_subagents],
-            "environment_lock": _environment_lock(resolved_environment),
-        }
+) -> bool:
+    return _plugin_runtime_signature(resolved_plugins) == _plugin_runtime_signature(
+        prepared.revision.resolved_plugin_versions
+    ) and _subagent_runtime_signature(resolved_subagents) == _subagent_runtime_signature(
+        prepared.revision.resolved_subagents
     )
 
 
-def _environment_lock(environment: EnvironmentExecutionConfig | None) -> dict[str, JsonValue] | None:
-    if environment is None:
-        return None
-    return {
-        "provider_lock": environment.provider_lock,
-        "logical_digest_sha256": environment.logical_digest_sha256,
-    }
+def _plugin_runtime_signature(plugins: tuple[ResolvedPluginVersion, ...]) -> frozenset[tuple[str, ...]]:
+    return frozenset(
+        (
+            item.plugin_id,
+            item.plugin_version_id,
+            item.plugin_key,
+            item.distribution_name,
+            item.distribution_version,
+            item.top_level_package,
+            item.wheel_digest,
+        )
+        for item in plugins
+    )
+
+
+def _subagent_runtime_signature(subagents: tuple[ResolvedSubagentEdge, ...]) -> frozenset[str]:
+    return frozenset(item.child_agent_preset_revision_id for item in subagents)
 
 
 def _authorization_error(error: AuthorizationError) -> AgentPresetError:

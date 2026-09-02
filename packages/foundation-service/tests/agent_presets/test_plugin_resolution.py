@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib.metadata import version as distribution_version
+
 import pytest
 from a13n_service.agent_presets.domain import (
     AgentPresetCommandRequest,
@@ -13,7 +15,8 @@ from a13n_service.agent_presets.errors import AgentPresetError
 from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError
 from a13n_service.agent_presets.service import AgentPresetService
-from a13n_service.plugins.models import PluginRecord, PluginVersionRecord
+from a13n_service.plugins.models import PluginRecord, PluginRuntimeLockRecord, PluginVersionRecord
+from a13n_service.plugins.runtime import PluginRuntimeLock
 from a13n_service.storage import short_session, transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -69,13 +72,47 @@ async def _add_plugin(
         )
 
 
-def _selection(*, instance_name: str = "audit") -> dict[str, object]:
+def _selection(
+    *,
+    instance_name: str = "audit",
+    plugin_version_id: str = PLUGIN_VERSION_ID,
+    config: dict[str, object] | None = None,
+) -> dict[str, object]:
     return {
         "mode": "on_demand",
         "instance_name": instance_name,
-        "plugin_version_id": PLUGIN_VERSION_ID,
-        "config": {"level": "strict"},
+        "plugin_version_id": plugin_version_id,
+        "config": {"level": "strict"} if config is None else config,
     }
+
+
+async def _add_plugin_version(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    plugin_version_id: str,
+    version: str,
+    digest: str,
+) -> None:
+    async with transaction(sessions) as session:
+        session.add(
+            PluginVersionRecord(
+                id=plugin_version_id,
+                plugin_id=PLUGIN_ID,
+                version=version,
+                content_digest=digest,
+                artifact_ref=f"plugins/artifacts/v1/sha256/{digest}.whl",
+                size_bytes=1024,
+                requires_dist=[],
+                requires_python=">=3.13",
+                wheel_tags=["py3-none-any"],
+                root_is_purelib=True,
+                entry_point_target="acme_audit.factory:Factory",
+                status="ready",
+                created_by_type="user",
+                created_by_id=USER_ID,
+                created_at=NOW,
+            )
+        )
 
 
 @pytest.mark.anyio
@@ -83,7 +120,7 @@ async def test_publish_freezes_exact_plugin_version(
     agent_preset_service: AgentPresetService,
     agent_preset_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    await _add_plugin(agent_preset_sessions)
+    await _add_plugin(agent_preset_sessions, requires_dist=("packaging>=25,<26",))
     preset = await agent_preset_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -114,6 +151,29 @@ async def test_publish_freezes_exact_plugin_version(
         "config": {"level": "strict"},
     }
     assert len(published.revision.runtime_lock_digest) == 64
+    async with short_session(agent_preset_sessions) as session:
+        record = await session.get(PluginRuntimeLockRecord, published.revision.runtime_lock_digest)
+    assert record is not None
+    runtime_lock = PluginRuntimeLock.model_validate(record.manifest)
+    assert runtime_lock.computed_digest() == runtime_lock.digest
+    assert runtime_lock.mode == "on_demand"
+    assert runtime_lock.worker_release == "unknown"
+    assert runtime_lock.harness_version
+    assert tuple(item.plugin_version_id for item in runtime_lock.plugins) == (PLUGIN_VERSION_ID,)
+    assert runtime_lock.distributions[0].model_dump(mode="json") == {
+        "distribution_name": "acme-audit",
+        "version": "1.2.3",
+        "source": "artifact",
+        "artifact_digest": PLUGIN_DIGEST,
+        "artifact_ref": f"plugins/artifacts/v1/sha256/{PLUGIN_DIGEST}.whl",
+    }
+    assert runtime_lock.distributions[1].model_dump(mode="json") == {
+        "distribution_name": "packaging",
+        "version": distribution_version("packaging"),
+        "source": "worker_release",
+        "artifact_digest": None,
+        "artifact_ref": None,
+    }
 
 
 @pytest.mark.anyio
@@ -149,6 +209,116 @@ async def test_run_override_resolves_plugin_and_changes_runtime_lock(
 
 
 @pytest.mark.anyio
+async def test_run_override_plugin_config_reuses_exact_runtime_lock(
+    agent_preset_service: AgentPresetService,
+    agent_preset_invocation_resolver: AgentPresetInvocationResolver,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _add_plugin(agent_preset_sessions)
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-plugin-config-override",
+        request=CreateAgentPresetRequest(
+            name="Plugin Config Override",
+            config=preset_config(plugins=[_selection()]),
+        ),
+    )
+    published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-plugin-config-override",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+
+    prepared = await agent_preset_invocation_resolver.prepare(
+        actor=actor(),
+        agent_preset_id=preset.id,
+        config_override=AgentRunOverride.model_validate(
+            {"plugins": [_selection(config={"level": "lenient"})]},
+        ),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        frozen = await agent_preset_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+
+    assert frozen.effective_config.resolved_plugin_versions[0].config == {"level": "lenient"}
+    assert frozen.effective_config.runtime_lock_digest == published.revision.runtime_lock_digest
+
+
+@pytest.mark.anyio
+async def test_publish_composes_subagent_runtime_lock_and_rejects_version_conflict(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _add_plugin(agent_preset_sessions)
+    child = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-plugin-lock-child",
+        request=CreateAgentPresetRequest(
+            name="Plugin Lock Child",
+            config=preset_config(plugins=[_selection()]),
+        ),
+    )
+    child_published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=child.id,
+        idempotency_key="publish-plugin-lock-child",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    parent = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-plugin-lock-parent",
+        request=CreateAgentPresetRequest(
+            name="Plugin Lock Parent",
+            config=preset_config(subagents={"child": {"agent_preset_id": child.id, "environment": {"mode": "none"}}}),
+        ),
+    )
+    parent_published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=parent.id,
+        idempotency_key="publish-plugin-lock-parent",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    async with short_session(agent_preset_sessions) as session:
+        parent_record = await session.get(PluginRuntimeLockRecord, parent_published.revision.runtime_lock_digest)
+    assert parent_record is not None
+    parent_lock = PluginRuntimeLock.model_validate(parent_record.manifest)
+    assert tuple(item.plugin_version_id for item in parent_lock.plugins) == (PLUGIN_VERSION_ID,)
+    assert parent_published.revision.runtime_lock_digest == child_published.revision.runtime_lock_digest
+
+    conflicting_version_id = "plgv_abcdef1234567890"
+    await _add_plugin_version(
+        agent_preset_sessions,
+        plugin_version_id=conflicting_version_id,
+        version="2.0.0",
+        digest="b" * 64,
+    )
+    conflicting = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-plugin-lock-conflict",
+        request=CreateAgentPresetRequest(
+            name="Plugin Lock Conflict",
+            config=preset_config(
+                plugins=[_selection(plugin_version_id=conflicting_version_id)],
+                subagents={"child": {"agent_preset_id": child.id, "environment": {"mode": "none"}}},
+            ),
+        ),
+    )
+    with pytest.raises(AgentPresetError) as rejected:
+        await agent_preset_service.publish(
+            actor=actor(),
+            preset_id=conflicting.id,
+            idempotency_key="publish-plugin-lock-conflict",
+            request=AgentPresetCommandRequest(expected_resource_version=1),
+        )
+    assert rejected.value.code == "preset_publish_failed"
+    assert rejected.value.details == {"reason": "plugin_dependency_conflict", "path": "plugins"}
+
+
+@pytest.mark.anyio
 async def test_retained_revision_keeps_archived_plugin_executable(
     agent_preset_service: AgentPresetService,
     agent_preset_invocation_resolver: AgentPresetInvocationResolver,
@@ -181,6 +351,38 @@ async def test_retained_revision_keeps_archived_plugin_executable(
 
     assert frozen.effective_config.resolved_plugin_versions == published.revision.resolved_plugin_versions
     assert frozen.effective_config.runtime_lock_digest == published.revision.runtime_lock_digest
+
+
+@pytest.mark.anyio
+async def test_retained_revision_fails_closed_when_runtime_lock_is_missing(
+    agent_preset_service: AgentPresetService,
+    agent_preset_invocation_resolver: AgentPresetInvocationResolver,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-missing-runtime-lock",
+        request=CreateAgentPresetRequest(name="Missing Runtime Lock", config=preset_config()),
+    )
+    published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-missing-runtime-lock",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        record = await session.get(PluginRuntimeLockRecord, published.revision.runtime_lock_digest)
+        assert record is not None
+        await session.delete(record)
+
+    prepared = await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=preset.id)
+    with pytest.raises(AgentPresetError) as rejected:
+        async with transaction(agent_preset_sessions) as session:
+            await agent_preset_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+
+    assert rejected.value.code == "preset_revision_not_executable"
+    assert rejected.value.details == {"reason": "plugin_runtime_lock_unavailable"}
 
 
 @pytest.mark.anyio

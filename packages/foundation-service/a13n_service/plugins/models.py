@@ -122,3 +122,19 @@ class PluginRuntimeStateRecord(Base):
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PluginRuntimeLockRecord(Base):
+    __tablename__ = "plugin_runtime_locks"
+    __table_args__ = (
+        CheckConstraint("length(digest) = 64", name="digest_sha256"),
+        CheckConstraint("schema_version = '1'", name="schema_version_v1"),
+        CheckConstraint("mode IN ('on_demand', 'runner')", name="mode_valid"),
+        Index("ix_plugin_runtime_locks_created", "created_at", "digest"),
+    )
+
+    digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    manifest: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

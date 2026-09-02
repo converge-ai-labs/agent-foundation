@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -13,6 +12,7 @@ from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import AuthenticatedActor, authorize_agent_preset, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.model_configs.runtime import AcceptedModelSelector, PreparedModelExecution
+from a13n_service.plugins.runtime import PluginRuntimeLockError
 from a13n_service.skills.domain import SkillPackageManifest
 from a13n_service.skills.models import SkillRecord, SkillRevisionRecord
 from a13n_service.storage import short_session
@@ -21,14 +21,12 @@ from .connector_resolution import AgentConnectorSelectionResolver, PreparedConne
 from .domain import (
     AgentPresetConfig,
     ChildEnvironmentPolicy,
-    EnvironmentExecutionConfig,
     PluginRuntimeMode,
     ResolvedAgentModelConfig,
     ResolvedRevisionContent,
     ResolvedSkillSelection,
     ResolvedSubagentEdge,
     SubagentSelection,
-    canonical_digest,
 )
 from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedEnvironmentSelection
 from .errors import AgentPresetError, preset_publish_failed
@@ -54,6 +52,7 @@ class PreparedSubagent:
     selection: SubagentSelection
     child_revision_id: str
     child_revision_digest: str
+    child_runtime_lock_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,15 +225,15 @@ class AgentPresetResolver:
         except EnvironmentManagementError as error:
             raise preset_publish_failed(error.code, path="environment") from error
         subagents = await self._freeze_subagents(session, prepared)
-        runtime_lock_digest = canonical_digest(
-            {
-                "schema_version": "1",
-                "mode": self.plugin_runtime_mode.value,
-                "plugins": [item.model_dump(mode="json") for item in plugins],
-                "child_locks": [item.child_revision_digest for item in prepared.subagents],
-                "environment_lock": _environment_lock(environment),
-            }
-        )
+        try:
+            runtime_lock = await self._plugin_resolver.runtime_locks.build_and_persist(
+                session,
+                mode=self.plugin_runtime_mode.value,
+                plugins=prepared.plugins.items,
+                child_lock_digests=tuple(item.child_runtime_lock_digest for item in prepared.subagents),
+            )
+        except PluginRuntimeLockError as error:
+            raise preset_publish_failed(error.reason, path=error.path) from error
         return ResolvedRevisionContent(
             resolved_model=ResolvedAgentModelConfig(
                 execution=model,
@@ -242,7 +241,7 @@ class AgentPresetResolver:
                 characteristics=prepared.config.model.characteristics,
             ),
             resolved_plugin_versions=plugins,
-            runtime_lock_digest=runtime_lock_digest,
+            runtime_lock_digest=runtime_lock.digest,
             resolved_skills=skills,
             resolved_connectors=connectors,
             resolved_environment=environment,
@@ -373,6 +372,7 @@ class AgentPresetResolver:
                     selection=selection,
                     child_revision_id=revision.id,
                     child_revision_digest=revision.content_digest,
+                    child_runtime_lock_digest=revision.runtime_lock_digest,
                 )
             )
         return tuple(result)
@@ -478,7 +478,11 @@ class AgentPresetResolver:
                 )
                 .with_for_update()
             )
-            if revision is None or revision.content_digest != expected.child_revision_digest:
+            if (
+                revision is None
+                or revision.content_digest != expected.child_revision_digest
+                or revision.runtime_lock_digest != expected.child_runtime_lock_digest
+            ):
                 raise preset_publish_failed("subagent_revision_changed", path=f"subagents.{expected.name}")
             result.append(
                 ResolvedSubagentEdge(
@@ -492,15 +496,6 @@ class AgentPresetResolver:
                 )
             )
         return tuple(result)
-
-
-def _environment_lock(environment: EnvironmentExecutionConfig | None) -> dict[str, JsonValue] | None:
-    if environment is None:
-        return None
-    return {
-        "provider_lock": environment.provider_lock,
-        "logical_digest_sha256": environment.logical_digest_sha256,
-    }
 
 
 def _validate_child_environment(

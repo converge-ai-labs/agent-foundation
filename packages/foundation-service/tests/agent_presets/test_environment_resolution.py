@@ -150,7 +150,7 @@ async def test_publish_freezes_exact_environment_and_invocation_can_override_inl
     assert frozen.effective_config.resolved_environment is not None
     assert frozen.effective_config.resolved_environment.source_environment_revision_id is None
     assert frozen.effective_config.resolved_environment.access == "read_only"
-    assert frozen.effective_config.runtime_lock_digest != published.revision.runtime_lock_digest
+    assert frozen.effective_config.runtime_lock_digest == published.revision.runtime_lock_digest
 
 
 @pytest.mark.anyio

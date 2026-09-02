@@ -332,6 +332,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     or AgentPluginSelectionResolver(
                         storage.sessions,
                         runtime_mode=settings.plugin_runtime_mode,
+                        worker_release=settings.build_version,
                     )
                 )
                 app.state.agent_environment_selection_resolver = AgentEnvironmentSelectionResolver(

@@ -18,6 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_workspace
 from a13n_service.plugins.domain import PluginLifecycleState, PluginSource
 from a13n_service.plugins.models import PluginRecord, PluginVersionRecord
+from a13n_service.plugins.runtime import (
+    PluginRuntimeLockStore,
+    RuntimeTarget,
+    WorkerReleaseManifest,
+    default_runtime_target,
+    installed_harness_version,
+)
 
 from .domain import (
     OnDemandPluginSelection,
@@ -55,6 +62,10 @@ class PreparedPluginVersion:
     root_is_purelib: bool
     source: PluginSource
 
+    @property
+    def plugin_version_id(self) -> str:
+        return self.selection.plugin_version_id
+
     def resolved(self) -> ResolvedPluginVersion:
         return ResolvedPluginVersion(
             instance_name=self.selection.instance_name,
@@ -91,19 +102,37 @@ class AgentPluginSelectionResolver:
         installed_top_level_packages: frozenset[str] | None = None,
         compatible_tags: frozenset[Tag] | None = None,
         python_version: Version | None = None,
+        worker_release: str = "unknown",
+        harness_version: str | None = None,
+        runtime_target: RuntimeTarget | None = None,
+        runtime_lock_clock=None,
     ) -> None:
         self._sessions = sessions
         self.runtime_mode = runtime_mode
-        self._installed_distributions = (
+        distribution_versions = (
             installed_distributions if installed_distributions is not None else _installed_distribution_versions()
         )
-        self._installed_top_level_packages = (
+        self._installed_distributions = {
+            str(canonicalize_name(name)): distribution_version
+            for name, distribution_version in distribution_versions.items()
+        }
+        installed_packages = (
             installed_top_level_packages
             if installed_top_level_packages is not None
             else frozenset(packages_distributions())
         )
+        self._installed_top_level_packages = frozenset(installed_packages).union(sys.stdlib_module_names)
         self._compatible_tags = compatible_tags if compatible_tags is not None else frozenset(sys_tags())
         self._python_version = python_version or Version(".".join(str(item) for item in sys.version_info[:3]))
+        self.runtime_locks = PluginRuntimeLockStore(
+            WorkerReleaseManifest(
+                worker_release=worker_release,
+                harness_version=harness_version or installed_harness_version(),
+                runtime_target=runtime_target or default_runtime_target(),
+                distributions=self._installed_distributions,
+            ),
+            clock=runtime_lock_clock,
+        )
 
     async def prepare(
         self,
@@ -285,10 +314,17 @@ class AgentPluginSelectionResolver:
             raise PluginSelectionError("plugin_runtime_incompatible", path=path)
         if item.source is PluginSource.uploaded and item.top_level_package in self._installed_top_level_packages:
             raise PluginSelectionError("plugin_platform_incompatible", path=path)
+        if (
+            item.source is PluginSource.uploaded
+            and canonicalize_name(item.distribution_name) in self._installed_distributions
+        ):
+            raise PluginSelectionError("plugin_platform_incompatible", path=path)
         for raw_requirement in item.requires_dist:
             requirement = Requirement(raw_requirement)
             if requirement.marker is not None and not requirement.marker.evaluate():
                 continue
+            if requirement.url is not None:
+                raise PluginSelectionError("plugin_platform_incompatible", path=path)
             installed = self._installed_distributions.get(canonicalize_name(requirement.name))
             if installed is None:
                 raise PluginSelectionError("plugin_worker_dependency_missing", path=path)
