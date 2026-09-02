@@ -1,4 +1,4 @@
-"""Exact PluginVersion resolution for Preset publication and Run acceptance."""
+"""Exact PluginVersion resolution for Preset Revision creation and Run acceptance."""
 
 from __future__ import annotations
 

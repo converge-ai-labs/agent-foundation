@@ -47,11 +47,11 @@ from .domain import (
 from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedEnvironmentSelection
 from .errors import (
     AgentPresetError,
-    active_revision_conflict,
+    default_revision_conflict,
     preset_archived,
+    preset_default_revision_missing,
     preset_disabled,
     preset_not_found,
-    preset_not_published,
     preset_revision_not_executable,
     preset_revision_not_found,
 )
@@ -63,7 +63,7 @@ from .validation import AgentConfigValidationError, AgentProtocolPolicy, validat
 
 
 class AgentPresetSelectorKind(StrEnum):
-    active = "active"
+    default = "default"
     exact = "exact"
 
 
@@ -93,7 +93,7 @@ class PreparedAgentInvocation:
     agent_preset_id: str
     agent_preset_revision_id: str
     selector_kind: AgentPresetSelectorKind
-    expected_active_revision_id: str | None
+    expected_default_revision_id: str | None
     revision_content_digest: str
     revision: AgentPresetRevision
     merged: MergedAgentRun
@@ -154,7 +154,7 @@ class AgentPresetInvocationResolver:
         actor: AuthenticatedActor,
         agent_preset_id: str,
         agent_preset_revision_id: str | None = None,
-        expected_active_revision_id: str | None = None,
+        expected_default_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
         _allow_disabled_root: bool = False,
     ) -> PreparedAgentInvocation:
@@ -176,16 +176,19 @@ class AgentPresetInvocationResolver:
                     for_update=False,
                 )
                 _require_invocable_preset(preset, allow_disabled=_allow_disabled_root)
-                if expected_active_revision_id is not None and preset.active_revision_id != expected_active_revision_id:
-                    raise active_revision_conflict(preset.active_revision_id)
+                if (
+                    expected_default_revision_id is not None
+                    and preset.default_revision_id != expected_default_revision_id
+                ):
+                    raise default_revision_conflict(preset.default_revision_id)
                 selector_kind = (
                     AgentPresetSelectorKind.exact
                     if agent_preset_revision_id is not None
-                    else AgentPresetSelectorKind.active
+                    else AgentPresetSelectorKind.default
                 )
-                revision_id = agent_preset_revision_id or preset.active_revision_id
+                revision_id = agent_preset_revision_id or preset.default_revision_id
                 if revision_id is None:
-                    raise preset_not_published()
+                    raise preset_default_revision_missing()
                 revision_record = await _load_revision(
                     session,
                     organization_id=authorized.organization_id,
@@ -316,7 +319,7 @@ class AgentPresetInvocationResolver:
             agent_preset_id=agent_preset_id,
             agent_preset_revision_id=revision.id,
             selector_kind=selector_kind,
-            expected_active_revision_id=expected_active_revision_id,
+            expected_default_revision_id=expected_default_revision_id,
             revision_content_digest=revision.content_digest,
             revision=revision,
             merged=merged,
@@ -407,15 +410,15 @@ class AgentPresetInvocationResolver:
             )
             _require_invocable_preset(preset, allow_disabled=_allow_disabled_root)
             if (
-                prepared.expected_active_revision_id is not None
-                and preset.active_revision_id != prepared.expected_active_revision_id
+                prepared.expected_default_revision_id is not None
+                and preset.default_revision_id != prepared.expected_default_revision_id
             ):
-                raise active_revision_conflict(preset.active_revision_id)
+                raise default_revision_conflict(preset.default_revision_id)
             if (
-                prepared.selector_kind is AgentPresetSelectorKind.active
-                and preset.active_revision_id != prepared.agent_preset_revision_id
+                prepared.selector_kind is AgentPresetSelectorKind.default
+                and preset.default_revision_id != prepared.agent_preset_revision_id
             ):
-                raise active_revision_conflict(preset.active_revision_id)
+                raise default_revision_conflict(preset.default_revision_id)
             revision_record = await _load_revision(
                 session,
                 organization_id=prepared.organization_id,
@@ -822,9 +825,9 @@ async def _select_child_revision_id(
     revision_number: int | None,
 ) -> str:
     if revision_number is None:
-        if child.active_revision_id is None:
-            raise preset_revision_not_executable("subagent_not_published")
-        return child.active_revision_id
+        if child.default_revision_id is None:
+            raise preset_revision_not_executable("subagent_default_revision_missing")
+        return child.default_revision_id
     revision_id = await session.scalar(
         select(AgentPresetRevisionRecord.id).where(
             AgentPresetRevisionRecord.agent_preset_id == child.id,

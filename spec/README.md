@@ -30,7 +30,7 @@ flowchart TB
     subgraph Service[foundation-service]
         Gateway[Protocol Gateway]
         Control[Control plane]
-        Definitions[AgentPresetVersions, Skill revisions, Assets, and ModelConfigs]
+        Definitions[AgentPresetRevisions, Skill revisions, Assets, and ModelConfigs]
         Lifecycle[Durable Runs and RunAttempts]
         Worker[Worker]
         Reconstruct[Trusted reconstruction adapters]
@@ -206,7 +206,7 @@ Foundation Service adds durability without changing Harness execution semantics:
 ```mermaid
 flowchart LR
     Ingress[API or webhook] --> Control[Control plane]
-    Control --> Durable[AgentPresetVersions and Runs]
+    Control --> Durable[AgentPresetRevisions and Runs]
     Durable --> Worker[Profile-selected Workers periodically scan and claim]
     Worker --> Reconstruct[Trusted adapters]
     Reconstruct --> Harness[agent-harness]
@@ -214,9 +214,9 @@ flowchart LR
     Candidate --> Durable
 ```
 
-Foundation AgentPresetVersions are Host-owned serializable documents, not Harness
+Foundation AgentPresetRevisions are Host-owned serializable documents, not Harness
 `AgentDefinition` wire values. Run acceptance pins the Preset-owned on-demand
-lock or the active runner-profile lock. The selected Worker execution loop verifies that exact lock and the Version's exact
+lock or the active runner-profile lock. The selected Worker execution loop verifies that exact lock and the Revision's exact
 managed-resource references, reconstructs native Pydantic/Harness objects,
 resolves current authorized Connections, Secrets, permissions, and
 operator-approved Environment Providers, and constructs fresh Environment
@@ -226,7 +226,7 @@ owns changed-only state publication, Thread association, explicit cleanup, and
 orphan prune.
 
 Workspace Skills are stable authoring resources with immutable ZIP- or
-GitHub-imported revisions in shared object storage. Each AgentPresetVersion locks exact
+GitHub-imported revisions in shared object storage. Each AgentPresetRevision locks exact
 Skill revisions, names, and content digests. The worker supplies an explicit
 `SkillManager`, exact Host materializer, and fresh selection. After Harness
 enters the fresh Environment and before model exposure, `SkillsCapability`

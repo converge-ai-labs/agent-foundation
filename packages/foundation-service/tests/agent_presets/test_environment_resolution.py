@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 from a13n_service.agent_presets.domain import (
-    AgentPresetCommandRequest,
     AgentRunOverride,
     CreateAgentPresetRequest,
 )
@@ -21,7 +20,7 @@ from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import SECRET_ID, WORKSPACE_ID, actor, preset_config
+from .conftest import SECRET_ID, WORKSPACE_ID, actor, create_default_revision, preset_config
 
 PROVIDER_KEY = "a13n.direct-local"
 
@@ -65,7 +64,7 @@ async def _environment(
 
 
 @pytest.mark.anyio
-async def test_publish_freezes_exact_environment_and_invocation_can_override_inline(
+async def test_create_revision_freezes_exact_environment_and_invocation_can_override_inline(
     agent_environment_service: EnvironmentManagementService,
     agent_preset_service: AgentPresetService,
     agent_preset_invocation_resolver: AgentPresetInvocationResolver,
@@ -82,14 +81,14 @@ async def test_publish_freezes_exact_environment_and_invocation_can_override_inl
             config=preset_config(environment={"environment_revision_id": environment_revision_id}),
         ),
     )
-    published = await agent_preset_service.publish(
-        actor=actor(),
+    revision_result, _ = await create_default_revision(
+        agent_preset_service,
         preset_id=preset.id,
-        idempotency_key="publish-with-environment",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="with-environment",
     )
 
-    frozen_environment = published.revision.resolved_environment
+    frozen_environment = revision_result.revision.resolved_environment
     assert frozen_environment is not None
     assert frozen_environment.source_environment_revision_id == environment_revision_id
     assert frozen_environment.provider.provider_key == PROVIDER_KEY
@@ -150,7 +149,7 @@ async def test_publish_freezes_exact_environment_and_invocation_can_override_inl
     assert frozen.effective_config.resolved_environment is not None
     assert frozen.effective_config.resolved_environment.source_environment_revision_id is None
     assert frozen.effective_config.resolved_environment.access == "read_only"
-    assert frozen.effective_config.runtime_lock_digest == published.revision.runtime_lock_digest
+    assert frozen.effective_config.runtime_lock_digest == revision_result.revision.runtime_lock_digest
 
 
 @pytest.mark.anyio
@@ -171,11 +170,11 @@ async def test_invocation_rejects_provider_selection_race(
             config=preset_config(environment={"environment_revision_id": environment_revision_id}),
         ),
     )
-    await agent_preset_service.publish(
-        actor=actor(),
+    await create_default_revision(
+        agent_preset_service,
         preset_id=preset.id,
-        idempotency_key="publish-environment-race",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="environment-race",
     )
     prepared = await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=preset.id)
     selected = await agent_environment_service.get_provider_selection(
@@ -213,11 +212,11 @@ async def test_invocation_rejects_environment_archived_during_acceptance(
             config=preset_config(environment={"environment_revision_id": environment_revision_id}),
         ),
     )
-    await agent_preset_service.publish(
-        actor=actor(),
+    await create_default_revision(
+        agent_preset_service,
         preset_id=preset.id,
-        idempotency_key="publish-environment-archive-race",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="environment-archive-race",
     )
     prepared = await agent_preset_invocation_resolver.prepare(actor=actor(), agent_preset_id=preset.id)
     environment = await agent_environment_service.get(actor=actor(), environment_id=environment_id)

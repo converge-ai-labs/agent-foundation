@@ -237,7 +237,7 @@ class AgentSkillSelectionRequest(BaseModel):
 
 
 class SkillRevisionLock(BaseModel):
-    """Exact managed Skill identity copied into an immutable AgentPresetVersion."""
+    """Exact managed Skill identity copied into an immutable AgentPresetRevision."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

@@ -1,4 +1,4 @@
-"""Two-phase AgentPreset publication resolution."""
+"""Two-phase AgentPreset Revision-creation resolution."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from .domain import (
     SubagentSelection,
 )
 from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedEnvironmentSelection
-from .errors import AgentPresetError, preset_publish_failed
+from .errors import AgentPresetError, preset_revision_create_failed
 from .models import AgentPresetRecord, AgentPresetRevisionRecord
 from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
 from .validation import AgentConfigValidationError, AgentProtocolPolicy, validate_agent_config
@@ -117,7 +117,7 @@ class AgentPresetResolver:
                 actor=actor,
                 workspace_id=workspace_id,
                 agent_preset_id=agent_preset_id,
-                action=WorkspaceAction.agent_preset_publish,
+                action=WorkspaceAction.agent_preset_revision_create,
             )
             try:
                 plugins = await self._plugin_resolver.prepare(
@@ -127,7 +127,7 @@ class AgentPresetResolver:
                     selections=config.plugins,
                 )
             except PluginSelectionError as error:
-                raise preset_publish_failed(error.reason, path=error.path) from error
+                raise preset_revision_create_failed(error.reason, path=error.path) from error
             skills = await self._prepare_skills(
                 session,
                 actor=actor,
@@ -147,29 +147,29 @@ class AgentPresetResolver:
         connectors = None
         if config.connectors:
             if self._connector_resolver is None:
-                raise preset_publish_failed("connector_resolution_unavailable", path="connectors")
+                raise preset_revision_create_failed("connector_resolution_unavailable", path="connectors")
             try:
-                connectors = await self._connector_resolver.prepare_publication(
+                connectors = await self._connector_resolver.prepare_revision_creation(
                     actor=actor,
                     organization_id=organization_id,
                     workspace_id=workspace_id,
                     selections=config.connectors,
                 )
             except ConnectorError as error:
-                raise preset_publish_failed(_connector_reason(error), path="connectors") from error
+                raise preset_revision_create_failed(_connector_reason(error), path="connectors") from error
         environment = None
         if config.environment is not None:
             if self._environment_resolver is None:
-                raise preset_publish_failed("environment_resolution_unavailable", path="environment")
+                raise preset_revision_create_failed("environment_resolution_unavailable", path="environment")
             try:
-                environment = await self._environment_resolver.prepare_publication(
+                environment = await self._environment_resolver.prepare_revision_creation(
                     actor=actor,
                     organization_id=organization_id,
                     workspace_id=workspace_id,
                     selection=config.environment,
                 )
             except EnvironmentManagementError as error:
-                raise preset_publish_failed(error.code, path="environment") from error
+                raise preset_revision_create_failed(error.code, path="environment") from error
         return PreparedRevisionResolution(
             actor=actor,
             organization_id=organization_id,
@@ -195,7 +195,7 @@ class AgentPresetResolver:
             actor=prepared.actor,
             workspace_id=prepared.workspace_id,
             agent_preset_id=prepared.agent_preset_id,
-            action=WorkspaceAction.agent_preset_publish,
+            action=WorkspaceAction.agent_preset_revision_create,
         )
         model = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
         try:
@@ -206,7 +206,7 @@ class AgentPresetResolver:
                 prepared=prepared.plugins,
             )
         except PluginSelectionError as error:
-            raise preset_publish_failed(error.reason, path=error.path) from error
+            raise preset_revision_create_failed(error.reason, path=error.path) from error
         try:
             connectors = (
                 await self._connector_resolver.freeze_in_transaction(session, prepared=prepared.connectors)
@@ -214,7 +214,7 @@ class AgentPresetResolver:
                 else ()
             )
         except ConnectorError as error:
-            raise preset_publish_failed(_connector_reason(error), path="connectors") from error
+            raise preset_revision_create_failed(_connector_reason(error), path="connectors") from error
         skills = await self._freeze_skills(session, prepared)
         try:
             environment = (
@@ -223,7 +223,7 @@ class AgentPresetResolver:
                 else None
             )
         except EnvironmentManagementError as error:
-            raise preset_publish_failed(error.code, path="environment") from error
+            raise preset_revision_create_failed(error.code, path="environment") from error
         subagents = await self._freeze_subagents(session, prepared)
         try:
             runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
@@ -233,7 +233,7 @@ class AgentPresetResolver:
                 use_active_catalog=True,
             )
         except PluginRuntimeLockError as error:
-            raise preset_publish_failed(error.reason, path=error.path) from error
+            raise preset_revision_create_failed(error.reason, path=error.path) from error
         return ResolvedRevisionContent(
             resolved_model=ResolvedAgentModelConfig(
                 execution=model,
@@ -250,18 +250,18 @@ class AgentPresetResolver:
 
     def _validate_local_config(self, config: AgentPresetConfig) -> None:
         if config.input_adapter.adapter_key != "native" or config.input_adapter.config:
-            raise preset_publish_failed("input_adapter_unsupported", path="input_adapter")
+            raise preset_revision_create_failed("input_adapter_unsupported", path="input_adapter")
         if config.connectors and self._connector_resolver is None:
-            raise preset_publish_failed("connector_resolution_unavailable", path="connectors")
+            raise preset_revision_create_failed("connector_resolution_unavailable", path="connectors")
         if config.environment is not None and self._environment_resolver is None:
-            raise preset_publish_failed("environment_resolution_unavailable", path="environment")
+            raise preset_revision_create_failed("environment_resolution_unavailable", path="environment")
         for index, skill in enumerate(config.skills):
             if skill.skill_revision_id in {item.skill_revision_id for item in config.skills[:index]}:
-                raise preset_publish_failed("skill_revision_duplicate", path=f"skills.{index}")
+                raise preset_revision_create_failed("skill_revision_duplicate", path=f"skills.{index}")
         try:
             validate_agent_config(config, protocol_policy=self._protocol_policy)
         except AgentConfigValidationError as error:
-            raise preset_publish_failed(error.reason, path=error.path) from error
+            raise preset_revision_create_failed(error.reason, path=error.path) from error
 
     async def _prepare_skills(
         self,
@@ -298,14 +298,14 @@ class AgentPresetResolver:
         )
         by_id = {revision.id: (revision, skill) for revision, skill in rows}
         if set(by_id) != set(requested_ids):
-            raise preset_publish_failed("skill_revision_not_found", path="skills")
+            raise preset_revision_create_failed("skill_revision_not_found", path="skills")
         result: list[PreparedSkill] = []
         names: set[str] = set()
         for revision_id in requested_ids:
             revision, _skill = by_id[revision_id]
             manifest = SkillPackageManifest.model_validate(revision.manifest)
             if manifest.skill_name in names:
-                raise preset_publish_failed("skill_name_duplicate", path="skills")
+                raise preset_revision_create_failed("skill_name_duplicate", path="skills")
             names.add(manifest.skill_name)
             result.append(
                 PreparedSkill(
@@ -344,21 +344,24 @@ class AgentPresetResolver:
                 )
             )
             if child is None or child.lifecycle_state != "enabled":
-                raise preset_publish_failed("subagent_unavailable", path=f"subagents.{name}")
+                raise preset_revision_create_failed("subagent_unavailable", path=f"subagents.{name}")
             revision_query = select(AgentPresetRevisionRecord).where(
                 AgentPresetRevisionRecord.agent_preset_id == child.id,
                 AgentPresetRevisionRecord.organization_id == organization_id,
                 AgentPresetRevisionRecord.workspace_id == workspace_id,
             )
             if selection.revision is None:
-                if child.active_revision_id is None:
-                    raise preset_publish_failed("subagent_not_published", path=f"subagents.{name}")
-                revision_query = revision_query.where(AgentPresetRevisionRecord.id == child.active_revision_id)
+                if child.default_revision_id is None:
+                    raise preset_revision_create_failed(
+                        "subagent_default_revision_missing",
+                        path=f"subagents.{name}",
+                    )
+                revision_query = revision_query.where(AgentPresetRevisionRecord.id == child.default_revision_id)
             else:
                 revision_query = revision_query.where(AgentPresetRevisionRecord.revision_number == selection.revision)
             revision = await session.scalar(revision_query)
             if revision is None:
-                raise preset_publish_failed("subagent_revision_not_found", path=f"subagents.{name}.revision")
+                raise preset_revision_create_failed("subagent_revision_not_found", path=f"subagents.{name}.revision")
             await self._validate_subagent_graph(
                 session,
                 root_preset_id=agent_preset_id,
@@ -390,14 +393,14 @@ class AgentPresetResolver:
         while pending:
             revision, depth = pending.pop()
             if depth > MAX_SUBAGENT_DEPTH:
-                raise preset_publish_failed("subagent_graph_too_deep", path=path)
+                raise preset_revision_create_failed("subagent_graph_too_deep", path=path)
             if revision.agent_preset_id == root_preset_id:
-                raise preset_publish_failed("subagent_cycle", path=path)
+                raise preset_revision_create_failed("subagent_cycle", path=path)
             if revision.id in visited:
                 continue
             visited.add(revision.id)
             if len(visited) > MAX_SUBAGENT_NODES:
-                raise preset_publish_failed("subagent_graph_too_large", path=path)
+                raise preset_revision_create_failed("subagent_graph_too_large", path=path)
             child_ids = tuple(str(item["child_agent_preset_revision_id"]) for item in revision.resolved_subagents)
             if not child_ids:
                 continue
@@ -409,7 +412,7 @@ class AgentPresetResolver:
                 ).all()
             )
             if len(children) != len(set(child_ids)):
-                raise preset_publish_failed("subagent_revision_not_found", path=path)
+                raise preset_revision_create_failed("subagent_revision_not_found", path=path)
             pending.extend((child, depth + 1) for child in children)
 
     async def _freeze_skills(
@@ -444,7 +447,7 @@ class AgentPresetResolver:
         for expected in prepared.skills:
             row = current.get(expected.revision_id)
             if row is None or row.skill_id != expected.skill_id or row.content_digest != expected.content_digest:
-                raise preset_publish_failed("skill_revision_changed", path="skills")
+                raise preset_revision_create_failed("skill_revision_changed", path="skills")
             result.append(
                 ResolvedSkillSelection(
                     skill_revision_id=expected.revision_id,
@@ -483,7 +486,7 @@ class AgentPresetResolver:
                 or revision.content_digest != expected.child_revision_digest
                 or revision.runtime_lock_digest != expected.child_runtime_lock_digest
             ):
-                raise preset_publish_failed("subagent_revision_changed", path=f"subagents.{expected.name}")
+                raise preset_revision_create_failed("subagent_revision_changed", path=f"subagents.{expected.name}")
             result.append(
                 ResolvedSubagentEdge(
                     name=expected.name,
@@ -507,7 +510,7 @@ def _validate_child_environment(
 ) -> None:
     child_environment = child_revision.resolved_environment
     if policy.mode == "none" and child_environment is not None:
-        raise preset_publish_failed("subagent_environment_required", path=path)
+        raise preset_revision_create_failed("subagent_environment_required", path=path)
     if policy.mode == "shared_root":
         root_environment_id = (
             root_config.environment.environment_revision_id if root_config.environment is not None else None
@@ -516,17 +519,17 @@ def _validate_child_environment(
             str(child_environment.get("source_environment_revision_id")) if child_environment is not None else None
         )
         if root_environment_id is None or child_source_id != root_environment_id:
-            raise preset_publish_failed("subagent_environment_incompatible", path=path)
+            raise preset_revision_create_failed("subagent_environment_incompatible", path=path)
     if policy.mode == "dedicated" and child_environment is None:
-        raise preset_publish_failed("subagent_environment_required", path=path)
+        raise preset_revision_create_failed("subagent_environment_required", path=path)
 
 
 def resolution_error(error: Exception) -> AgentPresetError:
-    """Map an owning-domain resolution failure to one bounded publish error."""
+    """Map an owning-domain resolution failure to one bounded Revision-creation error."""
 
     if isinstance(error, AgentPresetError):
         return error
-    return preset_publish_failed("managed_resource_unavailable")
+    return preset_revision_create_failed("managed_resource_unavailable")
 
 
 def _connector_reason(error: ConnectorError) -> str:

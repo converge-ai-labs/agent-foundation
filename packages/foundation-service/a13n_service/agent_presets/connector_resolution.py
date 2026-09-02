@@ -1,4 +1,4 @@
-"""Two-phase Connector selection for AgentPreset publication and invocation."""
+"""Two-phase Connector selection for AgentPreset Revision creation and invocation."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from .domain import (
 
 
 class ConnectorResolutionPurpose(StrEnum):
-    publish = "publish"
+    create_revision = "create_revision"
     invoke = "invoke"
 
 
@@ -83,7 +83,7 @@ class AgentConnectorSelectionResolver:
         self._operation_timeout = operation_timeout
         self._clock = clock or (lambda: datetime.now(UTC))
 
-    async def prepare_publication(
+    async def prepare_revision_creation(
         self,
         *,
         actor: AuthenticatedActor,
@@ -95,7 +95,7 @@ class AgentConnectorSelectionResolver:
             actor=actor,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            purpose=ConnectorResolutionPurpose.publish,
+            purpose=ConnectorResolutionPurpose.create_revision,
             selections=selections,
             retained={},
             reuse_names=frozenset(),
@@ -521,7 +521,7 @@ async def _authorize(
         workspace_id=workspace_id,
         action=(
             WorkspaceAction.connector_read
-            if purpose is ConnectorResolutionPurpose.publish
+            if purpose is ConnectorResolutionPurpose.create_revision
             else WorkspaceAction.connector_invoke
         ),
     )

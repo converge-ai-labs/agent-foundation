@@ -27,8 +27,12 @@ def preset_revision_not_found() -> AgentPresetError:
     return AgentPresetError("preset_revision_not_found", "The AgentPresetRevision was not found.", status_code=404)
 
 
-def preset_not_published() -> AgentPresetError:
-    return AgentPresetError("preset_not_published", "The AgentPreset has no active Revision.", status_code=409)
+def preset_default_revision_missing() -> AgentPresetError:
+    return AgentPresetError(
+        "preset_default_revision_missing",
+        "The AgentPreset has no default Revision.",
+        status_code=409,
+    )
 
 
 def preset_disabled() -> AgentPresetError:
@@ -49,12 +53,12 @@ def preset_revision_not_executable(reason: str | None = None) -> AgentPresetErro
     )
 
 
-def active_revision_conflict(current_revision_id: str | None) -> AgentPresetError:
+def default_revision_conflict(current_revision_id: str | None) -> AgentPresetError:
     return AgentPresetError(
-        "active_revision_conflict",
-        "The active AgentPresetRevision has changed.",
+        "default_revision_conflict",
+        "The default AgentPresetRevision has changed.",
         status_code=409,
-        details={"current_revision_id": current_revision_id},
+        details={"current_default_revision_id": current_revision_id},
     )
 
 
@@ -67,13 +71,13 @@ def resource_version_conflict(current_version: int) -> AgentPresetError:
     )
 
 
-def preset_publish_failed(reason: str, *, path: str | None = None) -> AgentPresetError:
+def preset_revision_create_failed(reason: str, *, path: str | None = None) -> AgentPresetError:
     details: dict[str, object] = {"reason": reason}
     if path is not None:
         details["path"] = path
     return AgentPresetError(
-        "preset_publish_failed",
-        "The AgentPreset configuration could not be published.",
+        "preset_revision_create_failed",
+        "The AgentPreset configuration could not be resolved into a Revision.",
         status_code=409,
         details=details,
     )
