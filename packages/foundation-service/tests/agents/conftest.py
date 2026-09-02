@@ -57,6 +57,8 @@ def agent_config(
     instructions: str = "Be helpful.",
     plugins: list[object] | None = None,
     skills: list[object] | None = None,
+    connector_tools: dict[str, object] | None = None,
+    mcp_tools: dict[str, object] | None = None,
     subagents: dict[str, object] | None = None,
     environment: dict[str, object] | None = None,
 ) -> AgentConfig:
@@ -71,6 +73,8 @@ def agent_config(
             "input_adapter": {"adapter_key": "native", "config": {}},
             "plugins": plugins or [],
             "skills": skills or [],
+            "connector_tools": connector_tools or {},
+            "mcp_tools": mcp_tools or {},
             "environment": environment,
             "subagents": subagents or {},
             "client_tools": [],
