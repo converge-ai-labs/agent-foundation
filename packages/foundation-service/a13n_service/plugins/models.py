@@ -114,11 +114,119 @@ class PluginRuntimeStateRecord(Base):
         CheckConstraint("id = 'runtime'", name="singleton"),
         CheckConstraint("mode IN ('on_demand', 'runner')", name="mode_valid"),
         CheckConstraint("version >= 1", name="version_positive"),
+        CheckConstraint("command_claim_generation >= 0", name="command_claim_generation_non_negative"),
+        CheckConstraint(
+            "(command_operation_id IS NULL AND command_lease_expires_at IS NULL) OR "
+            "(command_operation_id IS NOT NULL AND command_lease_expires_at IS NOT NULL)",
+            name="command_lease_shape_valid",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True)
     mode: Mapped[str] = mapped_column(String(16), nullable=False)
     active_lock_digest: Mapped[str | None] = mapped_column(String(64))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    command_operation_id: Mapped[str | None] = mapped_column(String(72))
+    command_claim_generation: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    command_lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PluginRuntimeLockRecord(Base):
+    __tablename__ = "plugin_runtime_locks"
+    __table_args__ = (
+        CheckConstraint("length(digest) = 64", name="digest_sha256"),
+        CheckConstraint("schema_version = '1'", name="schema_version_v1"),
+        CheckConstraint("mode IN ('on_demand', 'runner')", name="mode_valid"),
+        Index("ix_plugin_runtime_locks_created", "created_at", "digest"),
+    )
+
+    digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    manifest: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PluginRuntimeTaskRecord(Base):
+    __tablename__ = "plugin_runtime_tasks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("workspace_id", "organization_id"),
+            ("workspaces.id", "workspaces.organization_id"),
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(("plugin_id",), ("plugins.id",), ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ("plugin_version_id", "plugin_id"),
+            ("plugin_versions.id", "plugin_versions.plugin_id"),
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ("candidate_lock_digest",),
+            ("plugin_runtime_locks.digest",),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("actor_type IN ('user', 'service_account')", name="actor_type_valid"),
+        CheckConstraint("command IN ('activate', 'deactivate')", name="command_valid"),
+        CheckConstraint("status IN ('running', 'succeeded', 'failed')", name="status_valid"),
+        CheckConstraint(
+            "phase IN ('accepted', 'candidate_ready', 'staged', 'committed', 'succeeded', 'failed')",
+            name="phase_valid",
+        ),
+        CheckConstraint(
+            "(command = 'activate' AND plugin_version_id IS NOT NULL) OR "
+            "(command = 'deactivate' AND plugin_version_id IS NULL)",
+            name="target_shape_valid",
+        ),
+        CheckConstraint(
+            "(status = 'running' AND phase IN ('accepted', 'candidate_ready', 'staged', 'committed') "
+            "AND completed_at IS NULL) OR "
+            "(status = 'succeeded' AND phase = 'succeeded' AND completed_at IS NOT NULL) OR "
+            "(status = 'failed' AND phase = 'failed' AND completed_at IS NOT NULL)",
+            name="terminal_shape_valid",
+        ),
+        Index("ix_plugin_runtime_tasks_reconcile", "status", "created_at", "id"),
+        Index("ix_plugin_runtime_tasks_actor", "actor_type", "actor_id", "created_at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    command: Mapped[str] = mapped_column(String(16), nullable=False)
+    plugin_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    plugin_version_id: Mapped[str | None] = mapped_column(String(72))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    phase: Mapped[str] = mapped_column(String(32), nullable=False)
+    expected_runtime_version: Mapped[int | None] = mapped_column(BigInteger)
+    candidate_lock_digest: Mapped[str | None] = mapped_column(String(64))
+    staging_token: Mapped[str | None] = mapped_column(String(512))
+    committed_runtime_version: Mapped[int | None] = mapped_column(BigInteger)
+    result_refs: Mapped[list[dict[str, object]]] = mapped_column(JSON, nullable=False)
+    error: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PluginRuntimeResolutionRecord(Base):
+    __tablename__ = "plugin_runtime_resolutions"
+    __table_args__ = (
+        ForeignKeyConstraint(("operation_id",), ("plugin_runtime_tasks.id",), ondelete="RESTRICT"),
+        ForeignKeyConstraint(("runtime_lock_digest",), ("plugin_runtime_locks.digest",), ondelete="RESTRICT"),
+        CheckConstraint("length(request_digest) = 64", name="request_digest_sha256"),
+        Index("ix_plugin_runtime_resolutions_lock", "runtime_lock_digest", "operation_id"),
+    )
+
+    operation_id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

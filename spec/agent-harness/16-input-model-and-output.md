@@ -337,13 +337,13 @@ For streaming, only stream establishment can replay. Once a stream has been yiel
 
 Default rules are narrow tested provider repairs:
 
-| Rule                            | Repair                                                                              |
-| ------------------------------- | ----------------------------------------------------------------------------------- |
-| Oversized request payload       | Replace inline images with an explicit removal reminder                             |
-| Invalid provider item ID        | Remove provider-bound response IDs, metadata, reasoning state, and compaction parts |
-| Incomplete Anthropic thinking   | Remove thinking parts                                                               |
-| Modified Anthropic thinking     | Remove thinking parts                                                               |
-| Stale or unverifiable reasoning | Remove thinking parts                                                               |
+| Rule                                            | Repair                                                                              |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Oversized request payload                       | Replace inline images with an explicit removal reminder                             |
+| Invalid provider item ID                        | Remove provider-bound response IDs, metadata, reasoning state, and compaction parts |
+| Incomplete Anthropic thinking                   | Remove thinking parts                                                               |
+| Modified or invalidly signed Anthropic thinking | Remove thinking parts                                                               |
+| Stale or unverifiable reasoning                 | Remove thinking parts                                                               |
 
 The wrapper does not retry generic transport, rate-limit, tool, output-validation, or cancellation failures. Provider/client `RetryConfig` owns transport retry.
 
@@ -393,6 +393,10 @@ Neither source silently defaults to text. Callers request text explicitly with `
 
 A business output that directly or transitively includes `DeferredToolRequests` or a subclass through a parameterized collection, structured `BaseModel`/`RootModel`, dataclass or `TypedDict` field, union, `Annotated` value, PEP 695 type alias, output marker, or callable return type is rejected at definition construction; that native value is reserved as the Harness suspension control outcome. Completed candidate validation recursively enforces the same reservation across supported structured Python instances and built-in containers. At build time the Harness forms `[effective_business_output, DeferredToolRequests]` and supplies that complete contract once to `Agent.from_spec()`. Every `ModelAttempt` uses the built Agent contract without a run override, preserving suspension support, Agent-level output validators, and one stable output Toolset across recovery.
 
+When the effective build-time business output can create one or more Pydantic output tools, the Harness adds one innermost structured-output compatibility Capability. Plain-text, prompted-output, and native-output definitions do not receive it. On a request with output tools, the Capability wraps only the effective provider-facing Model request. The wrapper sends `tool_choice="auto"` and an otherwise detached request-parameter copy with text output permitted, while the Agent retains the original output contract and therefore continues to reject text, validate output-tool arguments, and spend the configured output-retry budget locally. Function tools, including deferred approval tools, remain available beside output tools.
+
+This compatibility behavior avoids forced-tool modes rejected by provider profiles without weakening the business-output boundary. It does not remove thinking settings, claim that every provider supports tools, or silently convert provider text into a successful structured result. A provider that cannot select an output tool still reaches the existing bounded output-validation failure path.
+
 The Harness builds one matching process-local output adapter from the effective build-time contract, including return annotations of synchronous, `Awaitable`, and `Coroutine` output functions, and uses it to validate plugin-produced completed output. If Pydantic cannot generate a schema for an otherwise valid arbitrary process-local code-first return type, the adapter permits arbitrary types rather than rejecting the upstream output contract. Declarative output uses the schema-derived `StructuredDict` adapter and therefore accepts only string-keyed JSON-object values under native semantics.
 
 For a root invocation, a Pydantic result whose output is `DeferredToolRequests` becomes a suspended Harness result rather than a completed business output. `.calls` and `.approvals` retain their native distinct meanings. The later Host or caller supplies the exact pending requests and matching Pydantic results through `DeferredToolResume` in a new logical run with prior state and fresh bindings. A child invocation resolves dynamic deferral as denied tool results inside the same loop; an unexpected terminal deferred output instead becomes a failed result with `code="subagent_deferred_unsupported"`.
@@ -401,22 +405,23 @@ Trusted plugins may replace the complete result candidate, including output, usa
 
 ## Failure Semantics
 
-| Failure                                         | Outcome                                                       |
-| ----------------------------------------------- | ------------------------------------------------------------- |
-| Invalid immediate or factory input              | Typed input/run error before model work                       |
-| Invalid or uncorrelated deferred continuation   | Typed run/deferred error before new model or tool work        |
-| Binding raises or returns a non-Model           | `ModelResolutionError`                                        |
-| No binding for a string model                   | Resolve through Harness `infer_model()`                       |
-| Exact self-healing repair succeeds              | Replay the same request once                                  |
-| Exact repair does not match or changes nothing  | Propagate the original Model error                            |
-| Recoverable model interruption with budget      | Start another `ModelAttempt` after cancellation-aware backoff |
-| Recovery budget exhausted                       | Failed result with `model_recovery_exhausted`                 |
-| Missing or conflicting build-time output source | `DefinitionError` before Agent construction                   |
-| Invalid declarative object JSON Schema          | `DefinitionError` retaining the native validation cause       |
-| Output validation retries exhausted             | No Harness `ModelAttempt` recovery                            |
-| Root native deferred/HITL output                | Suspended result with native `DeferredToolRequests`           |
-| Unexpected child terminal deferred output       | Failed result with `subagent_deferred_unsupported`            |
-| Invalid plugin-completed output                 | `PluginError(code="plugin_result_invalid")`                   |
+| Failure                                         | Outcome                                                                           |
+| ----------------------------------------------- | --------------------------------------------------------------------------------- |
+| Invalid immediate or factory input              | Typed input/run error before model work                                           |
+| Invalid or uncorrelated deferred continuation   | Typed run/deferred error before new model or tool work                            |
+| Binding raises or returns a non-Model           | `ModelResolutionError`                                                            |
+| No binding for a string model                   | Resolve through Harness `infer_model()`                                           |
+| Exact self-healing repair succeeds              | Replay the same request once                                                      |
+| Exact repair does not match or changes nothing  | Propagate the original Model error                                                |
+| Recoverable model interruption with budget      | Start another `ModelAttempt` after cancellation-aware backoff                     |
+| Recovery budget exhausted                       | Failed result with `model_recovery_exhausted`                                     |
+| Missing or conflicting build-time output source | `DefinitionError` before Agent construction                                       |
+| Invalid declarative object JSON Schema          | `DefinitionError` retaining the native validation cause                           |
+| Tool-based structured output request            | Provider receives auto tool choice; local output validation remains authoritative |
+| Output validation retries exhausted             | No Harness `ModelAttempt` recovery                                                |
+| Root native deferred/HITL output                | Suspended result with native `DeferredToolRequests`                               |
+| Unexpected child terminal deferred output       | Failed result with `subagent_deferred_unsupported`                                |
+| Invalid plugin-completed output                 | `PluginError(code="plugin_result_invalid")`                                       |
 
 ## Boundaries
 

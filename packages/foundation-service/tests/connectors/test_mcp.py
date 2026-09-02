@@ -188,7 +188,7 @@ def test_connector_capability_is_signed_bounded_and_expires() -> None:
         connector_id=CONNECTOR_ID,
         connector_revision_id=REVISION_ID,
         connection_id=None,
-        agent_preset_version_id="agpv_0000000000000001",
+        agent_preset_revision_id="agpr_0000000000000001",
         run_id="run_0000000000000001",
         run_attempt_id="attempt_0000000000000001",
         attempt_fence=3,

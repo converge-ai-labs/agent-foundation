@@ -81,7 +81,7 @@ class AgentPresetRecord(Base):
     resource_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
-    active_revision_id: Mapped[str | None] = mapped_column(String(72))
+    default_revision_id: Mapped[str | None] = mapped_column(String(72))
     config_base_revision_id: Mapped[str | None] = mapped_column(String(72))
     config_base_digest: Mapped[str | None] = mapped_column(String(64))
     duplicated_from_preset_id: Mapped[str | None] = mapped_column(String(72))
@@ -104,14 +104,14 @@ class AgentPresetRecord(Base):
             lifecycle_state=AgentPresetLifecycleState(self.lifecycle_state),
             resource_version=self.resource_version,
             config=_CONFIG_ADAPTER.validate_python(self.config),
-            active_revision_id=self.active_revision_id,
+            default_revision_id=self.default_revision_id,
             config_base_revision_id=self.config_base_revision_id,
             duplicated_from_preset_id=self.duplicated_from_preset_id,
             duplicated_from_revision_id=self.duplicated_from_revision_id,
             created_by=_principal(self.created_by_type, self.created_by_id),
             created_at=_as_utc(self.created_at),
             updated_at=_as_utc(self.updated_at),
-            has_unpublished_changes=self.config_digest != self.config_base_digest,
+            config_changed_since_revision=self.config_digest != self.config_base_digest,
         )
 
 

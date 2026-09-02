@@ -1,318 +1,302 @@
-"""Authority-neutral immutable Agent and Environment snapshot contracts."""
+"""Strict immutable Agent and Environment composition snapshots."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Annotated, Any, Literal, Self, cast
+import hashlib
+import json
+from typing import Literal, Self, get_args, get_origin
 
-from pydantic import Field, JsonValue, ValidationInfo, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from a13n_ui.configuration.models import (
-    AgentEnvironmentRequirements,
-    AgentOutputSelection,
-    AsyncSubagentConfiguration,
-    ChildEnvironmentPolicy,
-    DelegationContextSelection,
-    DependencyLock,
-    EnvironmentDefinitionDocument,
-    FirstPartyCapabilitySelection,
-    ModelDefinition,
-    ModelRecoverySelection,
-    PluginInstanceDefinition,
-    PromptDefinition,
-    ResolvedSkillRevisionContent,
-    ResourceRevisionRef,
-    StrictModel,
-    SubagentIdentitySelection,
-    UsageLimitsSelection,
-    _without_legacy_defaults,
-    canonical_digest,
-    legacy_environment_access,
-)
+from a13n_ui.configuration.models import EnvironmentVariableSource, McpTransport
 
-_DIGEST = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-_ID = Annotated[str, Field(min_length=3, max_length=128, pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")]
+_DIGEST_PATTERN = r"^[0-9a-f]{64}$"
 
 
-class ResolvedModel(StrictModel):
-    revision: ResourceRevisionRef
-    definition: ModelDefinition
-    dependency: DependencyLock
+class SnapshotModel(BaseModel):
+    """Immutable strict base for persisted composition values."""
 
-
-class ResolvedPrompt(StrictModel):
-    revision: ResourceRevisionRef
-    definition: PromptDefinition
-
-
-class ResolvedPlugin(StrictModel):
-    revision: ResourceRevisionRef
-    definition: PluginInstanceDefinition
-    dependency: DependencyLock
-
-
-class ResolvedSkill(StrictModel):
-    revision: ResourceRevisionRef
-    definition: ResolvedSkillRevisionContent
-    package_object_digest: _DIGEST
-
-
-class ResolvedSubagentEdge(StrictModel):
-    name: _ID
-    description: str = Field(min_length=1, max_length=16 * 1024)
-    target_agent: ResourceRevisionRef
-    context: DelegationContextSelection
-    identity: SubagentIdentitySelection = SubagentIdentitySelection()
-    usage_limits: UsageLimitsSelection | None
-    environment: ChildEnvironmentPolicy
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     @model_validator(mode="before")
     @classmethod
-    def _legacy_runtime_controls(cls, value: object) -> object:
-        return _without_legacy_defaults(
-            value,
-            {"lifetime": "parent_scope", "steering": "disabled", "continuation": "disabled"},
-        )
-
-
-class ResolvedAgentNode(StrictModel):
-    agent_revision: ResourceRevisionRef
-    agent_id: _ID
-    display_name: str = Field(min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=16 * 1024)
-    model: ResolvedModel
-    prompt: ResolvedPrompt
-    plugins: tuple[ResolvedPlugin, ...] = ()
-    skills: tuple[ResolvedSkill, ...] = ()
-    skill_materialization_mount: _ID | None = None
-    default_skill_names: tuple[str, ...] | None = None
-    capabilities: tuple[FirstPartyCapabilitySelection, ...] = ()
-    environment_tools: bool = True
-    environment: AgentEnvironmentRequirements
-    subagents: tuple[ResolvedSubagentEdge, ...] = ()
-    async_subagents: AsyncSubagentConfiguration
-    output: AgentOutputSelection
-    model_recovery: ModelRecoverySelection
-
-    @model_validator(mode="after")
-    def _consistent_skills(self) -> Self:
-        if bool(self.skills) != (self.skill_materialization_mount is not None):
-            raise ValueError("Skill materialization mount is present exactly when Skills are available")
-        names = tuple(skill.definition.skill_name for skill in self.skills)
-        if len(names) != len(set(names)):
-            raise ValueError("resolved Skill names must be unique within one Agent")
-        if self.default_skill_names is not None:
-            if len(self.default_skill_names) != len(set(self.default_skill_names)):
-                raise ValueError("resolved default Skill names must be unique")
-            if not set(self.default_skill_names).issubset(names):
-                raise ValueError("resolved default Skill names must select available Skills")
-        return self
-
-
-class ResolvedAgentSnapshot(StrictModel):
-    snapshot_schema_version: Literal["1"] = "1"
-    generation_id: _ID
-    catalog_digest: _DIGEST
-    root_agent: ResourceRevisionRef
-    logical_agent_digest: _DIGEST
-    resolved_agents: tuple[ResolvedAgentNode, ...] = Field(min_length=1, max_length=10_000)
-    adapter_locks: tuple[DependencyLock, ...] = ()
-    harness_release: str = Field(min_length=1, max_length=128)
-
-    @model_validator(mode="after")
-    def _validate_snapshot(self, info: ValidationInfo) -> Self:
-        refs = tuple(node.agent_revision for node in self.resolved_agents)
-        agent_ids = tuple(node.agent_id for node in self.resolved_agents)
-        if len(refs) != len(set(refs)) or self.root_agent not in refs:
-            raise ValueError("resolved Agent nodes must be unique and include the root")
-        if len(agent_ids) != len(set(agent_ids)):
-            raise ValueError("resolved Agent IDs must be unique")
-        known = set(refs)
-        expected_locks = {
-            _lock_identity(dependency)
-            for node in self.resolved_agents
-            for dependency in (
-                node.model.dependency,
-                *(plugin.dependency for plugin in node.plugins),
-            )
-        }
-        actual_locks = tuple(_lock_identity(lock) for lock in self.adapter_locks)
-        if (
-            len(actual_locks) != len(set(actual_locks))
-            or set(actual_locks) != expected_locks
-            or any(lock.dependency_kind not in {"model_adapter", "harness_plugin"} for lock in self.adapter_locks)
-        ):
-            raise ValueError("adapter locks must exactly cover resolved Agent dependencies")
-        edges = {
-            node.agent_revision: tuple(edge.target_agent for edge in node.subagents) for node in self.resolved_agents
-        }
-        if any(target not in known for targets in edges.values() for target in targets):
-            raise ValueError("resolved child edges must select included Agent nodes")
-        _require_acyclic(self.root_agent, edges)
-        expected = canonical_digest(
-            self.model_dump(
-                mode="python",
-                exclude={"logical_agent_digest", "generation_id", "catalog_digest"},
-            )
-        )
-        if self.logical_agent_digest != expected:
-            legacy_identity_matches = False
-            if not any(edge.identity.inherit_agent_id for node in self.resolved_agents for edge in node.subagents):
-                legacy_content = cast(
-                    dict[str, Any],
-                    self.model_dump(
-                        mode="python",
-                        exclude={"logical_agent_digest", "generation_id", "catalog_digest"},
-                    ),
-                )
-                for node in cast(tuple[dict[str, Any], ...], legacy_content["resolved_agents"]):
-                    for edge in cast(tuple[dict[str, Any], ...], node["subagents"]):
-                        edge.pop("identity")
-                legacy_identity_matches = self.logical_agent_digest == canonical_digest(legacy_content)
-            if not legacy_identity_matches and not _legacy_snapshot_digest_matches(
-                info,
-                field="logical_agent_digest",
-                expected=self.logical_agent_digest,
-            ):
-                raise ValueError("logical Agent digest does not match snapshot content")
-        return self
-
-
-class ResolvedEnvironmentLifecycleCapabilities(StrictModel):
-    pause_modes: frozenset[Literal["full", "filesystem"]] = frozenset()
-    resource_allocation: Literal["single_from_spec", "multiple_from_spec"]
-    attachment_concurrency: Literal["single", "shared"]
-
-
-class ResolvedEnvironmentMountDefinition(StrictModel):
-    mount_name: _ID
-    model_alias: str = Field(min_length=1, max_length=63)
-    provider_key: str = Field(min_length=3, max_length=128)
-    provider_schema_version: str = Field(min_length=1, max_length=64)
-    normalized_parameters: dict[str, JsonValue] = Field(default_factory=dict)
-    access: Literal["read_only", "read_write", "full"] = "full"
-    lifecycle_capabilities: ResolvedEnvironmentLifecycleCapabilities
-    dependency: DependencyLock
-
-    @model_validator(mode="before")
-    @classmethod
-    def _legacy_permission_ceiling(cls, value: object) -> object:
-        if not isinstance(value, dict) or "permission_ceiling" not in value:
+    def _normalize_serialized_tuples(cls, value: object) -> object:
+        if not isinstance(value, dict):
             return value
         normalized = dict(value)
-        if "access" in normalized:
-            raise ValueError("permission_ceiling and access must not both be present")
-        normalized["access"] = legacy_environment_access(normalized.pop("permission_ceiling"))
+        for name, field in cls.model_fields.items():
+            if isinstance(normalized.get(name), list) and _contains_tuple(field.annotation):
+                normalized[name] = tuple(normalized[name])
         return normalized
 
 
-class ResolvedEnvironmentSnapshot(StrictModel):
-    snapshot_schema_version: Literal["1"] = "1"
-    generation_id: _ID
-    catalog_digest: _DIGEST
-    environment_revision: ResourceRevisionRef
-    logical_environment_digest: _DIGEST
-    definition: EnvironmentDefinitionDocument
-    mounts: tuple[ResolvedEnvironmentMountDefinition, ...]
-    provider_locks: tuple[DependencyLock, ...] = ()
+class DependencyLock(SnapshotModel):
+    """Exact installed provenance for one trusted reconstruction boundary."""
+
+    dependency_kind: Literal["model-adapter", "plugin", "mcp-adapter", "provider", "workspace-binder"]
+    key: str = Field(min_length=1, max_length=200)
+    class_module: str = Field(min_length=1, max_length=512)
+    class_qualname: str = Field(min_length=1, max_length=512)
+    import_target: str | None = Field(default=None, min_length=1, max_length=1024)
+    distribution_name: str = Field(min_length=1, max_length=256)
+    distribution_version: str = Field(min_length=1, max_length=128)
+
+
+class ResolvedModelRecipe(SnapshotModel):
+    """One credential-free native Model reconstruction recipe."""
+
+    adapter_key: str = Field(min_length=1, max_length=200)
+    route: str = Field(min_length=3, max_length=512)
+    api_key: EnvironmentVariableSource | None = None
+    settings: dict[str, JsonValue] = Field(default_factory=dict)
+    model_cfg: dict[str, JsonValue] = Field(default_factory=dict)
+    adapter_lock: DependencyLock
 
     @model_validator(mode="after")
-    def _validate_snapshot(self, info: ValidationInfo) -> Self:
-        names = tuple(mount.mount_name for mount in self.mounts)
-        if len(names) != len(set(names)):
-            raise ValueError("resolved Environment mount names must be unique")
-        expected_locks = {_lock_identity(mount.dependency) for mount in self.mounts}
-        actual_locks = tuple(_lock_identity(lock) for lock in self.provider_locks)
-        if (
-            len(actual_locks) != len(set(actual_locks))
-            or set(actual_locks) != expected_locks
-            or any(lock.dependency_kind != "environment_provider" for lock in self.provider_locks)
-        ):
-            raise ValueError("provider locks must exactly cover resolved Environment mounts")
-        expected = canonical_digest(
-            self.model_dump(
-                mode="python",
-                exclude={"logical_environment_digest", "generation_id", "catalog_digest"},
-            )
-        )
-        if self.logical_environment_digest != expected and not _legacy_snapshot_digest_matches(
-            info,
-            field="logical_environment_digest",
-            expected=self.logical_environment_digest,
-        ):
-            raise ValueError("logical Environment digest does not match snapshot content")
+    def _matching_adapter(self) -> Self:
+        if self.adapter_lock.dependency_kind != "model-adapter" or self.adapter_lock.key != self.adapter_key:
+            raise ValueError("Model adapter lock does not match its recipe")
         return self
 
 
-def _legacy_snapshot_digest_matches(info: ValidationInfo, *, field: str, expected: str) -> bool:
-    if not isinstance(info.context, dict):
-        return False
-    payload = info.context.get("legacy_snapshot_payload")
-    if not isinstance(payload, Mapping) or payload.get(field) != expected:
-        return False
-    content = dict(payload)
-    for name in {field, "generation_id", "catalog_digest"}:
-        content.pop(name, None)
-    return canonical_digest(content) == expected
+class ResolvedPluginRecipe(SnapshotModel):
+    """One selected Harness Plugin instance and normalized package-owned configuration."""
+
+    instance_name: str = Field(min_length=1, max_length=64)
+    plugin_key: str = Field(min_length=1, max_length=200)
+    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    factory_lock: DependencyLock
+
+    @model_validator(mode="after")
+    def _matching_factory(self) -> Self:
+        if self.factory_lock.dependency_kind != "plugin" or self.factory_lock.key != self.plugin_key:
+            raise ValueError("Plugin factory lock does not match its recipe")
+        return self
 
 
-def _lock_identity(lock: DependencyLock) -> tuple[str, str, str | None, str | None]:
+class ResolvedMcpRecipe(SnapshotModel):
+    """One inert MCP transport recipe with credential references only."""
+
+    server_name: str = Field(min_length=1, max_length=64)
+    transport: McpTransport
+    adapter_lock: DependencyLock
+
+    @model_validator(mode="after")
+    def _matching_adapter(self) -> Self:
+        if self.adapter_lock.dependency_kind != "mcp-adapter":
+            raise ValueError("MCP recipe requires an MCP adapter lock")
+        return self
+
+
+class ResolvedAgentNode(SnapshotModel):
+    """One complete resolved Agent definition inside a finite immutable tree."""
+
+    definition_digest: str = Field(pattern=_DIGEST_PATTERN)
+    source_kind: Literal["agent", "markdown"]
+    source_name: str = Field(min_length=1, max_length=64)
+    instructions: tuple[str, ...] = Field(min_length=1, max_length=32)
+    model: ResolvedModelRecipe
+    plugins: tuple[ResolvedPluginRecipe, ...] = Field(default=(), max_length=128)
+    mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=128)
+    tools: tuple[str, ...] | None = Field(default=None, max_length=128)
+    optional_tools: tuple[str, ...] | None = Field(default=None, max_length=128)
+    children: tuple[ResolvedSubagent, ...] = Field(default=(), max_length=256)
+
+    @model_validator(mode="after")
+    def _valid_node(self) -> Self:
+        names = tuple(child.name for child in self.children)
+        if len(names) != len(set(names)):
+            raise ValueError("resolved child names must be unique")
+        plugin_names = tuple(item.instance_name for item in self.plugins)
+        if len(plugin_names) != len(set(plugin_names)):
+            raise ValueError("resolved Plugin instance names must be unique")
+        mcp_names = tuple(item.server_name for item in self.mcp_servers)
+        if len(mcp_names) != len(set(mcp_names)):
+            raise ValueError("resolved MCP server names must be unique")
+        if self.source_kind == "agent" and (self.tools is not None or self.optional_tools is not None):
+            raise ValueError("named Agents cannot serialize Markdown tool narrowing")
+        if _node_digest(self) != self.definition_digest:
+            raise ValueError("resolved Agent definition digest does not match its content")
+        return self
+
+
+class ResolvedSubagent(SnapshotModel):
+    """One model-facing roster edge and its complete child definition."""
+
+    name: str = Field(min_length=1, max_length=64)
+    description: str = Field(min_length=1, max_length=4096)
+    instruction: str | None = Field(default=None, min_length=1, max_length=16 * 1024)
+    definition: ResolvedAgentNode
+
+    @model_validator(mode="after")
+    def _matching_name(self) -> Self:
+        if self.name != self.definition.source_name:
+            raise ValueError("subagent edge name must match its resolved definition")
+        return self
+
+
+class ResolvedAgentSnapshot(SnapshotModel):
+    """Complete finite Agent graph pinned by one immutable object reference."""
+
+    schema_version: Literal["1"] = "1"
+    harness_release: str = Field(min_length=1, max_length=128)
+    package_prompt_revision: str = Field(min_length=1, max_length=128)
+    package_prompt_digest: str = Field(pattern=_DIGEST_PATTERN)
+    dependencies: tuple[DependencyLock, ...]
+    root: ResolvedAgentNode
+
+    @model_validator(mode="after")
+    def _complete_dependency_set(self) -> Self:
+        if not self.root.instructions or _text_digest(self.root.instructions[0]) != self.package_prompt_digest:
+            raise ValueError("root prompt does not match the locked package prompt")
+        actual = tuple(sorted(self.dependencies, key=_dependency_sort_key))
+        if actual != self.dependencies or len(actual) != len(set(actual)):
+            raise ValueError("snapshot dependencies must be sorted and unique")
+        required = _node_dependencies(self.root)
+        if set(actual) != required:
+            raise ValueError("snapshot dependency locks do not exactly cover the resolved graph")
+        _require_bounded_tree(self.root)
+        return self
+
+
+class ResolvedEnvironmentProfile(SnapshotModel):
+    """Credential-free profile template accepted for later per-folder binding."""
+
+    schema_version: Literal["1"] = "1"
+    profile_name: str = Field(min_length=1, max_length=64)
+    kind: Literal["native", "local_eip", "provider"]
+    provider_key: str = Field(min_length=1, max_length=200)
+    provider_schema_version: str = Field(min_length=1, max_length=64)
+    binder_key: str = Field(min_length=1, max_length=200)
+    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    provider_lock: DependencyLock
+    binder_lock: DependencyLock
+
+    @model_validator(mode="after")
+    def _matching_locks(self) -> Self:
+        if self.provider_lock.dependency_kind != "provider" or self.provider_lock.key != self.provider_key:
+            raise ValueError("Environment Provider lock does not match its profile")
+        if self.binder_lock.dependency_kind != "workspace-binder" or self.binder_lock.key != self.binder_key:
+            raise ValueError("workspace binder lock does not match its profile")
+        return self
+
+
+def resolved_agent_node(
+    *,
+    source_kind: Literal["agent", "markdown"],
+    source_name: str,
+    instructions: tuple[str, ...],
+    model: ResolvedModelRecipe,
+    plugins: tuple[ResolvedPluginRecipe, ...] = (),
+    mcp_servers: tuple[ResolvedMcpRecipe, ...] = (),
+    tools: tuple[str, ...] | None = None,
+    optional_tools: tuple[str, ...] | None = None,
+    children: tuple[ResolvedSubagent, ...] = (),
+) -> ResolvedAgentNode:
+    """Construct one node with its canonical behavior digest."""
+
+    values: dict[str, object] = {
+        "definition_digest": "0" * 64,
+        "source_kind": source_kind,
+        "source_name": source_name,
+        "instructions": instructions,
+        "model": model,
+        "plugins": plugins,
+        "mcp_servers": mcp_servers,
+        "tools": tools,
+        "optional_tools": optional_tools,
+        "children": children,
+    }
+    digest = _canonical_digest({key: value for key, value in values.items() if key != "definition_digest"})
+    values["definition_digest"] = digest
+    return ResolvedAgentNode.model_validate(values)
+
+
+def dependency_sort_key(lock: DependencyLock) -> tuple[str, str, str, str, str]:
+    """Return the canonical dependency-lock ordering used by snapshots."""
+
+    return _dependency_sort_key(lock)
+
+
+def _contains_tuple(annotation: object) -> bool:
+    origin = get_origin(annotation)
+    if origin is tuple:
+        return True
+    return any(_contains_tuple(argument) for argument in get_args(annotation))
+
+
+def _node_digest(node: ResolvedAgentNode) -> str:
+    return _canonical_digest(node.model_dump(mode="json", exclude={"definition_digest"}))
+
+
+def _node_dependencies(root: ResolvedAgentNode) -> set[DependencyLock]:
+    result: set[DependencyLock] = set()
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        result.add(node.model.adapter_lock)
+        result.update(item.factory_lock for item in node.plugins)
+        result.update(item.adapter_lock for item in node.mcp_servers)
+        stack.extend(child.definition for child in reversed(node.children))
+    return result
+
+
+def _require_bounded_tree(root: ResolvedAgentNode) -> None:
+    count = 0
+    stack: list[tuple[ResolvedAgentNode, int]] = [(root, 1)]
+    while stack:
+        node, depth = stack.pop()
+        count += 1
+        if count > 1024 or depth > 128:
+            raise ValueError("resolved Agent graph exceeds its size or depth bound")
+        stack.extend((child.definition, depth + 1) for child in reversed(node.children))
+
+
+def _dependency_sort_key(lock: DependencyLock) -> tuple[str, str, str, str, str]:
     return (
         lock.dependency_kind,
         lock.key,
         lock.distribution_name,
         lock.distribution_version,
+        lock.import_target or "",
     )
 
 
-def _require_acyclic(
-    root: ResourceRevisionRef,
-    edges: dict[ResourceRevisionRef, tuple[ResourceRevisionRef, ...]],
-) -> None:
-    visited: set[ResourceRevisionRef] = set()
-    active: set[ResourceRevisionRef] = set()
-
-    def visit(reference: ResourceRevisionRef) -> None:
-        if reference in active:
-            raise ValueError("resolved Agent child graph must be acyclic")
-        if reference in visited:
-            return
-        active.add(reference)
-        for target in edges[reference]:
-            visit(target)
-        active.remove(reference)
-        visited.add(reference)
-
-    visit(root)
-    if visited != set(edges):
-        raise ValueError("resolved Agent nodes must be reachable from the root")
+def _text_digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-class SnapshotReference(StrictModel):
-    snapshot_kind: Literal["agent", "environment"]
-    logical_digest: _DIGEST
-    object_digest: _DIGEST
-    generation_id: _ID
-    root_revision: ResourceRevisionRef
+def _canonical_digest(value: object) -> str:
+    def default(item: object) -> object:
+        if isinstance(item, BaseModel):
+            return item.model_dump(mode="json")
+        if isinstance(item, tuple):
+            return list(item)
+        raise TypeError(f"unsupported canonical value: {type(item).__name__}")
+
+    encoded = json.dumps(
+        value,
+        default=default,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
-class AgentEnvironmentCompatibility(StrictModel):
-    agent_snapshot_digest: _DIGEST
-    environment_snapshot_digest: _DIGEST
-    compatible: Literal[True] = True
-
+ResolvedAgentNode.model_rebuild()
+ResolvedSubagent.model_rebuild()
 
 __all__ = [
-    "AgentEnvironmentCompatibility",
+    "DependencyLock",
     "ResolvedAgentNode",
     "ResolvedAgentSnapshot",
-    "ResolvedEnvironmentLifecycleCapabilities",
-    "ResolvedEnvironmentMountDefinition",
-    "ResolvedEnvironmentSnapshot",
-    "ResolvedModel",
-    "ResolvedPlugin",
-    "ResolvedPrompt",
-    "ResolvedSkill",
-    "ResolvedSubagentEdge",
-    "SnapshotReference",
+    "ResolvedEnvironmentProfile",
+    "ResolvedMcpRecipe",
+    "ResolvedModelRecipe",
+    "ResolvedPluginRecipe",
+    "ResolvedSubagent",
+    "dependency_sort_key",
+    "resolved_agent_node",
 ]

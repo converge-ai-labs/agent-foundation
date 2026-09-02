@@ -1,5 +1,9 @@
 schema_version: 1
 models:
+  anthropic:claude-fable-5-1:
+    characteristics:
+      context_window: 1000000
+    source_url: https://platform.claude.com/docs/en/models/fable-5-1/overview
   anthropic:claude-sonnet-5:
     characteristics:
       context_window: 1000000

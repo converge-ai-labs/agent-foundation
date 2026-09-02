@@ -67,6 +67,18 @@ def test_unknown_model_name_is_valid_and_has_unknown_advisory_capabilities() -> 
     assert selected.capabilities == ModelCapabilities()
 
 
+def test_anthropic_catalog_contains_fable_5_1_capabilities() -> None:
+    definitions = {item.key: item for item in built_in_provider_registry().definitions()}
+    models = {item.model_name: item for item in definitions["anthropic"].model_catalog}
+
+    fable = models["claude-fable-5-1"]
+    assert fable.display_name == "Claude Fable 5.1"
+    assert fable.capabilities.context_window_tokens == 1_000_000
+    assert fable.capabilities.max_output_tokens == 128_000
+    assert fable.capabilities.input_modalities == ("text", "image")
+    assert fable.capabilities.reasoning is True
+
+
 def test_domestic_provider_catalogs_ship_as_advisory_metadata() -> None:
     definitions = {item.key: item for item in built_in_provider_registry().definitions()}
 

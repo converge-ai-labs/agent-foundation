@@ -93,7 +93,7 @@ Every input-bearing command in this contract can carry the optional inline `hook
 
 ## Input-Bearing Operations
 
-Start, existing-Thread Run submission, and continue-from requests carry an [`AgentInput`](33-agent-input.md#agent-input-protocol), a selected stable AgentPreset when permitted, an optional exact `agent_preset_revision_id`, an independent optional `expected_active_revision_id`, one typed `config_override`, and, for start, an optional Session selector. Fork accepts the same ordinary input and policy-permitted selections against its source. Managed trigger provenance is supplied only by its trusted ingress, not as caller-declared metadata on the public start command. Fields other than `AgentInput` are command options and never enter its `content` or `structured_content`.
+Start, existing-Thread Run submission, and continue-from requests carry an [`AgentInput`](33-agent-input.md#agent-input-protocol), a selected stable AgentPreset when permitted, an optional exact `agent_preset_revision_id`, an independent optional `expected_default_revision_id`, one typed `config_override`, and, for start, an optional Session selector. Fork accepts the same ordinary input and policy-permitted selections against its source. Managed trigger provenance is supplied only by its trusted ingress, not as caller-declared metadata on the public start command. Fields other than `AgentInput` are command options and never enter its `content` or `structured_content`.
 
 The existing-Thread route's reusable submitted intent has this conceptual shape. Its fields are top-level fields of the POST request beside `expected_thread_version`; a queued resource retains them together as `submission`.
 
@@ -102,7 +102,7 @@ class ThreadRunSubmissionIntent:
     input: AgentInput
     agent_preset_id: AgentPresetId | None
     agent_preset_revision_id: AgentPresetRevisionId | None
-    expected_active_revision_id: AgentPresetRevisionId | None
+    expected_default_revision_id: AgentPresetRevisionId | None
     config_override: AgentRunOverride | None
     hook_subscription: InlineHookSubscriptionInput | None
 
@@ -127,7 +127,7 @@ POST /api/v1/workspaces/{workspace_id}/runs
 Idempotency-Key: opaque-caller-key
 ```
 
-The request names one stable `agent_preset_id` and supplies one `AgentInput`. Omitting `agent_preset_revision_id` selects the current active Revision; supplying it selects that exact retained executable Revision even when historical. `expected_active_revision_id`, when present, separately requires the current active pointer to match. Acceptance applies the typed override, resolves and freezes `EffectiveAgentConfig` plus one Runtime lock, then selects or creates one Session and creates its root Thread. It initializes `HarnessState.new()` and atomically commits the version `1` Thread row, its first root Run, lifecycle facts, idempotency evidence, and Outbox records. Foundation exposes no standalone empty-Thread create operation.
+The request names one stable `agent_preset_id` and supplies one `AgentInput`. Omitting `agent_preset_revision_id` selects the current default Revision; supplying it selects that exact retained executable Revision even when historical. `expected_default_revision_id`, when present, separately requires the current default pointer to match. Acceptance applies the typed override, resolves and freezes `EffectiveAgentConfig` plus one Runtime lock, then selects or creates one Session and creates its root Thread. It initializes `HarnessState.new()` and atomically commits the version `1` Thread row, its first root Run, lifecycle facts, idempotency evidence, and Outbox records. Foundation exposes no standalone empty-Thread create operation.
 
 The existing-Thread Run route accepts a continuation immediately when the Thread is eligible and otherwise queues the complete submission intent:
 
@@ -146,9 +146,9 @@ The request carries `expected_thread_version`, the fields of `ThreadRunSubmissio
 
 Queue admission creates no Run, does not change `Thread.version`, increments `Thread.queue_version`, and returns `outcome="queued"`. Immediate acceptance returns `outcome="run_accepted"`, creates the Run, and increments `Thread.version`. Both outcomes are selected against locked commit-time state and are preserved by the route's idempotency evidence.
 
-When `head_run_id` names an exact completed Run, Foundation never infers a parent from timestamps. The selected Preset defaults to that parent's stable Preset. Omitted Revision selection resolves its current active Revision; an exact selector or override is accepted only when compatible with the parent state. Acceptance initializes a new Run-owned state from the completed parent, freezes the final effective configuration and Runtime lock, creates the Run with `lineage_kind="continue"`, sets `current_run_id` to it, preserves the head until the successor seals, increments Thread version, and commits the Run and its related durable facts.
+When `head_run_id` names an exact completed Run, Foundation never infers a parent from timestamps. The selected Preset defaults to that parent's stable Preset. Omitted Revision selection resolves its current default Revision; an exact selector or override is accepted only when compatible with the parent state. Acceptance initializes a new Run-owned state from the completed parent, freezes the final effective configuration and Runtime lock, creates the Run with `lineage_kind="continue"`, sets `current_run_id` to it, preserves the head until the successor seals, increments Thread version, and commits the Run and its related durable facts.
 
-When `head_run_id=null` and the current Run is `failed` or `cancelled`, the same route performs root-like acceptance in the existing Thread. The new Run has `lineage_kind="root"`, `parent_run_id=null`, and `retry_of_run_id=null`. A trusted Foundation state adapter constructs a complete empty Harness state carrying the existing Thread's exact `thread_id`; it does not call `HarnessState.new()`, which would create another Thread ID. When omitted, the stable Preset defaults to the current failed or cancelled Run's stable Preset; acceptance resolves its current active Revision and optional typed override. The acceptance transaction selects the new Run as current, leaves the head null until a waiting or completed outcome seals, and increments Thread version. This is new input rather than Retry of the failed or cancelled intent.
+When `head_run_id=null` and the current Run is `failed` or `cancelled`, the same route performs root-like acceptance in the existing Thread. The new Run has `lineage_kind="root"`, `parent_run_id=null`, and `retry_of_run_id=null`. A trusted Foundation state adapter constructs a complete empty Harness state carrying the existing Thread's exact `thread_id`; it does not call `HarnessState.new()`, which would create another Thread ID. When omitted, the stable Preset defaults to the current failed or cancelled Run's stable Preset; acceptance resolves its current default Revision and optional typed override. The acceptance transaction selects the new Run as current, leaves the head null until a waiting or completed outcome seals, and increments Thread version. This is new input rather than Retry of the failed or cancelled intent.
 
 A waiting head is not equivalent to an absent head. An existing-Thread Run submission without `waiting_resolution` queues instead of changing it. Feedback, explicit waiting Continue, Retry of an already accepted failed/cancelled successor, or an explicit branch operation such as Continue From can establish the next state.
 
@@ -163,7 +163,7 @@ POST /api/v1/runs/{source_run_id}/continue
 Idempotency-Key: opaque-caller-key
 ```
 
-The request has the same `expected_thread_version`, `AgentInput`, Preset selector, exact Revision selector, active-Revision precondition, typed override, and optional Hook fields as ordinary Continue. The source must be a retained, readable `completed` Run in the target Thread, but it need not be that Thread's current Run or selected head. Foundation also requires that the Thread have no current `accepted` or `running` Run.
+The request has the same `expected_thread_version`, `AgentInput`, Preset selector, exact Revision selector, default-Revision precondition, typed override, and optional Hook fields as ordinary Continue. The source must be a retained, readable `completed` Run in the target Thread, but it need not be that Thread's current Run or selected head. Foundation also requires that the Thread have no current `accepted` or `running` Run.
 
 Acceptance initializes state from the exact source and creates a same-Thread Run with `lineage_kind="continue"` and `parent_run_id=source_run_id`. In the final short transaction it sets `current_run_id` to the new Run, sets `head_run_id` to the selected source, increments the Thread version, and commits the accepted Run and related facts. If the successor later seals as `waiting` or `completed`, it becomes the new head. If it seals as `failed` or `cancelled`, the selected source remains the head.
 

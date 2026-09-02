@@ -12,7 +12,7 @@ from .authorization import (
     authorize_agent_skill_binding,
     authorize_workspace,
 )
-from .domain import PrincipalRef, PrincipalType
+from .domain import PrincipalRef, PrincipalType, ResourceRef
 from .models import (
     OrganizationRecord,
     RoleBindingRecord,
@@ -32,6 +32,7 @@ __all__ = [
     "PrincipalRef",
     "PrincipalType",
     "RequestAuthenticator",
+    "ResourceRef",
     "RoleBindingRecord",
     "SecurityAuditRecord",
     "ServiceAccountRecord",

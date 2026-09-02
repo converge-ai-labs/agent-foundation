@@ -146,7 +146,7 @@ class InlineEnvironmentSelection:
 
 Inline selection passes the same provider-selection, schema, credential-reference, access, and authorization validation but creates no reusable revision. Foundation exposes no public multi-Environment topology, mount-name map, default-mount selector, mutable Environment-head selector, or per-Preset Environment policy document in the first version.
 
-Publish resolves an exact named selection into the immutable Revision. Run acceptance resolves the final exact or inline selection into `EffectiveAgentConfig.environment`:
+AgentPreset Revision creation resolves an exact named selection into the immutable Revision. Run acceptance resolves the final exact or inline selection into `EffectiveAgentConfig.environment`:
 
 ```python
 class EnvironmentExecutionConfig:

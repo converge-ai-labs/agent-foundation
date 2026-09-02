@@ -25,7 +25,7 @@ class ConnectorCapabilityClaims(BaseModel):
     connector_id: Annotated[str, Field(min_length=1, max_length=72)]
     connector_revision_id: Annotated[str, Field(min_length=1, max_length=72)]
     connection_id: Annotated[str, Field(min_length=1, max_length=72)] | None
-    agent_preset_version_id: Annotated[str, Field(min_length=1, max_length=72)]
+    agent_preset_revision_id: Annotated[str, Field(min_length=1, max_length=72)]
     run_id: Annotated[str, Field(min_length=1, max_length=72)]
     run_attempt_id: Annotated[str, Field(min_length=1, max_length=72)]
     attempt_fence: Annotated[int, Field(ge=1)]

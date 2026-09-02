@@ -1,20 +1,16 @@
-"""Terminal frontend for the Agent UI Host."""
+"""Interactive terminal adapter for the process-local Agent UI App."""
 
 from __future__ import annotations
 
 import asyncio
-import json
-from typing import Literal
 
-from a13n_ui.host import AgentUiHost
-
-OutputFormat = Literal["text", "json"]
+from a13n_ui.app import AgentUiApp
 
 
-async def run(host: AgentUiHost) -> None:
-    """Run the interactive terminal frontend against one started Host."""
+async def run(app: AgentUiApp) -> None:
+    """Run the interactive terminal frontend against one started App."""
 
-    print("Agent UI CLI. Commands: /runtime, /restart, /exit")
+    print("Agent UI CLI. Commands: /status, /exit")
     while True:
         try:
             line = (await asyncio.to_thread(input, "a13n-ui> ")).strip()
@@ -23,32 +19,11 @@ async def run(host: AgentUiHost) -> None:
             return
         if line in {"/exit", "/quit"}:
             return
-        if line == "/runtime":
-            status = await host.runtime_status()
-            print_runtime_status(status.model_dump(mode="json"), output="text")
-        elif line == "/restart":
-            result = await host.restart_runtime()
-            print(f"active {result.active.generation_id} ({result.active.state.value})")
+        if line == "/status":
+            status = await app.status()
+            print(f"{status.state.value} instance={status.instance_id} objects={status.object_count}")
         elif line:
-            print("Session interaction is not available in this runtime-management slice.")
+            print("Use the headless run command for Session execution.")
 
 
-def print_runtime_status(value: dict[str, object], *, output: OutputFormat) -> None:
-    """Render one detached runtime status for terminal output."""
-
-    if output == "json":
-        print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
-        return
-    active = value.get("active_generation_id")
-    generations = value.get("generations")
-    print(f"active {active or 'unavailable'}")
-    if isinstance(generations, list):
-        for item in generations:
-            if isinstance(item, dict):
-                generation_id = item.get("generation_id", "unknown")
-                state = item.get("state", "unknown")
-                process_id = item.get("process_id", "-")
-                print(f"  {generation_id} {state} pid={process_id}")
-
-
-__all__ = ["OutputFormat", "print_runtime_status", "run"]
+__all__ = ["run"]

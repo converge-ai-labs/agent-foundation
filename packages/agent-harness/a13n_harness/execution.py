@@ -162,6 +162,10 @@ from a13n_harness.models.request_headers import (
     ModelRequestHeadersCapability,
     ModelRequestPatchConfiguration,
 )
+from a13n_harness.models.structured_output import (
+    STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID,
+    StructuredOutputAutoToolChoiceCapability,
+)
 from a13n_harness.observation import (
     HarnessInstrumentation,
     _compile_observation,
@@ -813,22 +817,26 @@ class HarnessBuilder:
                 )
             return inferred
 
-        capabilities = (
-            *self._observation.pydantic_capabilities,
-            ToolExecutionBoundaryCapability(),
-            ToolSurfaceCapability(),
-            MessageIntegrityFilterCapability(),
-            LifecycleEventCapability(),
-            SteeringCapability(),
-            ModelContextCoordinatorCapability(),
-            ResolveModelId(resolve_model),
-            *authored_capabilities,
-            *default_model_costs,
-            ModelRequestHeadersCapability(self._model_request_patch_configuration),
-            UsageCapability(),
-        )
         try:
             construction_spec, business_output, output_adapter = _resolve_business_output(definition)
+            structured_output_capabilities = (
+                (StructuredOutputAutoToolChoiceCapability(),) if _uses_tool_based_output(business_output) else ()
+            )
+            capabilities = (
+                *self._observation.pydantic_capabilities,
+                ToolExecutionBoundaryCapability(),
+                ToolSurfaceCapability(),
+                MessageIntegrityFilterCapability(),
+                LifecycleEventCapability(),
+                SteeringCapability(),
+                ModelContextCoordinatorCapability(),
+                ResolveModelId(resolve_model),
+                *authored_capabilities,
+                *default_model_costs,
+                ModelRequestHeadersCapability(self._model_request_patch_configuration),
+                *structured_output_capabilities,
+                UsageCapability(),
+            )
             definition_reserved_ids = definition_reserved_ids | _first_party_spec_reserved_ids(construction_spec)
             complete_output = [business_output, DeferredToolRequests]
             system_prompt = _normalize_system_prompt(construction_spec)
@@ -850,6 +858,7 @@ class HarnessBuilder:
                 agent.root_capability,
                 definition_reserved_ids=definition_reserved_ids,
                 expected_instrumentation=self._observation.pydantic_instrumentation,
+                expected_structured_output_compatibility=bool(structured_output_capabilities),
             )
         except Exception as exc:
             if isinstance(exc, HarnessError):
@@ -886,7 +895,10 @@ class HarnessBuilder:
                 HarnessPluginFactoryContext(
                     plugin_key=entry.plugin_key,
                     plugin_id=entry.plugin_id,
-                    configuration=entry.configuration,
+                    configuration=catalog.validate_configuration(
+                        entry.plugin_key,
+                        entry.configuration,
+                    ),
                     extensions=self._build_context.extensions,
                 )
             )
@@ -2529,11 +2541,23 @@ def _resolve_business_output[OutputT](
     return construction_spec, business_output, output_adapter
 
 
+def _uses_tool_based_output(value: Any) -> bool:
+    """Return whether the effective business output can create Pydantic output tools."""
+    if isinstance(value, ToolOutput):
+        return True
+    if isinstance(value, TextOutput | NativeOutput | PromptedOutput):
+        return False
+    if isinstance(value, tuple | list):
+        return any(_uses_tool_based_output(item) for item in value)
+    return value is not str
+
+
 def _validate_built_capability_tree(
     root: AbstractCapability[AgentContext],
     *,
     definition_reserved_ids: frozenset[str],
     expected_instrumentation: Instrumentation | None,
+    expected_structured_output_compatibility: bool,
 ) -> None:
     """Validate stable IDs and protected provenance on the complete Agent-bound tree."""
     leaves: list[AbstractCapability[AgentContext]] = []
@@ -2547,6 +2571,7 @@ def _validate_built_capability_tree(
     model_context_coordinator_count = 0
     model_resolver_count = 0
     model_request_headers_capability_count = 0
+    structured_output_auto_tool_choice_count = 0
     usage_count = 0
     model_cost_count = 0
     instrumentation_count = 0
@@ -2558,6 +2583,7 @@ def _validate_built_capability_tree(
         STEERING_CAPABILITY_ID,
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         MODEL_REQUEST_HEADERS_CAPABILITY_ID,
+        STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
         MODEL_COST_CAPABILITY_ID,
@@ -2680,6 +2706,14 @@ def _validate_built_capability_tree(
                     code="capability_scope_invalid",
                 )
             continue
+        if type(capability) is StructuredOutputAutoToolChoiceCapability:
+            structured_output_auto_tool_choice_count += 1
+            if capability_id != STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID:
+                raise DefinitionError(
+                    "The mandatory structured-output compatibility Capability has an invalid ID.",
+                    code="capability_scope_invalid",
+                )
+            continue
         if type(capability) is UsageCapability:
             usage_count += 1
             if capability_id != USAGE_CAPABILITY_ID:
@@ -2795,6 +2829,12 @@ def _validate_built_capability_tree(
             "The built Agent must contain exactly one mandatory model request headers Capability.",
             code="capability_scope_invalid",
         )
+    expected_structured_output_count = int(expected_structured_output_compatibility)
+    if structured_output_auto_tool_choice_count != expected_structured_output_count:
+        raise DefinitionError(
+            "The built Agent has an invalid structured-output compatibility Capability count.",
+            code="capability_scope_invalid",
+        )
     if usage_count != 1:
         raise DefinitionError(
             "The built Agent must contain exactly one mandatory Usage Capability.",
@@ -2876,6 +2916,7 @@ def _validate_capability_source(
         STEERING_CAPABILITY_ID,
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         MODEL_REQUEST_HEADERS_CAPABILITY_ID,
+        STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
         MODEL_COST_CAPABILITY_ID,

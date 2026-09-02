@@ -5,7 +5,7 @@ from a13n_service.plugins.domain import PluginLifecycleState
 from a13n_service.plugins.errors import PluginError
 from a13n_service.plugins.service import PluginService
 
-from .conftest import ADMIN_ID, BUILDER_ID, actor, build_wheel, wheel_body
+from .conftest import ADMIN_ID, BUILDER_ID, RecordingRuntimeDispatcher, actor, build_wheel, wheel_body
 
 
 async def _upload(
@@ -160,3 +160,87 @@ async def test_workspace_builder_can_read_but_cannot_upload(plugin_service: Plug
         )
     assert rejected.value.code == "forbidden"
     assert actor(ADMIN_ID).principal.principal_id == ADMIN_ID
+
+
+@pytest.mark.anyio
+async def test_on_demand_runtime_commands_fail_without_creating_receipts(plugin_service: PluginService) -> None:
+    with pytest.raises(PluginError) as activate:
+        await plugin_service.activate(
+            actor=actor(),
+            plugin_version_id="plgv_missing1234567890",
+            idempotency_key="activate-on-demand",
+        )
+    with pytest.raises(PluginError) as deactivate:
+        await plugin_service.deactivate(
+            actor=actor(),
+            plugin_id="plg_missing1234567890",
+            idempotency_key="deactivate-on-demand",
+        )
+    with pytest.raises(PluginError) as receipt:
+        await plugin_service.get_operation(actor=actor(), operation_id="op_missing1234567890")
+
+    assert activate.value.code == "plugin_runtime_mode_unsupported"
+    assert deactivate.value.code == "plugin_runtime_mode_unsupported"
+    assert receipt.value.code == "plugin_operation_not_found"
+
+
+@pytest.mark.anyio
+async def test_runner_commands_fail_closed_without_staging_dispatcher(
+    runner_plugin_service: PluginService,
+) -> None:
+    with pytest.raises(PluginError) as activate:
+        await runner_plugin_service.activate(
+            actor=actor(),
+            plugin_version_id="plgv_missing1234567890",
+            idempotency_key="activate-without-dispatcher",
+        )
+    with pytest.raises(PluginError) as deactivate:
+        await runner_plugin_service.deactivate(
+            actor=actor(),
+            plugin_id="plg_missing1234567890",
+            idempotency_key="deactivate-without-dispatcher",
+        )
+    with pytest.raises(PluginError) as receipt:
+        await runner_plugin_service.get_operation(actor=actor(), operation_id="op_missing1234567890")
+
+    assert activate.value.code == "plugin_runtime_control_unavailable"
+    assert deactivate.value.code == "plugin_runtime_control_unavailable"
+    assert receipt.value.code == "plugin_runtime_control_unavailable"
+
+
+@pytest.mark.anyio
+async def test_runner_commands_dispatch_authorized_snapshots_and_return_same_receipt(
+    runner_plugin_service_with_dispatcher: tuple[PluginService, RecordingRuntimeDispatcher],
+) -> None:
+    service, dispatcher = runner_plugin_service_with_dispatcher
+    uploaded = await _upload(service, build_wheel(), key="upload-for-runtime-command")
+
+    activated = await service.activate(
+        actor=actor(),
+        plugin_version_id=uploaded.version.id,
+        idempotency_key="activate-version",
+    )
+    assert activated.status == "running"
+    assert dispatcher.calls == [("activate", uploaded.version.id)]
+    assert await service.get_operation(actor=actor(), operation_id=activated.operation_id) == activated
+
+    deactivated = await service.deactivate(
+        actor=actor(),
+        plugin_id=uploaded.version.plugin_id,
+        idempotency_key="deactivate-plugin",
+    )
+    assert deactivated.status == "running"
+    assert dispatcher.calls == [
+        ("activate", uploaded.version.id),
+        ("deactivate", uploaded.version.plugin_id),
+    ]
+    assert await service.get_operation(actor=actor(), operation_id=deactivated.operation_id) == deactivated
+
+    with pytest.raises(PluginError) as forbidden:
+        await service.activate(
+            actor=actor(BUILDER_ID),
+            plugin_version_id=uploaded.version.id,
+            idempotency_key="builder-cannot-activate",
+        )
+    assert forbidden.value.code == "forbidden"
+    assert len(dispatcher.calls) == 2

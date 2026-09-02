@@ -30,7 +30,9 @@ nav:
           - Plugins and Extensions: agent-harness/plugins.md
   - Environments:
       - Overview: environments/index.md
-      - Environment Provider: agent-environment-provider/index.md
+      - Environment Provider:
+          - Overview: agent-environment-provider/index.md
+          - Built-in Examples: agent-environment-provider/examples.md
       - agent-envd: agent-envd/index.md
   - Streaming:
       - Agent Stream Protocol: agent-stream-protocol/index.md

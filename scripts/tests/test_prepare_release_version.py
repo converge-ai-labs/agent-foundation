@@ -19,6 +19,7 @@ RELEASE_FILES = (
     Path("packages/agent-harness/pyproject.toml"),
     Path("packages/agent-stream-protocol/pyproject.toml"),
     Path("packages/agent-ui/pyproject.toml"),
+    Path("packages/agent-ui/a13n_ui/assets/agent-envd-release.json"),
     Path("packages/logging/pyproject.toml"),
     Path("packages/foundation-service/pyproject.toml"),
     Path("packages/agent-envd-client/pyproject.toml"),

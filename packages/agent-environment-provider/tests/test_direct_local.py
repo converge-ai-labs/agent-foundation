@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import signal as os_signal
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
+import a13n_environment_provider.direct_local.processes as process_module
 import pytest
 from a13n_environment_provider import (
     DirectLocalEnvironment,
@@ -13,6 +18,7 @@ from a13n_environment_provider import (
     EnvironmentProviderError,
     EnvironmentState,
 )
+from a13n_environment_provider.direct_local.processes import LocalProcessManager
 
 pytestmark = pytest.mark.anyio
 
@@ -74,6 +80,32 @@ async def test_direct_local_read_only_configuration_denies_writes(tmp_path: Path
         await environment.operations.files.write_text("/denied.txt", "denied", mode="create")  # type: ignore[union-attr]
     assert getattr(captured.value, "code", None) == "environment_denied"
     await environment.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Direct Local process groups require POSIX")
+@pytest.mark.parametrize("denied_signal_name", ("SIGTERM", "SIGKILL"))
+async def test_process_group_cleanup_treats_permission_denial_as_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    denied_signal_name: str,
+) -> None:
+    denied_signal = cast(int, getattr(os_signal, denied_signal_name))
+    manager = cast(Any, object.__new__(LocalProcessManager))
+    manager._policy = SimpleNamespace(terminate_grace_seconds=0)
+    signals: list[int] = []
+
+    def killpg(process_group: int, sent_signal: int) -> None:
+        assert process_group == 123
+        signals.append(sent_signal)
+        if sent_signal == denied_signal:
+            raise PermissionError
+
+    monkeypatch.setattr(process_module.os, "killpg", killpg)
+
+    await manager._cleanup_group(123)
+
+    assert signals == (
+        [os_signal.SIGTERM] if denied_signal == os_signal.SIGTERM else [os_signal.SIGTERM, os_signal.SIGKILL]
+    )
 
 
 async def test_direct_local_destroy_is_non_destructive(tmp_path: Path) -> None:

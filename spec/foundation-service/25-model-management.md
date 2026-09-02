@@ -4,7 +4,7 @@
 
 Foundation manages the configuration required for an Agent to call one primary generative model. A `ModelConfig` is a mutable Workspace resource selected by `model_config_id` from an `AgentPreset`. It combines one trusted provider type, the provider's model name, non-secret connection configuration, one credential requirement, and advisory capability metadata.
 
-Model configuration has no published revision or version history. AgentPreset Publish resolves the current enabled `ModelConfig` into a non-secret `ModelExecutionSnapshot` and freezes it in the new `AgentPresetRevision`. Editing a `ModelConfig` therefore affects only future Publish and explicit Run model overrides; it never rewrites an existing Revision or accepted Run. Foundation does not expose pinned and follow-latest modes, model aliases, rollback, deployment promotion, traffic splitting, load balancing, fallback routing, or provider-account failover. Provider infrastructure remains responsible for balancing and routing behind the configured endpoint.
+Model configuration has no immutable revision or version history. AgentPreset Revision creation resolves the current enabled `ModelConfig` into a non-secret `ModelExecutionSnapshot` and freezes it in the new `AgentPresetRevision`. Editing a `ModelConfig` therefore affects only future Revision creation and explicit Run model overrides; it never rewrites an existing Revision or accepted Run. Foundation does not expose pinned and follow-latest modes, model aliases, rollback, deployment promotion, traffic splitting, load balancing, fallback routing, or provider-account failover. Provider infrastructure remains responsible for balancing and routing behind the configured endpoint.
 
 One ordinary Run inherits the selected Revision's frozen model snapshot and concrete settings. A typed model override may select another current enabled `ModelConfig` or replace bounded model settings and characteristics; acceptance resolves the result once into `EffectiveAgentConfig`. The snapshot is execution data, not a model-configuration revision or management resource. Every replacement attempt for that Run uses the same resolved value.
 
@@ -145,9 +145,9 @@ Every configurable endpoint is validated as an outbound network destination:
 
 Validation is applied on create, update, test, and execution. A hostname that passed at save time does not bypass DNS or redirect validation later.
 
-## Publish, Run Selection, and Reconstruction
+## Revision creation, Run Selection, and Reconstruction
 
-AgentPreset Publish reads the selected enabled `ModelConfig`, authorizes it, and freezes this conceptual value. Run acceptance normally reuses it; a typed model override performs the same resolution for the effective Run configuration:
+AgentPreset Revision creation reads the selected enabled `ModelConfig`, authorizes it, and freezes this conceptual value. Run acceptance normally reuses it; a typed model override performs the same resolution for the effective Run configuration:
 
 ```python
 class ModelExecutionSnapshot:
@@ -215,7 +215,7 @@ Create is a synchronous database mutation and retains no separate idempotency or
 
 `ModelConfig.version` starts at `1` and increments once for each effective update. `PATCH` requires `expected_version`; a mismatch returns `409 model_version_conflict` with the safe current version and changes nothing. A no-op update retains the same version. This counter is optimistic concurrency evidence, not configuration history, a provider model version, a revision selector, or a rollback handle.
 
-Create and update perform complete provider-schema, endpoint-policy, credential-reference, and static compatibility validation. Saving does not require a remote provider call. A PATCH that changes any execution field affects only later AgentPreset Publish and model overrides accepted after its atomic commit and requires no approval workflow.
+Create and update perform complete provider-schema, endpoint-policy, credential-reference, and static compatibility validation. Saving does not require a remote provider call. A PATCH that changes any execution field affects only later AgentPreset Revision creation and model overrides accepted after its atomic commit and requires no approval workflow.
 
 ## Candidate Connection Test
 
@@ -263,7 +263,7 @@ Create, update, enable, disable, and test attempts emit security audit events wi
 01. `ModelConfig` is a mutable Workspace resource for an Agent's primary generative model and has no configuration revision history.
 02. Every `AgentPresetRevision` freezes exactly one resolved `model_config_id`, non-secret execution snapshot, settings, and characteristics.
 03. Every new Run inherits that resolved model or freezes one typed model override inside `EffectiveAgentConfig`; replacement RunAttempts reuse it.
-04. A ModelConfig edit affects only future AgentPreset Publish and model overrides accepted after the edit commits.
+04. A ModelConfig edit affects only future AgentPreset Revision creation and model overrides accepted after the edit commits.
 05. Every credential requirement has exactly one source, and no durable model or Run record contains a credential value.
 06. Provider and capability catalogs are advisory trusted metadata, and manual model names remain valid input.
 07. Capability metadata never becomes an execution gate.

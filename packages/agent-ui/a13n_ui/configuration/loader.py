@@ -1,377 +1,378 @@
-"""Stable strict source loading and complete resource graph validation."""
+"""Bounded loading for one Agent UI YAML document and sibling Markdown set."""
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import os
 import stat
-from collections.abc import Mapping
-from dataclasses import dataclass
-from functools import partial
-from importlib.metadata import version
-from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from pathlib import Path
+from typing import Any
 
 import yaml
-from a13n_environment_provider import (
-    EnvironmentLifecycleCapabilities,
-    EnvironmentProviderSpec,
-    build_environment_provider_factory_catalog,
-    discover_environment_provider_factory_references,
-)
-from a13n_harness.plugin_factories import (
-    build_harness_plugin_factory_catalog,
-    discover_harness_plugin_factory_references,
-)
 from anyio import to_thread
-from pydantic import JsonValue, ValidationError
+from pydantic import ValidationError
 
 from a13n_ui.errors import ConfigurationError
-from a13n_ui.model_adapters import model_adapter_registration
 
 from .models import (
-    AgentDefinitionDocument,
-    ConfigurationSettings,
-    DependencyLock,
-    EnvironmentDefinitionDocument,
-    LocalSkillSourceDefinition,
-    ModelDefinition,
-    PluginInstanceDefinition,
-    PromptBlock,
-    PromptDefinition,
-    ResolvedSkillRevisionContent,
-    ResourceDocument,
-    ResourceKind,
-    ResourceRef,
-    ResourceRevision,
-    ResourceRevisionRef,
-    SafeSourceRef,
-    SkillDefinition,
+    AgentUiDocument,
+    CanonicalSubagent,
+    CanonicalSubagentSource,
+    LoadedAgentUiConfiguration,
     canonical_digest,
-    canonical_json_value,
-    resource_identity,
-    restart_settings_digest,
 )
 
-_NAMESPACE_MODELS: dict[str, type[ResourceDocument]] = {
-    "models": ModelDefinition,
-    "prompts": PromptDefinition,
-    "plugins": PluginInstanceDefinition,
-    "skill-sources": LocalSkillSourceDefinition,
-    "skills": SkillDefinition,
-    "agents": AgentDefinitionDocument,
-    "environments": EnvironmentDefinitionDocument,
-}
-_SOURCE_SUFFIXES = frozenset({".yaml", ".yml", ".json"})
+_MAX_YAML_BYTES = 1024 * 1024
+_MAX_MARKDOWN_BYTES = 1024 * 1024
+_MAX_MARKDOWN_TOTAL_BYTES = 16 * 1024 * 1024
+_MAX_MARKDOWN_FILES = 1024
+_MAX_DIRECTORY_ENTRIES = 4096
+_MAX_YAML_NODES = 100_000
+_MAX_YAML_DEPTH = 64
+_STABLE_READ_ATTEMPTS = 3
 
 
-@dataclass(frozen=True, slots=True)
-class SkillPackageCandidate:
-    revision: ResourceRevisionRef
-    payload: JsonValue
+async def load_agent_ui_configuration(path: Path) -> LoadedAgentUiConfiguration:
+    """Read one coherent source candidate for later trusted catalog resolution."""
 
+    selected = path.expanduser().resolve(strict=False)
+    if selected.suffix.lower() not in {".yaml", ".yml"}:
+        raise _error("settings_path_invalid", "Agent UI configuration must use YAML.", selected)
 
-@dataclass(frozen=True, slots=True)
-class CatalogCandidate:
-    settings: ConfigurationSettings
-    settings_digest: str
-    restart_settings_digest: str
-    catalog_digest: str
-    revisions: tuple[ResourceRevision, ...]
-    skill_packages: tuple[SkillPackageCandidate, ...]
-    availability: tuple[DependencyLock, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _LoadedDocument:
-    layer: int
-    root_id: str
-    root: Path
-    path: Path
-    relative_path: str
-    document: ResourceDocument
-    overlay: Mapping[str, bytes | None]
-
-
-async def load_configuration_settings(
-    path: Path | None,
-    fallback: ConfigurationSettings,
-) -> ConfigurationSettings:
-    """Load one strict file-backed process configuration or use the bootstrap value."""
-
-    if path is None:
-        return fallback
-    if path.suffix.lower() not in _SOURCE_SUFFIXES:
-        raise _error("process_settings_invalid", "Process settings must use YAML or JSON.")
-    content = await _stable_read(path, fallback)
-    raw = _parse_document(path, content, fallback)
-    try:
-        serialized = json.dumps(raw, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-        return ConfigurationSettings.model_validate_json(serialized, strict=True)
-    except (TypeError, ValueError, ValidationError) as exc:
-        raise _error(
-            "process_settings_invalid",
-            "The process settings document is invalid.",
-            details={"validation_error_count": exc.error_count() if isinstance(exc, ValidationError) else 1},
-        ) from exc
-
-
-async def load_catalog_candidate(
-    settings: ConfigurationSettings,
-    *,
-    source_overlays: Mapping[str, Mapping[str, bytes | None]] | None = None,
-) -> CatalogCandidate:
-    """Read every selected source at a stable point and validate one complete graph."""
-
-    loaded: list[_LoadedDocument] = []
-    overlays: dict[str, Mapping[str, bytes | None]] = {}
-    selected_overlays = source_overlays or {}
-    source_count = 0
-    for layer, root in enumerate(settings.ordered_roots):
-        overlay = selected_overlays.get(root.root_id, {})
-        overlays[root.root_id] = overlay
-        documents = await to_thread.run_sync(partial(_discover_root, root.path, settings.max_source_files, overlay))
-        source_count += len(documents)
-        if source_count > settings.max_source_files:
-            raise _error("configuration_source_limit", "Configuration contains too many source documents.")
-        for path, namespace, relative_path in documents:
-            selected_content = overlay.get(relative_path)
-            content = selected_content if isinstance(selected_content, bytes) else await _stable_read(path, settings)
-            raw = _parse_document(path, content, settings)
-            model_type = _NAMESPACE_MODELS[namespace]
-            try:
-                document = model_type.model_validate(raw, strict=True)
-            except ValidationError as exc:
+    for _attempt in range(_STABLE_READ_ATTEMPTS):
+        yaml_content, yaml_fingerprint = await to_thread.run_sync(
+            _read_bounded_stable,
+            selected,
+            _MAX_YAML_BYTES,
+        )
+        before = await to_thread.run_sync(_scan_subagent_directory, selected.parent / "subagents")
+        sources: list[CanonicalSubagentSource] = []
+        total_bytes = 0
+        source_changed = False
+        for item in before:
+            content, fingerprint = await to_thread.run_sync(
+                _read_bounded_stable,
+                item[0],
+                _MAX_MARKDOWN_BYTES,
+            )
+            if fingerprint != item[1:]:
+                source_changed = True
+                break
+            total_bytes += len(content)
+            if total_bytes > _MAX_MARKDOWN_TOTAL_BYTES:
                 raise _error(
-                    "configuration_document_invalid",
-                    "A configuration resource document is invalid.",
-                    details={"source_id": root.root_id, "validation_error_count": exc.error_count()},
-                ) from exc
-            loaded.append(
-                _LoadedDocument(
-                    layer=layer,
-                    root_id=root.root_id,
-                    root=root.path,
-                    path=path,
-                    relative_path=relative_path,
-                    document=document,
-                    overlay=overlay,
+                    "configuration_source_limit",
+                    "Canonical subagent Markdown exceeds the total size limit.",
+                    selected,
                 )
-            )
-
-    availability, model_locks, plugin_locks, provider_locks = _availability(settings)
-    selected = _select_precedence(loaded)
-    local_directory_ids = {item.directory_id for item in settings.local_directories}
-    revisions: list[ResourceRevision] = []
-    packages: list[SkillPackageCandidate] = []
-    identities = {
-        (identity.kind.value, identity.resource_id)
-        for item in selected
-        for identity in (resource_identity(item.document),)
-    }
-    for reference in settings.skill_discovery.ordered_sources:
-        if (reference.kind.value, reference.resource_id) not in identities:
-            raise _error(
-                "configuration_reference_missing",
-                "Skill discovery selects a missing source resource.",
-            )
-
-    for item in selected:
-        document = await _normalize_document(item, settings)
-        identity = resource_identity(document)
-        locks: list[DependencyLock] = []
-        if isinstance(document, ModelDefinition):
-            lock = model_locks.get(document.provider_key)
-            if document.provider_key not in settings.model_adapter_keys or lock is None:
-                raise _error("model_adapter_unavailable", "A Model selects an unavailable adapter.")
-            locks.append(lock)
-        elif isinstance(document, PluginInstanceDefinition):
-            lock = plugin_locks.get(document.plugin_key)
-            if document.plugin_key not in settings.plugin_keys or lock is None:
-                raise _error("plugin_factory_unavailable", "A Plugin selects an unavailable factory.")
-            locks.append(lock)
-        elif isinstance(document, LocalSkillSourceDefinition):
-            if document.directory_id not in local_directory_ids:
-                raise _error("skill_source_unauthorized", "A Skill source selects an unauthorized directory alias.")
-        elif isinstance(document, EnvironmentDefinitionDocument):
-            for mount in document.mounts:
-                lock = provider_locks.get(mount.provider_key)
-                if lock is None:
-                    raise _error("provider_factory_unavailable", "An Environment selects an unavailable provider.")
-                locks.append(lock)
-                _validate_provider_mount(mount, settings)
-
-        package_payload: JsonValue | None = None
-        normalized_value = cast(dict[str, JsonValue], canonical_json_value(document))
-        if isinstance(document, SkillDefinition):
-            package_payload = await _read_skill_package(document, settings, overlays)
-            if not isinstance(package_payload, dict) or not isinstance(package_payload.get("package_digest"), str):
-                raise _error("skill_package_invalid", "A managed Skill package has no canonical digest.")
-            normalized_value["resolved_package_digest"] = package_payload["package_digest"]
+            document = _parse_canonical_markdown(item[0], content)
             try:
-                normalized_value = cast(
-                    dict[str, JsonValue],
-                    canonical_json_value(
-                        ResolvedSkillRevisionContent.model_validate(
-                            normalized_value,
-                            strict=True,
-                        )
-                    ),
+                sources.append(
+                    CanonicalSubagentSource(
+                        document=document,
+                        relative_path=f"subagents/{item[0].name}",
+                        source_digest=hashlib.sha256(content).hexdigest(),
+                    )
                 )
             except ValidationError as exc:
-                raise _error("skill_package_invalid", "A managed Skill revision is invalid.") from exc
-        normalized = cast(JsonValue, normalized_value)
-        content_digest = canonical_digest(
+                raise _validation_error(
+                    "configuration_markdown_invalid",
+                    "A canonical subagent source is invalid.",
+                    item[0],
+                    exc,
+                ) from exc
+        if source_changed:
+            continue
+
+        after = await to_thread.run_sync(_scan_subagent_directory, selected.parent / "subagents")
+        final_yaml_fingerprint = await to_thread.run_sync(_regular_file_fingerprint, selected)
+        if before != after or yaml_fingerprint != final_yaml_fingerprint:
+            continue
+
+        document = _parse_agent_ui_document(selected, yaml_content)
+        yaml_digest = hashlib.sha256(yaml_content).hexdigest()
+        source_digest = canonical_digest(
             {
-                "schema_version": document.schema_version,
-                "normalized_content": normalized,
-                "dependencies": locks,
+                "yaml": yaml_digest,
+                "subagents": [
+                    {"name": item.document.name, "source_digest": item.source_digest}
+                    for item in sorted(sources, key=lambda source: source.document.name)
+                ],
             }
         )
-        revision_ref = ResourceRevisionRef(
-            kind=identity.kind,
-            resource_id=identity.resource_id,
-            content_digest=content_digest,
-        )
-        revision = ResourceRevision(
-            ref=revision_ref,
-            schema_version=document.schema_version,
-            normalized_content=normalized,
-            source=SafeSourceRef(source_id=item.root_id, relative_path=item.relative_path),
-            dependency_provenance=tuple(locks),
-        )
-        revisions.append(revision)
-        if package_payload is not None:
-            packages.append(SkillPackageCandidate(revision=revision_ref, payload=package_payload))
+        try:
+            return LoadedAgentUiConfiguration(
+                document=document,
+                yaml_digest=yaml_digest,
+                subagents=tuple(sorted(sources, key=lambda source: source.document.name)),
+                source_digest=source_digest,
+            )
+        except ValidationError as exc:
+            raise _validation_error(
+                "configuration_invalid",
+                "Agent UI configuration references are invalid.",
+                selected,
+                exc,
+            ) from exc
 
-    _validate_graph(revisions, identities)
-    revisions.sort(key=lambda revision: (revision.ref.kind.value, revision.ref.resource_id))
-    packages.sort(key=lambda package: package.revision.resource_id)
-    settings_dump = cast(dict[str, JsonValue], canonical_json_value(settings))
-    settings_digest = canonical_digest(settings_dump)
-    catalog_digest = canonical_digest(
-        {
-            "settings": settings_digest,
-            "roots": [root.root_id for root in settings.ordered_roots],
-            "resources": tuple(revision.ref for revision in revisions),
-            "availability": availability,
-        }
-    )
-    return CatalogCandidate(
-        settings=settings,
-        settings_digest=settings_digest,
-        restart_settings_digest=restart_settings_digest(settings),
-        catalog_digest=catalog_digest,
-        revisions=tuple(revisions),
-        skill_packages=tuple(packages),
-        availability=availability,
+    raise _error(
+        "settings_source_unstable",
+        "Agent UI configuration sources changed during bounded reads.",
+        selected,
     )
 
 
-def _discover_root(
-    root: Path,
-    max_files: int,
-    overlay: Mapping[str, bytes | None],
-) -> tuple[tuple[Path, str, str], ...]:
-    try:
-        root_stat = root.stat(follow_symlinks=False)
-    except FileNotFoundError:
-        root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        root_stat = root.stat(follow_symlinks=False)
-    except OSError as exc:
-        raise _error("configuration_source_unavailable", "A definition root cannot be inspected.") from exc
-    if not stat.S_ISDIR(root_stat.st_mode) or root.is_symlink():
-        raise _error("configuration_source_invalid", "A definition root must be a real directory.")
-    discovered: dict[str, tuple[Path, str, str]] = {}
-    for namespace in _NAMESPACE_MODELS:
-        namespace_path = root / namespace
-        if not namespace_path.exists():
-            continue
-        try:
-            metadata = namespace_path.stat(follow_symlinks=False)
-        except OSError as exc:
-            raise _error("configuration_source_unavailable", "A resource namespace cannot be inspected.") from exc
-        if not stat.S_ISDIR(metadata.st_mode) or namespace_path.is_symlink():
-            raise _error("configuration_source_invalid", "A resource namespace must be a real directory.")
-        for current, directories, files in os.walk(namespace_path, followlinks=False):
-            directories.sort()
-            files.sort()
-            current_path = Path(current)
-            for directory in tuple(directories):
-                candidate = current_path / directory
-                if candidate.is_symlink():
-                    raise _error("configuration_source_invalid", "Configuration source symlinks are forbidden.")
-            for name in files:
-                candidate = current_path / name
-                if candidate.suffix.lower() not in _SOURCE_SUFFIXES:
-                    continue
-                try:
-                    relative = candidate.relative_to(root).as_posix()
-                    file_stat = candidate.stat(follow_symlinks=False)
-                except (OSError, ValueError) as exc:
-                    raise _error("configuration_source_invalid", "A source file escaped its definition root.") from exc
-                if not stat.S_ISREG(file_stat.st_mode) or candidate.is_symlink():
-                    raise _error("configuration_source_invalid", "Resource documents must be regular files.")
-                discovered[relative] = (candidate, namespace, relative)
-    for relative, content in overlay.items():
-        path = PurePosixPath(relative)
-        namespace = path.parts[0] if path.parts else ""
-        if namespace not in _NAMESPACE_MODELS or path.suffix.lower() not in _SOURCE_SUFFIXES:
-            continue
-        if content is None:
-            discovered.pop(relative, None)
-        else:
-            discovered[relative] = (root.joinpath(*path.parts), namespace, relative)
-    if len(discovered) > max_files:
-        raise _error("configuration_source_limit", "A definition root contains too many documents.")
-    return tuple(discovered[key] for key in sorted(discovered))
+def empty_agent_ui_configuration() -> LoadedAgentUiConfiguration:
+    """Return the onboarding configuration used when the fixed default file is absent."""
+
+    document = AgentUiDocument()
+    yaml_digest = hashlib.sha256(b"").hexdigest()
+    source_digest = canonical_digest({"yaml": yaml_digest, "subagents": []})
+    return LoadedAgentUiConfiguration(
+        document=document,
+        yaml_digest=yaml_digest,
+        source_digest=source_digest,
+    )
 
 
-async def _stable_read(path: Path, settings: ConfigurationSettings) -> bytes:
-    for _attempt in range(settings.stable_read_attempts):
+def _read_bounded_stable(path: Path, max_bytes: int) -> tuple[bytes, tuple[int, int, int, int]]:
+    for _attempt in range(_STABLE_READ_ATTEMPTS):
+        descriptor = -1
         try:
-            before = await to_thread.run_sync(partial(path.stat, follow_symlinks=False))
-            if not stat.S_ISREG(before.st_mode) or before.st_size > settings.max_source_bytes:
-                raise _error("configuration_source_limit", "A configuration document exceeds its size limit.")
-            content = await to_thread.run_sync(path.read_bytes)
-            after = await to_thread.run_sync(partial(path.stat, follow_symlinks=False))
+            path_before = path.stat(follow_symlinks=False)
+            if not stat.S_ISREG(path_before.st_mode):
+                raise _error(
+                    "configuration_source_invalid",
+                    "A configuration source must be a non-symlink regular file.",
+                    path,
+                )
+            flags = os.O_RDONLY
+            flags |= getattr(os, "O_BINARY", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_NONBLOCK", 0)
+            descriptor = os.open(path, flags)
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode) or before.st_size > max_bytes:
+                raise _error(
+                    "configuration_source_limit",
+                    "A configuration source exceeds its size limit.",
+                    path,
+                )
+            remaining = max_bytes + 1
+            chunks: list[bytes] = []
+            while remaining:
+                chunk = os.read(descriptor, min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            content = b"".join(chunks)
+            after = os.fstat(descriptor)
+            path_after = path.stat(follow_symlinks=False)
         except ConfigurationError:
             raise
         except OSError as exc:
-            raise _error("configuration_source_unavailable", "A configuration document cannot be read.") from exc
-        fingerprint_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
-        fingerprint_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
-        if fingerprint_before == fingerprint_after and len(content) == before.st_size:
-            return content
-    raise _error("configuration_source_unstable", "A configuration document changed during bounded stable reads.")
+            raise _error("settings_unavailable", "A selected configuration source cannot be read.", path) from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        if len(content) > max_bytes:
+            raise _error("configuration_source_limit", "A configuration source exceeds its size limit.", path)
+        fingerprint_before = _fingerprint(before)
+        if (
+            fingerprint_before == _fingerprint(after)
+            and fingerprint_before == _fingerprint(path_before)
+            and fingerprint_before == _fingerprint(path_after)
+            and len(content) == before.st_size
+        ):
+            return content, fingerprint_before
+    raise _error("settings_source_unstable", "A configuration source changed during bounded reads.", path)
 
 
-def _parse_document(path: Path, content: bytes, settings: ConfigurationSettings) -> Mapping[str, Any]:
+def _regular_file_fingerprint(path: Path) -> tuple[int, int, int, int]:
+    try:
+        metadata = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise _error("settings_unavailable", "A selected configuration source cannot be read.", path) from exc
+    if not stat.S_ISREG(metadata.st_mode):
+        raise _error(
+            "configuration_source_invalid",
+            "A configuration source must be a non-symlink regular file.",
+            path,
+        )
+    return _fingerprint(metadata)
+
+
+def _fingerprint(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    if os.name == "nt":
+        return (0, 0, metadata.st_size, metadata.st_mtime_ns)
+    return (metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns)
+
+
+def _scan_subagent_directory(directory: Path) -> tuple[tuple[Path, int, int, int, int], ...]:
+    try:
+        metadata = directory.lstat()
+    except FileNotFoundError:
+        return ()
+    except OSError as exc:
+        raise _error("settings_unavailable", "The canonical subagent directory cannot be read.", directory) from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise _error(
+            "configuration_source_invalid",
+            "The canonical subagent source must be a non-symlink directory.",
+            directory,
+        )
+    selected: list[tuple[Path, int, int, int, int]] = []
+    try:
+        with os.scandir(directory) as entries:
+            entry_count = 0
+            for entry in entries:
+                entry_count += 1
+                if entry_count > _MAX_DIRECTORY_ENTRIES:
+                    raise _error(
+                        "configuration_source_limit",
+                        "The canonical subagent directory exceeds its entry limit.",
+                        directory,
+                    )
+                if entry.name.lower() == "readme.md" or not entry.name.endswith(".md"):
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                if len(selected) >= _MAX_MARKDOWN_FILES:
+                    raise _error(
+                        "configuration_source_limit",
+                        "Too many canonical subagent files were selected.",
+                        directory,
+                    )
+                item = entry.stat(follow_symlinks=False)
+                selected.append((Path(entry.path), *_fingerprint(item)))
+    except ConfigurationError:
+        raise
+    except OSError as exc:
+        raise _error("settings_unavailable", "The canonical subagent directory cannot be listed.", directory) from exc
+    return tuple(sorted(selected, key=lambda item: item[0].name))
+
+
+def _parse_agent_ui_document(path: Path, content: bytes) -> AgentUiDocument:
+    raw = _parse_yaml_mapping(
+        path,
+        content,
+        code="settings_invalid",
+        source_name="Agent UI configuration YAML",
+    )
+    _resolve_process_paths(raw, base=path.parent)
+    try:
+        serialized = json.dumps(raw, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        return AgentUiDocument.model_validate_json(serialized, strict=True)
+    except (TypeError, ValueError, ValidationError) as exc:
+        if isinstance(exc, ValidationError):
+            raise _validation_error(
+                "settings_invalid", "The Agent UI configuration document is invalid.", path, exc
+            ) from exc
+        raise _error("settings_invalid", "The Agent UI configuration document is invalid.", path) from exc
+
+
+def _parse_canonical_markdown(path: Path, content: bytes) -> CanonicalSubagent:
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise _error("configuration_document_invalid", "A configuration document is not valid UTF-8.") from exc
+        raise _error(
+            "configuration_markdown_invalid", "Canonical subagent Markdown must be valid UTF-8.", path
+        ) from exc
     if "\x00" in text:
-        raise _error("configuration_document_invalid", "A configuration document contains NUL.")
+        raise _error("configuration_markdown_invalid", "Canonical subagent Markdown contains NUL.", path)
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    if not lines or lines[0] != "---":
+        raise _error("configuration_markdown_invalid", "Canonical subagent Markdown requires YAML frontmatter.", path)
     try:
-        if path.suffix.lower() == ".json":
-            value = json.loads(
-                text, object_pairs_hook=_reject_duplicate_json_pairs, parse_constant=_reject_json_constant
-            )
-        else:
-            _reject_yaml_graph_features(text)
-            value = yaml.load(text, Loader=_UniqueSafeLoader)
+        closing = lines.index("---", 1)
+    except ValueError as exc:
+        raise _error("configuration_markdown_invalid", "Canonical subagent frontmatter is not closed.", path) from exc
+    frontmatter = "\n".join(lines[1:closing]).encode()
+    raw = _parse_yaml_mapping(
+        path,
+        frontmatter,
+        code="configuration_markdown_invalid",
+        source_name="Canonical subagent frontmatter",
+    )
+    if "body" in raw:
+        raise _error("configuration_markdown_invalid", "Markdown body is not a frontmatter field.", path)
+    raw["body"] = "\n".join(lines[closing + 1 :]).strip()
+    try:
+        return CanonicalSubagent.model_validate(raw, strict=True)
+    except ValidationError as exc:
+        raise _validation_error(
+            "configuration_markdown_invalid",
+            "A canonical subagent definition is invalid.",
+            path,
+            exc,
+        ) from exc
+
+
+def _resolve_process_paths(raw: dict[str, Any], *, base: Path) -> None:
+    process = raw.get("process")
+    if not isinstance(process, dict):
+        return
+    storage = process.get("storage")
+    if isinstance(storage, dict):
+        _resolve_mapping_path(storage, "data_root", base)
+    envd_runtime = process.get("envd_runtime")
+    if isinstance(envd_runtime, dict):
+        _resolve_mapping_path(envd_runtime, "executable", base)
+
+
+def _resolve_mapping_path(mapping: dict[str, Any], name: str, base: Path) -> None:
+    value = mapping.get(name)
+    if not isinstance(value, str) or "\x00" in value:
+        return
+    expanded = Path(value).expanduser()
+    if not expanded.is_absolute():
+        expanded = base / expanded
+    mapping[name] = str(expanded.resolve(strict=False))
+
+
+def _parse_yaml_mapping(
+    path: Path,
+    content: bytes,
+    *,
+    code: str,
+    source_name: str,
+) -> dict[str, Any]:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise _error(code, f"{source_name} is not valid UTF-8.", path) from exc
+    if "\x00" in text:
+        raise _error(code, f"{source_name} contains NUL.", path)
+    try:
+        depth = 0
+        nodes = 0
+        for event in yaml.parse(text, Loader=yaml.SafeLoader):
+            if isinstance(event, yaml.events.AliasEvent) or getattr(event, "anchor", None) is not None:
+                raise _error(code, f"{source_name} forbids YAML anchors and aliases.", path)
+            tag = getattr(event, "tag", None)
+            if tag is not None and not str(tag).startswith("tag:yaml.org,2002:"):
+                raise _error(code, f"{source_name} forbids custom YAML tags.", path)
+            if isinstance(event, (yaml.events.MappingStartEvent, yaml.events.SequenceStartEvent)):
+                depth += 1
+                nodes += 1
+            elif isinstance(event, (yaml.events.MappingEndEvent, yaml.events.SequenceEndEvent)):
+                depth -= 1
+            elif isinstance(event, yaml.events.ScalarEvent):
+                nodes += 1
+            if nodes > _MAX_YAML_NODES or depth > _MAX_YAML_DEPTH:
+                raise _error("settings_source_limit", "A configuration YAML source exceeds structural limits.", path)
+        value = yaml.load(text, Loader=_UniqueSafeLoader)
     except ConfigurationError:
         raise
-    except (json.JSONDecodeError, yaml.YAMLError, UnicodeError, ValueError) as exc:
-        raise _error("configuration_document_invalid", "A configuration document has invalid syntax.") from exc
+    except RecursionError as exc:
+        raise _error("settings_source_limit", f"{source_name} exceeds structural limits.", path) from exc
+    except (yaml.YAMLError, UnicodeError, ValueError) as exc:
+        raise _error(code, f"{source_name} has invalid syntax.", path) from exc
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
-        raise _error("configuration_document_invalid", "A resource document must be a string-keyed mapping.")
-    nodes, depth = _measure_tree(value)
-    if nodes > settings.max_yaml_nodes or depth > settings.max_document_depth:
-        raise _error("configuration_document_limit", "A configuration document exceeds structural limits.")
+        raise _error(code, f"{source_name} must be a string-keyed mapping.", path)
     return value
 
 
@@ -391,527 +392,20 @@ def _construct_mapping(loader: _UniqueSafeLoader, node: yaml.MappingNode, deep: 
     return result
 
 
-_UniqueSafeLoader.add_constructor(
-    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
-    _construct_mapping,
-)
+_UniqueSafeLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping)
 
 
-def _reject_yaml_graph_features(text: str) -> None:
-    try:
-        for event in yaml.parse(text, Loader=yaml.SafeLoader):
-            if isinstance(event, yaml.events.AliasEvent) or getattr(event, "anchor", None) is not None:
-                raise _error("configuration_document_invalid", "YAML anchors and aliases are forbidden.")
-            tag = getattr(event, "tag", None)
-            if tag is not None and not str(tag).startswith("tag:yaml.org,2002:"):
-                raise _error("configuration_document_invalid", "Custom YAML tags are forbidden.")
-    except yaml.YAMLError as exc:
-        raise _error("configuration_document_invalid", "A YAML document has invalid syntax.") from exc
-
-
-def _reject_duplicate_json_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    value: dict[str, Any] = {}
-    for key, item in pairs:
-        if key in value:
-            raise ValueError("duplicate JSON mapping key")
-        value[key] = item
-    return value
-
-
-def _reject_json_constant(value: str) -> None:
-    raise ValueError(f"non-finite JSON constant: {value}")
-
-
-def _measure_tree(value: Any, depth: int = 1) -> tuple[int, int]:
-    if isinstance(value, dict):
-        children = [_measure_tree(item, depth + 1) for item in value.values()]
-    elif isinstance(value, list):
-        children = [_measure_tree(item, depth + 1) for item in value]
-    else:
-        return 1, depth
-    return 1 + sum(item[0] for item in children), max((item[1] for item in children), default=depth)
-
-
-def _select_precedence(loaded: list[_LoadedDocument]) -> tuple[_LoadedDocument, ...]:
-    selected: dict[ResourceRef, _LoadedDocument] = {}
-    seen_layer: set[tuple[int, str, str]] = set()
-    resource_ids: dict[str, ResourceKind] = {}
-    for item in loaded:
-        identity = resource_identity(item.document)
-        layer_key = (item.layer, identity.kind.value, identity.resource_id)
-        if layer_key in seen_layer:
-            raise _error(
-                "configuration_duplicate_resource", "A source layer defines one resource identity more than once."
-            )
-        seen_layer.add(layer_key)
-        previous_kind = resource_ids.setdefault(identity.resource_id, identity.kind)
-        if previous_kind is not identity.kind:
-            raise _error("configuration_resource_kind_conflict", "A resource ID is reused by an incompatible kind.")
-        selected[identity] = item
-    return tuple(
-        sorted(
-            selected.values(),
-            key=lambda item: (
-                resource_identity(item.document).kind.value,
-                resource_identity(item.document).resource_id,
-            ),
-        )
-    )
-
-
-async def _normalize_document(item: _LoadedDocument, settings: ConfigurationSettings) -> ResourceDocument:
-    document = item.document
-    if isinstance(document, PromptDefinition):
-        blocks: list[PromptBlock] = []
-        for block in document.system_prompt_blocks:
-            if block.source is None:
-                blocks.append(block)
-                continue
-            parent = PurePosixPath(item.relative_path).parent
-            relative = (parent / block.source).as_posix()
-            selected = item.overlay.get(relative)
-            if selected is None and relative in item.overlay:
-                raise _error("configuration_source_invalid", "A referenced Prompt source was deleted.")
-            path = _confined_path(item.root, item.root, relative)
-            raw = selected if isinstance(selected, bytes) else await _stable_read(path, settings)
-            try:
-                content = raw.decode("utf-8")
-                blocks.append(PromptBlock(content=content))
-            except UnicodeDecodeError as exc:
-                raise _error("configuration_document_invalid", "A Prompt source is not valid UTF-8.") from exc
-            except ValidationError as exc:
-                raise _error(
-                    "configuration_document_invalid",
-                    "A resolved Prompt source is invalid.",
-                    details={"validation_error_count": exc.error_count()},
-                ) from exc
-        return document.model_copy(update={"system_prompt_blocks": tuple(blocks)}, deep=True)
-    return document
-
-
-def _confined_path(root: Path, parent: Path, relative: str) -> Path:
-    path = parent.joinpath(*PurePosixPath(relative).parts)
-    try:
-        resolved_parent = path.parent.resolve(strict=True)
-        resolved_parent.relative_to(root.resolve(strict=True))
-    except (OSError, ValueError) as exc:
-        raise _error("configuration_source_invalid", "A referenced source path escapes its definition root.") from exc
-    if path.is_symlink():
-        raise _error("configuration_source_invalid", "Referenced source symlinks are forbidden.")
-    return path
-
-
-def _availability(
-    settings: ConfigurationSettings,
-) -> tuple[
-    tuple[DependencyLock, ...],
-    dict[str, DependencyLock],
-    dict[str, DependencyLock],
-    dict[str, DependencyLock],
-]:
-    model_locks: dict[str, DependencyLock] = {}
-    for adapter_key in settings.model_adapter_keys:
-        registration = model_adapter_registration(adapter_key)
-        if registration is None:
-            raise _error(
-                "model_adapter_unavailable",
-                "A selected Agent UI Model adapter is unavailable.",
-            )
-        model_locks[adapter_key] = DependencyLock(
-            dependency_kind="model_adapter",
-            key=adapter_key,
-            distribution_name=registration.distribution_name,
-            distribution_version=registration.distribution_version,
-        )
-    try:
-        discovered_plugins = {item.plugin_key: item for item in discover_harness_plugin_factory_references()}
-        plugin_catalog = build_harness_plugin_factory_catalog(plugin_keys=settings.plugin_keys)
-        discovered_providers = {item.provider_key: item for item in discover_environment_provider_factory_references()}
-        provider_catalog = build_environment_provider_factory_catalog(
-            builtin_keys=settings.builtin_provider_keys,
-            extension_keys=settings.extension_provider_keys,
-        )
-    except Exception as exc:
-        raise _error("factory_catalog_invalid", "A selected installed factory catalog is unavailable.") from exc
-    plugin_locks: dict[str, DependencyLock] = {}
-    for registration in plugin_catalog.registrations:
-        reference = discovered_plugins.get(registration.plugin_key)
-        distribution_name = registration.distribution_name or (reference.distribution_name if reference else None)
-        distribution_version = registration.distribution_version or (
-            reference.distribution_version if reference else None
-        )
-        if distribution_name is None or distribution_version is None:
-            raise _error(
-                "factory_catalog_invalid",
-                "A selected Harness plugin has incomplete distribution provenance.",
-            )
-        plugin_locks[registration.plugin_key] = DependencyLock(
-            dependency_kind="harness_plugin",
-            key=registration.plugin_key,
-            distribution_name=distribution_name,
-            distribution_version=distribution_version,
-        )
-    provider_locks: dict[str, DependencyLock] = {}
-    for registration in provider_catalog.registrations:
-        reference = discovered_providers.get(registration.provider_key)
-        builtin = registration.provider_key in settings.builtin_provider_keys
-        distribution_name = (
-            registration.distribution_name
-            or (reference.distribution_name if reference else None)
-            or ("a13n-environment-provider" if builtin else None)
-        )
-        distribution_version = (
-            registration.distribution_version
-            or (reference.distribution_version if reference else None)
-            or (version("a13n-environment-provider") if builtin else None)
-        )
-        if distribution_name is None or distribution_version is None:
-            raise _error(
-                "factory_catalog_invalid",
-                "A selected Environment provider has incomplete distribution provenance.",
-            )
-        provider_locks[registration.provider_key] = DependencyLock(
-            dependency_kind="environment_provider",
-            key=registration.provider_key,
-            distribution_name=distribution_name,
-            distribution_version=distribution_version,
-        )
-    availability = tuple(
-        sorted(
-            (*model_locks.values(), *plugin_locks.values(), *provider_locks.values()),
-            key=lambda item: (item.dependency_kind, item.key),
-        )
-    )
-    return availability, model_locks, plugin_locks, provider_locks
-
-
-def _validate_provider_mount(
-    mount: Any,
-    settings: ConfigurationSettings,
-) -> EnvironmentLifecycleCapabilities:
-    parameters = mount.provider_parameters
-    if mount.provider_key == "a13n.direct-local":
-        root = parameters.get("root") if isinstance(parameters, dict) else None
-        directory_id = root.get("directory_id") if isinstance(root, dict) else None
-        directories = {item.directory_id: item.path for item in settings.local_directories}
-        path = directories.get(directory_id) if isinstance(directory_id, str) else None
-        if path is None or not isinstance(root, dict):
-            raise _error(
-                "provider_spec_invalid",
-                "Direct Local provider roots must select an authorized directory alias.",
-            )
-        parameters = {
-            **parameters,
-            "root": {
-                "path": str(path),
-                "read_only": bool(root.get("read_only", False)),
-            },
-        }
-        shell_profiles = parameters.get("shell_profiles")
-        if shell_profiles is not None:
-            if not isinstance(shell_profiles, list):
-                raise _error("provider_spec_invalid", "Direct Local shell profiles must be a list.")
-            executables = {item.executable_id: item.path for item in settings.local_executables}
-            normalized_profiles: list[dict[str, Any]] = []
-            for profile in shell_profiles:
-                if not isinstance(profile, dict):
-                    raise _error(
-                        "provider_spec_invalid",
-                        "Direct Local shell profiles must select an authorized executable alias.",
-                    )
-                executable = profile.get("executable")
-                if not isinstance(executable, dict) or set(executable) != {"executable_id"}:
-                    raise _error(
-                        "provider_spec_invalid",
-                        "Direct Local shell profiles must select an authorized executable alias.",
-                    )
-                executable_id = executable.get("executable_id")
-                executable_path = executables.get(executable_id) if isinstance(executable_id, str) else None
-                if executable_path is None:
-                    raise _error(
-                        "provider_spec_invalid",
-                        "Direct Local shell profiles must select an authorized executable alias.",
-                    )
-                normalized_profiles.append({**profile, "executable": str(executable_path)})
-            parameters["shell_profiles"] = normalized_profiles
-    try:
-        catalog = build_environment_provider_factory_catalog(
-            builtin_keys=settings.builtin_provider_keys,
-            extension_keys=settings.extension_provider_keys,
-        )
-        resolved = catalog.resolve_spec(
-            EnvironmentProviderSpec(
-                provider_key=mount.provider_key,
-                schema_version=mount.provider_schema_version,
-                parameters=parameters,
-            )
-        )
-    except Exception as exc:
-        raise _error("provider_spec_invalid", "An Environment provider specification is invalid.") from exc
-    return resolved.lifecycle_capabilities
-
-
-def _validate_graph(revisions: list[ResourceRevision], identities: set[tuple[str, str]]) -> None:
-    agent_edges: dict[str, set[str]] = {}
-    for revision in revisions:
-        if revision.ref.kind is not ResourceKind.agent:
-            continue
-        try:
-            document = AgentDefinitionDocument.model_validate(revision.normalized_content, strict=True)
-        except ValidationError as exc:
-            raise _error("configuration_document_invalid", "An Agent revision is invalid.") from exc
-        references = (
-            document.model,
-            document.prompt,
-            *document.plugins,
-            *document.skills.available,
-            *(edge.agent for edge in document.subagents),
-        )
-        for reference in references:
-            if (reference.kind.value, reference.resource_id) not in identities:
-                raise _error(
-                    "configuration_reference_missing", "A resource reference is missing or has the wrong kind."
-                )
-        agent_edges[revision.ref.resource_id] = {edge.agent.resource_id for edge in document.subagents}
-    _reject_cycles(agent_edges)
-
-
-def _reject_cycles(edges: dict[str, set[str]]) -> None:
-    visiting: set[str] = set()
-    visited: set[str] = set()
-
-    def visit(node: str) -> None:
-        if node in visiting:
-            raise _error("agent_graph_cycle", "The Agent resource graph contains a cycle.")
-        if node in visited:
-            return
-        visiting.add(node)
-        for child in edges.get(node, set()):
-            visit(child)
-        visiting.remove(node)
-        visited.add(node)
-
-    for node in edges:
-        visit(node)
-
-
-async def _read_skill_package(
-    document: SkillDefinition,
-    settings: ConfigurationSettings,
-    overlays: Mapping[str, Mapping[str, bytes | None]],
-) -> JsonValue:
-    roots = {root.root_id: root.path for root in settings.ordered_roots}
-    root = roots.get(document.package.root_id)
-    if root is None:
-        raise _error("skill_package_unauthorized", "A Skill package selects an unauthorized definition root.")
-    package_root = root.joinpath(*PurePosixPath(document.package.relative_path).parts)
-    payload = await to_thread.run_sync(
-        partial(
-            _read_skill_package_sync,
-            package_root,
-            document.package.relative_path,
-            overlays.get(document.package.root_id, {}),
-            settings.max_skill_package_files,
-            settings.max_skill_package_depth,
-            settings.max_skill_package_bytes,
-            settings.stable_read_attempts,
-        )
-    )
-    if not isinstance(payload, dict):
-        raise _error("skill_package_invalid", "A managed Skill package payload is invalid.")
-    files_value = payload.get("files")
-    if not isinstance(files_value, list):
-        raise _error("skill_package_invalid", "A managed Skill package manifest is invalid.")
-    files = cast(list[dict[str, JsonValue]], files_value)
-    skill_document = next((item for item in files if item["path"] == "SKILL.md"), None)
-    if skill_document is None:
-        raise _error("skill_package_invalid", "A managed Skill package must contain SKILL.md.")
-    copied: list[tuple[str, bytes]] = []
-    try:
-        for item in files:
-            path = item["path"]
-            encoded = item["content_base64"]
-            if not isinstance(path, str) or not isinstance(encoded, str):
-                raise ValueError("invalid package file")
-            copied.append((path, base64.b64decode(encoded, validate=True)))
-    except (KeyError, ValueError) as exc:
-        raise _error("skill_package_invalid", "A managed Skill package payload is invalid.") from exc
-    from .skills import validate_managed_skill_package
-
-    await validate_managed_skill_package(
-        tuple(copied),
-        expected_name=document.skill_name,
-        expected_description=document.description,
-        settings=settings,
-    )
-    return payload
-
-
-def _read_skill_package_sync(
-    root: Path,
-    package_relative: str,
-    overlay: Mapping[str, bytes | None],
-    max_files: int,
-    max_depth: int,
-    max_bytes: int,
-    stable_read_attempts: int,
-) -> JsonValue:
-    content_by_path: dict[str, bytes] = {}
-    if root.exists():
-        for _attempt in range(stable_read_attempts):
-            before = _package_fingerprints(root, max_files=max_files, max_depth=max_depth)
-            try:
-                candidate = {
-                    relative: _stable_package_read(
-                        root.joinpath(*PurePosixPath(relative).parts),
-                        max_bytes=max_bytes,
-                        attempts=1,
-                    )
-                    for relative in sorted(before)
-                }
-            except ConfigurationError as exc:
-                if exc.code == "skill_package_unstable":
-                    continue
-                raise
-            after = _package_fingerprints(root, max_files=max_files, max_depth=max_depth)
-            if before == after:
-                content_by_path = candidate
-                break
-        else:
-            raise _error("skill_package_unstable", "A managed Skill package changed during bounded stable reads.")
-    prefix = f"{package_relative.rstrip('/')}/"
-    for source_relative, content in overlay.items():
-        if not source_relative.startswith(prefix):
-            continue
-        relative = source_relative.removeprefix(prefix)
-        relative_path = PurePosixPath(relative)
-        if (
-            not relative
-            or any(part in {".", ".."} for part in relative_path.parts)
-            or len(relative_path.parts) > max_depth
-        ):
-            raise _error("skill_package_invalid", "A Skill package path is invalid.")
-        if content is None:
-            content_by_path.pop(relative, None)
-        else:
-            content_by_path[relative] = content
-    files: list[dict[str, JsonValue]] = []
-    total = 0
-    for relative, content in sorted(content_by_path.items()):
-        total += len(content)
-        if len(files) >= max_files or total > max_bytes:
-            raise _error("skill_package_limit", "A managed Skill package exceeds configured limits.")
-        files.append(
-            {
-                "path": relative,
-                "sha256": hashlib.sha256(content).hexdigest(),
-                "content_base64": base64.b64encode(content).decode("ascii"),
-            }
-        )
-    manifest = [{"path": item["path"], "sha256": item["sha256"]} for item in files]
-    return cast(
-        JsonValue,
-        {
-            "schema_version": "1",
-            "package_digest": canonical_digest(manifest),
-            "files": files,
-        },
-    )
-
-
-def _package_fingerprints(
-    root: Path,
-    *,
-    max_files: int,
-    max_depth: int,
-) -> dict[str, tuple[int, int, int, int]]:
-    try:
-        root_metadata = root.stat(follow_symlinks=False)
-    except OSError as exc:
-        raise _error("skill_package_unavailable", "A managed Skill package directory is unavailable.") from exc
-    if not stat.S_ISDIR(root_metadata.st_mode) or root.is_symlink():
-        raise _error("skill_package_invalid", "A managed Skill package root must be a real directory.")
-    fingerprints: dict[str, tuple[int, int, int, int]] = {}
-    entry_count = 0
-    try:
-        for current, directories, names in os.walk(
-            root,
-            followlinks=False,
-            onerror=_raise_walk_error,
-        ):
-            directories.sort()
-            names.sort()
-            current_path = Path(current)
-            for directory in directories:
-                path = current_path / directory
-                metadata = path.stat(follow_symlinks=False)
-                if not stat.S_ISDIR(metadata.st_mode):
-                    raise _error("skill_package_invalid", "Skill package symlinks are forbidden.")
-                entry_count += 1
-                relative = path.relative_to(root)
-                if entry_count > max_files or len(relative.parts) > max_depth:
-                    raise _error("skill_package_limit", "A managed Skill package exceeds configured limits.")
-            for name in names:
-                path = current_path / name
-                metadata = path.stat(follow_symlinks=False)
-                if not stat.S_ISREG(metadata.st_mode):
-                    raise _error(
-                        "skill_package_invalid",
-                        "Skill packages may contain only regular files and directories.",
-                    )
-                relative_path = path.relative_to(root)
-                entry_count += 1
-                if entry_count > max_files or len(relative_path.parts) > max_depth:
-                    raise _error("skill_package_limit", "A managed Skill package exceeds configured limits.")
-                relative = relative_path.as_posix()
-                fingerprints[relative] = (
-                    metadata.st_dev,
-                    metadata.st_ino,
-                    metadata.st_size,
-                    metadata.st_mtime_ns,
-                )
-    except ConfigurationError:
-        raise
-    except OSError as exc:
-        raise _error("skill_package_unavailable", "A managed Skill package changed during traversal.") from exc
-    return fingerprints
-
-
-def _raise_walk_error(error: OSError) -> None:
-    raise error
-
-
-def _stable_package_read(path: Path, *, max_bytes: int, attempts: int) -> bytes:
-    for _attempt in range(attempts):
-        try:
-            before = path.stat(follow_symlinks=False)
-            if not stat.S_ISREG(before.st_mode):
-                raise _error(
-                    "skill_package_invalid",
-                    "Skill packages may contain only regular files and directories.",
-                )
-            if before.st_size > max_bytes:
-                raise _error("skill_package_limit", "A managed Skill package exceeds configured limits.")
-            content = path.read_bytes()
-            after = path.stat(follow_symlinks=False)
-        except ConfigurationError:
-            raise
-        except OSError as exc:
-            raise _error("skill_package_unavailable", "A managed Skill package file is unavailable.") from exc
-        before_fingerprint = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
-        after_fingerprint = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
-        if before_fingerprint == after_fingerprint and len(content) == before.st_size:
-            return content
-    raise _error("skill_package_unstable", "A managed Skill package changed during bounded stable reads.")
-
-
-def _error(code: str, message: str, *, details: dict[str, Any] | None = None) -> ConfigurationError:
+def _validation_error(code: str, message: str, path: Path, exc: ValidationError) -> ConfigurationError:
+    first = exc.errors(include_input=False, include_url=False)[0] if exc.error_count() else None
+    details: dict[str, Any] = {"path": str(path), "validation_error_count": exc.error_count()}
+    if first is not None:
+        details["location"] = ".".join(str(item) for item in first["loc"])
+        details["reason"] = first["type"]
     return ConfigurationError(message, code=code, details=details)
 
 
-__all__ = [
-    "CatalogCandidate",
-    "SkillPackageCandidate",
-    "load_catalog_candidate",
-    "load_configuration_settings",
-]
+def _error(code: str, message: str, path: Path) -> ConfigurationError:
+    return ConfigurationError(message, code=code, details={"path": str(path)})
+
+
+__all__ = ["empty_agent_ui_configuration", "load_agent_ui_configuration"]

@@ -70,3 +70,23 @@ def plugin_idempotency_conflict() -> PluginError:
         "The Idempotency-Key was already used with different Plugin content.",
         status_code=409,
     )
+
+
+def plugin_runtime_mode_unsupported() -> PluginError:
+    return PluginError(
+        "plugin_runtime_mode_unsupported",
+        "Plugin Runtime commands are unavailable in the configured mode.",
+        status_code=409,
+    )
+
+
+def plugin_runtime_control_unavailable() -> PluginError:
+    return PluginError(
+        "plugin_runtime_control_unavailable",
+        "Plugin Runtime command coordination is unavailable.",
+        status_code=503,
+    )
+
+
+def plugin_operation_not_found() -> PluginError:
+    return PluginError("plugin_operation_not_found", "The Plugin operation was not found.", status_code=404)

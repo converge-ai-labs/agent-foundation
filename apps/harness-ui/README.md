@@ -12,6 +12,6 @@ make harness-ui-check
 make agent-ui-build
 ```
 
-The Agent UI target starts the package-provided interactive CLI. Browser asset preparation and product design remain behind the dedicated frontend build targets; the browser consumes the same stable `AgentUiHost` operations as the CLI rather than owning another runtime.
+The Agent UI target starts the package-provided interactive CLI. Browser asset preparation and product design remain behind the dedicated frontend build targets; the browser consumes the same stable `AgentUiApp` operations as the CLI rather than owning another runtime.
 
-During frontend-only development, Vite proxies relative `/api` requests to `http://127.0.0.1:8765`. Set `AGENT_UI_API_PROXY_TARGET` when the local Agent UI Host uses another loopback origin.
+During frontend-only development, Vite proxies relative `/api` requests to `http://127.0.0.1:8765`. Set `AGENT_UI_API_PROXY_TARGET` when the local Agent UI App adapter uses another loopback origin.

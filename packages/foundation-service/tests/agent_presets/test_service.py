@@ -7,20 +7,32 @@ from a13n_service.agent_presets.domain import (
     DuplicateAgentPresetRequest,
     PatchAgentPresetRequest,
     ReplaceAgentPresetConfigRequest,
-    RollbackAgentPresetRequest,
+    SetDefaultAgentPresetRevisionRequest,
 )
 from a13n_service.agent_presets.errors import AgentPresetError
+from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.models import AgentPresetRecord
 from a13n_service.agent_presets.service import AgentPresetService
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import DIRECT_USER_ID, NOW, ORG_ID, USER_ID, WORKSPACE_ID, actor, preset_config
+from .conftest import (
+    DIRECT_USER_ID,
+    NOW,
+    ORG_ID,
+    USER_ID,
+    WORKSPACE_ID,
+    actor,
+    create_default_revision,
+    preset_config,
+)
 
 
 @pytest.mark.anyio
-async def test_create_publish_and_revision_history(agent_preset_service: AgentPresetService) -> None:
+async def test_create_revision_is_independent_from_default_selection(
+    agent_preset_service: AgentPresetService,
+) -> None:
     created = await agent_preset_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -35,35 +47,56 @@ async def test_create_publish_and_revision_history(agent_preset_service: AgentPr
     )
 
     assert replay == created
-    assert created.active_revision_id is None
-    assert created.has_unpublished_changes
+    assert created.default_revision_id is None
+    assert created.config_changed_since_revision
 
-    published = await agent_preset_service.publish(
+    revision_result = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=created.id,
-        idempotency_key="publish-support-1",
+        idempotency_key="create_revision-support-1",
         request=AgentPresetCommandRequest(expected_resource_version=1),
     )
-    publish_replay = await agent_preset_service.publish(
+    revision_replay = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=created.id,
-        idempotency_key="publish-support-1",
+        idempotency_key="create_revision-support-1",
         request=AgentPresetCommandRequest(expected_resource_version=1),
     )
 
-    assert publish_replay == published
-    assert published.revision.revision_number == 1
-    assert published.preset.active_revision_id == published.revision.id
-    assert not published.preset.has_unpublished_changes
-    assert published.revision.resolved_model.execution.model_id == preset_config().model.model_config_id
-    assert len(published.revision.runtime_lock_digest) == 64
+    assert revision_replay == revision_result
+    assert revision_result.revision.revision_number == 1
+    assert revision_result.preset.default_revision_id is None
+    assert not revision_result.preset.config_changed_since_revision
+    assert revision_result.revision.resolved_model.execution.model_id == preset_config().model.model_config_id
+    assert len(revision_result.revision.runtime_lock_digest) == 64
+
+    selected = await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=created.id,
+        idempotency_key="set-default-support-1",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=revision_result.preset.resource_version,
+            revision_id=revision_result.revision.id,
+        ),
+    )
+    selection_replay = await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=created.id,
+        idempotency_key="set-default-support-1",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=revision_result.preset.resource_version,
+            revision_id=revision_result.revision.id,
+        ),
+    )
+    assert selection_replay == selected
+    assert selected.default_revision_id == revision_result.revision.id
 
     revisions = await agent_preset_service.list_revisions(actor=actor(), preset_id=created.id, limit=10, cursor=None)
-    assert revisions.items == (published.revision,)
+    assert revisions.items == (revision_result.revision,)
 
 
 @pytest.mark.anyio
-async def test_config_edit_publish_rollback_duplicate_and_lifecycle(
+async def test_config_edit_revision_default_duplicate_and_lifecycle(
     agent_preset_service: AgentPresetService,
 ) -> None:
     preset = await agent_preset_service.create(
@@ -72,59 +105,66 @@ async def test_config_edit_publish_rollback_duplicate_and_lifecycle(
         idempotency_key="create-lifecycle",
         request=CreateAgentPresetRequest(name="Lifecycle", config=preset_config()),
     )
-    first = await agent_preset_service.publish(
+    first = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-lifecycle-1",
+        idempotency_key="create_revision-lifecycle-1",
         request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    selected_first = await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="set-default-lifecycle-1",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=first.preset.resource_version,
+            revision_id=first.revision.id,
+        ),
     )
     edited = await agent_preset_service.replace_config(
         actor=actor(),
         preset_id=preset.id,
         request=ReplaceAgentPresetConfigRequest(
-            expected_resource_version=2,
+            expected_resource_version=selected_first.resource_version,
             config=preset_config(instructions="Analyze carefully."),
         ),
     )
-    assert edited.has_unpublished_changes
-    with pytest.raises(AgentPresetError) as unpublished:
-        await agent_preset_service.rollback(
-            actor=actor(),
-            preset_id=preset.id,
-            idempotency_key="rollback-too-soon",
-            request=RollbackAgentPresetRequest(
-                expected_resource_version=3,
-                source_revision_id=first.revision.id,
-            ),
-        )
-    assert unpublished.value.code == "config_has_unpublished_changes"
+    assert edited.config_changed_since_revision
 
-    second = await agent_preset_service.publish(
+    second = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-lifecycle-2",
-        request=AgentPresetCommandRequest(expected_resource_version=3),
+        idempotency_key="create_revision-lifecycle-2",
+        request=AgentPresetCommandRequest(expected_resource_version=edited.resource_version),
     )
-    rolled_back = await agent_preset_service.rollback(
+    assert second.preset.default_revision_id == first.revision.id
+    selected_second = await agent_preset_service.set_default_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="rollback-lifecycle",
-        request=RollbackAgentPresetRequest(
-            expected_resource_version=4,
-            source_revision_id=first.revision.id,
+        idempotency_key="set-default-lifecycle-2",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=second.preset.resource_version,
+            revision_id=second.revision.id,
+        ),
+    )
+    restored_first = await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="restore-default-lifecycle-1",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=selected_second.resource_version,
+            revision_id=first.revision.id,
         ),
     )
     assert second.revision.revision_number == 2
-    assert rolled_back.revision.revision_number == 3
-    assert rolled_back.revision.source_revision_id == first.revision.id
-    assert rolled_back.preset.config.instructions == "Be helpful."
+    assert restored_first.default_revision_id == first.revision.id
+    assert restored_first.config.instructions == "Analyze carefully."
 
     duplicate = await agent_preset_service.duplicate(
         actor=actor(),
         preset_id=preset.id,
         idempotency_key="duplicate-lifecycle",
         request=DuplicateAgentPresetRequest(
-            expected_resource_version=5,
+            expected_resource_version=restored_first.resource_version,
             name="Lifecycle Copy",
         ),
     )
@@ -133,39 +173,39 @@ async def test_config_edit_publish_rollback_duplicate_and_lifecycle(
         preset_id=preset.id,
         idempotency_key="duplicate-lifecycle",
         request=DuplicateAgentPresetRequest(
-            expected_resource_version=5,
+            expected_resource_version=restored_first.resource_version,
             name="Lifecycle Copy",
         ),
     )
     assert duplicate_replay == duplicate
-    assert duplicate.duplicated_from_revision_id == rolled_back.revision.id
-    assert duplicate.active_revision_id is not None
+    assert duplicate.duplicated_from_revision_id == first.revision.id
+    assert duplicate.default_revision_id is not None
     duplicate_revisions = await agent_preset_service.list_revisions(
         actor=actor(), preset_id=duplicate.id, limit=10, cursor=None
     )
     assert duplicate_revisions.items[0].revision_number == 1
-    assert duplicate.active_revision_id == duplicate_revisions.items[0].id
+    assert duplicate.default_revision_id == duplicate_revisions.items[0].id
 
     disabled = await agent_preset_service.change_lifecycle(
         actor=actor(),
         preset_id=preset.id,
         action="disable",
         idempotency_key="disable-lifecycle",
-        request=AgentPresetCommandRequest(expected_resource_version=5),
+        request=AgentPresetCommandRequest(expected_resource_version=restored_first.resource_version),
     )
     archived = await agent_preset_service.change_lifecycle(
         actor=actor(),
         preset_id=preset.id,
         action="archive",
         idempotency_key="archive-lifecycle",
-        request=AgentPresetCommandRequest(expected_resource_version=6),
+        request=AgentPresetCommandRequest(expected_resource_version=disabled.resource_version),
     )
     unarchived = await agent_preset_service.change_lifecycle(
         actor=actor(),
         preset_id=preset.id,
         action="unarchive",
         idempotency_key="unarchive-lifecycle",
-        request=AgentPresetCommandRequest(expected_resource_version=7),
+        request=AgentPresetCommandRequest(expected_resource_version=archived.resource_version),
     )
     assert disabled.lifecycle_state == "disabled"
     assert archived.lifecycle_state == "archived"
@@ -173,7 +213,7 @@ async def test_config_edit_publish_rollback_duplicate_and_lifecycle(
 
 
 @pytest.mark.anyio
-async def test_duplicate_accepts_a_disabled_published_source(
+async def test_duplicate_accepts_a_disabled_source_with_default_revision(
     agent_preset_service: AgentPresetService,
 ) -> None:
     preset = await agent_preset_service.create(
@@ -182,18 +222,27 @@ async def test_duplicate_accepts_a_disabled_published_source(
         idempotency_key="create-disabled-duplicate-source",
         request=CreateAgentPresetRequest(name="Disabled Duplicate Source", config=preset_config()),
     )
-    published = await agent_preset_service.publish(
+    revision_result = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=preset.id,
-        idempotency_key="publish-disabled-duplicate-source",
+        idempotency_key="create_revision-disabled-duplicate-source",
         request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    selected = await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="set-default-disabled-duplicate-source",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=revision_result.preset.resource_version,
+            revision_id=revision_result.revision.id,
+        ),
     )
     disabled = await agent_preset_service.change_lifecycle(
         actor=actor(),
         preset_id=preset.id,
         action="disable",
         idempotency_key="disable-duplicate-source",
-        request=AgentPresetCommandRequest(expected_resource_version=published.preset.resource_version),
+        request=AgentPresetCommandRequest(expected_resource_version=selected.resource_version),
     )
 
     duplicate = await agent_preset_service.duplicate(
@@ -207,7 +256,49 @@ async def test_duplicate_accepts_a_disabled_published_source(
     )
 
     assert duplicate.lifecycle_state == "enabled"
-    assert duplicate.duplicated_from_revision_id == published.revision.id
+    assert duplicate.duplicated_from_revision_id == revision_result.revision.id
+
+
+@pytest.mark.anyio
+async def test_enable_without_default_keeps_exact_revision_invocation_available(
+    agent_preset_service: AgentPresetService,
+    agent_preset_invocation_resolver: AgentPresetInvocationResolver,
+) -> None:
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-enable-without-default",
+        request=CreateAgentPresetRequest(name="Enable Without Default", config=preset_config()),
+    )
+    revision_result = await agent_preset_service.create_revision(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="create-revision-enable-without-default",
+        request=AgentPresetCommandRequest(expected_resource_version=preset.resource_version),
+    )
+    disabled = await agent_preset_service.change_lifecycle(
+        actor=actor(),
+        preset_id=preset.id,
+        action="disable",
+        idempotency_key="disable-without-default",
+        request=AgentPresetCommandRequest(expected_resource_version=revision_result.preset.resource_version),
+    )
+    enabled = await agent_preset_service.change_lifecycle(
+        actor=actor(),
+        preset_id=preset.id,
+        action="enable",
+        idempotency_key="enable-without-default",
+        request=AgentPresetCommandRequest(expected_resource_version=disabled.resource_version),
+    )
+    prepared = await agent_preset_invocation_resolver.prepare(
+        actor=actor(),
+        agent_preset_id=preset.id,
+        agent_preset_revision_id=revision_result.revision.id,
+    )
+
+    assert enabled.lifecycle_state == "enabled"
+    assert enabled.default_revision_id is None
+    assert prepared.agent_preset_revision_id == revision_result.revision.id
 
 
 @pytest.mark.anyio
@@ -310,7 +401,7 @@ async def test_list_presets_with_direct_agent_preset_visibility(
 
 
 @pytest.mark.anyio
-async def test_disable_rejects_transitive_active_subagent_reference(
+async def test_disable_rejects_transitive_default_subagent_reference(
     agent_preset_service: AgentPresetService,
 ) -> None:
     child = await agent_preset_service.create(
@@ -319,11 +410,11 @@ async def test_disable_rejects_transitive_active_subagent_reference(
         idempotency_key="create-transitive-child",
         request=CreateAgentPresetRequest(name="Child", config=preset_config()),
     )
-    child_published = await agent_preset_service.publish(
-        actor=actor(),
+    child_revision, selected_child = await create_default_revision(
+        agent_preset_service,
         preset_id=child.id,
-        idempotency_key="publish-transitive-child",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="transitive-child",
     )
     middle = await agent_preset_service.create(
         actor=actor(),
@@ -334,11 +425,11 @@ async def test_disable_rejects_transitive_active_subagent_reference(
             config=preset_config(subagents={"child": {"agent_preset_id": child.id, "environment": {"mode": "none"}}}),
         ),
     )
-    middle_published = await agent_preset_service.publish(
-        actor=actor(),
+    middle_revision, _ = await create_default_revision(
+        agent_preset_service,
         preset_id=middle.id,
-        idempotency_key="publish-transitive-middle",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="transitive-middle",
     )
     root = await agent_preset_service.create(
         actor=actor(),
@@ -349,11 +440,11 @@ async def test_disable_rejects_transitive_active_subagent_reference(
             config=preset_config(subagents={"middle": {"agent_preset_id": middle.id, "environment": {"mode": "none"}}}),
         ),
     )
-    await agent_preset_service.publish(
-        actor=actor(),
+    await create_default_revision(
+        agent_preset_service,
         preset_id=root.id,
-        idempotency_key="publish-transitive-root",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="transitive-root",
     )
 
     with pytest.raises(AgentPresetError) as in_use:
@@ -362,10 +453,11 @@ async def test_disable_rejects_transitive_active_subagent_reference(
             preset_id=child.id,
             action="disable",
             idempotency_key="disable-transitive-child",
-            request=AgentPresetCommandRequest(expected_resource_version=child_published.preset.resource_version),
+            request=AgentPresetCommandRequest(expected_resource_version=selected_child.resource_version),
         )
 
-    assert middle_published.revision.resolved_subagents[0].child_agent_preset_id == child.id
+    assert child_revision.revision.agent_preset_id == child.id
+    assert middle_revision.revision.resolved_subagents[0].child_agent_preset_id == child.id
     assert in_use.value.code == "preset_in_use"
 
 
@@ -380,11 +472,11 @@ async def test_enable_revalidates_every_retained_subagent_revision(
         idempotency_key="create-enable-child",
         request=CreateAgentPresetRequest(name="Enable Child", config=preset_config()),
     )
-    await agent_preset_service.publish(
-        actor=actor(),
+    await create_default_revision(
+        agent_preset_service,
         preset_id=child.id,
-        idempotency_key="publish-enable-child",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="enable-child",
     )
     middle = await agent_preset_service.create(
         actor=actor(),
@@ -395,11 +487,11 @@ async def test_enable_revalidates_every_retained_subagent_revision(
             config=preset_config(subagents={"child": {"agent_preset_id": child.id, "environment": {"mode": "none"}}}),
         ),
     )
-    await agent_preset_service.publish(
-        actor=actor(),
+    await create_default_revision(
+        agent_preset_service,
         preset_id=middle.id,
-        idempotency_key="publish-enable-middle",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="enable-middle",
     )
     root = await agent_preset_service.create(
         actor=actor(),
@@ -410,18 +502,18 @@ async def test_enable_revalidates_every_retained_subagent_revision(
             config=preset_config(subagents={"middle": {"agent_preset_id": middle.id, "environment": {"mode": "none"}}}),
         ),
     )
-    published = await agent_preset_service.publish(
-        actor=actor(),
+    _, selected_root = await create_default_revision(
+        agent_preset_service,
         preset_id=root.id,
-        idempotency_key="publish-enable-root",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="enable-root",
     )
     disabled = await agent_preset_service.change_lifecycle(
         actor=actor(),
         preset_id=root.id,
         action="disable",
         idempotency_key="disable-enable-root",
-        request=AgentPresetCommandRequest(expected_resource_version=published.preset.resource_version),
+        request=AgentPresetCommandRequest(expected_resource_version=selected_root.resource_version),
     )
     async with transaction(agent_preset_sessions) as session:
         child_record = await session.get(AgentPresetRecord, child.id)
@@ -444,7 +536,7 @@ async def test_enable_revalidates_every_retained_subagent_revision(
 
 
 @pytest.mark.anyio
-async def test_rollback_and_duplicate_reject_invalid_transitive_revision_graph(
+async def test_set_default_and_duplicate_reject_invalid_transitive_revision_graph(
     agent_preset_service: AgentPresetService,
     agent_preset_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -454,11 +546,11 @@ async def test_rollback_and_duplicate_reject_invalid_transitive_revision_graph(
         idempotency_key="create-copy-validation-child",
         request=CreateAgentPresetRequest(name="Copy Validation Child", config=preset_config()),
     )
-    await agent_preset_service.publish(
-        actor=actor(),
+    await create_default_revision(
+        agent_preset_service,
         preset_id=child.id,
-        idempotency_key="publish-copy-validation-child",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="copy-validation-child",
     )
     middle = await agent_preset_service.create(
         actor=actor(),
@@ -469,11 +561,11 @@ async def test_rollback_and_duplicate_reject_invalid_transitive_revision_graph(
             config=preset_config(subagents={"child": {"agent_preset_id": child.id, "environment": {"mode": "none"}}}),
         ),
     )
-    await agent_preset_service.publish(
-        actor=actor(),
+    await create_default_revision(
+        agent_preset_service,
         preset_id=middle.id,
-        idempotency_key="publish-copy-validation-middle",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="copy-validation-middle",
     )
     root = await agent_preset_service.create(
         actor=actor(),
@@ -484,31 +576,40 @@ async def test_rollback_and_duplicate_reject_invalid_transitive_revision_graph(
             config=preset_config(subagents={"middle": {"agent_preset_id": middle.id, "environment": {"mode": "none"}}}),
         ),
     )
-    first = await agent_preset_service.publish(
+    first = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=root.id,
-        idempotency_key="publish-copy-validation-root-1",
+        idempotency_key="create_revision-copy-validation-root-1",
         request=AgentPresetCommandRequest(expected_resource_version=1),
     )
-    second = await agent_preset_service.publish(
+    second = await agent_preset_service.create_revision(
         actor=actor(),
         preset_id=root.id,
-        idempotency_key="publish-copy-validation-root-2",
+        idempotency_key="create_revision-copy-validation-root-2",
         request=AgentPresetCommandRequest(expected_resource_version=first.preset.resource_version),
+    )
+    selected_second = await agent_preset_service.set_default_revision(
+        actor=actor(),
+        preset_id=root.id,
+        idempotency_key="set-default-copy-validation-root-2",
+        request=SetDefaultAgentPresetRevisionRequest(
+            expected_resource_version=second.preset.resource_version,
+            revision_id=second.revision.id,
+        ),
     )
     async with transaction(agent_preset_sessions) as session:
         child_record = await session.get(AgentPresetRecord, child.id)
         assert child_record is not None
         child_record.lifecycle_state = "disabled"
 
-    with pytest.raises(AgentPresetError) as rollback_rejected:
-        await agent_preset_service.rollback(
+    with pytest.raises(AgentPresetError) as default_rejected:
+        await agent_preset_service.set_default_revision(
             actor=actor(),
             preset_id=root.id,
-            idempotency_key="rollback-invalid-copy-graph",
-            request=RollbackAgentPresetRequest(
-                expected_resource_version=second.preset.resource_version,
-                source_revision_id=first.revision.id,
+            idempotency_key="set-default-invalid-copy-graph",
+            request=SetDefaultAgentPresetRevisionRequest(
+                expected_resource_version=selected_second.resource_version,
+                revision_id=first.revision.id,
             ),
         )
     with pytest.raises(AgentPresetError) as duplicate_rejected:
@@ -517,7 +618,7 @@ async def test_rollback_and_duplicate_reject_invalid_transitive_revision_graph(
             preset_id=root.id,
             idempotency_key="duplicate-invalid-copy-graph",
             request=DuplicateAgentPresetRequest(
-                expected_resource_version=second.preset.resource_version,
+                expected_resource_version=selected_second.resource_version,
                 name="Invalid Graph Copy",
             ),
         )
@@ -529,8 +630,8 @@ async def test_rollback_and_duplicate_reject_invalid_transitive_revision_graph(
         limit=10,
         cursor=None,
     )
-    assert rollback_rejected.value.code == "preset_disabled"
+    assert default_rejected.value.code == "preset_disabled"
     assert duplicate_rejected.value.code == "preset_disabled"
-    assert current.active_revision_id == second.revision.id
-    assert current.resource_version == second.preset.resource_version
+    assert current.default_revision_id == second.revision.id
+    assert current.resource_version == selected_second.resource_version
     assert len(revisions.items) == 2

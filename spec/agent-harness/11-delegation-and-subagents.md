@@ -89,7 +89,7 @@ resume_subagent(execution_id: str, prompt: str)
 
 The two surfaces use distinct internal Toolset identities and never register duplicate external names in one Agent. Tool descriptions state whether `delegate` blocks for completion or returns after admission. `timeout_seconds` bounds one wait call and never implies cancellation.
 
-An async `execution_id` is a bounded public Host execution reference. It is not a provider resource ID, credential, Environment reference, or necessarily a Harness-generated value. Standard results never expose Host-private storage IDs, raw child state, credentials, or native exceptions. Wait uses the ordinary managed-tool spill policy when a valid result exceeds the inline output ceiling.
+An async `execution_id` is a bounded public Host execution reference. It is not a provider resource ID, credential, Environment reference, or necessarily a Harness-generated value. Standard results never expose Host-private storage IDs, raw child state, raw business output, credentials, or native exceptions. A single-execution info and wait return the same bounded execution view; no-ID list and fan-in return bounded summaries. Harness output policy still bounds the serialized view.
 
 ## Harness-Resolved Async Authority
 
@@ -176,7 +176,7 @@ The operator owns:
 - admission, scheduling, recursive Harness invocation, and runtime location;
 - Environment association selection, current state loading, and fresh adapter construction;
 - child `RunBindings`, Host credentials, provider runtimes, and Host metadata within the plan ceilings;
-- execution storage, checkpoint acknowledgement, bounded activity projection, and output retention;
+- execution storage, checkpoint acknowledgement, and bounded activity projection;
 - wait and wake behavior, steering, cancellation, linked resume, loss, cleanup, and retention;
 - Host shutdown policy and any background task or worker lifecycle.
 
@@ -246,13 +246,13 @@ class DelegationContextPolicy:
 
 Harness applies the exact edge policy to child input. Selected history uses canonical message encoding. Summary history uses only the accepted restored summary boundary when available. Working-State sharing follows [Context and Memory](09-context-and-memory.md). Inline execution can isolate an embedded child task scope or borrow the active embedded parent task scope under a fresh child owner; provider-mode child tasks require Host-owned async execution because Harness has no generic provider attachment factory. All non-task Capability state remains isolated unless another owning contract explicitly defines inheritance.
 
-Parent `AgentContextState` is authoritative only for inline continuation. Async status, output, activity, and resumability are queried from the Host operator and are not mirrored into parent Harness state. Async child `HarnessState` belongs to the Host's child Thread checkpoint.
+Parent `AgentContextState` is authoritative only for inline continuation. Async status, bounded closed activity, and resumability are queried from the Host operator and are not mirrored into parent Harness state. Async child `HarnessState` belongs to the Host's child Thread checkpoint.
 
 ## Observation and Completion
 
 Inline execution forwards child Harness events with their original child Run and Thread provenance into the parent stream, then emits parent-scoped delegation completion or failure. Parent usage aggregates nested child usage without rewriting child observation provenance.
 
-For async work, the Host owns observation storage, subscriptions, wake policy, and activity compaction. Standard result models provide bounded status and activity projections when the operator returns them. Harness does not retain a weak observer, enqueue completion into a later parent Run, or infer current status from an old parent projection. Host wake and protocol delivery are separate from execution authority as defined by [Observation](19-observation-model.md) and the [Agent Stream Protocol](../agent-stream-protocol/README.md).
+For async work, the Host owns observation storage, subscriptions, wake policy, and activity compaction. The operator consumes each child `HarnessRunStream` as the narrow ordered public-recording boundary; Harness emits only public `HarnessStreamEvent` values and imports no AG-UI or Host presentation type. Standard result models provide bounded status and closed activity projections when the operator returns them. Activity contains no separate raw `output`; a final answer is represented by closed text activity. Harness does not retain a weak observer, enqueue completion into a later parent Run, or infer current status from an old parent projection. Host wake and protocol delivery are separate from execution authority as defined by [Observation](19-observation-model.md) and the [Agent Stream Protocol](../agent-stream-protocol/README.md).
 
 ## Failure and Cancellation Semantics
 

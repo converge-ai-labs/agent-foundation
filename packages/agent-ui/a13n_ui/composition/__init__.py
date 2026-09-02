@@ -1,31 +1,58 @@
-"""Immutable Agent and Environment composition snapshots."""
+"""Trusted Agent UI composition resolution and immutable snapshot publication."""
 
+from .catalogs import (
+    BinderCatalogEntry,
+    EnvironmentWorkspaceBinder,
+    ProviderCatalogEntry,
+    ProviderRuntime,
+    ValidatedProfileConfiguration,
+    WorkspaceBinderCatalog,
+    builtin_workspace_binder_catalog,
+)
 from .models import (
-    AgentEnvironmentCompatibility,
+    DependencyLock,
     ResolvedAgentNode,
     ResolvedAgentSnapshot,
-    ResolvedEnvironmentMountDefinition,
-    ResolvedEnvironmentSnapshot,
-    ResolvedModel,
-    ResolvedPlugin,
-    ResolvedPrompt,
-    ResolvedSkill,
-    ResolvedSubagentEdge,
-    SnapshotReference,
+    ResolvedEnvironmentProfile,
+    ResolvedMcpRecipe,
+    ResolvedModelRecipe,
+    ResolvedPluginRecipe,
+    ResolvedSubagent,
 )
-from .service import CompositionService
+from .reconstruction import AgentReconstructor, PortableCapabilityFactory, ReconstructedAgent
+from .resolver import (
+    IMPLICIT_NATIVE_PROFILE,
+    PACKAGE_PROMPT_REVISION,
+    PACKAGE_SYSTEM_PROMPT,
+    AgentCompositionResolver,
+    ResolvedConfiguration,
+)
+from .service import AcceptedComposition, CompositionAcceptanceService
 
 __all__ = [
-    "AgentEnvironmentCompatibility",
-    "CompositionService",
+    "IMPLICIT_NATIVE_PROFILE",
+    "PACKAGE_PROMPT_REVISION",
+    "PACKAGE_SYSTEM_PROMPT",
+    "AcceptedComposition",
+    "AgentCompositionResolver",
+    "AgentReconstructor",
+    "BinderCatalogEntry",
+    "CompositionAcceptanceService",
+    "DependencyLock",
+    "EnvironmentWorkspaceBinder",
+    "PortableCapabilityFactory",
+    "ProviderCatalogEntry",
+    "ProviderRuntime",
+    "ReconstructedAgent",
     "ResolvedAgentNode",
     "ResolvedAgentSnapshot",
-    "ResolvedEnvironmentMountDefinition",
-    "ResolvedEnvironmentSnapshot",
-    "ResolvedModel",
-    "ResolvedPlugin",
-    "ResolvedPrompt",
-    "ResolvedSkill",
-    "ResolvedSubagentEdge",
-    "SnapshotReference",
+    "ResolvedConfiguration",
+    "ResolvedEnvironmentProfile",
+    "ResolvedMcpRecipe",
+    "ResolvedModelRecipe",
+    "ResolvedPluginRecipe",
+    "ResolvedSubagent",
+    "ValidatedProfileConfiguration",
+    "WorkspaceBinderCatalog",
+    "builtin_workspace_binder_catalog",
 ]

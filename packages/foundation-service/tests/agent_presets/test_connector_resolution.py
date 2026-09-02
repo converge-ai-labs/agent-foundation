@@ -6,7 +6,6 @@ from datetime import timedelta
 import pytest
 from a13n_service.agent_presets.connector_resolution import AgentConnectorSelectionResolver
 from a13n_service.agent_presets.domain import (
-    AgentPresetCommandRequest,
     AgentRunOverride,
     CreateAgentPresetRequest,
     PluginRuntimeMode,
@@ -32,7 +31,7 @@ from a13n_service.model_configs.runtime import AcceptedModelSelector
 from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import NOW, ORG_ID, USER_ID, WORKSPACE_ID, actor, preset_config
+from .conftest import NOW, ORG_ID, USER_ID, WORKSPACE_ID, actor, create_default_revision, preset_config
 
 CONNECTOR_ID = "con_1234567890abcdef"
 CONNECTOR_REVISION_ID = "conrev_1234567890abcdef"
@@ -213,7 +212,7 @@ async def connector_agent_services(
         built_in_provider_registry(),
         EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
     )
-    publication = AgentPresetResolver(
+    revision_resolver = AgentPresetResolver(
         agent_preset_sessions,
         model_selector,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
@@ -226,13 +225,13 @@ async def connector_agent_services(
         connector_resolver=connector_resolver,
     )
     yield (
-        AgentPresetService(agent_preset_sessions, publication, invocation, clock=lambda: NOW),
+        AgentPresetService(agent_preset_sessions, revision_resolver, invocation, clock=lambda: NOW),
         invocation,
         provider,
     )
 
 
-async def _publish_connector_preset(service: AgentPresetService):
+async def _create_default_connector_preset(service: AgentPresetService):
     preset = await service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -249,23 +248,24 @@ async def _publish_connector_preset(service: AgentPresetService):
             ),
         ),
     )
-    return await service.publish(
-        actor=actor(),
+    result, _ = await create_default_revision(
+        service,
         preset_id=preset.id,
-        idempotency_key="publish-connector-preset",
-        request=AgentPresetCommandRequest(expected_resource_version=1),
+        expected_resource_version=1,
+        key="connector-preset",
     )
+    return result
 
 
 @pytest.mark.anyio
-async def test_publish_freezes_connector_tools_and_provider_contract(
+async def test_create_revision_freezes_connector_tools_and_provider_contract(
     connector_agent_services: tuple[AgentPresetService, AgentPresetInvocationResolver, _Provider],
 ) -> None:
     service, _invocations, provider = connector_agent_services
 
-    published = await _publish_connector_preset(service)
+    revision_result = await _create_default_connector_preset(service)
 
-    resolved = published.revision.resolved_connectors[0]
+    resolved = revision_result.revision.resolved_connectors[0]
     assert resolved.name == "issues"
     assert resolved.connector_revision_id == CONNECTOR_REVISION_ID
     assert tuple(tool.name for tool in resolved.tools) == ("search",)
@@ -276,7 +276,7 @@ async def test_publish_freezes_connector_tools_and_provider_contract(
 
 
 @pytest.mark.anyio
-async def test_published_revision_protects_referenced_connector_from_deletion(
+async def test_created_revision_protects_referenced_connector_from_deletion(
     connector_agent_services: tuple[AgentPresetService, AgentPresetInvocationResolver, _Provider],
     agent_preset_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -290,7 +290,7 @@ async def test_published_revision_protects_referenced_connector_from_deletion(
             connector_id=CONNECTOR_ID,
         )
 
-    await _publish_connector_preset(service)
+    await _create_default_connector_preset(service)
 
     async with transaction(agent_preset_sessions) as session:
         assert await checker.has_agent_preset_reference(
@@ -307,10 +307,10 @@ async def test_inherited_connector_reuses_frozen_contract_but_override_rediscove
     agent_preset_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     service, invocations, provider = connector_agent_services
-    published = await _publish_connector_preset(service)
+    revision_result = await _create_default_connector_preset(service)
     provider.search_description = "Changed current catalog"
 
-    inherited = await invocations.prepare(actor=actor(), agent_preset_id=published.preset.id)
+    inherited = await invocations.prepare(actor=actor(), agent_preset_id=revision_result.preset.id)
     async with transaction(agent_preset_sessions) as session:
         inherited_frozen = await invocations.freeze_in_transaction(session, prepared=inherited)
 
@@ -319,7 +319,7 @@ async def test_inherited_connector_reuses_frozen_contract_but_override_rediscove
 
     changed = await invocations.prepare(
         actor=actor(),
-        agent_preset_id=published.preset.id,
+        agent_preset_id=revision_result.preset.id,
         config_override=AgentRunOverride.model_validate({"connectors": {"issues": {"tools": ["create"]}}}),
     )
     async with transaction(agent_preset_sessions) as session:
@@ -334,12 +334,12 @@ async def test_runtime_headers_fail_closed_without_provider_schema(
     connector_agent_services: tuple[AgentPresetService, AgentPresetInvocationResolver, _Provider],
 ) -> None:
     service, invocations, _provider = connector_agent_services
-    published = await _publish_connector_preset(service)
+    revision_result = await _create_default_connector_preset(service)
 
     with pytest.raises(AgentPresetError) as rejected:
         await invocations.prepare(
             actor=actor(),
-            agent_preset_id=published.preset.id,
+            agent_preset_id=revision_result.preset.id,
             config_override=AgentRunOverride.model_validate(
                 {"connectors": {"issues": {"headers": {"X-Tenant": "private"}}}}
             ),
@@ -355,11 +355,11 @@ async def test_invocation_resolves_shared_connection_for_credentialed_override(
     agent_preset_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     service, invocations, provider = connector_agent_services
-    published = await _publish_connector_preset(service)
+    revision_result = await _create_default_connector_preset(service)
 
     prepared = await invocations.prepare(
         actor=actor(),
-        agent_preset_id=published.preset.id,
+        agent_preset_id=revision_result.preset.id,
         config_override=AgentRunOverride.model_validate({"connectors": {"issues": {"tools": ["private"]}}}),
     )
     async with transaction(agent_preset_sessions) as session:
@@ -377,8 +377,8 @@ async def test_connector_is_rechecked_in_final_acceptance_transaction(
     agent_preset_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     service, invocations, _provider = connector_agent_services
-    published = await _publish_connector_preset(service)
-    prepared = await invocations.prepare(actor=actor(), agent_preset_id=published.preset.id)
+    revision_result = await _create_default_connector_preset(service)
+    prepared = await invocations.prepare(actor=actor(), agent_preset_id=revision_result.preset.id)
     async with transaction(agent_preset_sessions) as session:
         connector = await session.get(ConnectorRecord, CONNECTOR_ID)
         assert connector is not None

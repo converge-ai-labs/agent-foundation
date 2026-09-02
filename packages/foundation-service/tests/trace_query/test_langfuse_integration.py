@@ -77,7 +77,7 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
         run_attempt_id=run_attempt_id,
         run_attempt_number=1,
         agent_preset_id=f"preset-it-{suffix}",
-        agent_preset_version_id=f"preset-version-it-{suffix}",
+        agent_preset_revision_id=f"preset-revision-it-{suffix}",
     )
     with runtime.run_attempt(correlation, input_value={"prompt": search_token}) as attempt:
         with attempt.phase("foundation.reconstruct"):

@@ -1,584 +1,509 @@
-"""Exact generation-captured Agent and Environment snapshot resolution."""
+"""Resolve one graph-valid Agent UI source candidate into trusted immutable snapshots."""
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
-from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
-from typing import cast
+from dataclasses import dataclass
+from types import MappingProxyType
 
-from a13n_environment_provider import (
-    EnvironmentProviderError,
-    EnvironmentProviderFactoryRegistration,
-    EnvironmentProviderSpec,
-    build_environment_provider_factory_catalog,
-)
-from pydantic import JsonValue, ValidationError
+from a13n_environment_provider import EnvironmentProvider
+from a13n_harness import __version__ as harness_version
+from a13n_harness.errors import PluginError
+from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from pydantic import BaseModel, JsonValue
 
-from a13n_ui.configuration import (
-    AgentDefinitionDocument,
-    CatalogRepository,
-    ConfigurationGeneration,
-    ConfigurationSettings,
-    DependencyLock,
-    EnvironmentDefinitionDocument,
-    ModelDefinition,
-    PluginInstanceDefinition,
-    PromptDefinition,
-    ResourceKind,
-    ResourceRevision,
-    ResourceRevisionRef,
-    canonical_digest,
-    canonical_json_value,
+from a13n_ui.configuration.models import (
+    AgentConfig,
+    AgentSubagentSelection,
+    CanonicalSubagent,
+    LoadedAgentUiConfiguration,
+    MarkdownSubagentSelection,
+    ModelConfig,
 )
-from a13n_ui.configuration.models import ResolvedSkillRevisionContent
 from a13n_ui.errors import CompositionError
+from a13n_ui.model_adapters import PydanticAiModelAdapter
 
+from .catalogs import (
+    LOCAL_EIP_BINDER_KEY,
+    LOCAL_EIP_PROVIDER_KEY,
+    NATIVE_BINDER_KEY,
+    NATIVE_PROVIDER_KEY,
+    BinderCatalogEntry,
+    ProviderCatalogEntry,
+    TrustedProviderCatalog,
+    WorkspaceBinderCatalog,
+    builtin_workspace_binder_catalog,
+    mcp_adapter_lock,
+    plugin_dependency_lock,
+    pydantic_ai_adapter_lock,
+    selected_plugin_catalog,
+    selected_provider_catalog,
+)
 from .models import (
-    AgentEnvironmentCompatibility,
+    DependencyLock,
     ResolvedAgentNode,
     ResolvedAgentSnapshot,
-    ResolvedEnvironmentLifecycleCapabilities,
-    ResolvedEnvironmentMountDefinition,
-    ResolvedEnvironmentSnapshot,
-    ResolvedModel,
-    ResolvedPlugin,
-    ResolvedPrompt,
-    ResolvedSkill,
-    ResolvedSubagentEdge,
+    ResolvedEnvironmentProfile,
+    ResolvedMcpRecipe,
+    ResolvedModelRecipe,
+    ResolvedPluginRecipe,
+    ResolvedSubagent,
+    dependency_sort_key,
+    resolved_agent_node,
 )
 
-_ACCESS_RANK = {"read_only": 0, "read_write": 1, "full": 2}
+PACKAGE_PROMPT_REVISION = "1"
+PACKAGE_SYSTEM_PROMPT = "You are an AI assistant running in Agent UI."
+IMPLICIT_NATIVE_PROFILE = "__native__"
+_MAX_RESOLVED_NODES = 1024
 
 
-class SnapshotResolver:
-    """Resolve only exact revisions captured by one accepted generation."""
+@dataclass(frozen=True, slots=True)
+class ResolvedConfiguration:
+    """Complete snapshot set produced from one stable source candidate."""
 
-    def __init__(self, catalog: CatalogRepository, *, data_root: Path) -> None:
-        self._catalog = catalog
-        self._data_root = data_root.resolve(strict=False)
+    source: LoadedAgentUiConfiguration
+    agents: Mapping[str, ResolvedAgentSnapshot]
+    environments: Mapping[str, ResolvedEnvironmentProfile]
+    default_agent: str | None
+    default_environment: str
 
-    async def resolve_agent(
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "agents", MappingProxyType(dict(self.agents)))
+        object.__setattr__(self, "environments", MappingProxyType(dict(self.environments)))
+
+
+class AgentCompositionResolver:
+    """Trusted all-or-nothing resolution boundary for Agent UI composition."""
+
+    def __init__(
         self,
-        generation: ConfigurationGeneration,
-        agent_id: str,
-    ) -> ResolvedAgentSnapshot:
-        resources = await self._load_generation(generation)
-        root = _select(resources, ResourceKind.agent, agent_id)
-        nodes: dict[ResourceRevisionRef, ResolvedAgentNode] = {}
-        active: list[ResourceRevisionRef] = []
+        *,
+        plugin_catalog: HarnessPluginFactoryCatalog | None = None,
+        binder_catalog: WorkspaceBinderCatalog | None = None,
+        provider_entries: tuple[ProviderCatalogEntry, ...] = (),
+    ) -> None:
+        self._injected_plugin_catalog = plugin_catalog
+        self._binders = binder_catalog or builtin_workspace_binder_catalog()
+        self._provider_entries = provider_entries
+        self._model_adapter = PydanticAiModelAdapter()
+        self._model_lock = pydantic_ai_adapter_lock()
+        self._mcp_lock = mcp_adapter_lock()
 
-        async def resolve(reference: ResourceRevisionRef) -> ResolvedAgentNode:
-            known = nodes.get(reference)
-            if known is not None:
-                return known
-            if reference in active:
-                raise CompositionError(
-                    "Agent child definitions must form a finite acyclic graph.",
-                    code="agent_snapshot_cycle",
-                    details={"agent_id": reference.resource_id},
-                )
-            active.append(reference)
-            try:
-                revision = resources[reference]
-                document = _parse(revision, AgentDefinitionDocument)
-                model_revision = resources[_resolve_ref(resources, document.model)]
-                prompt_revision = resources[_resolve_ref(resources, document.prompt)]
-                model = _parse(model_revision, ModelDefinition)
-                prompt = _parse(prompt_revision, PromptDefinition)
-                model_lock = _one_lock(
-                    model_revision,
-                    dependency_kind="model_adapter",
-                    key=model.provider_key,
-                )
+    def resolve(self, source: LoadedAgentUiConfiguration) -> ResolvedConfiguration:
+        """Resolve every configured Agent and Environment profile without native construction or I/O."""
 
-                plugins: list[ResolvedPlugin] = []
-                for selected in document.plugins:
-                    plugin_revision = resources[_resolve_ref(resources, selected)]
-                    plugin = _parse(plugin_revision, PluginInstanceDefinition)
-                    plugins.append(
-                        ResolvedPlugin(
-                            revision=plugin_revision.ref,
-                            definition=plugin,
-                            dependency=_one_lock(
-                                plugin_revision,
-                                dependency_kind="harness_plugin",
-                                key=plugin.plugin_key,
-                            ),
-                        )
-                    )
-
-                skills: list[ResolvedSkill] = []
-                for selected in document.skills.available:
-                    skill_revision = resources[_resolve_ref(resources, selected)]
-                    skill = _parse(skill_revision, ResolvedSkillRevisionContent)
-                    package = await self._catalog.skill_package_reference(skill_revision.ref)
-                    skills.append(
-                        ResolvedSkill(
-                            revision=skill_revision.ref,
-                            definition=skill,
-                            package_object_digest=package.logical_digest,
-                        )
-                    )
-                skill_names = tuple(skill.definition.skill_name for skill in skills)
-                if len(skill_names) != len(set(skill_names)):
-                    raise CompositionError(
-                        "An Agent selects ambiguous managed Skill names.",
-                        code="agent_skill_ambiguous",
-                        details={"agent_id": document.agent_id},
-                    )
-                if skills and document.skills.materialization_mount is None:
-                    raise CompositionError(
-                        "An Agent with available Skills requires a materialization mount.",
-                        code="agent_skill_mount_missing",
-                        details={"agent_id": document.agent_id},
-                    )
-                if not skills and document.skills.materialization_mount is not None:
-                    raise CompositionError(
-                        "An Agent without available Skills cannot select a materialization mount.",
-                        code="agent_skill_mount_invalid",
-                        details={"agent_id": document.agent_id},
-                    )
-                default_names: tuple[str, ...] | None
-                if document.skills.default_selection.mode == "all":
-                    default_names = None
-                else:
-                    default_names = document.skills.default_selection.names
-                    unknown = sorted(set(default_names) - set(skill_names))
-                    if unknown:
-                        raise CompositionError(
-                            "An exact Skill selection names an unavailable managed Skill.",
-                            code="agent_skill_selection_missing",
-                            details={"agent_id": document.agent_id, "skill_name": unknown[0]},
-                        )
-
-                children: list[ResolvedSubagentEdge] = []
-                for edge in document.subagents:
-                    child_ref = _resolve_ref(resources, edge.agent)
-                    await resolve(child_ref)
-                    children.append(
-                        ResolvedSubagentEdge(
-                            name=edge.name,
-                            description=edge.description,
-                            target_agent=child_ref,
-                            context=edge.context,
-                            identity=edge.identity,
-                            usage_limits=edge.usage_limits,
-                            environment=edge.environment,
-                        )
-                    )
-                node = ResolvedAgentNode(
-                    agent_revision=revision.ref,
-                    agent_id=document.agent_id,
-                    display_name=document.display_name,
-                    description=document.description,
-                    model=ResolvedModel(
-                        revision=model_revision.ref,
-                        definition=model,
-                        dependency=model_lock,
-                    ),
-                    prompt=ResolvedPrompt(revision=prompt_revision.ref, definition=prompt),
-                    plugins=tuple(plugins),
-                    skills=tuple(sorted(skills, key=lambda item: item.definition.skill_name)),
-                    skill_materialization_mount=document.skills.materialization_mount,
-                    default_skill_names=default_names,
-                    capabilities=document.capabilities,
-                    environment_tools=document.environment_tools,
-                    environment=document.environment,
-                    subagents=tuple(children),
-                    async_subagents=document.async_subagents,
-                    output=document.output,
-                    model_recovery=document.model_recovery,
-                )
-                nodes[reference] = node
-                return node
-            finally:
-                active.pop()
-
-        await resolve(root.ref)
-        resolved_nodes = tuple(sorted(nodes.values(), key=lambda item: item.agent_id))
-        locks = _unique_locks(
-            lock
-            for node in resolved_nodes
-            for lock in (
-                node.model.dependency,
-                *(plugin.dependency for plugin in node.plugins),
+        document = source.document
+        models = {name: self._model_recipe(item) for name, item in sorted(document.models.items())}
+        plugin_recipes = self._plugin_recipes(source)
+        mcp_recipes = {
+            name: ResolvedMcpRecipe(
+                server_name=name,
+                transport=item.transport,
+                adapter_lock=self._mcp_lock,
             )
-        )
-        behavior = {
-            "snapshot_schema_version": "1",
-            "root_agent": root.ref,
-            "resolved_agents": resolved_nodes,
-            "adapter_locks": locks,
-            "harness_release": _package_version("a13n-harness"),
+            for name, item in sorted(document.mcp_servers.items())
+            if item.enabled
         }
-        return ResolvedAgentSnapshot(
-            generation_id=generation.generation_id,
-            catalog_digest=generation.catalog_digest,
-            root_agent=root.ref,
-            resolved_agents=resolved_nodes,
-            adapter_locks=locks,
-            harness_release=cast(str, behavior["harness_release"]),
-            logical_agent_digest=canonical_digest(behavior),
+
+        _require_resolvable_graph(document.agents)
+        agents: dict[str, ResolvedAgentSnapshot] = {}
+        for name in sorted(document.agents):
+            budget = [_MAX_RESOLVED_NODES]
+            root = self._agent_node(
+                source=source,
+                name=name,
+                models=models,
+                plugins=plugin_recipes,
+                mcp_servers=mcp_recipes,
+                budget=budget,
+            )
+            dependencies = tuple(sorted(_node_dependencies(root), key=dependency_sort_key))
+            agents[name] = ResolvedAgentSnapshot(
+                harness_release=harness_version,
+                package_prompt_revision=PACKAGE_PROMPT_REVISION,
+                package_prompt_digest=_prompt_digest(),
+                dependencies=dependencies,
+                root=root,
+            )
+
+        environments = self._environment_profiles(source)
+        if IMPLICIT_NATIVE_PROFILE not in environments:
+            environments[IMPLICIT_NATIVE_PROFILE] = self._builtin_environment(
+                profile_name=IMPLICIT_NATIVE_PROFILE,
+                kind="native",
+                profile_configuration={},
+            )
+        default_environment = document.defaults.environment or IMPLICIT_NATIVE_PROFILE
+        return ResolvedConfiguration(
+            source=source,
+            agents=agents,
+            environments=environments,
+            default_agent=document.defaults.agent,
+            default_environment=default_environment,
         )
 
-    async def resolve_environment(
+    def _model_recipe(self, item: ModelConfig) -> ResolvedModelRecipe:
+        normalized = self._model_adapter.validate(
+            route=item.model,
+            settings=item.settings,
+            model_cfg=item.model_cfg,
+        )
+        return ResolvedModelRecipe(
+            adapter_key=self._model_adapter.key,
+            route=normalized.route,
+            api_key=item.api_key,
+            settings=normalized.settings,
+            model_cfg=normalized.model_cfg,
+            adapter_lock=self._model_lock,
+        )
+
+    def _overridden_model(
         self,
-        generation: ConfigurationGeneration,
-        environment_id: str,
-        settings: ConfigurationSettings,
-    ) -> ResolvedEnvironmentSnapshot:
-        resources = await self._load_generation(generation)
-        revision = _select(resources, ResourceKind.environment, environment_id)
-        document = _parse(revision, EnvironmentDefinitionDocument)
-        try:
-            factories = build_environment_provider_factory_catalog(
-                builtin_keys=settings.builtin_provider_keys,
-                extension_keys=settings.extension_provider_keys,
+        *,
+        source: LoadedAgentUiConfiguration,
+        child: CanonicalSubagent,
+        inherited: ResolvedModelRecipe,
+    ) -> ResolvedModelRecipe:
+        if child.model is None:
+            route = inherited.route
+            api_key = inherited.api_key
+            base_settings = inherited.settings
+            base_model_cfg = inherited.model_cfg
+        else:
+            selected = source.document.models[child.model]
+            route = selected.model
+            api_key = selected.api_key
+            base_settings = selected.settings
+            base_model_cfg = selected.model_cfg
+        settings = dict(base_settings)
+        if child.model_settings is not None:
+            settings.update(child.model_settings)
+        model_cfg = dict(base_model_cfg)
+        if child.model_cfg is not None:
+            model_cfg.update(child.model_cfg)
+        normalized = self._model_adapter.validate(route=route, settings=settings, model_cfg=model_cfg)
+        return ResolvedModelRecipe(
+            adapter_key=self._model_adapter.key,
+            route=normalized.route,
+            api_key=api_key,
+            settings=normalized.settings,
+            model_cfg=normalized.model_cfg,
+            adapter_lock=self._model_lock,
+        )
+
+    def _plugin_recipes(self, source: LoadedAgentUiConfiguration) -> dict[str, ResolvedPluginRecipe]:
+        enabled = {name: item for name, item in source.document.plugins.items() if item.enabled}
+        keys = tuple(sorted({item.plugin for item in enabled.values()}))
+        catalog = selected_plugin_catalog(keys, catalog=self._injected_plugin_catalog)
+        registrations = {item.plugin_key: item for item in catalog.registrations}
+        result: dict[str, ResolvedPluginRecipe] = {}
+        for name, item in sorted(enabled.items()):
+            registration = registrations.get(item.plugin)
+            if registration is None:
+                raise CompositionError(
+                    "A selected Harness Plugin registration is unavailable.",
+                    code="plugin_catalog_invalid",
+                    details={"plugin_key": item.plugin},
+                )
+            try:
+                normalized = catalog.validate_configuration(item.plugin, item.configuration)
+            except PluginError as exc:
+                raise CompositionError(
+                    "Harness Plugin configuration is invalid.",
+                    code="plugin_configuration_invalid",
+                    details={"plugin_name": name, "plugin_key": item.plugin},
+                ) from exc
+            result[name] = ResolvedPluginRecipe(
+                instance_name=name,
+                plugin_key=item.plugin,
+                configuration=dict(normalized),
+                factory_lock=plugin_dependency_lock(registration),
             )
-        except EnvironmentProviderError as exc:
+        return result
+
+    def _agent_node(
+        self,
+        *,
+        source: LoadedAgentUiConfiguration,
+        name: str,
+        models: Mapping[str, ResolvedModelRecipe],
+        plugins: Mapping[str, ResolvedPluginRecipe],
+        mcp_servers: Mapping[str, ResolvedMcpRecipe],
+        budget: list[int],
+    ) -> ResolvedAgentNode:
+        _consume_node_budget(budget)
+        definition = source.document.agents[name]
+        selected_plugins = tuple(plugins[item] for item in source.document.selected_plugins(definition))
+        selected_mcp = tuple(mcp_servers[item] for item in source.document.selected_mcp_servers(definition))
+        instructions = (PACKAGE_SYSTEM_PROMPT, definition.instructions)
+        children: list[ResolvedSubagent] = []
+        for selection in definition.subagents:
+            if isinstance(selection, MarkdownSubagentSelection):
+                markdown = source.markdown(selection.markdown)
+                children.append(
+                    self._markdown_child(
+                        source=source,
+                        child=markdown,
+                        inherited_model=models[definition.model],
+                        inherited_instructions=instructions,
+                        inherited_plugins=selected_plugins,
+                        inherited_mcp=selected_mcp,
+                        budget=budget,
+                    )
+                )
+            elif isinstance(selection, AgentSubagentSelection):
+                child = self._agent_node(
+                    source=source,
+                    name=selection.agent,
+                    models=models,
+                    plugins=plugins,
+                    mcp_servers=mcp_servers,
+                    budget=budget,
+                )
+                children.append(
+                    ResolvedSubagent(
+                        name=selection.agent,
+                        description=f"Delegate suitable work to the reusable {selection.agent} Agent.",
+                        definition=child,
+                    )
+                )
+            else:  # pragma: no cover - strict source models make this unreachable
+                raise TypeError("unsupported subagent selection")
+        return resolved_agent_node(
+            source_kind="agent",
+            source_name=name,
+            instructions=instructions,
+            model=models[definition.model],
+            plugins=selected_plugins,
+            mcp_servers=selected_mcp,
+            children=tuple(children),
+        )
+
+    def _markdown_child(
+        self,
+        *,
+        source: LoadedAgentUiConfiguration,
+        child: CanonicalSubagent,
+        inherited_model: ResolvedModelRecipe,
+        inherited_instructions: tuple[str, ...],
+        inherited_plugins: tuple[ResolvedPluginRecipe, ...],
+        inherited_mcp: tuple[ResolvedMcpRecipe, ...],
+        budget: list[int],
+    ) -> ResolvedSubagent:
+        _consume_node_budget(budget)
+        instructions = inherited_instructions
+        if child.body:
+            instructions = (*instructions, child.body)
+        definition = resolved_agent_node(
+            source_kind="markdown",
+            source_name=child.name,
+            instructions=instructions,
+            model=self._overridden_model(source=source, child=child, inherited=inherited_model),
+            plugins=inherited_plugins,
+            mcp_servers=inherited_mcp,
+            tools=child.tools,
+            optional_tools=child.optional_tools,
+        )
+        return ResolvedSubagent(
+            name=child.name,
+            description=child.description,
+            instruction=child.instruction,
+            definition=definition,
+        )
+
+    def _environment_profiles(self, source: LoadedAgentUiConfiguration) -> dict[str, ResolvedEnvironmentProfile]:
+        document = source.document
+        requested_keys = {NATIVE_PROVIDER_KEY, LOCAL_EIP_PROVIDER_KEY}
+        requested_keys.update(item.provider for item in document.environment_providers.values() if item.enabled)
+        providers = selected_provider_catalog(
+            provider_keys=sorted(requested_keys),
+            explicit_entries=self._provider_entries,
+        )
+
+        configured: dict[str, tuple[ProviderCatalogEntry, BinderCatalogEntry, Mapping[str, JsonValue]]] = {}
+        for name, item in sorted(document.environment_providers.items()):
+            if not item.enabled:
+                continue
+            provider = providers.require(item.provider)
+            binder = self._binders.require(item.binder)
+            self._require_compatible_binder(provider.provider, binder)
+            self._validate_profile_configuration(
+                binder=binder,
+                provider_configuration=item.configuration,
+                profile_configuration={},
+            )
+            configured[name] = (provider, binder, item.configuration)
+
+        result: dict[str, ResolvedEnvironmentProfile] = {}
+        for name, profile in sorted(document.environments.items()):
+            if profile.kind in {"native", "local_eip"}:
+                result[name] = self._builtin_environment(
+                    profile_name=name,
+                    kind=profile.kind,
+                    profile_configuration=profile.configuration,
+                    providers=providers,
+                )
+                continue
+            selected_name = profile.provider
+            if selected_name is None or selected_name not in configured:
+                raise CompositionError(
+                    "The Environment profile selects an unavailable Provider configuration.",
+                    code="environment_provider_missing",
+                    details={"profile_name": name},
+                )
+            provider, binder, provider_configuration = configured[selected_name]
+            normalized = self._validate_profile_configuration(
+                binder=binder,
+                provider_configuration=provider_configuration,
+                profile_configuration=profile.configuration,
+            )
+            result[name] = ResolvedEnvironmentProfile(
+                profile_name=name,
+                kind="provider",
+                provider_key=provider.provider.key,
+                provider_schema_version=binder.binder.provider_schema_version,
+                binder_key=binder.binder.key,
+                configuration=normalized,
+                provider_lock=provider.lock,
+                binder_lock=binder.lock,
+            )
+        return result
+
+    def _builtin_environment(
+        self,
+        *,
+        profile_name: str,
+        kind: str,
+        profile_configuration: Mapping[str, JsonValue],
+        providers: TrustedProviderCatalog | None = None,
+    ) -> ResolvedEnvironmentProfile:
+        if kind == "native":
+            provider_key = NATIVE_PROVIDER_KEY
+            binder_key = NATIVE_BINDER_KEY
+        elif kind == "local_eip":
+            provider_key = LOCAL_EIP_PROVIDER_KEY
+            binder_key = LOCAL_EIP_BINDER_KEY
+        else:  # pragma: no cover - caller is closed over the two built-ins
+            raise TypeError("unsupported built-in Environment kind")
+        catalog = providers or selected_provider_catalog(
+            provider_keys=(NATIVE_PROVIDER_KEY, LOCAL_EIP_PROVIDER_KEY),
+            explicit_entries=self._provider_entries,
+        )
+        provider = catalog.require(provider_key)
+        binder = self._binders.require(binder_key)
+        self._require_compatible_binder(provider.provider, binder)
+        normalized = self._validate_profile_configuration(
+            binder=binder,
+            provider_configuration={},
+            profile_configuration=profile_configuration,
+        )
+        return ResolvedEnvironmentProfile(
+            profile_name=profile_name,
+            kind=kind,
+            provider_key=provider_key,
+            provider_schema_version=binder.binder.provider_schema_version,
+            binder_key=binder_key,
+            configuration=normalized,
+            provider_lock=provider.lock,
+            binder_lock=binder.lock,
+        )
+
+    @staticmethod
+    def _require_compatible_binder(provider: EnvironmentProvider, binder: BinderCatalogEntry) -> None:
+        if binder.binder.provider_key != provider.key:
             raise CompositionError(
-                "The selected Environment provider catalog is unavailable.",
-                code=exc.code,
+                "The selected workspace binder is incompatible with its Environment Provider.",
+                code="workspace_binder_incompatible",
+                details={"binder_key": binder.binder.key, "provider_key": provider.key},
+            )
+        if binder.binder.provider_schema_version not in provider.configuration_versions:
+            raise CompositionError(
+                "The workspace binder selects an unsupported Provider configuration version.",
+                code="workspace_binder_incompatible",
+                details={"binder_key": binder.binder.key, "provider_key": provider.key},
+            )
+
+    @staticmethod
+    def _validate_profile_configuration(
+        *,
+        binder: BinderCatalogEntry,
+        provider_configuration: Mapping[str, JsonValue],
+        profile_configuration: Mapping[str, JsonValue],
+    ) -> dict[str, JsonValue]:
+        try:
+            validated = binder.binder.validate_profile(
+                provider_configuration=provider_configuration,
+                profile_configuration=profile_configuration,
+            )
+            if not isinstance(validated, BaseModel):
+                raise TypeError("workspace binder validation must return a BaseModel")
+            dumped = validated.model_dump(mode="json")
+            if not isinstance(dumped, dict) or any(not isinstance(key, str) for key in dumped):
+                raise TypeError("workspace binder validation must return an object model")
+            return dumped
+        except CompositionError:
+            raise
+        except Exception as exc:
+            raise CompositionError(
+                "Environment profile configuration is invalid.",
+                code="environment_profile_configuration_invalid",
+                details={"binder_key": binder.binder.key},
             ) from exc
 
-        registrations = {item.provider_key: item for item in factories.registrations}
-        mounts: list[ResolvedEnvironmentMountDefinition] = []
-        for mount in document.mounts:
-            lock = _one_lock(
-                revision,
-                dependency_kind="environment_provider",
-                key=mount.provider_key,
-            )
-            registration = registrations.get(mount.provider_key)
-            if registration is None or not _provider_registration_matches(lock, registration):
-                raise CompositionError(
-                    "A locked Environment provider factory changed after generation acceptance.",
-                    code="provider_factory_lock_mismatch",
-                    details={"provider_key": mount.provider_key},
-                )
-            parameters = _provider_parameters(mount.provider_key, mount.provider_parameters, settings)
-            spec = EnvironmentProviderSpec(
-                provider_key=mount.provider_key,
-                schema_version=mount.provider_schema_version,
-                parameters=parameters,
-            )
-            try:
-                resolved = factories.resolve_spec(spec)
-            except EnvironmentProviderError as exc:
-                raise CompositionError(
-                    "An Environment mount selects an invalid provider specification.",
-                    code=exc.code,
-                    details={"mount_name": mount.mount_name},
-                ) from exc
-            normalized = cast(
-                dict[str, JsonValue],
-                canonical_json_value(resolved.configuration),
-            )
-            _reject_data_root_overlap(normalized, self._data_root)
-            lifecycle_capabilities = ResolvedEnvironmentLifecycleCapabilities(
-                pause_modes=frozenset(mode.value for mode in resolved.lifecycle_capabilities.pause_modes),
-                resource_allocation=resolved.lifecycle_capabilities.resource_allocation.value,
-                attachment_concurrency=resolved.lifecycle_capabilities.attachment_concurrency.value,
-            )
-            mounts.append(
-                ResolvedEnvironmentMountDefinition(
-                    mount_name=mount.mount_name,
-                    model_alias=mount.model_alias,
-                    provider_key=mount.provider_key,
-                    provider_schema_version=mount.provider_schema_version,
-                    normalized_parameters=normalized,
-                    access=mount.access,
-                    lifecycle_capabilities=lifecycle_capabilities,
-                    dependency=lock,
-                )
-            )
-        locks = _unique_locks(mount.dependency for mount in mounts)
-        behavior = {
-            "snapshot_schema_version": "1",
-            "environment_revision": revision.ref,
-            "definition": document,
-            "mounts": tuple(mounts),
-            "provider_locks": locks,
-        }
-        return ResolvedEnvironmentSnapshot(
-            generation_id=generation.generation_id,
-            catalog_digest=generation.catalog_digest,
-            environment_revision=revision.ref,
-            definition=document,
-            mounts=tuple(mounts),
-            provider_locks=locks,
-            logical_environment_digest=canonical_digest(behavior),
-        )
 
-    async def _load_generation(
-        self,
-        generation: ConfigurationGeneration,
-    ) -> dict[ResourceRevisionRef, ResourceRevision]:
-        resources: dict[ResourceRevisionRef, ResourceRevision] = {}
-        for reference in generation.resources:
-            revision = await self._catalog.resource(reference)
-            resources[reference] = revision
-        return resources
+def _require_resolvable_graph(agents: Mapping[str, AgentConfig]) -> None:
+    """Bound every expanded named-Agent tree before recursive snapshot construction."""
+
+    for root in agents:
+        count = 0
+        stack: list[tuple[str, int]] = [(root, 1)]
+        while stack:
+            name, depth = stack.pop()
+            count += 1
+            if count > _MAX_RESOLVED_NODES or depth > 128:
+                raise CompositionError(
+                    "The resolved Agent graph exceeds the supported size or depth bound.",
+                    code="agent_graph_too_large",
+                    details={"agent_name": root},
+                )
+            stack.extend(
+                (selection.agent, depth + 1)
+                for selection in reversed(agents[name].subagents)
+                if isinstance(selection, AgentSubagentSelection)
+            )
 
 
-def validate_compatibility(
-    agent: ResolvedAgentSnapshot,
-    environment: ResolvedEnvironmentSnapshot,
-) -> AgentEnvironmentCompatibility:
-    mounts = {mount.mount_name: mount for mount in environment.mounts}
-    nodes = {node.agent_revision: node for node in agent.resolved_agents}
-    for node in agent.resolved_agents:
-        requirements = {item.mount_name: item for item in node.environment.mounts}
-        if node.skill_materialization_mount is not None:
-            requirement = requirements.get(node.skill_materialization_mount)
-            if requirement is None or requirement.required_access not in {"read_write", "full"}:
-                raise CompositionError(
-                    "A Skill materialization mount must require read-write access.",
-                    code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id},
-                )
-        for requirement in requirements.values():
-            mount = mounts.get(requirement.mount_name)
-            if mount is None:
-                raise CompositionError(
-                    "The Environment omits a required Agent mount.",
-                    code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "mount_name": requirement.mount_name},
-                )
-            if (
-                requirement.required_access is not None
-                and _ACCESS_RANK[mount.access] < _ACCESS_RANK[requirement.required_access]
-            ):
-                raise CompositionError(
-                    "An Environment mount access level does not satisfy the Agent.",
-                    code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "mount_name": requirement.mount_name},
-                )
-        for edge in node.subagents:
-            child = nodes[edge.target_agent]
-            selected = set(mounts if edge.environment.mounts is None else edge.environment.mounts)
-            if not selected.issubset(mounts):
-                raise CompositionError(
-                    "A child Environment policy selects an unknown mount.",
-                    code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "child_name": edge.name},
-                )
-            child_required = {requirement.mount_name for requirement in child.environment.mounts}
-            if edge.environment.mode == "none" and (child_required or child.skill_materialization_mount is not None):
-                raise CompositionError(
-                    "A child with Environment requirements cannot use the none policy.",
-                    code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "child_name": edge.name},
-                )
-            if edge.environment.mode != "none" and not child_required.issubset(selected):
-                raise CompositionError(
-                    "A child Environment policy omits a required mount.",
-                    code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "child_name": edge.name},
-                )
-            selected_mounts = tuple(mounts[name] for name in sorted(selected))
-            if edge.environment.mode == "dedicated" and any(
-                mount.lifecycle_capabilities.resource_allocation != "multiple_from_spec" for mount in selected_mounts
-            ):
-                raise CompositionError(
-                    "A dedicated child requires providers that allocate multiple resources from one specification.",
-                    code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "child_name": edge.name},
-                )
-            if edge.environment.mode == "shared_root" and any(
-                mount.lifecycle_capabilities.attachment_concurrency != "shared" for mount in selected_mounts
-            ):
-                raise CompositionError(
-                    "A shared-root child requires providers with shared attachment concurrency.",
-                    code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "child_name": edge.name},
-                )
-    return AgentEnvironmentCompatibility(
-        agent_snapshot_digest=agent.logical_agent_digest,
-        environment_snapshot_digest=environment.logical_environment_digest,
-    )
-
-
-def _reject_data_root_overlap(value: JsonValue, data_root: Path, *, key: str | None = None) -> None:
-    if isinstance(value, dict):
-        for name, item in value.items():
-            _reject_data_root_overlap(item, data_root, key=name)
-        return
-    if isinstance(value, list):
-        for item in value:
-            _reject_data_root_overlap(item, data_root, key=key)
-        return
-    if not isinstance(value, str) or key not in {"path", "root", "host_path", "source"}:
-        return
-    candidate = Path(value).expanduser()
-    if not candidate.is_absolute():
-        return
-    resolved = candidate.resolve(strict=False)
-    if resolved == data_root or resolved in data_root.parents or data_root in resolved.parents:
+def _consume_node_budget(budget: list[int]) -> None:
+    budget[0] -= 1
+    if budget[0] < 0:
         raise CompositionError(
-            "An executable Environment path overlaps the Agent UI data root.",
-            code="environment_data_root_overlap",
+            "The resolved Agent graph exceeds the supported node bound.",
+            code="agent_graph_too_large",
         )
 
 
-def _select(
-    resources: Mapping[ResourceRevisionRef, ResourceRevision],
-    kind: ResourceKind,
-    resource_id: str,
-) -> ResourceRevision:
-    matches = [revision for ref, revision in resources.items() if ref.kind is kind and ref.resource_id == resource_id]
-    if len(matches) != 1:
-        raise CompositionError(
-            "The selected resource is absent from the captured generation.",
-            code="composition_resource_missing",
-            details={"resource_kind": kind.value, "resource_id": resource_id},
-        )
-    return matches[0]
+def _node_dependencies(root: ResolvedAgentNode) -> set[DependencyLock]:
+    result: set[DependencyLock] = set()
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        result.add(node.model.adapter_lock)
+        result.update(item.factory_lock for item in node.plugins)
+        result.update(item.adapter_lock for item in node.mcp_servers)
+        stack.extend(child.definition for child in reversed(node.children))
+    return result
 
 
-def _resolve_ref(
-    resources: Mapping[ResourceRevisionRef, ResourceRevision],
-    selected: object,
-) -> ResourceRevisionRef:
-    from a13n_ui.configuration import ResourceRef
-
-    if not isinstance(selected, ResourceRef):
-        raise TypeError("selected resource must be a ResourceRef")
-    return _select(resources, selected.kind, selected.resource_id).ref
+def _prompt_digest() -> str:
+    return hashlib.sha256(PACKAGE_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
 
 
-def _parse[T](revision: ResourceRevision, model_type: type[T]) -> T:
-    try:
-        return model_type.model_validate(revision.normalized_content, strict=True)  # type: ignore[attr-defined, no-any-return]
-    except ValidationError as exc:
-        raise CompositionError(
-            "A selected resource revision is incompatible with snapshot resolution.",
-            code="composition_resource_invalid",
-            details={
-                "resource_kind": revision.ref.kind.value,
-                "resource_id": revision.ref.resource_id,
-                "validation_error_count": exc.error_count(),
-            },
-        ) from exc
-
-
-def _one_lock(
-    revision: ResourceRevision,
-    *,
-    dependency_kind: str,
-    key: str,
-) -> DependencyLock:
-    matches = {
-        (
-            lock.dependency_kind,
-            lock.key,
-            lock.distribution_name,
-            lock.distribution_version,
-        ): lock
-        for lock in revision.dependency_provenance
-        if lock.dependency_kind == dependency_kind and lock.key == key
-    }
-    if len(matches) != 1:
-        raise CompositionError(
-            "A selected resource revision has no exact dependency lock.",
-            code="composition_dependency_missing",
-            details={"resource_id": revision.ref.resource_id, "dependency_key": key},
-        )
-    return next(iter(matches.values()))
-
-
-def _provider_parameters(
-    provider_key: str,
-    parameters: Mapping[str, JsonValue],
-    settings: ConfigurationSettings,
-) -> dict[str, JsonValue]:
-    normalized = dict(parameters)
-    if provider_key != "a13n.direct-local":
-        return normalized
-    root = normalized.get("root")
-    directory_id = root.get("directory_id") if isinstance(root, dict) else None
-    directories = {item.directory_id: item.path for item in settings.local_directories}
-    path = directories.get(directory_id) if isinstance(directory_id, str) else None
-    if path is None or not isinstance(root, dict):
-        raise CompositionError(
-            "A Direct Local Environment root selects an unavailable directory alias.",
-            code="provider_spec_invalid",
-        )
-    normalized["root"] = {
-        "path": str(path),
-        "read_only": bool(root.get("read_only", False)),
-    }
-    shell_profiles = normalized.get("shell_profiles")
-    if shell_profiles is not None:
-        if not isinstance(shell_profiles, list):
-            raise CompositionError(
-                "Direct Local shell profiles must be a list.",
-                code="provider_spec_invalid",
-            )
-        executables = {item.executable_id: item.path for item in settings.local_executables}
-        normalized_profiles: list[JsonValue] = []
-        for profile in shell_profiles:
-            if not isinstance(profile, dict):
-                raise CompositionError(
-                    "A Direct Local shell profile selects an unavailable executable alias.",
-                    code="provider_spec_invalid",
-                )
-            executable = profile.get("executable")
-            if not isinstance(executable, dict) or set(executable) != {"executable_id"}:
-                raise CompositionError(
-                    "A Direct Local shell profile selects an unavailable executable alias.",
-                    code="provider_spec_invalid",
-                )
-            executable_id = executable.get("executable_id")
-            executable_path = executables.get(executable_id) if isinstance(executable_id, str) else None
-            if executable_path is None:
-                raise CompositionError(
-                    "A Direct Local shell profile selects an unavailable executable alias.",
-                    code="provider_spec_invalid",
-                )
-            normalized_profiles.append({**profile, "executable": str(executable_path)})
-        normalized["shell_profiles"] = normalized_profiles
-    return normalized
-
-
-def _unique_locks(values: object) -> tuple[DependencyLock, ...]:
-    locks = tuple(cast(object, values))  # type: ignore[arg-type]
-    by_identity: dict[tuple[str, str, str | None, str | None], DependencyLock] = {}
-    for value in locks:
-        if not isinstance(value, DependencyLock):
-            raise TypeError("dependency lock collection contains an invalid value")
-        identity = (
-            value.dependency_kind,
-            value.key,
-            value.distribution_name,
-            value.distribution_version,
-        )
-        by_identity[identity] = value
-    return tuple(by_identity[key] for key in sorted(by_identity))
-
-
-def _provider_registration_matches(
-    lock: DependencyLock,
-    registration: EnvironmentProviderFactoryRegistration,
-) -> bool:
-    distribution_name = registration.distribution_name
-    distribution_version = registration.distribution_version
-    if distribution_name is None and lock.distribution_name == "a13n-environment-provider":
-        distribution_name = "a13n-environment-provider"
-        distribution_version = _package_version(distribution_name)
-    return lock.distribution_name == distribution_name and lock.distribution_version == distribution_version
-
-
-def _package_version(distribution: str) -> str:
-    try:
-        return version(distribution)
-    except PackageNotFoundError as exc:
-        raise CompositionError(
-            "The required runtime distribution is unavailable.",
-            code="composition_dependency_missing",
-            details={"distribution": distribution},
-        ) from exc
-
-
-__all__ = ["SnapshotResolver", "validate_compatibility"]
+__all__ = [
+    "IMPLICIT_NATIVE_PROFILE",
+    "PACKAGE_PROMPT_REVISION",
+    "PACKAGE_SYSTEM_PROMPT",
+    "AgentCompositionResolver",
+    "ResolvedConfiguration",
+]

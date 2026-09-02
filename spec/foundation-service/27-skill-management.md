@@ -57,7 +57,7 @@ class SkillRevision:
 
 `sk_`, `skr_`, and `sku_` prefix stable Skills, immutable revisions, and staged ZIP receipts. A Skill is created atomically with revision `1`. Publishing a revision appends the next number, selects it as current, and increments the Skill `version`. Changing only `display_name` also increments `version`.
 
-`manifest.skill_name` and `manifest.description` are verified projections of `SKILL.md`. A later revision can change them; existing AgentPresetRevisions remain bound to their exact old revision and name. Workspace Skills can share a model-facing name; AgentPreset Publish rejects duplicates only within one selected catalog.
+`manifest.skill_name` and `manifest.description` are verified projections of `SKILL.md`. A later revision can change them; existing AgentPresetRevisions remain bound to their exact old revision and name. Workspace Skills can share a model-facing name; AgentPreset Revision creation rejects duplicates only within one selected catalog.
 
 Foundation stores each normalized package as one immutable ZIP object. For package contract version `1`, its internal object key is derived exactly as follows:
 
@@ -194,7 +194,7 @@ Stable error codes include `skill_not_found`, `skill_version_conflict`, `skill_u
 
 The domain contributes `skill.read`, `skill.create`, `skill.update`, `skill.delete`, and `skill.bind`. Viewer can read safe metadata and content. Builder and Admin can manage and bind Skills. Direct Agent Builder can bind an otherwise readable Skill while authoring that Agent but cannot manage the Workspace resource without a Workspace role.
 
-Every request reauthorizes its Workspace and resource. AgentPreset Publish reauthorizes `skill.bind` for every selected revision. Workers read packages under internal Run authority; invoking an Agent does not grant the caller package download permission.
+Every request reauthorizes its Workspace and resource. AgentPreset Revision creation reauthorizes `skill.bind` for every selected revision. Workers read packages under internal Run authority; invoking an Agent does not grant the caller package download permission.
 
 Skill creation, revision publication, metadata update, deletion, and denied management attempts emit bounded [IAM security audit events](10-identity-and-access-management.md#security_audit_events). Common event fields record the actor, Workspace, action, primary Skill resource when known, and success-or-failure outcome. The stable actions are `skill.create`, `skill.revision.publish`, `skill.update`, and `skill.delete`; a denied attempt uses the same action with failure outcome. Action-owned `details` use this additional allowlist:
 
@@ -261,7 +261,7 @@ class SkillRevisionLock:
     content_digest: str
 ```
 
-Each `AgentPresetConfig.skills` entry selects one immutable revision ID, including an authorized retained non-current revision. It accepts no `latest`, upload receipt, GitHub selector, object URL, or source path. AgentPreset Publish resolves the ordered list, rejects duplicate final model-facing names, and copies the complete locks into the Revision.
+Each `AgentPresetConfig.skills` entry selects one immutable revision ID, including an authorized retained non-current revision. It accepts no `latest`, upload receipt, GitHub selector, object URL, or source path. AgentPreset Revision creation resolves the ordered list, rejects duplicate final model-facing names, and copies the complete locks into the Revision.
 
 Foundation exposes no separate available catalog, `default_mode`, `default_names`, per-item default flag, or caller-selected materialization mount. The selected list is the Preset default. A non-empty list requires one primary Environment with sufficient write access; Foundation materializes Skills into its Runtime-owned Skill directory. Later Skill publication or deletion never mutates the AgentPresetRevision or an accepted Run.
 

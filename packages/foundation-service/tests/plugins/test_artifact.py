@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from a13n_service.plugins.artifact import inspect_plugin_wheel
+from a13n_service.plugins.artifact import inspect_distribution_wheel, inspect_plugin_wheel
 from a13n_service.plugins.errors import PluginError
 
 from .conftest import build_wheel
@@ -20,6 +20,20 @@ async def test_inspects_standard_plugin_wheel_without_importing(tmp_path: Path) 
     assert inspected.distribution_name == "acme-audit"
     assert inspected.version == "1.0.0"
     assert inspected.top_level_package == "acme_audit"
+    assert inspected.requires_dist == ("pydantic>=2",)
+    assert inspected.wheel_tags == ("py3-none-any",)
+    assert inspected.root_is_purelib is True
+
+
+@pytest.mark.anyio
+async def test_inspects_dependency_wheel_without_requiring_plugin_entry_point(tmp_path: Path) -> None:
+    path = tmp_path / "dependency.whl"
+    path.write_bytes(build_wheel(requires_dist=("pydantic>=2",), include_entry_point=False))
+
+    inspected = await inspect_distribution_wheel(path, max_expanded_bytes=1024 * 1024, max_members=100)
+
+    assert inspected.distribution_name == "acme-audit"
+    assert inspected.version == "1.0.0"
     assert inspected.requires_dist == ("pydantic>=2",)
     assert inspected.wheel_tags == ("py3-none-any",)
     assert inspected.root_is_purelib is True

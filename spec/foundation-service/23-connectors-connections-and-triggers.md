@@ -21,7 +21,7 @@ or calling ConnectorProvider code itself.
 A Trigger targets one stable `AgentPreset` and submits each unique schedule or
 Connector-event occurrence through the common root [Run
 acceptance](34-agent-control-input-and-continuation.md#acceptance-and-lineage)
-contract. Acceptance resolves the Preset's then-active Revision and Runtime lock,
+contract. Acceptance resolves the Preset's then-default Revision and Runtime lock,
 stores both on the Run, and selects or creates the Session and root Thread;
 Trigger does not own another Agent runtime, queue, or retry lifecycle.
 
@@ -65,7 +65,7 @@ flowchart LR
 
     Connector --> Revision --> Provider
     Connection --> Connector
-    AgentPreset -->|active| AgentPresetRevision
+    AgentPreset -->|default| AgentPresetRevision
     AgentPresetRevision --> Revision
     Trigger --> AgentPreset
     Trigger -. connector event .-> Revision
@@ -371,9 +371,9 @@ class ConnectorProviderContractLock:
     contract_version: str
 ```
 
-An explicit `tools` tuple is a non-empty unique allowlist of Provider tool names. Publish calls `list_tools` through the Connector Service and rejects an unknown name. `tools=None` means all tools returned by the compatible Provider during Publish. The resulting AgentPresetRevision freezes the exact tool names, descriptions, JSON Schemas, effects, output policy, and Provider contract lock required to reconstruct the surface.
+An explicit `tools` tuple is a non-empty unique allowlist of Provider tool names. AgentPreset Revision creation calls `list_tools` through the Connector Service and rejects an unknown name. `tools=None` means all tools returned by the compatible Provider during Revision creation. The resulting AgentPresetRevision freezes the exact tool names, descriptions, JSON Schemas, effects, output policy, and Provider contract lock required to reconstruct the surface.
 
-The Provider contract lock makes the selected definitions interpretable under one semantic contract. A compatible Provider can change its current catalog without mutating a retained AgentPresetRevision. Adopting another tool or schema requires another Publish or a typed Run override. Final visible-name and schema compatibility are validated through native Pydantic MCP composition before the first model request.
+The Provider contract lock makes the selected definitions interpretable under one semantic contract. A compatible Provider can change its current catalog without mutating a retained AgentPresetRevision. Adopting another tool or schema requires another AgentPreset Revision or a typed Run override. Final visible-name and schema compatibility are validated through native Pydantic MCP composition before the first model request.
 
 ## Connection Selection and RunAttempt Preparation
 
@@ -614,7 +614,7 @@ class ConnectorEventTriggerSource:
 is evaluated for each occurrence. It is not the external webhook sender. The
 creating caller can bind only itself as a User; a Workspace Admin can instead
 bind an eligible Service Account and cannot bind another User. The target is one
-stable AgentPreset. Each firing resolves that Preset's current active Revision
+stable AgentPreset. Each firing resolves that Preset's current default Revision
 during durable Run acceptance; it never reads mutable config or accepts a
 caller-selected historical Revision. The Connector-event Connection is exact because an
 unattended Trigger cannot choose an account interactively. It authorizes event
@@ -626,10 +626,10 @@ fields. Deployment policy imposes a finite minimum interval. Schedule evaluation
 uses UTC instants while retaining the selected IANA zone for cron meaning.
 
 The Trigger has no immutable TriggerRevision. A successful occurrence acceptance
-stores the exact Trigger ID and version, target AgentPreset ID, resolved active
+stores the exact Trigger ID and version, target AgentPreset ID, resolved default
 AgentPresetRevision, occurrence identity, expanded input, and resolved Connector
-selections with its root Run. Updating the Trigger or publishing another Preset
-Revision cannot alter that retained work.
+selections with its root Run. Updating the Trigger or selecting another default
+Preset Revision cannot alter that retained work.
 
 ## Trigger Lifecycle and Event Sources
 
@@ -691,9 +691,9 @@ arbitrary expressions are not supported. Connector-event templates can select
 `{{ event.occurred_at }}`. Schedule templates can select `{{ scheduled_at }}`.
 
 Foundation compiles the template at Trigger creation or update and validates the
-possible expanded structure against the target Preset's current active Revision
+possible expanded structure against the target Preset's current default Revision
 [`ProtocolConfig.input_data_schema`](12-agent-management.md#protocol-configuration)
-when present. At occurrence acceptance it resolves the then-active
+when present. At occurrence acceptance it resolves the then-default
 AgentPresetRevision and Runtime lock, revalidates the bounded expanded value
 against that frozen optional schema, and constructs an `AgentInput` with empty
 `content` and that value in `structured_content`. Provider event data is
@@ -716,7 +716,7 @@ Occurrence uniqueness is:
 Control occurrence handling invokes the common root Run acceptance operation. It
 validates and publishes the initial root state, then its short acceptance
 transaction rechecks Trigger state, current Principal and stable Preset
-authorization, resolves the exact active Preset Revision and profile-selected Runtime lock, verifies
+authorization, resolves the exact default Preset Revision and profile-selected Runtime lock, verifies
 Provider and Connection eligibility and Agent Connector resolution, and checks the
 unique occurrence key. That transaction commits the versioned root Thread row,
 root Run, Session relationship, exact Preset Revision and Runtime lock, resolved
@@ -869,7 +869,7 @@ No version substitutes for another. A Provider upgrade can support old config,
 state, and event versions explicitly, while a frozen Agent declaration requires
 an exact Provider contract lock; absence of that declared compatibility fails
 rather than applying current defaults. Explicit Agent tool-name allowlists change
-only through a new AgentPresetRevision or typed Run override; an all-tools declaration resolves and freezes its definitions at that boundary. Publishing that Revision or changing a Trigger
+only through a new AgentPresetRevision or typed Run override; an all-tools declaration resolves and freezes its definitions at that boundary. Creating that Revision or changing a Trigger
 affects only later occurrence acceptance because every Run retains the selected
 Trigger version, exact Preset Revision, Runtime lock, Connector selections, and
 expanded input.
@@ -903,7 +903,7 @@ observable Run identity. In exchange, Foundation does not expose Connector
 events as a general-purpose customer event bus; external event consumption
 independent of Agent work is outside this contract.
 
-Stable AgentPreset targets let unattended work adopt newly published active
+Stable AgentPreset targets let unattended work adopt newly selected default
 Revisions, while exact Run pinning and fail-closed Connection ambiguity preserve
 accepted-work reproducibility. Choosing between several accounts remains an
 explicit authoring action.
@@ -919,7 +919,7 @@ explicit authoring action.
 07. Every RunAttempt obtains current IAM, run grants, Provider compatibility, Connection eligibility, credential use, and a short-lived fenced Connector capability before Harness dispatch.
 08. Connector tools enter the model only through the Connector Service MCP Gateway, native Pydantic MCP composition, and the mandatory Harness managed-tool boundary; Worker and Control do not call Providers directly.
 09. Provider or external I/O spans no Foundation database session or transaction, and unknown external outcomes retain exact operation identity for reconciliation.
-10. Trigger is an independent resource that targets one stable AgentPreset; each occurrence accepts a root Run pinned to the then-active AgentPresetRevision and Runtime lock through the common Session and Thread contract.
+10. Trigger is an independent resource that targets one stable AgentPreset; each occurrence accepts a root Run pinned to the then-default AgentPresetRevision and Runtime lock through the common Session and Thread contract.
 11. A Connector-event Trigger selects one exact ConnectorRevision and Connection for ingress; that Connection never overrides the target Agent's tool selections.
 12. Each unique Trigger occurrence accepts at most one Run, while event delivery and Agent side effects remain independently retryable and are not claimed exactly once.
 13. Trigger input is bounded untrusted data and cannot create a Principal, permission, run grant, tool, Connection, or Secret authority.

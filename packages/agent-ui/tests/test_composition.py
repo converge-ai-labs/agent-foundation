@@ -1,679 +1,370 @@
 from __future__ import annotations
 
-import asyncio
-import hashlib
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, cast
 
-import a13n_ui.composition.reconstruction as reconstruction_module
 import pytest
-import yaml
+from a13n_harness.capabilities import SubagentOperator
 from a13n_harness.environment import DynamicEnvironmentCapability
-from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
-from a13n_harness.environment.local.files import LocalFileOperator
-from a13n_harness.mcp import ContextualMCP
-from a13n_ui.composition.reconstruction import SnapshotSkillMaterializer, _PackageFile
-from a13n_ui.configuration import (
-    ConfigurationSettings,
-    DefinitionRootSettings,
-    LocalDirectorySettings,
-    canonical_digest,
+from a13n_harness.plugin_factories import (
+    HarnessPluginFactory,
+    HarnessPluginFactoryContext,
+    build_harness_plugin_factory_catalog,
 )
-from a13n_ui.configuration.models import MCPSelection
-from a13n_ui.errors import CompositionError, ConfigurationError
-from a13n_ui.host import open_agent_ui_host
-from a13n_ui.settings import AgentUiSettings, StorageSettings
+from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_ui.capability_runtime import production_portable_capabilities
+from a13n_ui.composition import (
+    IMPLICIT_NATIVE_PROFILE,
+    PACKAGE_SYSTEM_PROMPT,
+    AgentCompositionResolver,
+    AgentReconstructor,
+    CompositionAcceptanceService,
+)
+from a13n_ui.configuration import load_agent_ui_configuration
+from a13n_ui.environment_runtime import WorkspaceBinding
+from a13n_ui.errors import CompositionError
+from a13n_ui.session_capability import AgentUiSessionCapability
+from a13n_ui.settings import StorageSettings
+from a13n_ui.storage import ObjectKind, open_local_store
+from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic_ai.capabilities import AbstractCapability
 
 pytestmark = pytest.mark.anyio
 
 
-def _write_yaml(path: Path, value: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(value, allow_unicode=True, sort_keys=True))
+class _MemoryConfiguration(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    capacity: int
 
 
-def _settings(data_root: Path, definitions: Path, workspace: Path) -> AgentUiSettings:
-    return AgentUiSettings(
-        storage=StorageSettings(data_root=data_root),
-        configuration=ConfigurationSettings(
-            definition_roots=(
-                DefinitionRootSettings(
-                    root_id="root-user",
-                    path=definitions,
-                    writable=True,
-                ),
-            ),
-            local_directories=(
-                LocalDirectorySettings(
-                    directory_id="directory-workspace",
-                    path=workspace,
-                ),
-            ),
-            model_adapter_keys=("a13n.pydantic-ai",),
-        ),
+class _MemoryPlugin(AbstractHarnessPlugin):
+    def __init__(self, plugin_id: str) -> None:
+        self._plugin_id = plugin_id
+
+    @property
+    def plugin_id(self) -> str:
+        return self._plugin_id
+
+
+class _PortableCapability(AbstractCapability[Any]):
+    def __init__(self, capability_id: str) -> None:
+        self.id = capability_id
+
+
+class _UnusedOperator(SubagentOperator):
+    async def delegate(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("not invoked during reconstruction")
+
+    async def info(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("not invoked during reconstruction")
+
+    async def wait(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("not invoked during reconstruction")
+
+    async def steer(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("not invoked during reconstruction")
+
+    async def cancel(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("not invoked during reconstruction")
+
+    async def resume(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("not invoked during reconstruction")
+
+
+class _MemoryFactory(HarnessPluginFactory):
+    @classmethod
+    def plugin_key(cls) -> str:
+        return "vendor.memory"
+
+    def validate_configuration(self, configuration: Mapping[str, JsonValue]) -> BaseModel:
+        return _MemoryConfiguration.model_validate(dict(configuration), strict=True)
+
+    def create_plugin(self, context: HarnessPluginFactoryContext) -> AbstractHarnessPlugin:
+        return _MemoryPlugin(context.plugin_id)
+
+
+def _plugin_catalog():
+    return build_harness_plugin_factory_catalog(explicit_factories=(_MemoryFactory(),))
+
+
+async def _write_complete_source(tmp_path: Path) -> Path:
+    config = tmp_path / "agent-ui.yaml"
+    config.write_text(
+        """
+schema_version: "1"
+defaults:
+  agent: assistant
+models:
+  primary:
+    model: openai:gpt-5
+    api_key: {env: OPENAI_API_KEY}
+    settings:
+      temperature: 0
+plugins:
+  memory:
+    plugin: vendor.memory
+    configuration:
+      capacity: 8
+mcp_servers:
+  docs:
+    transport:
+      url: https://example.test/mcp
+      headers:
+        Authorization: {env: MCP_TOKEN}
+agents:
+  assistant:
+    model: primary
+    instructions: Root authored instructions.
+    subagents:
+      - markdown: explorer
+      - agent: reviewer
+  reviewer:
+    model: primary
+    instructions: Review independently.
+    plugins: []
+    mcp_servers: []
+environments:
+  local:
+    kind: native
+""".lstrip()
+    )
+    subagents = tmp_path / "subagents"
+    subagents.mkdir()
+    (subagents / "explorer.md").write_text(
+        """---
+name: explorer
+description: Inspect relevant code.
+instruction: Use for repository exploration.
+model: inherit
+model_settings:
+  max_tokens: 2048
+tools: [search, files]
+optional_tools: [shell]
+---
+
+Report evidence with file paths.
+"""
+    )
+    return config
+
+
+async def test_resolves_complete_agent_graph_and_trusted_locks(tmp_path: Path) -> None:
+    source = await load_agent_ui_configuration(await _write_complete_source(tmp_path))
+    resolved = AgentCompositionResolver(plugin_catalog=_plugin_catalog()).resolve(source)
+
+    snapshot = resolved.agents["assistant"]
+    assert snapshot.harness_release
+    assert snapshot.root.instructions == (PACKAGE_SYSTEM_PROMPT, "Root authored instructions.")
+    assert snapshot.root.model.route == "openai:gpt-5"
+    assert snapshot.root.model.api_key is not None
+    assert snapshot.root.model.api_key.env == "OPENAI_API_KEY"
+    assert snapshot.root.model.settings == {"temperature": 0.0}
+    assert snapshot.root.plugins[0].configuration == {"capacity": 8}
+    assert snapshot.root.mcp_servers[0].transport.headers["Authorization"].env == "MCP_TOKEN"
+
+    explorer = snapshot.root.children[0]
+    assert explorer.name == "explorer"
+    assert explorer.definition.instructions == (
+        PACKAGE_SYSTEM_PROMPT,
+        "Root authored instructions.",
+        "Report evidence with file paths.",
+    )
+    assert explorer.definition.model.settings == {"temperature": 0.0, "max_tokens": 2048}
+    assert explorer.definition.plugins == snapshot.root.plugins
+    assert explorer.definition.mcp_servers == snapshot.root.mcp_servers
+    assert explorer.definition.tools == ("search", "files")
+
+    reviewer = snapshot.root.children[1].definition
+    assert reviewer.instructions == (PACKAGE_SYSTEM_PROMPT, "Review independently.")
+    assert reviewer.plugins == ()
+    assert reviewer.mcp_servers == ()
+    assert tuple(lock.dependency_kind for lock in snapshot.dependencies) == (
+        "mcp-adapter",
+        "model-adapter",
+        "plugin",
     )
 
-
-def _write_composition(definitions: Path, *, system_prompt: str = "Be concise.") -> None:
-    _write_yaml(
-        definitions / "models/model-main.yaml",
-        {
-            "schema_version": "1",
-            "model_id": "model-main",
-            "display_name": "Main Model",
-            "provider_key": "a13n.pydantic-ai",
-            "model_name": "test-v1",
-            "settings": {"temperature": 0},
-        },
-    )
-    _write_yaml(
-        definitions / "prompts/prompt-main.yaml",
-        {
-            "schema_version": "1",
-            "prompt_id": "prompt-main",
-            "display_name": "Main Prompt",
-            "system_prompt_blocks": [{"content": system_prompt}],
-        },
-    )
-    _write_yaml(
-        definitions / "agents/agent-main.yaml",
-        {
-            "schema_version": "1",
-            "agent_id": "agent-main",
-            "display_name": "Main Agent",
-            "model": {"kind": "model", "resource_id": "model-main"},
-            "prompt": {"kind": "prompt", "resource_id": "prompt-main"},
-            "async_subagents": {"tools": "disabled"},
-        },
-    )
-    _write_yaml(
-        definitions / "environments/environment-main.yaml",
-        {
-            "schema_version": "1",
-            "environment_id": "environment-main",
-            "display_name": "Main Environment",
-            "mounts": [
-                {
-                    "mount_name": "mount-main",
-                    "model_alias": "workspace",
-                    "provider_key": "a13n.direct-local",
-                    "provider_schema_version": "1",
-                    "provider_parameters": {
-                        "environment_id": "local-main",
-                        "root": {
-                            "directory_id": "directory-workspace",
-                            "read_only": False,
-                        },
-                    },
-                    "access": "read_write",
-                },
-            ],
-            "default_mount": "mount-main",
-            "provision": "on_first_run",
-        },
-    )
-
-
-async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        generation_one = await application.current_configuration()
-        assert generation_one is not None
-        agent_reference = await application.resolve_agent_snapshot("agent-main")
-        environment_reference = await application.resolve_environment_snapshot("environment-main")
-        agent = await application.agent_snapshot(agent_reference)
-        environment = await application.environment_snapshot(environment_reference)
-        compatibility = await application.validate_agent_environment(
-            agent_reference,
-            environment_reference,
-        )
-        await application.validate_agent_executable(agent_reference)
-        executable = await application._composition.executable(agent_reference)
-        retained_cache = application._composition._cache
-
-        assert retained_cache._entries
-        assert executable.definition.agent.system_prompt == ["Be concise."]
-        assert executable.definition.agent.instructions is None
-        assert agent.root_agent.resource_id == "agent-main"
-        assert agent.adapter_locks[0].dependency_kind == "model_adapter"
-        assert agent.adapter_locks[0].key == "a13n.pydantic-ai"
-        assert agent.adapter_locks[0].distribution_name == "a13n-ui"
-        assert agent.adapter_locks[0].distribution_version
-        assert environment.environment_revision.resource_id == "environment-main"
-        assert environment.mounts[0].access == "read_write"
-        assert agent.resolved_agents[0].environment_tools is True
-        environment_capability = next(
-            item for item in executable.definition.capabilities if isinstance(item, DynamicEnvironmentCapability)
-        )
-        assert environment_capability.operator.supports_background is False
-        assert environment.mounts[0].normalized_parameters["root"] == {
-            "path": str(workspace),
-            "read_only": False,
-        }
-        assert environment.mounts[0].lifecycle_capabilities.model_dump(mode="json") == {
-            "pause_modes": [],
-            "resource_allocation": "single_from_spec",
-            "attachment_concurrency": "shared",
-        }
-        assert compatibility.agent_snapshot_digest == agent.logical_agent_digest
-
-        legacy_environment = environment.model_dump(mode="python")
-        for mount in legacy_environment["definition"]["mounts"]:
-            mount["permission_ceiling"] = ["files"]
-            mount.pop("access")
-        for mount in legacy_environment["mounts"]:
-            mount["permission_ceiling"] = ["files"]
-            mount.pop("access")
-        legacy_behavior = {
-            key: value
-            for key, value in legacy_environment.items()
-            if key not in {"logical_environment_digest", "generation_id", "catalog_digest"}
-        }
-        legacy_environment["logical_environment_digest"] = canonical_digest(legacy_behavior)
-        restored_environment = type(environment).model_validate(
-            legacy_environment,
-            context={"legacy_snapshot_payload": legacy_environment},
-        )
-        assert restored_environment.mounts[0].access == "read_write"
-
-        _write_composition(definitions, system_prompt="Be precise.")
-        generation_two = await application.reload_configuration()
-        changed_reference = await application.resolve_agent_snapshot("agent-main")
-        assert generation_two.generation_id != generation_one.generation_id
-        assert changed_reference.logical_digest != agent_reference.logical_digest
-        assert await application.agent_snapshot(agent_reference) == agent
-        exact_reference = await application.resolve_agent_snapshot(
-            "agent-main",
-            generation_id=generation_one.generation_id,
-        )
-        assert exact_reference == agent_reference
-
-    assert retained_cache._entries == {}
-
-    async with open_agent_ui_host(settings) as restarted:
-        assert await restarted.agent_snapshot(agent_reference) == agent
-        assert await restarted.environment_snapshot(environment_reference) == environment
-        await restarted.validate_agent_executable(agent_reference)
-
-
-async def test_environment_tools_can_be_disabled_with_one_agent_setting(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    agent_path = definitions / "agents/agent-main.yaml"
-    agent_document = yaml.safe_load(agent_path.read_text())
-    agent_document["environment_tools"] = False
-    _write_yaml(agent_path, agent_document)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        reference = await application.resolve_agent_snapshot("agent-main")
-        snapshot = await application.agent_snapshot(reference)
-        executable = await application._composition.executable(reference)
-
-    assert snapshot.resolved_agents[0].environment_tools is False
-    assert not any(isinstance(item, DynamicEnvironmentCapability) for item in executable.definition.capabilities)
-
-
-async def test_host_shutdown_clears_executable_cache_after_prior_cleanup_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    retained_cache = None
-
-    async def fail_environment_close() -> None:
-        raise RuntimeError("simulated Environment cleanup failure")
-
-    with pytest.raises(RuntimeError, match="simulated Environment cleanup failure"):
-        async with open_agent_ui_host(settings) as application:
-            agent_reference = await application.resolve_agent_snapshot("agent-main")
-            await application.validate_agent_executable(agent_reference)
-            retained_cache = application._composition._cache
-            assert retained_cache._entries
-            monkeypatch.setattr(application._runtime, "close", fail_environment_close)
-
-    assert retained_cache is not None
-    assert retained_cache._entries == {}
-
-
-async def test_reconstruction_rejects_a_changed_model_adapter_lock(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        agent_reference = await application.resolve_agent_snapshot("agent-main")
-        monkeypatch.setattr(
-            reconstruction_module,
-            "model_adapter_registration",
-            lambda _key: None,
-        )
-        with pytest.raises(CompositionError) as error:
-            await application.validate_agent_executable(agent_reference)
-
-    assert error.value.code == "model_adapter_lock_mismatch"
-
-
-async def test_subagent_identity_policy_survives_snapshot_reconstruction(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    _write_yaml(
-        definitions / "agents/agent-child.yaml",
-        {
-            "schema_version": "1",
-            "agent_id": "agent-child",
-            "display_name": "Child Agent",
-            "model": {"kind": "model", "resource_id": "model-main"},
-            "prompt": {"kind": "prompt", "resource_id": "prompt-main"},
-            "async_subagents": {"tools": "disabled"},
-        },
-    )
-    agent_path = definitions / "agents/agent-main.yaml"
-    agent = yaml.safe_load(agent_path.read_text())
-    agent["subagents"] = [
-        {
-            "name": "child-worker",
-            "description": "Run child work.",
-            "agent": {"kind": "agent", "resource_id": "agent-child"},
-            "identity": {"inherit_agent_id": True},
-        }
-    ]
-    _write_yaml(agent_path, agent)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        reference = await application.resolve_agent_snapshot("agent-main")
-        snapshot = await application.agent_snapshot(reference)
-        executable = await application._composition.executable(reference)
-
-    root = next(node for node in snapshot.resolved_agents if node.agent_id == "agent-main")
-    assert root.subagents[0].identity.inherit_agent_id is True
-    assert executable.definition.subagents[0].identity.inherit_agent_id is True
-
-    legacy_payload = snapshot.model_dump(mode="python")
-    for node in legacy_payload["resolved_agents"]:
-        node.pop("environment_tools")
-        for edge in node["subagents"]:
-            edge.pop("identity")
-            edge.update(lifetime="parent_scope", steering="disabled", continuation="disabled")
-    legacy_behavior = {
-        key: value
-        for key, value in legacy_payload.items()
-        if key not in {"logical_agent_digest", "generation_id", "catalog_digest"}
-    }
-    legacy_payload["logical_agent_digest"] = canonical_digest(legacy_behavior)
-    restored = type(snapshot).model_validate(
-        legacy_payload,
-        context={"legacy_snapshot_payload": legacy_payload},
-    )
-    legacy_root = next(node for node in restored.resolved_agents if node.agent_id == "agent-main")
-    assert legacy_root.subagents[0].identity.inherit_agent_id is False
-
-
-async def test_mcp_selection_survives_snapshot_reconstruction(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    agent_path = definitions / "agents/agent-main.yaml"
-    agent = yaml.safe_load(agent_path.read_text())
-    agent["capabilities"] = [
-        {
-            "key": "a13n.mcp",
-            "schema_version": "1",
-            "id": "mcp-main",
-            "url": "https://mcp.example.com/mcp",
-            "execution": "auto",
-            "allowed_tools": ["search"],
-            "description": "Context-aware search.",
-            "defer_loading": True,
-            "context_headers": {
-                "X-Agent": {"source": "identity.agent_id", "required": True},
-                "X-Payload": {
-                    "source": "context.metadata.payload",
-                    "required": False,
-                },
-            },
-        },
-        {
-            "key": "a13n.mcp",
-            "schema_version": "1",
-            "id": "mcp-secondary",
-            "url": "https://secondary.example.com/mcp",
-            "execution": "native",
-            "allowed_tools": None,
-            "description": None,
-            "defer_loading": False,
-            "context_headers": {},
-        },
-    ]
-    _write_yaml(agent_path, agent)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        reference = await application.resolve_agent_snapshot("agent-main")
-        snapshot = await application.agent_snapshot(reference)
-        executable = await application._composition.executable(reference)
-
-    root = next(node for node in snapshot.resolved_agents if node.agent_id == "agent-main")
-    assert [selection.model_dump(mode="json") for selection in root.capabilities] == agent["capabilities"]
-    capabilities = [item for item in executable.definition.capabilities if isinstance(item, ContextualMCP)]
-    assert [item.id for item in capabilities] == ["mcp-main", "mcp-secondary"]
-    assert capabilities[0].url == "https://mcp.example.com/mcp"
-    assert capabilities[0].description == "Context-aware search."
-    assert capabilities[0].defer_loading is True
-    assert capabilities[1].url == "https://secondary.example.com/mcp"
-
-
-def test_mcp_selection_preserves_explicit_http_url_components() -> None:
-    url = "https://user:pass@mcp.example.com/mcp?signature=value#route"
-
-    selection = MCPSelection(
-        key="a13n.mcp",
-        id="mcp-main",
-        url=url,
-        context_headers={},
-    )
-
-    assert selection.url == url
-
-
-async def test_unrelated_reload_reuses_the_logical_agent_snapshot(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        original = await application.resolve_agent_snapshot("agent-main")
-        environment_path = definitions / "environments/environment-main.yaml"
-        environment = yaml.safe_load(environment_path.read_text())
-        environment["display_name"] = "Renamed Environment"
-        _write_yaml(environment_path, environment)
-        await application.reload_configuration()
-        unchanged = await application.resolve_agent_snapshot("agent-main")
-
-    assert unchanged == original
-
-
-async def test_skill_reconstruction_uses_the_selected_environment_alias(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    package = definitions / "managed-skills/skill-demo"
-    package.mkdir(parents=True)
-    (package / "SKILL.md").write_text(
-        "---\nname: demo\ndescription: Demonstration skill\n---\n\nUse the demo workflow.\n"
-    )
-    _write_yaml(
-        definitions / "skills/skill-demo.yaml",
-        {
-            "schema_version": "1",
-            "skill_id": "skill-demo",
-            "display_name": "Demo Skill",
-            "skill_name": "demo",
-            "description": "Demonstration skill",
-            "package": {
-                "root_id": "root-user",
-                "relative_path": "managed-skills/skill-demo",
-            },
-            "compatibility": {"harness_skill_contract": "1"},
-        },
-    )
-    agent_path = definitions / "agents/agent-main.yaml"
-    agent = yaml.safe_load(agent_path.read_text())
-    agent["skills"] = {
-        "available": [{"kind": "skill", "resource_id": "skill-demo"}],
-        "materialization_mount": "mount-main",
-        "default_selection": {"mode": "exact", "names": ["demo"]},
-    }
-    agent["environment"] = {
-        "mounts": [
-            {
-                "mount_name": "mount-main",
-                "required_access": "read_write",
-            },
-        ],
-    }
-    _write_yaml(agent_path, agent)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        agent_reference = await application.resolve_agent_snapshot("agent-main")
-        environment_reference = await application.resolve_environment_snapshot("environment-main")
-        with pytest.raises(CompositionError) as missing_environment:
-            await application.validate_agent_executable(agent_reference)
-        await application.validate_agent_executable(
-            agent_reference,
-            environment_reference,
-        )
-
-    assert missing_environment.value.code == "agent_environment_required"
-
-
-@pytest.mark.parametrize("relation", ["equal", "ancestor", "descendant"])
-async def test_environment_snapshot_rejects_data_root_overlap(
-    tmp_path: Path,
-    relation: str,
-) -> None:
-    definitions = tmp_path / "definitions"
-    data_root = tmp_path / "data"
-    if relation == "equal":
-        workspace = data_root
-    elif relation == "ancestor":
-        workspace = tmp_path
-    else:
-        workspace = data_root / "workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
-    _write_composition(definitions)
-    settings = _settings(data_root, definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        with pytest.raises(CompositionError) as overlap:
-            await application.resolve_environment_snapshot("environment-main")
-
-    assert overlap.value.code == "environment_data_root_overlap"
-
-
-async def test_environment_snapshot_resolves_symlinks_before_overlap_check(
-    tmp_path: Path,
-) -> None:
-    real_root = tmp_path / "real-root"
-    data_root = real_root / "data"
-    definitions = tmp_path / "definitions"
-    real_root.mkdir()
-    workspace_link = tmp_path / "workspace-link"
-    try:
-        workspace_link.symlink_to(real_root, target_is_directory=True)
-    except OSError:
-        pytest.skip("directory symlinks are unavailable on this Windows configuration")
-    _write_composition(definitions)
-    settings = _settings(data_root, definitions, workspace_link)
-
-    async with open_agent_ui_host(settings) as application:
-        with pytest.raises(CompositionError) as overlap:
-            await application.resolve_environment_snapshot("environment-main")
-
-    assert overlap.value.code == "environment_data_root_overlap"
-
-
-async def test_compatibility_rejects_a_missing_required_binding(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    agent_path = definitions / "agents/agent-main.yaml"
-    agent = yaml.safe_load(agent_path.read_text())
-    agent["environment"] = {
-        "mounts": [
-            {
-                "mount_name": "mount-missing",
-                "required_access": "read_write",
-            },
-        ],
-    }
-    _write_yaml(agent_path, agent)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        agent_reference = await application.resolve_agent_snapshot("agent-main")
-        environment_reference = await application.resolve_environment_snapshot("environment-main")
-        with pytest.raises(CompositionError) as incompatible:
-            await application.validate_agent_environment(
-                agent_reference,
-                environment_reference,
-            )
-
-    assert incompatible.value.code == "agent_environment_incompatible"
-
-
-async def test_reload_rejects_unknown_environment_idle_policy_and_accepts_async_tools(
-    tmp_path: Path,
-) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        accepted = await application.current_configuration()
-        assert accepted is not None
-
-        environment_path = definitions / "environments/environment-main.yaml"
-        environment = yaml.safe_load(environment_path.read_text())
-        environment["idle"] = "pause"
-        _write_yaml(environment_path, environment)
-        with pytest.raises(ConfigurationError) as lifecycle_error:
-            await application.reload_configuration()
-        assert lifecycle_error.value.code == "configuration_document_invalid"
-        assert await application.current_configuration() == accepted
-
-        _write_composition(definitions)
-        agent_path = definitions / "agents/agent-main.yaml"
-        agent = yaml.safe_load(agent_path.read_text())
-        agent["async_subagents"] = {"tools": "standard"}
-        _write_yaml(agent_path, agent)
-        generation = await application.reload_configuration()
-        assert generation.generation_id != accepted.generation_id
-        reference = await application.resolve_agent_snapshot("agent-main")
-        await application.validate_agent_executable(reference)
+    native = resolved.environments["local"]
+    assert native.provider_key == "a13n.direct-local"
+    assert native.binder_key == "a13n.native-workspace"
+    assert resolved.default_environment == IMPLICIT_NATIVE_PROFILE
+    assert IMPLICIT_NATIVE_PROFILE in resolved.environments
 
 
 @pytest.mark.parametrize(
-    ("mode", "compatible"),
+    ("settings", "model_cfg", "code"),
     [
-        ("dedicated", False),
-        ("shared_root", True),
+        ({"extra_headers": {"X-Test": "value"}}, {}, "model_settings_invalid"),
+        ({"temperature": 0}, {"base_url": "https://example.test"}, "model_configuration_unsupported"),
     ],
 )
-async def test_child_environment_policy_uses_provider_lifecycle_capabilities(
+async def test_rejects_unsupported_model_behavior(
     tmp_path: Path,
-    mode: str,
-    compatible: bool,
+    settings: dict[str, JsonValue],
+    model_cfg: dict[str, JsonValue],
+    code: str,
 ) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    _write_yaml(
-        definitions / "agents/agent-child.yaml",
-        {
-            "schema_version": "1",
-            "agent_id": "agent-child",
-            "display_name": "Child Agent",
-            "model": {"kind": "model", "resource_id": "model-main"},
-            "prompt": {"kind": "prompt", "resource_id": "prompt-main"},
-            "async_subagents": {"tools": "disabled"},
-        },
+    config = tmp_path / "agent-ui.yaml"
+    config.write_text(
+        """
+schema_version: "1"
+models:
+  primary:
+    model: openai:gpt-5
+    settings: SETTINGS
+    model_cfg: MODEL_CFG
+agents:
+  assistant:
+    model: primary
+""".replace("SETTINGS", _inline_json(settings)).replace("MODEL_CFG", _inline_json(model_cfg))
     )
-    agent_path = definitions / "agents/agent-main.yaml"
-    agent = yaml.safe_load(agent_path.read_text())
-    agent["capabilities"] = [{"key": "a13n.user-interaction", "schema_version": "1"}]
-    agent["subagents"] = [
-        {
-            "name": "child-worker",
-            "description": "Run child work.",
-            "agent": {"kind": "agent", "resource_id": "agent-child"},
-            "environment": {"mode": mode, "mounts": ["mount-main"]},
-        }
-    ]
-    _write_yaml(agent_path, agent)
-    settings = _settings(tmp_path / "data", definitions, workspace)
+    source = await load_agent_ui_configuration(config)
 
-    async with open_agent_ui_host(settings) as application:
-        agent_reference = await application.resolve_agent_snapshot("agent-main")
-        environment_reference = await application.resolve_environment_snapshot("environment-main")
-        if compatible:
-            result = await application.validate_agent_environment(
-                agent_reference,
-                environment_reference,
-            )
-            assert result.compatible is True
-            await application.validate_agent_executable(
-                agent_reference,
-                environment_reference,
-            )
-        else:
-            with pytest.raises(CompositionError) as error:
-                await application.validate_agent_environment(
-                    agent_reference,
-                    environment_reference,
-                )
-            assert error.value.code == "agent_environment_incompatible"
+    with pytest.raises(CompositionError) as invalid:
+        AgentCompositionResolver().resolve(source)
+
+    assert invalid.value.code == code
 
 
-async def test_skill_materializer_replaces_stale_tree_and_handles_concurrent_publish(
-    tmp_path: Path,
-) -> None:
-    target = tmp_path / "managed"
-    target.mkdir()
-    (target / "stale.txt").write_text("stale")
-    content = b"---\nname: demo\ndescription: Demo\n---\n"
-    package = _PackageFile(
-        path="SKILL.md",
-        content=content,
-        sha256=hashlib.sha256(content).hexdigest(),
+async def test_plugin_package_schema_rejects_unknown_configuration(tmp_path: Path) -> None:
+    config = tmp_path / "agent-ui.yaml"
+    config.write_text(
+        """
+schema_version: "1"
+plugins:
+  memory:
+    plugin: vendor.memory
+    configuration: {capacity: 8, unknown: true}
+""".lstrip()
     )
-    materializer = SnapshotSkillMaterializer(
-        "materializer-demo",
-        "/managed",
-        {"demo": (package,)},
-    )
-    files = LocalFileOperator(
-        root=tmp_path,
-        read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-main",
-        generation="generation-1",
+    source = await load_agent_ui_configuration(config)
+
+    with pytest.raises(CompositionError) as invalid:
+        AgentCompositionResolver(plugin_catalog=_plugin_catalog()).resolve(source)
+
+    assert invalid.value.code == "plugin_configuration_invalid"
+
+
+async def test_reconstructs_exact_graph_without_resolving_runtime_credentials(tmp_path: Path) -> None:
+    source = await load_agent_ui_configuration(await _write_complete_source(tmp_path))
+    snapshot = AgentCompositionResolver(plugin_catalog=_plugin_catalog()).resolve(source).agents["assistant"]
+    portable = {
+        name: (lambda selected=name: _PortableCapability(f"test.{selected}")) for name in ("search", "files", "shell")
+    }
+
+    reconstructed = AgentReconstructor(
+        plugin_catalog=_plugin_catalog(),
+        portable_capabilities=portable,
+    ).reconstruct(
+        snapshot,
+        subagent_operator=_UnusedOperator(),
+        root_capabilities=(
+            AgentUiSessionCapability(
+                service=cast(Any, object()),
+                source_session_id="session-root",
+                binding=WorkspaceBinding(folders=(tmp_path,)),
+            ),
+        ),
     )
 
-    await asyncio.gather(
-        materializer.materialize(files=files),
-        materializer.materialize(files=files),
-    )
-    await materializer.materialize(files=files)
+    assert reconstructed.executable.definition.definition_id == f"agent-ui:{snapshot.root.definition_digest}"
+    assert reconstructed.executable.definition.agent.model.startswith("agent-ui:model-")
+    assert tuple(reconstructed.executable.subagents) == ("explorer", "reviewer")
+    assert "a13n.agent-ui.sessions" in {
+        capability.id for capability in reconstructed.executable.definition.capabilities
+    }
+    for child in reconstructed.executable.subagents.values():
+        assert "a13n.agent-ui.sessions" not in {capability.id for capability in child.definition.capabilities}
 
-    assert (target / "demo" / "SKILL.md").read_bytes() == content
-    assert not (target / "stale.txt").exists()
-    assert not tuple(tmp_path.glob("managed.stage-*"))
+
+async def test_markdown_children_narrow_environment_tool_families_exactly(tmp_path: Path) -> None:
+    config = tmp_path / "agent-ui.yaml"
+    config.write_text(
+        """
+schema_version: "1"
+models:
+  primary:
+    model: openai:gpt-5
+agents:
+  assistant:
+    model: primary
+    subagents:
+      - markdown: files-only
+      - markdown: shell-only
+""".lstrip()
+    )
+    subagents = tmp_path / "subagents"
+    subagents.mkdir()
+    (subagents / "files-only.md").write_text(
+        """---
+name: files-only
+description: Read and write files.
+tools: [files]
+---
+
+Use only file tools.
+"""
+    )
+    (subagents / "shell-only.md").write_text(
+        """---
+name: shell-only
+description: Run shell commands.
+tools: [shell]
+---
+
+Use only shell tools.
+"""
+    )
+    source = await load_agent_ui_configuration(config)
+    snapshot = AgentCompositionResolver().resolve(source).agents["assistant"]
+
+    reconstructed = AgentReconstructor(
+        portable_capabilities=production_portable_capabilities(),
+    ).reconstruct(snapshot, subagent_operator=_UnusedOperator())
+
+    files = _dynamic_environment(reconstructed.executable.subagents["files-only"].definition.capabilities)
+    shell = _dynamic_environment(reconstructed.executable.subagents["shell-only"].definition.capabilities)
+    assert files.configuration.files_enabled
+    assert not files.configuration.shell_enabled
+    assert not shell.configuration.files_enabled
+    assert shell.configuration.shell_enabled
+
+
+async def test_acceptance_publishes_all_snapshots_before_atomic_selection(tmp_path: Path) -> None:
+    source = await load_agent_ui_configuration(await _write_complete_source(tmp_path))
+    settings = StorageSettings(data_root=tmp_path / "state")
+
+    async with open_local_store(settings) as store:
+        service = CompositionAcceptanceService(
+            store,
+            AgentCompositionResolver(plugin_catalog=_plugin_catalog()),
+        )
+        first = await service.accept(source, expected_current_digest=None)
+        second = await service.accept(source, expected_current_digest=source.source_digest)
+
+        assert first.snapshots == second.snapshots
+        assert await store.configurations.current_digest() == source.source_digest
+        selected = await store.configurations.snapshots(source.source_digest)
+        assert selected == dict(first.snapshots)
+        assert selected[("agent", "assistant")].object_kind is ObjectKind.agent_snapshot
+        assert selected[("environment", "local")].object_kind is ObjectKind.environment_snapshot
+        assert selected[("environment", IMPLICIT_NATIVE_PROFILE)].object_kind is ObjectKind.environment_snapshot
+        agent = await store.objects.read_model(
+            selected[("agent", "assistant")],
+            type(AgentCompositionResolver(plugin_catalog=_plugin_catalog()).resolve(source).agents["assistant"]),
+        )
+        assert agent.root.source_name == "assistant"
+
+
+def _dynamic_environment(capabilities: tuple[AbstractCapability[Any], ...]) -> DynamicEnvironmentCapability:
+    matches = [item for item in capabilities if isinstance(item, DynamicEnvironmentCapability)]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def _inline_json(value: object) -> str:
+    import json
+
+    return json.dumps(value, separators=(",", ":"))

@@ -2,213 +2,199 @@
 
 ## Design Position
 
-Agent UI is the local single-user workstation for composing and running `agent-harness` Agents. The `a13n-ui` distribution owns reloadable product configuration, exact Agent and Environment snapshots, local Sessions, Environment lifecycle, continuation persistence, one stable `AgentUiHost`, replaceable runtime Runners, an append-only CLI, and a bundled multi-Session WebUI.
+Agent UI is a local, single-user Harness workstation. One process-local `AgentUiApp` owns configuration, Sessions, root execution, persisted async child Threads, Environment state, and live presentation. CLI and WebUI adapters call that same application boundary.
 
-The executable exposes these surface roots:
+Agent UI contains no child Runner generation, private runtime protocol, runtime rotation controller, or cross-process execution handoff. External Provider processes such as `agent-envd`, user-started tool processes, and remote sandbox services remain ordinary runtime collaborators rather than Agent UI workers.
 
-```text
-a13n-ui
-a13n-ui cli
-a13n-ui run
-a13n-ui sessions
-a13n-ui web
-a13n-ui runtime status
-```
-
-`a13n-ui` is an alias for `a13n-ui cli`. The CLI is an ordinary terminal frontend, not a separate full-screen TUI product. The WebUI reaches the same Host operations through a thin loopback HTTP/SSE adapter. Neither surface owns another Session model, Agent loop, scheduler, or storage authority.
-
-Agent UI uses best-effort continuation persistence rather than durable workflow execution. At each complete or suspended Harness result, it attempts to store and select one complete continuation. A later Run starts from the latest successfully selected continuation. Input, partial output, model and tool work, live AG-UI events, and Runner-local async-child work are process-local and can disappear when their canonical owner exits. Foundation Service remains the product for durable distributed acceptance, failover, remote workers, and retry.
+Agent UI persists complete continuation boundaries, not accepted-work intent. Process loss can discard a submitted root message, partial root output, an active child segment, live events, and Run-owned shell processes. A later operation resumes only from a previously selected complete checkpoint.
 
 ## Product Model
 
 ```mermaid
 flowchart TB
-    Definitions[Model Prompt Plugin Skill Agent Environment definitions]
-    Agent[Resolved Agent snapshot]
-    Environment[Resolved Environment snapshot]
-    Session[Session metadata]
-    Continuation[Latest continuation bundle]
-    Bindings[Fresh Run bindings]
-    Harness[Harness Run]
+    Config[agent-ui.yaml]
+    Markdown[Canonical subagents Markdown]
+    Snapshot[Resolved Agent and Environment snapshots]
+    Session[Root Session]
+    Binding[Message plus WorkspaceBinding]
+    App[AgentUiApp]
+    Harness[Harness root Run]
+    Children[Persisted child Threads]
+    Store[SQLite and immutable objects]
+    Live[Live presentation]
 
-    Definitions --> Agent
-    Definitions --> Environment
-    Agent & Environment --> Session
-    Session --> Continuation
-    Session & Continuation --> Bindings --> Harness
-    Harness -->|best-effort save at complete or suspended boundary| Continuation
+    Config & Markdown --> Snapshot --> Session
+    Binding --> App
+    Session --> App --> Harness
+    Harness --> Children
+    App --> Store
+    Harness & Children --> Live
 ```
 
-A Session pins one exact Agent snapshot and one exact Environment snapshot. It selects one latest `StoredSessionContinuation`, which bundles the complete public `HarnessState`, optional exact `DeferredToolRequests`, Harness release, and creation time. A configuration reload creates new selectable revisions but does not rewrite an existing Session.
+The core concepts are:
 
-A Run is process-local. It uses the selected continuation, fresh Model authority, fresh Provider collaborators, newly constructed Environment adapters, one Run-local bound mount facade, and current Host Capabilities. A complete or suspended Harness result can produce a new continuation. The Host attempts to publish that object and make it the Session's latest continuation. Session writes use ordinary last-write-wins behavior.
+| Concept             | Meaning and owner                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Agent definition    | Small Agent UI-authored behavior that resolves to a complete Harness Agent graph                                           |
+| Environment profile | Reusable selection of Native, Local EIP, or one trusted extension Provider; contains no workspace path                     |
+| Resolved snapshot   | Immutable normalized Agent graph or Environment profile pinned by a Session                                                |
+| Session             | One root Thread with pinned snapshots and one selected root continuation                                                   |
+| `WorkspaceBinding`  | Ordered local folders captured with one message and converted to fresh Run mounts                                          |
+| Child Thread        | Agent UI-owned async-subagent history containing linked execution segments and selected child checkpoints                  |
+| Execution segment   | One accepted `delegate` or `resume_subagent` execution; normally one child Run, plus any internal denial continuation Runs |
+| Compact display     | Bounded, redacted AG-UI projection used for inspection and rendering, never for resume                                     |
 
 ## Boundaries
 
-| Concern                                              | Owner                                       | Agent UI relationship                                                                                  |
-| ---------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Desired product definitions                          | Reloadable Agent UI files                   | Human- and agent-editable source of current Models, Prompts, Plugins, Skills, Agents, and Environments |
-| Exact Session composition                            | Agent UI snapshot resolver                  | Publishes immutable Agent and Environment snapshots selected by Sessions                               |
-| Native Agent construction and loop                   | Harness and Pydantic AI                     | Runs only through public build and stream contracts                                                    |
-| Provider target effects and adapter lifecycle        | Environment Provider package                | Agent UI supplies desired configuration/current state and selects Host lifecycle policy                |
-| Current mount set                                    | Harness bound Environment facade            | One fresh process-local aggregate per independent root or child Run                                    |
-| Session metadata and continuation selection          | Agent UI SQLite                             | Small local index with ordinary last-write-wins updates                                                |
-| Continuation, snapshot, Skill, and provider payloads | Agent UI object store                       | Immutable content-addressed files published before SQLite selection                                    |
-| Live presentation                                    | Agent Stream Protocol and Agent UI live hub | Best-effort process-local streaming; not recovery authority                                            |
-| Web and terminal rendering                           | Surface adapters                            | Call detached Host commands and queries                                                                |
-| Runtime process lifecycle                            | Agent UI runtime-generation service         | Starts and activates Runners, drains admitted roots, and force-stops process-local async work          |
-| Distributed durable execution                        | Foundation Service                          | Not emulated by Agent UI                                                                               |
+| Concern                                | Owner                                       | Agent UI relationship                                                                     |
+| -------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Native Agent construction and loop     | Harness and Pydantic AI                     | Reconstructs exact native inputs and executes public Run contracts                        |
+| Desired local product behavior         | Agent UI configuration                      | Owns the compact configuration and canonical Markdown schema                              |
+| Root and child continuation            | Harness `HarnessState` selected by Agent UI | Persists complete immutable checkpoints and current references                            |
+| Environment operations and state codec | Environment Provider package                | Supplies fresh adapters and explicit lifecycle operations                                 |
+| Workspace selection                    | Submitting surface and `AgentUiApp`         | Captures folders per message; never embeds them in Agent, Session, or profile definitions |
+| Current Environment state              | Agent UI                                    | Stores and publishes Host-authoritative state under a complete binding key                |
+| Async child admission and persistence  | `AgentUiSubagentOperator`                   | Implements the complete Harness Host-operator boundary                                    |
+| AG-UI conversion                       | Agent Stream Protocol                       | Uses one observer per root or child Run                                                   |
+| Local persistence                      | Agent UI                                    | Uses SQLite for compact mutable heads and immutable files for checkpoints and snapshots   |
+| Presentation                           | CLI and WebUI adapters                      | Consume the same detached App operations and live hub                                     |
+| Durable distributed execution          | Foundation Service                          | Not emulated by Agent UI                                                                  |
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-    Entry[a13n-ui]
     CLI[CLI]
     Web[Loopback Web adapter]
     Browser[Bundled WebUI]
 
-    subgraph Host[Stable AgentUiHost]
-        Configuration[Configuration and catalogs]
-        Composition[Snapshot composition]
-        Sessions[Session and continuation service]
-        Environments[Environment lifecycle]
-        Runs[Process-local Run supervision]
-        Live[Live AG-UI hub]
-        Runtime[Runtime generation service]
+    subgraph App[AgentUiApp]
+        Configuration[Configuration and snapshots]
+        Sessions[Session application service]
+        Runs[Root Run coordination]
+        Operator[AgentUiSubagentOperator]
+        Environments[Environment state and binders]
+        SessionTools[Root-only Session tools]
+        Live[Live presentation hub]
     end
 
-    subgraph Store[Local store]
-        DB[SQLite metadata]
-        Objects[Immutable objects]
+    subgraph Runtime[Fresh process-local runtime values]
+        Models[Models and credentials]
+        Extensions[Plugins and MCP clients]
+        Adapters[Environment adapters]
+        Harness[Harness Runs]
     end
 
-    subgraph Runner[Selected runtime Runner]
-        Model[Fresh Model resolver]
-        Provider[Provider collaborators]
-        Executable[ExecutableAgent]
-        Stream[HarnessRunStream]
-        Children[Process-local async children]
+    subgraph Storage[Local persistence]
+        SQLite[SQLite heads and indexes]
+        Objects[Immutable snapshots and checkpoints]
     end
 
-    Entry --> CLI --> Host
-    Entry --> Web --> Browser
-    Web --> Host
-    Host --> Store
-    Host --> Runtime --> Runner
-    Runner --> Live --> CLI
-    Live --> Web
-    Model & Provider --> Executable --> Stream
-    Stream --> Children
+    CLI --> App
+    Browser --> Web --> App
+    App --> Storage
+    Configuration --> Runtime
+    Environments --> Adapters
+    Runs & Operator --> Harness
+    Models & Extensions & Adapters --> Harness
+    Harness --> Live --> CLI & Web
+    SessionTools --> Sessions & Runs
 ```
 
-`AgentUiHost` is the only product boundary. A surface does not read configuration files, SQLite, continuation objects, Environment state, native credentials, or Runner control channels directly. A Runner does not open Agent UI storage or select a continuation.
+`AgentUiApp` is an application boundary, not a network protocol. Detached typed commands and queries are intentionally broader than the CLI because the WebUI and model-visible Session tools require richer inspection and management operations.
 
-Multiple frontend invocations can open separate Host processes against the same data root. This is shared local storage, not a distributed execution system. SQLite transactions and atomic file replacement prevent malformed writes, while Session and resource updates use last-write-wins. Concurrent Runs against one Session are not merged; whichever complete continuation is written last becomes current.
-
-## Main Run Flow
+## Root Message Flow
 
 ```mermaid
 sequenceDiagram
-    participant Surface as CLI or WebUI
-    participant Host as AgentUiHost
-    participant Runner
+    participant Surface
+    participant App as AgentUiApp
+    participant Store
+    participant Env as Workspace binders
     participant Harness
-    participant Store as Object store and SQLite
 
-    Surface->>Host: run input against Session
-    Host->>Host: load pinned snapshots and selected continuation
-    Host->>Runner: execute with fresh authority
-    Runner->>Harness: stream input and RunBindings
-    loop public stream items
-        Harness-->>Runner: Harness item
-        Runner-->>Host: AG-UI event
-        Host-->>Surface: best-effort live delivery
-    end
-    Harness-->>Runner: complete or suspended result and HarnessState
-    Runner-->>Host: continuation bundle
-    Host->>Store: atomically publish object
-    Host->>Store: update latest continuation reference
-    alt saved
-        Host-->>Surface: saved result
-    else publication or update fails
-        Host-->>Surface: save failure; previous continuation remains current
-    end
+    Surface->>App: submit Session message and ordered folders
+    App->>Store: load pinned snapshots and selected continuation
+    App->>Env: load current state and construct fresh adapters
+    App->>Harness: run with fresh authority and mounts
+    Harness-->>App: public stream items
+    App-->>Surface: best-effort live presentation
+    Harness-->>App: complete or suspended result
+    App->>Env: close adapters and publish changed state
+    App->>Store: publish and select acceptable continuation
+    App-->>Surface: detached execution and persistence outcome
 ```
 
-The Host does not insert a durable accepted-work row before dispatch. Process loss before continuation selection leaves the prior continuation as the next resume point. Partial output is not promoted into continuation state. External effects may have happened and may repeat when the user retries; Agent UI reports that limitation instead of maintaining a general effect journal.
+Environment-state publication and continuation selection are independent completion boundaries. Known changed state is published after adapter cleanup even when execution or continuation publication fails. A valid complete or suspended continuation can be selected even when Environment-state publication reports an independent failure.
 
-A suspended result stores its complete deferred requests in the same continuation bundle. Resume loads that bundle, validates the pinned Agent snapshot, and starts another process-local Run. If the resume attempt fails before selecting a later continuation, the suspended continuation remains selected.
+The App does not create a durable input row before dispatch. If the process exits before a new continuation is selected, the previous continuation remains current. External effects can be unknown and may repeat after retry.
 
-## Session and Environment Model
+## Async Child Flow
 
-A Session stores only restart-relevant facts:
+One `delegate` creates a child Thread and segment zero. `resume_subagent` retains the child Thread identity and creates a new segment with the next index from the exact selected child `HarnessState`.
 
-- identity and display metadata;
-- pinned Agent and Environment snapshot references;
-- exact Skill exposure selections;
-- optional fork lineage;
-- one latest continuation reference;
-- Environment assignments, current state, and private cleanup/prune bookkeeping needed to re-enter or clean up backing targets.
+```mermaid
+sequenceDiagram
+    participant Parent as Parent Harness Run
+    participant Operator as AgentUiSubagentOperator
+    participant Store
+    participant Child as Child Harness Run
+    participant Live
 
-Active Run state, pending input, partial output, subscriptions, Runner-local async-child work, and delivery attempts stay in memory. Session history for CLI and WebUI is reconstructed from the latest `HarnessState` message history plus small terminal metadata where useful. Retained AG-UI segment chains and projection watermarks are not part of the product.
-
-Environment backing targets can outlive one Run, so Agent UI retains current `EnvironmentState` and explicit cleanup/prune behavior. Every independent Run constructs fresh adapters from Host-selected state. Unconditional finalization publishes only changed state under ordinary last-write-wins, including after failure or cancellation; Harness close remains non-destructive. Agent UI does not persist live adapters, clients, credentials, PIDs, or Run-local bound facades. [Sessions, Environments, and State](04-sessions-environments-and-state.md) owns this boundary.
-
-## Runtime and Async Operators
-
-The stable Host can replace runtime Runners without restarting the surface. New root work selects the active Runner generation; admitted Harness Runs stay on their original Runner until completion, cancellation, or bounded drain. No live Harness Run migrates between processes.
-
-Each Runner generation owns one Agent UI `SubagentOperator`. Root async children can outlive their initiating parent Run while remaining process-local to that generation. Agent UI persists neither canonical child work nor output. It aggregates async child usage in generation memory and, when the correlated Session is inactive, can start one best-effort child-completion wake Run from the latest selected continuation. Generation replacement never restores or retargets old child records.
-
-Background shell instead uses the Harness default Run-owned controller over the current Environment. It requires no Agent UI operator, stores no cross-Run process state, and cannot wake an inactive Session. Tool authority still comes from exact Capability composition. Nested children use inline subagents; every independent Run receives the same standard Environment shell semantics from its own effective actions. Agent UI does not maintain a child Session entity, durable process record, generic Job, queue, or delivery ledger.
-
-[Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md) owns the detailed Runner-local child and frontend contracts.
-
-## Configuration and Storage
-
-Configuration files remain the desired-state authority. A complete valid reload publishes one accepted generation; failure leaves the prior generation active. Exact snapshots and managed Skill packages remain immutable so existing Sessions continue after source edits.
-
-The local store uses SQLite for small mutable indexes and content-addressed files for larger immutable values. Publication is file-first, then SQLite selection. The design does not claim cross-store ACID or device-level durability. SQLite uses WAL and short write transactions. A crash can lose an unselected continuation while leaving the previously selected one usable.
-
-[Configuration and Resource Catalog](01-configuration-and-resource-catalog.md), [Agent Composition and Snapshots](02-agent-composition-and-snapshots.md), and [Local Storage and Recovery](03-local-storage-and-recovery.md) own these details.
-
-## Application Lifetime
-
-Each command opens one Host lifetime:
-
-1. load process settings;
-2. open and migrate the shared local store;
-3. load one accepted configuration generation;
-4. start and activate one runtime Runner;
-5. attach the selected surface;
-6. serve commands until the surface exits;
-7. stop accepting new work, cancel root Runs, force-close Runner-local async work, stop Runners, and close local collaborators.
-
-Startup validates values when they are selected or needed; it does not scan every retained Session, infer that another process died, repair active work, or claim another process's staging files. Shutdown does not synthesize durable interruption records for tasks that are about to disappear.
-
-## Packaging
-
-`a13n-ui` is both the Python distribution and console script. The bundled browser assets are private build input from `apps/harness-ui` and ship in both wheel and sdist. Building a wheel from the sdist does not require Node.js.
-
-The supported no-install entrypoints are:
-
-```console
-uvx a13n-ui
-uvx a13n-ui cli
-uvx a13n-ui web
+    Parent->>Operator: delegate authorized child plan
+    Operator->>Store: create child Thread and running segment head
+    Operator-->>Parent: accepted execution reference
+    Operator->>Child: execute with fresh authority
+    Child-->>Operator: ordered public stream items
+    Operator->>Live: closed compact activity
+    Operator->>Store: immutable progress checkpoints at natural boundaries
+    Child-->>Operator: terminal result and HarnessState
+    Operator->>Store: publish terminal checkpoint and atomically select terminal head
+    Operator-->>Parent: info or wait returns bounded saved view
 ```
 
-## Completion Boundary
+Compact display contains only closed text, closed thinking, and completed Tool summaries. It excludes open content, running Tool calls, encrypted reasoning, unrelated custom events, and duplicate terminal output. Terminal success becomes visible only after the terminal checkpoint is saved and selected. Checkpoint failure produces explicit execution failure and no false resumability.
 
-Agent UI is complete when:
+## Persistence and Recovery Position
 
-- configuration and exact snapshots reconstruct valid Harness executables;
-- root Runs execute in the selected Runner with fresh Model and Environment authority;
-- every complete or suspended continuation is saved on a best-effort basis, and every successfully selected continuation can resume;
-- process loss cleanly falls back to the previous selected continuation;
-- fresh Environment adapters re-enter from current Host state, while Host cleanup explicitly destroys backing targets;
-- async children work within one Runner generation without a durable job subsystem;
-- `a13n-ui` and `a13n-ui cli` provide one append-only terminal experience;
-- the bundled WebUI provides a complete multi-Session application over the same Host;
-- multiple local processes can open the data root using ordinary SQLite and filesystem behavior, without leases, fencing, or distributed coordination.
+Agent UI stores:
+
+- accepted configuration metadata and immutable snapshots;
+- Session metadata and selected root continuation;
+- complete root continuation objects;
+- child Thread and execution heads;
+- immutable child checkpoints containing exact child `HarnessState` and compact display;
+- Host-authoritative Environment state and cleanup bookkeeping.
+
+It does not store:
+
+- pending root input or active root Run records;
+- a child scheduler, lease, worker attempt, or takeover protocol;
+- Run-owned process handles or output cursors;
+- live Model, Provider, adapter, plugin, MCP, credential, task, callback, or stream objects;
+- AG-UI as a substitute for continuation state.
+
+## Surfaces and Packaging
+
+The primary console surface is:
+
+```text
+a13n-ui
+```
+
+It provides interactive Session use plus focused configuration, Agent, subagent migration, Environment, Session, and diagnostic commands. The loopback Web adapter exposes the same App operations and live stream to the bundled WebUI. Neither surface reads storage directly.
+
+`a13n-ui` is both the Python distribution and console script. The private `apps/harness-ui` build output ships in both the wheel and sdist, and rebuilding a wheel from the sdist requires no Node.js. Source browser assets are not published independently.
+
+## Stable Principles
+
+01. One in-process App owns all local application behavior.
+02. Configuration is compact and Agent UI-specific; it does not serialize Harness object graphs.
+03. Sessions pin behavior snapshots, while each message supplies its own workspace folders.
+04. Every independent Run receives fresh runtime authority and Environment adapters.
+05. Root input and active work are not durably accepted.
+06. Root continuation, Environment state, and child checkpoint publication remain independent facts.
+07. Async children are persisted child Threads without becoming a general Job system.
+08. Compact display is inspection authority only; `HarnessState` is resume authority.
+09. Shell processes belong to one Harness Run and have no Agent UI persistence or wake path.
+10. CLI, WebUI, and model-visible Session tools use the same App commands and queries.
