@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from a13n_harness import HarnessState
-from pydantic import Field, JsonValue, field_validator, model_serializer, model_validator
+from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME
+from pydantic import Field, JsonValue, TypeAdapter, field_validator, model_serializer, model_validator
+from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_service.agents.domain import EffectiveAgentConfig
 
@@ -13,6 +15,7 @@ from .domain import (
     BoundedName,
     JsonObject,
     ObjectId,
+    PendingCallKind,
     RunPayloadObjectRef,
     RunPendingSummary,
     RunWaitReason,
@@ -20,6 +23,8 @@ from .domain import (
     StrictModel,
     ThreadId,
 )
+
+_DEFERRED_REQUESTS_ADAPTER = TypeAdapter(DeferredToolRequests)
 
 
 class DeferredContinuationState(StrictModel):
@@ -140,10 +145,55 @@ class RunStateEnvelope(StrictModel):
         elif self.checkpoint_kind == "waiting":
             if not isinstance(self.outcome_candidate, WaitingOutcomeCandidate) or self.host.deferred is None:
                 raise ValueError("waiting checkpoint requires matching outcome and deferred continuation")
+            _validate_waiting_projection(self.host.deferred, self.outcome_candidate)
         elif self.checkpoint_kind == "completed":
             if not isinstance(self.outcome_candidate, CompletedOutcomeCandidate) or self.host.deferred is not None:
                 raise ValueError("completed checkpoint requires matching outcome and no deferred continuation")
         return self
+
+
+def _validate_waiting_projection(
+    deferred: DeferredContinuationState,
+    candidate: WaitingOutcomeCandidate,
+) -> None:
+    try:
+        requests = _DEFERRED_REQUESTS_ADAPTER.validate_python(deferred.requests)
+    except (TypeError, ValueError) as error:
+        raise ValueError("waiting state contains invalid native deferred requests") from error
+    native: dict[str, tuple[PendingCallKind, str]] = {}
+    for request in requests.approvals:
+        _add_deferred_request(native, request.tool_call_id, PendingCallKind.approval, request.tool_name)
+    for request in requests.calls:
+        kind = (
+            PendingCallKind.user_input
+            if request.tool_name == ASK_USER_QUESTION_TOOL_NAME
+            else PendingCallKind.client_tool
+        )
+        _add_deferred_request(native, request.tool_call_id, kind, request.tool_name)
+    projected = {call.call_id: (call.kind, call.tool_name) for call in candidate.pending.calls}
+    if set(projected) != set(native):
+        raise ValueError("waiting pending summary call IDs must equal native deferred requests")
+    for call_id, (kind, tool_name) in projected.items():
+        native_kind, native_tool_name = native[call_id]
+        if kind is not native_kind or (tool_name is not None and tool_name != native_tool_name):
+            raise ValueError("waiting pending summary must preserve native request kind and tool name")
+    kinds = {kind for kind, _ in native.values()}
+    if PendingCallKind.client_tool in kinds and deferred.effective_client_tool_surface is None:
+        raise ValueError("client-tool waiting state requires its frozen effective client-tool surface")
+    expected_reason = RunWaitReason.multiple if len(kinds) > 1 else RunWaitReason(next(iter(kinds)).value)
+    if candidate.wait_reason is not expected_reason:
+        raise ValueError("waiting reason must match the native deferred request kinds")
+
+
+def _add_deferred_request(
+    requests: dict[str, tuple[PendingCallKind, str]],
+    call_id: str,
+    kind: PendingCallKind,
+    tool_name: str,
+) -> None:
+    if not call_id or call_id in requests:
+        raise ValueError("native deferred request call IDs must be non-empty and unique")
+    requests[call_id] = (kind, tool_name)
 
 
 class RunPayloadEnvelope(StrictModel):
@@ -163,6 +213,8 @@ def validate_state_successor(
 ) -> None:
     """Validate one same-Run semantic checkpoint replacement."""
 
+    if previous.outcome_candidate is not None:
+        raise ValueError("Run outcome candidate state cannot be replaced")
     immutable_pairs = (
         ("run_id", previous.run_id, successor.run_id),
         ("thread_id", previous.thread_id, successor.thread_id),

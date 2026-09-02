@@ -68,7 +68,10 @@ def s3_service() -> Iterator[S3Service]:
         .waiting_for(HttpWaitStrategy(9000, "/minio/health/ready").with_startup_timeout(60).with_poll_interval(0.25))
     )
     with container:
-        endpoint = f"http://{container.get_container_host_ip()}:{container.get_exposed_port(9000)}"
+        host = container.get_container_host_ip()
+        if host == "localhost":
+            host = "127.0.0.1"
+        endpoint = f"http://{host}:{container.get_exposed_port(9000)}"
         yield S3Service(endpoint, access_key, secret_key)
 
 

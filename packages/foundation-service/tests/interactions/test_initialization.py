@@ -63,7 +63,15 @@ def _completed_parent():
 
 def _waiting_parent():
     initial = initial_state()
-    pending = RunPendingSummary(calls=(PendingCallSummary(call_id="approval-1", kind=PendingCallKind.approval),))
+    pending = RunPendingSummary(
+        calls=(
+            PendingCallSummary(
+                call_id="approval-1",
+                kind=PendingCallKind.approval,
+                tool_name="dangerous_tool",
+            ),
+        )
+    )
     payload = initial.model_dump(mode="python", by_alias=True)
     payload.update(
         checkpoint_seq=1,
@@ -72,7 +80,19 @@ def _waiting_parent():
         last_checkpoint_run_attempt_id=ATTEMPT_ID,
         last_checkpoint_fence=1,
         host=HostContinuationState(
-            deferred=DeferredContinuationState(requests={"approvals": {"approval-1": {}}}),
+            deferred=DeferredContinuationState(
+                requests={
+                    "calls": [],
+                    "approvals": [
+                        {
+                            "tool_name": "dangerous_tool",
+                            "args": {},
+                            "tool_call_id": "approval-1",
+                        }
+                    ],
+                    "metadata": {},
+                }
+            ),
             consumed_inbox_entries=(
                 ConsumedThreadInboxEntry(
                     inbox_entry_id="tin_1234567890abcdef",

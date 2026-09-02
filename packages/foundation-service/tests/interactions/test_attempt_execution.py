@@ -27,7 +27,11 @@ from a13n_service.interactions import (
     RunAttemptYieldReason,
     RunInputKind,
     RunLineageKind,
+    RunObjectIntegrityError,
     RunOutcomeService,
+    RunPayloadEnvelope,
+    RunPayloadObjectRef,
+    RunPayloadStore,
     RunPendingSummary,
     RunStateEnvelope,
     RunStateSeed,
@@ -61,9 +65,12 @@ from .conftest import (
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("object_backed", [False, True])
 async def test_claim_execute_checkpoint_and_complete_atomically(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
+    *,
+    object_backed: bool,
 ) -> None:
     states, run, state = await _accept_root(interaction_sessions, interaction_object_store)
     scheduler = AttemptScheduler(
@@ -95,10 +102,28 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     accounted = await execution.increment_model_request(authority)
     authority = _authority(claim, run_version=accounted.run_version, attempt_version=accounted.attempt_version)
 
-    candidate = _completed_state(state, claim.attempt.id, claim.attempt.fence)
+    payloads = RunPayloadStore(interaction_object_store)
+    output_reference: RunPayloadObjectRef | None = None
+    if object_backed:
+        output_reference = await payloads.create(
+            TENANT_ID,
+            RunPayloadEnvelope(
+                run_id=run.id,
+                payload_kind="output",
+                payload_schema_version="1",
+                payload={"answer": 42},
+            ),
+        )
+    candidate = _completed_state(
+        state,
+        claim.attempt.id,
+        claim.attempt.fence,
+        outcome=(CompletedOutcomeCandidate(output_object=output_reference) if output_reference is not None else None),
+    )
     stored = await execution.publish_checkpoint(authority, states, await states.read(TENANT_ID, run.id), candidate)
     outcome = await RunOutcomeService(
         interaction_sessions,
+        payloads,
         clock=lambda: NOW + timedelta(seconds=3),
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
 
@@ -109,11 +134,80 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
         attempt = await database.get(RunAttemptRecord, claim.attempt.id)
         thread = await database.get(ThreadRecord, run.thread_id)
         assert run_record is not None and attempt is not None and thread is not None
-        assert run_record.to_resource().status is RunStatus.completed
-        assert run_record.to_resource().output == {"answer": 42}
+        completed = run_record.to_resource()
+        assert completed.status is RunStatus.completed
+        if output_reference is None:
+            assert completed.output == {"answer": 42}
+        else:
+            assert completed.output_object == output_reference
         assert run_record.usage_charged_json["model_requests"] == 1
         assert attempt.status == "succeeded"
         assert (thread.head_run_id, thread.current_run_id, thread.version) == (run.id, run.id, 2)
+    if output_reference is not None:
+        assert await payloads.read(TENANT_ID, output_reference) == RunPayloadEnvelope(
+            run_id=run.id,
+            payload_kind="output",
+            payload_schema_version="1",
+            payload={"answer": 42},
+        )
+
+
+async def test_completed_outcome_rejects_output_payload_owned_by_another_run(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states, run, state = await _accept_root(interaction_sessions, interaction_object_store)
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "lease-secret",
+        attempt_id_factory=lambda: "rat_dddddddddddddddd",
+    )
+    claim = await scheduler.claim(run.id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    authority = _authority(claim)
+    preparation = await execution.commit_preparation_success(authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(
+        authority,
+        preparation=preparation,
+        harness_run_id="harness-run-invalid-output",
+    )
+    authority = _authority(claim, run_version=entered.run_version, attempt_version=entered.attempt_version)
+    candidate = _completed_state(
+        state,
+        claim.attempt.id,
+        claim.attempt.fence,
+        outcome=CompletedOutcomeCandidate(
+            output_object=RunPayloadObjectRef(
+                object_key=(f"tenants/{TENANT_ID}/runs/run_eeeeeeeeeeeeeeee/payloads/output/{'e' * 64}.json"),
+                digest_sha256="e" * 64,
+                size_bytes=123,
+                content_type="application/vnd.converge.run-payload+json",
+                schema_version="1",
+            )
+        ),
+    )
+    stored = await execution.publish_checkpoint(
+        authority,
+        states,
+        await states.read(TENANT_ID, run.id),
+        candidate,
+    )
+
+    with pytest.raises(RunObjectIntegrityError, match="owned by the selected Run"):
+        await RunOutcomeService(
+            interaction_sessions,
+            RunPayloadStore(interaction_object_store),
+            clock=lambda: NOW + timedelta(seconds=3),
+        ).commit_state_outcome(authority, stored, expected_thread_version=1)
+
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        attempt = await database.get(RunAttemptRecord, claim.attempt.id)
+        assert current is not None and attempt is not None
+        assert (current.status, attempt.status) == ("running", "running")
 
 
 async def test_expired_attempt_is_failed_charged_and_replaced_with_a_higher_fence(
@@ -257,6 +351,31 @@ async def test_zero_recovery_budget_seals_without_creating_an_attempt(
         assert attempts == []
 
 
+async def test_unknown_recovery_policy_fails_closed_before_attempt_creation(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    _, run, _ = await _accept_root(
+        interaction_sessions,
+        interaction_object_store,
+        recovery_policy_version="future-policy",
+    )
+
+    result = await AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+    ).claim(run.id, _worker())
+
+    assert isinstance(result, SealedClaim)
+    assert result.failure.code == "recovery_policy_unsupported"
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        attempts = (await database.scalars(select(RunAttemptRecord))).all()
+        assert current is not None
+        assert current.status == "failed"
+        assert attempts == []
+
+
 async def test_preparation_rechecks_fixed_deadline_and_fails_closed(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
@@ -302,6 +421,7 @@ async def test_cancel_seals_without_state_replacement(
 
     receipt = await RunOutcomeService(
         interaction_sessions,
+        RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=1),
     ).cancel(
         tenant_id=TENANT_ID,
@@ -388,6 +508,7 @@ async def test_waiting_outcome_selects_the_frozen_continuation_head(
 
     receipt = await RunOutcomeService(
         interaction_sessions,
+        RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=3),
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
 
@@ -439,6 +560,7 @@ async def _accept_root(
     objects: ObjectStore,
     *,
     max_recovery_attempts: int = 3,
+    recovery_policy_version: str = "1",
     recovery_deadline_at: datetime | None = None,
 ) -> tuple[RunStateStore, Run, RunStateEnvelope]:
     config = effective_agent_config()
@@ -474,7 +596,7 @@ async def _accept_root(
         available_at=NOW,
         next_attempt_fence=1,
         recovery_budget=RecoveryBudget(
-            policy_version="1",
+            policy_version=recovery_policy_version,
             max_recovery_attempts=max_recovery_attempts,
             max_handoffs=2,
             recovery_deadline_at=recovery_deadline_at,
@@ -491,7 +613,7 @@ async def _accept_root(
         updated_at=NOW,
     )
     states = RunStateStore(objects)
-    await RunAcceptanceService(sessions, states, clock=lambda: NOW).accept_new_thread(
+    await RunAcceptanceService(sessions, states, RunPayloadStore(objects), clock=lambda: NOW).accept_new_thread(
         session=Session(
             id=SESSION_ID,
             tenant_id=TENANT_ID,
@@ -554,7 +676,13 @@ def _authority(
     )
 
 
-def _completed_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) -> RunStateEnvelope:
+def _completed_state(
+    previous: RunStateEnvelope,
+    run_attempt_id: str,
+    fence: int,
+    *,
+    outcome: CompletedOutcomeCandidate | None = None,
+) -> RunStateEnvelope:
     payload = previous.model_dump(mode="python", by_alias=True)
     payload.update(
         checkpoint_seq=1,
@@ -562,7 +690,7 @@ def _completed_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int
         input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
         last_checkpoint_fence=fence,
-        outcome_candidate=CompletedOutcomeCandidate(output={"answer": 42}),
+        outcome_candidate=outcome or CompletedOutcomeCandidate(output={"answer": 42}),
     )
     return type(previous).model_validate(payload)
 
@@ -575,12 +703,32 @@ def _waiting_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) 
         input_disposition="applied",
         last_checkpoint_run_attempt_id=run_attempt_id,
         last_checkpoint_fence=fence,
-        host=HostContinuationState(deferred=DeferredContinuationState(requests={"approval-1": {"kind": "approval"}})),
+        host=HostContinuationState(
+            deferred=DeferredContinuationState(
+                requests={
+                    "calls": [],
+                    "approvals": [
+                        {
+                            "tool_name": "dangerous_tool",
+                            "args": {},
+                            "tool_call_id": "approval-1",
+                        }
+                    ],
+                    "metadata": {},
+                }
+            )
+        ),
         outcome_candidate={
             "outcome": "waiting",
             "wait_reason": RunWaitReason.approval,
             "pending": RunPendingSummary(
-                calls=(PendingCallSummary(call_id="approval-1", kind=PendingCallKind.approval),)
+                calls=(
+                    PendingCallSummary(
+                        call_id="approval-1",
+                        kind=PendingCallKind.approval,
+                        tool_name="dangerous_tool",
+                    ),
+                )
             ),
         },
     )

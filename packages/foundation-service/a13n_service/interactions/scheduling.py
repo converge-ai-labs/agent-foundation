@@ -298,6 +298,8 @@ def _classify_candidate(
 
 
 def _claim_budget_failure(run: RunRecord, classification: str, now: datetime) -> SafeFailure | None:
+    if run.recovery_policy_version != "1":
+        return _failure("recovery_policy_unsupported", "The Run recovery policy version is unsupported.")
     if run.recovery_deadline_at is not None and now >= _utc(run.recovery_deadline_at):
         return _failure("recovery_deadline_exhausted", "The Run recovery deadline was exhausted.")
     resource = run.to_resource()

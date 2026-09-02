@@ -56,6 +56,7 @@ from .objects import (
     StoredRunState,
     run_payload_key,
     run_state_key,
+    validate_run_payload_reference,
 )
 from .outcomes import RunOutcomeError, RunOutcomeReceipt, RunOutcomeService
 from .scheduling import (
@@ -144,4 +145,5 @@ __all__ = [
     "new_session_id",
     "run_payload_key",
     "run_state_key",
+    "validate_run_payload_reference",
 ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import TypeAdapter
 
@@ -184,8 +185,7 @@ class RunPayloadStore:
         )
 
     async def read(self, tenant_id: str, reference: RunPayloadObjectRef) -> RunPayloadEnvelope:
-        if reference.content_type != RUN_PAYLOAD_CONTENT_TYPE:
-            raise RunObjectIntegrityError("Run payload reference content type is invalid")
+        _validate_run_payload_reference_format(reference)
         if not reference.object_key.startswith(f"tenants/{tenant_id}/runs/"):
             raise RunObjectIntegrityError("Run payload reference is outside the authorized tenant")
         body, info = await _read_object(self._objects, reference.object_key, max_bytes=self._max_payload_bytes)
@@ -197,11 +197,12 @@ class RunPayloadStore:
             envelope = decode_canonical_model(body, _PAYLOAD_ADAPTER)
         except DurableObjectCodecError as error:
             raise RunObjectIntegrityError("Run payload body is invalid") from error
-        expected_key = run_payload_key(tenant_id, envelope.run_id, envelope.payload_kind, digest)
-        if reference.object_key != expected_key:
-            raise RunObjectIntegrityError("Run payload identity does not match its content-addressed key")
-        if envelope.schema_version != reference.schema_version:
-            raise RunObjectIntegrityError("Run payload schema does not match its immutable reference")
+        validate_run_payload_reference(
+            tenant_id,
+            envelope.run_id,
+            envelope.payload_kind,
+            reference,
+        )
         expected_metadata = {
             "schema-version": envelope.schema_version,
             "run-id": envelope.run_id,
@@ -212,6 +213,21 @@ class RunPayloadStore:
             raise RunObjectIntegrityError("Run payload object metadata is invalid")
         return envelope
 
+    async def verify_reference(
+        self,
+        tenant_id: str,
+        run_id: str,
+        payload_kind: Literal["input", "output"],
+        reference: RunPayloadObjectRef,
+    ) -> RunPayloadEnvelope:
+        """Read and verify one exact Run-owned payload reference."""
+
+        validate_run_payload_reference(tenant_id, run_id, payload_kind, reference)
+        envelope = await self.read(tenant_id, reference)
+        if envelope.run_id != run_id or envelope.payload_kind != payload_kind:
+            raise RunObjectIntegrityError("Run payload envelope does not match its selected owner and kind")
+        return envelope
+
 
 def run_state_key(tenant_id: str, run_id: str) -> str:
     return f"tenants/{tenant_id}/runs/{run_id}/state.json"
@@ -219,6 +235,27 @@ def run_state_key(tenant_id: str, run_id: str) -> str:
 
 def run_payload_key(tenant_id: str, run_id: str, payload_kind: str, digest_sha256: str) -> str:
     return f"tenants/{tenant_id}/runs/{run_id}/payloads/{payload_kind}/{digest_sha256}.json"
+
+
+def validate_run_payload_reference(
+    tenant_id: str,
+    run_id: str,
+    payload_kind: Literal["input", "output"],
+    reference: RunPayloadObjectRef,
+) -> None:
+    """Require a payload reference to name the exact supported Run-owned object."""
+
+    _validate_run_payload_reference_format(reference)
+    expected_key = run_payload_key(tenant_id, run_id, payload_kind, reference.digest_sha256)
+    if reference.object_key != expected_key:
+        raise RunObjectIntegrityError("Run payload reference is not owned by the selected Run")
+
+
+def _validate_run_payload_reference_format(reference: RunPayloadObjectRef) -> None:
+    if reference.content_type != RUN_PAYLOAD_CONTENT_TYPE:
+        raise RunObjectIntegrityError("Run payload reference content type is invalid")
+    if reference.schema_version != "1":
+        raise RunObjectIntegrityError("Run payload reference schema version is unsupported")
 
 
 async def _read_object(objects: ObjectStore, key: str, *, max_bytes: int) -> tuple[bytes, ObjectInfo]:
@@ -251,11 +288,14 @@ def _state_metadata(envelope: RunStateEnvelope, digest: str, *, writer_fence: in
 
 
 def _verify_state_metadata(info: ObjectInfo, *, envelope: RunStateEnvelope, digest: str) -> int:
-    expected = _state_metadata(envelope, digest, writer_fence=_parse_non_negative_int(info, "writer-fence"))
+    writer_fence = _parse_non_negative_int(info, "writer-fence")
+    if writer_fence != envelope.last_checkpoint_fence:
+        raise RunObjectIntegrityError("Run state writer fence does not match its envelope")
+    expected = _state_metadata(envelope, digest, writer_fence=writer_fence)
     for key, value in expected.items():
         if info.metadata.get(key) != value:
             raise RunObjectIntegrityError(f"Run state metadata field {key} is invalid")
-    return int(expected["writer-fence"])
+    return writer_fence
 
 
 def _parse_non_negative_int(info: ObjectInfo, key: str) -> int:
@@ -285,4 +325,5 @@ __all__ = [
     "StoredRunState",
     "run_payload_key",
     "run_state_key",
+    "validate_run_payload_reference",
 ]

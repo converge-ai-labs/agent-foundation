@@ -107,7 +107,7 @@ class RunAttemptYieldReason(StrEnum):
 class RunPayloadObjectRef(StrictModel):
     object_key: Annotated[str, StringConstraints(min_length=1, max_length=1024)]
     digest_sha256: Sha256Digest
-    size_bytes: int = Field(ge=0)
+    size_bytes: int = Field(ge=1)
     content_type: Annotated[str, StringConstraints(min_length=1, max_length=255)]
     schema_version: SchemaVersion
 

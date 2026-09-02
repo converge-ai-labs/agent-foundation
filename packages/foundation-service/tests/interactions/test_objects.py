@@ -6,9 +6,11 @@ import pytest
 from a13n_service.interactions import (
     RunObjectIntegrityError,
     RunPayloadEnvelope,
+    RunPayloadObjectRef,
     RunPayloadStore,
     RunStateStore,
     StaleStateWriter,
+    validate_run_payload_reference,
 )
 from a13n_service.interactions.codec import DurableObjectCodecError, decode_canonical_model
 from a13n_service.interactions.state import RunStateEnvelope
@@ -71,6 +73,25 @@ async def test_object_version_and_fence_reject_stale_state_writers(
     assert second_checkpoint.writer_fence == 2
 
 
+async def test_state_read_rejects_metadata_fence_that_disagrees_with_envelope(
+    interaction_object_store: ObjectStore,
+) -> None:
+    store = RunStateStore(interaction_object_store)
+    created = await store.create(TENANT_ID, initial_state())
+    metadata = dict(created.info.metadata)
+    metadata["writer-fence"] = "1"
+    await interaction_object_store.put(
+        created.info.key,
+        created.body,
+        content_type=created.info.content_type,
+        metadata=metadata,
+        if_match=created.info.version,
+    )
+
+    with pytest.raises(RunObjectIntegrityError, match="writer fence does not match"):
+        await store.read(TENANT_ID, created.envelope.run_id)
+
+
 async def test_payload_is_content_addressed_and_idempotent(
     interaction_object_store: ObjectStore,
 ) -> None:
@@ -87,6 +108,7 @@ async def test_payload_is_content_addressed_and_idempotent(
 
     assert first == second
     assert await store.read(TENANT_ID, first) == envelope
+    assert await store.verify_reference(TENANT_ID, envelope.run_id, "input", first) == envelope
 
 
 async def test_payload_read_rejects_wrong_tenant(
@@ -105,6 +127,24 @@ async def test_payload_read_rejects_wrong_tenant(
 
     with pytest.raises(RunObjectIntegrityError, match="authorized tenant"):
         await store.read("org_abcdef1234567890", reference)
+
+
+def test_payload_reference_must_name_the_exact_run_owned_object() -> None:
+    reference = RunPayloadObjectRef(
+        object_key=(f"tenants/org_1234567890abcdef/runs/run_other1234567890/payloads/input/{'a' * 64}.json"),
+        digest_sha256="a" * 64,
+        size_bytes=123,
+        content_type="application/vnd.converge.run-payload+json",
+        schema_version="1",
+    )
+
+    with pytest.raises(RunObjectIntegrityError, match="owned by the selected Run"):
+        validate_run_payload_reference(
+            TENANT_ID,
+            "run_1234567890abcdef",
+            "input",
+            reference,
+        )
 
 
 async def test_state_checkpoint_cas_is_portable_across_object_backends(

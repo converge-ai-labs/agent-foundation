@@ -9,13 +9,23 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.domain import canonical_digest
 from a13n_service.storage import short_session, transaction
 
-from .domain import Run, RunInputKind, RunLineageKind, RunStatus, Session, Thread, ThreadOriginKind
+from .domain import (
+    Run,
+    RunInputKind,
+    RunLineageKind,
+    RunStatus,
+    Session,
+    Thread,
+    ThreadOriginKind,
+    ThreadRole,
+)
 from .models import RunRecord, SessionRecord, ThreadRecord
-from .objects import RunStateStore, StaleStateWriter
+from .objects import RunPayloadStore, RunStateStore, StaleStateWriter
 from .records import run_record, session_record, thread_record
-from .state import RunStateEnvelope
+from .state import RunPayloadEnvelope, RunStateEnvelope
 
 
 class RunAcceptanceError(RuntimeError):
@@ -39,11 +49,13 @@ class RunAcceptanceService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         states: RunStateStore,
+        payloads: RunPayloadStore,
         *,
         clock=None,
     ) -> None:
         self._sessions = sessions
         self._states = states
+        self._payloads = payloads
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def accept_new_thread(
@@ -59,6 +71,7 @@ class RunAcceptanceService:
         replay = await self._load_replay(run, accepted_thread_version=1)
         if replay is not None:
             return replay
+        await self._verify_input_payload(run)
         await self._publish_initial(run, state)
         try:
             async with transaction(self._sessions) as database:
@@ -89,6 +102,8 @@ class RunAcceptanceService:
         replay = await self._load_replay(run, accepted_thread_version=accepted_thread_version)
         if replay is not None:
             return replay
+        candidate_payload = await self._verify_input_payload(run)
+        await self._verify_retry_payload(run, candidate_payload)
         await self._publish_initial(run, state)
         try:
             async with transaction(self._sessions) as database:
@@ -150,6 +165,43 @@ class RunAcceptanceService:
                     "Run state key already contains different accepted state",
                 ) from None
 
+    async def _verify_input_payload(self, run: Run) -> RunPayloadEnvelope | None:
+        if run.input_object is None:
+            return None
+        return await self._payloads.verify_reference(run.tenant_id, run.id, "input", run.input_object)
+
+    async def _verify_retry_payload(
+        self,
+        run: Run,
+        candidate_payload: RunPayloadEnvelope | None,
+    ) -> None:
+        if run.retry_of_run_id is None:
+            return
+        async with short_session(self._sessions) as database:
+            source = (await _load_run(database, run.tenant_id, run.retry_of_run_id)).to_resource()
+        if source.thread_id != run.thread_id or source.status not in {RunStatus.failed, RunStatus.cancelled}:
+            raise RunAcceptanceError("run_retry_conflict", "Retry source is not an eligible same-Thread terminal Run")
+        if source.input_object is None:
+            if candidate_payload is not None:
+                raise RunAcceptanceError("run_retry_invalid", "Retry must preserve its input representation")
+            return
+        if candidate_payload is None:
+            raise RunAcceptanceError("run_retry_invalid", "Retry must preserve its input representation")
+        source_payload = await self._payloads.verify_reference(
+            source.tenant_id,
+            source.id,
+            "input",
+            source.input_object,
+        )
+        if (
+            source_payload.payload_schema_version,
+            source_payload.payload,
+        ) != (
+            candidate_payload.payload_schema_version,
+            candidate_payload.payload,
+        ):
+            raise RunAcceptanceError("run_retry_invalid", "Retry must copy the terminal Run's exact accepted input")
+
     async def _reconcile_conflict(
         self,
         run: Run,
@@ -172,8 +224,14 @@ def _validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
         raise ValueError("prepared acceptance requires initial Run state")
     if (state.agent_id, state.agent_revision_id) != (run.agent_id, run.agent_revision_id):
         raise ValueError("prepared Run and state Agent selection do not match")
-    if state.effective_agent_config.content_digest != run.effective_agent_config_digest:
+    effective = state.effective_agent_config
+    effective_payload = effective.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
+    if canonical_digest(effective_payload) != effective.content_digest:
+        raise ValueError("prepared Run effective configuration digest is invalid")
+    if effective.content_digest != run.effective_agent_config_digest:
         raise ValueError("prepared Run effective configuration digest does not match state")
+    if effective.resolved_model.execution.observation() != run.model_execution_observation:
+        raise ValueError("prepared Run model observation does not match state")
     if state.runtime_lock_digest != run.runtime_lock_digest:
         raise ValueError("prepared Run Runtime lock does not match state")
 
@@ -185,8 +243,14 @@ def _validate_new_thread(thread: Thread, run: Run, session: Session | None) -> N
         raise ValueError("new Thread must select its first Run")
     if (thread.tenant_id, thread.session_id, thread.id) != (run.tenant_id, run.session_id, run.thread_id):
         raise ValueError("new Thread and first Run scope do not match")
+    if run.retry_of_run_id is not None:
+        raise ValueError("the first Run of a new Thread cannot retry another Run")
     if session is not None and (session.id, session.tenant_id) != (thread.session_id, thread.tenant_id):
         raise ValueError("new Session and root Thread scope do not match")
+    if session is not None and thread.role is not ThreadRole.root:
+        raise ValueError("a new Session must begin with its root Thread")
+    if session is None and thread.role is not ThreadRole.child:
+        raise ValueError("an existing Session can accept only a child Thread")
     if thread.origin_kind is ThreadOriginKind.fork and run.lineage_kind is not RunLineageKind.fork:
         raise ValueError("fork Thread requires fork Run lineage")
     if thread.origin_kind is ThreadOriginKind.child and run.lineage_kind is not RunLineageKind.root:
@@ -209,6 +273,10 @@ async def _require_origin(database: AsyncSession, thread: Thread, run: Run) -> N
     origin = await _load_run(database, thread.tenant_id, thread.origin_run_id)
     if origin.thread_id != thread.origin_thread_id:
         raise RunAcceptanceError("thread_origin_invalid", "Thread origin Run does not belong to its origin Thread")
+    if thread.role is ThreadRole.child and origin.session_id != thread.session_id:
+        raise RunAcceptanceError("thread_origin_invalid", "Child Thread origin must belong to the same Session")
+    if thread.role is ThreadRole.root and origin.session_id == thread.session_id:
+        raise RunAcceptanceError("thread_origin_invalid", "Session fork origin must belong to another Session")
     if thread.origin_kind is ThreadOriginKind.fork and origin.status != RunStatus.completed.value:
         raise RunAcceptanceError("thread_origin_invalid", "Thread fork source must be completed")
 
@@ -286,17 +354,22 @@ async def _validate_advancement(
 
 def _validate_retry_copy(source: Run, candidate: Run) -> None:
     _validate_inherited_execution(source, candidate)
+    object_backed = source.input_object is not None
     immutable_intent = (
         source.parent_run_id,
         source.lineage_kind,
         source.input_kind,
-        _accepted_input(source),
+        object_backed,
+        source.input_text,
+        None if object_backed else source.input,
     )
     candidate_intent = (
         candidate.parent_run_id,
         candidate.lineage_kind,
         candidate.input_kind,
-        _accepted_input(candidate),
+        candidate.input_object is not None,
+        candidate.input_text,
+        None if object_backed else candidate.input,
     )
     if candidate_intent != immutable_intent:
         raise RunAcceptanceError("run_retry_invalid", "Retry must copy the terminal Run's exact accepted intent")
@@ -334,12 +407,6 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
             "run_inherited_authority_invalid",
             "Run must preserve its source's accepted execution authority",
         )
-
-
-def _accepted_input(run: Run) -> tuple[object, ...]:
-    if run.input_object is not None:
-        return ("object", run.input_object, run.input_text)
-    return ("inline", run.input, run.input_text)
 
 
 async def _load_run(database: AsyncSession, tenant_id: str, run_id: str | None) -> RunRecord:

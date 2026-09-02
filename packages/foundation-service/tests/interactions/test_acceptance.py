@@ -11,6 +11,10 @@ from a13n_service.interactions import (
     Run,
     RunInputKind,
     RunLineageKind,
+    RunObjectIntegrityError,
+    RunPayloadEnvelope,
+    RunPayloadObjectRef,
+    RunPayloadStore,
     RunStatus,
     Session,
     Thread,
@@ -97,12 +101,26 @@ def _accepted_run(
     )
 
 
+def _with_input_object(run: Run, reference: RunPayloadObjectRef) -> Run:
+    payload = run.model_dump(
+        mode="python",
+        exclude={"input", "input_object", "output", "output_object"},
+    )
+    payload["input_object"] = reference
+    return Run.model_validate(payload)
+
+
 async def test_accepts_prepared_root_state_and_round_trips_the_run(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
     states = RunStateStore(interaction_object_store)
-    service = RunAcceptanceService(interaction_sessions, states, clock=lambda: NOW)
+    service = RunAcceptanceService(
+        interaction_sessions,
+        states,
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW,
+    )
     seed = RunStateSeed(
         run_id="run_1111111111111111",
         agent_id=AGENT_ID,
@@ -136,6 +154,17 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         updated_at=NOW,
     )
 
+    invalid_config = state.effective_agent_config.model_copy(update={"content_digest": "f" * 64})
+    invalid_state = state.model_copy(update={"effective_agent_config": invalid_config})
+    invalid_run = run.model_copy(update={"effective_agent_config_digest": "f" * 64})
+    with pytest.raises(ValueError, match="configuration digest is invalid"):
+        await service.accept_new_thread(
+            session=session,
+            thread=thread,
+            run=invalid_run,
+            state=invalid_state,
+        )
+
     receipt = await service.accept_new_thread(session=session, thread=thread, run=run, state=state)
 
     assert receipt.thread_version == 1
@@ -146,12 +175,79 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         assert record.to_resource() == run
 
 
+async def test_acceptance_rejects_input_payload_owned_by_another_run(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states = RunStateStore(interaction_object_store)
+    service = RunAcceptanceService(
+        interaction_sessions,
+        states,
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW,
+    )
+    seed = RunStateSeed(
+        run_id="run_aaaaaaaaaaaaaaaa",
+        agent_id=AGENT_ID,
+        agent_revision_id=AGENT_REVISION_ID,
+        effective_agent_config=effective_agent_config(),
+    )
+    state = initialize_start_state(seed)
+    inline = _accepted_run(
+        run_id=seed.run_id,
+        thread_id=state.thread_id,
+        idempotency_key="wrong-input-owner",
+        request_fingerprint="a" * 64,
+    )
+    run = _with_input_object(
+        inline,
+        RunPayloadObjectRef(
+            object_key=(f"tenants/{TENANT_ID}/runs/run_bbbbbbbbbbbbbbbb/payloads/input/{'b' * 64}.json"),
+            digest_sha256="b" * 64,
+            size_bytes=123,
+            content_type="application/vnd.converge.run-payload+json",
+            schema_version="1",
+        ),
+    )
+
+    with pytest.raises(RunObjectIntegrityError, match="owned by the selected Run"):
+        await service.accept_new_thread(
+            session=Session(
+                id=SESSION_ID,
+                tenant_id=TENANT_ID,
+                workspace_id=WORKSPACE_ID,
+                created_at=NOW,
+                updated_at=NOW,
+            ),
+            thread=Thread(
+                id=state.thread_id,
+                version=1,
+                queue_version=0,
+                tenant_id=TENANT_ID,
+                session_id=SESSION_ID,
+                role=ThreadRole.root,
+                origin_kind=ThreadOriginKind.new,
+                current_run_id=run.id,
+                created_at=NOW,
+                updated_at=NOW,
+            ),
+            run=run,
+            state=state,
+        )
+
+
 async def test_root_retry_is_atomic_exact_and_idempotent(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
     states = RunStateStore(interaction_object_store)
-    service = RunAcceptanceService(interaction_sessions, states, clock=lambda: NOW + timedelta(seconds=2))
+    payloads = RunPayloadStore(interaction_object_store)
+    service = RunAcceptanceService(
+        interaction_sessions,
+        states,
+        payloads,
+        clock=lambda: NOW + timedelta(seconds=2),
+    )
     first_seed = RunStateSeed(
         run_id="run_2222222222222222",
         agent_id=AGENT_ID,
@@ -159,11 +255,23 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         effective_agent_config=effective_agent_config(),
     )
     first_state = initialize_start_state(first_seed)
-    first = _accepted_run(
+    first_inline = _accepted_run(
         run_id=first_seed.run_id,
         thread_id=first_state.thread_id,
         idempotency_key="start-2",
         request_fingerprint="2" * 64,
+    )
+    first = _with_input_object(
+        first_inline,
+        await payloads.create(
+            TENANT_ID,
+            RunPayloadEnvelope(
+                run_id=first_inline.id,
+                payload_kind="input",
+                payload_schema_version="1",
+                payload={"schema_version": "1", "content": "hello"},
+            ),
+        ),
     )
     await service.accept_new_thread(
         session=Session(
@@ -216,11 +324,23 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         source_input_kind=RunInputKind.agent_input,
         parent=None,
     )
-    second = _accepted_run(
+    second_inline = _accepted_run(
         run_id=second_seed.run_id,
         thread_id=first.thread_id,
         idempotency_key="continue-after-failure",
         request_fingerprint="3" * 64,
+    )
+    second = _with_input_object(
+        second_inline,
+        await payloads.create(
+            TENANT_ID,
+            RunPayloadEnvelope(
+                run_id=second_inline.id,
+                payload_kind="input",
+                payload_schema_version="1",
+                payload={"schema_version": "1", "content": "hello"},
+            ),
+        ),
     ).model_copy(update={"retry_of_run_id": first.id})
     await states.create(TENANT_ID, second_state)
 
@@ -264,3 +384,98 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
             expected_head_run_id=None,
             next_head_run_id=None,
         )
+
+
+async def test_new_session_cannot_begin_with_a_child_thread(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states = RunStateStore(interaction_object_store)
+    service = RunAcceptanceService(
+        interaction_sessions,
+        states,
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW,
+    )
+    seed = RunStateSeed(
+        run_id="run_6666666666666666",
+        agent_id=AGENT_ID,
+        agent_revision_id=AGENT_REVISION_ID,
+        effective_agent_config=effective_agent_config(),
+    )
+    state = initialize_start_state(seed)
+    run = _accepted_run(
+        run_id=seed.run_id,
+        thread_id=state.thread_id,
+        idempotency_key="invalid-child-session",
+        request_fingerprint="6" * 64,
+    )
+    thread = Thread(
+        id=state.thread_id,
+        version=1,
+        queue_version=0,
+        tenant_id=TENANT_ID,
+        session_id=SESSION_ID,
+        role=ThreadRole.child,
+        origin_kind=ThreadOriginKind.child,
+        origin_thread_id="thread-11111111111111111111111111111111",
+        origin_run_id="run_7777777777777777",
+        current_run_id=run.id,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    with pytest.raises(ValueError, match="new Session must begin with its root Thread"):
+        await service.accept_new_thread(
+            session=Session(
+                id=SESSION_ID,
+                tenant_id=TENANT_ID,
+                workspace_id=WORKSPACE_ID,
+                created_at=NOW,
+                updated_at=NOW,
+            ),
+            thread=thread,
+            run=run,
+            state=state,
+        )
+
+
+async def test_existing_session_cannot_accept_another_root_thread(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states = RunStateStore(interaction_object_store)
+    service = RunAcceptanceService(
+        interaction_sessions,
+        states,
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW,
+    )
+    seed = RunStateSeed(
+        run_id="run_8888888888888888",
+        agent_id=AGENT_ID,
+        agent_revision_id=AGENT_REVISION_ID,
+        effective_agent_config=effective_agent_config(),
+    )
+    state = initialize_start_state(seed)
+    run = _accepted_run(
+        run_id=seed.run_id,
+        thread_id=state.thread_id,
+        idempotency_key="invalid-second-root",
+        request_fingerprint="8" * 64,
+    )
+    thread = Thread(
+        id=state.thread_id,
+        version=1,
+        queue_version=0,
+        tenant_id=TENANT_ID,
+        session_id=SESSION_ID,
+        role=ThreadRole.root,
+        origin_kind=ThreadOriginKind.new,
+        current_run_id=run.id,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    with pytest.raises(ValueError, match="existing Session can accept only a child Thread"):
+        await service.accept_new_thread(session=None, thread=thread, run=run, state=state)

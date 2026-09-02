@@ -276,7 +276,7 @@ class RunRecord(Base):
         CheckConstraint(
             "(input_object_key IS NULL AND input_object_digest_sha256 IS NULL AND input_object_size_bytes IS NULL "
             "AND input_object_content_type IS NULL AND input_object_schema_version IS NULL) OR "
-            "(input_object_key IS NOT NULL AND input_object_digest_sha256 IS NOT NULL AND input_object_size_bytes >= 0 "
+            "(input_object_key IS NOT NULL AND input_object_digest_sha256 IS NOT NULL AND input_object_size_bytes > 0 "
             "AND input_object_content_type IS NOT NULL AND input_object_schema_version IS NOT NULL)",
             name="input_object_group_valid",
         ),
@@ -287,7 +287,7 @@ class RunRecord(Base):
             "(output_object_key IS NULL AND output_object_digest_sha256 IS NULL AND output_object_size_bytes IS NULL "
             "AND output_object_content_type IS NULL AND output_object_schema_version IS NULL) OR "
             "(output_object_key IS NOT NULL AND output_object_digest_sha256 IS NOT NULL "
-            "AND output_object_size_bytes >= 0 AND output_object_content_type IS NOT NULL "
+            "AND output_object_size_bytes > 0 AND output_object_content_type IS NOT NULL "
             "AND output_object_schema_version IS NOT NULL)",
             name="output_object_group_valid",
         ),

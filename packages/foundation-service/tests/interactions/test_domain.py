@@ -4,11 +4,18 @@ from datetime import UTC, datetime
 
 import pytest
 from a13n_service.interactions import (
+    CompletedOutcomeCandidate,
+    DeferredContinuationState,
+    HostContinuationState,
+    PendingCallKind,
+    PendingCallSummary,
     RecoveryUsage,
     RecoveryUsageLimit,
+    RunPendingSummary,
     Thread,
     ThreadOriginKind,
     ThreadRole,
+    WaitingOutcomeCandidate,
 )
 from a13n_service.interactions.state import validate_state_successor
 from pydantic import ValidationError
@@ -83,4 +90,60 @@ def test_non_initial_checkpoint_requires_applied_input_and_attempt_fence() -> No
     payload.update(checkpoint_seq=1, checkpoint_kind="progress")
 
     with pytest.raises(ValidationError, match="applied input"):
+        type(initial).model_validate(payload)
+
+
+def test_outcome_candidate_cannot_be_replaced_before_relational_sealing() -> None:
+    initial = initial_state()
+    payload = progress_state(initial).model_dump(mode="python")
+    payload.update(
+        checkpoint_kind="completed",
+        outcome_candidate=CompletedOutcomeCandidate(output={"answer": 42}),
+    )
+    completed = type(initial).model_validate(payload)
+    successor = progress_state(completed)
+
+    with pytest.raises(ValueError, match="outcome candidate state cannot be replaced"):
+        validate_state_successor(completed, successor, run_attempt_id=ATTEMPT_ID, fence=1)
+
+
+def test_waiting_summary_must_match_native_deferred_request_kinds() -> None:
+    initial = initial_state()
+    payload = initial.model_dump(mode="python")
+    payload.update(
+        checkpoint_seq=1,
+        checkpoint_kind="waiting",
+        input_disposition="applied",
+        last_checkpoint_run_attempt_id=ATTEMPT_ID,
+        last_checkpoint_fence=1,
+        host=HostContinuationState(
+            deferred=DeferredContinuationState(
+                requests={
+                    "calls": [],
+                    "approvals": [
+                        {
+                            "tool_name": "dangerous_tool",
+                            "args": {},
+                            "tool_call_id": "approval-1",
+                        }
+                    ],
+                    "metadata": {},
+                }
+            )
+        ),
+        outcome_candidate=WaitingOutcomeCandidate(
+            wait_reason="client_tool",
+            pending=RunPendingSummary(
+                calls=(
+                    PendingCallSummary(
+                        call_id="approval-1",
+                        kind=PendingCallKind.client_tool,
+                        tool_name="dangerous_tool",
+                    ),
+                )
+            ),
+        ),
+    )
+
+    with pytest.raises(ValidationError, match="preserve native request kind"):
         type(initial).model_validate(payload)

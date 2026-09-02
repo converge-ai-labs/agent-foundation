@@ -10,13 +10,13 @@ from a13n_harness import SafeFailure
 from sqlalchemy import JSON, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.storage import transaction
+from a13n_service.storage import short_session, transaction
 
 from ._transitions import charge_attempt_usage, terminalize_attempt
-from .attempts import AttemptAuthority, AttemptMutationError, lock_attempt_authority
+from .attempts import AttemptAuthority, AttemptMutationError, lock_attempt_authority, read_attempt_authority
 from .domain import RunAttemptStatus, RunStatus
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
-from .objects import RUN_STATE_CONTENT_TYPE, StoredRunState
+from .objects import RUN_STATE_CONTENT_TYPE, RunPayloadStore, StoredRunState
 from .state import CompletedOutcomeCandidate, WaitingOutcomeCandidate
 
 
@@ -38,10 +38,12 @@ class RunOutcomeService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
+        payloads: RunPayloadStore,
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._sessions = sessions
+        self._payloads = payloads
         self._clock = clock
 
     async def commit_state_outcome(
@@ -55,6 +57,7 @@ class RunOutcomeService:
 
         now = _utc(self._clock())
         _validate_candidate(state, authority)
+        await self._verify_output_payload(authority, state, expected_thread_version, now)
         async with transaction(self._sessions) as database:
             run, attempt, thread = await lock_attempt_authority(database, authority, now)
             if thread.version != expected_thread_version:
@@ -158,6 +161,28 @@ class RunOutcomeService:
                 None if attempt is None else attempt.version,
                 thread.version,
             )
+
+    async def _verify_output_payload(
+        self,
+        authority: AttemptAuthority,
+        state: StoredRunState,
+        expected_thread_version: int,
+        now: datetime,
+    ) -> None:
+        candidate = state.envelope.outcome_candidate
+        if not isinstance(candidate, CompletedOutcomeCandidate) or candidate.output_object is None:
+            return
+        async with short_session(self._sessions) as database:
+            run, _, thread = await read_attempt_authority(database, authority, now)
+            if thread.version != expected_thread_version:
+                raise RunOutcomeError("Thread outcome precondition changed")
+            _validate_candidate_scope(state, run, thread)
+        await self._payloads.verify_reference(
+            authority.tenant_id,
+            authority.run_id,
+            "output",
+            candidate.output_object,
+        )
 
 
 def _validate_candidate(state: StoredRunState, authority: AttemptAuthority) -> None:
