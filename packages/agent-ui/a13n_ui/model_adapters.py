@@ -24,9 +24,12 @@ _SUPPORTED_PROVIDERS = frozenset(
         "google-cloud",
         "google-gla",
         "google-vertex",
+        "grok",
+        "grok-build",
         "groq",
         "mistral",
         "openai",
+        "openai-codex",
         "openai-responses",
     }
 )

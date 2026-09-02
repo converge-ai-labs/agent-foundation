@@ -195,8 +195,6 @@ class AsyncSubagentToolset:
         )
         previous = _require_exact_execution(info.executions, execution_id)
         child = self._require_child(previous.subagent_name)
-        if previous.child_definition_id != child.definition.definition_id:
-            raise ToolFailed("The retained subagent definition is incompatible.")
         if not previous.resumable:
             raise ToolFailed("The retained subagent execution is not resumable.")
         request = AsyncResumeRequest(execution_id=execution_id, prompt=prompt)
@@ -204,7 +202,12 @@ class AsyncSubagentToolset:
             AsyncExecutionView,
             await self._operator.resume(self._plan(ctx, child, prompt), request),
         )
-        _validate_execution(result, child, resumed_from=execution_id)
+        _validate_execution(
+            result,
+            child,
+            resumed_from=execution_id,
+            allow_definition_replacement=True,
+        )
         return result.model_dump(mode="json")
 
     def _plan(
@@ -297,10 +300,11 @@ def _validate_execution(
     child: BuiltSubagent,
     *,
     resumed_from: str | None,
+    allow_definition_replacement: bool = False,
 ) -> None:
     if result.subagent_name != child.declaration.name:
         raise TypeError("subagent operator retargeted the selected child")
-    if result.child_definition_id != child.definition.definition_id:
+    if not allow_definition_replacement and result.child_definition_id != child.definition.definition_id:
         raise TypeError("subagent operator returned an incompatible child definition")
     if result.resumed_from != resumed_from:
         raise TypeError("subagent operator returned incompatible continuation linkage")

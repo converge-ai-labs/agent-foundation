@@ -34,6 +34,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.events`               | Event emission helpers and typed first-party payloads                                        |
 | `a13n_harness.filters`              | First-party content and integrity filters                                                    |
 | `a13n_harness.mcp`                  | MCP context-header integration                                                               |
+| `a13n_harness.model_auth`           | SDK-first OAuth credential sources, provider flows, lifecycle, and native Model constructors |
 | `a13n_harness.model_catalog`        | Official model catalog values                                                                |
 | `a13n_harness.model_context`        | Model-context middleware and projection contracts                                            |
 | `a13n_harness.models`               | Provider inference, request headers, transport, settings, and self-healing                   |
@@ -46,6 +47,8 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.tools`                | Managed tool invocation and event helpers                                                    |
 | `a13n_harness.toolsets`             | First-party reusable Toolsets, including the standard async subagent dispatcher              |
 | `a13n_harness.usage`                | Usage attribution records and ledger                                                         |
+
+The Model authentication feature exports its provider-specific credential values and structural `load()`/`save()` source protocols, OAuth flow and refresh callables, bounded authentication errors, and `build_codex_model()` / `build_grok_model()` constructors. Its complete lifecycle and Host boundary belong to [Model Authentication](16a-model-authentication.md).
 
 A value is not private merely because it is absent from the root facade. Its owning module and that module's documented exports are the canonical import route. Removing duplicate root re-exports keeps discovery bounded and prevents unrelated feature families from becoming one coupled compatibility surface. The public Mem0 integration is imported as `from a13n_harness.capabilities import Mem0Capability, Mem0Scope`; its run replacement and Toolset implementation remain package-private. The public async-subagent boundary is imported from `a13n_harness.capabilities`: `SubagentCapability`, `SubagentOperator`, `SubagentOperatorContext`, `SubagentDelegationPlan`, and the standard request/result/view models. `AsyncSubagentToolset` and the standard Environment Shell Toolset are available from `a13n_harness.toolsets`; the private inline executor and Run process controller are not public operator implementations.
 

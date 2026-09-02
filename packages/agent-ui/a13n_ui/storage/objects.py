@@ -33,9 +33,10 @@ _ObjectModelT = TypeVar("_ObjectModelT", bound=BaseModel)
 class ObjectKind(StrEnum):
     """Immutable payload families owned by the Agent UI store."""
 
-    agent_snapshot = "agent-snapshot"
-    environment_snapshot = "environment-snapshot"
-    session_continuation = "session-continuation"
+    configuration_generation = "configuration-generation"
+    run_composition = "run-composition"
+    thread_initial_state = "thread-initial-state"
+    continuation = "continuation"
     child_checkpoint = "child-checkpoint"
     environment_state = "environment-state"
 
@@ -162,8 +163,14 @@ class ImmutableObjectStore:
 
         envelope = await self.read(reference)
         try:
-            return model_type.model_validate(envelope.payload)
-        except ValidationError as exc:
+            serialized = json.dumps(
+                envelope.payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            )
+            return model_type.model_validate_json(serialized, strict=True)
+        except (TypeError, ValueError, ValidationError) as exc:
             raise ObjectIntegrityError(
                 "Immutable object payload does not match its expected contract.",
                 code="object_payload_incompatible",

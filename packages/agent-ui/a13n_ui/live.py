@@ -33,7 +33,6 @@ class LiveEvent(BaseModel):
 
     sequence: int = Field(ge=1)
     run_kind: Literal["root", "child"]
-    session_id: str = Field(min_length=1, max_length=80)
     thread_id: str = Field(min_length=1, max_length=80)
     run_id: str = Field(min_length=1, max_length=80)
     execution_id: str | None = Field(default=None, min_length=1, max_length=80)
@@ -70,18 +69,14 @@ class _Subscriber:
         *,
         send: MemoryObjectSendStream[LiveEvent],
         receive: MemoryObjectReceiveStream[LiveEvent],
-        session_id: str | None,
         thread_id: str | None,
     ) -> None:
         self.send = send
         self.receive = receive
-        self.session_id = session_id
         self.thread_id = thread_id
 
     def accepts(self, event: LiveEvent) -> bool:
-        return (self.session_id is None or self.session_id == event.session_id) and (
-            self.thread_id is None or self.thread_id == event.thread_id
-        )
+        return self.thread_id is None or self.thread_id == event.thread_id
 
 
 class AgentUiLiveHub:
@@ -106,7 +101,6 @@ class AgentUiLiveHub:
         self,
         *,
         run_kind: Literal["root", "child"],
-        session_id: str,
         thread_id: str,
         run_id: str,
         events: Sequence[AguiEvent],
@@ -124,7 +118,6 @@ class AgentUiLiveHub:
                 event = LiveEvent(
                     sequence=self._sequence,
                     run_kind=run_kind,
-                    session_id=session_id,
                     thread_id=thread_id,
                     run_id=run_id,
                     execution_id=execution_id,
@@ -156,24 +149,19 @@ class AgentUiLiveHub:
     async def snapshot(
         self,
         *,
-        session_id: str | None = None,
         thread_id: str | None = None,
     ) -> tuple[LiveEvent, ...]:
         """Return a detached filtered view of the current ring."""
 
         async with self._lock:
             return tuple(
-                event.model_copy(deep=True)
-                for event in self._ring
-                if (session_id is None or event.session_id == session_id)
-                and (thread_id is None or event.thread_id == thread_id)
+                event.model_copy(deep=True) for event in self._ring if thread_id is None or event.thread_id == thread_id
             )
 
     @asynccontextmanager
     async def subscribe(
         self,
         *,
-        session_id: str | None = None,
         thread_id: str | None = None,
     ) -> AsyncGenerator[LiveSubscription]:
         """Replay the matching ring and follow future best-effort events."""
@@ -183,7 +171,6 @@ class AgentUiLiveHub:
         subscriber = _Subscriber(
             send=send,
             receive=receive,
-            session_id=session_id,
             thread_id=thread_id,
         )
         async with self._lock:

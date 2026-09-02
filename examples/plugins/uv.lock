@@ -60,6 +60,7 @@ version = "0.0.0"
 source = { editable = "../../packages/agent-harness" }
 dependencies = [
     { name = "a13n-environment-provider" },
+    { name = "anyio" },
     { name = "genai-prices" },
     { name = "httpx2" },
     { name = "mem0ai" },
@@ -75,6 +76,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
+    { name = "anyio", specifier = ">=4,<5" },
     { name = "genai-prices", specifier = ">=0.1.4,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "mem0ai", specifier = ">=2.0.19,<3" },

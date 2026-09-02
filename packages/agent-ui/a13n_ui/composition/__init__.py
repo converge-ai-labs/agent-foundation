@@ -1,33 +1,31 @@
-"""Trusted Agent UI composition resolution and immutable snapshot publication."""
+"""Agent UI accepted-generation resolution and per-Run composition."""
 
-from .catalogs import (
-    BinderCatalogEntry,
-    EnvironmentWorkspaceBinder,
-    ProviderCatalogEntry,
-    ProviderRuntime,
-    ValidatedProfileConfiguration,
-    WorkspaceBinderCatalog,
-    builtin_workspace_binder_catalog,
-)
 from .models import (
-    DependencyLock,
+    DependencyProvenance,
     ResolvedAgentNode,
-    ResolvedAgentSnapshot,
+    ResolvedCapabilityRecipe,
     ResolvedEnvironmentProfile,
     ResolvedMcpRecipe,
     ResolvedModelRecipe,
     ResolvedPluginRecipe,
+    ResolvedRunComposition,
+    ResolvedRunExtensionRecipe,
     ResolvedSubagent,
 )
-from .reconstruction import AgentReconstructor, PortableCapabilityFactory, ReconstructedAgent
+from .reconstruction import AgentReconstructor, ReconstructedAgent
 from .resolver import (
     IMPLICIT_NATIVE_PROFILE,
     PACKAGE_PROMPT_REVISION,
     PACKAGE_SYSTEM_PROMPT,
     AgentCompositionResolver,
-    ResolvedConfiguration,
+    ThreadCompositionSelection,
 )
-from .service import AcceptedComposition, CompositionAcceptanceService
+from .service import (
+    AcceptedComposition,
+    CompositionAcceptanceService,
+    PublishedRunComposition,
+    RunCompositionService,
+)
 
 __all__ = [
     "IMPLICIT_NATIVE_PROFILE",
@@ -36,23 +34,19 @@ __all__ = [
     "AcceptedComposition",
     "AgentCompositionResolver",
     "AgentReconstructor",
-    "BinderCatalogEntry",
     "CompositionAcceptanceService",
-    "DependencyLock",
-    "EnvironmentWorkspaceBinder",
-    "PortableCapabilityFactory",
-    "ProviderCatalogEntry",
-    "ProviderRuntime",
+    "DependencyProvenance",
+    "PublishedRunComposition",
     "ReconstructedAgent",
     "ResolvedAgentNode",
-    "ResolvedAgentSnapshot",
-    "ResolvedConfiguration",
+    "ResolvedCapabilityRecipe",
     "ResolvedEnvironmentProfile",
     "ResolvedMcpRecipe",
     "ResolvedModelRecipe",
     "ResolvedPluginRecipe",
+    "ResolvedRunComposition",
+    "ResolvedRunExtensionRecipe",
     "ResolvedSubagent",
-    "ValidatedProfileConfiguration",
-    "WorkspaceBinderCatalog",
-    "builtin_workspace_binder_catalog",
+    "RunCompositionService",
+    "ThreadCompositionSelection",
 ]

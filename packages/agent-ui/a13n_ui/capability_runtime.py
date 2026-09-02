@@ -5,12 +5,11 @@ from __future__ import annotations
 import ipaddress
 import socket
 import ssl
-from collections.abc import AsyncIterable, AsyncIterator, Collection, Iterable, Mapping
+from collections.abc import AsyncIterable, AsyncIterator, Collection, Iterable
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import MappingProxyType
 from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
@@ -21,26 +20,20 @@ from a13n_harness.capabilities import (
     DocumentConversionError,
     DocumentConversionRequest,
     DocumentConversionResult,
-    DocumentsCapability,
     DocumentsRunCapability,
-    WebCapability,
-    WebConfiguration,
     WebPolicy,
     WebProviderError,
     WebRequest,
     WebResponse,
     WebRunCapability,
-    WebScrapeConfiguration,
     WebScrapeRequest,
     WebScrapeResult,
-    WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResponse,
     WebSearchResult,
 )
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
-from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from anyio import getaddrinfo, to_thread
 from markdownify import markdownify
 from openpyxl import load_workbook
@@ -49,8 +42,6 @@ from pptx.shapes.autoshape import Shape
 from pptx.shapes.placeholder import BasePlaceholder
 from pydantic_ai.capabilities import AbstractCapability
 from pypdf import PdfReader
-
-from a13n_ui.composition.reconstruction import PortableCapabilityFactory
 
 _MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024
 _USER_AGENT = "a13n-ui/0 web tools"
@@ -337,28 +328,6 @@ class LocalDocumentConverter:
         return await to_thread.run_sync(_convert_document, request)
 
 
-def production_portable_capabilities() -> Mapping[str, PortableCapabilityFactory]:
-    """Return the fixed portable child template owned by this Agent UI release."""
-
-    return MappingProxyType(
-        {
-            "search": lambda: WebCapability(
-                WebConfiguration(
-                    search=WebSearchConfiguration(mode="host"),
-                    scrape=WebScrapeConfiguration(mode="host"),
-                )
-            ),
-            "documents": DocumentsCapability,
-            "files": lambda: DynamicEnvironmentCapability(
-                DynamicEnvironmentConfiguration(files_enabled=True, shell_enabled=False)
-            ),
-            "shell": lambda: DynamicEnvironmentCapability(
-                DynamicEnvironmentConfiguration(files_enabled=False, shell_enabled=True)
-            ),
-        }
-    )
-
-
 def production_run_capabilities(
     owner_capability_ids: Collection[str],
 ) -> tuple[AbstractCapability[Any], ...]:
@@ -568,6 +537,5 @@ __all__ = [
     "HttpxWebClient",
     "LocalDocumentConverter",
     "PublicWebPolicy",
-    "production_portable_capabilities",
     "production_run_capabilities",
 ]

@@ -11,159 +11,221 @@ from a13n_ui.errors import ConfigurationError
 pytestmark = pytest.mark.anyio
 
 
-async def test_loads_one_document_and_canonical_markdown_set(tmp_path: Path) -> None:
+def _write_source_tree(
+    tmp_path: Path,
+    *,
+    root: str = 'schema_version: "2"\n',
+    resources: dict[str, str] | None = None,
+) -> Path:
     config = tmp_path / "a13n-ui.yaml"
-    config.write_text(
-        """
-schema_version: "1"
+    config.write_text(root.lstrip())
+    for relative_path, content in (resources or {}).items():
+        target = tmp_path / relative_path
+        target.parent.mkdir(exist_ok=True)
+        target.write_text(content.lstrip())
+    return config
+
+
+async def test_loads_multi_file_resources_and_canonical_markdown_set(tmp_path: Path) -> None:
+    config = _write_source_tree(
+        tmp_path,
+        root="""
+schema_version: "2"
 process:
-  storage:
-    data_root: ./state
   log_level: debug
 defaults:
-  agent: assistant
-  environment: native
-models:
-  primary:
-    model: openai:gpt-5
-    api_key:
-      env: OPENAI_API_KEY
-    settings:
-      temperature: 0
-plugins:
-  memory:
-    plugin: vendor.memory
-    enabled: true
-mcp_servers:
-  github:
-    transport:
-      command: npx
-      arguments: [-y, server-github]
-agents:
-  assistant:
-    model: primary
-    plugins: null
-    mcp_servers: []
-    subagents:
-      - markdown: explorer
-      - agent: reviewer
-  reviewer:
-    model: primary
-    plugins: []
-environments:
-  native:
-    kind: native
-environment_providers: {}
-""".lstrip()
-    )
-    subagents = tmp_path / "subagents"
-    subagents.mkdir()
-    (subagents / "explorer.md").write_text(
-        """---
+  agent: agent-assistant
+  harness_plugins: [plugin-memory]
+  mcp_servers: [mcp-github]
+""",
+        resources={
+            "models/primary.yaml": """
+schema_version: "1"
+kind: model
+id: model-primary
+name: Primary
+route: openai:gpt-5
+authentication:
+  kind: api_key
+  env: OPENAI_API_KEY
+settings:
+  temperature: 0
+model_configuration: {}
+""",
+            "extensions/memory.yaml": """
+schema_version: "1"
+kind: harness_plugin
+id: plugin-memory
+name: Memory
+plugin_key: vendor.memory
+configuration: {}
+""",
+            "mcp/github.yaml": """
+schema_version: "1"
+kind: mcp_server
+id: mcp-github
+name: GitHub
+transport:
+  command: npx
+  arguments: [-y, server-github]
+""",
+            "agents/assistant.yaml": """
+schema_version: "1"
+kind: agent
+id: agent-assistant
+name: Assistant
+model: model-primary
+harness_plugins: null
+mcp_servers: []
+subagents:
+  - markdown: subagent-explorer
+  - agent: agent-reviewer
+""",
+            "agents/reviewer.yaml": """
+schema_version: "1"
+kind: agent
+id: agent-reviewer
+name: Reviewer
+model: model-primary
+harness_plugins: []
+""",
+            "subagents/explorer.md": """---
 name: explorer
 description: Inspect an unfamiliar codebase.
 instruction: Use for focused repository exploration.
 model: inherit
-model_settings: null
-model_cfg: {}
 tools: search, files
-optional_tools: [shell]
 ---
 
 Inspect the relevant code and report evidence.
-"""
+""",
+        },
     )
-    (subagents / "README.md").write_text("ignored\n")
-    nested = subagents / "nested"
+    (tmp_path / "subagents/README.md").write_text("ignored\n")
+    nested = tmp_path / "subagents/nested"
     nested.mkdir()
     (nested / "ignored.md").write_text("not discovered\n")
 
     loaded = await load_agent_ui_configuration(config)
 
-    assert loaded.document.process.storage.data_root == (tmp_path / "state").resolve()
+    assert loaded.document.schema_version == "2"
     assert loaded.document.process.log_level == "DEBUG"
-    assistant = loaded.document.agents["assistant"]
-    assert loaded.document.selected_plugins(assistant) == ("memory",)
-    assert loaded.document.selected_mcp_servers(assistant) == ()
+    assert set(loaded.models) == {"model-primary"}
+    assert set(loaded.harness_plugins) == {"plugin-memory"}
+    assert set(loaded.mcp_servers) == {"mcp-github"}
+    assert set(loaded.agents) == {"agent-assistant", "agent-reviewer"}
+    assistant = loaded.agents["agent-assistant"]
+    assert loaded.selected_plugins(assistant) == ("plugin-memory",)
+    assert loaded.selected_mcp_servers(assistant) == ()
     assert len(loaded.subagents) == 1
-    explorer = loaded.markdown("explorer")
+    explorer = loaded.markdown("subagent-explorer")
     assert explorer.model is None
-    assert explorer.model_settings is None
-    assert explorer.model_cfg == {}
     assert explorer.tools == ("search", "files")
-    assert explorer.optional_tools == ("shell",)
     assert explorer.body == "Inspect the relevant code and report evidence."
-    assert loaded.source_digest != loaded.yaml_digest
+    assert {source.relative_path for source in loaded.sources} == {
+        "a13n-ui.yaml",
+        "agents/assistant.yaml",
+        "agents/reviewer.yaml",
+        "extensions/memory.yaml",
+        "mcp/github.yaml",
+        "models/primary.yaml",
+        "subagents/explorer.md",
+    }
+    assert loaded.source_digest != loaded.root_digest
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("root", "resources", "error_code"),
     [
-        """
+        (
+            'schema_version: "2"\nunknown: true\n',
+            {},
+            "settings_invalid",
+        ),
+        (
+            'schema_version: "2"\n',
+            {
+                "models/primary.yaml": """
 schema_version: "1"
-unknown: true
-""",
-        """
+kind: model
+id: model-primary
+name: Primary
+route: openai:gpt-5
+authentication: {kind: api_key, env: OPENAI_API_KEY}
+settings:
+  api_key: literal-secret
+"""
+            },
+            "configuration_resource_invalid",
+        ),
+        (
+            'schema_version: "2"\n',
+            {
+                "models/primary.yaml": """
 schema_version: "1"
-models:
-  primary:
-    model: openai:gpt-5
-    settings:
-      api_key: literal-secret
+kind: model
+id: model-primary
+name: Primary
+route: openai:gpt-5
+authentication: {kind: api_key, env: OPENAI_API_KEY}
 """,
-        """
+                "agents/first.yaml": """
 schema_version: "1"
-models:
-  primary:
-    model: openai:gpt-5
-plugins:
-  memory:
-    plugin: vendor.memory
-    enabled: false
-agents:
-  assistant:
-    model: primary
-    plugins: [memory]
+kind: agent
+id: agent-first
+name: First
+model: model-primary
+subagents: [{agent: agent-second}]
 """,
-        """
+                "agents/second.yaml": """
 schema_version: "1"
-models:
-  primary:
-    model: openai:gpt-5
-agents:
-  first:
-    model: primary
-    subagents: [{agent: second}]
-  second:
-    model: primary
-    subagents: [{agent: first}]
+kind: agent
+id: agent-second
+name: Second
+model: model-primary
+subagents: [{agent: agent-first}]
 """,
+            },
+            "configuration_invalid",
+        ),
     ],
 )
-async def test_rejects_invalid_document_behavior(tmp_path: Path, body: str) -> None:
-    config = tmp_path / "a13n-ui.yaml"
-    config.write_text(body.lstrip())
+async def test_rejects_invalid_configuration_tree(
+    tmp_path: Path,
+    root: str,
+    resources: dict[str, str],
+    error_code: str,
+) -> None:
+    config = _write_source_tree(tmp_path, root=root, resources=resources)
 
     with pytest.raises(ConfigurationError) as invalid:
         await load_agent_ui_configuration(config)
 
-    assert invalid.value.code == "settings_invalid"
+    assert invalid.value.code == error_code
     assert invalid.value.details["validation_error_count"] >= 1
 
 
 async def test_rejects_missing_markdown_reference(tmp_path: Path) -> None:
-    config = tmp_path / "a13n-ui.yaml"
-    config.write_text(
-        """
+    config = _write_source_tree(
+        tmp_path,
+        resources={
+            "models/primary.yaml": """
 schema_version: "1"
-models:
-  primary:
-    model: openai:gpt-5
-agents:
-  assistant:
-    model: primary
-    subagents: [{markdown: missing}]
-""".lstrip()
+kind: model
+id: model-primary
+name: Primary
+route: openai:gpt-5
+authentication: {kind: api_key, env: OPENAI_API_KEY}
+""",
+            "agents/assistant.yaml": """
+schema_version: "1"
+kind: agent
+id: agent-assistant
+name: Assistant
+model: model-primary
+subagents: [{markdown: subagent-missing}]
+""",
+        },
     )
 
     with pytest.raises(ConfigurationError) as invalid:
@@ -173,8 +235,7 @@ agents:
 
 
 async def test_rejects_symlinked_canonical_directory(tmp_path: Path) -> None:
-    config = tmp_path / "a13n-ui.yaml"
-    config.write_text('schema_version: "1"\n')
+    config = _write_source_tree(tmp_path)
     actual = tmp_path / "actual"
     actual.mkdir()
     (tmp_path / "subagents").symlink_to(actual, target_is_directory=True)
@@ -189,8 +250,7 @@ async def test_retries_when_final_yaml_fingerprint_changes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = tmp_path / "a13n-ui.yaml"
-    config.write_text('schema_version: "1"\n')
+    config = _write_source_tree(tmp_path)
     original = configuration_loader._regular_file_fingerprint
     calls = 0
 
@@ -206,37 +266,44 @@ async def test_retries_when_final_yaml_fingerprint_changes(
 
     loaded = await load_agent_ui_configuration(config)
 
-    assert loaded.document.schema_version == "1"
-    assert calls == 2
+    assert loaded.document.schema_version == "2"
+    assert calls == 3
 
 
 async def test_validates_deep_agent_reference_graph_without_python_recursion(tmp_path: Path) -> None:
-    config = tmp_path / "a13n-ui.yaml"
     count = 600
-    agents: dict[str, object] = {}
-    for index in range(count):
-        item: dict[str, object] = {"model": "primary"}
-        if index + 1 < count:
-            item["subagents"] = [{"agent": f"agent-{index + 1}"}]
-        agents[f"agent-{index}"] = item
-    config.write_text(
-        json.dumps(
+    resources = {
+        "models/primary.yaml": json.dumps(
             {
                 "schema_version": "1",
-                "models": {"primary": {"model": "openai:gpt-5"}},
-                "agents": agents,
+                "kind": "model",
+                "id": "model-primary",
+                "name": "Primary",
+                "route": "openai:gpt-5",
+                "authentication": {"kind": "api_key", "env": "OPENAI_API_KEY"},
             }
         )
-    )
+    }
+    for index in range(count):
+        agent: dict[str, object] = {
+            "schema_version": "1",
+            "kind": "agent",
+            "id": f"agent-{index}",
+            "name": f"Agent {index}",
+            "model": "model-primary",
+        }
+        if index + 1 < count:
+            agent["subagents"] = [{"agent": f"agent-{index + 1}"}]
+        resources[f"agents/agent-{index}.yaml"] = json.dumps(agent)
+    config = _write_source_tree(tmp_path, resources=resources)
 
     loaded = await load_agent_ui_configuration(config)
 
-    assert len(loaded.document.agents) == count
+    assert len(loaded.agents) == count
 
 
 async def test_long_markdown_filename_has_bounded_file_diagnostic(tmp_path: Path) -> None:
-    config = tmp_path / "a13n-ui.yaml"
-    config.write_text('schema_version: "1"\n')
+    config = _write_source_tree(tmp_path)
     subagents = tmp_path / "subagents"
     subagents.mkdir()
     filename = f"{'x' * 220}.md"

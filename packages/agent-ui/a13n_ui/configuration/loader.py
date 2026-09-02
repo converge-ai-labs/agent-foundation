@@ -1,4 +1,4 @@
-"""Bounded loading for one Agent UI YAML document and sibling Markdown set."""
+"""Stable bounded loading for the Agent UI multi-file configuration tree."""
 
 from __future__ import annotations
 
@@ -11,110 +11,78 @@ from typing import Any
 
 import yaml
 from anyio import to_thread
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from a13n_ui.errors import ConfigurationError
 
 from .models import (
+    AgentResource,
     AgentUiDocument,
     CanonicalSubagent,
-    CanonicalSubagentSource,
+    EnvironmentProfileResource,
+    EnvironmentRunExtensionResource,
+    ExtensionResource,
+    HarnessPluginResource,
     LoadedAgentUiConfiguration,
+    McpServerResource,
+    ModelResource,
+    ProjectResource,
+    SourceDocument,
     canonical_digest,
 )
 
-_MAX_YAML_BYTES = 1024 * 1024
-_MAX_MARKDOWN_BYTES = 1024 * 1024
-_MAX_MARKDOWN_TOTAL_BYTES = 16 * 1024 * 1024
-_MAX_MARKDOWN_FILES = 1024
+_MAX_SOURCE_BYTES = 1024 * 1024
+_MAX_TOTAL_BYTES = 32 * 1024 * 1024
+_MAX_FILES = 4096
 _MAX_DIRECTORY_ENTRIES = 4096
 _MAX_YAML_NODES = 100_000
 _MAX_YAML_DEPTH = 64
 _STABLE_READ_ATTEMPTS = 3
+_YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects")
+_RESOURCE_TYPES: dict[str, type[Any]] = {
+    "models": ModelResource,
+    "mcp": McpServerResource,
+    "agents": AgentResource,
+    "projects": ProjectResource,
+}
+_EXTENSION_ADAPTER = TypeAdapter(ExtensionResource)
 
 
 async def load_agent_ui_configuration(path: Path) -> LoadedAgentUiConfiguration:
-    """Read one coherent source candidate for later trusted catalog resolution."""
+    """Read and validate one coherent complete source-tree generation."""
 
     selected = path.expanduser().resolve(strict=False)
-    if selected.suffix.lower() not in {".yaml", ".yml"}:
-        raise _error("settings_path_invalid", "Agent UI configuration must use YAML.", selected)
+    if selected.suffix != ".yaml":
+        raise _error("settings_path_invalid", "Agent UI configuration must use lower-case .yaml.", selected)
 
     for _attempt in range(_STABLE_READ_ATTEMPTS):
-        yaml_content, yaml_fingerprint = await to_thread.run_sync(
-            _read_bounded_stable,
-            selected,
-            _MAX_YAML_BYTES,
-        )
-        before = await to_thread.run_sync(_scan_subagent_directory, selected.parent / "subagents")
-        sources: list[CanonicalSubagentSource] = []
+        before = await to_thread.run_sync(_scan_tree, selected)
+        captured: list[tuple[str, bytes, tuple[int, int, int, int]]] = []
         total_bytes = 0
-        source_changed = False
-        for item in before:
+        changed = False
+        for relative_path, source_path, expected in before:
             content, fingerprint = await to_thread.run_sync(
                 _read_bounded_stable,
-                item[0],
-                _MAX_MARKDOWN_BYTES,
+                source_path,
+                _MAX_SOURCE_BYTES,
             )
-            if fingerprint != item[1:]:
-                source_changed = True
+            if fingerprint != expected:
+                changed = True
                 break
             total_bytes += len(content)
-            if total_bytes > _MAX_MARKDOWN_TOTAL_BYTES:
+            if total_bytes > _MAX_TOTAL_BYTES:
                 raise _error(
                     "configuration_source_limit",
-                    "Canonical subagent Markdown exceeds the total size limit.",
+                    "The Agent UI configuration tree exceeds its total size limit.",
                     selected,
                 )
-            document = _parse_canonical_markdown(item[0], content)
-            try:
-                sources.append(
-                    CanonicalSubagentSource(
-                        document=document,
-                        relative_path=f"subagents/{item[0].name}",
-                        source_digest=hashlib.sha256(content).hexdigest(),
-                    )
-                )
-            except ValidationError as exc:
-                raise _validation_error(
-                    "configuration_markdown_invalid",
-                    "A canonical subagent source is invalid.",
-                    item[0],
-                    exc,
-                ) from exc
-        if source_changed:
+            captured.append((relative_path, content, fingerprint))
+        if changed:
             continue
-
-        after = await to_thread.run_sync(_scan_subagent_directory, selected.parent / "subagents")
-        final_yaml_fingerprint = await to_thread.run_sync(_regular_file_fingerprint, selected)
-        if before != after or yaml_fingerprint != final_yaml_fingerprint:
+        after = await to_thread.run_sync(_scan_tree, selected)
+        if before != after:
             continue
-
-        document = _parse_agent_ui_document(selected, yaml_content)
-        yaml_digest = hashlib.sha256(yaml_content).hexdigest()
-        source_digest = canonical_digest(
-            {
-                "yaml": yaml_digest,
-                "subagents": [
-                    {"name": item.document.name, "source_digest": item.source_digest}
-                    for item in sorted(sources, key=lambda source: source.document.name)
-                ],
-            }
-        )
-        try:
-            return LoadedAgentUiConfiguration(
-                document=document,
-                yaml_digest=yaml_digest,
-                subagents=tuple(sorted(sources, key=lambda source: source.document.name)),
-                source_digest=source_digest,
-            )
-        except ValidationError as exc:
-            raise _validation_error(
-                "configuration_invalid",
-                "Agent UI configuration references are invalid.",
-                selected,
-                exc,
-            ) from exc
+        return _parse_complete_tree(selected, captured)
 
     raise _error(
         "settings_source_unstable",
@@ -124,16 +92,267 @@ async def load_agent_ui_configuration(path: Path) -> LoadedAgentUiConfiguration:
 
 
 def empty_agent_ui_configuration() -> LoadedAgentUiConfiguration:
-    """Return the onboarding configuration used when the fixed default file is absent."""
+    """Return an empty onboarding generation when the default root is absent."""
 
-    document = AgentUiDocument()
-    yaml_digest = hashlib.sha256(b"").hexdigest()
-    source_digest = canonical_digest({"yaml": yaml_digest, "subagents": []})
-    return LoadedAgentUiConfiguration(
-        document=document,
-        yaml_digest=yaml_digest,
-        source_digest=source_digest,
+    content = 'schema_version: "2"\n'
+    root_digest = hashlib.sha256(content.encode()).hexdigest()
+    source = SourceDocument(
+        relative_path="a13n-ui.yaml",
+        source_digest=root_digest,
+        resource_kind="root",
+        content=content,
     )
+    return LoadedAgentUiConfiguration(
+        document=AgentUiDocument(),
+        root_digest=root_digest,
+        source_digest=canonical_digest(((source.relative_path, source.source_digest),)),
+        sources=(source,),
+    )
+
+
+def _scan_tree(path: Path) -> tuple[tuple[str, Path, tuple[int, int, int, int]], ...]:
+    root = (path.name, path, _regular_file_fingerprint(path))
+    entries: list[tuple[str, Path, tuple[int, int, int, int]]] = [root]
+    for directory_name in (*_YAML_DIRECTORIES, "subagents"):
+        directory = path.parent / directory_name
+        entries.extend(_scan_directory(directory, markdown=directory_name == "subagents"))
+        if len(entries) > _MAX_FILES:
+            raise _error(
+                "configuration_source_limit",
+                "The Agent UI configuration tree contains too many sources.",
+                path,
+            )
+    return tuple(entries)
+
+
+def _scan_directory(
+    directory: Path,
+    *,
+    markdown: bool,
+) -> tuple[tuple[str, Path, tuple[int, int, int, int]], ...]:
+    try:
+        metadata = directory.lstat()
+    except FileNotFoundError:
+        return ()
+    except OSError as exc:
+        raise _error("settings_unavailable", "A configuration directory cannot be read.", directory) from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise _error(
+            "configuration_source_invalid",
+            "A configuration source directory must be a non-symlink directory.",
+            directory,
+        )
+    selected: list[tuple[str, Path, tuple[int, int, int, int]]] = []
+    try:
+        with os.scandir(directory) as iterator:
+            for index, entry in enumerate(iterator, start=1):
+                if index > _MAX_DIRECTORY_ENTRIES:
+                    raise _error(
+                        "configuration_source_limit",
+                        "A configuration directory exceeds its entry limit.",
+                        directory,
+                    )
+                wanted = (
+                    entry.name != "README.md" and entry.name.endswith(".md")
+                    if markdown
+                    else entry.name.endswith(".yaml")
+                )
+                if not wanted:
+                    continue
+                if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                    raise _error(
+                        "configuration_source_invalid",
+                        "A selected configuration source must be a non-symlink regular file.",
+                        Path(entry.path),
+                    )
+                metadata = entry.stat(follow_symlinks=False)
+                source_path = Path(entry.path)
+                relative = f"{directory.name}/{entry.name}"
+                selected.append((relative, source_path, _fingerprint(metadata)))
+    except ConfigurationError:
+        raise
+    except OSError as exc:
+        raise _error("settings_unavailable", "A configuration directory cannot be listed.", directory) from exc
+    return tuple(sorted(selected, key=lambda item: item[0]))
+
+
+def _parse_complete_tree(
+    root_path: Path,
+    captured: list[tuple[str, bytes, tuple[int, int, int, int]]],
+) -> LoadedAgentUiConfiguration:
+    if not captured or captured[0][0] != root_path.name:
+        raise RuntimeError("configuration capture omitted its root")
+    document = _validate_model(
+        AgentUiDocument,
+        _parse_yaml_mapping(root_path, captured[0][1], code="settings_invalid"),
+        root_path,
+        code="settings_invalid",
+    )
+    models: dict[str, ModelResource] = {}
+    plugins: dict[str, HarnessPluginResource] = {}
+    profiles: dict[str, EnvironmentProfileResource] = {}
+    run_extensions: dict[str, EnvironmentRunExtensionResource] = {}
+    mcp: dict[str, McpServerResource] = {}
+    agents: dict[str, AgentResource] = {}
+    subagents: dict[str, CanonicalSubagent] = {}
+    projects: dict[str, ProjectResource] = {}
+    sources: list[SourceDocument] = []
+
+    for relative_path, content, _fingerprint_value in captured:
+        source_path = root_path.parent / relative_path
+        digest = hashlib.sha256(content).hexdigest()
+        text = _decode_source(source_path, content, code="configuration_source_invalid")
+        if relative_path == root_path.name:
+            sources.append(
+                SourceDocument(
+                    relative_path=relative_path,
+                    source_digest=digest,
+                    resource_kind="root",
+                    content=text,
+                )
+            )
+            continue
+        directory = relative_path.split("/", 1)[0]
+        if directory == "subagents":
+            resource = _parse_canonical_markdown(source_path, content)
+            _insert_unique(subagents, resource.id, resource, source_path)
+            kind = "subagent"
+            resource_id = resource.id
+        else:
+            raw = _parse_yaml_mapping(source_path, content, code="configuration_resource_invalid")
+            if directory == "extensions":
+                resource = _validate_extension(raw, source_path)
+                if isinstance(resource, HarnessPluginResource):
+                    _insert_unique(plugins, resource.id, resource, source_path)
+                elif isinstance(resource, EnvironmentProfileResource):
+                    _insert_unique(profiles, resource.id, resource, source_path)
+                else:
+                    _insert_unique(run_extensions, resource.id, resource, source_path)
+            else:
+                model_type = _RESOURCE_TYPES[directory]
+                resource = _validate_model(
+                    model_type,
+                    raw,
+                    source_path,
+                    code="configuration_resource_invalid",
+                )
+                expected_kind = {
+                    "models": "model",
+                    "mcp": "mcp_server",
+                    "agents": "agent",
+                    "projects": "project",
+                }[directory]
+                if resource.kind != expected_kind:
+                    raise _error(
+                        "configuration_resource_invalid",
+                        f"Resource kind does not belong in {directory}/.",
+                        source_path,
+                    )
+                target = {
+                    "models": models,
+                    "mcp": mcp,
+                    "agents": agents,
+                    "projects": projects,
+                }[directory]
+                _insert_unique(target, resource.id, resource, source_path)
+            kind = resource.kind
+            resource_id = resource.id
+        sources.append(
+            SourceDocument(
+                relative_path=relative_path,
+                source_digest=digest,
+                resource_kind=kind,
+                resource_id=resource_id,
+                content=text,
+            )
+        )
+
+    try:
+        return LoadedAgentUiConfiguration(
+            document=document,
+            root_digest=sources[0].source_digest,
+            source_digest=canonical_digest(tuple((item.relative_path, item.source_digest) for item in sources)),
+            sources=tuple(sources),
+            models=models,
+            harness_plugins=plugins,
+            environment_profiles=profiles,
+            environment_run_extensions=run_extensions,
+            mcp_servers=mcp,
+            agents=agents,
+            subagents=subagents,
+            projects=projects,
+        )
+    except ValidationError as exc:
+        raise _validation_error(
+            "configuration_invalid",
+            "Agent UI configuration references are invalid.",
+            root_path,
+            exc,
+        ) from exc
+
+
+def _validate_extension(raw: dict[str, Any], path: Path) -> ExtensionResource:
+    try:
+        serialized = json.dumps(raw, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        return _EXTENSION_ADAPTER.validate_json(serialized, strict=True)
+    except (TypeError, ValueError, ValidationError) as exc:
+        if isinstance(exc, ValidationError):
+            raise _validation_error(
+                "configuration_resource_invalid",
+                "An extension resource is invalid.",
+                path,
+                exc,
+            ) from exc
+        raise _error("configuration_resource_invalid", "An extension resource is invalid.", path) from exc
+
+
+def _validate_model(model_type: type[Any], raw: dict[str, Any], path: Path, *, code: str) -> Any:
+    try:
+        serialized = json.dumps(raw, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        return model_type.model_validate_json(serialized, strict=True)
+    except (TypeError, ValueError, ValidationError) as exc:
+        if isinstance(exc, ValidationError):
+            raise _validation_error(code, "A configuration document is invalid.", path, exc) from exc
+        raise _error(code, "A configuration document is invalid.", path) from exc
+
+
+def _parse_canonical_markdown(path: Path, content: bytes) -> CanonicalSubagent:
+    text = _decode_source(path, content, code="configuration_markdown_invalid")
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    if not lines or lines[0] != "---":
+        raise _error("configuration_markdown_invalid", "Canonical subagent Markdown requires YAML frontmatter.", path)
+    try:
+        closing = lines.index("---", 1)
+    except ValueError as exc:
+        raise _error("configuration_markdown_invalid", "Canonical subagent frontmatter is not closed.", path) from exc
+    raw = _parse_yaml_mapping(
+        path,
+        "\n".join(lines[1:closing]).encode(),
+        code="configuration_markdown_invalid",
+    )
+    if "body" in raw:
+        raise _error("configuration_markdown_invalid", "Markdown body is not a frontmatter field.", path)
+    name = raw.get("name")
+    if "id" not in raw and isinstance(name, str):
+        raw["id"] = f"subagent-{name}"
+    raw["body"] = "\n".join(lines[closing + 1 :]).strip()
+    return _validate_model(
+        CanonicalSubagent,
+        raw,
+        path,
+        code="configuration_markdown_invalid",
+    )
+
+
+def _insert_unique(target: dict[str, Any], resource_id: str, value: Any, path: Path) -> None:
+    if resource_id in target:
+        raise _error(
+            "configuration_duplicate_resource",
+            f"Duplicate resource ID: {resource_id}",
+            path,
+        )
+    target[resource_id] = value
 
 
 def _read_bounded_stable(path: Path, max_bytes: int) -> tuple[bytes, tuple[int, int, int, int]]:
@@ -147,27 +366,12 @@ def _read_bounded_stable(path: Path, max_bytes: int) -> tuple[bytes, tuple[int, 
                     "A configuration source must be a non-symlink regular file.",
                     path,
                 )
-            flags = os.O_RDONLY
-            flags |= getattr(os, "O_BINARY", 0)
-            flags |= getattr(os, "O_NOFOLLOW", 0)
-            flags |= getattr(os, "O_NONBLOCK", 0)
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
             descriptor = os.open(path, flags)
             before = os.fstat(descriptor)
             if not stat.S_ISREG(before.st_mode) or before.st_size > max_bytes:
-                raise _error(
-                    "configuration_source_limit",
-                    "A configuration source exceeds its size limit.",
-                    path,
-                )
-            remaining = max_bytes + 1
-            chunks: list[bytes] = []
-            while remaining:
-                chunk = os.read(descriptor, min(64 * 1024, remaining))
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                remaining -= len(chunk)
-            content = b"".join(chunks)
+                raise _error("configuration_source_limit", "A configuration source exceeds its size limit.", path)
+            content = os.read(descriptor, max_bytes + 1)
             after = os.fstat(descriptor)
             path_after = path.stat(follow_symlinks=False)
         except ConfigurationError:
@@ -177,16 +381,16 @@ def _read_bounded_stable(path: Path, max_bytes: int) -> tuple[bytes, tuple[int, 
         finally:
             if descriptor >= 0:
                 os.close(descriptor)
+        fingerprint = _fingerprint(before)
         if len(content) > max_bytes:
             raise _error("configuration_source_limit", "A configuration source exceeds its size limit.", path)
-        fingerprint_before = _fingerprint(before)
         if (
-            fingerprint_before == _fingerprint(after)
-            and fingerprint_before == _fingerprint(path_before)
-            and fingerprint_before == _fingerprint(path_after)
+            fingerprint == _fingerprint(after)
+            and fingerprint == _fingerprint(path_before)
+            and fingerprint == _fingerprint(path_after)
             and len(content) == before.st_size
         ):
-            return content, fingerprint_before
+            return content, fingerprint
     raise _error("settings_source_unstable", "A configuration source changed during bounded reads.", path)
 
 
@@ -210,151 +414,27 @@ def _fingerprint(metadata: os.stat_result) -> tuple[int, int, int, int]:
     return (metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns)
 
 
-def _scan_subagent_directory(directory: Path) -> tuple[tuple[Path, int, int, int, int], ...]:
-    try:
-        metadata = directory.lstat()
-    except FileNotFoundError:
-        return ()
-    except OSError as exc:
-        raise _error("settings_unavailable", "The canonical subagent directory cannot be read.", directory) from exc
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-        raise _error(
-            "configuration_source_invalid",
-            "The canonical subagent source must be a non-symlink directory.",
-            directory,
-        )
-    selected: list[tuple[Path, int, int, int, int]] = []
-    try:
-        with os.scandir(directory) as entries:
-            entry_count = 0
-            for entry in entries:
-                entry_count += 1
-                if entry_count > _MAX_DIRECTORY_ENTRIES:
-                    raise _error(
-                        "configuration_source_limit",
-                        "The canonical subagent directory exceeds its entry limit.",
-                        directory,
-                    )
-                if entry.name.lower() == "readme.md" or not entry.name.endswith(".md"):
-                    continue
-                if not entry.is_file(follow_symlinks=False):
-                    continue
-                if len(selected) >= _MAX_MARKDOWN_FILES:
-                    raise _error(
-                        "configuration_source_limit",
-                        "Too many canonical subagent files were selected.",
-                        directory,
-                    )
-                item = entry.stat(follow_symlinks=False)
-                selected.append((Path(entry.path), *_fingerprint(item)))
-    except ConfigurationError:
-        raise
-    except OSError as exc:
-        raise _error("settings_unavailable", "The canonical subagent directory cannot be listed.", directory) from exc
-    return tuple(sorted(selected, key=lambda item: item[0].name))
-
-
-def _parse_agent_ui_document(path: Path, content: bytes) -> AgentUiDocument:
-    raw = _parse_yaml_mapping(
-        path,
-        content,
-        code="settings_invalid",
-        source_name="Agent UI configuration YAML",
-    )
-    _resolve_process_paths(raw, base=path.parent)
-    try:
-        serialized = json.dumps(raw, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-        return AgentUiDocument.model_validate_json(serialized, strict=True)
-    except (TypeError, ValueError, ValidationError) as exc:
-        if isinstance(exc, ValidationError):
-            raise _validation_error(
-                "settings_invalid", "The Agent UI configuration document is invalid.", path, exc
-            ) from exc
-        raise _error("settings_invalid", "The Agent UI configuration document is invalid.", path) from exc
-
-
-def _parse_canonical_markdown(path: Path, content: bytes) -> CanonicalSubagent:
+def _decode_source(path: Path, content: bytes, *, code: str) -> str:
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise _error(
-            "configuration_markdown_invalid", "Canonical subagent Markdown must be valid UTF-8.", path
-        ) from exc
+        raise _error(code, "A configuration source must be valid UTF-8.", path) from exc
     if "\x00" in text:
-        raise _error("configuration_markdown_invalid", "Canonical subagent Markdown contains NUL.", path)
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = normalized.split("\n")
-    if not lines or lines[0] != "---":
-        raise _error("configuration_markdown_invalid", "Canonical subagent Markdown requires YAML frontmatter.", path)
-    try:
-        closing = lines.index("---", 1)
-    except ValueError as exc:
-        raise _error("configuration_markdown_invalid", "Canonical subagent frontmatter is not closed.", path) from exc
-    frontmatter = "\n".join(lines[1:closing]).encode()
-    raw = _parse_yaml_mapping(
-        path,
-        frontmatter,
-        code="configuration_markdown_invalid",
-        source_name="Canonical subagent frontmatter",
-    )
-    if "body" in raw:
-        raise _error("configuration_markdown_invalid", "Markdown body is not a frontmatter field.", path)
-    raw["body"] = "\n".join(lines[closing + 1 :]).strip()
-    try:
-        return CanonicalSubagent.model_validate(raw, strict=True)
-    except ValidationError as exc:
-        raise _validation_error(
-            "configuration_markdown_invalid",
-            "A canonical subagent definition is invalid.",
-            path,
-            exc,
-        ) from exc
+        raise _error(code, "A configuration source contains NUL.", path)
+    return text
 
 
-def _resolve_process_paths(raw: dict[str, Any], *, base: Path) -> None:
-    process = raw.get("process")
-    if not isinstance(process, dict):
-        return
-    storage = process.get("storage")
-    if isinstance(storage, dict):
-        _resolve_mapping_path(storage, "data_root", base)
-    envd_runtime = process.get("envd_runtime")
-    if isinstance(envd_runtime, dict):
-        _resolve_mapping_path(envd_runtime, "executable", base)
-
-
-def _resolve_mapping_path(mapping: dict[str, Any], name: str, base: Path) -> None:
-    value = mapping.get(name)
-    if not isinstance(value, str) or "\x00" in value:
-        return
-    expanded = Path(value).expanduser()
-    if not expanded.is_absolute():
-        expanded = base / expanded
-    mapping[name] = str(expanded.resolve(strict=False))
-
-
-def _parse_yaml_mapping(
-    path: Path,
-    content: bytes,
-    *,
-    code: str,
-    source_name: str,
-) -> dict[str, Any]:
-    try:
-        text = content.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise _error(code, f"{source_name} is not valid UTF-8.", path) from exc
-    if "\x00" in text:
-        raise _error(code, f"{source_name} contains NUL.", path)
+def _parse_yaml_mapping(path: Path, content: bytes, *, code: str) -> dict[str, Any]:
+    text = _decode_source(path, content, code=code)
     try:
         depth = 0
         nodes = 0
         for event in yaml.parse(text, Loader=yaml.SafeLoader):
             if isinstance(event, yaml.events.AliasEvent) or getattr(event, "anchor", None) is not None:
-                raise _error(code, f"{source_name} forbids YAML anchors and aliases.", path)
+                raise _error(code, "Configuration YAML forbids anchors and aliases.", path)
             tag = getattr(event, "tag", None)
             if tag is not None and not str(tag).startswith("tag:yaml.org,2002:"):
-                raise _error(code, f"{source_name} forbids custom YAML tags.", path)
+                raise _error(code, "Configuration YAML forbids custom tags.", path)
             if isinstance(event, (yaml.events.MappingStartEvent, yaml.events.SequenceStartEvent)):
                 depth += 1
                 nodes += 1
@@ -363,16 +443,16 @@ def _parse_yaml_mapping(
             elif isinstance(event, yaml.events.ScalarEvent):
                 nodes += 1
             if nodes > _MAX_YAML_NODES or depth > _MAX_YAML_DEPTH:
-                raise _error("settings_source_limit", "A configuration YAML source exceeds structural limits.", path)
+                raise _error("configuration_source_limit", "Configuration YAML exceeds structural limits.", path)
         value = yaml.load(text, Loader=_UniqueSafeLoader)
     except ConfigurationError:
         raise
-    except RecursionError as exc:
-        raise _error("settings_source_limit", f"{source_name} exceeds structural limits.", path) from exc
-    except (yaml.YAMLError, UnicodeError, ValueError) as exc:
-        raise _error(code, f"{source_name} has invalid syntax.", path) from exc
-    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
-        raise _error(code, f"{source_name} must be a string-keyed mapping.", path)
+    except (yaml.YAMLError, RecursionError, UnicodeError, ValueError) as exc:
+        raise _error(code, "Configuration YAML is malformed.", path) from exc
+    if value is None:
+        value = {}
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        raise _error(code, "Configuration YAML must be a string-keyed mapping.", path)
     return value
 
 
@@ -380,32 +460,34 @@ class _UniqueSafeLoader(yaml.SafeLoader):
     pass
 
 
-def _construct_mapping(loader: _UniqueSafeLoader, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
-    pairs = loader.construct_pairs(node, deep=deep)
-    result: dict[Any, Any] = {}
-    for key, value in pairs:
-        if not isinstance(key, str):
-            raise yaml.constructor.ConstructorError(None, None, "mapping keys must be strings", node.start_mark)
-        if key in result:
-            raise yaml.constructor.ConstructorError(None, None, "duplicate mapping key", node.start_mark)
-        result[key] = value
-    return result
+def _construct_unique_mapping(loader: _UniqueSafeLoader, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key == "<<":
+            raise yaml.constructor.ConstructorError(None, None, "YAML merge keys are forbidden", key_node.start_mark)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(None, None, f"duplicate YAML key: {key!r}", key_node.start_mark)
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
 
 
-_UniqueSafeLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping)
+_UniqueSafeLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
 
 
 def _validation_error(code: str, message: str, path: Path, exc: ValidationError) -> ConfigurationError:
-    first = exc.errors(include_input=False, include_url=False)[0] if exc.error_count() else None
-    details: dict[str, Any] = {"path": str(path), "validation_error_count": exc.error_count()}
-    if first is not None:
-        details["location"] = ".".join(str(item) for item in first["loc"])
-        details["reason"] = first["type"]
-    return ConfigurationError(message, code=code, details=details)
+    return ConfigurationError(
+        message,
+        code=code,
+        details={"path": str(path)[-4096:], "validation_error_count": exc.error_count()},
+    )
 
 
 def _error(code: str, message: str, path: Path) -> ConfigurationError:
-    return ConfigurationError(message, code=code, details={"path": str(path)})
+    return ConfigurationError(message, code=code, details={"path": str(path)[-4096:]})
 
 
 __all__ = ["empty_agent_ui_configuration", "load_agent_ui_configuration"]

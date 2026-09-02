@@ -82,6 +82,7 @@ version = "0.0.0"
 source = { editable = "packages/agent-harness" }
 dependencies = [
     { name = "a13n-environment-provider" },
+    { name = "anyio" },
     { name = "genai-prices" },
     { name = "httpx2" },
     { name = "mem0ai" },
@@ -103,6 +104,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-environment-provider", editable = "packages/agent-environment-provider" },
+    { name = "anyio", specifier = ">=4,<5" },
     { name = "genai-prices", specifier = ">=0.1.4,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "mem0ai", specifier = ">=2.0.19,<3" },
@@ -244,10 +246,13 @@ dependencies = [
     { name = "alembic" },
     { name = "anyio" },
     { name = "fastmcp-slim", extra = ["client"] },
+    { name = "filelock" },
     { name = "httpcore2" },
+    { name = "httpx" },
     { name = "httpx2" },
     { name = "mammoth" },
     { name = "markdownify" },
+    { name = "openai" },
     { name = "openpyxl" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
@@ -275,10 +280,13 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.1,<2" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "fastmcp-slim", extras = ["client"], specifier = ">=3.4,<4" },
+    { name = "filelock", specifier = ">=3.18,<4" },
     { name = "httpcore2", specifier = ">=2.12,<3" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "mammoth", specifier = ">=1.11,<2" },
     { name = "markdownify", specifier = ">=1,<2" },
+    { name = "openai", specifier = ">=3.5,<4" },
     { name = "openpyxl", specifier = ">=3.1,<4" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.33,<2.34" },

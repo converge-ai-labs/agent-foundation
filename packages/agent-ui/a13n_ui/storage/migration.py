@@ -73,7 +73,7 @@ class DatabaseMigrator:
         engine = self._engine()
         try:
             with engine.connect() as connection:
-                self._configure(connection)
+                self._configure(connection, foreign_keys=not write)
                 if write:
                     connection.exec_driver_sql("BEGIN IMMEDIATE")
                 config = self._config()
@@ -81,6 +81,11 @@ class DatabaseMigrator:
                 operation(config)
                 if connection.in_transaction():
                     connection.commit()
+                if write:
+                    connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                    violations = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+                    if violations:
+                        raise DatabaseSchemaError("Agent UI migration left invalid foreign keys")
         finally:
             engine.dispose()
 
@@ -101,8 +106,8 @@ class DatabaseMigrator:
         config.set_main_option("timezone", "UTC")
         return config
 
-    def _configure(self, connection: Connection) -> None:
-        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+    def _configure(self, connection: Connection, *, foreign_keys: bool = True) -> None:
+        connection.exec_driver_sql(f"PRAGMA foreign_keys={'ON' if foreign_keys else 'OFF'}")
         connection.exec_driver_sql(f"PRAGMA busy_timeout={int(self._busy_timeout_seconds * 1000)}")
         connection.exec_driver_sql("PRAGMA journal_mode=WAL")
         connection.exec_driver_sql("PRAGMA synchronous=FULL")

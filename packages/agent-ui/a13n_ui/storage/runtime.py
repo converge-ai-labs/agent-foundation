@@ -18,7 +18,7 @@ from .repositories import (
     ChildExecutionRepository,
     ConfigurationRepository,
     EnvironmentStateRepository,
-    SessionRepository,
+    ThreadRepository,
 )
 
 if TYPE_CHECKING:
@@ -41,7 +41,7 @@ class LocalStore:
         self.database = database
         self.objects = objects
         self.configurations = ConfigurationRepository(database.sessions)
-        self.sessions = SessionRepository(database.sessions)
+        self.threads = ThreadRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)
 

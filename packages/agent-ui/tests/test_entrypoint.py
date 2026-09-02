@@ -35,13 +35,5 @@ def test_terminal_frontend_uses_process_local_app(tmp_path: Path) -> None:
 
 def _write_settings(tmp_path: Path) -> Path:
     settings = tmp_path / "settings.yaml"
-    settings.write_text(
-        f"""
-schema_version: "1"
-process:
-  storage:
-    data_root: {(tmp_path / "data").as_posix()}
-""".strip()
-        + "\n"
-    )
+    settings.write_text('schema_version: "2"\n')
     return settings

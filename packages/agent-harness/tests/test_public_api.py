@@ -7,6 +7,7 @@ import a13n_harness.capability_types as capability_types
 import a13n_harness.environment as environment
 import a13n_harness.environment.advanced as advanced_environment
 import a13n_harness.filters as filters
+import a13n_harness.model_auth as model_auth
 import a13n_harness.models as models
 import a13n_harness.pricing as pricing
 import a13n_harness.tools as tools
@@ -220,6 +221,29 @@ def test_feature_facades_export_documented_families() -> None:
     assert expected_capabilities <= set(capabilities.__all__)
     assert expected_toolsets == set(toolsets.__all__)
     assert expected_filters == set(filters.__all__)
+
+
+def test_model_auth_feature_facade_is_public_without_root_reexports() -> None:
+    expected = {
+        "CodexCredentialSource",
+        "CodexCredentials",
+        "CodexOAuthFlow",
+        "CodexSubscriptionModel",
+        "CredentialPersistenceError",
+        "CredentialRefreshError",
+        "GrokCredentialSource",
+        "GrokCredentials",
+        "ModelAuthenticationError",
+        "OAuthFlow",
+        "build_codex_model",
+        "build_grok_model",
+        "refresh_codex_credentials",
+        "refresh_grok_credentials",
+    }
+
+    assert expected == set(model_auth.__all__)
+    assert all(hasattr(model_auth, name) for name in expected)
+    assert expected.isdisjoint(harness.__all__)
 
 
 def test_environment_and_managed_tool_import_routes_are_public() -> None:

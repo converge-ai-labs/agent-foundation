@@ -34,6 +34,7 @@ The Harness adds:
 
 - process-local `AgentDefinition` containing native objects;
 - one synchronous `HarnessBuilder` that calls `Agent.from_spec()` and captures optional gateway Provider construction;
+- SDK-first provider-compatible Model OAuth values, Host credential sources, refresh lifecycle, and native Model constructors through [`a13n_harness.model_auth`](16a-model-authentication.md);
 - trusted code-first plugins around the outer semantic-input-to-result boundary;
 - fresh `RunBindings` and one `AgentContext` per logical run;
 - fresh Environment adapters entered before input and Pydantic work, exposed through one stable Run-local bound facade;
@@ -69,7 +70,7 @@ A concrete native Model is used directly. A string model selection reaches the t
 - with `RunBindings.model_resolver`, the fresh async callable returns a native Model or raises;
 - without a resolver, the thin Capability calls Harness `infer_model()` with the builder's optional gateway Provider factory.
 
-Every request then receives independently switchable Thread-derived defaults for `x-session-id` in native `ModelSettings.extra_headers` and `openai_prompt_cache_key`, unless effective settings explicitly override them. The resolved native Model carries its own effective profile and provider adapter behavior; the selected adapter consumes only settings it recognizes. The Harness does not duplicate settings/profile merge logic. When explicitly selected, `SelfHealingModelCapability` uses the public request wrapper hook to install `SelfHealingModel` around the final effective Model after concrete selection, logical resolution, or native inference.
+Every request then receives independently switchable Thread-derived defaults for `x-session-id` in native `ModelSettings.extra_headers` and `openai_prompt_cache_key`, unless effective settings explicitly override them. The resolved native Model carries its own effective profile and provider adapter behavior; the selected adapter consumes only settings it recognizes. OAuth-backed Models use the separate [Model Authentication contract](16a-model-authentication.md), which keeps storage Host-owned while the Harness owns process-local refresh and provider wire behavior. The Harness does not duplicate settings/profile merge logic. When explicitly selected, `SelfHealingModelCapability` uses the public request wrapper hook to install `SelfHealingModel` around the final effective Model after concrete selection, logical resolution, or native inference.
 
 Recovery ownership is intentionally split:
 

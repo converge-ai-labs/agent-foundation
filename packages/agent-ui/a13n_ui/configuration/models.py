@@ -1,10 +1,12 @@
-"""Strict serialized configuration and canonical subagent contracts."""
+"""Strict serialized contracts for the Agent UI configuration tree."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import re
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
@@ -17,20 +19,9 @@ from pydantic import (
     model_validator,
 )
 
-from a13n_ui.settings import AgentUiSettings
-
-type ConfigName = Annotated[
-    str,
-    Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$"),
-]
-type CatalogKey = Annotated[
-    str,
-    Field(min_length=3, max_length=160, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$"),
-]
-type ToolName = Annotated[
-    str,
-    Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$"),
-]
+_RESOURCE_ID = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
+_NAME = r"^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$"
+_CATALOG_KEY = r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SECRET_FIELD_NAMES = frozenset(
     {
@@ -47,6 +38,12 @@ _SECRET_FIELD_NAMES = frozenset(
     }
 )
 
+type ResourceId = Annotated[str, Field(min_length=3, max_length=128, pattern=_RESOURCE_ID)]
+type CatalogKey = Annotated[str, Field(min_length=1, max_length=200, pattern=_CATALOG_KEY)]
+type ToolName = Annotated[str, Field(min_length=1, max_length=128, pattern=_CATALOG_KEY)]
+type RosterName = Annotated[str, Field(min_length=1, max_length=63, pattern=_NAME)]
+type SourceDigest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
 
 class StrictModel(BaseModel):
     """Immutable strict behavior shared by serialized contracts."""
@@ -61,26 +58,49 @@ class StrictModel(BaseModel):
         normalized = dict(value)
         for name, field in cls.model_fields.items():
             raw = normalized.get(name)
-            origin = _collection_origin(field.annotation)
-            if isinstance(raw, list) and origin is tuple:
+            if isinstance(raw, list) and _contains_tuple(field.annotation):
                 normalized[name] = tuple(raw)
         return normalized
 
 
-def _collection_origin(annotation: object) -> object:
-    origin = get_origin(annotation)
-    if origin is tuple:
-        return origin
-    for argument in get_args(annotation):
-        nested = _collection_origin(argument)
-        if nested is tuple:
-            return nested
-    return origin
+class ProcessConfiguration(StrictModel):
+    log_level: str = Field(default="INFO", min_length=1, max_length=32)
+    log_format: Literal["pretty", "json"] = "pretty"
+
+    @field_validator("log_level")
+    @classmethod
+    def _normalize_log_level(cls, value: str) -> str:
+        normalized = value.upper()
+        if normalized not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
+            raise ValueError("log_level must be a standard logging level")
+        return normalized
+
+
+class GlobalDefaults(StrictModel):
+    project: ResourceId | None = None
+    agent: ResourceId | None = None
+    environment_profile: ResourceId | None = None
+    harness_plugins: tuple[ResourceId, ...] = ()
+    environment_run_extensions: tuple[ResourceId, ...] = ()
+    mcp_servers: tuple[ResourceId, ...] = ()
+
+    @field_validator("harness_plugins", "environment_run_extensions", "mcp_servers")
+    @classmethod
+    def _unique_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("default resource IDs must be unique and ordered")
+        return value
+
+
+class AgentUiDocument(StrictModel):
+    """Root ``a13n-ui.yaml`` document."""
+
+    schema_version: Literal["2"] = "2"
+    process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
+    defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
 
 
 class EnvironmentVariableSource(StrictModel):
-    """A credential or runtime value resolved from the App process environment."""
-
     env: str = Field(min_length=1, max_length=256)
 
     @field_validator("env")
@@ -91,28 +111,103 @@ class EnvironmentVariableSource(StrictModel):
         return value
 
 
-class ModelConfig(StrictModel):
-    model: str = Field(min_length=1, max_length=512)
-    api_key: EnvironmentVariableSource | None = None
+class ApiKeyAuthentication(StrictModel):
+    kind: Literal["api_key"]
+    env: str = Field(min_length=1, max_length=256)
+
+    @field_validator("env")
+    @classmethod
+    def _valid_environment_name(cls, value: str) -> str:
+        if not _ENV_NAME.fullmatch(value):
+            raise ValueError("env must be a valid environment variable name")
+        return value
+
+
+class CodexSubscriptionAuthentication(StrictModel):
+    kind: Literal["codex_subscription"]
+
+
+class GrokSubscriptionAuthentication(StrictModel):
+    kind: Literal["grok_subscription"]
+
+
+type ModelAuthentication = Annotated[
+    ApiKeyAuthentication | CodexSubscriptionAuthentication | GrokSubscriptionAuthentication,
+    Field(discriminator="kind"),
+]
+
+
+class ModelResource(StrictModel):
+    schema_version: Literal["1"]
+    kind: Literal["model"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    route: str = Field(min_length=3, max_length=512)
+    authentication: ModelAuthentication
     settings: dict[str, JsonValue] = Field(default_factory=dict)
-    model_cfg: dict[str, JsonValue] = Field(default_factory=dict)
+    model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _credential_free_values(self) -> Self:
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "model-")
         _validate_json_mapping(self.settings)
-        _validate_json_mapping(self.model_cfg)
+        _validate_json_mapping(self.model_configuration)
         return self
 
 
-class PluginConfig(StrictModel):
-    plugin: CatalogKey
-    enabled: bool = True
+class HarnessPluginResource(StrictModel):
+    schema_version: Literal["1"]
+    kind: Literal["harness_plugin"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    plugin_key: CatalogKey
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _credential_free_configuration(self) -> Self:
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "plugin-")
         _validate_json_mapping(self.configuration)
         return self
+
+
+class EnvironmentProfileResource(StrictModel):
+    schema_version: Literal["1"]
+    kind: Literal["environment_profile"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    provider_key: CatalogKey
+    provider_schema_version: str = Field(min_length=1, max_length=64)
+    provider_configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    adapter_key: CatalogKey
+    adapter_configuration: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "environment-")
+        _validate_json_mapping(self.provider_configuration)
+        _validate_json_mapping(self.adapter_configuration)
+        return self
+
+
+class EnvironmentRunExtensionResource(StrictModel):
+    schema_version: Literal["1"]
+    kind: Literal["environment_run_extension"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    extension_key: CatalogKey
+    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "extension-")
+        _validate_json_mapping(self.configuration)
+        return self
+
+
+type ExtensionResource = Annotated[
+    HarnessPluginResource | EnvironmentProfileResource | EnvironmentRunExtensionResource,
+    Field(discriminator="kind"),
+]
 
 
 class McpCommandTransport(StrictModel):
@@ -141,159 +236,153 @@ class McpRemoteTransport(StrictModel):
     url: str = Field(min_length=1, max_length=2048)
     headers: dict[str, EnvironmentVariableSource] = Field(default_factory=dict)
 
-    @field_validator("url")
-    @classmethod
-    def _credential_free_url(cls, value: str) -> str:
-        parsed = urlsplit(value)
+    @model_validator(mode="after")
+    def _safe_remote(self) -> Self:
+        parsed = urlsplit(self.url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
             raise ValueError("MCP URL must be a credential-free HTTP(S) URL")
         query_names = {unquote_plus(part.split("=", 1)[0]).lower() for part in parsed.query.split("&") if part}
         if query_names & _SECRET_FIELD_NAMES:
             raise ValueError("MCP URL query parameters must not contain credentials")
-        return value
+        loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        if parsed.scheme == "http" and (not loopback or self.headers):
+            raise ValueError("plain HTTP MCP is limited to header-free loopback URLs")
+        return self
 
 
 type McpTransport = McpCommandTransport | McpRemoteTransport
 
 
-class McpServerConfig(StrictModel):
-    enabled: bool = True
+class McpServerResource(StrictModel):
+    schema_version: Literal["1"]
+    kind: Literal["mcp_server"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
+
+    @model_validator(mode="after")
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "mcp-")
+        return self
+
+
+class CapabilitySelection(StrictModel):
+    capability: CatalogKey
+    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _valid_configuration(self) -> Self:
+        _validate_json_mapping(self.configuration)
+        return self
 
 
 class MarkdownSubagentSelection(StrictModel):
-    markdown: ConfigName
+    markdown: ResourceId
+
+    @field_validator("markdown")
+    @classmethod
+    def _valid_id(cls, value: str) -> str:
+        _require_id_prefix(value, "subagent-")
+        return value
 
 
 class AgentSubagentSelection(StrictModel):
-    agent: ConfigName
+    agent: ResourceId
+
+    @field_validator("agent")
+    @classmethod
+    def _valid_id(cls, value: str) -> str:
+        _require_id_prefix(value, "agent-")
+        return value
 
 
 type SubagentSelection = MarkdownSubagentSelection | AgentSubagentSelection
 
 
-class AgentConfig(StrictModel):
-    model: ConfigName
+class AgentResource(StrictModel):
+    schema_version: Literal["1"]
+    kind: Literal["agent"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    model: ResourceId
     instructions: str = Field(default="", max_length=1024 * 1024)
-    plugins: tuple[ConfigName, ...] | None = None
-    mcp_servers: tuple[ConfigName, ...] | None = None
+    capabilities: tuple[CapabilitySelection, ...] = Field(default=(), max_length=128)
+    harness_plugins: tuple[ResourceId, ...] | None = None
+    mcp_servers: tuple[ResourceId, ...] | None = None
+    tools: tuple[ToolName, ...] | None = None
     subagents: tuple[SubagentSelection, ...] = Field(default=(), max_length=256)
-    environment: ConfigName | None = None
 
-    @field_validator("plugins", "mcp_servers")
+    @model_validator(mode="after")
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "agent-")
+        _require_id_prefix(self.model, "model-")
+        for values in (self.harness_plugins, self.mcp_servers, self.tools):
+            if values is not None and len(values) != len(set(values)):
+                raise ValueError("Agent selections must be unique and ordered")
+        capability_names = tuple(item.capability for item in self.capabilities)
+        if len(capability_names) != len(set(capability_names)):
+            raise ValueError("Agent Capability selections must be unique")
+        return self
+
+
+class ProjectRoot(StrictModel):
+    path: str = Field(min_length=1, max_length=4096)
+
+    @field_validator("path")
     @classmethod
-    def _unique_selections(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
-        if value is not None and len(value) != len(set(value)):
-            raise ValueError("selection names must be unique")
-        return value
+    def _absolute_path(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("Project root contains NUL")
+        expanded = Path(value).expanduser()
+        if not expanded.is_absolute():
+            raise ValueError("Project roots must be absolute")
+        return str(expanded.resolve(strict=False))
 
 
-class EnvironmentProfile(StrictModel):
-    kind: Literal["native", "local_eip", "provider"]
-    provider: ConfigName | None = None
-    configuration: dict[str, JsonValue] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _consistent_provider(self) -> Self:
-        if self.kind == "provider" and self.provider is None:
-            raise ValueError("provider Environment profiles require provider")
-        if self.kind != "provider" and self.provider is not None:
-            raise ValueError("built-in Environment profiles cannot select provider")
-        _validate_json_mapping(self.configuration)
-        return self
-
-
-class EnvironmentProviderConfig(StrictModel):
-    provider: CatalogKey
-    binder: CatalogKey
-    enabled: bool = True
-    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+class ProjectResource(StrictModel):
+    schema_version: Literal["1"]
+    kind: Literal["project"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    position: int = Field(default=0)
+    roots: tuple[ProjectRoot, ...] = Field(min_length=1, max_length=64)
 
     @model_validator(mode="after")
-    def _credential_free_configuration(self) -> Self:
-        _validate_json_mapping(self.configuration)
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "project-")
+        paths = tuple(item.path for item in self.roots)
+        if len(paths) != len(set(paths)):
+            raise ValueError("Project roots must be unique and ordered")
+        for path in paths:
+            candidate = Path(path)
+            if not candidate.exists() or not candidate.is_dir():
+                raise ValueError(f"Project root is not an existing directory: {path}")
         return self
-
-
-class AgentUiDefaults(StrictModel):
-    agent: ConfigName | None = None
-    environment: ConfigName | None = None
-
-
-class AgentUiDocument(StrictModel):
-    """The complete desired configuration loaded from one a13n-ui.yaml."""
-
-    schema_version: Literal["1"] = "1"
-    process: AgentUiSettings = Field(default_factory=AgentUiSettings)
-    defaults: AgentUiDefaults = Field(default_factory=AgentUiDefaults)
-    models: dict[ConfigName, ModelConfig] = Field(default_factory=dict)
-    plugins: dict[ConfigName, PluginConfig] = Field(default_factory=dict)
-    mcp_servers: dict[ConfigName, McpServerConfig] = Field(default_factory=dict)
-    agents: dict[ConfigName, AgentConfig] = Field(default_factory=dict)
-    environments: dict[ConfigName, EnvironmentProfile] = Field(default_factory=dict)
-    environment_providers: dict[ConfigName, EnvironmentProviderConfig] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _validate_references(self) -> Self:
-        if self.defaults.agent is not None and self.defaults.agent not in self.agents:
-            raise ValueError("defaults.agent selects an unknown Agent")
-        if self.defaults.environment is not None and self.defaults.environment not in self.environments:
-            raise ValueError("defaults.environment selects an unknown Environment profile")
-
-        enabled_plugins = {name for name, item in self.plugins.items() if item.enabled}
-        enabled_mcp = {name for name, item in self.mcp_servers.items() if item.enabled}
-        enabled_providers = {name for name, item in self.environment_providers.items() if item.enabled}
-        for name, agent in self.agents.items():
-            if agent.model not in self.models:
-                raise ValueError(f"Agent {name!r} selects an unknown Model")
-            if agent.environment is not None and agent.environment not in self.environments:
-                raise ValueError(f"Agent {name!r} selects an unknown Environment profile")
-            if agent.plugins is not None and not set(agent.plugins) <= enabled_plugins:
-                raise ValueError(f"Agent {name!r} selects an unknown or disabled Plugin")
-            if agent.mcp_servers is not None and not set(agent.mcp_servers) <= enabled_mcp:
-                raise ValueError(f"Agent {name!r} selects an unknown or disabled MCP server")
-            for selection in agent.subagents:
-                if isinstance(selection, AgentSubagentSelection) and selection.agent not in self.agents:
-                    raise ValueError(f"Agent {name!r} selects an unknown reusable Agent")
-
-        for name, profile in self.environments.items():
-            if profile.kind == "provider" and profile.provider not in enabled_providers:
-                raise ValueError(f"Environment profile {name!r} selects an unknown or disabled Provider")
-        _reject_agent_cycles(self.agents)
-        return self
-
-    def selected_plugins(self, agent: AgentConfig) -> tuple[str, ...]:
-        if agent.plugins is None:
-            return tuple(sorted(name for name, item in self.plugins.items() if item.enabled))
-        return agent.plugins
-
-    def selected_mcp_servers(self, agent: AgentConfig) -> tuple[str, ...]:
-        if agent.mcp_servers is None:
-            return tuple(sorted(name for name, item in self.mcp_servers.items() if item.enabled))
-        return agent.mcp_servers
 
 
 class CanonicalSubagent(StrictModel):
-    """Normalized canonical sibling Markdown behavior."""
+    """Normalized canonical Markdown child resource."""
 
-    name: ConfigName
+    id: ResourceId
+    name: RosterName
     description: str = Field(min_length=1, max_length=4096)
     instruction: str | None = Field(default=None, min_length=1, max_length=16 * 1024)
-    model: ConfigName | None = None
-    model_settings: dict[str, JsonValue] | None = None
-    model_cfg: dict[str, JsonValue] | None = None
+    model: ResourceId | None = None
     tools: tuple[ToolName, ...] | None = None
-    optional_tools: tuple[ToolName, ...] | None = None
     body: str = Field(default="", max_length=1024 * 1024)
+
+    @field_validator("id")
+    @classmethod
+    def _valid_id(cls, value: str) -> str:
+        _require_id_prefix(value, "subagent-")
+        return value
 
     @field_validator("model", mode="before")
     @classmethod
     def _normalize_inherited_model(cls, value: object) -> object:
-        if value == "inherit":
-            return None
-        return value
+        return None if value in {None, "inherit"} else value
 
-    @field_validator("tools", "optional_tools", mode="before")
+    @field_validator("tools", mode="before")
     @classmethod
     def _normalize_tool_list(cls, value: object) -> object:
         if value is None:
@@ -302,77 +391,117 @@ class CanonicalSubagent(StrictModel):
             value = tuple(item.strip() for item in value.split(",") if item.strip())
         elif isinstance(value, list):
             value = tuple(value)
-        if isinstance(value, tuple) and len(value) != len(set(value)):
-            raise ValueError("tool names must be unique and ordered")
+        if isinstance(value, tuple):
+            return tuple(dict.fromkeys(value))
         return value
 
-    @model_validator(mode="after")
-    def _valid_overrides(self) -> Self:
-        if self.model_settings is not None:
-            _validate_json_mapping(self.model_settings)
-        if self.model_cfg is not None:
-            _validate_json_mapping(self.model_cfg)
-        if self.tools is not None and self.optional_tools is not None:
-            overlap = set(self.tools) & set(self.optional_tools)
-            if overlap:
-                raise ValueError("tools and optional_tools must not overlap")
-        return self
 
-
-class CanonicalSubagentSource(StrictModel):
-    """One normalized Markdown definition plus safe file provenance."""
-
-    document: CanonicalSubagent
+class SourceDocument(StrictModel):
     relative_path: str = Field(min_length=1, max_length=4096)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_digest: SourceDigest
+    resource_kind: str
+    resource_id: ResourceId | None = None
+    content: str = Field(max_length=1024 * 1024)
 
 
 class LoadedAgentUiConfiguration(StrictModel):
-    """One graph-valid source candidate awaiting trusted catalog resolution."""
+    """One complete graph-valid configuration-tree generation."""
 
     document: AgentUiDocument
-    yaml_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    subagents: tuple[CanonicalSubagentSource, ...] = ()
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    root_digest: SourceDigest
+    source_digest: SourceDigest
+    sources: tuple[SourceDocument, ...]
+    models: dict[ResourceId, ModelResource] = Field(default_factory=dict)
+    harness_plugins: dict[ResourceId, HarnessPluginResource] = Field(default_factory=dict)
+    environment_profiles: dict[ResourceId, EnvironmentProfileResource] = Field(default_factory=dict)
+    environment_run_extensions: dict[ResourceId, EnvironmentRunExtensionResource] = Field(default_factory=dict)
+    mcp_servers: dict[ResourceId, McpServerResource] = Field(default_factory=dict)
+    agents: dict[ResourceId, AgentResource] = Field(default_factory=dict)
+    subagents: dict[ResourceId, CanonicalSubagent] = Field(default_factory=dict)
+    projects: dict[ResourceId, ProjectResource] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _validate_complete_graph(self) -> Self:
-        markdown = {item.document.name: item.document for item in self.subagents}
-        if len(markdown) != len(self.subagents):
-            raise ValueError("canonical Markdown child names must be unique")
-        for child in markdown.values():
-            if child.model is not None and child.model not in self.document.models:
-                raise ValueError(f"Markdown child {child.name!r} selects an unknown Model")
-        for name, agent in self.document.agents.items():
-            child_names: list[str] = []
+    def _validate_graph(self) -> Self:
+        defaults = self.document.defaults
+        _require_reference(defaults.project, self.projects, "defaults.project")
+        _require_reference(defaults.agent, self.agents, "defaults.agent")
+        if defaults.environment_profile != "environment-native":
+            _require_reference(defaults.environment_profile, self.environment_profiles, "defaults.environment_profile")
+        for item in defaults.harness_plugins:
+            _require_reference(item, self.harness_plugins, "defaults.harness_plugins")
+        for item in defaults.environment_run_extensions:
+            _require_reference(item, self.environment_run_extensions, "defaults.environment_run_extensions")
+        for item in defaults.mcp_servers:
+            _require_reference(item, self.mcp_servers, "defaults.mcp_servers")
+
+        for agent in self.agents.values():
+            _require_reference(agent.model, self.models, f"{agent.id}.model")
+            for item in agent.harness_plugins or ():
+                _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
+            for item in agent.mcp_servers or ():
+                _require_reference(item, self.mcp_servers, f"{agent.id}.mcp_servers")
+            roster_names: list[str] = []
             for selection in agent.subagents:
-                if isinstance(selection, MarkdownSubagentSelection):
-                    child = markdown.get(selection.markdown)
+                if isinstance(selection, AgentSubagentSelection):
+                    child = self.agents.get(selection.agent)
                     if child is None:
-                        raise ValueError(f"Agent {name!r} selects an unknown Markdown child")
-                    child_names.append(child.name)
+                        raise ValueError(f"{agent.id} selects unknown Agent {selection.agent}")
+                    roster_names.append(child.id)
                 else:
-                    child_names.append(selection.agent)
-            if len(child_names) != len(set(child_names)):
-                raise ValueError(f"Agent {name!r} has duplicate final child names")
+                    child = self.subagents.get(selection.markdown)
+                    if child is None:
+                        raise ValueError(f"{agent.id} selects unknown Markdown subagent {selection.markdown}")
+                    roster_names.append(child.name)
+            if len(roster_names) != len(set(roster_names)):
+                raise ValueError(f"{agent.id} has duplicate immediate roster names")
+        for child in self.subagents.values():
+            _require_reference(child.model, self.models, f"{child.id}.model")
+        _reject_agent_cycles(self.agents)
         return self
 
-    def markdown(self, name: str) -> CanonicalSubagent:
-        for source in self.subagents:
-            if source.document.name == name:
-                return source.document
-        raise KeyError(name)
+    @property
+    def yaml_digest(self) -> str:
+        """Compatibility alias for the root source digest."""
+
+        return self.root_digest
+
+    def source(self, relative_path: str) -> SourceDocument:
+        for item in self.sources:
+            if item.relative_path == relative_path:
+                return item
+        raise KeyError(relative_path)
+
+    def markdown(self, resource_id: str) -> CanonicalSubagent:
+        return self.subagents[resource_id]
+
+    def selected_plugins(self, agent: AgentResource) -> tuple[str, ...]:
+        return self.document.defaults.harness_plugins if agent.harness_plugins is None else agent.harness_plugins
+
+    def selected_mcp_servers(self, agent: AgentResource) -> tuple[str, ...]:
+        return self.document.defaults.mcp_servers if agent.mcp_servers is None else agent.mcp_servers
 
 
-def canonical_digest(value: BaseModel | JsonValue) -> str:
-    """Hash one finite normalized JSON value deterministically."""
-
+def canonical_digest(value: BaseModel | JsonValue | object) -> str:
     if isinstance(value, BaseModel):
-        payload = value.model_dump(mode="json")
-    else:
-        payload = value
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+        value = value.model_dump(mode="json")
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _contains_tuple(annotation: object) -> bool:
+    if get_origin(annotation) is tuple:
+        return True
+    return any(_contains_tuple(argument) for argument in get_args(annotation))
+
+
+def _require_id_prefix(value: str, prefix: str) -> None:
+    if not value.startswith(prefix):
+        raise ValueError(f"resource ID must start with {prefix}")
+
+
+def _require_reference(value: str | None, resources: Mapping[str, object], field: str) -> None:
+    if value is not None and value not in resources:
+        raise ValueError(f"{field} selects unknown resource {value}")
 
 
 def _validate_json_mapping(value: dict[str, JsonValue]) -> None:
@@ -382,61 +511,73 @@ def _validate_json_mapping(value: dict[str, JsonValue]) -> None:
 def _validate_json_value(value: JsonValue, *, field_name: str | None = None) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
-            normalized = key.lower().replace("-", "_")
-            if normalized in _SECRET_FIELD_NAMES:
+            if key.casefold() in _SECRET_FIELD_NAMES:
                 raise ValueError(f"literal credential field {key!r} is forbidden")
             _validate_json_value(item, field_name=key)
     elif isinstance(value, list):
         for item in value:
             _validate_json_value(item, field_name=field_name)
     elif isinstance(value, float) and not (-float("inf") < value < float("inf")):
-        raise ValueError("configuration numbers must be finite")
+        raise ValueError("non-finite JSON values are forbidden")
 
 
-def _reject_agent_cycles(agents: dict[str, AgentConfig]) -> None:
-    colors: dict[str, int] = {}
-    for root in agents:
-        if colors.get(root) == 2:
+def _reject_agent_cycles(agents: dict[str, AgentResource]) -> None:
+    graph = {
+        name: tuple(item.agent for item in agent.subagents if isinstance(item, AgentSubagentSelection))
+        for name, agent in agents.items()
+    }
+    color: dict[str, int] = {}
+    for start in graph:
+        if color.get(start, 0):
             continue
-        stack: list[tuple[str, bool]] = [(root, False)]
+        stack: list[tuple[str, int]] = [(start, 0)]
+        path: list[str] = []
         while stack:
-            name, leaving = stack.pop()
-            if leaving:
-                colors[name] = 2
-                continue
-            color = colors.get(name, 0)
-            if color == 1:
-                raise ValueError("reusable Agent references must not contain cycles")
-            if color == 2:
-                continue
-            colors[name] = 1
-            stack.append((name, True))
-            children = [
-                selection.agent for selection in agents[name].subagents if isinstance(selection, AgentSubagentSelection)
-            ]
-            for child in reversed(children):
-                if colors.get(child) == 1:
-                    raise ValueError("reusable Agent references must not contain cycles")
-                if colors.get(child) != 2:
-                    stack.append((child, False))
+            node, index = stack[-1]
+            if index == 0:
+                color[node] = 1
+                path.append(node)
+            children = graph[node]
+            if index < len(children):
+                child = children[index]
+                stack[-1] = (node, index + 1)
+                state = color.get(child, 0)
+                if state == 1:
+                    raise ValueError(f"Agent graph contains a cycle through {child}")
+                if state == 0:
+                    stack.append((child, 0))
+            else:
+                stack.pop()
+                path.pop()
+                color[node] = 2
 
 
 __all__ = [
-    "AgentConfig",
+    "AgentResource",
     "AgentSubagentSelection",
-    "AgentUiDefaults",
     "AgentUiDocument",
+    "ApiKeyAuthentication",
     "CanonicalSubagent",
-    "CanonicalSubagentSource",
-    "EnvironmentProfile",
-    "EnvironmentProviderConfig",
+    "CapabilitySelection",
+    "CodexSubscriptionAuthentication",
+    "EnvironmentProfileResource",
+    "EnvironmentRunExtensionResource",
     "EnvironmentVariableSource",
+    "ExtensionResource",
+    "GlobalDefaults",
+    "GrokSubscriptionAuthentication",
+    "HarnessPluginResource",
     "LoadedAgentUiConfiguration",
-    "MarkdownSubagentSelection",
     "McpCommandTransport",
     "McpRemoteTransport",
-    "McpServerConfig",
-    "ModelConfig",
-    "PluginConfig",
+    "McpServerResource",
+    "McpTransport",
+    "ModelAuthentication",
+    "ModelResource",
+    "ProcessConfiguration",
+    "ProjectResource",
+    "ProjectRoot",
+    "SourceDocument",
+    "SubagentSelection",
     "canonical_digest",
 ]
