@@ -6,7 +6,7 @@ Foundation Service embeds Agent Harness in the selected Worker execution loop. T
 
 Foundation invokes Harness only through its public construction, run, state, and stream APIs. Harness invokes Foundation-owned behavior through explicit fresh typed collaborators and one mandatory Foundation-owned Pydantic Capability. That Capability is direct trusted Worker composition, not a managed Harness plugin and not caller-selectable Agent content.
 
-This contract owns the concrete integration profile. The generic public Harness surfaces remain owned by [Public API and Packaging](../agent-harness/14-public-api-and-packaging.md), [Execution Context and Lifecycle](../agent-harness/06-execution-context-and-lifecycle.md), and [Harness State and Resume](../agent-harness/10-snapshot-and-resume.md). Foundation persistence and scheduling remain owned by [Durable Run State](14-run-persistence.md) and [Run Attempts, Scheduling, and Recovery](15-run-attempt-scheduling-and-recovery.md).
+This contract owns the concrete integration profile. The generic public Harness surfaces remain owned by [Public API and Packaging](../agent-harness/14-public-api-and-packaging.md), [Execution Context and Lifecycle](../agent-harness/06-execution-context-and-lifecycle.md), and [Harness State and Resume](../agent-harness/10-snapshot-and-resume.md). Foundation persistence and scheduling remain owned by [Durable Run State](12-run-persistence.md) and [Run Attempts, Scheduling, and Recovery](13-run-attempt-scheduling-and-recovery.md).
 
 ## Boundaries
 
@@ -221,7 +221,7 @@ The stream has one consumer and natural backpressure. Foundation decouples clien
 
 ### Harness Stream Output and Result Mapping
 
-Foundation consumes every `HarnessStreamEvent` once. Native model/tool events and `HarnessExtensionEvent` values are projected according to [Events, Usage, and Delivery](20-events-usage-and-delivery.md). At most one terminal `HarnessRunResultEvent` supplies the complete waiting, completed, failed, or cancelled result candidate mapped under [Durable Run State](14-run-persistence.md). Event arrival order, absence, or prior client delivery never replaces the conditional checkpoint and outcome transactions.
+Foundation consumes every `HarnessStreamEvent` once. Native model/tool events and `HarnessExtensionEvent` values are projected according to [Events, Usage, and Delivery](24-events-usage-and-delivery.md). At most one terminal `HarnessRunResultEvent` supplies the complete waiting, completed, failed, or cancelled result candidate mapped under [Durable Run State](12-run-persistence.md). Event arrival order, absence, or prior client delivery never replaces the conditional checkpoint and outcome transactions.
 
 When a model response invokes tools, the complete post-tool checkpoint is published from awaited `after_node_run()` on the successfully completed `CallToolsNode`. When a model response invokes no tools and terminates the logical Harness Run, Foundation publishes the complete terminal checkpoint from `HarnessRunResultEvent`, not from `after_model_request()`.
 

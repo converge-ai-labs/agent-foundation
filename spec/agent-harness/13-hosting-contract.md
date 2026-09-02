@@ -4,7 +4,7 @@
 
 Embedded applications and hosted execution workers use the same code-first Harness API. The Harness does not expose a separate hosted Agent format. A hosted service owns durable Agent definition schemas, Presets, immutable revisions, dependency locks, and reconstruction adapters; the worker reconstructs one process-local `AgentDefinition` and calls `HarnessBuilder`. Plugin middleware may instead use the narrow Harness-owned configuration document and Build Context, so the Host need not expose or implement plugin factory concepts.
 
-The Host also owns durable acceptance, worker `ExecutionAttempt` values, leases, checkpoint selection, deferred delivery, recovery, and terminal commit. The Harness returns only process-local observations and state candidates. Foundation Service's concrete use of these generic surfaces is owned by [Foundation–Harness Runtime Integration](../foundation-service/16a-harness-runtime-integration.md).
+The Host also owns durable acceptance, worker `ExecutionAttempt` values, leases, checkpoint selection, deferred delivery, recovery, and terminal commit. The Harness returns only process-local observations and state candidates. Foundation Service's concrete use of these generic surfaces is owned by [Foundation–Harness Runtime Integration](../foundation-service/14-harness-runtime-integration.md).
 
 ## Boundary
 

@@ -6,7 +6,7 @@ Foundation Service separates durable lifecycle authority from presentation persi
 
 Redis and replay snapshots are projections, never Run or `RunAttempt` authority. Foundation creates no relational table for Items, live or retained stream replay, Native notifications, pending calls or approvals, or provider receipts.
 
-The Thread-scoped Redis control signal Stream is a separate business-payload-free reconciliation wakeup transport owned by [Agent Control: Active Execution](35-agent-control-active-execution.md#thread-control-signal-stream). It never shares the Run presentation cursor, retained replay object, or lifecycle projection state.
+The Thread-scoped Redis control signal Stream is a separate business-payload-free reconciliation wakeup transport owned by [Agent Control: Active Execution](19-agent-control-active-execution.md#thread-control-signal-stream). It never shares the Run presentation cursor, retained replay object, or lifecycle projection state.
 
 ## Boundaries and Table Inventory
 
@@ -18,7 +18,7 @@ The Thread-scoped Redis control signal Stream is a separate business-payload-fre
 | Live Agent messages and observations | Redis Stream                         | Bounded transport and replay projection only                              |
 | Retained Items and stream replay     | Immutable `RunReplaySnapshot` object | Presentation projection, never Run-state or lifecycle authority           |
 
-Only `lifecycle_events` is introduced here, under the service-wide [Relational Schema Lifecycle](04-relational-schema.md). Run waiting state belongs to [Run Persistence](14-run-persistence.md). Tool observations remain presentation or telemetry unless an owning Capability defines its own durable task protocol; this document introduces no generic tool lifecycle authority.
+Only `lifecycle_events` is introduced here, under the service-wide [Relational Schema Lifecycle](04-relational-schema.md). Run waiting state belongs to [Run Persistence](12-run-persistence.md). Tool observations remain presentation or telemetry unless an owning Capability defines its own durable task protocol; this document introduces no generic tool lifecycle authority.
 
 ## Lifecycle Event Model
 
@@ -133,13 +133,13 @@ The Redis Stream entry ID is the live replay cursor. `event_id` is the stable ev
 
 Writers bound payloads and stream length, use deterministic event identities for retryable publication, and set a retention TTL that never expires an active Run's stream. Consumers resume within the live horizon from the last Redis Stream entry ID.
 
-The public Native SSE framing, `Last-Event-ID` behavior, and replay-to-live cutover are owned by [Native Streaming and Notifications](29-native-streaming-and-notifications.md#run-sse). Hosted AG-UI and A2A can project this source under their own protocol identities, but they do not reinterpret the Redis entry ID as an AG-UI or A2A cursor.
+The public Native SSE framing, `Last-Event-ID` behavior, and replay-to-live cutover are owned by [Native Streaming and Notifications](21-native-streaming-and-notifications.md#run-sse). Hosted AG-UI and A2A can project this source under their own protocol identities, but they do not reinterpret the Redis entry ID as an AG-UI or A2A cursor.
 
 ## Workspace Events and Best-Effort Notifications
 
 Authorized Workspace lifecycle reads page forward over `lifecycle_events.seq` under the Native Workspace event collection. The lifecycle cursor is distinct from every Run Stream entry ID. Retention below a Workspace cursor produces an explicit lifecycle replay gap and never falls through to a surviving row as if history were complete.
 
-Authorized Run and RunAttempt lifecycle reads page forward over `resource_seq` under the Native resource lifecycle collections. Their sequence domain is independent for each resource and supports Webhook gap recovery; it is never inferred from the Workspace cursor. The complete API behavior is owned by [Native Streaming and Notifications](29-native-streaming-and-notifications.md#resource-lifecycle-event-collections).
+Authorized Run and RunAttempt lifecycle reads page forward over `resource_seq` under the Native resource lifecycle collections. Their sequence domain is independent for each resource and supports Webhook gap recovery; it is never inferred from the Workspace cursor. The complete API behavior is owned by [Native Streaming and Notifications](21-native-streaming-and-notifications.md#resource-lifecycle-event-collections).
 
 Native WebSocket notifications are an ephemeral wake-up projection of current resource and lifecycle changes. They have no relational row, Redis replay stream, retained object, delivery acknowledgement, or cursor. Their loss cannot remove a lifecycle event, Run Stream entry, Item, or resource mutation. Disconnected clients reconcile through the Workspace event collection and current resource reads.
 
@@ -153,7 +153,7 @@ tenants/{tenant_id}/runs/{run_id}/replay/version-{schema_version}.json
 
 For version `1`, this resolves to `tenants/{tenant_id}/runs/{run_id}/replay/version-1.json`; the version segment names the snapshot schema, not a replay sequence or Run version.
 
-`RunReplaySnapshot` follows the common [Run object serialization rules](14-run-persistence.md#other-object-storage-schemas). Its content type is `application/vnd.converge.run-replay+json`. Object metadata records `schema-version=1`, `run-id`, and the lowercase SHA-256 digest of the canonical stored bytes; object stat supplies the exact byte size. These values are validated before decoding.
+`RunReplaySnapshot` follows the common [Run object serialization rules](12-run-persistence.md#other-object-storage-schemas). Its content type is `application/vnd.converge.run-replay+json`. Object metadata records `schema-version=1`, `run-id`, and the lowercase SHA-256 digest of the canonical stored bytes; object stat supplies the exact byte size. These values are validated before decoding.
 
 The object body is this serialized schema:
 

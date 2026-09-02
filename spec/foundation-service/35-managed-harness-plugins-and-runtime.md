@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation manages trusted Harness plugins through stable `Plugin` resources, immutable `PluginVersion` Wheels, explicit Preset selections, and one deployment-fixed Runtime profile. This document owns their public identity, lifecycle, commands, artifact validation, Runtime locks, Worker materialization, and execution-profile behavior. [Agent Management](12-agent-management.md) only embeds the Plugin selections and exact resolved locks owned here into `AgentPresetConfig` and `AgentPresetRevision`.
+Foundation manages trusted Harness plugins through stable `Plugin` resources, immutable `PluginVersion` Wheels, explicit Preset selections, and one deployment-fixed Runtime profile. This document owns their public identity, lifecycle, commands, artifact validation, Runtime locks, Worker materialization, and execution-profile behavior. [Agent Management](27-agent-management.md) only embeds the Plugin selections and exact resolved locks owned here into `AgentPresetConfig` and `AgentPresetRevision`.
 
 Every deployment fixes one `plugin_runtime.mode` before it stores Plugin, AgentPresetRevision, or Run data:
 
@@ -16,14 +16,14 @@ Both profiles persist immutable Runtime locks and every accepted Run pins one ex
 | Concern                                                                  | Owner                                                               | Contract                                                                     |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Plugin identity, Version, Preset selection, lifecycle, and commands      | This document                                                       | Defines the product, HTTP-visible, and trusted-code deployment behavior      |
-| Preset identity, Revision creation, and effective configuration          | [Agent Management](12-agent-management.md)                          | Embeds exact Plugin selections and resolved locks without owning their model |
+| Preset identity, Revision creation, and effective configuration          | [Agent Management](27-agent-management.md)                          | Embeds exact Plugin selections and resolved locks without owning their model |
 | Runtime mode initialization and process lifecycle                        | [Runtime Configuration](01-runtime-configuration-and-deployment.md) | Fixes one durable deployment profile and owns readiness, drain, and shutdown |
 | Wheel shape, digest, Runtime lock, and artifact retention                | This document                                                       | Makes exact trusted Plugin environments identifiable and verifiable          |
 | On-demand registry, import preflight, and conflict behavior              | This document                                                       | Keeps incompatible work unclaimed without another routing authority          |
 | Runner materialization, staging, cutover, and drain                      | This document                                                       | Replaces Python interpreters without replacing the Worker container          |
 | Plugin factory, configuration, construction, and Capability contribution | [Harness plugin system](../agent-harness/05-plugin-system.md)       | Builds fresh plugin instances from an explicitly selected catalog            |
-| Run acceptance and exact lock-digest persistence                         | [Durable Run State](14-run-persistence.md)                          | Pins one Runtime with one accepted Preset Revision                           |
-| Run claim, lease, fence, and recovery                                    | [Run Attempt scheduling](15-run-attempt-scheduling-and-recovery.md) | Applies the profile-specific pre-claim compatibility gate                    |
+| Run acceptance and exact lock-digest persistence                         | [Durable Run State](12-run-persistence.md)                          | Pins one Runtime with one accepted Preset Revision                           |
+| Run claim, lease, fence, and recovery                                    | [Run Attempt scheduling](13-run-attempt-scheduling-and-recovery.md) | Applies the profile-specific pre-claim compatibility gate                    |
 | Relational and object capabilities                                       | [Foundation storage](03-storage.md)                                 | Supplies metadata authority and immutable artifact bytes                     |
 
 `PluginRuntime` means the Python, Harness, Pydantic AI, Plugin Wheels, and third-party distributions selected by one Runtime lock. It contains no Prompt, Secret value, Run state, Agent work files, shell workspace, browser, or Agent `Environment`.
@@ -344,7 +344,7 @@ Plugin, PluginVersion, every successful Wheel, bounded runner task receipt evide
 
 ## Plugin Management API
 
-The Plugin `/api/v1` routes are cataloged by [Management API](21-management-api.md). List and Get authorize `plugin.read`; upload, Archive, and Unarchive authorize `plugin.manage`; runner-profile Activate and Deactivate authorize `plugin.runtime.manage`. The IAM [stable action registry](10-identity-and-access-management.md#stable-action-registry) owns role grants.
+The Plugin `/api/v1` routes are cataloged by [Management API](16-management-api.md). List and Get authorize `plugin.read`; upload, Archive, and Unarchive authorize `plugin.manage`; runner-profile Activate and Deactivate authorize `plugin.runtime.manage`. The IAM [stable action registry](32-identity-and-access-management.md#stable-action-registry) owns role grants.
 
 Upload creates or returns one immutable PluginVersion synchronously. Archive and Unarchive return the committed Plugin. Clients cannot directly write `source`, `plugin_key`, package identity, `active_version_id`, lifecycle state, Version content, digests, or audit fields.
 

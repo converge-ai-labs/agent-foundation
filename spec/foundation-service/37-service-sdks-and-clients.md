@@ -10,9 +10,9 @@ Foundation Web and the remote `agent-foundation` CLI are first-party clients of 
 
 | Concern                                                  | Owner                                                                          |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Native resources and command semantics                   | [Foundation Management API](21-management-api.md) and owning domains           |
+| Native resources and command semantics                   | [Foundation Management API](16-management-api.md) and owning domains           |
 | Shared HTTP, errors, concurrency, and idempotency        | [Platform API Conventions](../api-conventions.md)                              |
-| Run SSE, lifecycle events, and notification WebSocket    | [Native Streaming and Notifications](29-native-streaming-and-notifications.md) |
+| Run SSE, lifecycle events, and notification WebSocket    | [Native Streaming and Notifications](21-native-streaming-and-notifications.md) |
 | Language transport, public types, and idiomatic lifetime | Each SDK                                                                       |
 | CLI command composition and presentation                 | `agent-foundation` CLI                                                         |
 | Browser navigation and user experience                   | Foundation Web                                                                 |

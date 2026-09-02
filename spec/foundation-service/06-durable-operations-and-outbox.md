@@ -15,7 +15,7 @@ This contract owns the shared persistence and retry boundary. Owning domains con
 | Shared operation persistence                 | This contract                                                  | Defines evidence, atomicity, and unknown-outcome handling        |
 | Lifecycle event and Item meaning             | Owning event or interaction domain                             | Supplies bounded records for a committed transition              |
 | Outbox claim and publication                 | This contract                                                  | Delivers committed intents with retry and deduplication identity |
-| Delivery envelope, replay, and retention     | [Events, Usage, and Delivery](20-events-usage-and-delivery.md) | Exposes authorized retained and live sources                     |
+| Delivery envelope, replay, and retention     | [Events, Usage, and Delivery](24-events-usage-and-delivery.md) | Exposes authorized retained and live sources                     |
 | External provider or client effect           | Owning integration                                             | Supplies idempotency or reconciliation evidence                  |
 
 The shared operation boundary is not a generic repository, application service base class, event bus, saga engine, or abstract unit-of-work framework. Domains use the canonical short relational transaction and focused helpers for the repeated evidence and outbox records.

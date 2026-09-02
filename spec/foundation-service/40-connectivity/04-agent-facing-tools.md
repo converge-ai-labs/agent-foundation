@@ -27,7 +27,7 @@ The Agent can therefore use zero or one logical a13n MCP source and zero or more
 
 | Concern                               | Owner                                                                | Boundary                                                                                               |
 | ------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Effective managed capability choice   | [Agent Management](../12-agent-management.md#run-capability-overlay) | Selects Ingress actions, ConnectorConnections, MCPConnections, exposure modes, and allowlists          |
+| Effective managed capability choice   | [Agent Management](../27-agent-management.md#run-capability-overlay) | Selects Ingress actions, ConnectorConnections, MCPConnections, exposure modes, and allowlists          |
 | Protected native target and policy    | `IngressRunContext`                                                  | Retains the current provider target without model-settable destination arguments                       |
 | Exact model and callable tool surface | `MCPToolSnapshot`                                                    | Freezes source bindings, names, schemas, exposure, and allowlists for one Run                          |
 | Fresh a13n MCP invocation authority   | Foundation Worker and a13n MCP                                       | Creates and validates one current RunAttempt-scoped opaque grant                                       |

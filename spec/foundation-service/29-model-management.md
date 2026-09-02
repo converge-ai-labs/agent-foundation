@@ -15,13 +15,13 @@ This contract covers only the primary text or multimodal generative model used b
 | Concern                            | Owner                                                          | Contract                                                                                        |
 | ---------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | Model configuration and lifecycle  | This document                                                  | Owns `ModelConfig`, provider discovery, testing, updating, enabling, and disabling              |
-| Agent model selection and behavior | [Agent Management](12-agent-management.md)                     | Stores one `model_config_id`, concrete Harness model characteristics, and native model settings |
-| Run-time model selection           | This document and [Durable Run State](14-run-persistence.md)   | Reuses the Revision snapshot or resolves one typed override into effective configuration        |
-| Secret values and use eligibility  | [Secret Management](11-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                            |
+| Agent model selection and behavior | [Agent Management](27-agent-management.md)                     | Stores one `model_config_id`, concrete Harness model characteristics, and native model settings |
+| Run-time model selection           | This document and [Durable Run State](12-run-persistence.md)   | Reuses the Revision snapshot or resolves one typed override into effective configuration        |
+| Secret values and use eligibility  | [Secret Management](26-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                            |
 | Provider API and balancing         | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                                |
 | Trusted provider code              | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code            |
 | Harness model behavior             | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                              |
-| Usage identity and measures        | [Events, Usage, and Delivery](20-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                               |
+| Usage identity and measures        | [Events, Usage, and Delivery](24-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                               |
 
 `ModelConfig` is not a Provider account, connection pool, deployment, gateway, or credential container. Foundation exposes no independent Provider Connection resource for models. Connection fields live directly in the configuration and credential values remain in managed Secrets.
 
@@ -108,7 +108,7 @@ class ModelConfig:
     updated_at: datetime
 ```
 
-`SecretCredentialSource` and its variants come from the shared [Secret credential-reference contract](11-secret-management.md#credential-references). `NoCredential` remains Model-specific because only a provider schema can declare that a model needs no credential.
+`SecretCredentialSource` and its variants come from the shared [Secret credential-reference contract](26-secret-management.md#credential-references). `NoCredential` remains Model-specific because only a provider schema can declare that a model needs no credential.
 
 `base_url` is the normalized effective endpoint exposed when it is safe to do so. It is null when the provider derives its endpoint from typed fields such as region or project. `provider_config` contains only the fields declared by the selected provider definition and never contains a credential.
 
@@ -238,7 +238,7 @@ Workspace Viewer can read safe provider and model metadata. Workspace Builder an
 Provider and ModelConfig reads authorize `models.read`; create, update, test,
 enable, and disable authorize `models.manage`. These stable actions and
 built-in grants are owned by the IAM
-[registry](10-identity-and-access-management.md#stable-action-registry). Runtime
+[registry](32-identity-and-access-management.md#stable-action-registry). Runtime
 model use is accepted Agent execution under the Run's current authority and
 grants, not another public ModelConfig action.
 

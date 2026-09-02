@@ -96,7 +96,7 @@ resolve one fixed Agent
     -> accept one exact effective Run capability selection
 ```
 
-The matched base Route can configure different Skills, MCPConnections, ConnectorConnections, and native Ingress actions for the same Agent in different Conversations through its per-Agent common [Run Capability Overlay](../12-agent-management.md#run-capability-overlay). `inherit_agent`, `include`, and `exclude` are the complete composition controls. An authorized `include` can add a supported managed capability absent from the Agent defaults; message content cannot add one. The accepted Run fixes the resulting effective selection so a replacement RunAttempt cannot observe a different tool surface silently.
+The matched base Route can configure different Skills, MCPConnections, ConnectorConnections, and native Ingress actions for the same Agent in different Conversations through its per-Agent common [Run Capability Overlay](../27-agent-management.md#run-capability-overlay). `inherit_agent`, `include`, and `exclude` are the complete composition controls. An authorized `include` can add a supported managed capability absent from the Agent defaults; message content cannot add one. The accepted Run fixes the resulting effective selection so a replacement RunAttempt cannot observe a different tool surface silently.
 
 Changing capabilities does not change the bound Agent or Agent Thread.
 

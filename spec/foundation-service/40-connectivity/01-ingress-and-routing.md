@@ -56,7 +56,7 @@ Organization, Workspace, provider key, execution Principal, and the adapter-decl
 
 The default Agent, every Route-selected Agent, and every Agent named by `capability_overlays` must occur in the Ingress's unique `agents`. For an unbound external reference, a Route-selected Agent overrides the Ingress default only for events matched by that Route. An existing Binding remains fixed. Event content cannot select or switch an Agent.
 
-`match` and `provider_policy` are provider-specific typed data validated by the adapter under the exact `provider_config_version`. Messaging `provider_policy` has the common bounded shape owned by [Messaging Ingress](02-messaging-ingress.md#interaction-policy); other providers retain their own typed policy. `capability_overlays` uses the common [Run Capability Overlay](../12-agent-management.md#run-capability-overlay) contract and is never interpreted by the provider adapter. The selected Agent's entry applies when present; absence means no Route overlay for that Agent. Foundation does not pretend that a Slack channel, Gmail label, GitHub repository, and webhook path share one native resource model.
+`match` and `provider_policy` are provider-specific typed data validated by the adapter under the exact `provider_config_version`. Messaging `provider_policy` has the common bounded shape owned by [Messaging Ingress](02-messaging-ingress.md#interaction-policy); other providers retain their own typed policy. `capability_overlays` uses the common [Run Capability Overlay](../27-agent-management.md#run-capability-overlay) contract and is never interpreted by the provider adapter. The selected Agent's entry applies when present; absence means no Route overlay for that Agent. Foundation does not pretend that a Slack channel, Gmail label, GitHub repository, and webhook path share one native resource model.
 
 One event resolves to zero or one Route. Route matchers under one Ingress must be non-overlapping for every provider event type; configuration validation rejects overlap it can prove, and runtime ambiguity fails closed. An unmatched event uses the provider's bounded default policy, input mapping, input batching, and no Route capability overlay; an unbound target uses the Ingress default Agent, while an existing Binding retains its Agent. An event never fans out because several Routes match.
 
@@ -99,7 +99,7 @@ Raw provider data is never included in Agent input by default. When policy retai
 
 ## Input Mapping
 
-Every provider supplies a useful default mapping to the canonical [AgentInput](../33-agent-input.md). A Route can replace that default with a bounded declarative mapping over this safe view:
+Every provider supplies a useful default mapping to the canonical [AgentInput](../17-agent-input.md). A Route can replace that default with a bounded declarative mapping over this safe view:
 
 ```python
 class EventInputView:
@@ -199,7 +199,7 @@ After routing, the Ingress delegates completely to Foundation Service:
 
 - a new destination uses ordinary new-Thread and root Run acceptance;
 - an idle existing Thread uses ordinary existing-Thread Run acceptance;
-- a compatible current running or current/head waiting Run uses only the common active [Steer contract](../35-agent-control-active-execution.md#public-steer-api) and never creates a queued submission;
+- a compatible current running or current/head waiting Run uses only the common active [Steer contract](../19-agent-control-active-execution.md#public-steer-api) and never creates a queued submission;
 - when a busy Run lacks the same Ingress context or accepted capability surface, the durably admitted event remains pending at the Ingress admission boundary until the Thread can accept a compatible Run rather than changing the active Run's tools; and
 - any bounded burst coalescing occurs before one canonical Steer or Run submission and never replaces the durable Foundation Thread inbox.
 

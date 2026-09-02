@@ -56,7 +56,7 @@ A Workspace-shared MCPConnection can be selected by an Agent default, an authori
 
 A User-owned MCPConnection is eligible only for a Run whose active invoking Foundation Principal is the same User. An external Slack, Lark, Discord, Teams, GitHub, Gmail, or other provider actor is not a Foundation Principal merely because an ID, username, or email appears to match. Ingress-triggered Runs therefore cannot use User-owned MCPConnections under this contract. Route configuration cannot override this rule.
 
-An MCPConnection does not store mutable Agent or Route assignment lists. Agent authoring and the common [`RunCapabilityOverlay`](../12-agent-management.md#run-capability-overlay) reference the MCPConnection ID and choose exposure plus an exact tool allowlist. Authorized reads can derive reverse-use projections without creating another assignment authority.
+An MCPConnection does not store mutable Agent or Route assignment lists. Agent authoring and the common [`RunCapabilityOverlay`](../27-agent-management.md#run-capability-overlay) reference the MCPConnection ID and choose exposure plus an exact tool allowlist. Authorized reads can derive reverse-use projections without creating another assignment authority.
 
 The model never receives the endpoint URL, MCPConnection ID, authorization metadata, remote account identifiers, access token, refresh token, client registration credential, or setup handle.
 
@@ -108,7 +108,7 @@ Access tokens, refresh tokens, and any Dynamic Client Registration credential fo
 
 ## Secret Boundary
 
-MCPConnection credentials use the [Foundation Secret protection contract](../11-secret-management.md) under the internal `mcp_connection` owner type. Generic Secret routes cannot create, enumerate, replace, or delete those values. MCPConnection setup, reconnect, bearer or static-header replacement, OAuth refresh, disablement, revocation, and deletion own their credential lifecycle.
+MCPConnection credentials use the [Foundation Secret protection contract](../26-secret-management.md) under the internal `mcp_connection` owner type. Generic Secret routes cannot create, enumerate, replace, or delete those values. MCPConnection setup, reconnect, bearer or static-header replacement, OAuth refresh, disablement, revocation, and deletion own their credential lifecycle.
 
 No plaintext credential enters Agent configuration, Run state, tool snapshots, model context, Tool arguments, events, Items, errors, logs, traces, or tool results. The Worker resolves only the exact credential required for the current fenced RunAttempt and endpoint request.
 

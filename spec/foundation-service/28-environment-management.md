@@ -24,7 +24,7 @@ Harness receives already constructed adapters as lightweight mounts. It enters a
 | Provider configuration schema and deterministic validation | Environment Provider                         | No external I/O during validation or Environment construction                               |
 | Provider catalog and exact package lock                    | Foundation distribution or operator boundary | Trusted code selection; catalog presence grants no Workspace authority                      |
 | Workspace Provider selection                               | Foundation authorization                     | Enables one exact trusted Provider package lock                                             |
-| Secret storage and current eligibility                     | [Secret Management](11-secret-management.md) | Resolves fresh values without persisting them in Provider configuration or state            |
+| Secret storage and current eligibility                     | [Secret Management](26-secret-management.md) | Resolves fresh values without persisting them in Provider configuration or state            |
 | Current state and root/child Thread association            | Foundation Host                              | Current managed value, including authoritative `None`, wins over portable continuation data |
 | Fresh runtime collaborators and Environment adapters       | Worker                                       | Constructed for one independent RunAttempt and never persisted                              |
 | Multi-mount routing, entry, portable snapshots, and close  | Harness                                      | Run-local bound facade; close never destroys backing targets                                |
@@ -39,7 +39,7 @@ Provider discovery, package upload, schema validity, state possession, or identi
 
 Foundation exposes a safe catalog of deployment-trusted Environment Providers. Each entry contains bounded display metadata, supported configuration versions and JSON Schemas, non-secret runtime credential requirements, operation families, and an exact dependency lock. Reading the catalog performs no import, credential, filesystem, daemon, network, or provider-target I/O.
 
-Provider code comes from fixed [distribution composition](02-distribution-composition-and-extensions.md) or an immutable managed Environment Provider package revision. Managed revisions reuse the upload, hashing, immutable object storage, dependency validation, content-addressed cache, and conflict handling defined for [managed Harness plugins](26-managed-harness-plugins-and-runtime.md), but remain a separate extension kind with their own identities, entry point, locks, authorization, and runtime contract.
+Provider code comes from fixed [distribution composition](02-distribution-composition-and-extensions.md) or an immutable managed Environment Provider package revision. Managed revisions reuse the upload, hashing, immutable object storage, dependency validation, content-addressed cache, and conflict handling defined for [managed Harness plugins](35-managed-harness-plugins-and-runtime.md), but remain a separate extension kind with their own identities, entry point, locks, authorization, and runtime contract.
 
 Foundation reuses the artifact substrate, not the `HarnessPluginPackage` product identity or Harness plugin SPI. One managed Provider package contributes exactly one `EnvironmentProvider` through the standard `a13n_environment_provider.providers` entry-point group. Publication validates non-executing metadata without importing code. A Worker loads only the exact verified artifact on demand and rejects conflicting Provider keys, distributions, or top-level packages; a process never reloads a Provider implementation.
 
@@ -120,7 +120,7 @@ class EnvironmentCredentialBinding:
     credential: SecretCredentialSource
 ```
 
-`SecretCredentialSource` is the shared non-secret selector defined by the [Secret credential-reference contract](11-secret-management.md#credential-references). Environment bindings add only the Provider requirement key; they do not create Environment-specific variants of the same Secret reference.
+`SecretCredentialSource` is the shared non-secret selector defined by the [Secret credential-reference contract](26-secret-management.md#credential-references). Environment bindings add only the Provider requirement key; they do not create Environment-specific variants of the same Secret reference.
 
 Every RunAttempt and Host lifecycle operation reauthorizes the Workspace selection, Environment use, credential source, owning principal, and current Secret eligibility. Foundation decrypts values only after closing the authorization transaction and supplies them to one process-local runtime builder. Secret rotation therefore affects the next independent operation without creating another revision or changing current Environment state.
 
@@ -219,7 +219,7 @@ If the Worker disappears before publication, the last Host state remains current
 
 Managed Skill materialization is Host preparation, not an Agent tool call. It uses the fresh entered Harness Environment facade, is content-addressed, writes a completion manifest last, and may be repeated after re-entry without exposing a partial catalog.
 
-[`environment_path` Agent input delivery](33-agent-input.md#binary-source-and-delivery) requires a writable default mount. The Worker reads the accepted URL, authorized source binding path, or exact immutable Asset into private local staging and transfers it through the active default Environment's authorized file-write operation to the deterministic logical path below `/workspace/.a13n/inputs/`. Only that Environment path enters Agent input; the Worker staging path is never exposed.
+[`environment_path` Agent input delivery](17-agent-input.md#binary-source-and-delivery) requires a writable default mount. The Worker reads the accepted URL, authorized source binding path, or exact immutable Asset into private local staging and transfers it through the active default Environment's authorized file-write operation to the deterministic logical path below `/workspace/.a13n/inputs/`. Only that Environment path enters Agent input; the Worker staging path is never exposed.
 
 A replacement RunAttempt re-enters from current Host state and derives whether to rewrite the path from the Run's existing charged model-request usage. Zero prior model requests causes another bounded source read and deterministic replacement; a positive total assumes that input preparation already wrote the path and performs no file inspection or rewrite. Foundation stores no separate materialization status. A pending steer follows its existing inbox status and receipt: it can be reacquired and rewritten until consumption commits, while a consumed steer is not materialized again.
 
@@ -250,7 +250,7 @@ Retention periods, retry schedules, discovery cadence, and private candidate rep
 
 ## Management API
 
-The public `/api/v1` surface follows the shared [Management API](21-management-api.md):
+The public `/api/v1` surface follows the shared [Management API](16-management-api.md):
 
 | Resource                     | Route shape                                                                                                 |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -267,7 +267,7 @@ revision publication, and archive mutation authorize `environment.manage`; a
 configuration test authorizes `environment.test`; and an explicit Run selection
 authorizes `environment.use` in addition to Agent invocation. These stable
 actions and built-in grants are owned by the IAM
-[registry](10-identity-and-access-management.md#stable-action-registry).
+[registry](32-identity-and-access-management.md#stable-action-registry).
 
 The synchronous `test` endpoint reauthorizes the exact revision and current credential sources, validates configuration, resolves required runtime collaborators, constructs and immediately discards a fresh Environment without external I/O. It reports bounded schema, package, credential, and construction diagnostics. It does not enter, warm, create, re-enter, destroy, publish state, or retain health. Runtime readiness is established only by an authorized warmup or RunAttempt.
 

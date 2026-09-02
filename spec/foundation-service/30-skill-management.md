@@ -20,9 +20,9 @@ parser; it does not import a Harness parser API.
 | Harness discovery, selection, instructions, and paths             | [Harness Skills](../agent-harness/09-context-and-memory.md#skills-and-discovery) |
 | Workspace resource, revision, API, authorization, and retention   | This document                                                                    |
 | Idempotency and unknown mutation outcomes                         | [Durable Operations](06-durable-operations-and-outbox.md)                        |
-| GitHub credential value and eligibility                           | [Secret Management](11-secret-management.md)                                     |
-| Exact Agent composition                                           | [Agent Management](12-agent-management.md)                                       |
-| Entered Environment and write authority                           | [Environment Management](19-environment-management.md)                           |
+| GitHub credential value and eligibility                           | [Secret Management](26-secret-management.md)                                     |
+| Exact Agent composition                                           | [Agent Management](27-agent-management.md)                                       |
+| Entered Environment and write authority                           | [Environment Management](28-environment-management.md)                           |
 
 Foundation accepts no server-native source path, arbitrary URL, executable extension, or ambient Skill directory through this API.
 
@@ -196,7 +196,7 @@ The domain contributes `skill.read`, `skill.create`, `skill.update`, `skill.dele
 
 Every request reauthorizes its Workspace and resource. AgentPreset Revision creation reauthorizes `skill.bind` for every selected revision. Workers read packages under internal Run authority; invoking an Agent does not grant the caller package download permission.
 
-Skill creation, revision publication, metadata update, deletion, and denied management attempts emit bounded [IAM security audit events](10-identity-and-access-management.md#security_audit_events). Common event fields record the actor, Workspace, action, primary Skill resource when known, and success-or-failure outcome. The stable actions are `skill.create`, `skill.revision.publish`, `skill.update`, and `skill.delete`; a denied attempt uses the same action with failure outcome. Action-owned `details` use this additional allowlist:
+Skill creation, revision publication, metadata update, deletion, and denied management attempts emit bounded [IAM security audit events](32-identity-and-access-management.md#security_audit_events). Common event fields record the actor, Workspace, action, primary Skill resource when known, and success-or-failure outcome. The stable actions are `skill.create`, `skill.revision.publish`, `skill.update`, and `skill.delete`; a denied attempt uses the same action with failure outcome. Action-owned `details` use this additional allowlist:
 
 - Successful Skill creation records `selected_revision_id` and `source_kind`.
 - Successful revision publication records `previous_revision_id`, `selected_revision_id`, `source_kind`, and `publication_outcome`, whose value is `published` or `already_current`. The two revision IDs are equal when the selected content is already current; otherwise they identify the immutable transition that an authorized caller can compare.
