@@ -64,6 +64,8 @@ def queued_submission_record(value: QueuedSubmission, *, tenant_id: str) -> Queu
         submission_digest_sha256=value.submission_digest_sha256,
         consumed_run_id=value.consumed_run_id,
         consumed_at=value.consumed_at,
+        failure_json=None if value.failure is None else value.failure.model_dump(mode="json"),
+        failed_at=value.failed_at,
         created_at=value.created_at,
         updated_at=value.updated_at,
     )

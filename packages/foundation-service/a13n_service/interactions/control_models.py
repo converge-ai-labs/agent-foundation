@@ -25,6 +25,7 @@ from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from .control_domain import (
     InboxPayloadObjectRef,
     QueuedSubmission,
+    QueuedSubmissionFailure,
     QueuedSubmissionState,
     ThreadInboxCounter,
     ThreadInboxEntry,
@@ -34,6 +35,7 @@ from .control_domain import (
 )
 
 _SUBMISSION_ADAPTER = TypeAdapter(ThreadRunSubmissionIntent)
+_QUEUED_FAILURE_ADAPTER = TypeAdapter(QueuedSubmissionFailure)
 
 
 def _run_references() -> tuple[ForeignKeyConstraint, ...]:
@@ -249,8 +251,12 @@ class QueuedSubmissionRecord(Base):
         CheckConstraint("authority_principal_type IN ('user', 'service_account')", name="principal_type_valid"),
         CheckConstraint("length(submission_digest_sha256) = 64", name="submission_digest_sha256"),
         CheckConstraint(
-            "(position IS NOT NULL AND position >= 1 AND consumed_run_id IS NULL AND consumed_at IS NULL) OR "
-            "(position IS NULL AND consumed_run_id IS NOT NULL AND consumed_at IS NOT NULL)",
+            "(position IS NOT NULL AND position >= 1 "
+            "AND consumed_run_id IS NULL AND consumed_at IS NULL AND failure_json IS NULL AND failed_at IS NULL) OR "
+            "(position IS NULL AND consumed_run_id IS NOT NULL AND consumed_at IS NOT NULL "
+            "AND failure_json IS NULL AND failed_at IS NULL) OR "
+            "(position IS NULL AND consumed_run_id IS NULL AND consumed_at IS NULL "
+            "AND failure_json IS NOT NULL AND failed_at IS NOT NULL)",
             name="lifecycle_valid",
         ),
         UniqueConstraint("tenant_id", "id", name="uq_thread_queued_submissions_tenant_id"),
@@ -261,8 +267,8 @@ class QueuedSubmissionRecord(Base):
             "thread_id",
             "position",
             unique=True,
-            postgresql_where=text("consumed_run_id IS NULL"),
-            sqlite_where=text("consumed_run_id IS NULL"),
+            postgresql_where=text("position IS NOT NULL"),
+            sqlite_where=text("position IS NOT NULL"),
         ),
         Index(
             "ix_thread_queued_submissions_live",
@@ -270,14 +276,21 @@ class QueuedSubmissionRecord(Base):
             "thread_id",
             "position",
             "id",
-            postgresql_where=text("consumed_run_id IS NULL"),
-            sqlite_where=text("consumed_run_id IS NULL"),
+            postgresql_where=text("position IS NOT NULL"),
+            sqlite_where=text("position IS NOT NULL"),
         ),
         Index(
             "ix_thread_queued_submissions_consumed",
             "tenant_id",
             "thread_id",
             "consumed_at",
+            "id",
+        ),
+        Index(
+            "ix_thread_queued_submissions_failed",
+            "tenant_id",
+            "thread_id",
+            "failed_at",
             "id",
         ),
     )
@@ -293,11 +306,14 @@ class QueuedSubmissionRecord(Base):
     submission_digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     consumed_run_id: Mapped[str | None] = mapped_column(String(72))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     def to_resource(self) -> QueuedSubmission:
         consumed = self.consumed_run_id is not None
+        failed = self.failure_json is not None
         return QueuedSubmission(
             queued_submission_id=self.id,
             version=self.version,
@@ -309,11 +325,19 @@ class QueuedSubmissionRecord(Base):
             position=self.position,
             submission=_SUBMISSION_ADAPTER.validate_python(self.submission_json),
             submission_digest_sha256=self.submission_digest_sha256,
-            state=QueuedSubmissionState.consumed if consumed else QueuedSubmissionState.queued,
+            state=(
+                QueuedSubmissionState.consumed
+                if consumed
+                else QueuedSubmissionState.failed
+                if failed
+                else QueuedSubmissionState.queued
+            ),
             consumed_run_id=self.consumed_run_id,
+            failure=None if self.failure_json is None else _QUEUED_FAILURE_ADAPTER.validate_python(self.failure_json),
             created_at=_as_utc(self.created_at),
             updated_at=_as_utc(self.updated_at),
             consumed_at=_optional_utc(self.consumed_at),
+            failed_at=_optional_utc(self.failed_at),
         )
 
 
