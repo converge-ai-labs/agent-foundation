@@ -5,9 +5,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -25,12 +24,12 @@ from a13n_service.connectivity.management import canonical_digest
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .connection_access import (
     apply_inspection,
     connection_resource,
     external_error,
-    utc,
     verify_inspection,
 )
 from .domain import ConnectorSetupLaunch
@@ -63,7 +62,7 @@ class ConnectorSetupCoordinator:
         correlation_secret: bytes | None,
         public_origin: str | None,
         setup_ttl_seconds: int,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         if correlation_secret is not None and len(correlation_secret) < 32:
             raise ValueError("Connector setup correlation secret must be at least 32 bytes")
@@ -152,7 +151,7 @@ class ConnectorSetupCoordinator:
             {
                 "attempt_id": attempt.id,
                 "status": status,
-                "expires_at": utc(attempt.expires_at),
+                "expires_at": assume_utc(attempt.expires_at),
                 "connection": await connection_resource(session, connection_id),
                 "redirect_url": redirect_url,
             }
@@ -177,7 +176,7 @@ class ConnectorSetupCoordinator:
             if (
                 attempt is None
                 or attempt.initiating_principal_id != actor.principal.principal_id
-                or utc(attempt.expires_at) <= now
+                or assume_utc(attempt.expires_at) <= now
                 or not attempt.supports_verified_callback
                 or attempt.external_ref is None
             ):

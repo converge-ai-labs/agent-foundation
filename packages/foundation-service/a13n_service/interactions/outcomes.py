@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 
 from a13n_harness import SafeFailure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._outcome_transitions import (
     RunOutcomeError,
@@ -50,7 +50,7 @@ class RunOutcomeService:
         payloads: RunPayloadStore,
         *,
         control_signals: ThreadControlSignalPublisher | None = None,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._payloads = payloads
@@ -66,7 +66,7 @@ class RunOutcomeService:
     ) -> RunOutcomeReceipt:
         """Adopt an already-published waiting or completed state candidate."""
 
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         validate_outcome_candidate(state, authority)
         await self._verify_output_payload(authority, state, expected_thread_version, now)
         async with transaction(self._sessions) as database:
@@ -116,7 +116,7 @@ class RunOutcomeService:
     ) -> RunOutcomeReceipt:
         """Seal an accepted or running Run without object-store I/O."""
 
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             thread_id = await database.scalar(
                 select(RunRecord.thread_id).where(RunRecord.tenant_id == tenant_id, RunRecord.id == run_id)
@@ -214,12 +214,6 @@ class RunOutcomeService:
                 extra={"event": "thread_control_signal_failed", "thread_id": thread_id},
                 exc_info=True,
             )
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [

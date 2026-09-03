@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
-
 from anyio import sleep
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .catalog_service import MCPCatalogService
 from .errors import MCPConnectionError
@@ -28,7 +26,7 @@ class MCPReconciler:
         *,
         poll_interval_seconds: float = 2,
         refresh_skew_seconds: int = 60,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._connections = connections

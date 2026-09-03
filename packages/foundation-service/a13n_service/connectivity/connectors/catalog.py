@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from functools import partial
 
 from anyio import to_thread
@@ -21,6 +20,7 @@ from a13n_service.connectivity.management import canonical_json
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .catalog_objects import ConnectorCatalogObjectStore
 from .connection_access import external_error
@@ -65,7 +65,7 @@ class ConnectorCatalogService:
         instance_id: str = "connector-catalog",
         lease_seconds: int = 60,
         retention_seconds: int = 30 * 24 * 3600,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
@@ -139,7 +139,10 @@ class ConnectorCatalogService:
             connector = await require_connector(session, connection.connector_id)
             if connection.status != "ready" or connection.external_ref is None or connector.status != "active":
                 raise ConnectorError("connection_not_ready", "ConnectorConnection is not ready.", status_code=409)
-            if connection.catalog_claim_expires_at is not None and _utc(connection.catalog_claim_expires_at) > now:
+            if (
+                connection.catalog_claim_expires_at is not None
+                and assume_utc(connection.catalog_claim_expires_at) > now
+            ):
                 raise ConnectorError(
                     "catalog_claimed", "Connector catalog refresh is already running.", status_code=409
                 )
@@ -326,7 +329,7 @@ def _source_matches(
         connection.status == "ready"
         and connection.deleted_at is None
         and connection.catalog_claim_expires_at is not None
-        and _utc(connection.catalog_claim_expires_at) > now
+        and assume_utc(connection.catalog_claim_expires_at) > now
         and connection.external_ref == source.external_ref
         and connection.provider_key == source.provider_key
         and connection.setup_generation == source.setup_generation
@@ -339,7 +342,3 @@ def _source_matches(
         and connector.config_version == source.connector.config_version
         and connector.endpoint == source.connector.endpoint
     )
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

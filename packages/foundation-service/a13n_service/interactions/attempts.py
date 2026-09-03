@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from a13n_harness import SafeFailure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
@@ -66,7 +66,7 @@ class AttemptContext:
             raise ValueError("Attempt reconciliation timeout must be positive")
         if self.cleanup_timeout <= timedelta(0):
             raise ValueError("Attempt cleanup timeout must be positive")
-        object.__setattr__(self, "lease_expires_at", _utc(self.lease_expires_at))
+        object.__setattr__(self, "lease_expires_at", assume_utc(self.lease_expires_at))
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +101,7 @@ class AttemptExecutionService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._clock = clock
@@ -109,7 +109,7 @@ class AttemptExecutionService:
     async def validate(self, authority: AttemptContext) -> AttemptMutationReceipt:
         """Revalidate current lease and fence without mutating durable state."""
 
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
             run, attempt, _ = await read_attempt_authority(database, authority, now)
             return _receipt(run, attempt)
@@ -122,7 +122,7 @@ class AttemptExecutionService:
     ) -> AttemptMutationReceipt:
         if lease_duration <= timedelta(0):
             raise ValueError("lease_duration must be positive")
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             run, attempt, _ = await lock_attempt_authority(database, authority, now)
             attempt.heartbeat_at = now
@@ -147,7 +147,7 @@ class AttemptExecutionService:
             or preparation.mutation.attempt_version > authority.expected_attempt_version
         ):
             raise AttemptMutationError("Harness entry requires the matching successful preparation decision")
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             run, attempt, _ = await lock_attempt_authority(database, authority, now)
             if attempt.status != RunAttemptStatus.leased.value:
@@ -169,7 +169,7 @@ class AttemptExecutionService:
     ) -> AttemptPreparationResult:
         """Commit the decision after exact state, dependency, and Principal preflight succeeds."""
 
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             run, attempt, thread = await lock_attempt_authority(
                 database,
@@ -200,7 +200,7 @@ class AttemptExecutionService:
         authority: AttemptContext,
         delta: RecoveryUsage,
     ) -> AttemptMutationReceipt:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             run, attempt, _ = await lock_attempt_authority(database, authority, now)
             if attempt.status != RunAttemptStatus.running.value:
@@ -229,7 +229,7 @@ class AttemptExecutionService:
     ) -> StoredRunState:
         """Validate relational authority, then replace state outside the DB session."""
 
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
             await read_attempt_authority(database, authority, now)
         return await states.replace(
@@ -249,7 +249,7 @@ class AttemptExecutionService:
     ) -> AttemptMutationReceipt:
         if retry_after < timedelta(0):
             raise ValueError("retry_after must not be negative")
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             run, attempt, thread = await lock_attempt_authority(
                 database,
@@ -275,7 +275,7 @@ class AttemptExecutionService:
         authority: AttemptContext,
         reason: RunAttemptYieldReason,
     ) -> AttemptMutationReceipt:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             run, attempt, _ = await lock_attempt_authority(database, authority, now)
             if run.handoffs_completed >= run.max_handoffs:
@@ -394,7 +394,7 @@ def _validate_authority(
         or run.runtime_lock_digest != authority.runtime_lock_digest
         or attempt.runtime_lock_digest != authority.runtime_lock_digest
         or not token_matches
-        or _utc(attempt.lease_expires_at) <= now
+        or assume_utc(attempt.lease_expires_at) <= now
     ):
         raise AttemptAuthorityError("Attempt lease, fence, selection, or version is no longer authoritative")
 
@@ -402,7 +402,7 @@ def _validate_authority(
 def _successor_budget_remains(run: RunRecord, available_at: datetime) -> bool:
     if run.recovery_attempts_started >= run.max_recovery_attempts:
         return False
-    if run.recovery_deadline_at is not None and available_at >= _utc(run.recovery_deadline_at):
+    if run.recovery_deadline_at is not None and available_at >= assume_utc(run.recovery_deadline_at):
         return False
     maximum = run.to_resource().recovery_budget.max_usage
     return maximum is None or maximum.permits(run.to_resource().usage_charged)
@@ -413,7 +413,7 @@ def _active_budget_failure(
     attempt: RunAttemptRecord,
     now: datetime,
 ) -> SafeFailure | None:
-    if run.recovery_deadline_at is not None and now >= _utc(run.recovery_deadline_at):
+    if run.recovery_deadline_at is not None and now >= assume_utc(run.recovery_deadline_at):
         return SafeFailure(
             code="recovery_deadline_exhausted",
             message="The Run recovery deadline was exhausted during preparation.",
@@ -432,18 +432,12 @@ def _receipt(run: RunRecord, attempt: RunAttemptRecord) -> AttemptMutationReceip
     return AttemptMutationReceipt(
         run_version=run.version,
         attempt_version=attempt.version,
-        lease_expires_at=_utc(attempt.lease_expires_at),
+        lease_expires_at=assume_utc(attempt.lease_expires_at),
     )
 
 
 def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [

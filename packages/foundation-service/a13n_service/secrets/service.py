@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .crypto import EncryptedSecret, SecretProtectionError, SecretProtector
 from .domain import SecretOperation, SecretOwnerType, SecretUseContext
@@ -44,7 +43,7 @@ class InternalSecretService:
         sessions: async_sessionmaker[AsyncSession],
         protector: SecretProtector,
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._protector = protector

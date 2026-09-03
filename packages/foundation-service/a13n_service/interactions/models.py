@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from a13n_harness import SafeFailure
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.models.domain import ModelExecutionObservation
+from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
     EncryptedRunConfigPayloadRef,
@@ -87,8 +88,8 @@ class SessionRecord(Base):
             id=self.id,
             tenant_id=self.tenant_id,
             workspace_id=self.workspace_id,
-            created_at=_as_utc(self.created_at),
-            updated_at=_as_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -186,8 +187,8 @@ class ThreadRecord(Base):
             origin_run_id=self.origin_run_id,
             head_run_id=self.head_run_id,
             current_run_id=self.current_run_id,
-            created_at=_as_utc(self.created_at),
-            updated_at=_as_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -544,14 +545,14 @@ class RunRecord(Base):
             ),
             "priority": self.priority,
             "queue_name": self.queue_name,
-            "available_at": _as_utc(self.available_at),
+            "available_at": assume_utc(self.available_at),
             "current_run_attempt_id": self.current_run_attempt_id,
             "next_attempt_fence": self.next_attempt_fence,
             "recovery_budget": RecoveryBudget(
                 policy_version=self.recovery_policy_version,
                 max_recovery_attempts=self.max_recovery_attempts,
                 max_handoffs=self.max_handoffs,
-                recovery_deadline_at=_optional_utc(self.recovery_deadline_at),
+                recovery_deadline_at=optional_assume_utc(self.recovery_deadline_at),
                 max_usage=_RECOVERY_LIMIT_ADAPTER.validate_python(self.max_usage_json),
             ),
             "attempts_started": self.attempts_started,
@@ -568,12 +569,12 @@ class RunRecord(Base):
             "failure": _FAILURE_ADAPTER.validate_python(self.failure_json),
             "pending": _PENDING_ADAPTER.validate_python(self.pending_json),
             "sealed_state": self._sealed_state(),
-            "created_at": _as_utc(self.created_at),
-            "updated_at": _as_utc(self.updated_at),
-            "started_at": _optional_utc(self.started_at),
-            "waiting_at": _optional_utc(self.waiting_at),
-            "completed_at": _optional_utc(self.completed_at),
-            "sealed_at": _optional_utc(self.sealed_at),
+            "created_at": assume_utc(self.created_at),
+            "updated_at": assume_utc(self.updated_at),
+            "started_at": optional_assume_utc(self.started_at),
+            "waiting_at": optional_assume_utc(self.waiting_at),
+            "completed_at": optional_assume_utc(self.completed_at),
+            "sealed_at": optional_assume_utc(self.sealed_at),
         }
         if self.input_object_key is None:
             values["input"] = _json_null(self.input_json)
@@ -754,29 +755,21 @@ class RunAttemptRecord(Base):
                 self.model_execution_observation_json
             ),
             lease_token_digest=self.lease_token_digest,
-            lease_expires_at=_as_utc(self.lease_expires_at),
-            heartbeat_at=_as_utc(self.heartbeat_at),
+            lease_expires_at=assume_utc(self.lease_expires_at),
+            heartbeat_at=assume_utc(self.heartbeat_at),
             usage=_RECOVERY_USAGE_ADAPTER.validate_python(self.usage_json),
             yield_reason=None if self.yield_reason is None else RunAttemptYieldReason(self.yield_reason),
             failure=_FAILURE_ADAPTER.validate_python(self.failure_json),
-            created_at=_as_utc(self.created_at),
-            claimed_at=_as_utc(self.claimed_at),
-            started_at=_optional_utc(self.started_at),
-            finished_at=_optional_utc(self.finished_at),
-            updated_at=_as_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            claimed_at=assume_utc(self.claimed_at),
+            started_at=optional_assume_utc(self.started_at),
+            finished_at=optional_assume_utc(self.finished_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
 def _json_null(value: Any) -> Any:
     return None if value is JSON.NULL else value
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _optional_utc(value: datetime | None) -> datetime | None:
-    return None if value is None else _as_utc(value)
 
 
 __all__ = ["RunAttemptRecord", "RunRecord", "SessionRecord", "ThreadRecord"]

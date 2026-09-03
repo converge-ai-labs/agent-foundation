@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
-from datetime import UTC, datetime
+from collections.abc import Awaitable, Sequence
 from time import monotonic
 from typing import Protocol
 
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .domain import (
@@ -49,13 +49,13 @@ class ModelService:
         sessions: async_sessionmaker[AsyncSession],
         registry: ProviderRegistry,
         *,
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
         connection_tester: ModelConnectionTester | None = None,
         connection_test_timeout_seconds: float = 15,
     ) -> None:
         self._sessions = sessions
         self._registry = registry
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
         self._connection_tester = connection_tester
         self._connection_test_timeout_seconds = connection_test_timeout_seconds
 

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from anyio import sleep
 from sqlalchemy import or_, select
@@ -17,6 +16,7 @@ from a13n_service.connectivity.connectors.adapters import (
 )
 from a13n_service.secrets import SecretOperation
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .catalog import ConnectorCatalogService
 from .connection_access import apply_inspection, verify_inspection
@@ -40,7 +40,7 @@ class ConnectorReconciler:
         instance_id: str,
         poll_interval_seconds: float,
         lease_seconds: int,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters

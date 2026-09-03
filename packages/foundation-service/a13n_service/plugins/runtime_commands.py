@@ -7,7 +7,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import cast
 
 from a13n_harness import SafeFailure
@@ -28,6 +28,7 @@ from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .commands import (
     PluginRuntimeCandidateResolver,
@@ -74,7 +75,7 @@ class PluginRuntimeCommandCoordinator:
         *,
         poll_interval_seconds: float = 1,
         lease_seconds: float = 300,
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         if poll_interval_seconds <= 0:
             raise ValueError("poll_interval_seconds must be positive")
@@ -85,7 +86,7 @@ class PluginRuntimeCommandCoordinator:
         self._staging_authority = staging_authority
         self._poll_interval_seconds = poll_interval_seconds
         self._lease_seconds = lease_seconds
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def activate(
         self,
@@ -396,7 +397,7 @@ class PluginRuntimeCommandCoordinator:
             if state.command_operation_id is not None:
                 task = await session.get(PluginRuntimeTaskRecord, state.command_operation_id, with_for_update=True)
                 if task is not None and task.status == PluginTaskStatus.running.value:
-                    if state.command_lease_expires_at is not None and _as_utc(state.command_lease_expires_at) > now:
+                    if state.command_lease_expires_at is not None and assume_utc(state.command_lease_expires_at) > now:
                         return None
                 else:
                     state.command_operation_id = None
@@ -736,7 +737,7 @@ class PluginRuntimeCommandCoordinator:
             or state.command_operation_id != claim.operation_id
             or state.command_claim_generation != claim.generation
             or state.command_lease_expires_at is None
-            or _as_utc(state.command_lease_expires_at) <= _as_utc(self._clock())
+            or assume_utc(state.command_lease_expires_at) <= assume_utc(self._clock())
         ):
             raise _RuntimeTaskLeaseLost
         task = await session.get(PluginRuntimeTaskRecord, claim.operation_id, with_for_update=True)
@@ -921,10 +922,6 @@ def _clear_claim(state: PluginRuntimeStateRecord, *, now: datetime) -> None:
     state.command_operation_id = None
     state.command_lease_expires_at = None
     state.updated_at = now
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 async def _load_replay(

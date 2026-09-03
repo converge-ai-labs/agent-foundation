@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import utc_now
 
 from .control_domain import (
     QueuedSubmissionConsumptionReceipt,
@@ -63,7 +62,7 @@ class RunAcceptanceService:
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def accept_new_thread(
         self,

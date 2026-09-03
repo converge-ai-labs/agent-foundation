@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import anyio
 from pydantic import TypeAdapter, ValidationError
@@ -19,6 +18,7 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .admission_domain import (
     BindingState,
@@ -59,7 +59,7 @@ class IngressAdmissionReconciler:
         lease_seconds: float,
         max_attempts: int,
         max_backoff_seconds: float,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._acceptor = acceptor

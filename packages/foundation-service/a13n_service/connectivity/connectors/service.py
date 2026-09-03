@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
-
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -27,6 +24,7 @@ from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .connection_access import external_error
 from .domain import (
@@ -58,7 +56,7 @@ class ConnectorService:
         adapters: AdapterRegistry[ConnectorAdapter],
         secrets: InternalSecretService,
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
@@ -380,7 +378,7 @@ class ConnectorService:
                 return ConnectorTestResult(
                     connector_id=record.id,
                     connector_version=replay.result_version,
-                    tested_at=_utc(replay.created_at),
+                    tested_at=assume_utc(replay.created_at),
                 )
             _require_version(record.version, expected_version)
             if record.status != ConnectorStatus.active.value:
@@ -535,7 +533,3 @@ async def _replay_connector_command(
     except ConnectivityManagementValueError as error:
         raise map_management_value_error(error) from error
     return replay is not None
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

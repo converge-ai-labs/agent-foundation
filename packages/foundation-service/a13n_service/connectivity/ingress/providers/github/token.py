@@ -5,9 +5,8 @@ from __future__ import annotations
 import base64
 import json
 from collections import OrderedDict
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import anyio
 import httpx2
@@ -16,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.temporal import Clock, utc_now
 
 from .api import GitHubApiError, read_github_response
 
@@ -42,7 +42,7 @@ class GitHubInstallationTokenProvider:
         private_key_pem: str,
         permissions: JsonObject,
         max_cached_repositories: int = 512,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         if app_id <= 0 or installation_id <= 0 or not 1 <= len(private_key_pem) <= 32 * 1024:
             raise ValueError("GitHub App credentials are invalid")

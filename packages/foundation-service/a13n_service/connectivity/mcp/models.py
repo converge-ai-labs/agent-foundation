@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc
 
 from .domain import MCPAuthMode, MCPConnection, MCPConnectionStatus, MCPConnectionStatusReason
 
@@ -110,8 +111,8 @@ class MCPConnectionRecord(Base):
                 principal_type=PrincipalType(self.created_by_type),
                 principal_id=self.created_by_id,
             ),
-            created_at=_utc(self.created_at),
-            updated_at=_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -192,7 +193,3 @@ class MCPToolCatalogRecord(Base):
     server_version: Mapped[str] = mapped_column(String(128), nullable=False)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     retain_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

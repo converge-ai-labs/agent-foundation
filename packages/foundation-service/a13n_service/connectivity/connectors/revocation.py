@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,6 +14,7 @@ from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .connection_access import (
     authorize_connection,
@@ -44,7 +44,7 @@ class ConnectorRevocationService:
         adapters: AdapterRegistry[ConnectorAdapter],
         secrets: InternalSecretService,
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters

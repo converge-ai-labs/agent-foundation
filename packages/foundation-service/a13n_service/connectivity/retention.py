@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 
 import anyio
@@ -15,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import ObjectConflict, ObjectStore, ObjectStoreError, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .connectors.models import ConnectorConnectionRecord, ConnectorToolCatalogRecord
 from .mcp.models import MCPConnectionRecord, MCPToolCatalogRecord
@@ -51,7 +51,7 @@ class CatalogRetentionReconciler:
         lease_seconds: float = 60,
         object_grace_seconds: float = 3600,
         batch_size: int = 25,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._objects = objects
@@ -148,7 +148,7 @@ class CatalogRetentionReconciler:
         self._object_cursor = page.cursor
         cleaned = 0
         for item in page.items:
-            if _utc(item.modified_at) > cutoff:
+            if assume_utc(item.modified_at) > cutoff:
                 continue
             match = _SNAPSHOT_KEY.fullmatch(item.key)
             if match is not None:
@@ -237,7 +237,7 @@ class CatalogRetentionReconciler:
         source = await session.scalar(select(model).where(model.id == source_id).with_for_update())
         if source is None:
             return None, False
-        if source.catalog_claim_expires_at is not None and _utc(source.catalog_claim_expires_at) > now:
+        if source.catalog_claim_expires_at is not None and assume_utc(source.catalog_claim_expires_at) > now:
             return None, True
         source.catalog_claim_generation += 1
         source.catalog_claim_owner = self._instance_id
@@ -307,7 +307,3 @@ def _catalog_match(key: str) -> tuple[CatalogKind, re.Match[str] | None]:
     if connector is not None:
         return "connector", connector
     return "mcp", _MCP_CATALOG_KEY.fullmatch(key)
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

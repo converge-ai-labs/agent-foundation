@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from collections.abc import Awaitable
 from time import monotonic
 from typing import Protocol
 
@@ -16,6 +15,7 @@ from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .credentials import ProviderCredentialError, replace_provider_credential, validate_provider_credential
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
@@ -53,7 +53,7 @@ class ModelProviderService:
         endpoint_policy: EndpointPolicy,
         protector: SecretProtector,
         *,
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
         resolve_dns_on_save: bool = True,
         operations: ProviderOperations | None = None,
         command_timeout_seconds: float = 15,
@@ -62,7 +62,7 @@ class ModelProviderService:
         self._registry = registry
         self._endpoint_policy = endpoint_policy
         self._protector = protector
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
         self._resolve_dns_on_save = resolve_dns_on_save
         self._operations = operations
         self._command_timeout_seconds = command_timeout_seconds

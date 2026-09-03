@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import anyio
 from sqlalchemy import or_, select
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.storage import transaction
+from a13n_service.temporal import utc_now
 
 from .models import AssetRecord
 from .objects import ASSET_OBJECT_DESTINATION, AssetObjectStore
@@ -43,7 +44,7 @@ class AssetCleanupReconciler:
         self._poll_interval_seconds = poll_interval_seconds
         self._lease_seconds = lease_seconds
         self._max_attempts = max_attempts
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def run(self) -> None:
         while True:

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from collections.abc import Mapping
 
 from pydantic import JsonValue
 from sqlalchemy import and_, or_, select
@@ -17,6 +16,7 @@ from a13n_service.connectivity.management import fingerprint, record_command
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
 
 from ._management import (
     audit,
@@ -51,7 +51,7 @@ class RouteService:
         *,
         batch_max_events: int,
         batch_max_wait_seconds: float,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters

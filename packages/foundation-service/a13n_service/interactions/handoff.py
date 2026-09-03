@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._outcome_transitions import (
     apply_completed_outcome,
@@ -68,7 +68,7 @@ class CompletionQueueHandoffService:
         states: RunStateStore,
         payloads: RunPayloadStore,
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._states = states
@@ -100,7 +100,7 @@ class CompletionQueueHandoffService:
         )
         await self._publish_initial(successor_run, successor_state)
 
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         try:
             async with transaction(self._sessions) as database:
                 source, attempt, thread = await _lock_and_seal_source(
@@ -187,7 +187,7 @@ class CompletionQueueHandoffService:
         """Atomically seal completion and terminally fail an invalid queue head."""
 
         candidate = await self._verify_source(authority=authority, source_state=source_state)
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         try:
             async with transaction(self._sessions) as database:
                 source, attempt, thread = await _lock_and_seal_source(
@@ -416,12 +416,6 @@ async def _consume_queue_head(
     if consumed.consumed_run_id != run.id:
         raise RuntimeError("combined handoff lost its queue correlation")
     return consumed.to_resource()
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = ["CombinedQueueHandoffReceipt", "CompletionQueueHandoffService"]

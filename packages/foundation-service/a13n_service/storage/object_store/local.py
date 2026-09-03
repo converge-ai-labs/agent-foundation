@@ -11,11 +11,13 @@ import struct
 import uuid
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import anyio
 from anyio import AsyncFile, CapacityLimiter, to_thread
+
+from a13n_service.temporal import utc_now
 
 from ..filesystem import prepare_root
 from .api import (
@@ -178,7 +180,7 @@ class LocalObjectStore:
     ) -> ObjectInfo:
         digest = hashlib.sha256()
         size = 0
-        modified_at = datetime.now(UTC)
+        modified_at = utc_now()
         file = await anyio.open_file(path, "xb", limiter=self._limiter)
         try:
             await to_thread.run_sync(lambda: os.chmod(path, 0o600), limiter=self._limiter)

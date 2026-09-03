@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc
 
 from .domain import (
     Connector,
@@ -84,8 +85,8 @@ class ConnectorRecord(Base):
             credential_configured=True,
             credential_generation=self.credential_generation,
             created_by=_principal(self.created_by_type, self.created_by_id),
-            created_at=_utc(self.created_at),
-            updated_at=_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -189,8 +190,8 @@ class ConnectorConnectionRecord(Base):
             version=self.version,
             catalog_digest=self.current_catalog_digest,
             created_by=_principal(self.created_by_type, self.created_by_id),
-            created_at=_utc(self.created_at),
-            updated_at=_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -326,7 +327,3 @@ class ConnectorToolCatalogRecord(Base):
 
 def _principal(kind: str, identifier: str) -> PrincipalRef:
     return PrincipalRef(principal_type=PrincipalType(kind), principal_id=identifier)
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

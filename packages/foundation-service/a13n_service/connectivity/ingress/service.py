@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
-
 from pydantic import SecretStr
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -31,6 +28,7 @@ from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import InternalSecretError, InternalSecretService
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
 
 from ._management import (
     audit,
@@ -64,7 +62,7 @@ class IngressService:
         adapters: AdapterRegistry[IngressAdapter],
         secrets: InternalSecretService,
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters

@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
-
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .cursors import (
     SkillCursorError,
@@ -49,11 +47,11 @@ class SkillCatalogService:
         sessions: async_sessionmaker[AsyncSession],
         packages: SkillPackageStore,
         *,
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._sessions = sessions
         self._packages = packages
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def get(self, *, actor: AuthenticatedActor, skill_id: str) -> Skill:
         async with transaction(self._sessions) as session:

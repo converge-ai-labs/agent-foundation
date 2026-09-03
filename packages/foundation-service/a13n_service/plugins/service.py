@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import and_, func, or_, select
@@ -21,6 +21,7 @@ from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAc
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import utc_now
 
 from .artifact import InspectedPluginWheel, inspect_plugin_wheel
 from .commands import PluginRuntimeCommandDispatcher
@@ -92,7 +93,7 @@ class PluginService:
         self._max_expanded_bytes = max_expanded_bytes
         self._max_archive_members = max_archive_members
         self._runtime_command_dispatcher = runtime_command_dispatcher
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def ensure_runtime_mode(self) -> None:
         """Persist and verify the deployment-wide immutable Plugin Runtime profile."""

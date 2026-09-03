@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import utc_now
 
 from .access import (
     authorize_environment_workspace as _authorize,
@@ -104,7 +104,7 @@ class EnvironmentManagementService:
     ) -> None:
         self._sessions = sessions
         self._catalog = catalog
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
         self._attachment_tester = attachment_tester
 
     async def list_provider_catalog(

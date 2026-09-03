@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import anyio
 from pydantic import ValidationError
@@ -13,6 +12,7 @@ from sqlalchemy import delete, exists, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import ObjectConflict, ObjectStore, ObjectStoreError, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .admission_domain import ProtectedRawRef
 from .admission_models import IngressAdmissionRecord, IngressBatchEventRecord, IngressBatchRecord
@@ -33,7 +33,7 @@ class IngressRetentionReconciler:
         poll_interval_seconds: float = 60,
         object_grace_seconds: float = 3600,
         batch_size: int = 25,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._objects = objects
@@ -82,7 +82,7 @@ class IngressRetentionReconciler:
                     ref = ProtectedRawRef.model_validate(record.raw_ref_json)
                 except ValidationError:
                     continue
-                if _utc(ref.expires_at) <= now:
+                if assume_utc(ref.expires_at) <= now:
                     record.raw_ref_json = None
                     refs.append(ref)
         for ref in refs:
@@ -157,7 +157,7 @@ class IngressRetentionReconciler:
         self._object_cursor = page.cursor
         cleaned = 0
         for item in page.items:
-            if _utc(item.modified_at) > cutoff or _RAW_KEY.fullmatch(item.key) is None:
+            if assume_utc(item.modified_at) > cutoff or _RAW_KEY.fullmatch(item.key) is None:
                 continue
             if not await self._raw_object_exists(item.key):
                 cleaned += await self._delete_object(item.key, version=item.version)
@@ -184,7 +184,3 @@ class IngressRetentionReconciler:
         except (ObjectConflict, ObjectStoreError):
             return 0
         return 1
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

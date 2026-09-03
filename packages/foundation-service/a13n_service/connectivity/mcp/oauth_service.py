@@ -5,9 +5,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets as random_secrets
-from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 import httpx2
@@ -33,6 +32,7 @@ from a13n_service.secrets import (
     SecretUseContext,
 )
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import MCPAuthorizationLaunch, MCPConnection
 from .errors import MCPConnectionError
@@ -92,7 +92,7 @@ class MCPOAuthService:
         instance_id: str,
         setup_ttl_seconds: int = 600,
         claim_lease_seconds: int = 60,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._oauth = oauth
@@ -284,7 +284,7 @@ class MCPOAuthService:
             oauth_session = await session.get(MCPOAuthSessionRecord, session_id, with_for_update=True)
             if oauth_session is None or oauth_session.status != "expired" or oauth_session.consumed_at is not None:
                 return True
-            if oauth_session.claim_expires_at is not None and _utc(oauth_session.claim_expires_at) > now:
+            if oauth_session.claim_expires_at is not None and assume_utc(oauth_session.claim_expires_at) > now:
                 return False
             connection = await require_connection(
                 session,
@@ -514,7 +514,7 @@ class MCPOAuthService:
                 state=required_oauth_string(setup, "state"),
                 code_challenge=_b64url(hashlib.sha256(verifier.encode()).digest()),
             ),
-            expires_at=_utc(oauth_session.expires_at),
+            expires_at=assume_utc(oauth_session.expires_at),
         )
 
     async def _reserve_callback(
@@ -535,7 +535,7 @@ class MCPOAuthService:
                 raise MCPConnectionError("invalid_oauth_state", "OAuth callback state is invalid.", status_code=400)
             connection = await require_connection(session, oauth_session.mcp_connection_id, lock=True)
             await authorize_connection(session, actor, connection, mode="owner_manage")
-            if _utc(oauth_session.expires_at) <= now:
+            if assume_utc(oauth_session.expires_at) <= now:
                 oauth_session.status = "expired"
                 oauth_session.updated_at = now
                 raise MCPConnectionError(
@@ -550,7 +550,7 @@ class MCPOAuthService:
             if oauth_session.status not in {"pending", "exchanging"} or (
                 oauth_session.status == "exchanging"
                 and oauth_session.claim_expires_at is not None
-                and _utc(oauth_session.claim_expires_at) > now
+                and assume_utc(oauth_session.claim_expires_at) > now
             ):
                 raise MCPConnectionError("oauth_session_unavailable", "OAuth session is unavailable.", status_code=409)
             oauth_session.status = "exchanging"
@@ -673,7 +673,10 @@ class MCPOAuthService:
                 connection.auth_mode != "oauth"
                 or connection.credential_secret_id is None
                 or connection.status == "disabled"
-                or (connection.catalog_claim_expires_at is not None and _utc(connection.catalog_claim_expires_at) > now)
+                or (
+                    connection.catalog_claim_expires_at is not None
+                    and assume_utc(connection.catalog_claim_expires_at) > now
+                )
             ):
                 return None
             connection.catalog_claim_generation += 1
@@ -777,7 +780,3 @@ def _digest(value: str) -> str:
 
 def _b64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

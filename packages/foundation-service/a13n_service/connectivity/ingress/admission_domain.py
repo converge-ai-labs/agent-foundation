@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from a13n_service.interactions.input import AgentInput
+from a13n_service.temporal import Clock, utc_now
 
 from .domain import JsonObject
 from .provider import ExternalRef
@@ -95,7 +95,7 @@ class UnavailableFoundationInputAcceptor:
         self,
         *,
         retry_seconds: float = 30,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._retry_seconds = retry_seconds
         self._clock = clock

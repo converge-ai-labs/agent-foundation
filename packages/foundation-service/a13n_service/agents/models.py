@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
     Agent,
@@ -98,13 +99,13 @@ class AgentRecord(Base):
             version=self.version,
             current_revision_id=self.current_revision_id,
             enabled=self.enabled,
-            archived_at=_optional_utc(self.archived_at),
+            archived_at=optional_assume_utc(self.archived_at),
             duplicated_from_agent_id=self.duplicated_from_agent_id,
             duplicated_from_revision_id=self.duplicated_from_revision_id,
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),
-            created_at=_as_utc(self.created_at),
-            updated_at=_as_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -183,7 +184,7 @@ class AgentRevisionRecord(Base):
             content_digest=self.content_digest,
             source_revision_id=self.source_revision_id,
             created_by=_principal(self.created_by_type, self.created_by_id),
-            created_at=_as_utc(self.created_at),
+            created_at=assume_utc(self.created_at),
         )
 
 
@@ -193,11 +194,3 @@ def _principal(principal_type: str, principal_id: str) -> PrincipalRef:
         # until the shared IAM domain exposes SystemActorRef.
         return PrincipalRef(principal_type=PrincipalType.service_account, principal_id=principal_id)
     return PrincipalRef(principal_type=PrincipalType(principal_type), principal_id=principal_id)
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _optional_utc(value: datetime | None) -> datetime | None:
-    return None if value is None else _as_utc(value)

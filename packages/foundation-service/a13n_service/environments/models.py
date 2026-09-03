@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc
 
 from .domain import (
     Environment,
@@ -70,7 +71,7 @@ class EnvironmentProviderSelectionRecord(Base):
             provider_lock=_LOCK_ADAPTER.validate_python(self.provider_lock),
             enabled=self.enabled,
             updated_by=_principal(self.updated_by_type, self.updated_by_id),
-            updated_at=_utc(self.updated_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -116,11 +117,11 @@ class EnvironmentRecord(Base):
             description=self.description,
             version=self.version,
             current_revision_id=self.current_revision_id,
-            archived_at=_utc(self.archived_at) if self.archived_at is not None else None,
+            archived_at=assume_utc(self.archived_at) if self.archived_at is not None else None,
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),
-            created_at=_utc(self.created_at),
-            updated_at=_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -173,7 +174,7 @@ class EnvironmentRevisionRecord(Base):
             target_key=self.target_key,
             logical_digest_sha256=self.logical_digest_sha256,
             created_by=_principal(self.created_by_type, self.created_by_id),
-            created_at=_utc(self.created_at),
+            created_at=assume_utc(self.created_at),
         )
 
 
@@ -237,13 +238,9 @@ class RunEnvironmentBindingRecord(Base):
             provider_key=self.provider_key,
             target_key=self.target_key,
             environment_execution_config_digest_sha256=self.environment_execution_config_digest_sha256,
-            created_at=_utc(self.created_at),
+            created_at=assume_utc(self.created_at),
         )
 
 
 def _principal(value: str, principal_id: str) -> PrincipalRef:
     return PrincipalRef(principal_type=PrincipalType(value), principal_id=principal_id)
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

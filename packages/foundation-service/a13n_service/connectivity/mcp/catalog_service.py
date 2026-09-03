@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import httpx2
 from sqlalchemy import select
@@ -19,6 +18,7 @@ from a13n_service.secrets import (
     SecretUseContext,
 )
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .catalog import catalog_bytes
 from .catalog_objects import MCPCatalogObjectStore
@@ -54,7 +54,7 @@ class MCPCatalogService:
         instance_id: str,
         lease_seconds: int = 60,
         retention_seconds: int = 30 * 24 * 3600,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._protocol = protocol
@@ -127,7 +127,7 @@ class MCPCatalogService:
                     "MCPConnection credentials are required.",
                     status_code=409,
                 )
-            if record.catalog_claim_expires_at is not None and _utc(record.catalog_claim_expires_at) > now:
+            if record.catalog_claim_expires_at is not None and assume_utc(record.catalog_claim_expires_at) > now:
                 raise MCPConnectionError("catalog_claimed", "MCP discovery is already running.", status_code=409)
             record.catalog_generation += 1
             record.catalog_claim_generation += 1
@@ -242,7 +242,7 @@ def _matches(record: MCPConnectionRecord, source: CatalogSource, *, now: datetim
         record.deleted_at is None
         and record.status != "disabled"
         and record.catalog_claim_expires_at is not None
-        and _utc(record.catalog_claim_expires_at) > now
+        and assume_utc(record.catalog_claim_expires_at) > now
         and record.endpoint_url == source.endpoint_url
         and record.auth_mode == source.auth_mode
         and record.credential_generation == source.credential_generation
@@ -273,7 +273,3 @@ def _action_required_reason(auth_mode: str, code: str) -> str | None:
     }:
         return "incompatible"
     return None
-
-
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

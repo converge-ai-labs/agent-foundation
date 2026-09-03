@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import SkillUploadReceipt, new_skill_upload_id
 from .errors import SkillError
@@ -39,11 +39,11 @@ class SkillUploadService:
         sessions: async_sessionmaker[AsyncSession],
         packages: SkillPackageStore,
         *,
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._sessions = sessions
         self._packages = packages
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def stage(
         self,
@@ -148,7 +148,7 @@ class SkillUploadService:
             record = await session.scalar(_owned_upload_query(actor=actor, upload_id=upload_id))
             if record is None:
                 raise _upload_not_found()
-            if _as_utc(record.expires_at) <= _as_utc(self._clock()):
+            if assume_utc(record.expires_at) <= assume_utc(self._clock()):
                 raise SkillError(
                     "skill_upload_expired",
                     "The staged Skill upload has expired.",
@@ -279,7 +279,3 @@ def _upload_not_found() -> SkillError:
         "The staged Skill upload was not found.",
         status_code=404,
     )
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

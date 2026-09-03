@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import TypeAdapter
@@ -24,6 +24,7 @@ from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import utc_now
 
 from .cursors import (
     AgentCursorError,
@@ -80,7 +81,7 @@ class AgentService:
         self._sessions = sessions
         self._resolver = resolver
         self._invocation_resolver = invocation_resolver
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def register_builtin(
         self,

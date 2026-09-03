@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import and_, or_, select
@@ -23,6 +23,7 @@ from a13n_service.iam.authorization import (
 from a13n_service.iam.models import SecurityAuditRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import assume_utc, utc_now
 
 from .cursors import AssetCursorError, decode_asset_cursor, encode_asset_cursor
 from .domain import (
@@ -81,7 +82,7 @@ class AssetService:
         self._objects = objects
         self._staging = staging
         self._max_size_bytes = max_size_bytes
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def upload(
         self,
@@ -569,7 +570,7 @@ async def _load_upload_replay(
     )
     if evidence is None:
         return None
-    if _as_utc(evidence.expires_at) <= _as_utc(now):
+    if assume_utc(evidence.expires_at) <= assume_utc(now):
         await session.delete(evidence)
         await session.flush()
         return None
@@ -702,7 +703,3 @@ def _is_idempotency_race(error: IntegrityError) -> bool:
         return getattr(diagnostic, "constraint_name", None) == "uq_idempotency_evidence_replay_scope"
     message = str(error.orig).casefold()
     return "unique constraint failed" in message and "idempotency_evidence.actor_type" in message
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

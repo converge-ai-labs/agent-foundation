@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .domain import (
     CreateSkillRequest,
@@ -86,11 +86,11 @@ class SkillPublicationService:
         sessions: async_sessionmaker[AsyncSession],
         sources: SkillSourcePreparer,
         *,
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._sessions = sessions
         self._sources = sources
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def create(
         self,

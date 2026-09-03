@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from pydantic import TypeAdapter
 from sqlalchemy import (
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
     Skill,
@@ -81,7 +82,7 @@ class SkillRecord(Base):
             name=self.name,
             version=self.version,
             current_revision_id=self.current_revision_id,
-            created_at=_as_utc(self.created_at),
+            created_at=assume_utc(self.created_at),
             created_by=PrincipalRef(
                 principal_type=PrincipalType(self.created_by_type),
                 principal_id=self.created_by_id,
@@ -90,8 +91,8 @@ class SkillRecord(Base):
                 principal_type=PrincipalType(self.updated_by_type),
                 principal_id=self.updated_by_id,
             ),
-            updated_at=_as_utc(self.updated_at),
-            deleted_at=_optional_utc(self.deleted_at),
+            updated_at=assume_utc(self.updated_at),
+            deleted_at=optional_assume_utc(self.deleted_at),
         )
 
 
@@ -142,7 +143,7 @@ class SkillRevisionRecord(Base):
             version=self.version,
             manifest=SkillPackageManifest.model_validate(self.manifest),
             imported_from=_PROVENANCE_ADAPTER.validate_python(self.imported_from),
-            created_at=_as_utc(self.created_at),
+            created_at=assume_utc(self.created_at),
             created_by=PrincipalRef(
                 principal_type=PrincipalType(self.created_by_type),
                 principal_id=self.created_by_id,
@@ -185,7 +186,7 @@ class SkillUploadRecord(Base):
             workspace_id=self.workspace_id,
             archive_sha256=self.archive_sha256,
             manifest=SkillPackageManifest.model_validate(self.manifest),
-            expires_at=_as_utc(self.expires_at),
+            expires_at=assume_utc(self.expires_at),
             consumed_by_revision_id=self.consumed_by_revision_id,
         )
 
@@ -225,11 +226,3 @@ class SkillIdempotencyRecord(Base):
     status_code: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _optional_utc(value: datetime | None) -> datetime | None:
-    return None if value is None else _as_utc(value)

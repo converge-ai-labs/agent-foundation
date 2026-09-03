@@ -22,6 +22,7 @@ from a13n_service.iam.authorization import (
 from a13n_service.iam.models import SecurityAuditRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import assume_utc
 
 from .errors import SkillError
 from .models import SkillIdempotencyRecord
@@ -90,7 +91,7 @@ async def load_replay[ResponseModel: BaseModel](
     )
     if record is None:
         return None
-    if _as_utc(record.expires_at) <= _as_utc(now):
+    if assume_utc(record.expires_at) <= assume_utc(now):
         await session.delete(record)
         await session.flush()
         return None
@@ -235,9 +236,3 @@ def _invalid_idempotency_key() -> SkillError:
         "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
         status_code=400,
     )
-
-
-def _as_utc(value: datetime) -> datetime:
-    from datetime import UTC
-
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

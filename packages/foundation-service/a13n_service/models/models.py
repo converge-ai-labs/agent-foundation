@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc
 
 from .domain import Model, ModelApiConfig, ModelProvider
 
@@ -76,8 +77,8 @@ class ModelProviderRecord(Base):
             enabled=self.enabled,
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),
-            created_at=_as_utc(self.created_at),
-            updated_at=_as_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
@@ -137,14 +138,10 @@ class ModelRecord(Base):
             enabled=self.enabled,
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),
-            created_at=_as_utc(self.created_at),
-            updated_at=_as_utc(self.updated_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
         )
 
 
 def _principal(principal_type: str, principal_id: str) -> PrincipalRef:
     return PrincipalRef(principal_type=PrincipalType(principal_type), principal_id=principal_id)
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

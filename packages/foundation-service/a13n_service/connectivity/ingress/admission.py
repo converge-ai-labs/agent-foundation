@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from pydantic import JsonValue
 from sqlalchemy import func, select
@@ -18,6 +17,7 @@ from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, utc_now
 
 from ._management import require_adapter, require_ingress, secret_context
 from .admission_domain import ProtectedRawRef
@@ -89,7 +89,7 @@ class IngressEventService:
         ingress_pending_max_bytes: int,
         batch_max_bytes: int,
         dedup_horizon_seconds: int,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters

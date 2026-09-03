@@ -5,7 +5,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import datetime
+
+from a13n_service.temporal import assume_utc
 
 
 class AssetCursorError(ValueError):
@@ -15,7 +17,7 @@ class AssetCursorError(ValueError):
 def encode_asset_cursor(*, created_at: datetime, asset_id: str, scope: dict[str, object]) -> str:
     payload = {
         "v": "1",
-        "created_at": _as_utc(created_at).isoformat().replace("+00:00", "Z"),
+        "created_at": assume_utc(created_at).isoformat().replace("+00:00", "Z"),
         "id": asset_id,
         "scope": _scope_digest(scope),
     }
@@ -39,13 +41,9 @@ def decode_asset_cursor(value: str, *, scope: dict[str, object]) -> tuple[dateti
         if isinstance(error, AssetCursorError):
             raise
         raise AssetCursorError("invalid cursor") from error
-    return _as_utc(created_at), asset_id
+    return assume_utc(created_at), asset_id
 
 
 def _scope_digest(scope: dict[str, object]) -> str:
     encoded = json.dumps(scope, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

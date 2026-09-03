@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import select
@@ -198,7 +198,3 @@ def external_error(error: ConnectorAdapterError) -> ConnectorError:
     if error.retryable or error.outcome_unknown:
         return ConnectorError("connector_unavailable", "Connector is unavailable.", status_code=503)
     return ConnectorError("connector_rejected", "Connector rejected the operation.", status_code=409)
-
-
-def utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

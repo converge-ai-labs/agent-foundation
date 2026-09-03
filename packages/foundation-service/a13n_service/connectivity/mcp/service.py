@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any, Protocol
 
 from sqlalchemy import and_, or_, select
@@ -26,6 +25,7 @@ from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
 
 from .credentials import (
     MCPCredentialError,
@@ -75,7 +75,7 @@ class MCPConnectionService:
         catalog: CatalogRefresher,
         *,
         registration_cleaner: RegistrationCleaner | None = None,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._endpoint_policy = endpoint_policy

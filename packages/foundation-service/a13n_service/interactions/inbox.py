@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Protocol, cast
 
 from a13n_harness import RunInputValue
@@ -15,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .attempts import (
     AttemptContext,
@@ -59,7 +59,7 @@ class ThreadInboxStore:
         signals: ThreadControlSignalPublisher | None = None,
         max_pending_count: int = 256,
         max_pending_bytes: int = 8 * 1024 * 1024,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         if max_pending_count < 1 or max_pending_bytes < 1:
             raise ValueError("Thread inbox admission limits must be positive")
@@ -79,7 +79,7 @@ class ThreadInboxStore:
     ) -> SteerReceipt:
         """Append one already-authorized, canonical steer to the current Run."""
 
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         steer_id = entry_id or new_thread_inbox_entry_id()
         payload = input.model_dump(mode="json", by_alias=True, exclude_none=True)
         async with transaction(self._sessions) as database:
@@ -189,7 +189,7 @@ class DatabaseThreadInboxReconciler:
         sessions: async_sessionmaker[AsyncSession],
         materialize: InboxPayloadMaterializer,
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._materialize = materialize
@@ -200,7 +200,7 @@ class DatabaseThreadInboxReconciler:
         authority: AttemptContext,
         state: StoredRunState,
     ) -> AttemptMutationReceipt:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             run, attempt, _ = await lock_attempt_authority(
                 database,
@@ -212,14 +212,14 @@ class DatabaseThreadInboxReconciler:
             return AttemptMutationReceipt(
                 run_version=run.version,
                 attempt_version=attempt.version,
-                lease_expires_at=_utc(attempt.lease_expires_at),
+                lease_expires_at=assume_utc(attempt.lease_expires_at),
             )
 
     async def read_eligible(
         self,
         authority: AttemptContext,
     ) -> Sequence[AdaptedThreadInboxEntry]:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with short_session(self._sessions) as database:
             run, _, _ = await read_attempt_authority(database, authority, now)
             pending = tuple(
@@ -435,12 +435,6 @@ def _contiguous_target_prefix(
             break
         selected.append(row)
     return tuple(selected)
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [
