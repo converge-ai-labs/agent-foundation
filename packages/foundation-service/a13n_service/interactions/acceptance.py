@@ -37,6 +37,7 @@ from .inbox_persistence import (
     bind_waiting_entries,
 )
 from .input import AcceptedAgentInput
+from .lifecycle import append_accepted_run_lifecycle
 from .models import RunRecord, SessionRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
@@ -90,13 +91,14 @@ class RunAcceptanceService:
                 if thread.origin_kind is not ThreadOriginKind.new:
                     await _require_origin(database, thread, run)
                 database.add(thread_record(thread))
-                await add_run_with_environment_binding(
+                run_record_value = await add_run_with_environment_binding(
                     database,
                     run=run,
                     state=state,
                     workspace_id=workspace_id,
                 )
                 database.add(inbox_counter_record(thread))
+                await append_accepted_run_lifecycle(database, run_record_value)
         except IntegrityError as error:
             return await self._reconcile_conflict(run, state, error, accepted_thread_version=1)
         return _receipt(thread, run)
@@ -140,7 +142,7 @@ class RunAcceptanceService:
                     next_head_run_id=next_head_run_id,
                 )
                 session_record_value = await _require_session(database, run)
-                await add_run_with_environment_binding(
+                run_record_value = await add_run_with_environment_binding(
                     database,
                     run=run,
                     state=state,
@@ -172,6 +174,7 @@ class RunAcceptanceService:
                 thread.head_run_id = next_head_run_id
                 thread.updated_at = self._clock()
                 await database.flush()
+                await append_accepted_run_lifecycle(database, run_record_value)
                 receipt = RunAcceptanceReceipt(
                     session_id=thread.session_id,
                     thread_id=thread.id,
@@ -246,7 +249,7 @@ class RunAcceptanceService:
                     next_head_run_id=next_head_run_id,
                 )
                 session_record_value = await _require_session(database, run)
-                await add_run_with_environment_binding(
+                run_record_value = await add_run_with_environment_binding(
                     database,
                     run=run,
                     state=state,
@@ -282,6 +285,7 @@ class RunAcceptanceService:
                 thread.head_run_id = next_head_run_id
                 thread.updated_at = now
                 await database.flush()
+                await append_accepted_run_lifecycle(database, run_record_value)
                 if consumed.consumed_run_id != run.id:
                     raise RuntimeError("queue consumption lost its accepted Run correlation")
                 receipt = QueuedSubmissionConsumptionReceipt(

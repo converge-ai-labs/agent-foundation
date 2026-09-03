@@ -9,6 +9,7 @@ from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -38,6 +39,10 @@ from .environment_bindings import (
 from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
 from .input import AcceptedAgentInput
+from .lifecycle import (
+    append_accepted_run_lifecycle,
+    append_run_with_attempt_lifecycle,
+)
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter, StoredRunState
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
@@ -129,7 +134,7 @@ class CompletionQueueHandoffService:
                     next_head_run_id=source.id,
                 )
                 session_record_value = await _require_session(database, successor_run)
-                await add_run_with_environment_binding(
+                successor_record = await add_run_with_environment_binding(
                     database,
                     run=successor_run,
                     state=successor_state,
@@ -156,6 +161,23 @@ class CompletionQueueHandoffService:
                 thread.queue_version += 1
                 thread.updated_at = now
                 await database.flush()
+                mutation_id = new_mutation_id()
+                await append_run_with_attempt_lifecycle(
+                    database,
+                    source,
+                    "run.completed",
+                    attempt=attempt,
+                    attempt_event_type="run_attempt.succeeded",
+                    mutation_id=mutation_id,
+                    occurred_at=now,
+                    actor_type="worker",
+                    actor_id=attempt.worker_id,
+                )
+                await append_accepted_run_lifecycle(
+                    database,
+                    successor_record,
+                    mutation_id=mutation_id,
+                )
                 return CombinedQueueHandoffReceipt(
                     source_run_id=source.id,
                     source_run_version=source.version,
@@ -226,6 +248,18 @@ class CompletionQueueHandoffService:
                 thread.queue_version += 1
                 thread.updated_at = now
                 await database.flush()
+                mutation_id = new_mutation_id()
+                await append_run_with_attempt_lifecycle(
+                    database,
+                    source,
+                    "run.completed",
+                    attempt=attempt,
+                    attempt_event_type="run_attempt.succeeded",
+                    mutation_id=mutation_id,
+                    occurred_at=now,
+                    actor_type="worker",
+                    actor_id=attempt.worker_id,
+                )
                 return CombinedQueueHandoffReceipt(
                     source_run_id=source.id,
                     source_run_version=source.version,

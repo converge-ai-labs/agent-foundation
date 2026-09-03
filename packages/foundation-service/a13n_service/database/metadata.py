@@ -35,6 +35,7 @@ def service_metadata() -> MetaData:
     from a13n_service.iam import models as iam_models
     from a13n_service.interactions import control_models as interaction_control_models
     from a13n_service.interactions import models as interaction_models
+    from a13n_service.lifecycle import models as lifecycle_models
     from a13n_service.models import models as model_models
     from a13n_service.plugins import models as plugin_models
     from a13n_service.secrets import models as secret_models
@@ -52,6 +53,7 @@ def service_metadata() -> MetaData:
         interaction_models,
         ingress_admission_models,
         ingress_models,
+        lifecycle_models,
         mcp_models,
         model_models,
         plugin_models,

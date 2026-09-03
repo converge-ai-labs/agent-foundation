@@ -11,6 +11,7 @@ from a13n_harness import SafeFailure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -18,6 +19,7 @@ from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_att
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
 from .environment_bindings import deactivate_run_environment
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
+from .lifecycle import append_run_attempt_lifecycle, append_run_with_attempt_lifecycle
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunStateStore, StoredRunState
 from .state import RunStateEnvelope
@@ -162,6 +164,14 @@ class AttemptExecutionService:
                 run.started_at = now
             run.updated_at = now
             run.version += 1
+            await append_run_attempt_lifecycle(
+                database,
+                run,
+                attempt,
+                "run_attempt.running",
+                mutation_id=new_mutation_id(),
+                occurred_at=now,
+            )
             return _receipt(run, attempt)
 
     async def commit_preparation_success(
@@ -190,6 +200,16 @@ class AttemptExecutionService:
             await deactivate_run_environment(database, run=run, now=now)
             await apply_run_outcome(database, run=run, outcome="failed", now=now)
             seal_failed_run(run, thread, failure, now)
+            await append_run_with_attempt_lifecycle(
+                database,
+                run,
+                "run.failed",
+                attempt=attempt,
+                attempt_event_type="run_attempt.failed",
+                occurred_at=now,
+                actor_type="worker",
+                actor_id=attempt.worker_id,
+            )
             return AttemptPreparationRejected(
                 run_attempt_id=attempt.id,
                 fence=attempt.fence,
@@ -263,14 +283,34 @@ class AttemptExecutionService:
             charge_attempt_usage(run, attempt)
             run.current_run_attempt_id = None
             available_at = now + retry_after
+            mutation_id = new_mutation_id()
             if retryable and _successor_budget_remains(run, available_at):
                 run.available_at = available_at
                 run.updated_at = now
                 run.version += 1
+                await append_run_attempt_lifecycle(
+                    database,
+                    run,
+                    attempt,
+                    "run_attempt.failed",
+                    mutation_id=mutation_id,
+                    occurred_at=now,
+                )
             else:
                 await deactivate_run_environment(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, failure, now)
+                await append_run_with_attempt_lifecycle(
+                    database,
+                    run,
+                    "run.failed",
+                    attempt=attempt,
+                    attempt_event_type="run_attempt.failed",
+                    mutation_id=mutation_id,
+                    occurred_at=now,
+                    actor_type="worker",
+                    actor_id=attempt.worker_id,
+                )
             return _receipt(run, attempt)
 
     async def yield_attempt(
@@ -290,6 +330,14 @@ class AttemptExecutionService:
             run.available_at = now
             run.updated_at = now
             run.version += 1
+            await append_run_attempt_lifecycle(
+                database,
+                run,
+                attempt,
+                "run_attempt.yielded",
+                mutation_id=new_mutation_id(),
+                occurred_at=now,
+            )
             return _receipt(run, attempt)
 
 

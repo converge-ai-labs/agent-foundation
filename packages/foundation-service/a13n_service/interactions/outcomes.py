@@ -27,6 +27,7 @@ from .domain import RunAttemptStatus, RunStatus
 from .environment_bindings import deactivate_run_environment
 from .inbox import ThreadControlSignalPublisher
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
+from .lifecycle import append_run_lifecycle, append_run_with_attempt_lifecycle
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunPayloadStore, StoredRunState
 from .state import CompletedOutcomeCandidate, WaitingOutcomeCandidate
@@ -106,6 +107,16 @@ class RunOutcomeService:
             thread.head_run_id = run.id
             thread.version += 1
             thread.updated_at = now
+            await append_run_with_attempt_lifecycle(
+                database,
+                run,
+                "run.waiting" if status is RunStatus.waiting else "run.completed",
+                attempt=attempt,
+                attempt_event_type="run_attempt.succeeded",
+                occurred_at=now,
+                actor_type="worker",
+                actor_id=attempt.worker_id,
+            )
             return RunOutcomeReceipt(status, run.version, attempt.version, thread.version)
 
     async def cancel(
@@ -175,6 +186,26 @@ class RunOutcomeService:
             run.version += 1
             thread.version += 1
             thread.updated_at = now
+            if attempt is None:
+                await append_run_lifecycle(
+                    database,
+                    run,
+                    "run.cancelled",
+                    occurred_at=now,
+                    actor_type="system",
+                    actor_id=None,
+                )
+            else:
+                await append_run_with_attempt_lifecycle(
+                    database,
+                    run,
+                    "run.cancelled",
+                    attempt=attempt,
+                    attempt_event_type="run_attempt.cancelled",
+                    occurred_at=now,
+                    actor_type="system",
+                    actor_id=None,
+                )
             receipt = RunOutcomeReceipt(
                 RunStatus.cancelled,
                 run.version,
