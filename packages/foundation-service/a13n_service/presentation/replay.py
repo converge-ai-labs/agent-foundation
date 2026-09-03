@@ -183,7 +183,10 @@ class RunReplayPublisher:
         if any(event.event.run_id != run.id or event.event.thread_id != run.thread_id for event in events):
             raise RunReplayUnavailable("Run Stream identity does not match its sealed Run")
         expected_terminal = _TERMINAL_EVENT_BY_STATUS[run.status]
-        if events[-1].event.event_type != expected_terminal:
+        terminal_events = tuple(event for event in events if event.event.event_type in {"RUN_FINISHED", "RUN_ERROR"})
+        if len(terminal_events) != 1 or terminal_events[0].stream_id != events[-1].stream_id:
+            raise RunReplayUnavailable("Run Stream must contain exactly one final terminal observation")
+        if terminal_events[0].event.event_type != expected_terminal:
             raise RunReplayUnavailable("Run Stream does not end with the sealed Run outcome")
 
     async def _verify_attempt_provenance(

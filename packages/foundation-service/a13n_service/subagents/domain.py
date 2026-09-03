@@ -81,7 +81,7 @@ class AsyncSubagentResultInboxPayload(StrictModel):
     terminal_status: Literal["completed", "failed", "cancelled"]
     terminal_result_item_id: ObjectId | None = None
     result_payload: JsonValue | None = None
-    result_digest: Sha256Digest
+    result_digest: Sha256Digest | None = None
 
     @field_validator("result_payload")
     @classmethod

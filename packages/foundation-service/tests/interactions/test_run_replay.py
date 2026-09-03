@@ -140,7 +140,7 @@ async def test_object_backed_run_output_is_verified_and_retained_by_reference(
     assert snapshot.events[-1].event.payload["rawEvent"]["result_omitted"] is True
 
 
-@pytest.mark.parametrize("failure_kind", ["trimmed", "terminal_mismatch"])
+@pytest.mark.parametrize("failure_kind", ["trimmed", "terminal_mismatch", "multiple_terminals"])
 async def test_incomplete_or_contradictory_stream_does_not_publish_replay(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
@@ -164,6 +164,9 @@ async def test_incomplete_or_contradictory_stream_does_not_publish_replay(
     )
     if failure_kind == "trimmed":
         await projector.project(_text_event(run.thread_id, 0, PartStartEvent(index=0, part=TextPart("hello"))))
+        terminal_output = {"answer": 42}
+    elif failure_kind == "multiple_terminals":
+        await projector.project(_terminal_event(run.thread_id, 0, {"answer": 41}))
         terminal_output = {"answer": 42}
     else:
         terminal_output = {"answer": 41}

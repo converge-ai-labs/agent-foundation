@@ -89,9 +89,18 @@ def test_result_payload_preserves_json_null_and_requires_one_representation() ->
         terminal_result_item_id="item_1234567890abcdef",
         result_digest="b" * 64,
     )
+    digestless = AsyncSubagentResultInboxPayload(
+        relationship_id=inline_null.relationship_id,
+        subagent_name=inline_null.subagent_name,
+        child_thread_id=inline_null.child_thread_id,
+        child_run_id=inline_null.child_run_id,
+        terminal_status="completed",
+        result_payload={"answer": "digest optional by contract"},
+    )
 
     assert inline_null.as_json()["result_payload"] is None
     assert "result_payload" not in referenced.as_json()
+    assert digestless.as_json()["result_digest"] is None
     with pytest.raises(ValidationError, match="exactly one"):
         AsyncSubagentResultInboxPayload.model_validate(
             {
