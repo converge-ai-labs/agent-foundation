@@ -85,20 +85,13 @@ async def open_service_runtime(
             if owns_worker(settings.role):
                 if execution is None or environment_catalog is None:
                     raise RuntimeError("Worker execution resources were not constructed")
-                worker = await build_worker_runtime(
+                worker, worker_background = await build_worker_runtime(
                     settings,
                     shared,
                     execution,
                     environment_catalog,
                     components.environment_keepalive_source_resolver,
                     stack,
-                )
-                worker_background = (
-                    BackgroundTask(
-                        name="environment_keepalive",
-                        run=worker.environment_keepalive.run,
-                        return_is_expected=worker.environment_keepalive.is_draining,
-                    ),
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()

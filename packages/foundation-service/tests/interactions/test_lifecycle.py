@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import anyio
 import pytest
 from a13n_service.interactions import (
     MCPToolSnapshotRef,
@@ -304,6 +305,53 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
             await database.scalars(select(LifecycleEventRecord.projection_state).order_by(LifecycleEventRecord.seq))
         )
     assert projection_states == ("projected", "projected")
+
+
+async def test_background_projector_drains_successive_claim_batches(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+    redis_client: Redis,
+) -> None:
+    await _seed_run(interaction_sessions)
+    async with transaction(interaction_sessions) as database:
+        await append_lifecycle_event(database, _draft(mutation_id="mut_3131313131313131"))
+        await append_lifecycle_event(
+            database,
+            _draft(
+                event_type="run.running",
+                mutation_id="mut_3232323232323232",
+                entity_version=2,
+                payload={"status": "running"},
+            ),
+        )
+    stream = RedisRunStream(redis_client)
+    projector = LifecycleRunStreamProjector(
+        interaction_sessions,
+        stream,
+        RunReplayStore(interaction_object_store),
+        worker_id="projection-worker-1",
+        poll_interval_seconds=0.01,
+        claim_limit=1,
+        clock=lambda: NOW,
+    )
+
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(projector.run)
+        with anyio.fail_after(2):
+            while True:
+                async with short_session(interaction_sessions) as database:
+                    states = tuple(
+                        await database.scalars(
+                            select(LifecycleEventRecord.projection_state).order_by(LifecycleEventRecord.seq)
+                        )
+                    )
+                if states == ("projected", "projected"):
+                    break
+                await anyio.sleep(0.01)
+        tasks.cancel_scope.cancel()
+
+    page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    assert tuple(entry.event.event_type for entry in page.items) == ("run.accepted", "run.running")
 
 
 async def test_expired_projection_owner_cannot_settle_reclaimed_fact(

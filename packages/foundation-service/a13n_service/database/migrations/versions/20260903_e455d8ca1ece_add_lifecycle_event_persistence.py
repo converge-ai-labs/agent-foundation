@@ -1,7 +1,7 @@
 """add lifecycle event persistence.
 
 Revision ID: e455d8ca1ece
-Revises: 93f7e255236d
+Revises: e416d6806802
 Create Date: 2026-09-03 14:12:12.519792+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "e455d8ca1ece"
-down_revision: str | Sequence[str] | None = "c2b68dc827b5"
+down_revision: str | Sequence[str] | None = "e416d6806802"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

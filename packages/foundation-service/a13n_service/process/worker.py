@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
+from datetime import timedelta
 
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
@@ -24,8 +25,10 @@ from a13n_service.plugins.runtime import (
     installed_distribution_versions,
     installed_harness_version,
 )
+from a13n_service.process.background import BackgroundTask
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
+from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
 from a13n_service.settings import ServiceSettings
 from a13n_service.skills.runtime import SkillRuntimePreparer
 
@@ -43,7 +46,7 @@ async def build_worker_runtime(
     environment_catalog: FoundationEnvironmentProviderCatalog,
     keepalive_sources: EnvironmentKeepaliveSourceResolver | None,
     stack: AsyncExitStack,
-) -> WorkerRuntime:
+) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
 
     materializer = await PluginRuntimeMaterializer.create(
@@ -100,12 +103,45 @@ async def build_worker_runtime(
         max_concurrency=settings.environment_keepalive_max_concurrency,
     )
 
-    return WorkerRuntime(
+    run_stream = RedisRunStream(
+        shared.storage.redis,
+        max_events=settings.run_stream_max_events,
+        max_event_bytes=settings.run_stream_max_event_bytes,
+        closed_ttl_seconds=settings.run_stream_closed_ttl_seconds,
+    )
+    run_replay = RunReplayStore(
+        shared.storage.objects,
+        max_events=settings.run_replay_max_events,
+        max_items=settings.run_replay_max_items,
+        max_bytes=settings.run_replay_max_bytes,
+    )
+    lifecycle_projector = LifecycleRunStreamProjector(
+        shared.storage.sessions,
+        run_stream,
+        run_replay,
+        worker_id=new_object_id("lsp"),
+        lease_duration=timedelta(seconds=settings.lifecycle_projection_lease_seconds),
+        retry_after=timedelta(seconds=settings.lifecycle_projection_retry_seconds),
+        max_attempts=settings.lifecycle_projection_max_attempts,
+        poll_interval_seconds=settings.lifecycle_projection_poll_interval_seconds,
+        claim_limit=settings.lifecycle_projection_claim_limit,
+    )
+    runtime = WorkerRuntime(
         plugin_materializer=materializer,
         plugin_runtime=plugin_runtime,
         native_model_factory=execution.native_model_factory,
         skill_runtime=SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store),
         environment_keepalive=environment_keepalive,
+        run_stream=run_stream,
+        run_replay=run_replay,
+    )
+    return runtime, (
+        BackgroundTask(
+            name="environment_keepalive",
+            run=environment_keepalive.run,
+            return_is_expected=environment_keepalive.is_draining,
+        ),
+        BackgroundTask("lifecycle Run Stream projector", lifecycle_projector.run),
     )
 
 

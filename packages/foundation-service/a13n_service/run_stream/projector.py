@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
+import anyio
 from a13n_harness import SafeFailure
 from anyio import create_task_group
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -40,10 +41,16 @@ class LifecycleRunStreamProjector:
         lease_duration: timedelta = timedelta(seconds=30),
         retry_after: timedelta = timedelta(seconds=5),
         max_attempts: int = 20,
+        poll_interval_seconds: float = 1,
+        claim_limit: int = 16,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        if not worker_id or lease_duration <= timedelta(0) or retry_after < timedelta(0) or max_attempts < 1:
-            raise ValueError("lifecycle projection worker policy is invalid")
+        if not worker_id:
+            raise ValueError("lifecycle projection worker identity is required")
+        if lease_duration <= timedelta(0) or retry_after < timedelta(0) or max_attempts < 1:
+            raise ValueError("lifecycle projection retry policy is invalid")
+        if poll_interval_seconds <= 0 or claim_limit < 1 or claim_limit > 200:
+            raise ValueError("lifecycle projection polling policy is invalid")
         self._sessions = sessions
         self._stream = stream
         self._replay = replay
@@ -51,7 +58,24 @@ class LifecycleRunStreamProjector:
         self._lease_duration = lease_duration
         self._retry_after = retry_after
         self._max_attempts = max_attempts
+        self._poll_interval_seconds = poll_interval_seconds
+        self._claim_limit = claim_limit
         self._clock = clock
+
+    async def run(self) -> None:
+        while True:
+            try:
+                claimed = await self.project_once(limit=self._claim_limit)
+            except anyio.get_cancelled_exc_class():
+                raise
+            except Exception:
+                logger.exception(
+                    "Run Stream projection sweep failed",
+                    extra={"event": "run_stream_projection_sweep_failed", "worker_id": self._worker_id},
+                )
+                claimed = 0
+            if claimed < self._claim_limit:
+                await anyio.sleep(self._poll_interval_seconds)
 
     async def project_once(self, *, limit: int = 16) -> int:
         now = _utc(self._clock())
