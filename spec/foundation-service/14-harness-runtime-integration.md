@@ -2,25 +2,28 @@
 
 ## Design Position
 
-Foundation Service embeds Agent Harness in the selected Worker execution loop. The two components share one trusted Python process and one async task tree; they do not communicate through an internal network API, RPC protocol, queue, or serialized callback registry. Harness owns process-local Agent composition, Pydantic AI execution, complete portable state export, and the canonical event/result stream. Foundation owns durable Run and RunAttempt authority, current credentials and policy, Environment selection, checkpoint publication, active control, recovery, and terminal lifecycle commits.
+Foundation Service embeds Agent Harness inside one process-local `RunAttemptExecutor` for each successfully claimed RunAttempt. The `WorkerExecutionLoop` performs scan, preflight, capacity admission, and claim; it then starts the executor as an async task in the same Worker process for `on_demand` or the same lock-scoped Runner child process for `runner`. It does not create an OS thread. The executor and Harness share one trusted Python process and one structured async scope; they do not communicate through an internal network API, RPC protocol, queue, or serialized callback registry.
 
-Foundation invokes Harness only through its public construction, run, state, and stream APIs. Harness invokes Foundation-owned behavior through explicit fresh typed collaborators and one mandatory Foundation-owned Pydantic Capability. That Capability is direct trusted Worker composition, not a managed Harness plugin and not caller-selectable Agent content.
+Harness owns process-local Agent composition, Pydantic AI execution, complete portable state export, and the canonical event/result stream. The executor root task owns the Attempt's live Foundation lifecycle and runs one `HarnessDriver` that exclusively holds and operates the entered `HarnessRunStream`. One process-local `RunAttemptControl` is the sole control facade for the lease monitor, control watcher, mandatory Capability, driver, checkpoint, and outcome paths. Its private `RunControlGate` supplies only local state and serialization. Preparation still includes Agent construction, exact Environment-binding verification, and attach-only adapter construction. Foundation's PostgreSQL contracts retain durable Run and RunAttempt authority; cached Attempt context, Redis delivery, the Capability, control facade, driver, and gate never replace that authority.
+
+Foundation invokes Harness only through its public construction, run, state, and stream APIs. Harness invokes Foundation-owned behavior through explicit fresh typed collaborators and one mandatory Foundation-owned Pydantic Capability. That Capability is direct trusted executor composition, not a managed Harness plugin and not caller-selectable Agent content.
 
 This contract owns the concrete integration profile. The generic public Harness surfaces remain owned by [Public API and Packaging](../agent-harness/14-public-api-and-packaging.md), [Execution Context and Lifecycle](../agent-harness/06-execution-context-and-lifecycle.md), and [Harness State and Resume](../agent-harness/10-snapshot-and-resume.md). Foundation persistence and scheduling remain owned by [Durable Run State](12-run-persistence.md) and [Run Attempts, Scheduling, and Recovery](13-run-attempt-scheduling-and-recovery.md).
 
 ## Boundaries
 
-| Concern                                                                                       | Owner                                    | Integration rule                                                                               |
-| --------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Agent definition, Capability composition, Pydantic model/tool loop, and process-local cleanup | Harness                                  | Foundation supplies trusted constructed values and does not inspect private graph state        |
-| Run, RunAttempt, lease, fence, recovery budget, and terminal lifecycle                        | Foundation                               | No Harness value creates, transfers, or proves durable authority                               |
-| Complete portable messages, Capability state, and Environment state envelopes                 | Harness                                  | Export is detached observation with no persistence side effect                                 |
-| Durable checkpoint selection and conditional publication                                      | Foundation                               | Only the current fenced Attempt may publish or select `state.json`                             |
-| Model, input, context, Environment, and policy collaborators                                  | Foundation through public Harness fields | Values are fresh for the logical Harness Run and never restored from `HarnessState`            |
-| Agent-loop lifecycle rendezvous                                                               | Pydantic Capability hooks                | One direct Foundation-owned Capability delegates to the current fenced run-control coordinator |
-| Outer semantic-input/event/result middleware                                                  | Harness plugins                          | Plugins remain separate from Foundation control and cannot replace its mandatory Capability    |
-| Live events and terminal result                                                               | Harness stream to Foundation             | Backpressured process-local observations; Foundation decides what becomes durable or public    |
-| Thread-control wakeup                                                                         | Foundation Redis contract                | Foundation-internal hint containing no business payload; not a Harness communication channel   |
+| Concern                                                                                       | Owner                                    | Integration rule                                                                                |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Agent definition, Capability composition, Pydantic model/tool loop, and process-local cleanup | Harness                                  | Foundation supplies trusted constructed values and does not inspect private graph state         |
+| Run, RunAttempt, lease, fence, recovery budget, and terminal lifecycle                        | Foundation                               | No Harness value creates, transfers, or proves durable authority                                |
+| Complete portable messages and Capability state                                               | Harness                                  | Export is detached observation; Foundation attachment mounts publish no provider target state   |
+| Durable checkpoint selection and conditional publication                                      | Foundation                               | Only the current fenced Attempt may publish or select `state.json`                              |
+| Model, input, context, Environment, and policy collaborators                                  | Foundation through public Harness fields | Values are fresh for the logical Harness Run and never restored from `HarnessState`             |
+| Agent-loop lifecycle rendezvous                                                               | Pydantic Capability hooks                | Capability borrows context, obtains a driver-owned hook boundary, and awaits the control facade |
+| Outer semantic-input/event/result middleware                                                  | Harness plugins                          | Plugins remain separate from Foundation control and cannot replace its mandatory Capability     |
+| Harness stream and callback-context API adaptation                                            | Executor-owned `HarnessDriver`           | The driver is the sole stream owner and creates one ephemeral adapter for each awaited hook     |
+| Live events and terminal result                                                               | Harness stream through the driver        | Backpressured process-local observations; Foundation decides what becomes durable or public     |
+| Thread-control wakeup                                                                         | Foundation Redis contract                | Foundation-internal hint containing no business payload; not a Harness communication channel    |
 
 ## Security Boundary
 
@@ -80,26 +83,129 @@ class ModelContextMiddleware(Protocol):
 
 `RunPreparationContext` contains only the Harness Run ID, current `AgentInstanceContext`, entered Environment facade, and immutable safe metadata. `ModelResolutionContext` supplies the current `AgentContext` and native Pydantic resolution state; `model_id` is the logical string being resolved. `ModelContextProjectionRequest` classifies an input or tool-results boundary and carries only its typed origin and tool-call correlation. `handler` is the next projection layer, not a general Foundation service locator.
 
+## RunAttempt Executor Lifetime
+
+`RunAttemptExecutor` is the process-local lifetime owner that converts one successful claim into at most one Harness Run. It is a conceptual component name, not a durable `Execution` resource, wire schema, or commitment to one exact Python class or task library. Its claim-derived `AttemptContext` carries immutable tenant, Thread, Run, Attempt, Worker, build, Runtime-lock, fence, lease-proof, and fixed-policy correlation plus the current expected relational versions and lease deadline advanced from successful fenced operations. The context contains no open database session, credential, Harness object, or authority independent of PostgreSQL revalidation.
+
+```mermaid
+flowchart TB
+    subgraph Worker["Worker process or lock-scoped Runner process"]
+        Loop["WorkerExecutionLoop<br/>scan PostgreSQL · Runtime preflight<br/>reserve capacity · claim/takeover"]
+
+        subgraph Executor["one RunAttemptExecutor structured async scope"]
+            Root["1. Executor root task<br/>lifecycle supervision · AttemptContext<br/>checkpoint · outcome · cleanup"]
+            Lease["2. LeaseMonitor child task<br/>renew exact Attempt<br/>verify fence and lease authority"]
+            Watcher["3. ControlWatcher child task<br/>consume Redis wakeup<br/>reread PostgreSQL"]
+            Control["RunAttemptControl — not a task<br/>sole process-local control facade"]
+            Gate["private RunControlGate — not a task<br/>async lock + local state only<br/>open · handoff pending · fenced · terminal<br/>in-flight offer and first-request correlation"]
+            Driver["HarnessDriver — not a task<br/>runs in executor root task<br/>sole Harness API adapter"]
+            Boundary["HarnessHookBoundary — callback-scoped<br/>temporary RunContext / AgentContext wrapper"]
+            Capability["FoundationRunControlCapability — not a task<br/>adapt awaited Pydantic hooks"]
+
+            subgraph Harness["Attempt-scoped Harness Run"]
+                Agent["ExecutableAgent<br/>Pydantic Agent loop"]
+                Stream["HarnessRunStream<br/>events and terminal candidate"]
+                Agent --> Stream
+            end
+
+            Root -->|start, cancel, and join| Lease
+            Root -->|start, cancel, and join| Watcher
+            Root -->|await driver.run in this task| Driver
+            Root -->|construct and inject| Capability
+            Root -->|construct Agent| Agent
+            Root -->|await checkpoint and outcome decisions| Control
+
+            Lease -->|await authority_lost| Control
+            Watcher -->|await reconcile current facts| Control
+            Agent -->|await hooks| Capability
+            Capability -->|borrow context and create boundary| Driver
+            Driver -.->|creates for one awaited hook| Boundary
+            Capability -->|await control with boundary| Control
+
+            Control -.->|owns privately| Gate
+            Control -->|active steer · cancel · direct export| Driver
+            Control -->|hook-local enqueue · export| Boundary
+            Boundary -.->|wrapped RunContext / AgentContext| Agent
+
+            Driver -->|enter Agent stream| Agent
+            Driver <-->|sole stream API calls and iteration| Stream
+            Driver -->|events and terminal candidate| Root
+        end
+
+        Loop -->|successful claim: start root task<br/>pass AttemptContext and capacity slot| Root
+    end
+
+    PG[("PostgreSQL<br/>Run / RunAttempt / inbox authority")]
+    Redis[["Redis<br/>control wakeups / Run live events"]]
+    Objects[("Object storage<br/>state.json / artifacts")]
+
+    Loop <-->|candidate scan / claim| PG
+    Lease <-->|lease-renewal CAS| PG
+
+    Redis -->|Thread reconcile wakeup| Watcher
+    Watcher -->|Thread / Run / Attempt / inbox reread| PG
+    Watcher -.->|ack after bounded reconciliation| Redis
+
+    Control <-->|short revalidation, receipt, and outcome commit| PG
+    Control <-->|complete checkpoint| Objects
+    Root -->|publish live events| Redis
+```
+
+The executor uses structured concurrency rather than a Go-style single `select` loop. From the Worker's perspective, one successful claim creates one executor root task. Per Attempt, that root and its two children are the only Foundation async tasks: the root awaits `HarnessDriver.run()`, `LeaseMonitor.run()` renews authority, and `ControlWatcher.run()` watches for reconciliation hints. `HarnessDriver`, `RunAttemptControl`, `RunControlGate`, `FoundationRunControlCapability`, `AttemptContext`, `HarnessHookBoundary`, and `HarnessRunStream` are objects, not additional tasks. The executor root is the lifecycle supervisor; there is no separate supervisor component or fourth control loop. In runner mode, the Runner child-process boundary encloses all three tasks. The root cancels and joins both children before releasing its capacity slot.
+
+| Component                        | Owns                                                                                                                                                                                           | Must not do                                                                                                                        |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Executor root task               | Structured task scope, preparation, live-object construction, awaiting the driver, state/outcome candidates, ordered cancellation, bounded cleanup, and capacity release                       | Hold the private gate while awaiting the next stream item, create a second stream consumer, or let child work outlive cleanup      |
+| `LeaseMonitor` child task        | Bounded periodic short transactions that renew only the exact selected Attempt and direct awaited authority-loss notification                                                                  | Interpret Agent progress, consume Redis, call the driver or private gate, or continue after authority cannot be confirmed          |
+| `ControlWatcher` child task      | Initial PostgreSQL reconciliation, Thread control-signal consumption, bounded PostgreSQL reread, direct awaited reconciliation, and post-reconciliation acknowledgement                        | Treat a Redis entry as a command, carry its payload into Harness, call the driver or private gate, or mark an inbox entry consumed |
+| `HarnessDriver`                  | Entered `HarnessRunStream`, every direct Harness stream call, sole event iteration, and creation of callback-scoped `HarnessHookBoundary` adapters                                             | Own durable control facts, retain a hook context beyond its callback, RunAttempt authority, another task, or a second consumer     |
+| `HarnessHookBoundary`            | Temporary adaptation of the current hook's `RunContext` and `AgentContext` into enqueue and complete-state-export operations                                                                   | Outlive its awaited hook, enter another task or queue, expose raw context to control code, or call stream APIs                     |
+| `RunAttemptControl`              | Sole process-local control facade, current driver and executor-cancellation bindings, authority loss, durable reconciliation, hook-boundary work, checkpoint/receipt coordination, and handoff | Run as a task, consume Redis, iterate the stream, receive raw Harness contexts, expose its private gate, or call Harness APIs      |
+| Private `RunControlGate`         | Async critical section plus open, handoff-pending, fenced, terminal, first-request, and in-flight inbox-offer state                                                                            | Perform I/O, call Harness or the driver, own a live context, replace the lease/fence, or create a safe boundary by acquisition     |
+| `FoundationRunControlCapability` | Borrow the current Pydantic hook context, ask the driver for one temporary boundary, and directly await `RunAttemptControl` with that boundary                                                 | Own durable state, retain callback contexts or boundaries, launch detached work, expose a service locator, or become Agent content |
+
+The executor starts `LeaseMonitor` before preparation can consume a material fraction of the lease. When renewal loses the lease or cannot confirm authority within the bounded policy, the monitor calls and awaits `RunAttemptControl.authority_lost(...)` in the monitor's own task. The facade idempotently transitions its private gate to `fenced`, closes local admission, asks the attached driver to issue bounded idempotent Harness cancellation when available, and cancels the executor task scope. The awaited call establishes the local fence and cancellation request; it does not wait for full executor cleanup or a replacement Worker. Scope cancellation interrupts the root's current stream await, stops both children, and leads to bounded cleanup. No task then publishes an authoritative write under the lost Attempt.
+
+`ControlWatcher` first performs the mandatory PostgreSQL reconciliation, then consumes Redis hints. For each signal it rereads current Thread, Run, Attempt, and inbox facts before calling and awaiting `RunAttemptControl.reconcile(...)` in the watcher task; the call creates no controller task or process-local command queue. Under the private gate, the facade can ask the driver to offer ordinary active steer, fence and cancel a matching terminalized Attempt, or leave durable work pending for a later Capability boundary. Reconciliation returns after that bounded local action, not after Pydantic incorporates an offer, a checkpoint is published, or an inbox receipt becomes `consumed`. Only then may the watcher acknowledge the Redis signal. Reconnect and failure are bounded; an unrecoverable watcher failure cancels the executor scope, while mandatory PostgreSQL checks at Harness boundaries preserve correctness independently of Redis.
+
+Capability hooks borrow the current `RunContext` or `AgentContext`, ask `HarnessDriver` to create one `HarnessHookBoundary`, and call and await the same facade with that boundary. `RunAttemptControl` asks the boundary to enqueue or export but never receives the raw context or calls a Harness API. The boundary maps those requests to callback-local `RunContext.enqueue(..., priority="asap")` or `AgentContext.export_state(...)`; outside a callback, the facade uses the driver for `HarnessRunStream.steer()`, `cancel()`, or direct state export. The Capability closes the boundary in `finally`, and the driver invalidates it before the hook returns. This split prevents callback context retention and recursive invocation of a stream method whose completion depends on that callback returning. Drain and Runner lifecycle code call `RunAttemptControl.request_handoff(...)`; they never mutate the private gate directly.
+
 ## Definition Construction
 
-After claim and compatibility preflight, the current Worker reconstructs one process-local `AgentDefinition` from the Run-pinned immutable configuration. It then:
+After claim and compatibility preflight, the current `RunAttemptExecutor` reconstructs one process-local `AgentDefinition` from the Run-pinned immutable configuration. It then:
 
 1. reconstructs the accepted Agent specification, exact managed plugin set, Skill and subagent composition, output contract, and model selection;
-2. creates one Attempt-scoped Foundation run-control coordinator containing only live references to the current Worker services and immutable `(tenant_id, run_id, run_attempt_id, fence, worker_generation)` correlation;
-3. inserts one direct `FoundationRunControlCapability` with ID `a13n.foundation.run-control` into `AgentDefinition.capabilities` before building the executable;
+2. creates one Attempt-scoped `RunAttemptControl` backed by the executor's current services and `AttemptContext`, plus one `HarnessDriver`; the facade privately owns one `RunControlGate` and binds the driver plus executor cancel scope without exposing them to Agent code;
+3. inserts one direct `FoundationRunControlCapability` with ID `a13n.foundation.run-control` and references to that facade and driver into `AgentDefinition.capabilities` before building the executable;
 4. requires the Harness build to validate finalized Capability identity and ordering, rejecting a duplicate reserved ID or an incompatible outer wrapper; and
 5. calls `HarnessBuilder.build(definition)`.
 
-The control Capability contributes no instructions, model settings, Toolset, native tool, output type, or model-facing description. Its ordering is `CapabilityOrdering(position="outermost")`, and Foundation supplies it before plugin-contributed Capabilities at the same tier. It observes the effective downstream response or node result, returns those values unchanged, and performs Foundation control only through its Attempt-scoped coordinator.
+The control Capability contributes no instructions, model settings, Toolset, native tool, output type, or model-facing description. Its ordering is `CapabilityOrdering(position="outermost")`, and Foundation supplies it before plugin-contributed Capabilities at the same tier. It observes the effective downstream response or node result, returns those values unchanged, borrows each raw Harness context only to obtain a driver-owned callback boundary, and performs Foundation decisions through `RunAttemptControl`. Neither collaborator can outlive the executor or act as a service locator.
 
 The following code is normative in lifecycle shape, while concrete package names for the Foundation-private adapter may differ:
 
 ```python
+class HarnessHookBoundary(Protocol):
+    async def enqueue(
+        self,
+        input: NativeInput,
+        *,
+        priority: Literal["asap"],
+    ) -> EnqueueEvidence: ...
+
+    async def export_state(
+        self,
+        complete_messages: Sequence[ModelMessage],
+    ) -> HarnessState: ...
+
+
 @dataclass
 class FoundationRunControlCapability(
     AbstractCapability[AgentContext]
 ):
-    coordinator: FoundationRunControlCoordinator
+    control: RunAttemptControl
+    driver: HarnessDriver
+    binding: HarnessContextBinding | None = None
     id: str = "a13n.foundation.run-control"
 
     def get_ordering(self) -> CapabilityOrdering:
@@ -109,17 +215,23 @@ class FoundationRunControlCapability(
         self,
         ctx: RunContext[AgentContext],
     ) -> AbstractCapability[AgentContext]:
-        return await self.coordinator.bind_model_attempt(ctx)
+        binding = self.driver.bind_model_attempt(ctx)
+        await self.control.bind_model_attempt(binding)
+        return replace(self, binding=binding)
 
     async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        await self.coordinator.before_model_request(
+        async with self.driver.hook_boundary(
             ctx,
-            request_context,
-        )
+            self.binding,
+        ) as boundary:
+            await self.control.before_model_request(
+                boundary,
+                request_context,
+            )
         return request_context
 
     async def after_model_request(
@@ -129,7 +241,14 @@ class FoundationRunControlCapability(
         request_context: ModelRequestContext,
         response: ModelResponse,
     ) -> ModelResponse:
-        await self.coordinator.after_model_response(ctx, response)
+        async with self.driver.hook_boundary(
+            ctx,
+            self.binding,
+        ) as boundary:
+            await self.control.after_model_response(
+                boundary,
+                response,
+            )
         return response
 
     async def after_node_run(
@@ -140,15 +259,48 @@ class FoundationRunControlCapability(
         result: NodeResult[AgentContext],
     ) -> NodeResult[AgentContext]:
         if isinstance(node, CallToolsNode):
-            await self.coordinator.after_tool_batch(ctx, result)
+            async with self.driver.hook_boundary(
+                ctx,
+                self.binding,
+            ) as boundary:
+                await self.control.after_tool_batch(
+                    boundary,
+                    result,
+                )
         return result
 ```
 
-Pydantic calls `for_run()` once for each internal `ModelAttempt`, not once for the outer logical Harness Run. Each returned active Capability is fresh for that ModelAttempt, binds back to the same logical-run coordinator, validates exact `AgentContext` identity, and carries no durable authority by itself. Rebinding after Harness semantic recovery is idempotent and does not reset Thread-inbox receipts, checkpoint sequence, first-request state, or the Foundation RunAttempt fence.
+`HarnessContextBinding` is an opaque process-local identity token containing no `RunContext`, `AgentContext`, mutable Harness object, or durable authority. `HarnessHookBoundary` is a conceptual driver-owned callback adapter, not a serialized type or independently scheduled component. It is valid only inside the `async with` for the current awaited hook, wraps the current context privately, maps `enqueue()` and `export_state()` to the matching callback-local Harness APIs, and fails closed after exit.
+
+`RunAttemptControl` is the conceptual sole process-local control facade; its illustrated name and method signatures do not define a wire type or require one exact Python class. Pydantic calls `for_run()` once for each internal `ModelAttempt`, not once for the outer logical Harness Run. Each returned active Capability is fresh for that ModelAttempt, retains only the opaque binding plus executor-owned collaborators, and carries no durable authority by itself. Rebinding after Harness semantic recovery is idempotent and does not reset Thread-inbox receipts, checkpoint sequence, first-request state, or the Foundation RunAttempt fence.
 
 ## Run Invocation
 
-Foundation uses `ExecutableAgent.stream()` rather than `run()` because it must consume the canonical event stream, expose live control, and select complete state during execution. One Foundation task is the sole stream consumer.
+Foundation uses `ExecutableAgent.stream()` rather than `run()` because it must consume the canonical event stream, expose live control, and select complete state during execution. `HarnessDriver.run()` executes inside the `RunAttemptExecutor` root task; the driver is the sole holder, public-API caller, and consumer of the entered stream. It is not started as another task.
+
+The executor has this normative lifecycle shape; helper and task-library names are illustrative:
+
+```python
+async def execute_attempt(ctx: AttemptContext, capacity_slot: CapacitySlot):
+    control = RunAttemptControl(ctx)
+    driver = HarnessDriver(ctx, control)
+    try:
+        async with structured_task_group() as tasks:
+            control.bind_executor(driver, tasks.cancel_scope)
+            tasks.start_soon(LeaseMonitor(ctx, control).run)
+            tasks.start_soon(ControlWatcher(ctx, control).run)
+            try:
+                candidate = await driver.run()
+                await control.finalize(candidate)
+            finally:
+                await control.close_admission()
+                tasks.cancel_children()
+        await bounded_process_local_cleanup(ctx, control, driver)
+    finally:
+        capacity_slot.release()
+```
+
+The executor root does not enter the private `RunControlGate` around `HarnessDriver.run()`, `async for event in stream`, or an equivalent `anext(stream)` await. Pydantic can invoke the Foundation Capability inside that call chain; holding the same gate across iteration would deadlock the callback. Every Foundation control path instead calls an explicit `RunAttemptControl` operation, and only that facade enters its gate for the bounded state transition or concrete safe-boundary operation.
 
 The following table is the Foundation-to-Harness input mapping for `stream()`. Harness-to-Foundation output, including ordinary stream events, terminal results, and their checkpoint mapping, is defined by [Asynchronous Communication](#asynchronous-communication).
 
@@ -162,7 +314,7 @@ The following table is the Foundation-to-Harness input mapping for `stream()`. H
 | `bindings.metadata`             | Bounded safe correlation                                         | Non-authoritative IDs and classifications only; no secrets or live objects                                    |
 | `bindings.model_context`        | Foundation `ModelContextMiddleware`                              | Bounded current Host context projection without message or durable-state authority                            |
 | `bindings.observation`          | Current trace and scope policy                                   | Bounded Harness observation correlation, separate from arbitrary metadata                                     |
-| `environment` or `environments` | Fresh adapters constructed from current Foundation Host state    | Entered by Harness; restored portable state cannot replace current authority                                  |
+| `environment` or `environments` | Fresh attach-only adapter for the exact `RunEnvironmentBinding`  | Entered by Harness; portable state cannot replace or retarget the accepted customer-owned target              |
 | `default_environment`           | Accepted mount selection                                         | Names one supplied mount and grants no additional access                                                      |
 | `previous_state`                | Latest valid Harness value from the Run's committed `state.json` | Detached continuation input; never a lease, credential, or current-state selector by itself                   |
 | `deferred_resume`               | Accepted waiting Feedback or Continue resolution                 | Native Pydantic deferred correlation, separate from user input                                                |
@@ -171,14 +323,19 @@ The following table is the Foundation-to-Harness input mapping for `stream()`. H
 Illustrative Foundation invocation:
 
 ```python
+driver = executor.driver
 definition = reconstruct_agent_definition(run_state)
 definition = definition.with_updates(
     capabilities=(
-        FoundationRunControlCapability(coordinator),
+        FoundationRunControlCapability(
+            control=executor.control,
+            driver=driver,
+        ),
         *definition.capabilities,
     )
 )
 agent = harness_builder.build(definition)
+driver.bind_agent(agent)
 
 bindings = RunBindings(
     instance=instance_context,
@@ -189,7 +346,7 @@ bindings = RunBindings(
     observation=observation_context,
 )
 
-async with agent.stream(
+terminal_candidate = await driver.run(
     input=native_input,
     bindings=bindings,
     environments=fresh_environments,
@@ -198,26 +355,26 @@ async with agent.stream(
     deferred_resume=deferred_resume,
     usage=run_usage,
     usage_limits=usage_limits,
-) as stream:
-    coordinator.bind_stream(stream)
-    async for event in stream:
-        await project_harness_event(event)
+)
 ```
 
-When `input_factory` is present, the example omits `input`. Foundation binds the Harness Run ID to the current Attempt after stream entry and before publishing the first live observation, as required by the Attempt contract.
+`HarnessDriver.run()` enters `agent.stream(...)`, registers itself with `RunAttemptControl`, iterates every event exactly once, and unregisters itself while leaving the stream context. Its narrow control port maps ordinary active offer, cancellation, and callback-external export to `HarnessRunStream.steer()`, `cancel()`, and `export_state()` without exposing the stream object. The same driver creates each `HarnessHookBoundary` and privately maps that boundary to the callback-local `RunContext.enqueue()` and `AgentContext.export_state()` APIs. The driver retains the stream for its entered lifetime but retains no callback context after the boundary closes. When `input_factory` is present, the example omits `input`. Foundation binds the Harness Run ID to the current Attempt after stream entry and before publishing the first live observation, as required by the Attempt contract.
 
 ## Asynchronous Communication
 
-| Direction                            | Mechanism                                                                         | Purpose                                                                        | Content and authority                                                                                                   |
-| ------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| Foundation to Harness                | Awaited `stream()` entry and single-consumer iteration                            | Start and drive one logical Run                                                | Typed run arguments and fresh live collaborators; Foundation retains durable authority                                  |
-| Harness to Foundation                | `HarnessStreamEvent` async iterator                                               | Observe model, tool, extension, usage, and terminal progress with backpressure | Typed process-local observations; no event is a durable Foundation transition                                           |
-| Harness/Pydantic to Foundation       | Awaited methods on `FoundationRunControlCapability`                               | Reconcile control and checkpoint at model/node boundaries                      | Current `RunContext`, typed request/response/node boundary, and Attempt-scoped coordinator closure                      |
-| Harness to Foundation collaborator   | Awaited `RunInputFactory`, `RunModelResolver`, and `ModelContextMiddleware` calls | Materialize input, resolve current Model, and project bounded context          | Only the typed parameters of the owning public interface; failures stop the dependent boundary                          |
-| Foundation to active Harness Run     | `HarnessRunStream.steer()`, `cancel()`, and state export                          | Deliver accepted live input, interrupt local work, or capture complete state   | Process-local control only; enqueue IDs and cancellation are not durable receipts or lifecycle commits                  |
-| Foundation control process to Worker | Thread-scoped Redis wake signal                                                   | Reduce reconciliation latency                                                  | Thread identity and safe correlation only; Worker re-reads PostgreSQL and never forwards Redis payload as Harness input |
+| Direction                               | Mechanism                                                                                 | Purpose                                                                        | Content and authority                                                                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Executor root through `HarnessDriver`   | Awaited `driver.run()` with `stream()` entry and single-consumer iteration                | Start and drive one logical Run                                                | Typed run arguments and fresh live collaborators; Foundation retains durable authority                                         |
+| Harness through driver to executor root | `HarnessStreamEvent` async iterator                                                       | Observe model, tool, extension, usage, and terminal progress with backpressure | Typed process-local observations; no event is a durable Foundation transition                                                  |
+| Lease monitor to control facade         | Direct awaited `RunAttemptControl.authority_lost(...)`                                    | Fence lost authority and stop local execution                                  | Process-local notification after bounded lease policy; no terminal Run outcome                                                 |
+| Control watcher to control facade       | Direct awaited `RunAttemptControl.reconcile(...)` after PostgreSQL reread                 | Apply current control facts without another local queue                        | Redis is only a wakeup; the reread facts and subsequent fenced checks determine action                                         |
+| Harness/Pydantic to control facade      | Capability borrows context, obtains `HarnessHookBoundary`, and awaits the facade          | Reconcile and checkpoint at model/node boundaries                              | Opaque callback boundary and typed lifecycle values; raw context does not enter control code and grants no authority           |
+| Control facade to driver                | Narrow driver calls backed by `HarnessRunStream.steer()`, `cancel()`, or `export_state()` | Offer accepted live input, stop local work, or capture complete state          | Process-local control only; enqueue IDs and cancellation are not durable receipts or lifecycle commits                         |
+| Control facade to hook boundary         | Driver-owned `HarnessHookBoundary.enqueue()` or `export_state()`                          | Perform non-reentrant hook-local enqueue or export                             | Boundary privately adapts raw context, remains callback-scoped, and fails closed after exit                                    |
+| Harness to Foundation collaborator      | Awaited `RunInputFactory`, `RunModelResolver`, and `ModelContextMiddleware` calls         | Materialize input, resolve current Model, and project bounded context          | Only the typed parameters of the owning public interface; failures stop the dependent boundary                                 |
+| Control process to executor watcher     | Thread-scoped Redis wake signal, followed by PostgreSQL reread                            | Reduce reconciliation latency                                                  | Thread identity only; the watcher derives the current action from PostgreSQL and never forwards Redis payload as Harness input |
 
-The stream has one consumer and natural backpressure. Foundation decouples client delivery by projecting into its own bounded durable or live channels; it never creates a second consumer or asks Harness to provide replay. Callback calls are in-task awaited calls, not messages placed on Redis, a background queue, or an unbounded task set.
+The stream has one driver and one consumer with natural backpressure. Foundation decouples client delivery by projecting into its own bounded durable or live channels; it never creates a second consumer or asks Harness to provide replay. Monitor, watcher, and callback calls execute in their caller's existing task and await `RunAttemptControl`; they are not messages placed on Redis, another process-local queue, a controller task, or an unbounded task set. A callback boundary is an ephemeral adapter in that same call stack, not a task or another stream consumer.
 
 ### Harness Stream Output and Result Mapping
 
@@ -227,29 +384,81 @@ When a model response invokes tools, the complete post-tool checkpoint is publis
 
 Harness usage snapshots are process-local evidence. Foundation attributes and durably charges usage under the current RunAttempt contract. A late immutable usage record may be admitted under its original Attempt identity, but it cannot restore control authority or change a terminal lifecycle decision.
 
+The authority-loss path and the ordinary authority-valid path are separate timelines. An authority-loss decision fences the executor and cancels its structured scope; it does not fall through into later control reconciliation or Harness callbacks.
+
 ```mermaid
 sequenceDiagram
-    participant Worker as Foundation Worker
-    participant Control as Run-control coordinator
-    participant Harness
-    participant Capability as Foundation Capability
-    participant PAI as Pydantic AI
-    participant DB as PostgreSQL/Object state
+    participant Worker as WorkerExecutionLoop
+    participant Executor as Executor root task
+    participant Lease as LeaseMonitor task
+    participant Watcher as ControlWatcher task
+    participant RunControl as RunAttemptControl
+    participant Driver as HarnessDriver
+    participant Harness as HarnessRunStream
+    participant Postgres as PostgreSQL
 
-    Worker->>Harness: build definition and enter stream with fresh bindings
-    Worker->>DB: bind Harness Run ID to fenced Attempt
-    Worker->>Harness: consume one event stream
+    Worker->>Executor: start after successful claim
+    Executor->>Lease: start child task
+    Executor->>Watcher: start child task
+    Executor->>Driver: await run in root task
+    Driver->>Harness: enter and iterate stream
+    Lease->>Postgres: renew exact Attempt
+    Postgres-->>Lease: authority lost or cannot be confirmed
+    Lease->>RunControl: await authority_lost
+    RunControl->>RunControl: fence private gate and close admission
+    RunControl->>Driver: await bounded cancel
+    Driver->>Harness: cancel
+    RunControl-->>Executor: cancel structured scope
+    Executor->>Executor: join children and run bounded cleanup
+```
+
+While authority remains valid, Redis only wakes the watcher, the watcher rereads PostgreSQL, and `RunAttemptControl` chooses any process-local Harness action. Harness hooks borrow their callback context through a driver-owned boundary; neither the watcher nor `RunAttemptControl` receives raw `RunContext` or `AgentContext`.
+
+```mermaid
+sequenceDiagram
+    participant RedisControl as Thread control Stream
+    participant Watcher as ControlWatcher task
+    participant Postgres as PostgreSQL
+    participant RunControl as RunAttemptControl
+    participant Driver as HarnessDriver
+    participant Capability as Foundation Capability
+    participant Boundary as HarnessHookBoundary
+    participant PAI as Pydantic AI
+    participant Objects as Object storage
+    participant Executor as Executor root task
+    participant Harness as HarnessRunStream
+
+    RedisControl-->>Watcher: reconcile Thread wakeup
+    Watcher->>Postgres: reread Thread, Run, Attempt, and inbox
+    Postgres-->>Watcher: current authoritative facts
+    Watcher->>RunControl: await reconcile facts
+    RunControl->>Driver: offer active input or cancel local Run when required
+    RunControl-->>Watcher: bounded reconciliation complete
+    Watcher-->>RedisControl: acknowledge wakeup
+
     PAI->>Capability: await before_model_request
-    Capability->>Control: revalidate, reconcile, checkpoint, or handoff
-    Control->>DB: short reads/writes under current fence
+    Capability->>Driver: create boundary from current context
+    Driver-->>Capability: callback-scoped boundary
+    Capability->>RunControl: await boundary operation
+    RunControl->>Postgres: short fenced reread
+    RunControl->>Boundary: enqueue when eligible
+    Boundary->>PAI: RunContext enqueue
+    Capability->>Driver: close and invalidate boundary
     Capability-->>PAI: unchanged request context
     PAI->>PAI: model request and optional tool batch
-    PAI->>Capability: await after_model_request
-    Capability->>Control: apply first-request delivery rule
     PAI->>Capability: await after_node_run(CallToolsNode)
-    Capability->>Control: reconcile and checkpoint complete tool batch
-    Harness-->>Worker: ordered events and one terminal result
-    Worker->>DB: conditionally publish state and commit outcome
+    Capability->>Driver: create new callback boundary
+    Driver-->>Capability: callback-scoped boundary
+    Capability->>RunControl: await tool-boundary work with boundary
+    RunControl->>Boundary: export complete state
+    Boundary->>PAI: AgentContext export_state
+    RunControl->>Objects: conditionally publish state
+    RunControl->>Postgres: commit matching receipt
+    Capability->>Driver: close and invalidate boundary
+    Harness-->>Driver: ordered events and terminal candidate
+    Driver-->>Executor: events and terminal candidate
+    Executor->>RunControl: await final outcome decision
+    RunControl->>Postgres: conditionally commit outcome
 ```
 
 ## Foundation Capability Hook Contract
@@ -258,7 +467,7 @@ sequenceDiagram
 
 | Hook                                   | Pydantic boundary                                                               | Foundation work                                                                                                                                                                                  | Not permitted                                                                                                                     |
 | -------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `for_run()`                            | Once before hooks for each internal `ModelAttempt`                              | Return a fresh active Capability bound to the same logical-run coordinator; validate reserved ID, context, Attempt correlation, and compatible run attachment                                    | Durable reads that outlive preparation, model/tool execution, or replacing accepted Agent content                                 |
+| `for_run()`                            | Once before hooks for each internal `ModelAttempt`                              | Ask the driver to validate context identity and return an opaque binding; return a fresh Capability bound to that identity and the same control facade                                           | Retaining raw `RunContext` or `AgentContext`, durable reads that outlive preparation, or replacing accepted Agent content         |
 | `before_model_request()`               | Awaited before each provider model request                                      | Revalidate current ownership; reconcile ordinary eligible Thread inbox delivery; publish a dirty complete prior boundary when required; honor a pending planned handoff before new provider I/O  | Holding a database session across the provider call, editing the accepted model, or creating a tool-dispatch ledger               |
 | `after_model_request()`                | Awaited after a complete model response and before downstream response handling | Inspect the effective response only for the waiting-successor first-request gate; when the first response has no tool calls, reconcile and enqueue the eligible FIFO before ordinary termination | Treating the response alone as a complete tool boundary, persisting a generic tool-dispatch record, or claiming provider rollback |
 | `after_node_run()` for `CallToolsNode` | Awaited after the complete tool-handling node succeeds                          | Reconcile eligible delivery, export complete state, publish the post-tool checkpoint, and honor planned handoff before another node begins                                                       | Running before or between individual tool calls, inferring exactly-once effects, or requiring tools to be managed                 |
@@ -269,15 +478,15 @@ Foundation does not use a generic `before_tool_execute()` or `after_tool_execute
 
 For each Foundation callback, the internal operation order is:
 
-1. validate that the active Capability, `AgentContext`, Harness Run, RunAttempt, coordinator, and reserved Capability ID still match;
-2. enter the process-local run-control critical section and reject a terminally fenced coordinator;
+1. let `HarnessDriver` validate that the hook's raw context matches the active Capability's opaque binding, Harness Run, RunAttempt, executor, driver, and reserved Capability ID, then create one callback-scoped `HarnessHookBoundary`;
+2. call `RunAttemptControl` with that boundary; the facade enters its private process-local critical section and rejects a terminally fenced gate without receiving the raw context;
 3. perform bounded durable rereads and current lease/fence checks using short sessions;
 4. reconcile eligible Thread inbox work in its authoritative FIFO and enqueue only accepted adapted values;
 5. when the boundary requires persistence, export one complete Harness state, assemble bounded Host state and receipts, conditionally publish `state.json`, then commit any relational receipt transition in a separate short transaction;
 6. if planned handoff is pending and the safe-boundary conditions hold, request local Harness cancellation before releasing the critical section so no later Foundation control operation or new model request is admitted; and
-7. return the original Pydantic request, response, or node result unchanged unless cancellation or a classified Foundation failure terminates the local run.
+7. return the original Pydantic request, response, or node result unchanged unless cancellation or a classified Foundation failure terminates the local run, then invalidate the boundary in `finally` before the hook returns.
 
-The callback may release and reacquire the process-local critical section only through a coordinator operation that preserves FIFO order and terminal fencing. It never keeps a relational session open while awaiting object storage, Harness enqueue, state export, model/tool work, or another external service.
+The callback may release and reacquire the process-local critical section only through a `RunAttemptControl` operation that preserves FIFO order and terminal fencing. The facade invokes only the boundary's narrow enqueue/export methods; it neither receives nor retains `RunContext` or `AgentContext`. No relational session remains open while awaiting object storage, Harness enqueue, state export, model/tool work, or another external service.
 
 ### Waiting-Successor First-Request Gate
 
@@ -286,7 +495,7 @@ For a successor created from waiting Feedback or waiting Continue, Foundation wi
 - if the first response contains no tool calls, `after_model_request()` reconciles and enqueues the eligible FIFO before response handling can terminate;
 - if the first response contains tool calls, `after_model_request()` records that the gate remains closed and `after_node_run(CallToolsNode)` acts only after the complete tool batch;
 - an ordinary next request or ordinary terminal path receives the eligible enqueue, while a deferred or HITL terminal result receives none and lets Foundation seal waiting and roll pending entries forward; and
-- Pydantic `RunContext.enqueue(..., priority="asap")` supplies native delivery. Its enqueue ID and `EnqueuedMessagesEvent` are process-local evidence only; durable consumption still requires a complete same-Run checkpoint and Foundation receipt transaction.
+- The driver-owned `HarnessHookBoundary.enqueue(..., priority="asap")` maps to Pydantic `RunContext.enqueue(...)` for native delivery. Its enqueue ID and `EnqueuedMessagesEvent` are process-local evidence only; durable consumption still requires a complete same-Run checkpoint and Foundation receipt transaction.
 
 The first-request gate is based on the first model request and its complete tool batch, not on the internal `ModelAttempt` count.
 
@@ -294,17 +503,17 @@ The first-request gate is based on the first model request and its complete tool
 
 All Foundation Capability hooks and typed collaborators are awaited. They create no fire-and-forget persistence, detached callback task, or best-effort durable mutation.
 
-| Failure boundary                                 | Required behavior                                                                                                                                        |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `for_run()` or collaborator binding fails        | No dependent model or tool work begins; Attempt preparation or execution records the safe classified failure                                             |
-| `before_model_request()` fails                   | The provider request does not begin; no later hook is assumed to run; the last confirmed checkpoint remains authoritative                                |
-| `after_model_request()` fails                    | Provider work may already have occurred; no rollback or non-execution claim is made, and replacement starts from the last confirmed complete checkpoint  |
-| `after_node_run(CallToolsNode)` fails            | Tool effects may already have occurred; no generic replay or duplicate-suppression claim is made, and tool-specific reconciliation remains authoritative |
-| Enqueue or state export fails                    | No inbox row is marked consumed and no handoff is committed from the unconfirmed candidate                                                               |
-| Conditional state publication is lost or unknown | Foundation reconciles the exact object version and body before retrying; the hook does not guess success                                                 |
-| Lease or fence is lost                           | The coordinator terminally fences local control, requests Harness cancellation, and suppresses every authoritative Foundation write                      |
-| External task cancellation                       | Cancellation propagates after bounded cleanup and cannot be converted into success by a Capability or plugin                                             |
-| Hook exception contains unsafe detail            | Foundation records a stable bounded error code and excludes raw credentials, payloads, provider bodies, and callback representations                     |
+| Failure boundary                                 | Required behavior                                                                                                                                               |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `for_run()` or collaborator binding fails        | No dependent model or tool work begins; Attempt preparation or execution records the safe classified failure                                                    |
+| `before_model_request()` fails                   | The provider request does not begin; no later hook is assumed to run; the last confirmed checkpoint remains authoritative                                       |
+| `after_model_request()` fails                    | Provider work may already have occurred; no rollback or non-execution claim is made, and replacement starts from the last confirmed complete checkpoint         |
+| `after_node_run(CallToolsNode)` fails            | Tool effects may already have occurred; no generic replay or duplicate-suppression claim is made, and tool-specific reconciliation remains authoritative        |
+| Enqueue or state export fails                    | No inbox row is marked consumed and no handoff is committed from the unconfirmed candidate                                                                      |
+| Conditional state publication is lost or unknown | Foundation reconciles the exact object version and body before retrying; the hook does not guess success                                                        |
+| Lease or fence is lost                           | `RunAttemptControl` terminally fences its private gate, asks the driver to cancel Harness, cancels the executor scope, and suppresses every authoritative write |
+| External task cancellation                       | Cancellation propagates after bounded cleanup and cannot be converted into success by a Capability or plugin                                                    |
+| Hook exception contains unsafe detail            | Foundation records a stable bounded error code and excludes raw credentials, payloads, provider bodies, and callback representations                            |
 
 Hook retries are not an implicit Pydantic model retry. A repeated safe-boundary callback must be idempotent against the same durable inbox receipt, checkpoint sequence, object version, and RunAttempt fence. Failure after model or tool work does not rewind that external work.
 
@@ -312,45 +521,49 @@ Hook retries are not an implicit Pydantic model retry. A repeated safe-boundary 
 
 ### Meaning of the Run-Control Barrier
 
-The phrases “run-control barrier” and “run-control gate” refer to one Foundation-owned process-local async critical section attached to the active RunAttempt. It serializes:
+`RunAttemptControl` is the sole process-local control facade attached to one active RunAttempt. It owns the current driver and executor-cancellation bindings, the Foundation service ports needed for bounded durable operations, and one private `RunControlGate`. The phrases “run-control barrier” and “run-control gate” refer only to that facade's private async critical section and local state, not to another callable component. Gate state includes whether admission is open, handoff is pending, authority is terminally fenced, the waiting-successor first-request gate has opened, and which inbox entries have been offered but not durably consumed.
+
+The facade uses that private gate to serialize:
 
 - durable Thread-inbox reconciliation and calls to `HarnessRunStream.steer()`;
 - complete state export, Host receipt assembly, and checkpoint publication;
 - interrupt and planned-handoff cancellation requests;
 - terminal outcome selection and local stream finalization; and
-- coordinator registration, terminal fencing, and cleanup.
+- driver and opaque callback-boundary identity validation, terminal fencing, and cleanup.
 
-It is not a Harness or Pydantic hook, not a distributed lock, not a database transaction, not a Tool Dispatch Barrier, and not a general pause mechanism. Acquiring it does not interrupt an active provider stream, tool call, inline child, input factory, or state publication. It only prevents concurrent Foundation control operations from crossing one another once execution has reached a separately defined safe boundary.
+The gate performs no I/O and calls neither Harness nor `HarnessDriver`. It is not an async task, callable service facade, scheduler, poller, Redis consumer, Harness or Pydantic hook, distributed lock, database transaction, Tool Dispatch Barrier, or general pause mechanism. `LeaseMonitor`, `ControlWatcher`, the executor root, and Capability hooks call `RunAttemptControl`, never the gate. Acquiring the gate does not interrupt an active provider stream, tool call, inline child, input factory, or state publication. It only prevents concurrent Foundation control operations from crossing one another once execution has reached a separately defined safe boundary.
+
+The executor root never holds the gate while `HarnessDriver` awaits the next stream item. A Capability hook can execute inside that await and must be able to call the facade and enter its gate. After the driver returns an event, the root can call the facade for a concrete checkpoint, terminal decision, or finalization operation.
 
 Consequently, “acquire the run-control barrier and then call `export_state()`” is insufficient. State export is valid for handoff only when both conditions hold:
 
 1. execution is at a complete safe boundary exposed by the direct Host path or an awaited Capability hook; and
-2. the coordinator holds the run-control critical section, remains current under its lease and fence, and admits no concurrent enqueue, checkpoint, interrupt, or terminal decision.
+2. `RunAttemptControl` holds its private critical section, remains current under its lease and fence, and admits no concurrent enqueue, checkpoint, interrupt, or terminal decision.
 
 ### Safe Boundaries and Corresponding Hooks
 
-| Boundary                                                                           | Harness surface                                                                           | Handoff meaning                                                                                                                  |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| After stream entry and input preparation, before first iteration starts model work | Host calls `HarnessRunStream.export_state()` while it exclusively owns the entered stream | Initial complete state can be published without a Capability hook                                                                |
-| Immediately before any later model request                                         | `FoundationRunControlCapability.before_model_request()`                                   | Prior messages and completed nodes form a complete boundary; a pending handoff can checkpoint and cancel before new provider I/O |
-| After a complete tool batch                                                        | `FoundationRunControlCapability.after_node_run()` with `CallToolsNode`                    | All results for that node are in the complete public boundary; a pending handoff can checkpoint and cancel before the next node  |
-| Waiting or completed terminal result                                               | `HarnessRunResultEvent` consumed by the Worker                                            | Foundation commits the ordinary outcome rather than converting it to `yielded`                                                   |
+| Boundary                                                                           | Harness surface                                                                  | Handoff meaning                                                                                                                  |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| After stream entry and input preparation, before first iteration starts model work | `RunAttemptControl` asks the driver for direct `HarnessRunStream.export_state()` | Initial complete state can be published without a Capability hook                                                                |
+| Immediately before any later model request                                         | `FoundationRunControlCapability.before_model_request()`                          | Prior messages and completed nodes form a complete boundary; a pending handoff can checkpoint and cancel before new provider I/O |
+| After a complete tool batch                                                        | `FoundationRunControlCapability.after_node_run()` with `CallToolsNode`           | All results for that node are in the complete public boundary; a pending handoff can checkpoint and cancel before the next node  |
+| Waiting or completed terminal result                                               | `HarnessRunResultEvent` consumed by the driver and returned to the executor root | Foundation commits the ordinary outcome rather than converting it to `yielded`                                                   |
 
 `after_model_request()` is not by itself a planned-handoff checkpoint hook. Although the provider response is complete, downstream tool handling, output validation, deferred classification, or terminal normalization may still be pending. It exists in this integration for the waiting-successor first-request gate. A handoff requested during a model response waits for the next `before_model_request()`, complete `CallToolsNode` boundary, or ordinary terminal result.
 
-Inside an awaited Capability hook, the Capability exports through `AgentContext.export_state(complete_messages)` using the complete public message sequence for that boundary. Outside the inner Pydantic callback, the Worker may use `HarnessRunStream.export_state()` while the stream is entered and the coordinator has established the same quiescent condition. Neither method persists data. A callback must not recursively call a stream method whose completion depends on the callback returning; the coordinator selects the non-reentrant export path.
+Inside an awaited Capability hook, `RunAttemptControl` asks the current `HarnessHookBoundary` to export the complete public message sequence; the driver-owned boundary maps that call to callback-local `AgentContext.export_state(complete_messages)`. Outside the inner Pydantic callback, the facade asks `HarnessDriver` to use `HarnessRunStream.export_state()` while the stream is entered and the same quiescent condition holds. Neither method persists data. A callback never recursively calls a stream method whose completion depends on the callback returning; the explicit boundary selects the non-reentrant hook-local path without exposing raw context to the facade.
 
 ### Planned-Handoff Flow
 
-1. Drain or Runner rotation sets one process-local handoff request on the current coordinator. The Attempt continues heartbeat and lease renewal.
+1. Drain or Runner rotation calls `RunAttemptControl.request_handoff(...)`; the facade records the request in its private gate. The Attempt continues heartbeat and lease renewal.
 2. If model, tool, inline-child, input, enqueue, or checkpoint work is active, Foundation waits. The request does not make that work safe and does not invoke state export concurrently.
-3. At the next eligible direct boundary, `before_model_request()`, or `after_node_run(CallToolsNode)`, the awaited Foundation Capability enters the run-control critical section and revalidates current Attempt, lease, fence, handoff budget, and absence of a winning interrupt or terminal decision.
+3. At the next eligible direct boundary, `before_model_request()`, or `after_node_run(CallToolsNode)`, the executor root or awaited Foundation Capability calls `RunAttemptControl`; the facade enters its critical section and revalidates current Attempt, lease, fence, handoff budget, and absence of a winning interrupt or terminal decision.
 4. The callback reconciles required inbox work, exports complete Harness and Host state, and conditionally publishes or confirms the matching `state.json`. A published checkpoint remains an ordinary recovery checkpoint and contains no handoff marker.
-5. After checkpoint confirmation, the coordinator terminally closes admission for steering and new checkpoint work and calls the public idempotent `HarnessRunStream.cancel()` path before releasing the boundary. This cancellation is process-local quiescence, not the durable `cancelled` Run outcome.
-6. The Worker leaves the stream context, closes Runtime resources, and attempts the short fenced `yielded` transaction while continuing lease renewal. It commits `yield_reason="service_drain"` or `"runner_rotation"` only when the same Attempt still owns the Run and no ordinary outcome, interrupt, or failure has won.
-7. Only a successful `yielded` commit stops renewal and makes the still-running Run eligible for a planned-handoff successor. A failed yield CAS does not free the Run; the Worker reconciles the winning durable state.
+5. After checkpoint confirmation, the facade terminally closes admission and asks `HarnessDriver` to call the public idempotent `HarnessRunStream.cancel()` path before releasing the boundary. This cancellation is process-local quiescence, not the durable `cancelled` Run outcome.
+6. The driver leaves the stream context; the executor root closes Runtime resources and asks the facade to attempt the short fenced `yielded` transaction while `LeaseMonitor` continues. It commits `yield_reason="service_drain"` or `"runner_rotation"` only when the same Attempt still owns the Run and no ordinary outcome, interrupt, or failure has won.
+7. Only a successful `yielded` commit stops renewal and makes the still-running Run eligible for a planned-handoff successor. A failed yield CAS does not free the Run; the executor reconciles the winning durable state.
 
-If checkpoint publication cannot be confirmed, Foundation does not cancel the local run solely for handoff and does not commit `yielded`; it retains the lease and retries at a later safe boundary until the drain deadline. If the deadline arrives first, the Worker fences local work, stops renewal, and exits. Another Worker may take over only after the recorded lease expires.
+If checkpoint publication cannot be confirmed, Foundation does not cancel the local run solely for handoff and does not commit `yielded`; it retains the lease and retries at a later safe boundary until the drain deadline. If the deadline arrives first, the executor fences local work, stops renewal, and exits. Another Worker may take over only after the recorded lease expires.
 
 ## Compatibility
 
@@ -360,7 +573,7 @@ Foundation pins a compatible Harness release and exact Runtime lock in the accep
 - the Pydantic Capability hook signature or ordering behavior relied on by the mandatory control Capability;
 - the complete-message semantics of `AgentContext.export_state()` or `HarnessRunStream.export_state()`;
 - the stream cancellation or terminal-result contract used for planned handoff; or
-- the Foundation-private coordinator boundary schema and its stable failure classifications.
+- the Foundation-private `AttemptContext`, `RunAttemptControl`, `HarnessDriver`, or `HarnessHookBoundary` correlation and their stable failure classifications.
 
 Adding a new Foundation callback requires an owning lifecycle boundary, exact input types, ordering, authority checks, cancellation behavior, failure semantics, and proof that it cannot be expressed by an existing typed collaborator or Capability hook. A plugin callback, metadata key, or free-form callable registry is never added as a shortcut.
 
@@ -370,7 +583,7 @@ Adding a new Foundation callback requires an owning lifecycle boundary, exact in
 02. Harness state, events, results, enqueue IDs, metadata, and callbacks grant no durable authority.
 03. The current Foundation RunAttempt lease and fence are revalidated before every authoritative callback effect.
 04. `RunInputFactory`, `RunModelResolver`, and `ModelContextMiddleware` remain explicit typed collaborators, not plugins or generic Capability hooks.
-05. The Foundation control Capability is direct Worker composition with a reserved type and ID; managed plugins cannot select or replace it.
+05. The Foundation control Capability is direct executor composition with a reserved type and ID; managed plugins cannot select or replace it.
 06. Every Foundation hook and collaborator is awaited, cancellation-aware, bounded, and free of detached durable work.
 07. No database session or transaction spans model, tool, child, object-store, sleep, or streaming work.
 08. The run-control critical section serializes Foundation control but creates no execution safe point by itself.
@@ -380,3 +593,8 @@ Adding a new Foundation callback requires an owning lifecycle boundary, exact in
 12. Foundation defines no generic Tool Dispatch Barrier, tool invocation ledger, or requirement that every hosted function tool be managed.
 13. Tool effects completed before a hook failure or crash are not rolled back; duplicate suppression and reconciliation remain tool- or provider-owned.
 14. A terminal Harness result competes with planned handoff as an ordinary durable outcome and is never rewritten to `yielded` merely because drain was requested.
+15. A successful claim starts exactly one process-local `RunAttemptExecutor` root task within pre-reserved capacity; `LeaseMonitor` and `ControlWatcher` are its only Foundation child tasks and are not OS threads.
+16. `HarnessDriver` runs in the executor root task and is the only holder, public-API caller, and consumer of `HarnessRunStream`; its callback-scoped boundaries are the only Foundation adapters for hook-local Harness context APIs, and neither is another task.
+17. `RunAttemptControl` is the sole process-local control facade. Monitor, watcher, executor, and Capability paths call it directly with awaited methods rather than using a controller task or process-local command queue, and it calls no Harness API directly.
+18. `RunControlGate` is private lock and local state inside `RunAttemptControl`, not a callable component or authority; it performs no I/O and calls neither Harness nor the driver.
+19. Harness/Pydantic owns each raw `RunContext` and `AgentContext`; the mandatory Capability only borrows it, a driver-owned `HarnessHookBoundary` wraps it for one awaited hook, and no Foundation object retains it after boundary exit.

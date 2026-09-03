@@ -6,7 +6,9 @@ Foundation Service uses the `Run` as its only durable schedulable Agent-work ide
 
 Reconciliation or maintenance work that does not invoke an Agent belongs to its owning domain and does not manufacture a Run or `RunAttempt`. If such a workflow invokes an Agent, that invocation is ordinary Run work. Foundation defines no generic `Execution` resource or `executions` table.
 
-Every non-draining Worker execution loop performs the same bounded relational Run scan, transactional claim or takeover, lease renewal, and recovery contract through its configured Plugin Runtime profile. Adding Worker replicas adds competing consumers of that contract; it does not create a separate Run Scheduler, recovery controller, or Redis dispatch authority. PostgreSQL remains authoritative for Run eligibility, Attempt generations, leases, fences, recovery budgets, and outcomes.
+Every non-draining `WorkerExecutionLoop` performs the same bounded relational Run scan, Runtime preflight, local-capacity admission, and transactional claim or takeover through its configured Plugin Runtime profile. It reserves one bounded local execution slot before claim so that a successful claim always has process-local capacity. A winning claim immediately starts exactly one `RunAttemptExecutor` as an async task in the claiming execution process; it does not run the Attempt inline in the scan loop and does not create another OS thread. The executor owns preparation, lease renewal, Harness execution, active-control reconciliation, fenced publication, and finalization for that Attempt.
+
+`WorkerExecutionLoop` and `RunAttemptExecutor` are process-local component names, not durable resources or public Python API commitments. In the on-demand profile both run in the Worker process. In the runner profile they run in the same lock-scoped Runner child process, while the Supervisor owns only Runner lifecycle and claim gating. Adding Worker replicas adds competing consumers of the relational claim contract; it does not create a separate Run Scheduler, recovery controller, or Redis dispatch authority. PostgreSQL remains authoritative for Run eligibility, Attempt generations, leases, fences, recovery budgets, and outcomes.
 
 ## Core Model
 
@@ -20,15 +22,15 @@ A Run is the stable logical-work identity and durable recovery boundary for one 
 
 ## Boundaries
 
-| Concern                                            | Owner                                                                            | Contract                                                                                                         |
-| -------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Run status, scheduling fields, and recovery budget | [Durable Run State](12-run-persistence.md)                                       | Defines the stable Run lifecycle and the limits consumed by Attempt generations                                  |
-| Plugin Runtime preflight and execution profile     | [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) | Defines on-demand import compatibility and lock-scoped Runner materialization                                    |
-| Model-loop retries inside one Harness Run          | Agent Harness                                                                    | Remain process-local `ModelAttempt` values and never allocate another `RunAttempt`                               |
-| Harness construction, callbacks, and live control  | [Foundation–Harness Runtime Integration](14-harness-runtime-integration.md)      | Uses public Harness APIs, fresh typed collaborators, one mandatory Capability, and a process-local control gate  |
-| Lifecycle history                                  | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md)       | Records ordered facts without becoming Run or attempt authority                                                  |
-| Thread inbox acceptance and consumption            | [Agent Control: Active Execution](19-agent-control-active-execution.md)          | Supplies durable steer and asynchronous-result entries plus state-coupled same-Run consumption                   |
-| Agent tool crash behavior                          | Latest complete Run state plus the owning tool or Capability domain              | Defines no generic invocation ledger; effectful tools own cross-crash idempotency or durable task reconciliation |
+| Concern                                                | Owner                                                                            | Contract                                                                                                                       |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Run status, scheduling fields, and recovery budget     | [Durable Run State](12-run-persistence.md)                                       | Defines the stable Run lifecycle and the limits consumed by Attempt generations                                                |
+| Plugin Runtime preflight and execution profile         | [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) | Defines on-demand import compatibility and lock-scoped Runner materialization                                                  |
+| Model-loop retries inside one Harness Run              | Agent Harness                                                                    | Remain process-local `ModelAttempt` values and never allocate another `RunAttempt`                                             |
+| Attempt execution, Harness callbacks, and live control | [Foundation–Harness Runtime Integration](14-harness-runtime-integration.md)      | Defines the executor tasks, `RunAttemptControl`, `HarnessDriver`, public Harness calls, mandatory Capability, and private gate |
+| Lifecycle history                                      | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md)       | Records ordered facts without becoming Run or attempt authority                                                                |
+| Thread inbox acceptance and consumption                | [Agent Control: Active Execution](19-agent-control-active-execution.md)          | Supplies durable steer and asynchronous-result entries plus state-coupled same-Run consumption                                 |
+| Agent tool crash behavior                              | Latest complete Run state plus the owning tool or Capability domain              | Defines no generic invocation ledger; effectful tools own cross-crash idempotency or durable task reconciliation               |
 
 ## RunAttempt Allocation Within a Run
 
@@ -124,11 +126,11 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-`succeeded`, `yielded`, `failed`, and `cancelled` are terminal. `yielded` means the Worker voluntarily stopped at a complete recoverable boundary, committed its known usage and released execution authority while the Run remained `running`. It is expected placement change, not failure, cancellation, or a Harness result. `failed` means only that this worker generation can no longer produce an authoritative result. It does not by itself mean that the Run failed: an in-budget retryable failure leaves the Run `running` and allows a later attempt. An owning worker can commit that fact directly; otherwise a later Worker's takeover transaction commits it after the lease expires. Foundation defines no separate `lost` attempt state.
+`succeeded`, `yielded`, `failed`, and `cancelled` are terminal. `yielded` means the executor voluntarily stopped at a complete recoverable boundary, committed its known usage and released execution authority while the Run remained `running`. It is expected placement change, not failure, cancellation, or a Harness result. `failed` means only that this worker generation can no longer produce an authoritative result. It does not by itself mean that the Run failed: an in-budget retryable failure leaves the Run `running` and allows a later attempt. An owning executor can commit that fact directly; otherwise a later Worker's takeover transaction commits it after the lease expires. Foundation defines no separate `lost` attempt state.
 
 Loss of outcome certainty at the attempt boundary means that the whole attempt can no longer continue and produce an authoritative Run result. Foundation does not create another Attempt merely because one process-local tool call fails or has an uncertain outcome; replacement still follows the lease, failure, and handoff rules below.
 
-`leased` is the pre-Run preparation state. Worker claim acknowledgement is a transport observation, not another durable phase. While an attempt is `leased`, `harness_run_id` and `started_at` are null. The worker may read and validate state and immutable artifacts, resolve current authority and credentials, and construct fresh run-local dependencies outside database transactions. It cannot dispatch an Agent model or tool call before Harness entry. Entering the Harness Run atomically records `harness_run_id` and `started_at` and changes the attempt to `running`.
+`leased` is the pre-Run preparation state. Worker claim acknowledgement is a transport observation, not another durable phase. While an attempt is `leased`, `harness_run_id` and `started_at` are null. The executor may read and validate state and immutable artifacts, resolve current authority and credentials, and construct fresh run-local dependencies outside database transactions. It cannot dispatch an Agent model or tool call before Harness entry. Entering the Harness Run atomically records `harness_run_id` and `started_at` and changes the attempt to `running`.
 
 A `leased` Attempt can yield before Harness entry by retaining the already complete initial or imported Run state. A `running` Attempt can yield only after the [Run state contract](12-run-persistence.md#checkpoint-triggers-and-refresh) confirms a complete safe boundary and the local Harness execution is fenced from further model, tool, or child dispatch. A yielded Attempt has a `yield_reason`, has no `failure`, and has `harness_run_id` and `started_at` exactly when it had entered Harness before yielding.
 
@@ -148,7 +150,7 @@ Each worker generation is one `run_attempts` row:
 
 Once terminal, every attempt column is immutable.
 
-`usage.model_requests` is monotonic durable execution evidence, not only a terminal accounting total. After all required input preparation and immediately before each provider model request, the Worker increments it in a short fenced Attempt update; the provider request does not start unless that update commits. The update does not claim that the provider received or completed the request. When an Attempt is terminalized or replaced, its known usage is charged into `Run.usage_charged` in the same transaction. Consequently, `Run.usage_charged.model_requests > 0` proves that a prior Attempt crossed a model boundary after input preparation without adding a separate input-file materialization field.
+`usage.model_requests` is monotonic durable execution evidence, not only a terminal accounting total. After all required input preparation and immediately before each provider model request, the executor increments it in a short fenced Attempt update; the provider request does not start unless that update commits. The update does not claim that the provider received or completed the request. When an Attempt is terminalized or replaced, its known usage is charged into `Run.usage_charged` in the same transaction. Consequently, `Run.usage_charged.model_requests > 0` proves that a prior Attempt crossed a model boundary after input preparation without adding a separate input-file materialization field.
 
 `usage.tool_invocations` is aggregate known usage reported by Harness and committed with a complete checkpoint or Attempt outcome. It is not a dispatch authorization record and does not require a PostgreSQL update before each tool call. A crash can therefore omit uncheckpointed tool invocation usage; recovery budgets constrain durable known usage rather than claiming exact accounting of external effects.
 
@@ -156,7 +158,7 @@ Once terminal, every attempt column is immutable.
 
 `Run.current_run_attempt_id` selects the sole `RunAttempt` whose lease may authorize work for a `running` Run. The selected attempt is the complete lease record: it owns the worker identity and generation, monotonic fence, lease proof, and lease expiry. A worker is authorized only while the Run still selects that non-terminal attempt and the caller matches its worker generation, fence, lease proof, and unexpired lease.
 
-Every Worker periodically scans bounded, deterministically ordered relational candidates through its configured Plugin Runtime profile. An on-demand Worker preflights the exact candidate lock against its process-local registry before claim; a runner Supervisor ensures a matching Runner exists and that Runner scans only an equal `runtime_lock_digest`. A candidate is exactly one of:
+Every `WorkerExecutionLoop` periodically scans bounded, deterministically ordered relational candidates through its configured Plugin Runtime profile. An on-demand loop preflights the exact candidate lock against its process-local registry before claim; a runner Supervisor ensures a matching Runner exists and that Runner's loop scans only an equal `runtime_lock_digest`. A candidate is exactly one of:
 
 - an `accepted` Run with no current attempt and `available_at <= now`;
 - a `running` Run with no current attempt after a retryable failed generation and `available_at <= now`;
@@ -165,9 +167,11 @@ Every Worker periodically scans bounded, deterministically ordered relational ca
 
 A yielded candidate has reason-specific scheduling eligibility in addition to ordinary Runtime and state compatibility preflight. After `yield_reason="service_drain"`, a compatible claimant whose immutable `worker_build_id` differs from the yielded Attempt may claim immediately. A same-build claimant skips it until the finite positive `handoff_preference_window` has elapsed from `finished_at`, then may claim as a capacity fallback. The default window equals one RunAttempt lease duration. After `yield_reason="runner_rotation"`, any compatible non-draining execution loop whose Runtime lock matches exactly may claim immediately, regardless of `worker_build_id`.
 
-Build difference is neither authority nor compatibility proof. Every claimant still passes the exact Runtime, state-schema, Harness, Plugin, Skill, Environment, codec, and artifact compatibility checks and wins the transactional lease and fence. The preference chooses no specific Worker; it only lets compatible new-build capacity win during rolling service overlap while retaining bounded same-build fallback. It does not delay initial claim, retryable-failure recovery, expired-lease takeover, or Runner rotation. A draining Worker claims no candidate.
+Build difference is neither authority nor compatibility proof. Every claimant still passes the exact Runtime, state-schema, Harness, Plugin, Skill, Environment connection and attachment-capability, codec, and artifact compatibility checks and wins the transactional lease and fence. The preference chooses no specific Worker; it only lets compatible new-build capacity win during rolling service overlap while retaining bounded same-build fallback. It does not delay initial claim, retryable-failure recovery, expired-lease takeover, or Runner rotation. A draining Worker claims no candidate.
 
-There is no separate scheduler claim, recovery controller, or Redis ownership handoff. A Worker establishes or replaces the current selection in one short transaction that:
+Before attempting the claim transaction, the execution loop reserves one slot from its bounded local `RunAttemptExecutor` capacity. It releases the slot when the claim loses or no Attempt is created. When the claim succeeds, ownership of that slot transfers to the new executor until its complete cleanup finishes. A loop with no slot does not claim and later queue the Attempt in process memory; the Run remains available to other compatible claimants. The slot is admission control only and never grants or extends RunAttempt authority.
+
+There is no separate scheduler claim, recovery controller, or Redis ownership handoff. A `WorkerExecutionLoop` establishes or replaces the current selection in one short transaction that:
 
 1. locks or conditionally updates the candidate Run and, when present, its exact selected attempt;
 2. revalidates the candidate shape, Thread current selection, Run status, `available_at`, lease expiry, fixed recovery deadline, applicable recovery or handoff count, aggregate known usage, and any reason-specific build-preference eligibility;
@@ -184,20 +188,23 @@ Operational admission control, queue names, priority, and fairness may order or 
 
 ```mermaid
 sequenceDiagram
-    participant Executor as Worker loop or lock-scoped Runner
+    participant Loop as WorkerExecutionLoop
     participant DB as PostgreSQL
+    participant Executor as RunAttemptExecutor
     participant Objects as State and artifacts
     participant Harness
 
     loop bounded periodic scan
-        Executor->>DB: find compatible eligible Run
-        Executor->>DB: short claim or takeover transaction
+        Loop->>DB: find compatible eligible Run
+        Loop->>Loop: reserve bounded executor slot
+        Loop->>DB: short claim or takeover transaction
         alt transaction wins and budget permits
-            DB-->>Executor: new leased Attempt, fence, exact Run metadata
+            DB-->>Loop: new leased Attempt, fence, exact Run metadata
+            Loop->>Executor: start one async task with AttemptContext and slot
         else candidate changed or another Worker won
-            DB-->>Executor: no claim
+            DB-->>Loop: no claim; release slot
         else budget exhausted
-            DB-->>Executor: old Attempt failed when present, Run failed
+            DB-->>Loop: old Attempt failed when present, Run failed; release slot
         end
     end
     Executor->>Objects: outside transaction, read exact state and frozen artifacts
@@ -217,11 +224,13 @@ sequenceDiagram
     end
 ```
 
-After commit, the winning Worker performs state and dependency preparation outside database transactions while renewing the lease. When Service tracing is enabled, that committed claim starts the parentless RunAttempt root defined by [Observability](38-observability.md). Before model or tool work, it conditionally claims the Run's current state object version for its fence. It then enters the Harness Run through another short fenced transaction: it verifies the current leased attempt and the expected Attempt version returned by the preparation decision, records `harness_run_id` and `started_at`, changes the attempt to `running`, sets the Run's `started_at` if this is its first Harness Run, and appends the attempt lifecycle fact. The Run remains `running`.
+After commit, the winning execution loop schedules the executor as its next local action and resumes scanning only according to its remaining capacity. `AttemptContext` is a claim-derived process-local context. Its immutable correlation includes tenant, Thread, Run, Attempt, Worker identity and generation, build identity, Runtime lock, fence, lease proof, and fixed policy deadlines; it initializes the expected relational versions and lease deadline that the executor advances only from successful fenced operations or authoritative rereads. It contains no database session, transaction, Harness object, credential, or independent authority; every authoritative operation still revalidates PostgreSQL.
+
+The executor performs state and dependency preparation outside database transactions while its child renewal activity keeps the lease current. When Service tracing is enabled, that committed claim starts the parentless RunAttempt root defined by [Observability](38-observability.md). Before model or tool work, the executor conditionally claims the Run's current state object version for its fence. It then enters the Harness Run through another short fenced transaction: it verifies the current leased attempt and the expected Attempt version returned by the preparation decision, records `harness_run_id` and `started_at`, changes the attempt to `running`, sets the Run's `started_at` if this is its first Harness Run, and appends the attempt lifecycle fact. The Run remains `running`.
 
 Heartbeat and lease renewal update only the selected attempt, but their conditional update verifies the authority rule above in the same relational transaction. Like every worker-originated durable mutation, they supply `tenant_id`, `run_id`, `run_attempt_id`, fence, lease proof, and expected Run version. They cannot revive a terminal or deselected generation. A state write additionally supplies the current opaque object version and conditionally replaces the same deterministic state key.
 
-The same fence covers Attempt preparation and outcome, Run state replacement and sealing, lifecycle and retained-Item publication, waiting feedback, child acceptance or result incorporation, and terminal Thread updates. Lease renewal proves only that the selected Worker generation remains alive and authorized to publish; it does not commit Agent progress, extend credential lifetime, or make process memory recoverable. A Worker that cannot confirm current ownership stops model and tool work and suppresses authoritative publication. It may still emit bounded non-authoritative telemetry naming its stale Attempt.
+The same fence covers Attempt preparation and outcome, Run state replacement and sealing, lifecycle and retained-Item publication, waiting feedback, child acceptance or result incorporation, and terminal Thread updates. Lease renewal proves only that the selected Worker generation remains alive and authorized to publish; it does not commit Agent progress, extend credential lifetime, or make process memory recoverable. An executor that cannot confirm current ownership terminally fences its process-local control gate, stops model and tool work, cancels its Harness stream, and suppresses authoritative publication. It may still emit bounded non-authoritative telemetry naming its stale Attempt.
 
 Immutable usage evidence for already incurred work may arrive later under its original RunAttempt attribution as defined by [Events, Usage, and Delivery](25-events-usage-and-delivery.md), but it cannot restore an Attempt or advance Run lifecycle. Each successful claim starts a separate parentless RunAttempt trace under [Observability](38-observability.md); takeover never reopens or completes the prior Worker's root span.
 
@@ -237,11 +246,11 @@ A known attempt failure commits atomically with its Run decision and charges kno
 
 During shutdown, a control process stops accepting product mutations and streaming connections before stopping its publishers and domain-owned control work. An on-demand Worker stops scanning; a runner Supervisor gates every child scan. Complete role ordering is owned by [Runtime Configuration and Deployment](01-runtime-configuration-and-deployment.md#drain-and-shutdown).
 
-SIGTERM, deployment drain, or controlled Runner rotation sets a `yield_requested` flag only in the owning process. It does not add a Run or Attempt column, make the Worker stale, or stop heartbeat and lease renewal. The Worker may begin a planned handoff only when `handoffs_completed < max_handoffs`; an exhausted handoff budget makes it continue ordinary execution until a normal outcome or the drain deadline.
+SIGTERM, deployment drain, or controlled Runner rotation sets a `yield_requested` flag only in the owning process. It does not add a Run or Attempt column, make the Worker stale, or stop heartbeat and lease renewal. The executor may begin a planned handoff only when `handoffs_completed < max_handoffs`; an exhausted handoff budget makes it continue ordinary execution until a normal outcome or the drain deadline.
 
-At a safe Harness boundary, the owner first confirms that the complete current Harness, Host, and portable Environment state is conditionally present at the Run's ordinary deterministic `state.json` key. It may reuse an already equivalent complete checkpoint. The state contract creates no handoff-specific object, row, object key, or checkpoint identity, and the yield transaction does not store or validate checkpoint metadata. An unknown object-write result is reconciled by the ordinary object stat and body rules. Until the owner can confirm that this safe-point state is durable, it keeps renewing and does not submit `yielded`.
+At a safe Harness boundary, the owner first confirms that the complete current Harness and Host state is conditionally present at the Run's ordinary deterministic `state.json` key. It may reuse an already equivalent complete checkpoint. Foundation attachment adapters publish no provider target state; the immutable Run binding remains relational authority. The state contract creates no handoff-specific object, row, object key, or checkpoint identity, and the yield transaction does not store or validate checkpoint metadata. An unknown object-write result is reconciled by the ordinary object stat and body rules. Until the owner can confirm that this safe-point state is durable, it keeps renewing and does not submit `yielded`.
 
-After that confirmation, the Worker establishes a process-local terminal fence for the old Harness Run when one exists, preventing another model request, tool call, child dispatch, or state mutation. It closes any Run stream, attachments, and process-local Runtime while continuing to renew the Attempt lease. It then opens one short transaction, locks Thread, Run, and RunAttempt in the canonical order, and revalidates the latest Attempt version, current Run selection, unexpired lease proof, worker generation, fence, `running` Run status, non-terminal Attempt status, and absence of an already committed cancellation or normal outcome.
+After that confirmation, the `RunAttemptExecutor` establishes a process-local terminal fence for the old Harness Run when one exists, preventing another model request, tool call, child dispatch, or state mutation. It closes any Run stream, attachments, and process-local Runtime while its renewal activity keeps the Attempt lease current. It then opens one short transaction, locks Thread, Run, and RunAttempt in the canonical order, and revalidates the latest Attempt version, current Run selection, unexpired lease proof, worker generation, fence, `running` Run status, non-terminal Attempt status, and absence of an already committed cancellation or normal outcome.
 
 The winning transaction atomically:
 
@@ -251,24 +260,24 @@ The winning transaction atomically:
 4. clears `Run.current_run_attempt_id`, preserves `Run.status=running`, and sets `Run.available_at=now`; and
 5. appends the `run_attempt.yielded` lifecycle fact and its outbox intent.
 
-Only after this transaction commits does the old owner stop heartbeat and lease renewal and issue a best-effort Redis reconciliation wakeup. If the transaction loses to outcome or cancellation, the Worker abandons yield and observes that authoritative result. If it fails for another reason while the old Attempt remains authoritative, the Worker continues renewal, reconciles the latest state, and retries or commits another legal authoritative result.
+Only after this transaction commits does the old executor stop heartbeat and lease renewal and issue a best-effort Redis reconciliation wakeup. If the transaction loses to outcome or cancellation, the executor abandons yield and observes that authoritative result. If it fails for another reason while the old Attempt remains authoritative, the executor continues renewal, reconciles the latest state, and retries or commits another legal authoritative result.
 
-If the drain deadline arrives before any terminal transaction commits, the Worker abandons graceful handoff, stops renewing, fences local execution, and exits. The Attempt remains authoritative until its recorded lease actually expires; only then may an ordinary takeover transaction fail it and allocate a higher fence. A checkpoint written before a failed yield or process crash remains an ordinary valid latest checkpoint and never implies that the Attempt was yielded.
+If the drain deadline arrives before any terminal transaction commits, the executor abandons graceful handoff, stops renewing, fences local execution, and exits. The Attempt remains authoritative until its recorded lease actually expires; only then may an ordinary takeover transaction fail it and allocate a higher fence. A checkpoint written before a failed yield or process crash remains an ordinary valid latest checkpoint and never implies that the Attempt was yielded.
 
 ## Recovery and Budget Enforcement
 
 Only the Run row authorizes another attempt under its accepted recovery, handoff, elapsed-time, and usage limits. A first or failure/expiry replacement claim consumes `recovery_attempts_started`; a successful yield consumes `handoffs_completed`, and its planned-handoff successor consumes neither another handoff nor recovery count. Every claim still increments `attempts_started` for complete audit history. Claim and takeover consume their applicable authority before external preparation begins; preparation never reserves a future generation.
 
-After any new attempt owns the lease, its Worker reads the exact state, attempt history, immutable artifacts, and the Run's immutable `authority_principal` outside a database transaction and satisfies the [active-control recovery contract](19-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment). It admits Harness entry only when all of these conditions hold:
+After any new attempt owns the lease, its executor reads the exact state, attempt history, immutable artifacts, and the Run's immutable `authority_principal` outside a database transaction and satisfies the [active-control recovery contract](19-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment). It admits Harness entry only when all of these conditions hold:
 
-- the latest complete state object passes key, tenant, Run, Thread, digest, size, envelope, checkpoint, AgentRevision, Runtime lock, and required Harness, Capability, Host, and Environment-state codec validation;
+- the latest complete state object passes key, tenant, Run, Thread, digest, size, envelope, checkpoint, AgentRevision, Runtime lock, and required Harness, Capability, and Host codec validation;
 - the applicable fixed recovery or handoff count, elapsed-time, and known-usage ceilings still permit this already-created attempt after all durable usage charges;
-- the exact AgentRevision, `EffectiveAgentConfig`, Runtime lock, managed Harness Plugin and Skill artifacts, accepted MCP tool snapshot and Connectivity selections, Environment Provider locks, and other frozen dependency locks are present, digest-valid, and compatible; and
+- the exact AgentRevision, `EffectiveAgentConfig`, Runtime lock, managed Harness Plugin and Skill artifacts, accepted MCP tool snapshot and Connectivity selections, `RunEnvironmentBinding`, Environment attachment-capability lock, and other frozen dependency locks are present, digest-valid, and compatible; and
 - the Run's persisted authority Principal remains active in the same tenant, and its current Workspace and principal policy, RoleBindings, Agent invocation authority, Connection and MCPConnection ownership or eligibility, Ingress action authority, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
 
 Attempt preparation is an internal operation over already accepted work. It does not replay the accepting browser session or API key and does not substitute the claiming Worker, queue consumer, administrator, or `system` audit actor as the Run Principal. Revoking the original request credential blocks later requests made with that credential but does not erase the accepted Run; disabling the persisted Principal or removing its required current grants fails the Attempt closed.
 
-The Worker then uses one short fenced compare-and-swap transaction to revalidate that the same Run still selects its unexpired `leased` attempt and to commit exactly one preparation decision:
+The executor then uses one short fenced compare-and-swap transaction to revalidate that the same Run still selects its unexpired `leased` attempt and to commit exactly one preparation decision:
 
 - **continue**: preserve the Run and attempt as active and permit fresh reconstruction and Harness entry;
 - **retry later**: terminalize the attempt as `failed`, charge known usage, clear the current selection, keep the Run `running`, and set a bounded `available_at`, but only for an explicitly retryable condition while budget remains; or
@@ -278,23 +287,23 @@ Every Run-failure path records bounded `failure`, sets `sealed_at`, clears the c
 
 A permanent state, integrity, schema, codec, artifact, lock, compatibility, or authority failure takes the final path. An exhausted applicable recovery or handoff count, deadline, or usage budget also takes the final path. A transient object-store or immutable-artifact availability failure can take the retry-later path only when policy classifies it retryable and all remaining budget checks pass. If the Worker dies during preparation, its lease eventually expires and another Worker's ordinary takeover transaction replaces that attempt.
 
-Recovery does not probe model reachability, inspect Provider business state, validate a backing target, or re-enter a prior Environment. Model reachability and fresh Environment entry from current Host state are outcomes of the newly owned Attempt, not recovery admission checks.
+Recovery does not probe model reachability, inspect Provider business state, or validate the customer-owned target. Model reachability and attachment to the exact target frozen in `RunEnvironmentBinding` are outcomes of the newly owned Attempt, not recovery admission checks.
 
-A later Attempt receives a new ID, fence, lease, fresh `RunBindings`, fresh Environment adapters selected from current Host state, and a Harness Run, then follows the [Run resume contract](12-run-persistence.md#resume-semantics) against the same Run state key. Foundation imports only the selected complete state and does not add synthetic results or generic recovery context for tool work absent from that state.
+A later Attempt receives a new ID, fence, lease, fresh `RunBindings`, a fresh attach-only Environment adapter for the same immutable Run binding, and a Harness Run, then follows the [Run resume contract](12-run-persistence.md#resume-semantics) against the same Run state key. Foundation imports only the selected complete state and does not add synthetic results or generic recovery context for tool work absent from that state.
 
 The Agent decides its next action through ordinary model output. A re-driven or later tool call receives its ordinary tool-call and invocation identity. Foundation does not guarantee cross-Attempt idempotency-key reuse; a tool that requires it must define and persist that key through its own contract.
 
-## Worker Execution Boundary
+## RunAttempt Execution Boundary
 
-After preparation succeeds, [Foundation–Harness Runtime Integration](14-harness-runtime-integration.md) owns exact Agent reconstruction, fresh collaborators and Environment adapters, Harness invocation, lifecycle hooks, control dispatch, observation consumption, and finalization. [Environment Management](29-environment-management.md) owns Host state selection and publication. This contract does not define a second integration profile.
+After claim succeeds, [Foundation–Harness Runtime Integration](14-harness-runtime-integration.md) owns the executor's structured async lifetime: the executor root task, its `LeaseMonitor` and `ControlWatcher` child tasks, one non-task `RunAttemptControl` facade with a private gate, one non-task `HarnessDriver` running in the root task, exact Agent reconstruction, fresh collaborators and Environment adapters, sole stream ownership and consumption, fenced publication, and finalization. [Agent Control: Active Execution](19-agent-control-active-execution.md) owns what the watcher reconciles from PostgreSQL and when a Redis signal may be acknowledged. [Environment Management](29-environment-management.md) owns exact-target connection resolution, the immutable Run binding, and attach-only adapter construction. This contract defines no second integration profile.
 
-RunAttempt authority imposes three constraints on that integration: only the current leased and fenced Attempt may enter and publish; the Worker binds at most one `harness_run_id` before its first live observation; and no database session or lock spans reconstruction, provider calls, Harness work, streaming, waits, or cleanup. A replacement Attempt receives fresh process-local values and never restores another Worker's task, socket, client, adapter, entered facade, dispatcher, or subscriber. Active-control hooks follow their [owning FIFO and waiting-delivery contract](19-agent-control-active-execution.md), and Redis remains only a wakeup optimization.
+RunAttempt authority imposes four constraints on that integration: only the current leased and fenced Attempt may enter and publish; exactly one executor owns that Attempt in the claiming process; the executor binds at most one `harness_run_id` before its first live observation; and no database session or lock spans reconstruction, provider calls, Harness work, streaming, waits, or cleanup. The executor's child activities cannot outlive its structured scope. A replacement Attempt receives fresh process-local values and never restores another Worker's task, socket, client, adapter, entered facade, `HarnessDriver`, `RunAttemptControl`, private gate, or subscriber. Active-control hooks follow their [owning FIFO and waiting-delivery contract](19-agent-control-active-execution.md), and Redis remains only a wakeup optimization.
 
 ## Retry Semantics
 
 Retries remain owned by the layer that knows the failed boundary:
 
-- bounded Provider transport retries remain inside the fresh Environment adapter under Provider and Host policy;
+- bounded attachment transport retries remain inside the fresh Environment adapter under Provider and Host policy and never invoke target lifecycle operations;
 - Harness semantic recovery creates another ModelAttempt inside one Harness Run;
 - eligible pending inbox delivery that can no longer enter the current native Run prevents completed sealing and follows the active-control recovery rule;
 - Foundation creates another RunAttempt only after the prior Attempt failed, yielded, or lost its lease, and only under the Run's applicable budget;
@@ -312,6 +321,9 @@ Backoff uses the Run's exact durable `available_at`; Worker or process restart d
 | No compatible execution loop can serve the Run's Runtime lock    | The Run remains eligible or the claimed Attempt follows bounded preparation failure; no Runtime is substituted.                    |
 | Worker crashes before claim commit                               | The transaction commits no partial Attempt ownership.                                                                              |
 | Worker crashes after claim or during preparation                 | Its lease expires; a later takeover fails it and creates at most one successor within budget.                                      |
+| Local executor capacity is full                                  | The execution loop does not claim; compatible capacity may claim the still-eligible Run.                                           |
+| Lease renewal loses or cannot confirm authority                  | The executor terminally fences local control, cancels its task tree and Harness stream, and publishes no authoritative result.     |
+| Redis control watcher fails                                      | The executor remains correct through mandatory PostgreSQL checks; an unrecoverable child-task failure cancels the executor safely. |
 | Worker crashes after uncheckpointed Agent tool work              | The successor resumes from prior complete state; generic recovery cannot determine the external outcome, so work can be re-driven. |
 | Worker drains while model, tool, or inline-child work is active  | It keeps renewing and waits for a complete safe boundary; no second Worker may execute the Run.                                    |
 | Checkpoint publication or reconciliation spans heartbeats        | The selected Attempt keeps renewing; checkpoint work does not release authority.                                                   |
@@ -362,9 +374,11 @@ Keeping attempts as immutable audit rows increases relational retention but pres
 13. Yield and lease renewal serialize through the same selected Attempt CAS and fence. A failed yield CAS never by itself stops renewal or permits another Worker to execute the Run.
 14. `attempts_started` counts every generation, `recovery_attempts_started` counts the first and failure/expiry generations, and `handoffs_completed` counts successful planned yields.
 15. Every Attempt executes for its Run's immutable authority Principal and re-evaluates that Principal's current status and grants before Harness entry; an internal claimant never becomes the product Principal.
-16. Every Worker uses the same bounded relational scan and transactional claim or takeover contract; PostgreSQL owns eligibility and Attempt state, while Redis owns no scheduling or inbox-consumption fact.
+16. Every `WorkerExecutionLoop` uses the same bounded relational scan and transactional claim or takeover contract; PostgreSQL owns eligibility and Attempt state, while Redis owns no scheduling or inbox-consumption fact.
 17. Object, artifact, authorization, Environment, model, tool, and other external I/O never occurs inside a claim, takeover, or preparation-decision transaction.
 18. `accepted` is pre-first-attempt only. Replacement and backoff keep the same Run `running`; a sealed failed Run never returns to `accepted`.
 19. An on-demand Worker claims only after exact additive compatibility preflight, and a Runner claims only an equal Runtime lock digest; neither scheduling nor recovery substitutes another Runtime.
 20. Service-drain build preference is bounded and advisory: compatibility and transactional claim remain mandatory, and same-build capacity becomes eligible after `handoff_preference_window`. Runner rotation has no build-preference delay.
 21. Every Attempt owner participates in the Harness-integration and active-control reconciliation points defined by their owning contracts; Redis consumer progress is only a wakeup optimization.
+22. A claim requires a pre-reserved bounded local execution slot and starts exactly one process-local `RunAttemptExecutor` async task; it never creates another OS thread or a durable Execution resource.
+23. The execution slot, both child tasks, `HarnessDriver`, `HarnessRunStream`, `RunAttemptControl`, Capability, and private gate are released only after the executor's bounded structured cleanup finishes.

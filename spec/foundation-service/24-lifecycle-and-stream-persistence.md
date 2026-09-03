@@ -198,7 +198,7 @@ The service derives the object key only after a tenant-authorized Run lookup and
 | Lifecycle live projection fails                                 | Fact remains pending or retryable                               | Projector reclaims it without repeating the source mutation                                     |
 | Yielded lifecycle projection is delayed or duplicated           | The Attempt remains durably yielded and the Run remains running | Successor scheduling reads relational state; projection retry preserves the same event identity |
 | Redis presentation stream is lost while Run is active           | Live observation is unavailable                                 | Work continues from durable Run and attempt state; no cursor becomes state                      |
-| Redis Thread control Stream is trimmed, expires, or is lost     | Wakeup delivery and its group cursor are unavailable            | Worker reconciles durable Thread inbox and Run state at mandatory boundaries                    |
+| Redis Thread control Stream is trimmed, expires, or is lost     | Wakeup delivery and its group cursor are unavailable            | Attempt executor reconciles durable Thread inbox and Run state at mandatory boundaries          |
 | Replay snapshot publication fails                               | Run outcome remains committed                                   | Retry deterministic create-only publication while source stream is complete                     |
 | Native notification is dropped or duplicated                    | Wake-up observation is incomplete                               | Client reconciles durable Workspace events and current resources                                |
 

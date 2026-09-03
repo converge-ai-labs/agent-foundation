@@ -261,14 +261,14 @@ In `runner`, one Worker container contains a stable Supervisor and one or more l
 ```text
 Worker container
 └── Worker Supervisor
-    ├── Runner(active lock)
-    ├── Runner(draining old lock)
-    └── Runner(candidate lock during staging)
+    ├── Runner(active lock): WorkerExecutionLoop + RunAttemptExecutor tasks
+    ├── Runner(draining old lock): existing RunAttemptExecutor tasks only
+    └── Runner(candidate lock during staging): claim-gated WorkerExecutionLoop
 ```
 
 The Supervisor imports no Harness Plugin, Plugin dependency, or candidate Runtime path. It owns bounded process startup, liveness observation, claim gating, drain, shutdown, and exit handling. The Supervisor-to-Runner protocol carries lifecycle control only; Harness execution does not become a remote Plugin or Agent RPC contract.
 
-Each Runner starts in a clean Python interpreter from exactly one materialized lock. It owns the ordinary Worker loop for compatible work: periodic scan, claim, takeover, lease renewal, fenced persistence, Agent reconstruction, Harness execution, and event production. It creates fresh Plugin instances for every reconstructed Agent definition and never shares a concrete Plugin instance between definitions.
+Each Runner starts in a clean Python interpreter from exactly one materialized lock. It owns one ordinary `WorkerExecutionLoop` for compatible work: periodic scan, exact-lock preflight, bounded local executor-capacity reservation, claim, and takeover. Each successful claim starts exactly one `RunAttemptExecutor` async task in that Runner, not another OS thread. The executor owns lease renewal, control watching, fenced persistence, Agent reconstruction, Harness execution, and event production, and creates fresh Plugin instances for every reconstructed Agent definition. It never shares a concrete Plugin instance between definitions or executors.
 
 The Runner derives imports only from verified lock entry points. It verifies every artifact digest before publishing the immutable directory to the child process. It never unloads, reloads, or replaces modules in a live interpreter and never renames arbitrary Wheel modules or installs a custom multi-version importer.
 
@@ -311,7 +311,7 @@ If any serviceable Worker fails staging, the command fails, candidate Runners ex
 
 An old Runner remains eligible for accepted and newly accepted work whose frozen Revision requires its exact lock; Activate alone does not put it into drain. The Supervisor may retire it later when no eligible work needs the lock, and can reconstruct the same lock on demand if historical work appears again.
 
-If capacity policy retires a Runner while it still owns Attempts, it requests graceful handoff under the common contract. Each Attempt continues heartbeat and lease renewal while it reaches a complete Harness safe boundary, persists ordinary `state.json`, closes local Runtime resources, and commits `yield_reason="runner_rotation"`. A successor reconstructs the exact Run-pinned historical lock; the current active lock is never substituted. Insufficient local capacity fails a later runtime command without terminating existing Attempts.
+If capacity policy retires a Runner while it still owns Attempts, it gates the loop and requests graceful handoff on each active executor's process-local control gate under the common contract. Each executor continues heartbeat and lease renewal while it reaches a complete Harness safe boundary, persists ordinary `state.json`, closes local Runtime resources, and commits `yield_reason="runner_rotation"`. A successor reconstructs the exact Run-pinned historical lock; the current active lock is never substituted. Insufficient local capacity fails a later runtime command without terminating existing Attempts.
 
 A staged Worker that loses its liveness lease after commit leaves the serviceable set and cannot reverse cutover. On rejoin it reconstructs the committed active lock before claim. An active Runner crash causes the Supervisor to reconstruct the same lock and never silently roll back.
 
@@ -323,7 +323,7 @@ An on-demand Worker preflights the lock against its registry before claim. A Run
 
 Claim-time code performs no package-index access or dependency solving. Missing artifacts, digest mismatch, target mismatch, dependency mismatch, import failure, or factory validation failure prevents claim or Harness entry without substituting another PluginVersion. A retained on-demand Run can become unserviceable after an incompatible Worker image upgrade; the deployment must retain or restore a Worker release compatible with the Run lock.
 
-Planned handoff changes only the Attempt and Harness Run generation. Recovery preflight reads the same latest complete Run state and exact lock digest. A different `worker_build_id` receives scheduling preference only after all Runtime-target, Harness, Plugin, Skill, Environment, state-schema, codec, and artifact checks pass; build difference cannot make an incompatible historical lock serviceable.
+Planned handoff changes only the Attempt and Harness Run generation. Recovery preflight reads the same latest complete Run state and exact lock digest. A different `worker_build_id` receives scheduling preference only after all Runtime-target, Harness, Plugin, Skill, Environment connection and attachment-capability, state-schema, codec, and artifact checks pass; build difference cannot make an incompatible historical lock serviceable.
 
 ## Worker Cache
 
