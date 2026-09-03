@@ -445,7 +445,7 @@ class RunRecord(Base):
     encrypted_config_schema_version: Mapped[str | None] = mapped_column(String(32))
     runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    connector_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     mcp_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     ingress_context_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     mcp_tool_snapshot_digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -529,7 +529,9 @@ class RunRecord(Base):
             "model_execution_observation": _MODEL_OBSERVATION_ADAPTER.validate_python(
                 self.model_execution_observation_json
             ),
-            "connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.connection_selections_json),
+            "connector_connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(
+                self.connector_connection_selections_json
+            ),
             "mcp_connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.mcp_connection_selections_json),
             "ingress_context": _JSON_OBJECT_ADAPTER.validate_python(self.ingress_context_json),
             "mcp_tool_snapshot": _MCP_TOOL_SNAPSHOT_REF_ADAPTER.validate_python(

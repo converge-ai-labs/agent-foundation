@@ -27,10 +27,12 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         assert INTERACTION_TABLES <= tables
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert {
+            "connector_connection_selections_json",
             "current_run_attempt_id",
             "recovery_policy_version",
             "sealed_state_digest_sha256",
         } <= run_columns
+        assert "connection_selections_json" not in run_columns
         run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
         assert {
             "ix_runs_worker_scan",
