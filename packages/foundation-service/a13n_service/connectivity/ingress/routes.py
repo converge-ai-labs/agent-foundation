@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
+from pydantic import JsonValue
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -39,6 +40,7 @@ from .domain import (
     UpdateRouteRequest,
 )
 from .errors import IngressError
+from .mapping import MappingError, compile_mapping
 from .models import IngressRecord, RouteRecord
 
 
@@ -87,6 +89,7 @@ class RouteService:
                     return (await require_route(session, replay.resource_id)).to_resource()
                 adapter = require_adapter(self._adapters, ingress.provider_key, ingress.provider_config_version)
                 match, policy = _validate_route(adapter, ingress, request)
+                input_mapping = _compile_input_mapping(request.input_mapping)
                 await _validate_route_agents(session, ingress, request.agent_id, request.capability_overlays)
                 self._validate_batching(
                     request.input_batching.min_interval_ms,
@@ -104,7 +107,7 @@ class RouteService:
                     provider_config_version=ingress.provider_config_version,
                     match_json=match,
                     agent_id=request.agent_id,
-                    input_mapping_json=request.input_mapping,
+                    input_mapping_json=input_mapping,
                     min_interval_ms=request.input_batching.min_interval_ms,
                     max_batch_events=request.input_batching.max_batch_events,
                     capability_overlays_json={
@@ -199,6 +202,7 @@ class RouteService:
             adapter = require_adapter(self._adapters, ingress.provider_key, ingress.provider_config_version)
             candidate = _updated_route(record, request)
             match, policy = _validate_route(adapter, ingress, candidate)
+            input_mapping = _compile_input_mapping(candidate.input_mapping)
             await _validate_route_agents(session, ingress, candidate.agent_id, candidate.capability_overlays)
             self._validate_batching(
                 candidate.input_batching.min_interval_ms,
@@ -210,7 +214,7 @@ class RouteService:
             record.normalized_name = candidate.name.casefold()
             record.match_json = match
             record.agent_id = candidate.agent_id
-            record.input_mapping_json = candidate.input_mapping
+            record.input_mapping_json = input_mapping
             record.min_interval_ms = candidate.input_batching.min_interval_ms
             record.max_batch_events = candidate.input_batching.max_batch_events
             record.capability_overlays_json = {
@@ -283,3 +287,12 @@ async def _validate_route_agents(
         selected.add(agent_id)
     if not selected <= allowed:
         raise IngressError("invalid_agent_selection", "Route Agent must be allowed by its Ingress.", status_code=400)
+
+
+def _compile_input_mapping(value: object | None) -> dict[str, JsonValue] | None:
+    if value is None:
+        return None
+    try:
+        return compile_mapping(value).value
+    except MappingError as error:
+        raise IngressError("invalid_input_mapping", "Route input mapping is invalid.", status_code=400) from error

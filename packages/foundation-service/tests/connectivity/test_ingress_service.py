@@ -200,3 +200,42 @@ async def test_unknown_route_overlap_requires_explicit_adapter_support(
             request=route_request(channel="engineering"),
         )
     assert unknown.value.code == "route_overlap_unknown"
+
+
+@pytest.mark.anyio
+async def test_route_mapping_is_compiled_on_write(ingress_service: IngressService, route_service: RouteService) -> None:
+    ingress = await ingress_service.create_ingress(
+        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="mapping-ingress", request=ingress_request()
+    )
+    request = route_request().model_copy(
+        update={
+            "input_mapping": {
+                "op": "object",
+                "fields": {
+                    "schema_version": {"op": "static", "value": "2"},
+                    "content": {"op": "static", "value": []},
+                },
+            }
+        }
+    )
+    route = await route_service.create_route(
+        actor=actor(), ingress_id=ingress.id, idempotency_key="mapping-route", request=request
+    )
+    assert route.input_mapping == {
+        "op": "object",
+        "fields": {
+            "content": {"op": "static", "value": []},
+            "schema_version": {"op": "static", "value": "2"},
+        },
+    }
+
+    with pytest.raises(IngressError) as invalid:
+        await route_service.create_route(
+            actor=actor(),
+            ingress_id=ingress.id,
+            idempotency_key="invalid-mapping",
+            request=route_request(channel="invalid").model_copy(
+                update={"input_mapping": {"op": "select", "path": ["raw_ref"]}}
+            ),
+        )
+    assert invalid.value.code == "invalid_input_mapping"
