@@ -6,17 +6,20 @@ from datetime import timedelta
 import pytest
 from a13n_harness import SafeFailure
 from a13n_service.durable_operations.models import OutboxRecord
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.models import RunEnvironmentBindingRecord
-from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
+from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord
+from a13n_service.hooks.validation import EndpointValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions import (
     AttemptExecutionService,
     AttemptPreparationAccepted,
     AttemptScheduler,
     ClaimedAttempt,
 )
-from a13n_service.interactions.acceptance import RunAcceptanceService
+from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceService
 from a13n_service.interactions.control_domain import (
     QueuedSubmissionFailure,
     QueuedSubmissionState,
@@ -45,6 +48,8 @@ from a13n_service.storage import ObjectStore, short_session, transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.hooks.support import seed_hook_actor_access
+
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
@@ -67,6 +72,20 @@ def _intent(text: str) -> ThreadRunSubmissionIntent:
 
 def _principal(principal_id: str = USER_ID) -> PrincipalRef:
     return PrincipalRef(principal_type=PrincipalType.user, principal_id=principal_id)
+
+
+def _inline_hooks(endpoint_validator: EndpointValidator | None = None) -> InlineHookValidator:
+    return InlineHookValidator(endpoint_validator or EndpointPolicy())
+
+
+class _RecordingEndpoint:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str:
+        assert resolve_dns
+        self.calls.append(endpoint)
+        return endpoint
 
 
 async def _fail_current_run(
@@ -169,7 +188,7 @@ async def test_queue_crud_reorder_and_versions_are_independent_from_thread_advan
     interaction_object_store: ObjectStore,
 ) -> None:
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW)
+    queue = QueuedSubmissionStore(interaction_sessions, _inline_hooks(), clock=lambda: NOW)
     ids = (
         "qsub_1111111111111111",
         "qsub_2222222222222222",
@@ -246,7 +265,7 @@ async def test_queue_update_requires_stored_principal_and_exact_version(
     interaction_object_store: ObjectStore,
 ) -> None:
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW)
+    queue = QueuedSubmissionStore(interaction_sessions, _inline_hooks(), clock=lambda: NOW)
     accepted = await queue.enqueue(
         tenant_id=TENANT_ID,
         thread_id=run.thread_id,
@@ -281,7 +300,7 @@ async def test_enqueue_rejects_thread_that_can_accept_immediately(
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     await _fail_current_run(interaction_sessions, run_id=run.id, thread_id=run.thread_id)
 
-    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW)
+    queue = QueuedSubmissionStore(interaction_sessions, _inline_hooks(), clock=lambda: NOW)
     with pytest.raises(QueuedSubmissionConflict, match="immediate Run acceptance"):
         await queue.enqueue(
             tenant_id=TENANT_ID,
@@ -304,7 +323,7 @@ async def test_postgresql_concurrent_enqueues_allocate_distinct_fifo_positions(
     interaction_object_store: ObjectStore,
 ) -> None:
     _, run, _ = await _accept_root(postgres_interaction_sessions, interaction_object_store)
-    queue = QueuedSubmissionStore(postgres_interaction_sessions, clock=lambda: NOW)
+    queue = QueuedSubmissionStore(postgres_interaction_sessions, _inline_hooks(), clock=lambda: NOW)
 
     receipts = await asyncio.gather(
         queue.enqueue(
@@ -339,6 +358,9 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     interaction_object_store: ObjectStore,
 ) -> None:
     _, source, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    await seed_hook_actor_access(interaction_sessions)
+    endpoint = _RecordingEndpoint()
+    inline_hooks = _inline_hooks(endpoint)
     secret_id = "sec_5656565656565656"
     hook = InlineHookSubscriptionInput(
         hook_names=("run.accepted",),
@@ -365,7 +387,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
                 deleted_at=None,
             )
         )
-    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW)
+    queue = QueuedSubmissionStore(interaction_sessions, inline_hooks, clock=lambda: NOW)
     first = await queue.enqueue(
         tenant_id=TENANT_ID,
         thread_id=source.thread_id,
@@ -384,6 +406,16 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         authority_principal=_principal(),
         submission=_intent("second"),
         queued_submission_id="qsub_6666666666666666",
+    )
+    updated_hook = hook.model_copy(
+        update={"webhook": hook.webhook.model_copy(update={"endpoint_url": "https://hooks.example.com/updated"})}
+    )
+    first = await queue.update(
+        tenant_id=TENANT_ID,
+        queued_submission_id=first.queued_submission.queued_submission_id,
+        expected_version=1,
+        actor_principal=_principal(),
+        submission=first.queued_submission.submission.model_copy(update={"hook_subscription": updated_hook}),
     )
     async with short_session(interaction_sessions) as database:
         assert await database.scalar(select(HookSubscriptionRecord.id)) is None
@@ -406,19 +438,59 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         request_fingerprint="6" * 64,
         config=config,
     ).model_copy(update={"input": accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)})
-    receipt = await RunAcceptanceService(
+    service = RunAcceptanceService(
         interaction_sessions,
         RunStateStore(interaction_object_store),
         RunPayloadStore(interaction_object_store),
+        inline_hooks,
         clock=lambda: NOW,
-    ).consume_queued(
+    )
+    async with transaction(interaction_sessions) as database:
+        binding = await database.scalar(
+            select(RoleBindingRecord).where(
+                RoleBindingRecord.principal_id == USER_ID,
+                RoleBindingRecord.resource_type == "workspace",
+            )
+        )
+        assert binding is not None
+        binding.role_key = "runner"
+
+    with pytest.raises(RunAcceptanceError) as unauthorized:
+        await service.consume_queued(
+            run=run,
+            state=state,
+            queued_submission_id=first.queued_submission.queued_submission_id,
+            submission_digest_sha256=first.queued_submission.submission_digest_sha256,
+            accepted_input=accepted_input,
+            expected_thread_version=2,
+            expected_queue_version=3,
+            expected_current_run_id=source.id,
+            expected_head_run_id=None,
+            next_head_run_id=None,
+        )
+    assert unauthorized.value.code == "inline_hook_unauthorized"
+    async with short_session(interaction_sessions) as database:
+        assert await database.get(RunRecord, run.id) is None
+        assert await database.scalar(select(HookSubscriptionRecord.id)) is None
+
+    async with transaction(interaction_sessions) as database:
+        binding = await database.scalar(
+            select(RoleBindingRecord).where(
+                RoleBindingRecord.principal_id == USER_ID,
+                RoleBindingRecord.resource_type == "workspace",
+            )
+        )
+        assert binding is not None
+        binding.role_key = "builder"
+
+    receipt = await service.consume_queued(
         run=run,
         state=state,
         queued_submission_id=first.queued_submission.queued_submission_id,
         submission_digest_sha256=first.queued_submission.submission_digest_sha256,
         accepted_input=accepted_input,
         expected_thread_version=2,
-        expected_queue_version=2,
+        expected_queue_version=3,
         expected_current_run_id=source.id,
         expected_head_run_id=None,
         next_head_run_id=None,
@@ -449,8 +521,14 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         assert thread is not None and accepted is not None and binding is not None
         assert hook_head is not None and hook_head.inline_run_id == run.id
         assert delivery is not None and delivery.destination_ref == hook_head.current_revision_id
-        assert (thread.version, thread.queue_version, thread.current_run_id) == (3, 3, run.id)
+        assert (thread.version, thread.queue_version, thread.current_run_id) == (3, 4, run.id)
         assert binding.target_key == environment.target_key
+    assert endpoint.calls == [
+        "https://hooks.example.com/queued",
+        "https://hooks.example.com/updated",
+        "https://hooks.example.com/updated",
+        "https://hooks.example.com/updated",
+    ]
     assert await queue.scan_drainable(tenant_id=TENANT_ID) == ()
 
 
@@ -459,7 +537,7 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
     interaction_object_store: ObjectStore,
 ) -> None:
     _, source, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW)
+    queue = QueuedSubmissionStore(interaction_sessions, _inline_hooks(), clock=lambda: NOW)
     first = await queue.enqueue(
         tenant_id=TENANT_ID,
         thread_id=source.thread_id,
@@ -486,6 +564,7 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
         interaction_sessions,
         RunStateStore(interaction_object_store),
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=1),
     ).fail_queued_permanently(
         tenant_id=TENANT_ID,
@@ -529,6 +608,35 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
     interaction_object_store: ObjectStore,
 ) -> None:
     states, source, initial = await _accept_root(interaction_sessions, interaction_object_store)
+    await seed_hook_actor_access(interaction_sessions)
+    secret_id = "sec_7171717171717171"
+    async with transaction(interaction_sessions) as database:
+        database.add(
+            SecretRecord(
+                id=secret_id,
+                organization_id=TENANT_ID,
+                workspace_id=WORKSPACE_ID,
+                owner_type="workspace",
+                owner_id=WORKSPACE_ID,
+                key="combined-hook-signing",
+                version=1,
+                ciphertext=b"ciphertext",
+                nonce=b"3" * 12,
+                encryption_key_id="test-key",
+                created_at=NOW,
+                value_updated_at=NOW,
+                deleted_at=None,
+            )
+        )
+    hook = InlineHookSubscriptionInput(
+        hook_names=("run.accepted",),
+        webhook=WebhookDestinationConfig(
+            endpoint_url="https://hooks.example.com/combined",
+            signing_secret_id=secret_id,
+        ),
+    )
+    endpoint = _RecordingEndpoint()
+    inline_hooks = _inline_hooks(endpoint)
     scheduler = AttemptScheduler(
         interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=1),
@@ -558,13 +666,20 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         await states.read(TENANT_ID, source.id),
         completed,
     )
-    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
+    queue = QueuedSubmissionStore(
+        interaction_sessions,
+        inline_hooks,
+        clock=lambda: NOW + timedelta(seconds=3),
+    )
     queued = await queue.enqueue(
         tenant_id=TENANT_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
-        submission=_intent("next"),
+        submission=ThreadRunSubmissionIntent(
+            input=AgentInput(schema_version="1", content=(TextContent(text="next"),)),
+            hook_subscription=hook,
+        ),
         queued_submission_id="qsub_7171717171717171",
     )
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="next"),))
@@ -595,6 +710,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        inline_hooks,
         clock=lambda: NOW + timedelta(seconds=4),
     ).complete_and_consume(
         authority=authority,
@@ -612,6 +728,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
     assert receipt.outcome == "run_accepted"
     assert receipt.queued_submission.state is QueuedSubmissionState.consumed
     assert receipt.successor is not None and receipt.successor.thread_version == 3
+    assert receipt.successor.hook_subscription_id is not None
     assert receipt.queue_version == 2
     async with short_session(interaction_sessions) as database:
         source_row = await database.get(RunRecord, source.id)
@@ -621,12 +738,16 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         binding = await database.scalar(
             select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == successor.id)
         )
+        hook_head = await database.get(HookSubscriptionRecord, receipt.successor.hook_subscription_id)
+        delivery = await database.scalar(select(OutboxRecord))
         assert (
             source_row is not None
             and successor_row is not None
             and attempt is not None
             and thread is not None
             and binding is not None
+            and hook_head is not None
+            and delivery is not None
         )
         assert source_row.status == "completed"
         assert successor_row.status == "accepted"
@@ -638,6 +759,12 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
             successor.id,
         )
         assert binding.target_key == environment.target_key
+        assert hook_head.inline_run_id == successor.id
+        assert delivery.destination_ref == hook_head.current_revision_id
+    assert endpoint.calls == [
+        "https://hooks.example.com/combined",
+        "https://hooks.example.com/combined",
+    ]
 
 
 async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head_atomically(
@@ -674,7 +801,11 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
         await states.read(TENANT_ID, source.id),
         completed,
     )
-    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
+    queue = QueuedSubmissionStore(
+        interaction_sessions,
+        _inline_hooks(),
+        clock=lambda: NOW + timedelta(seconds=3),
+    )
     first = await queue.enqueue(
         tenant_id=TENANT_ID,
         thread_id=source.thread_id,
@@ -700,6 +831,7 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=4),
     ).complete_and_fail_permanently(
         authority=authority,
@@ -779,7 +911,11 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
         ),
         entry_id="inb_8181818181818181",
     )
-    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
+    queue = QueuedSubmissionStore(
+        interaction_sessions,
+        _inline_hooks(),
+        clock=lambda: NOW + timedelta(seconds=3),
+    )
     queued = await queue.enqueue(
         tenant_id=TENANT_ID,
         thread_id=source.thread_id,
@@ -814,6 +950,7 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
             interaction_sessions,
             states,
             RunPayloadStore(interaction_object_store),
+            _inline_hooks(),
             clock=lambda: NOW + timedelta(seconds=4),
         ).complete_and_consume(
             authority=authority,

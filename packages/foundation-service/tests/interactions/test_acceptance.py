@@ -5,8 +5,9 @@ from datetime import timedelta
 import pytest
 from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.durable_operations.models import OutboxRecord
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.models import EnvironmentTargetRecord, RunEnvironmentBindingRecord
-from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
+from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
@@ -39,6 +40,8 @@ from a13n_service.storage import ObjectStore, short_session, transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.hooks.support import seed_hook_actor_access
+
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
@@ -54,6 +57,10 @@ from .conftest import (
 )
 
 pytestmark = pytest.mark.anyio
+
+
+def _inline_hooks() -> InlineHookValidator:
+    return InlineHookValidator(EndpointPolicy())
 
 
 def _accepted_run(
@@ -130,6 +137,7 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW,
     )
     seed = RunStateSeed(
@@ -205,6 +213,7 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
+    await seed_hook_actor_access(interaction_sessions)
     secret_id = "sec_9191919191919191"
     async with transaction(interaction_sessions) as database:
         database.add(
@@ -228,6 +237,7 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
         interaction_sessions,
         RunStateStore(interaction_object_store),
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW,
     )
     seed = RunStateSeed(
@@ -265,10 +275,22 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
     hook = InlineHookSubscriptionInput(
         hook_names=("run.accepted", "run.completed"),
         webhook=WebhookDestinationConfig(
-            endpoint_url="https://hooks.example.com/foundation",
+            endpoint_url="https://8.8.8.8/foundation",
             signing_secret_id=secret_id,
         ),
     )
+
+    with pytest.raises(RunAcceptanceError) as invalid_endpoint:
+        await service.accept_new_thread(
+            session=session,
+            thread=thread,
+            run=run,
+            state=state,
+            hook_subscription=hook.model_copy(
+                update={"webhook": hook.webhook.model_copy(update={"endpoint_url": "https://127.0.0.1/hook"})}
+            ),
+        )
+    assert invalid_endpoint.value.code == "invalid_webhook_endpoint"
 
     receipt = await service.accept_new_thread(
         session=session,
@@ -317,6 +339,7 @@ async def test_acceptance_atomically_binds_exact_environment_and_replay_verifies
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW,
     )
     environment = environment_execution_config()
@@ -400,6 +423,7 @@ async def test_acceptance_rejects_input_payload_owned_by_another_run(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW,
     )
     seed = RunStateSeed(
@@ -462,6 +486,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         interaction_sessions,
         states,
         payloads,
+        _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=2),
     )
     environment = environment_execution_config()
@@ -627,6 +652,7 @@ async def test_new_session_cannot_begin_with_a_child_thread(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW,
     )
     seed = RunStateSeed(
@@ -681,6 +707,7 @@ async def test_existing_session_cannot_accept_another_root_thread(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW,
     )
     seed = RunStateSeed(

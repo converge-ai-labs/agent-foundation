@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
     AttemptAuthorityError,
@@ -671,7 +673,13 @@ async def _accept_root(
         updated_at=NOW,
     )
     states = RunStateStore(objects)
-    await RunAcceptanceService(sessions, states, RunPayloadStore(objects), clock=lambda: NOW).accept_new_thread(
+    await RunAcceptanceService(
+        sessions,
+        states,
+        RunPayloadStore(objects),
+        InlineHookValidator(EndpointPolicy()),
+        clock=lambda: NOW,
+    ).accept_new_thread(
         session=Session(
             id=SESSION_ID,
             tenant_id=TENANT_ID,

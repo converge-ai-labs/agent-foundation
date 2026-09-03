@@ -9,6 +9,7 @@ from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.hooks import InlineHookValidator
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -21,7 +22,6 @@ from ._outcome_transitions import (
 )
 from ._transitions import charge_attempt_usage, terminalize_attempt
 from .acceptance import (
-    RunAcceptanceError,
     RunAcceptanceReceipt,
     _require_session,
     _validate_advancement,
@@ -36,9 +36,10 @@ from .environment_bindings import (
     deactivate_run_environment,
     lock_run_environment_targets,
 )
+from .errors import RunAcceptanceError
 from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
-from .inline_hooks import create_inline_run_hook
+from .inline_hooks import InlineHookAcceptance
 from .input import AcceptedAgentInput
 from .lifecycle import (
     append_accepted_run_lifecycle,
@@ -77,12 +78,14 @@ class CompletionQueueHandoffService:
         sessions: async_sessionmaker[AsyncSession],
         states: RunStateStore,
         payloads: RunPayloadStore,
+        inline_hooks: InlineHookValidator,
         *,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
+        self._inline_hooks = InlineHookAcceptance(sessions, inline_hooks)
         self._clock = clock
 
     async def complete_and_consume(
@@ -101,6 +104,11 @@ class CompletionQueueHandoffService:
     ) -> CombinedQueueHandoffReceipt:
         """Atomically seal a completed source and accept the prepared queue head."""
 
+        await self._inline_hooks.validate_queued_destination(
+            tenant_id=successor_run.tenant_id,
+            queued_submission_id=queued_submission_id,
+            submission_digest_sha256=submission_digest_sha256,
+        )
         candidate, input_payload = await self._verify_prepared(
             authority=authority,
             source_state=source_state,
@@ -162,7 +170,13 @@ class CompletionQueueHandoffService:
                 thread.queue_version += 1
                 thread.updated_at = now
                 await database.flush()
-                successor_hook_subscription_id = await create_inline_run_hook(
+                await self._inline_hooks.authorize(
+                    database,
+                    run=successor_run,
+                    workspace_id=session_record_value.workspace_id,
+                    subscription=consumed.submission.hook_subscription,
+                )
+                successor_hook_subscription_id = await self._inline_hooks.create(
                     database,
                     run=successor_record,
                     workspace_id=session_record_value.workspace_id,

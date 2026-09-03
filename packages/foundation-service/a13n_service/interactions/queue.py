@@ -8,6 +8,7 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.hooks import InlineHookValidationError, InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -24,7 +25,7 @@ from .control_domain import (
 from .control_models import QueuedSubmissionRecord
 from .control_records import queued_submission_record
 from .domain import Run, RunStatus, Thread
-from .models import RunRecord, ThreadRecord
+from .models import RunRecord, SessionRecord, ThreadRecord
 
 
 class ThreadSubmissionAdmission(StrEnum):
@@ -45,6 +46,7 @@ class QueuedSubmissionStore:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
+        inline_hooks: InlineHookValidator,
         *,
         max_queued: int = 256,
         clock: Clock = utc_now,
@@ -52,6 +54,7 @@ class QueuedSubmissionStore:
         if max_queued < 1:
             raise ValueError("max_queued must be positive")
         self._sessions = sessions
+        self._inline_hooks = inline_hooks
         self._max_queued = max_queued
         self._clock = clock
 
@@ -65,6 +68,7 @@ class QueuedSubmissionStore:
         submission: ThreadRunSubmissionIntent,
         queued_submission_id: str | None = None,
     ) -> QueuedSubmissionMutationReceipt:
+        await self._validate_inline_hook_destination(submission)
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=thread_id)
@@ -90,6 +94,14 @@ class QueuedSubmissionStore:
                 raise QueuedSubmissionConflict("Thread is eligible for immediate Run acceptance")
             if len(rows) >= self._max_queued:
                 raise QueuedSubmissionConflict("Thread queued-submission capacity is exhausted")
+            await self._authorize_inline_hook(
+                database,
+                tenant_id=tenant_id,
+                workspace_id=await _load_workspace_id(database, thread),
+                agent_id=submission.agent_id or current.agent_id,
+                principal=authority_principal,
+                submission=submission,
+            )
             value = QueuedSubmission(
                 queued_submission_id=queued_submission_id or new_queued_submission_id(),
                 version=1,
@@ -204,6 +216,7 @@ class QueuedSubmissionStore:
         actor_principal: PrincipalRef,
         submission: ThreadRunSubmissionIntent,
     ) -> QueuedSubmissionMutationReceipt:
+        await self._validate_inline_hook_destination(submission)
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             scope = await _scope(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
@@ -214,6 +227,15 @@ class QueuedSubmissionStore:
             resource = row.to_resource()
             if resource.authority_principal != actor_principal:
                 raise QueuedSubmissionConflict("only the queued authority Principal can replace its intent")
+            current = await _load_run_snapshot(database, tenant_id=tenant_id, run_id=thread.current_run_id)
+            await self._authorize_inline_hook(
+                database,
+                tenant_id=tenant_id,
+                workspace_id=await _load_workspace_id(database, thread),
+                agent_id=submission.agent_id or current.agent_id,
+                principal=actor_principal,
+                submission=submission,
+            )
             row.submission_json = submission.model_dump(mode="json", by_alias=True, exclude_none=True)
             row.submission_digest_sha256 = submission.digest_sha256()
             row.version += 1
@@ -295,6 +317,34 @@ class QueuedSubmissionStore:
             thread.queue_version += 1
             thread.updated_at = now
             return ThreadQueueMutationReceipt(thread_id=thread.id, queue_version=thread.queue_version)
+
+    async def _validate_inline_hook_destination(self, submission: ThreadRunSubmissionIntent) -> None:
+        try:
+            await self._inline_hooks.validate_destination(submission.hook_subscription)
+        except InlineHookValidationError as error:
+            raise QueuedSubmissionConflict(str(error)) from error
+
+    async def _authorize_inline_hook(
+        self,
+        database: AsyncSession,
+        *,
+        tenant_id: str,
+        workspace_id: str,
+        agent_id: str,
+        principal: PrincipalRef,
+        submission: ThreadRunSubmissionIntent,
+    ) -> None:
+        try:
+            await self._inline_hooks.authorize(
+                database,
+                principal=principal,
+                organization_id=tenant_id,
+                workspace_id=workspace_id,
+                agent_id=agent_id,
+                subscription=submission.hook_subscription,
+            )
+        except InlineHookValidationError as error:
+            raise QueuedSubmissionConflict(str(error)) from error
 
 
 def classify_thread_submission(
@@ -398,6 +448,18 @@ async def _load_run_snapshot(database: AsyncSession, *, tenant_id: str, run_id: 
     if run is None:
         raise QueuedSubmissionConflict("Thread-selected Run was not found")
     return run
+
+
+async def _load_workspace_id(database: AsyncSession, thread: ThreadRecord) -> str:
+    workspace_id = await database.scalar(
+        select(SessionRecord.workspace_id).where(
+            SessionRecord.tenant_id == thread.tenant_id,
+            SessionRecord.id == thread.session_id,
+        )
+    )
+    if workspace_id is None:
+        raise QueuedSubmissionConflict("Thread Session was not found")
+    return workspace_id
 
 
 async def _lock_entry(

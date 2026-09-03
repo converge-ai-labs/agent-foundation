@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
 
 import anyio
 import httpx2
@@ -24,12 +23,9 @@ from .outbox import (
     claim_webhook_deliveries,
     load_webhook_delivery,
 )
+from .validation import EndpointValidator
 
 logger = logging.getLogger("a13n_service.hooks.publisher")
-
-
-class EndpointValidator(Protocol):
-    def validate(self, endpoint: str, *, resolve_dns: bool = True) -> Awaitable[str]: ...
 
 
 @dataclass(frozen=True, slots=True)

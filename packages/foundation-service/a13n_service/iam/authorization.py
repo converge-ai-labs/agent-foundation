@@ -229,6 +229,12 @@ class _WorkspaceAuthorizationContext:
     bindings: tuple[RoleBindingRecord, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _PrincipalAuthorizationContext:
+    workspace: WorkspaceRecord
+    bindings: tuple[RoleBindingRecord, ...]
+
+
 class AuthorizationError(Exception):
     def __init__(self, code: str, *, concealed: bool = False) -> None:
         super().__init__(code)
@@ -294,13 +300,35 @@ async def authorize_agent(
         workspace_id=workspace_id,
         agent_id=agent_id,
     )
-    permissions = set(_workspace_permissions(context.bindings))
-    for binding in context.bindings:
-        if binding.resource_type == "agent" and binding.resource_id == agent_id:
-            permissions.update(_DIRECT_AGENT_ROLE_ACTIONS.get(binding.role_key, ()))
-    if action not in permissions:
+    if action not in _agent_permissions(context.bindings, agent_id=agent_id):
         raise AuthorizationError("permission_denied", concealed=True)
     return context.authorized
+
+
+async def authorize_persisted_agent_principal_actions(
+    session: AsyncSession,
+    *,
+    principal: PrincipalRef,
+    organization_id: str,
+    workspace_id: str,
+    agent_id: str,
+    actions: frozenset[WorkspaceAction],
+) -> None:
+    """Reauthorize durable Principal actions without inventing a request credential."""
+
+    if not actions:
+        raise ValueError("persisted Principal authorization requires at least one action")
+
+    context = await _load_principal_authorization(
+        session,
+        principal=principal,
+        workspace_id=workspace_id,
+        agent_id=agent_id,
+    )
+    if context.workspace.organization_id != organization_id:
+        raise AuthorizationError("workspace_not_found", concealed=True)
+    if not actions.issubset(_agent_permissions(context.bindings, agent_id=agent_id)):
+        raise AuthorizationError("permission_denied", concealed=True)
 
 
 async def authorize_agent_collection(
@@ -357,22 +385,48 @@ async def _load_workspace_authorization(
     if actor.boundary_workspace_id != workspace_id:
         raise AuthorizationError("credential_boundary_mismatch", concealed=True)
 
+    principal_context = await _load_principal_authorization(
+        session,
+        principal=actor.principal,
+        workspace_id=workspace_id,
+        agent_id=agent_id,
+        include_agent_bindings=include_agent_bindings,
+    )
+    return _WorkspaceAuthorizationContext(
+        authorized=AuthorizedWorkspace(
+            organization_id=principal_context.workspace.organization_id,
+            workspace_id=principal_context.workspace.id,
+            actor=actor,
+        ),
+        bindings=principal_context.bindings,
+    )
+
+
+async def _load_principal_authorization(
+    session: AsyncSession,
+    *,
+    principal: PrincipalRef,
+    workspace_id: str,
+    agent_id: str | None = None,
+    include_agent_bindings: bool = False,
+) -> _PrincipalAuthorizationContext:
+
     workspace = await session.scalar(
         select(WorkspaceRecord).where(WorkspaceRecord.id == workspace_id, WorkspaceRecord.deleted_at.is_(None))
     )
     if workspace is None:
         raise AuthorizationError("workspace_not_found", concealed=True)
 
-    if actor.principal.principal_type is PrincipalType.user:
-        await _require_active_user(session, actor.principal.principal_id)
+    if principal.principal_type is PrincipalType.user:
+        await _require_active_user(session, principal.principal_id)
     else:
-        await _require_active_service_account(session, actor.principal.principal_id, workspace)
+        await _require_active_service_account(session, principal.principal_id, workspace)
 
     bindings = tuple(
         (
             await session.scalars(
                 _binding_query(
-                    actor.principal,
+                    principal,
                     workspace,
                     agent_id=agent_id,
                     include_agent_bindings=include_agent_bindings,
@@ -380,17 +434,13 @@ async def _load_workspace_authorization(
             )
         ).all()
     )
-    if actor.principal.principal_type is PrincipalType.user and not any(
+    if principal.principal_type is PrincipalType.user and not any(
         item.resource_type == "organization" for item in bindings
     ):
         raise AuthorizationError("organization_membership_required", concealed=True)
 
-    return _WorkspaceAuthorizationContext(
-        authorized=AuthorizedWorkspace(
-            organization_id=workspace.organization_id,
-            workspace_id=workspace.id,
-            actor=actor,
-        ),
+    return _PrincipalAuthorizationContext(
+        workspace=workspace,
         bindings=bindings,
     )
 
@@ -402,6 +452,18 @@ def _workspace_permissions(bindings: tuple[RoleBindingRecord, ...]) -> frozenset
             permissions.update(frozenset(WorkspaceAction))
         elif binding.resource_type == "workspace":
             permissions.update(_WORKSPACE_ROLE_ACTIONS.get(binding.role_key, ()))
+    return frozenset(permissions)
+
+
+def _agent_permissions(
+    bindings: tuple[RoleBindingRecord, ...],
+    *,
+    agent_id: str,
+) -> frozenset[WorkspaceAction]:
+    permissions = set(_workspace_permissions(bindings))
+    for binding in bindings:
+        if binding.resource_type == "agent" and binding.resource_id == agent_id:
+            permissions.update(_DIRECT_AGENT_ROLE_ACTIONS.get(binding.role_key, ()))
     return frozenset(permissions)
 
 

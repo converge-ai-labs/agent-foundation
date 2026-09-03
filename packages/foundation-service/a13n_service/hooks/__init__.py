@@ -14,6 +14,7 @@ from .domain import (
     UpdateHookSubscriptionStateRequest,
     WebhookDestinationConfig,
 )
+from .inline_validation import InlineHookValidationError, InlineHookValidator
 
 __all__ = [
     "DURABLE_WEBHOOK_HOOK_NAMES",
@@ -25,6 +26,8 @@ __all__ = [
     "HookSubscriptionCollection",
     "HookSubscriptionRevision",
     "InlineHookSubscriptionInput",
+    "InlineHookValidationError",
+    "InlineHookValidator",
     "UpdateHookSubscriptionRequest",
     "UpdateHookSubscriptionStateRequest",
     "WebhookDestinationConfig",

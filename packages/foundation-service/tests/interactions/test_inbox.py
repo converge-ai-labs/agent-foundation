@@ -4,6 +4,8 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions import (
     AttemptExecutionService,
     AttemptPreparationAccepted,
@@ -451,6 +453,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         interaction_sessions,
         RunStateStore(interaction_object_store),
         RunPayloadStore(interaction_object_store),
+        InlineHookValidator(EndpointPolicy()),
         clock=lambda: NOW + timedelta(seconds=5),
     ).advance_thread(
         run=successor,

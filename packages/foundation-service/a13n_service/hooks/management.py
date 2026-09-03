@@ -5,13 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from anyio import fail_after
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.outbox import redrive_outbox
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import short_session, transaction
 
@@ -43,6 +42,7 @@ from .persistence import (
     require_active_workspace_secret,
     require_hook_capacity,
 )
+from .validation import HookEndpointValidationError, validate_hook_endpoint
 
 
 class HookSubscriptionService:
@@ -398,9 +398,12 @@ class HookSubscriptionService:
 
     async def _validate_endpoint(self, endpoint_url: str) -> None:
         try:
-            with fail_after(self._validation_timeout_seconds):
-                await self._endpoint_policy.validate(endpoint_url, resolve_dns=True)
-        except (EndpointPolicyError, TimeoutError) as error:
+            await validate_hook_endpoint(
+                self._endpoint_policy,
+                endpoint_url,
+                timeout_seconds=self._validation_timeout_seconds,
+            )
+        except HookEndpointValidationError as error:
             raise HookManagementError(
                 "invalid_webhook_endpoint",
                 "The Webhook endpoint is not allowed.",
