@@ -94,9 +94,13 @@ async def test_run_stream_projects_stable_items_and_bounded_terminal_output(
 ) -> None:
     projector = _projector(redis_client, max_event_bytes=1024)
 
-    started = await projector.project(_event(0, PartStartEvent(index=0, part=TextPart("hello"))))
-    ended = await projector.project(_event(1, PartEndEvent(index=0, part=TextPart("hello"))))
-    terminal = await projector.project(_terminal(2, "x" * 4096))
+    await projector.project(_event(0, PartStartEvent(index=0, part=TextPart("hello"))))
+    await projector.project(_event(1, PartEndEvent(index=0, part=TextPart("hello"))))
+    await projector.project(_terminal(2, "x" * 4096))
+    stored = await _stored_events(redis_client)
+    started = tuple(event for _, event in stored[1:3])
+    ended = tuple(event for _, event in stored[3:4])
+    terminal = tuple(event for _, event in stored[4:])
 
     assert len(started) == 2
     assert {event.item_id for event in (*started, *ended)} == {started[0].item_id}
@@ -107,7 +111,6 @@ async def test_run_stream_projects_stable_items_and_bounded_terminal_output(
     assert terminal[0].payload["result"] is None
     assert terminal[0].payload["rawEvent"]["result_omitted"] is True
 
-    stored = await _stored_events(redis_client)
     assert stored[0][0] == RUN_STREAM_OPEN_ID
     assert [event for _, event in stored[1:]] == [*started, *ended, *terminal]
     assert all(
@@ -121,8 +124,10 @@ async def test_event_and_item_identity_are_stable_across_publication_retry(
 ) -> None:
     source = _event(0, PartStartEvent(index=0, part=TextPart("hello")))
 
-    first = await _projector(redis_client).project(source)
-    replay = await _projector(redis_client).project(source)
+    await _projector(redis_client).project(source)
+    first = tuple(event for _, event in (await _stored_events(redis_client))[1:])
+    await _projector(redis_client).project(source)
+    replay = tuple(event for _, event in (await _stored_events(redis_client))[1 + len(first) :])
 
     assert [(event.event_id, event.item_id) for event in replay] == [(event.event_id, event.item_id) for event in first]
 

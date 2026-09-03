@@ -19,12 +19,12 @@ from a13n_harness import (
     EnvironmentMount,
     ExecutableAgent,
     HarnessBuilder,
-    HarnessEvent,
     HarnessObservationContext,
     HarnessRunResult,
     HarnessRunResultEvent,
     HarnessRunStream,
     HarnessState,
+    HarnessStreamEvent,
     RunBindings,
     RunInputFactory,
     RunInputValue,
@@ -174,10 +174,10 @@ class FoundationHarnessInvocation[OutputT]:
             raise TypeError("Foundation Harness usage limits must be UsageLimits or None")
 
 
-class HarnessEventProjector(Protocol):
-    """Await one non-terminal canonical Harness observation with backpressure."""
+class HarnessStreamProjector(Protocol):
+    """Await one canonical Harness stream item with publication backpressure."""
 
-    async def project(self, event: HarnessEvent) -> None: ...
+    async def project(self, event: HarnessStreamEvent[Any]) -> None: ...
 
 
 class HarnessDriver:
@@ -188,7 +188,7 @@ class HarnessDriver:
         builder: HarnessBuilder,
         *,
         control: RunControlPort,
-        projector: HarnessEventProjector,
+        projector: HarnessStreamProjector,
     ) -> None:
         if not isinstance(builder, HarnessBuilder):
             raise TypeError("Harness driver requires a HarnessBuilder")
@@ -331,6 +331,8 @@ class HarnessDriver:
                         "Harness terminal result does not match the entered stream.",
                         code="foundation_control_identity_mismatch",
                     )
+                if not self._control.handoff_ready:
+                    await self._projector.project(item)
                 terminal = item.result
                 continue
             if terminal is not None:
@@ -540,7 +542,7 @@ __all__ = [
     "FoundationHarnessInput",
     "FoundationHarnessInvocation",
     "HarnessDriver",
-    "HarnessEventProjector",
+    "HarnessStreamProjector",
     "ImmediateHarnessInput",
     "MaterializedHarnessInput",
     "MountedHarnessEnvironments",

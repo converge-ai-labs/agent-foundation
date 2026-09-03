@@ -4,6 +4,7 @@ import json
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from a13n_environment_provider import EnvironmentState
@@ -13,9 +14,9 @@ from a13n_harness import (
     AgentSpec,
     DeferredToolResume,
     HarnessBuilder,
-    HarnessEvent,
     HarnessRunResult,
     HarnessState,
+    HarnessStreamEvent,
     ModelRecoveryPolicy,
     RunBindings,
     SafeFailure,
@@ -144,9 +145,9 @@ class _RecordingThreadInbox:
 
 @dataclass
 class _RecordingEventProjector:
-    events: list[HarnessEvent] = field(default_factory=list)
+    events: list[HarnessStreamEvent[Any]] = field(default_factory=list)
 
-    async def project(self, event: HarnessEvent) -> None:
+    async def project(self, event: HarnessStreamEvent[Any]) -> None:
         self.events.append(event)
 
 

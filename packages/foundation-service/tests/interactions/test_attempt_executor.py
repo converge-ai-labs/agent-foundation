@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from a13n_harness import (
@@ -11,8 +12,8 @@ from a13n_harness import (
     AgentInstanceContext,
     AgentSpec,
     HarnessBuilder,
-    HarnessEvent,
     HarnessState,
+    HarnessStreamEvent,
     SafeFailure,
 )
 from a13n_harness.errors import RunError
@@ -180,9 +181,9 @@ class _Wakeups:
 
 @dataclass
 class _Projector:
-    events: list[HarnessEvent] = field(default_factory=list)
+    events: list[HarnessStreamEvent[Any]] = field(default_factory=list)
 
-    async def project(self, event: HarnessEvent) -> None:
+    async def project(self, event: HarnessStreamEvent[Any]) -> None:
         self.events.append(event)
 
 

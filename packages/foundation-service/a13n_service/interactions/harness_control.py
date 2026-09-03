@@ -85,6 +85,9 @@ class RunControlPort(Protocol):
     @property
     def current_state(self) -> StoredRunState: ...
 
+    @property
+    def handoff_ready(self) -> bool: ...
+
     async def enter_harness(
         self,
         identity: HarnessRunIdentity,

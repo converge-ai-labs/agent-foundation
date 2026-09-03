@@ -84,7 +84,7 @@ class RunStreamProjector:
         self._harness_run_id: str | None = None
         self._opened = False
 
-    async def project(self, source: HarnessStreamEvent[Any]) -> tuple[RunStreamEvent, ...]:
+    async def project(self, source: HarnessStreamEvent[Any]) -> None:
         """Project and append one exact Harness stream item."""
 
         if source.thread_id != self._thread_id:
@@ -98,7 +98,6 @@ class RunStreamProjector:
         )
         await self._append(source, projected)
         self._harness_run_id = source.run_id
-        return projected
 
     async def _append(
         self,

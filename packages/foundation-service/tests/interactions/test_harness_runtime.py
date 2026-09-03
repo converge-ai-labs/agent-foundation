@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from a13n_environment_provider import (
@@ -22,8 +23,9 @@ from a13n_harness import (
     AgentSpec,
     DeferredToolResume,
     HarnessBuilder,
-    HarnessEvent,
     HarnessObservationContext,
+    HarnessRunResultEvent,
+    HarnessStreamEvent,
     RunPreparationContext,
 )
 from a13n_harness.errors import RunError
@@ -74,6 +76,10 @@ class _RuntimeCoordinator:
     planned_handoff: bool = False
     environment: Environment | None = None
     driver: HarnessDriver | None = field(default=None, init=False)
+
+    @property
+    def handoff_ready(self) -> bool:
+        return self.planned_handoff
 
     async def enter_harness(
         self,
@@ -143,9 +149,9 @@ class _ModelContext:
 
 @dataclass
 class _EventProjector:
-    events: list[HarnessEvent] = field(default_factory=list)
+    events: list[HarnessStreamEvent[Any]] = field(default_factory=list)
 
-    async def project(self, event: HarnessEvent) -> None:
+    async def project(self, event: HarnessStreamEvent[Any]) -> None:
         self.events.append(event)
 
 
@@ -272,6 +278,7 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
     assert model_calls
     assert model_context.requests
     assert projector.events
+    assert isinstance(projector.events[-1], HarnessRunResultEvent)
     assert usage.requests == 1
     assert not environment.is_entered
     assert trace.index("input-factory") < trace.index("coordinator:attach")
@@ -485,7 +492,8 @@ async def test_planned_handoff_yields_only_after_environment_close(
         planned_handoff=True,
         environment=environment,
     )
-    result = await _driver(coordinator).run(
+    projector = _EventProjector()
+    result = await _driver(coordinator, projector).run(
         FoundationHarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(),
@@ -502,3 +510,4 @@ async def test_planned_handoff_yields_only_after_environment_close(
     assert result.status == "cancelled"
     assert not environment.is_entered
     assert trace[-1] == "coordinator:before-model"
+    assert not any(isinstance(event, HarnessRunResultEvent) for event in projector.events)
