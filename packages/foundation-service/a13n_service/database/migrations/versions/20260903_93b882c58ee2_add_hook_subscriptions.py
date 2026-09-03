@@ -155,18 +155,24 @@ def upgrade() -> None:
         "hook_subscription_revisions",
         ["organization_id", "run_id", "id"],
         unique=False,
+        postgresql_where=sa.text("run_id IS NOT NULL"),
+        sqlite_where=sa.text("run_id IS NOT NULL"),
     )
     op.create_index(
         "ix_hook_subscription_revisions_session",
         "hook_subscription_revisions",
         ["organization_id", "session_id", "id"],
         unique=False,
+        postgresql_where=sa.text("session_id IS NOT NULL"),
+        sqlite_where=sa.text("session_id IS NOT NULL"),
     )
     op.create_index(
         "ix_hook_subscription_revisions_thread",
         "hook_subscription_revisions",
         ["organization_id", "thread_id", "id"],
         unique=False,
+        postgresql_where=sa.text("thread_id IS NOT NULL"),
+        sqlite_where=sa.text("thread_id IS NOT NULL"),
     )
     op.create_index(
         "uq_hook_subscription_revisions_id_tenant",
@@ -196,9 +202,24 @@ def downgrade() -> None:
     if op.get_bind().dialect.name == "postgresql":
         op.drop_constraint("fk_hook_subscriptions_current_revision", "hook_subscriptions", type_="foreignkey")
     op.drop_index("uq_hook_subscription_revisions_id_tenant", table_name="hook_subscription_revisions")
-    op.drop_index("ix_hook_subscription_revisions_thread", table_name="hook_subscription_revisions")
-    op.drop_index("ix_hook_subscription_revisions_session", table_name="hook_subscription_revisions")
-    op.drop_index("ix_hook_subscription_revisions_run", table_name="hook_subscription_revisions")
+    op.drop_index(
+        "ix_hook_subscription_revisions_thread",
+        table_name="hook_subscription_revisions",
+        postgresql_where=sa.text("thread_id IS NOT NULL"),
+        sqlite_where=sa.text("thread_id IS NOT NULL"),
+    )
+    op.drop_index(
+        "ix_hook_subscription_revisions_session",
+        table_name="hook_subscription_revisions",
+        postgresql_where=sa.text("session_id IS NOT NULL"),
+        sqlite_where=sa.text("session_id IS NOT NULL"),
+    )
+    op.drop_index(
+        "ix_hook_subscription_revisions_run",
+        table_name="hook_subscription_revisions",
+        postgresql_where=sa.text("run_id IS NOT NULL"),
+        sqlite_where=sa.text("run_id IS NOT NULL"),
+    )
     op.drop_index(
         "ix_hook_subscription_revisions_hook_names", table_name="hook_subscription_revisions", postgresql_using="gin"
     )

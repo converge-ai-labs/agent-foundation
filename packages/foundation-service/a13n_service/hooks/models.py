@@ -134,9 +134,30 @@ class HookSubscriptionRevisionRecord(Base):
         ),
         Index("uq_hook_subscription_revisions_id_tenant", "id", "organization_id", "workspace_id", unique=True),
         Index("ix_hook_subscription_revisions_hook_names", "hook_names", postgresql_using="gin"),
-        Index("ix_hook_subscription_revisions_session", "organization_id", "session_id", "id"),
-        Index("ix_hook_subscription_revisions_thread", "organization_id", "thread_id", "id"),
-        Index("ix_hook_subscription_revisions_run", "organization_id", "run_id", "id"),
+        Index(
+            "ix_hook_subscription_revisions_session",
+            "organization_id",
+            "session_id",
+            "id",
+            postgresql_where=text("session_id IS NOT NULL"),
+            sqlite_where=text("session_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_hook_subscription_revisions_thread",
+            "organization_id",
+            "thread_id",
+            "id",
+            postgresql_where=text("thread_id IS NOT NULL"),
+            sqlite_where=text("thread_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_hook_subscription_revisions_run",
+            "organization_id",
+            "run_id",
+            "id",
+            postgresql_where=text("run_id IS NOT NULL"),
+            sqlite_where=text("run_id IS NOT NULL"),
+        ),
         Index("ix_hook_subscription_revisions_head", "hook_subscription_id", "version", "id"),
     )
 

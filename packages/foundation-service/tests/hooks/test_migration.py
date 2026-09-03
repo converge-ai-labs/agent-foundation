@@ -19,14 +19,19 @@ def _assert_hook_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: boo
             return
         assert {"hook_subscriptions", "hook_subscription_revisions"} <= tables
         head_indexes = {index["name"] for index in inspector.get_indexes("hook_subscriptions")}
-        revision_indexes = {index["name"] for index in inspector.get_indexes("hook_subscription_revisions")}
+        revision_indexes = {index["name"]: index for index in inspector.get_indexes("hook_subscription_revisions")}
         assert "ix_hook_subscriptions_active_workspace" in head_indexes
-        assert {
+        scope_index_names = {
             "ix_hook_subscription_revisions_hook_names",
             "ix_hook_subscription_revisions_run",
             "ix_hook_subscription_revisions_session",
             "ix_hook_subscription_revisions_thread",
-        } <= revision_indexes
+        }
+        assert scope_index_names <= revision_indexes.keys()
+        dialect = engine.dialect.name
+        for scope in ("run", "session", "thread"):
+            options = revision_indexes[f"ix_hook_subscription_revisions_{scope}"]["dialect_options"]
+            assert options[f"{dialect}_where"] is not None
         with engine.connect() as connection:
             if connection.dialect.name == "postgresql":
                 triggers = set(
