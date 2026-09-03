@@ -83,7 +83,7 @@ The workstation has three durable areas with different jobs:
 2. **Configure** provides the browser-only complete management surface for Projects, Models, Agents, canonical subagents, MCP servers, configured extensions, defaults, installed catalogs, compatible Model accounts, exact sources, and configuration diagnostics.
 3. **Debug** provides read-only authenticated App status and current-App-lifetime Thread, Run, child, task, state, payload, and timing inspection without an ordinary composer.
 
-The Threads area follows the same Focus/Workbench product model as the TUI while using browser-native Project navigation. The WebUI can show All Projects or one selected Project and can create, edit, reorder, or delete Project resources through Configure. It defines no separate Workspace grouping, root, membership, or binding model.
+The Threads area follows the same Focus/Workbench product model as the TUI while using browser-native Project navigation. The WebUI can show All Projects or one selected Project and can create, edit, reorder, or delete Project resources through Configure. The selector is a direct Project filter and creates no separate grouping, root, membership, or binding model.
 
 The ordinary Threads area does not permanently surround conversation with receipts, raw events, task tables, configuration source, or timing panels. Current activity is progressively disclosed: active reasoning, tools, tasks, and child work remain understandable while running; settled intermediate work folds into a compact semantic summary while the final answer remains primary. An exact activity or failure can deep-link to its corresponding Debug selection.
 
@@ -161,7 +161,7 @@ The selected stack favors a mature interaction and testing ecosystem over the sm
 ## Invariants
 
 01. The WebUI is one static same-origin SPA over one authenticated Web adapter and one `AgentUiApp`.
-02. Project is the only local-root and root-Thread organization concept; the WebUI adds no Workspace model.
+02. Project is the only local-root and root-Thread organization concept; the WebUI adds no second grouping model.
 03. React renders detached values and owns no duplicate Agent, Project, or Thread domain model.
 04. TanStack Query, Router, focused live state, and unsaved drafts have separate responsibilities.
 05. Only one selected Focus or Debug Thread route owns detailed live reduction.

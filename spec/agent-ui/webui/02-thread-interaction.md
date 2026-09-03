@@ -10,7 +10,7 @@ The canonical detail route names only the stable root Thread ID. Project origin,
 
 The Threads area always provides All Projects and the accepted Projects in their configured order. Selecting one Project queries root Threads whose current sticky `project_id` equals that exact ID; All Projects omits the filter. Changing the selector starts a fresh first-page query and selects a valid row only after the new result arrives. It never mutates any Thread.
 
-Project creation, source editing, reordering, and deletion remain in Configure and use the ordinary expected-digest desired-resource boundary. The Threads area links there for Project management rather than introducing another grouping resource. Agent UI defines no Workspace ID, Workspace membership, or Workspace route.
+Project creation, source editing, reordering, and deletion remain in Configure and use the ordinary expected-digest desired-resource boundary. The Threads area links there for Project management rather than introducing another grouping identity, membership, or route.
 
 A new-Thread draft opened under one selected Project initializes its explicit Project selection from that filter. A draft opened through All Projects applies ordinary root-Thread creation defaults. The create command always carries the resolved explicit Project selection and no separate view identity.
 

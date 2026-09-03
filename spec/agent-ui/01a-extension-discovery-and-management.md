@@ -105,9 +105,9 @@ A Thread selects exactly one Environment profile. Omission during new root Threa
 ```yaml
 schema_version: "1"
 kind: environment_run_extension
-id: extension-workspace-marker
-name: Workspace Marker
-extension_key: vendor.workspace-marker
+id: extension-root-marker
+name: Root Marker
+extension_key: vendor.root-marker
 configuration: {}
 ```
 

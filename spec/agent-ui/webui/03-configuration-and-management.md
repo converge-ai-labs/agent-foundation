@@ -90,7 +90,7 @@ If the source disappeared, recreation remains a new no-clobber create. If anothe
 
 The Project editor manages name, position, and an ordered non-empty root list. Roots are entered as explicit paths and validated by the App; the browser receives no directory enumeration capability. Reordering roots visibly changes the default working directory and mount order for later Runs. The UI explains that existing admitted Runs are unchanged and that Environment state identity can change with profile behavior or root path.
 
-Project is both the WebUI's root-Thread organization and the owner of roots used by execution; Configure does not create a separate Workspace layer. Deleting a Project can leave retained Threads with an unresolved Project ID, and the Threads area continues to expose those Threads through All Projects for explicit reassignment.
+Project is both the WebUI's root-Thread organization and the owner of roots used by execution; Configure does not create a second grouping layer. Deleting a Project can leave retained Threads with an unresolved Project ID, and the Threads area continues to expose those Threads through All Projects for explicit reassignment.
 
 The defaults editor distinguishes scalar default selection from exact ordered Plugin, Run Extension, and MCP collections. It states that defaults initialize new root Threads only. Clearing a collection means select none; omission is not represented as a persistent browser-only inheritance state.
 
