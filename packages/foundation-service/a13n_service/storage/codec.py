@@ -1,4 +1,4 @@
-"""Strict RFC 8785 encoding for durable Run objects."""
+"""Strict RFC 8785 encoding for durable object-store documents."""
 
 from __future__ import annotations
 

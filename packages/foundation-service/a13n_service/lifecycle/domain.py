@@ -140,6 +140,10 @@ def new_mutation_id() -> str:
     return new_object_id("mut")
 
 
+def new_lifecycle_event_id() -> str:
+    return new_object_id("lev")
+
+
 def deterministic_mutation_id(*parts: str) -> str:
     """Build retry-stable mutation identity from non-secret canonical facts."""
 
@@ -157,5 +161,6 @@ __all__ = [
     "LifecycleEventDraft",
     "LifecycleProjectionState",
     "deterministic_mutation_id",
+    "new_lifecycle_event_id",
     "new_mutation_id",
 ]

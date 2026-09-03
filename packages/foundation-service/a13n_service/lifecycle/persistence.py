@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from a13n_harness import SafeFailure
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from .domain import LifecycleEntityType, LifecycleEvent, LifecycleEventDraft, LifecycleProjectionState
 from .models import LifecycleEventRecord
@@ -32,6 +35,12 @@ class LifecycleReplayGap(RuntimeError):
         super().__init__("requested lifecycle history is no longer retained")
         self.retained_floor = retained_floor
         self.high_watermark = high_watermark
+
+
+@dataclass(frozen=True, slots=True)
+class LifecycleProjectionClaim:
+    event: LifecycleEvent
+    lease_owner: str
 
 
 async def append_lifecycle_event(
@@ -130,10 +139,138 @@ async def read_resource_events(
     return LifecycleResourcePage(items, next_resource_seq, floor, high)
 
 
+async def claim_lifecycle_projections(
+    database: AsyncSession,
+    *,
+    lease_owner: str,
+    now: datetime,
+    lease_duration: timedelta,
+    limit: int,
+) -> tuple[LifecycleProjectionClaim, ...]:
+    if not lease_owner or lease_duration <= timedelta(0):
+        raise ValueError("projection lease owner and duration are required")
+    if limit < 1 or limit > 200:
+        raise ValueError("projection claim limit must be between 1 and 200")
+    due = or_(
+        and_(
+            LifecycleEventRecord.projection_state.in_(
+                (LifecycleProjectionState.pending.value, LifecycleProjectionState.retry_wait.value)
+            ),
+            LifecycleEventRecord.projection_next_attempt_at <= now,
+        ),
+        and_(
+            LifecycleEventRecord.projection_state == LifecycleProjectionState.projecting.value,
+            LifecycleEventRecord.projection_lease_expires_at <= now,
+        ),
+    )
+    earlier = aliased(LifecycleEventRecord)
+    no_earlier_unsettled_run_event = ~exists().where(
+        earlier.tenant_id == LifecycleEventRecord.tenant_id,
+        earlier.run_id == LifecycleEventRecord.run_id,
+        earlier.seq < LifecycleEventRecord.seq,
+        earlier.projection_state.in_(
+            (
+                LifecycleProjectionState.pending.value,
+                LifecycleProjectionState.projecting.value,
+                LifecycleProjectionState.retry_wait.value,
+            )
+        ),
+    )
+    records = (
+        await database.scalars(
+            select(LifecycleEventRecord)
+            .where(due, no_earlier_unsettled_run_event)
+            .order_by(LifecycleEventRecord.seq)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+    ).all()
+    claims: list[LifecycleProjectionClaim] = []
+    for record in records:
+        record.projection_state = LifecycleProjectionState.projecting.value
+        record.projection_attempts += 1
+        record.projection_next_attempt_at = None
+        record.projection_lease_owner = lease_owner
+        record.projection_lease_expires_at = now + lease_duration
+        record.projected_at = None
+        record.projection_error_json = None
+        claims.append(LifecycleProjectionClaim(record.to_resource(), lease_owner))
+    await database.flush()
+    return tuple(claims)
+
+
+async def complete_lifecycle_projection(
+    database: AsyncSession,
+    claim: LifecycleProjectionClaim,
+    *,
+    projected_at: datetime,
+) -> bool:
+    record = await _lock_projection_claim(database, claim, settled_at=projected_at)
+    if record is None:
+        return False
+    record.projection_state = LifecycleProjectionState.projected.value
+    record.projection_next_attempt_at = None
+    record.projection_lease_owner = None
+    record.projection_lease_expires_at = None
+    record.projected_at = projected_at
+    record.projection_error_json = None
+    await database.flush()
+    return True
+
+
+async def fail_lifecycle_projection(
+    database: AsyncSession,
+    claim: LifecycleProjectionClaim,
+    *,
+    failed_at: datetime,
+    retry_after: timedelta,
+    max_attempts: int,
+    failure: SafeFailure,
+) -> bool:
+    if retry_after < timedelta(0) or max_attempts < 1:
+        raise ValueError("projection retry policy is invalid")
+    record = await _lock_projection_claim(database, claim, settled_at=failed_at)
+    if record is None:
+        return False
+    abandoned = record.projection_attempts >= max_attempts
+    record.projection_state = (
+        LifecycleProjectionState.abandoned.value if abandoned else LifecycleProjectionState.retry_wait.value
+    )
+    record.projection_next_attempt_at = None if abandoned else failed_at + retry_after
+    record.projection_lease_owner = None
+    record.projection_lease_expires_at = None
+    record.projected_at = None
+    record.projection_error_json = failure.model_dump(mode="json", by_alias=True)
+    await database.flush()
+    return True
+
+
+async def _lock_projection_claim(
+    database: AsyncSession,
+    claim: LifecycleProjectionClaim,
+    *,
+    settled_at: datetime,
+) -> LifecycleEventRecord | None:
+    return await database.scalar(
+        select(LifecycleEventRecord)
+        .where(
+            LifecycleEventRecord.seq == claim.event.seq,
+            LifecycleEventRecord.projection_state == LifecycleProjectionState.projecting.value,
+            LifecycleEventRecord.projection_lease_owner == claim.lease_owner,
+            LifecycleEventRecord.projection_lease_expires_at > settled_at,
+        )
+        .with_for_update()
+    )
+
+
 __all__ = [
+    "LifecycleProjectionClaim",
     "LifecycleReplayGap",
     "LifecycleResourcePage",
     "LifecycleWorkspacePage",
     "append_lifecycle_event",
+    "claim_lifecycle_projections",
+    "complete_lifecycle_projection",
+    "fail_lifecycle_projection",
     "read_resource_events",
 ]

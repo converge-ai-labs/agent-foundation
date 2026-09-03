@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from a13n_service.interactions import (
     MCPToolSnapshotRef,
@@ -19,13 +21,18 @@ from a13n_service.interactions.records import run_record, session_record, thread
 from a13n_service.lifecycle import (
     LifecycleEntityType,
     LifecycleEventDraft,
+    LifecycleEventRecord,
     LifecycleProjectionState,
     LifecycleReplayGap,
     append_lifecycle_event,
+    claim_lifecycle_projections,
+    complete_lifecycle_projection,
     read_resource_events,
 )
-from a13n_service.storage import short_session, transaction
-from sqlalchemy import delete
+from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
+from a13n_service.storage import ObjectStore, short_session, transaction
+from redis.asyncio import Redis
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import (
@@ -251,3 +258,125 @@ async def test_rolls_back_lifecycle_fact_with_owning_mutation(
         )
 
     assert page.items == ()
+
+
+async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+    redis_client: Redis,
+) -> None:
+    await _seed_run(interaction_sessions)
+    async with transaction(interaction_sessions) as database:
+        await append_lifecycle_event(database, _draft(mutation_id="mut_1111111111111111"))
+        await append_lifecycle_event(
+            database,
+            _draft(
+                event_type="run.completed",
+                mutation_id="mut_2222222222222222",
+                entity_version=2,
+                payload={"status": "completed"},
+            ),
+        )
+
+    stream = RedisRunStream(redis_client)
+    replay = RunReplayStore(interaction_object_store)
+    projector = LifecycleRunStreamProjector(
+        interaction_sessions,
+        stream,
+        replay,
+        worker_id="projection-worker-1",
+        clock=lambda: NOW,
+    )
+
+    assert await projector.project_once(limit=16) == 1
+    first_page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    assert tuple(entry.event.event_type for entry in first_page.items) == ("run.accepted",)
+    assert not first_page.closed
+    assert await projector.project_once(limit=16) == 1
+
+    terminal_page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    snapshot = await replay.read(TENANT_ID, RUN_ID)
+    assert terminal_page.closed
+    assert tuple(entry.event.event_type for entry in terminal_page.items) == ("run.accepted", "run.completed")
+    assert tuple(entry.event.event_type for entry in snapshot.events) == ("run.accepted", "run.completed")
+    async with short_session(interaction_sessions) as database:
+        projection_states = tuple(
+            await database.scalars(select(LifecycleEventRecord.projection_state).order_by(LifecycleEventRecord.seq))
+        )
+    assert projection_states == ("projected", "projected")
+
+
+async def test_expired_projection_owner_cannot_settle_reclaimed_fact(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _seed_run(interaction_sessions)
+    async with transaction(interaction_sessions) as database:
+        await append_lifecycle_event(database, _draft(mutation_id="mut_1111111111111111"))
+    async with transaction(interaction_sessions) as database:
+        first = (
+            await claim_lifecycle_projections(
+                database,
+                lease_owner="projection-worker-old",
+                now=NOW,
+                lease_duration=timedelta(seconds=1),
+                limit=1,
+            )
+        )[0]
+    async with transaction(interaction_sessions) as database:
+        assert not await complete_lifecycle_projection(
+            database,
+            first,
+            projected_at=NOW + timedelta(seconds=2),
+        )
+    async with transaction(interaction_sessions) as database:
+        replacement = (
+            await claim_lifecycle_projections(
+                database,
+                lease_owner="projection-worker-new",
+                now=NOW + timedelta(seconds=2),
+                lease_duration=timedelta(seconds=30),
+                limit=1,
+            )
+        )[0]
+        assert await complete_lifecycle_projection(
+            database,
+            replacement,
+            projected_at=NOW + timedelta(seconds=3),
+        )
+
+
+async def test_projection_failure_retries_then_abandons_without_mutating_fact(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+    redis_client: Redis,
+) -> None:
+    await _seed_run(interaction_sessions)
+    async with transaction(interaction_sessions) as database:
+        source = await append_lifecycle_event(database, _draft(mutation_id="mut_1111111111111111"))
+    stream = RedisRunStream(redis_client)
+    await stream.close(TENANT_ID, RUN_ID, closed_at=NOW)
+    times = iter((NOW, NOW, NOW + timedelta(seconds=2), NOW + timedelta(seconds=2)))
+    projector = LifecycleRunStreamProjector(
+        interaction_sessions,
+        stream,
+        RunReplayStore(interaction_object_store),
+        worker_id="projection-worker-1",
+        retry_after=timedelta(seconds=1),
+        max_attempts=2,
+        clock=lambda: next(times),
+    )
+
+    assert await projector.project_once() == 1
+    async with short_session(interaction_sessions) as database:
+        retrying = await database.get(LifecycleEventRecord, source.seq)
+        assert retrying is not None
+        assert (retrying.projection_state, retrying.projection_attempts) == ("retry_wait", 1)
+        assert retrying.event_type == "run.accepted"
+
+    assert await projector.project_once() == 1
+    async with short_session(interaction_sessions) as database:
+        abandoned = await database.get(LifecycleEventRecord, source.seq)
+        assert abandoned is not None
+        assert (abandoned.projection_state, abandoned.projection_attempts) == ("abandoned", 2)
+        assert abandoned.projection_error_json is not None
+        assert abandoned.projection_error_json["code"] == "run_stream_projection_failed"

@@ -12,9 +12,9 @@ from a13n_service.interactions import (
     StaleStateWriter,
     validate_run_payload_reference,
 )
-from a13n_service.interactions.codec import DurableObjectCodecError, decode_canonical_model
 from a13n_service.interactions.state import RunStateEnvelope
 from a13n_service.storage import ObjectStore
+from a13n_service.storage.codec import DurableObjectCodecError, decode_canonical_model
 from pydantic import TypeAdapter
 
 from .conftest import TENANT_ID, initial_state, progress_state

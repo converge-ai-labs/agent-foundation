@@ -14,6 +14,7 @@ from a13n_service.lifecycle import (
     LifecycleEntityType,
     LifecycleEventDraft,
     append_lifecycle_event,
+    new_lifecycle_event_id,
     new_mutation_id,
 )
 
@@ -72,16 +73,7 @@ async def append_run_with_attempt_lifecycle(
     """Record one Run transition and its correlated Attempt transition."""
 
     resolved_mutation_id = new_mutation_id() if mutation_id is None else mutation_id
-    run_event_id = await append_run_lifecycle(
-        database,
-        run,
-        run_event_type,
-        mutation_id=resolved_mutation_id,
-        occurred_at=occurred_at,
-        actor_type=actor_type,
-        actor_id=actor_id,
-        final_run_attempt_id=attempt.id,
-    )
+    run_event_id = new_lifecycle_event_id()
     await append_run_attempt_lifecycle(
         database,
         run,
@@ -91,7 +83,17 @@ async def append_run_with_attempt_lifecycle(
         occurred_at=occurred_at,
         resulting_run_lifecycle_event_id=run_event_id,
     )
-    return run_event_id
+    return await append_run_lifecycle(
+        database,
+        run,
+        run_event_type,
+        event_id=run_event_id,
+        mutation_id=resolved_mutation_id,
+        occurred_at=occurred_at,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        final_run_attempt_id=attempt.id,
+    )
 
 
 async def append_run_lifecycle(
@@ -99,6 +101,7 @@ async def append_run_lifecycle(
     run: RunRecord,
     event_type: RunEventType,
     *,
+    event_id: str | None = None,
     mutation_id: str | None = None,
     occurred_at: datetime,
     actor_type: str,
@@ -108,6 +111,7 @@ async def append_run_lifecycle(
     record = await append_lifecycle_event(
         database,
         LifecycleEventDraft(
+            id=new_lifecycle_event_id() if event_id is None else event_id,
             tenant_id=run.tenant_id,
             entity_type=LifecycleEntityType.run,
             entity_id=run.id,

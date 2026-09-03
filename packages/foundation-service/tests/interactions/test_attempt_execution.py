@@ -160,11 +160,11 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
         ).all()
         assert tuple(event.event_type for event in events) == (
             "run.accepted",
-            "run.running",
             "run_attempt.leased",
+            "run.running",
             "run_attempt.running",
-            "run.completed",
             "run_attempt.succeeded",
+            "run.completed",
         )
         assert tuple(event.resource_seq for event in events if event.entity_type == "run") == (1, 2, 3)
         assert tuple(event.resource_seq for event in events if event.entity_type == "run_attempt") == (1, 2, 3)
@@ -355,8 +355,8 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
         ).all()
         assert tuple(event.event_type for event in events) == (
             "run.accepted",
-            "run.running",
             "run_attempt.leased",
+            "run.running",
             "run_attempt.failed",
         )
 

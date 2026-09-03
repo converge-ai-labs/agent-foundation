@@ -10,14 +10,19 @@ from .domain import (
     LifecycleEventDraft,
     LifecycleProjectionState,
     deterministic_mutation_id,
+    new_lifecycle_event_id,
     new_mutation_id,
 )
 from .models import LifecycleEventRecord
 from .persistence import (
+    LifecycleProjectionClaim,
     LifecycleReplayGap,
     LifecycleResourcePage,
     LifecycleWorkspacePage,
     append_lifecycle_event,
+    claim_lifecycle_projections,
+    complete_lifecycle_projection,
+    fail_lifecycle_projection,
     read_resource_events,
 )
 
@@ -30,12 +35,17 @@ __all__ = [
     "LifecycleEvent",
     "LifecycleEventDraft",
     "LifecycleEventRecord",
+    "LifecycleProjectionClaim",
     "LifecycleProjectionState",
     "LifecycleReplayGap",
     "LifecycleResourcePage",
     "LifecycleWorkspacePage",
     "append_lifecycle_event",
+    "claim_lifecycle_projections",
+    "complete_lifecycle_projection",
     "deterministic_mutation_id",
+    "fail_lifecycle_projection",
+    "new_lifecycle_event_id",
     "new_mutation_id",
     "read_resource_events",
 ]

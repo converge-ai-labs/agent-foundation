@@ -9,8 +9,8 @@ from typing import Literal
 from pydantic import TypeAdapter
 
 from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectStore
+from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
 
-from .codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
 from .domain import RunPayloadObjectRef
 from .state import RunPayloadEnvelope, RunStateEnvelope, validate_state_successor
 
