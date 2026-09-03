@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import anyio
 import pytest
@@ -30,7 +30,14 @@ from a13n_service.lifecycle import (
     complete_lifecycle_projection,
     read_resource_events,
 )
-from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
+from a13n_service.run_stream import (
+    LifecycleRunStreamProjector,
+    RedisRunStream,
+    RunReplayStore,
+    RunStreamEvent,
+    deterministic_item_id,
+    deterministic_run_stream_event_id,
+)
 from a13n_service.storage import ObjectStore, short_session, transaction
 from redis.asyncio import Redis
 from sqlalchemy import delete, select
@@ -51,6 +58,18 @@ from .conftest import (
 pytestmark = pytest.mark.anyio
 
 RUN_ID = "run_1111111111111111"
+
+
+class _FailOnceCloseRunStream(RedisRunStream):
+    def __init__(self, redis: Redis) -> None:
+        super().__init__(redis)
+        self._fail_close = True
+
+    async def close(self, tenant_id: str, run_id: str, *, closed_at: datetime) -> None:
+        if self._fail_close:
+            self._fail_close = False
+            raise RuntimeError("transient close failure")
+        await super().close(tenant_id, run_id, closed_at=closed_at)
 
 
 def _draft(**changes: object) -> LifecycleEventDraft:
@@ -305,6 +324,73 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
             await database.scalars(select(LifecycleEventRecord.projection_state).order_by(LifecycleEventRecord.seq))
         )
     assert projection_states == ("projected", "projected")
+
+
+async def test_terminal_projection_interrupts_open_items_before_stream_close(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+    redis_client: Redis,
+) -> None:
+    await _seed_run(interaction_sessions)
+    async with transaction(interaction_sessions) as database:
+        await append_lifecycle_event(database, _draft(mutation_id="mut_1111111111111111"))
+        terminal = await append_lifecycle_event(
+            database,
+            _draft(
+                event_type="run.completed",
+                mutation_id="mut_2222222222222222",
+                entity_version=2,
+                payload={"status": "completed"},
+            ),
+        )
+    stream = _FailOnceCloseRunStream(redis_client)
+    replay = RunReplayStore(interaction_object_store)
+    projector = LifecycleRunStreamProjector(
+        interaction_sessions,
+        stream,
+        replay,
+        worker_id="projection-worker-1",
+        retry_after=timedelta(0),
+        clock=lambda: NOW,
+    )
+    assert await projector.project_once() == 1
+    item_id = deterministic_item_id(RUN_ID, "text_message", "message-1")
+    first_item_stream_id = await stream.append(
+        TENANT_ID,
+        RunStreamEvent(
+            event_id=deterministic_run_stream_event_id("test", "open-item"),
+            event_type="agui.text_message_start",
+            run_id=RUN_ID,
+            thread_id=THREAD_ID,
+            run_attempt_id="rat_1234567890abcdef",
+            harness_run_id="harness-run-1",
+            item_id=item_id,
+            occurred_at=NOW,
+            payload={"item_kind": "text_message"},
+        ),
+    )
+
+    assert await projector.project_once() == 1
+    failed_page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    assert not failed_page.closed
+    assert failed_page.items[-1].event.event_type == "item.interrupted"
+    assert await projector.project_once() == 1
+
+    page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    snapshot = await replay.read(TENANT_ID, RUN_ID)
+    interrupted = page.items[-1]
+    assert page.closed
+    assert tuple(entry.event.event_type for entry in page.items) == (
+        "run.accepted",
+        "agui.text_message_start",
+        "run.completed",
+        "item.interrupted",
+    )
+    assert interrupted.event.lifecycle_event_id == terminal.id
+    assert interrupted.event.payload["first_stream_id"] == first_item_stream_id
+    assert interrupted.event.payload["last_content_stream_id"] == first_item_stream_id
+    assert snapshot.items[0].state == "interrupted"
+    assert snapshot.items[0].last_stream_id == interrupted.stream_id
 
 
 async def test_background_projector_drains_successive_claim_batches(

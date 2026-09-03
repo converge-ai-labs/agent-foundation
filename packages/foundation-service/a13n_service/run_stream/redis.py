@@ -59,12 +59,12 @@ class RedisRunStream:
                 try:
                     await pipeline.watch(stream_key, metadata_key)
                     await _require_identity(pipeline, metadata_key, tenant_id=tenant_id, run_id=event.run_id)
-                    if _as_text(await pipeline.hget(metadata_key, b"closed_at")) is not None:
-                        raise RunStreamClosed("Run Stream is already closed")
                     entries = _entry_rows(await pipeline.xrange(stream_key, min=b"-", max=b"+"))
                     duplicate = _find_event(entries, event.event_id, body)
                     if duplicate is not None:
                         return duplicate
+                    if _as_text(await pipeline.hget(metadata_key, b"closed_at")) is not None:
+                        raise RunStreamClosed("Run Stream is already closed")
                     length = int(await pipeline.xlen(stream_key))
                     pipeline.multi()
                     pipeline.hset(
@@ -177,6 +177,21 @@ class RedisRunStream:
             closed_at=closed,
             stream_key_digest_sha256=hashlib.sha256(stream_key).hexdigest(),
         )
+
+    async def untrimmed_entries(self, tenant_id: str, run_id: str) -> tuple[RunStreamEntry, ...]:
+        """Return the complete retained prefix used to seal Item projections."""
+
+        stream_key, metadata_key = _keys(tenant_id, run_id)
+        async with self._redis.pipeline(transaction=True) as pipeline:
+            pipeline.hgetall(metadata_key)
+            pipeline.xrange(stream_key, min=b"-", max=b"+")
+            metadata_value, rows_value = await pipeline.execute()
+        metadata = _metadata(metadata_value)
+        _validate_identity(metadata, tenant_id=tenant_id, run_id=run_id)
+        if metadata.get("trimmed") == "1":
+            raise RetainedReplayUnavailable("Run Stream prefix was trimmed")
+        rows = _entry_rows(rows_value)
+        return tuple(_decode_entry(row, expected_run_id=run_id) for row in rows)
 
 
 def _keys(tenant_id: str, run_id: str) -> tuple[bytes, bytes]:

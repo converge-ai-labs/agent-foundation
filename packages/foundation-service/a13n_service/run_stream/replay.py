@@ -60,7 +60,7 @@ class RunReplayStore:
         expected_stream_digest = run_stream_key_digest_sha256(tenant_id, run_id)
         if source.stream_key_digest_sha256 != expected_stream_digest:
             raise RunReplayIntegrityError("Run Stream source key does not match the selected Run")
-        items = _project_items(source.entries)
+        items = project_retained_items(source.entries)
         if len(items) > self._max_items:
             raise RetainedReplayUnavailable("Run Stream Item count exceeds the retained replay bound")
         snapshot = RunReplaySnapshot(
@@ -119,7 +119,7 @@ def run_replay_key(tenant_id: str, run_id: str) -> str:
     return f"tenants/{tenant_id}/runs/{run_id}/replay/version-1.json"
 
 
-def _project_items(entries: tuple[RunStreamEntry, ...]) -> tuple[RetainedItem, ...]:
+def project_retained_items(entries: tuple[RunStreamEntry, ...]) -> tuple[RetainedItem, ...]:
     item_entries: dict[str, list[RunStreamEntry]] = {}
     for entry in entries:
         if entry.event.item_id is not None:
@@ -208,4 +208,10 @@ def _verify_info(info: ObjectInfo, *, key: str, body: bytes, metadata: Mapping[s
         raise RunReplayIntegrityError("retained replay object metadata is invalid")
 
 
-__all__ = ["RUN_REPLAY_CONTENT_TYPE", "RunReplayIntegrityError", "RunReplayStore", "run_replay_key"]
+__all__ = [
+    "RUN_REPLAY_CONTENT_TYPE",
+    "RunReplayIntegrityError",
+    "RunReplayStore",
+    "project_retained_items",
+    "run_replay_key",
+]

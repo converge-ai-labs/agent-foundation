@@ -81,6 +81,7 @@ async def test_close_is_idempotent_and_rejects_late_append(redis_client: Redis) 
 
     await stream.close(TENANT_ID, RUN_ID, closed_at=NOW)
     await stream.close(TENANT_ID, RUN_ID, closed_at=NOW)
+    assert await stream.append(TENANT_ID, _event(1)) == entry_id
 
     page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
     assert page.closed

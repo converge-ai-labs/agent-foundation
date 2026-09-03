@@ -22,7 +22,7 @@ from a13n_service.storage import transaction
 
 from .domain import RetainedReplayUnavailable, RunStreamEvent, deterministic_run_stream_event_id
 from .redis import RedisRunStream
-from .replay import RunReplayStore
+from .replay import RunReplayStore, project_retained_items
 
 logger = logging.getLogger("a13n_service.run_stream.projector")
 _TERMINAL_RUN_EVENTS = frozenset({"run.completed", "run.failed", "run.cancelled"})
@@ -141,6 +141,7 @@ class LifecycleRunStreamProjector:
         )
         if event.event_type not in _TERMINAL_RUN_EVENTS:
             return
+        await self._interrupt_open_items(event)
         await self._stream.close(event.tenant_id, event.run_id, closed_at=event.occurred_at)
         try:
             source = await self._stream.complete_source(event.tenant_id, event.run_id)
@@ -149,6 +150,57 @@ class LifecycleRunStreamProjector:
             logger.info(
                 "Run Stream closed without retained replay",
                 extra={"run_id": event.run_id, "lifecycle_event_id": event.id},
+            )
+
+    async def _interrupt_open_items(self, event: LifecycleEvent) -> None:
+        if event.thread_id is None:  # pragma: no cover - guarded by the caller
+            raise ValueError("Run lifecycle projection requires Thread correlation")
+        try:
+            entries = await self._stream.untrimmed_entries(event.tenant_id, event.run_id)
+        except RetainedReplayUnavailable:
+            logger.info(
+                "Run Stream closed without complete Item interruption projection",
+                extra={"run_id": event.run_id, "lifecycle_event_id": event.id},
+            )
+            return
+        last_entry_by_item = {entry.event.item_id: entry for entry in entries if entry.event.item_id is not None}
+        for item in project_retained_items(entries):
+            if item.state != "interrupted":
+                continue
+            source = last_entry_by_item[item.id].event
+            if source.event_type == "item.interrupted":
+                continue
+            payload = {
+                "item_kind": item.kind,
+                "item_state": "interrupted",
+                "first_stream_id": item.first_stream_id,
+                "last_content_stream_id": item.last_stream_id,
+                "interruption": {
+                    "code": "run_closed_before_item_completion",
+                    "message": "The Run closed before this presentation Item completed.",
+                },
+            }
+            if item.parent_item_id is not None:
+                payload["parent_item_id"] = item.parent_item_id
+            await self._stream.append(
+                event.tenant_id,
+                RunStreamEvent(
+                    event_id=deterministic_run_stream_event_id(
+                        "item",
+                        event.id,
+                        item.id,
+                        "interrupted",
+                    ),
+                    event_type="item.interrupted",
+                    run_id=event.run_id,
+                    thread_id=event.thread_id,
+                    run_attempt_id=source.run_attempt_id,
+                    harness_run_id=source.harness_run_id,
+                    lifecycle_event_id=event.id,
+                    item_id=item.id,
+                    occurred_at=event.occurred_at,
+                    payload=payload,
+                ),
             )
 
 
