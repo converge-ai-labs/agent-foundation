@@ -169,6 +169,11 @@ class ServiceSettings(BaseSettings):
     webhook_retry_max_seconds: float = Field(default=300, gt=0, le=86_400)
     webhook_request_timeout_seconds: float = Field(default=10, gt=0, le=300)
     webhook_max_response_bytes: int = Field(default=64 * 1024, ge=1, le=16 * 1024 * 1024)
+    lifecycle_retention_days: int = Field(default=30, ge=1, le=3650)
+    lifecycle_published_delivery_retention_days: int = Field(default=7, ge=1, le=3650)
+    lifecycle_dead_letter_retention_days: int = Field(default=30, ge=1, le=3650)
+    lifecycle_retention_poll_interval_seconds: float = Field(default=300, gt=0, le=86_400)
+    lifecycle_retention_batch_limit: int = Field(default=200, ge=1, le=1000)
     secret_master_key_base64: SecretStr | None = Field(default=None, repr=False)
     secret_encryption_key_id: str | None = Field(default=None, min_length=1, max_length=128, repr=False)
 

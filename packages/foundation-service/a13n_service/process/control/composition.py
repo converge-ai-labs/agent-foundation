@@ -84,7 +84,7 @@ async def build_control_runtime(
         hook_subscriptions=hooks.subscriptions,
         lifecycle_events=hooks.lifecycle_events,
     )
-    background_tasks = [assets.cleanup_task, hooks.delivery_task]
+    background_tasks = [assets.cleanup_task, hooks.delivery_task, hooks.retention_task]
     if plugins.background_task is not None:
         background_tasks.append(plugins.background_task)
     return runtime, tuple(background_tasks)

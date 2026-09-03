@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from datetime import timedelta
 
 import httpx2
 
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.hooks.publisher import WebhookPublisher
+from a13n_service.lifecycle.retention import LifecycleRetentionReconciler
 from a13n_service.lifecycle.service import LifecycleEventService
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.runtime import SharedRuntime
@@ -21,6 +23,7 @@ class _HookBundle:
     subscriptions: HookSubscriptionService
     lifecycle_events: LifecycleEventService
     delivery_task: BackgroundTask
+    retention_task: BackgroundTask
 
 
 async def build_hook_bundle(
@@ -64,10 +67,19 @@ async def build_hook_bundle(
         delivery_timeout_seconds=settings.webhook_request_timeout_seconds,
         max_response_bytes=settings.webhook_max_response_bytes,
     )
+    retention = LifecycleRetentionReconciler(
+        shared.storage.sessions,
+        event_horizon=timedelta(days=settings.lifecycle_retention_days),
+        published_delivery_horizon=timedelta(days=settings.lifecycle_published_delivery_retention_days),
+        dead_letter_horizon=timedelta(days=settings.lifecycle_dead_letter_retention_days),
+        poll_interval_seconds=settings.lifecycle_retention_poll_interval_seconds,
+        batch_limit=settings.lifecycle_retention_batch_limit,
+    )
     return _HookBundle(
         subscriptions=subscriptions,
         lifecycle_events=LifecycleEventService(shared.storage.sessions),
         delivery_task=BackgroundTask("webhook publisher", publisher.run),
+        retention_task=BackgroundTask("lifecycle retention reconciler", retention.run),
     )
 
 
