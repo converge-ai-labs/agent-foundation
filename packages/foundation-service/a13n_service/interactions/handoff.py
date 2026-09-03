@@ -24,8 +24,8 @@ from .acceptance import (
     RunAcceptanceReceipt,
     _require_session,
     _validate_advancement,
-    _validate_prepared_run,
     _validate_queued_run_input,
+    validate_prepared_run,
 )
 from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority
 from .control_domain import QueuedSubmission, QueuedSubmissionFailure, QueuedSubmissionState
@@ -245,7 +245,7 @@ class CompletionQueueHandoffService:
         accepted_input: AcceptedAgentInput,
     ) -> tuple[CompletedOutcomeCandidate, RunPayloadEnvelope | None]:
         candidate = await self._verify_source(authority=authority, source_state=source_state)
-        _validate_prepared_run(successor_run, successor_state)
+        validate_prepared_run(successor_run, successor_state)
         _validate_combined_successor(authority, source_state, successor_run, successor_state)
         input_payload = await self._verify_input_payload(successor_run)
         _validate_queued_run_input(successor_run, input_payload, accepted_input)

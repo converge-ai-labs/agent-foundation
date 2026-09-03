@@ -73,7 +73,7 @@ class RunAcceptanceService:
         run: Run,
         state: RunStateEnvelope,
     ) -> RunAcceptanceReceipt:
-        _validate_prepared_run(run, state)
+        validate_prepared_run(run, state)
         _validate_new_thread(thread, run, session)
         replay = await self._load_replay(run, state, accepted_thread_version=1)
         if replay is not None:
@@ -112,7 +112,7 @@ class RunAcceptanceService:
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
     ) -> RunAcceptanceReceipt:
-        _validate_prepared_run(run, state)
+        validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
@@ -205,7 +205,7 @@ class RunAcceptanceService:
     ) -> QueuedSubmissionConsumptionReceipt:
         """Atomically consume the first queue row and accept its prepared Run."""
 
-        _validate_prepared_run(run, state)
+        validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
@@ -477,7 +477,7 @@ class RunAcceptanceService:
             return queued
 
 
-def _validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
+def validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
     if run.status is not RunStatus.accepted or run.version != 1:
         raise ValueError("prepared acceptance requires a version-one accepted Run")
     if (state.run_id, state.thread_id) != (run.id, run.thread_id):
@@ -831,4 +831,5 @@ __all__ = [
     "RunAcceptanceError",
     "RunAcceptanceReceipt",
     "RunAcceptanceService",
+    "validate_prepared_run",
 ]
