@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
+from itertools import pairwise
 from typing import Literal
 
 from pydantic import JsonValue, TypeAdapter
@@ -76,6 +77,7 @@ class RunReplayStore:
             ),
             items=items,
         )
+        _validate_snapshot_body(snapshot)
         body = canonical_model_bytes(snapshot)
         if len(body) > self._max_bytes:
             raise RetainedReplayUnavailable("retained replay exceeds its encoded size bound")
@@ -112,6 +114,7 @@ class RunReplayStore:
             raise RunReplayIntegrityError("retained replay body belongs to another Run")
         if snapshot.stream_key_digest_sha256 != run_stream_key_digest_sha256(tenant_id, run_id):
             raise RunReplayIntegrityError("retained replay Stream identity is invalid")
+        _validate_snapshot_body(snapshot)
         return snapshot
 
 
@@ -177,6 +180,25 @@ def _attempt_ids(entries: tuple[RunStreamEntry, ...]) -> tuple[str, ...]:
         if attempt_id is not None and attempt_id not in result:
             result.append(attempt_id)
     return tuple(result)
+
+
+def _validate_snapshot_body(snapshot: RunReplaySnapshot) -> None:
+    entries = tuple(RunStreamEntry(item.stream_id, item.event) for item in snapshot.events)
+    positions = tuple(_stream_position(entry.stream_id) for entry in entries)
+    if any(current <= previous for previous, current in pairwise(positions)):
+        raise RunReplayIntegrityError("retained replay events are not strictly ordered")
+    event_ids = tuple(entry.event.event_id for entry in entries)
+    if len(event_ids) != len(set(event_ids)):
+        raise RunReplayIntegrityError("retained replay contains duplicate event identities")
+    if snapshot.source_run_attempt_ids != _attempt_ids(entries):
+        raise RunReplayIntegrityError("retained replay Attempt index does not match its events")
+    if snapshot.items != project_retained_items(entries):
+        raise RunReplayIntegrityError("retained replay Item index does not match its events")
+
+
+def _stream_position(value: str) -> tuple[int, int]:
+    milliseconds, sequence = value.split("-", maxsplit=1)
+    return int(milliseconds), int(sequence)
 
 
 async def _read_object(objects: ObjectStore, key: str, *, max_bytes: int) -> tuple[bytes, ObjectInfo]:
