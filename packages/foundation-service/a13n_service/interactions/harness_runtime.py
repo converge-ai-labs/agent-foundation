@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Protocol
+from typing import Any, Literal, Protocol
 
 from a13n_environment_provider import Environment
 from a13n_harness import (
@@ -18,9 +19,12 @@ from a13n_harness import (
     EnvironmentMount,
     ExecutableAgent,
     HarnessBuilder,
+    HarnessEvent,
     HarnessObservationContext,
     HarnessRunResult,
+    HarnessRunResultEvent,
     HarnessRunStream,
+    HarnessState,
     RunBindings,
     RunInputFactory,
     RunInputValue,
@@ -29,18 +33,20 @@ from a13n_harness import (
 from a13n_harness.errors import RunError
 from a13n_harness.model_context import ModelContextMiddleware
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from .attempts import AttemptMutationReceipt, AttemptPreparationAccepted
-from .harness_control import RunControlCoordinator, compose_run_control
-from .harness_stream import (
-    HarnessResultCoordinator,
-    HarnessStreamConsumer,
-    HarnessTerminalConsumption,
+from .attempts import AttemptPreparationAccepted
+from .harness_control import (
+    HarnessContextBinding,
+    HarnessHookBoundary,
+    HarnessRunIdentity,
+    RunControlPort,
+    compose_run_control,
 )
-from .objects import StoredRunState
 from .state import RunStateEnvelope
 
 _DEFERRED_REQUESTS_ADAPTER = TypeAdapter(DeferredToolRequests)
@@ -168,55 +174,50 @@ class FoundationHarnessInvocation[OutputT]:
             raise TypeError("Foundation Harness usage limits must be UsageLimits or None")
 
 
-@dataclass(frozen=True, slots=True)
-class FoundationHarnessYielded[OutputT]:
-    """A planned local cancellation followed by its durable yielded transition."""
+class HarnessEventProjector(Protocol):
+    """Await one non-terminal canonical Harness observation with backpressure."""
 
-    result: HarnessRunResult[OutputT]
-    mutation: AttemptMutationReceipt
+    async def project(self, event: HarnessEvent) -> None: ...
 
 
-type FoundationHarnessExecution[OutputT] = HarnessTerminalConsumption[OutputT] | FoundationHarnessYielded[OutputT]
+class HarnessDriver:
+    """Sole owner, public-API caller, and consumer of one entered Harness stream."""
 
-
-class FoundationHarnessRuntimeCoordinator(
-    RunControlCoordinator,
-    HarnessResultCoordinator,
-    Protocol,
-):
-    """Attempt coordinator surface required by the outer Harness runtime."""
-
-    @property
-    def current_state(self) -> StoredRunState: ...
-
-    async def attach_stream[OutputT](
+    def __init__(
         self,
-        stream: HarnessRunStream[OutputT],
-        preparation: AttemptPreparationAccepted,
-    ) -> None: ...
-
-    async def complete_handoff(self) -> AttemptMutationReceipt: ...
-
-
-class FoundationHarnessRuntime:
-    """Build, enter, consume, and finalize one Foundation-owned Harness Run."""
-
-    def __init__(self, builder: HarnessBuilder) -> None:
+        builder: HarnessBuilder,
+        *,
+        control: RunControlPort,
+        projector: HarnessEventProjector,
+    ) -> None:
         if not isinstance(builder, HarnessBuilder):
-            raise TypeError("Foundation Harness runtime requires a HarnessBuilder")
+            raise TypeError("Harness driver requires a HarnessBuilder")
         self._builder = builder
+        self._control = control
+        self._projector = projector
+        self._driver_token = object()
+        self._run_token: object | None = None
+        self._stream: HarnessRunStream[Any] | None = None
+        self._model_attempt_token: object | None = None
+        self._model_attempt_run_id: str | None = None
+        self._boundary: _DriverHookBoundary | None = None
+        self._used = False
 
-    async def execute[OutputT](
+    async def run[OutputT](
         self,
         invocation: FoundationHarnessInvocation[OutputT],
         *,
-        coordinator: FoundationHarnessRuntimeCoordinator,
         preparation: AttemptPreparationAccepted,
-        consumer: HarnessStreamConsumer,
-    ) -> FoundationHarnessExecution[OutputT]:
-        state = coordinator.current_state.envelope
+    ) -> HarnessRunResult[OutputT]:
+        if self._used:
+            raise RunError(
+                "Harness driver cannot be reused.",
+                code="foundation_driver_reused",
+            )
+        self._used = True
+        state = self._control.current_state.envelope
         input_source, deferred_resume = _select_attempt_input(invocation, state)
-        definition = compose_run_control(invocation.definition, coordinator)
+        definition = compose_run_control(invocation.definition, self._control, self)
         executable = self._builder.build(definition)
         bindings = invocation.collaborators.create_bindings()
         stream = _create_stream(
@@ -230,14 +231,210 @@ class FoundationHarnessRuntime:
             usage_limits=invocation.usage_limits,
         )
         async with stream as entered:
-            await coordinator.attach_stream(entered, preparation)
-            consumption = await consumer.consume(entered, coordinator)
-        if isinstance(consumption, HarnessTerminalConsumption):
-            return consumption
-        return FoundationHarnessYielded(
-            result=consumption.result,
-            mutation=await coordinator.complete_handoff(),
+            self._attach(entered, invocation.collaborators.instance, state.thread_id)
+            try:
+                await self._control.enter_harness(
+                    HarnessRunIdentity(thread_id=entered.thread_id, run_id=entered.run_id),
+                    preparation,
+                )
+                await self._control.after_stream_entry()
+                return await self._consume(entered)
+            finally:
+                self._detach()
+
+    def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> HarnessContextBinding:
+        self._require_context(ctx)
+        run_token = self._require_run_token()
+        model_attempt_token = object()
+        self._model_attempt_token = model_attempt_token
+        self._model_attempt_run_id = ctx.run_id
+        return HarnessContextBinding(
+            self._driver_token,
+            run_token,
+            model_attempt_token,
         )
+
+    @asynccontextmanager
+    async def hook_boundary(
+        self,
+        ctx: RunContext[AgentContext],
+        binding: HarnessContextBinding | None,
+    ) -> AsyncIterator[HarnessHookBoundary]:
+        self._require_context(ctx)
+        if binding is None:
+            raise RunError(
+                "Foundation run-control hook is missing its ModelAttempt binding.",
+                code="foundation_control_identity_mismatch",
+            )
+        self.validate_binding(binding)
+        if self._model_attempt_run_id != ctx.run_id:
+            raise RunError(
+                "Foundation run control received a binding from another ModelAttempt.",
+                code="foundation_control_identity_mismatch",
+            )
+        if self._boundary is not None:
+            raise RunError(
+                "Foundation run-control hook boundaries cannot overlap.",
+                code="foundation_control_reentrant",
+            )
+        boundary = _DriverHookBoundary(self, ctx)
+        self._boundary = boundary
+        try:
+            yield boundary
+        finally:
+            boundary.close()
+            self._boundary = None
+
+    def validate_binding(self, binding: HarnessContextBinding) -> None:
+        if (
+            binding._driver_token is not self._driver_token
+            or binding._run_token is not self._require_run_token()
+            or binding._model_attempt_token is not self._model_attempt_token
+        ):
+            raise RunError(
+                "Foundation run control received an incompatible Harness binding.",
+                code="foundation_control_identity_mismatch",
+            )
+
+    def validate_boundary(self, boundary: HarnessHookBoundary) -> None:
+        if boundary is not self._boundary:
+            raise RunError(
+                "Foundation run control received an inactive Harness hook boundary.",
+                code="foundation_control_identity_mismatch",
+            )
+
+    async def steer(self, input: RunInputValue) -> str:
+        return await self._require_stream().steer(input)
+
+    async def cancel(self) -> None:
+        stream = self._stream
+        if stream is not None:
+            stream.cancel()
+
+    async def export_state(self) -> HarnessState:
+        return await self._require_stream().export_state()
+
+    async def _consume[OutputT](
+        self,
+        stream: HarnessRunStream[OutputT],
+    ) -> HarnessRunResult[OutputT]:
+        terminal: HarnessRunResult[OutputT] | None = None
+        async for item in stream:
+            if isinstance(item, HarnessRunResultEvent):
+                if terminal is not None:
+                    raise RunError(
+                        "Harness stream emitted more than one terminal result.",
+                        code="foundation_stream_terminal_duplicate",
+                    )
+                if item.thread_id != stream.thread_id or item.run_id != stream.run_id:
+                    raise RunError(
+                        "Harness terminal result does not match the entered stream.",
+                        code="foundation_control_identity_mismatch",
+                    )
+                terminal = item.result
+                continue
+            if terminal is not None:
+                raise RunError(
+                    "Harness stream emitted an observation after its terminal result.",
+                    code="foundation_stream_event_after_terminal",
+                )
+            await self._projector.project(item)
+        if terminal is None:
+            raise RunError(
+                "Harness stream ended without a terminal result.",
+                code="foundation_stream_terminal_missing",
+            )
+        return terminal
+
+    def _attach[OutputT](
+        self,
+        stream: HarnessRunStream[OutputT],
+        instance: AgentInstanceContext,
+        thread_id: str,
+    ) -> None:
+        context = stream.context
+        if stream.thread_id != thread_id or context.instance is not instance:
+            raise RunError(
+                "Harness Run identity does not match Foundation preparation.",
+                code="foundation_control_identity_mismatch",
+            )
+        self._stream = stream
+        self._run_token = object()
+
+    def _detach(self) -> None:
+        if self._boundary is not None:
+            self._boundary.close()
+        self._boundary = None
+        self._stream = None
+        self._model_attempt_token = None
+        self._model_attempt_run_id = None
+        self._run_token = None
+
+    def _require_context(self, ctx: RunContext[AgentContext]) -> None:
+        if ctx.deps is not self._require_stream().context:
+            raise RunError(
+                "Foundation run control received an incompatible Harness context.",
+                code="foundation_control_identity_mismatch",
+            )
+
+    def _require_run_token(self) -> object:
+        if self._run_token is None:
+            raise RunError(
+                "The Harness driver is not attached to an active Run.",
+                code="run_not_active",
+            )
+        return self._run_token
+
+    def _require_stream(self) -> HarnessRunStream[Any]:
+        if self._stream is None:
+            raise RunError(
+                "The Harness driver is not attached to an active Run.",
+                code="run_not_active",
+            )
+        return self._stream
+
+
+class _DriverHookBoundary:
+    """Ephemeral adaptation of one currently awaited Harness hook context."""
+
+    def __init__(self, driver: HarnessDriver, ctx: RunContext[AgentContext]) -> None:
+        self._driver = driver
+        self._ctx: RunContext[AgentContext] | None = ctx
+
+    async def enqueue(
+        self,
+        input: RunInputValue,
+        *,
+        priority: Literal["asap"],
+    ) -> str:
+        ctx = self._require_context()
+        enqueue_id = (
+            ctx.enqueue(input, priority=priority) if isinstance(input, str) else ctx.enqueue(*input, priority=priority)
+        )
+        if enqueue_id is None:
+            raise RunError(
+                "A Thread inbox entry produced no Harness input.",
+                code="foundation_inbox_input_invalid",
+            )
+        return enqueue_id
+
+    async def export_state(
+        self,
+        complete_messages: Sequence[ModelMessage],
+    ) -> HarnessState:
+        return await self._require_context().deps.export_state(complete_messages)
+
+    def close(self) -> None:
+        self._ctx = None
+
+    def _require_context(self) -> RunContext[AgentContext]:
+        self._driver.validate_boundary(self)
+        if self._ctx is None:
+            raise RunError(
+                "Harness hook boundary is no longer active.",
+                code="foundation_control_identity_mismatch",
+            )
+        return self._ctx
 
 
 def _select_attempt_input[OutputT](
@@ -340,12 +537,10 @@ def _require_environment_entry(entry: object) -> None:
 __all__ = [
     "FoundationHarnessCollaborators",
     "FoundationHarnessEnvironment",
-    "FoundationHarnessExecution",
     "FoundationHarnessInput",
     "FoundationHarnessInvocation",
-    "FoundationHarnessRuntime",
-    "FoundationHarnessRuntimeCoordinator",
-    "FoundationHarnessYielded",
+    "HarnessDriver",
+    "HarnessEventProjector",
     "ImmediateHarnessInput",
     "MaterializedHarnessInput",
     "MountedHarnessEnvironments",

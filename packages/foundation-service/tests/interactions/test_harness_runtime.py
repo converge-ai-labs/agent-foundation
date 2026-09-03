@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
 
 import pytest
 from a13n_environment_provider import (
@@ -25,8 +24,6 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
     HarnessObservationContext,
-    HarnessRunResult,
-    HarnessRunStream,
     RunPreparationContext,
 )
 from a13n_harness.errors import RunError
@@ -41,26 +38,21 @@ from a13n_service.interactions import (
     DeferredContinuationState,
     FoundationHarnessCollaborators,
     FoundationHarnessInvocation,
-    FoundationHarnessRuntime,
-    FoundationHarnessYielded,
-    HarnessOutcomeAdapter,
-    HarnessOutcomeProjection,
-    HarnessStreamConsumer,
-    HarnessTerminalConsumption,
+    HarnessContextBinding,
+    HarnessDriver,
+    HarnessHookBoundary,
+    HarnessRunIdentity,
     HostContinuationState,
     ImmediateHarnessInput,
     MaterializedHarnessInput,
     MountedHarnessEnvironments,
     RunStateEnvelope,
     RunStateStore,
-    RunTerminalCommitter,
-    RunTerminalDisposition,
-    RunTerminalReceipt,
     SingleHarnessEnvironment,
     StoredRunState,
 )
 from pydantic import TypeAdapter
-from pydantic_ai import RunContext, Tool
+from pydantic_ai import Tool
 from pydantic_ai.capabilities import Capability, NodeResult
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart
 from pydantic_ai.models import Model, ModelRequestContext, ModelResolutionContext
@@ -78,78 +70,58 @@ class _RuntimeCoordinator:
     current_state: StoredRunState
     instance: AgentInstanceContext
     trace: list[str]
+    boundaries: list[HarnessHookBoundary] = field(default_factory=list)
     planned_handoff: bool = False
     environment: Environment | None = None
-    _stream: HarnessRunStream[Any] | None = field(default=None, init=False)
+    driver: HarnessDriver | None = field(default=None, init=False)
 
-    async def attach_stream(
+    async def enter_harness(
         self,
-        stream: HarnessRunStream[Any],
+        identity: HarnessRunIdentity,
         preparation: AttemptPreparationAccepted,
     ) -> None:
         assert preparation.run_attempt_id == ATTEMPT_ID
-        assert stream.context.instance is self.instance
-        self._stream = stream
+        assert identity.thread_id == self.current_state.envelope.thread_id
+        assert identity.run_id
         self.trace.append("coordinator:attach")
 
-    async def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> None:
-        assert ctx.deps.instance is self.instance
+    async def after_stream_entry(self) -> None:
+        self.trace.append("coordinator:stream-entry")
+
+    async def bind_model_attempt(self, binding: HarnessContextBinding) -> None:
+        assert isinstance(binding, HarnessContextBinding)
         self.trace.append("coordinator:bind")
 
     async def before_model_request(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         request_context: ModelRequestContext,
     ) -> None:
-        del ctx, request_context
+        del request_context
+        self.boundaries.append(boundary)
         self.trace.append("coordinator:before-model")
         if self.planned_handoff:
-            assert self._stream is not None
-            self._stream.cancel()
+            assert self.driver is not None
+            await self.driver.cancel()
 
     async def after_model_response(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         response: ModelResponse,
     ) -> None:
-        del ctx, response
+        del response
+        self.boundaries.append(boundary)
         self.trace.append("coordinator:after-model")
 
     async def after_tool_batch(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         result: NodeResult[AgentContext],
+        complete_messages: Sequence[ModelMessage],
     ) -> None:
-        del ctx, result
+        del result, complete_messages
+        self.boundaries.append(boundary)
         self.trace.append("coordinator:after-tools")
-
-    async def commit_terminal_result(
-        self,
-        result: HarnessRunResult[Any],
-        *,
-        adapter: HarnessOutcomeAdapter,
-        committer: RunTerminalCommitter,
-    ) -> RunTerminalReceipt | None:
-        del adapter, committer
-        self.trace.append(f"coordinator:terminal:{result.status}")
-        if self.planned_handoff:
-            assert result.status == "cancelled"
-            return None
-        return RunTerminalReceipt(
-            disposition=RunTerminalDisposition.completed,
-            run_version=2,
-            attempt_version=2,
-            thread_version=2,
-        )
-
-    async def complete_handoff(self) -> AttemptMutationReceipt:
-        assert self.environment is None or not self.environment.is_entered
-        self.trace.append("coordinator:yield")
-        return AttemptMutationReceipt(
-            run_version=2,
-            attempt_version=2,
-            lease_expires_at=NOW + timedelta(minutes=5),
-        )
 
 
 @dataclass
@@ -177,26 +149,6 @@ class _EventProjector:
         self.events.append(event)
 
 
-class _UnusedOutcomeAdapter:
-    async def project(self, result: HarnessRunResult[Any]) -> HarnessOutcomeProjection:
-        del result
-        raise AssertionError("stub coordinator must own terminal selection")
-
-
-class _UnusedTerminalCommitter:
-    async def commit_state_outcome(self, *args: object, **kwargs: object) -> RunTerminalReceipt:
-        del args, kwargs
-        raise AssertionError("stub coordinator must own terminal selection")
-
-    async def commit_failure(self, *args: object, **kwargs: object) -> RunTerminalReceipt:
-        del args, kwargs
-        raise AssertionError("stub coordinator must own terminal selection")
-
-    async def reconcile_cancelled(self, *args: object, **kwargs: object) -> RunTerminalReceipt:
-        del args, kwargs
-        raise AssertionError("stub coordinator must own terminal selection")
-
-
 async def _stored_state(objects, envelope) -> StoredRunState:
     return await RunStateStore(objects).create(TENANT_ID, envelope)
 
@@ -222,12 +174,17 @@ def _preparation() -> AttemptPreparationAccepted:
     )
 
 
-def _consumer(projector: _EventProjector | None = None) -> HarnessStreamConsumer:
-    return HarnessStreamConsumer(
+def _driver(
+    coordinator: _RuntimeCoordinator,
+    projector: _EventProjector | None = None,
+) -> HarnessDriver:
+    driver = HarnessDriver(
+        HarnessBuilder(instrumentation=None),
+        control=coordinator,
         projector=projector or _EventProjector(),
-        outcome_adapter=_UnusedOutcomeAdapter(),
-        terminal_committer=_UnusedTerminalCommitter(),
     )
+    coordinator.driver = driver
+    return driver
 
 
 def _environment(root: Path, environment_id: str) -> DirectLocalEnvironment:
@@ -283,7 +240,7 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
     usage = RunUsage()
     coordinator = _RuntimeCoordinator(state, instance, trace)
     projector = _EventProjector()
-    result = await FoundationHarnessRuntime(HarnessBuilder(instrumentation=None)).execute(
+    result = await _driver(coordinator, projector).run(
         FoundationHarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(model="logical:accepted"),
@@ -307,15 +264,11 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
             usage=usage,
             usage_limits=UsageLimits(request_limit=2),
         ),
-        coordinator=coordinator,
         preparation=_preparation(),
-        consumer=_consumer(projector),
     )
 
-    assert isinstance(result, HarnessTerminalConsumption)
-    assert result.result.output_or_raise() == "completed"
-    assert result.terminal.disposition is RunTerminalDisposition.completed
-    assert resolver_calls == [(result.result.run_id, state.envelope.thread_id, "logical:accepted")]
+    assert result.output_or_raise() == "completed"
+    assert resolver_calls == [(result.run_id, state.envelope.thread_id, "logical:accepted")]
     assert model_calls
     assert model_context.requests
     assert projector.events
@@ -324,6 +277,10 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
     assert trace.index("input-factory") < trace.index("coordinator:attach")
     assert trace.index("coordinator:attach") < trace.index("model-resolver") < trace.index("model")
     assert "coordinator:bind" in trace
+    assert coordinator.boundaries
+    with pytest.raises(RunError) as error:
+        await coordinator.boundaries[0].enqueue("late input", priority="asap")
+    assert error.value.code == "foundation_control_identity_mismatch"
 
 
 async def test_recovery_omits_already_applied_input_factory(
@@ -369,7 +326,8 @@ async def test_recovery_omits_already_applied_input_factory(
         model_calls.append(tuple(messages))
         yield "recovered"
 
-    result = await FoundationHarnessRuntime(HarnessBuilder(instrumentation=None)).execute(
+    coordinator = _RuntimeCoordinator(state, instance, trace)
+    result = await _driver(coordinator).run(
         FoundationHarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(),
@@ -379,13 +337,10 @@ async def test_recovery_omits_already_applied_input_factory(
             input=MaterializedHarnessInput(must_not_replay),
             collaborators=FoundationHarnessCollaborators(instance=instance),
         ),
-        coordinator=_RuntimeCoordinator(state, instance, trace),
         preparation=_preparation(),
-        consumer=_consumer(),
     )
 
-    assert isinstance(result, HarnessTerminalConsumption)
-    assert result.result.status == "completed", result.result.failure
+    assert result.status == "completed", result.failure
     assert len(model_calls) == 1
 
 
@@ -415,7 +370,8 @@ async def test_pending_deferred_state_requires_native_resume(
     instance = _instance()
 
     with pytest.raises(RunError) as exc_info:
-        await FoundationHarnessRuntime(HarnessBuilder(instrumentation=None)).execute(
+        coordinator = _RuntimeCoordinator(state, instance, [])
+        await _driver(coordinator).run(
             FoundationHarnessInvocation(
                 definition=AgentDefinition(
                     agent=AgentSpec(),
@@ -425,9 +381,7 @@ async def test_pending_deferred_state_requires_native_resume(
                 input=ImmediateHarnessInput(),
                 collaborators=FoundationHarnessCollaborators(instance=instance),
             ),
-            coordinator=_RuntimeCoordinator(state, instance, []),
             preparation=_preparation(),
-            consumer=_consumer(),
         )
 
     assert exc_info.value.code == "foundation_deferred_resume_required"
@@ -494,7 +448,8 @@ async def test_runtime_passes_exact_native_deferred_resume(
     )
     state = await _stored_state(interaction_object_store, pending)
     instance = _instance()
-    result = await FoundationHarnessRuntime(HarnessBuilder(instrumentation=None)).execute(
+    coordinator = _RuntimeCoordinator(state, instance, [])
+    result = await _driver(coordinator).run(
         FoundationHarnessInvocation(
             definition=definition(),
             input=ImmediateHarnessInput(),
@@ -507,13 +462,10 @@ async def test_runtime_passes_exact_native_deferred_resume(
                 ),
             ),
         ),
-        coordinator=_RuntimeCoordinator(state, instance, []),
         preparation=_preparation(),
-        consumer=_consumer(),
     )
 
-    assert isinstance(result, HarnessTerminalConsumption)
-    assert result.result.output_or_raise() == "resumed"
+    assert result.output_or_raise() == "resumed"
     assert tool_calls == ["executed"]
     assert len(model_calls) == 2
 
@@ -533,7 +485,7 @@ async def test_planned_handoff_yields_only_after_environment_close(
         planned_handoff=True,
         environment=environment,
     )
-    result = await FoundationHarnessRuntime(HarnessBuilder(instrumentation=None)).execute(
+    result = await _driver(coordinator).run(
         FoundationHarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(),
@@ -544,13 +496,9 @@ async def test_planned_handoff_yields_only_after_environment_close(
             collaborators=FoundationHarnessCollaborators(instance=instance),
             environment=SingleHarnessEnvironment(environment),
         ),
-        coordinator=coordinator,
         preparation=_preparation(),
-        consumer=_consumer(),
     )
 
-    assert isinstance(result, FoundationHarnessYielded)
-    assert result.result.status == "cancelled"
-    assert result.mutation.run_version == 2
+    assert result.status == "cancelled"
     assert not environment.is_entered
-    assert trace[-2:] == ["coordinator:terminal:cancelled", "coordinator:yield"]
+    assert trace[-1] == "coordinator:before-model"
