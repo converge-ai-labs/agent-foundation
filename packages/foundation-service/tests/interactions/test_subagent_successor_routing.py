@@ -28,7 +28,7 @@ from a13n_service.subagents import (
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import NOW, TENANT_ID
+from .conftest import NOW, TENANT_ID, USER_ID, WORKSPACE_ID
 from .test_acceptance import _accepted_run
 from .test_subagent_results import RecordingSignals, _accept_child, _fail_child
 from .test_subagent_successors import _seal_parent
@@ -280,5 +280,67 @@ async def test_automatic_successor_reauthorizes_origin_principal_before_commit(
     async with short_session(interaction_sessions) as database:
         entry = await database.get(ThreadInboxRecord, result.id)
         successor = await database.get(RunRecord, "run_eeeeeeeeeeeeeeee")
+        assert entry is not None and successor is None
+        assert (entry.status, entry.target_run_id) == ("pending", None)
+
+
+async def test_automatic_successor_reauthorizes_child_result_before_commit(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states, parent, authority, child_run_id = await _accept_child(
+        interaction_sessions,
+        interaction_object_store,
+    )
+    await _seal_parent(
+        interaction_sessions,
+        interaction_object_store,
+        states,
+        parent,
+        authority,
+        outcome="completed",
+    )
+    await _fail_child(interaction_sessions, child_run_id)
+    result = await AsyncSubagentResultPublisher(
+        interaction_sessions,
+        entry_id_factory=lambda: "inb_ffffffffffffffff",
+        clock=lambda: NOW + timedelta(seconds=5),
+    ).publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    async with transaction(interaction_sessions) as database:
+        workspace_binding = await database.scalar(
+            select(RoleBindingRecord).where(
+                RoleBindingRecord.principal_id == parent.authority_principal.principal_id,
+                RoleBindingRecord.resource_type == "workspace",
+            )
+        )
+        assert workspace_binding is not None
+        await database.delete(workspace_binding)
+        database.add(
+            RoleBindingRecord(
+                id="rbac_ffffffffffffffff",
+                organization_id=TENANT_ID,
+                workspace_id=WORKSPACE_ID,
+                principal_type="user",
+                principal_id=USER_ID,
+                resource_type="agent",
+                resource_id=parent.agent_id,
+                role_key="runner",
+                created_by_user_id=USER_ID,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+
+    with pytest.raises(AsyncSubagentSuccessorError, match="no longer authorized"):
+        await AsyncSubagentSuccessorReconciler(
+            interaction_sessions,
+            states,
+            run_id_factory=lambda _tenant, _entry, _parent: "run_ffffffffffffffff",
+            clock=lambda: NOW + timedelta(seconds=6),
+        ).reconcile_thread(tenant_id=TENANT_ID, thread_id=parent.thread_id)
+
+    async with short_session(interaction_sessions) as database:
+        entry = await database.get(ThreadInboxRecord, result.id)
+        successor = await database.get(RunRecord, "run_ffffffffffffffff")
         assert entry is not None and successor is None
         assert (entry.status, entry.target_run_id) == ("pending", None)

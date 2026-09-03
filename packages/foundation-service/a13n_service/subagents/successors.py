@@ -19,7 +19,7 @@ from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import Run
 from a13n_service.interactions.environment_bindings import add_run_with_environment_binding
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
-from a13n_service.interactions.models import SessionRecord
+from a13n_service.interactions.models import RunRecord, SessionRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
     RunStateStore,
@@ -202,14 +202,18 @@ class AsyncSubagentSuccessorReconciler:
                 )
                 if isinstance(selected, AsyncSubagentSuccessorReceipt):
                     return selected
-                await _validate_final_selection(
+                child_run_id = await _validate_final_selection(
                     database,
                     selected,
                     prepared,
                     parent_state,
                     initial_state,
                 )
-                session = await _authorize_successor(database, selected)
+                session = await _authorize_successor(
+                    database,
+                    selected,
+                    child_run_id=child_run_id,
+                )
                 await add_run_with_environment_binding(
                     database,
                     run=prepared.run,
@@ -274,8 +278,8 @@ async def _validate_final_selection(
     prepared: PreparedAsyncResultSuccessor,
     parent_state: StoredRunState,
     initial_state: StoredRunState,
-) -> None:
-    await validate_async_subagent_result_authority(database, selected.entry.to_resource())
+) -> str:
+    payload = await validate_async_subagent_result_authority(database, selected.entry.to_resource())
     _verify_selected_parent_state(selected.selected_parent.to_resource(), parent_state)
     expected = prepare_async_result_successor(
         selected_parent=selected.selected_parent.to_resource(),
@@ -288,11 +292,14 @@ async def _validate_final_selection(
     if expected != prepared or initial_state.envelope != prepared.state:
         raise AsyncSubagentSuccessorError("automatic successor preparation no longer matches authority")
     validate_prepared_run(prepared.run, prepared.state)
+    return payload.child_run_id
 
 
 async def _authorize_successor(
     database: AsyncSession,
     selected: LockedAsyncResultSelection,
+    *,
+    child_run_id: str,
 ) -> SessionRecord:
     session = await database.scalar(
         select(SessionRecord).where(
@@ -300,7 +307,19 @@ async def _authorize_successor(
             SessionRecord.id == selected.thread.session_id,
         )
     )
-    if session is None or selected.selected_parent.session_id != session.id or selected.origin.session_id != session.id:
+    child = await database.scalar(
+        select(RunRecord).where(
+            RunRecord.tenant_id == selected.thread.tenant_id,
+            RunRecord.id == child_run_id,
+        )
+    )
+    if (
+        session is None
+        or child is None
+        or selected.selected_parent.session_id != session.id
+        or selected.origin.session_id != session.id
+        or child.session_id != session.id
+    ):
         raise AsyncSubagentSuccessorError("automatic successor Session authority is incomplete")
     actor = AuthenticatedActor(
         principal=selected.origin.to_resource().authority_principal,
@@ -330,6 +349,13 @@ async def _authorize_successor(
             workspace_id=session.workspace_id,
             agent_id=selected.selected_parent.agent_id,
             action=WorkspaceAction.agent_invoke,
+        )
+        await authorize_agent(
+            database,
+            actor=actor,
+            workspace_id=session.workspace_id,
+            agent_id=child.agent_id,
+            action=WorkspaceAction.run_read,
         )
     except AuthorizationError as error:
         raise AsyncSubagentSuccessorError("automatic successor is no longer authorized") from error
