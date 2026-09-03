@@ -1,12 +1,29 @@
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from a13n_service.agents.models import AgentRecord
+from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
+from a13n_service.connectivity.ingress.admission import IngressEventService
+from a13n_service.connectivity.ingress.domain import InputBatchingPolicy
+from a13n_service.connectivity.ingress.provider import (
+    AdmissionReceipt,
+    DefaultRoute,
+    ExternalRef,
+    InboundEvent,
+    ProviderCompleteDecision,
+    ProviderEventDecision,
+    ProviderHttpResponse,
+    ProviderRequest,
+    ProviderRequestDecision,
+    ProviderRequestError,
+)
+from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
 from a13n_service.database.metadata import service_metadata
@@ -21,6 +38,7 @@ from a13n_service.iam.models import (
 from a13n_service.secrets import InternalSecretService, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -36,6 +54,8 @@ class FakeIngressAdapter:
     provider_key = "fake"
     config_versions = frozenset({"fake_http_v1"})
     allows_runtime_ambiguity = False
+    max_request_bytes = 1024 * 1024
+    dedup_horizon_seconds = 3600
 
     def validate_config(self, value: object, *, config_version: str) -> dict[str, object]:
         if config_version != "fake_http_v1" or not isinstance(value, dict) or set(value) != {"installation_id"}:
@@ -72,6 +92,98 @@ class FakeIngressAdapter:
     def prove_non_overlap(self, left: dict[str, object], right: dict[str, object]) -> bool | None:
         return left["channel"] != right["channel"]
 
+    async def authenticate_and_normalize(
+        self,
+        request: ProviderRequest,
+        *,
+        ingress_id: str,
+        ingress_config: dict[str, object],
+        credentials: dict[str, object],
+        received_at: datetime,
+    ) -> ProviderRequestDecision:
+        del ingress_id
+        if request.headers.get("authorization") != f"Bearer {credentials['token']}":
+            return ProviderCompleteDecision(
+                response=ProviderHttpResponse(status_code=401, body=b"unauthorized"),
+            )
+        try:
+            payload = json.loads(request.body)
+        except json.JSONDecodeError as error:
+            raise ProviderRequestError(
+                ProviderHttpResponse(status_code=400, body=b"invalid payload"),
+                reason_code="invalid_payload",
+            ) from error
+        if not isinstance(payload, dict):
+            raise ProviderRequestError(
+                ProviderHttpResponse(status_code=400, body=b"invalid payload"),
+                reason_code="invalid_payload",
+            )
+        installation_id = payload.get("installation_id")
+        if installation_id != ingress_config["installation_id"]:
+            return ProviderCompleteDecision(
+                response=ProviderHttpResponse(status_code=401, body=b"unauthorized"),
+            )
+        event_id = payload.get("event_id")
+        channel = payload.get("channel")
+        text = payload.get("text")
+        if not all(isinstance(item, str) and item for item in (event_id, channel, text)):
+            raise ProviderRequestError(
+                ProviderHttpResponse(status_code=400, body=b"invalid payload"),
+                reason_code="invalid_payload",
+            )
+        return ProviderEventDecision(
+            event=InboundEvent(
+                identity_kind="delivery",
+                external_event_id=event_id,
+                normalization_version="fake_v1",
+                type="message.created",
+                received_at=received_at,
+                text=text,
+                context={"installation_id": installation_id, "channel": channel},
+                refs={"conversation": ExternalRef(kind="channel", id=channel)},
+                data={},
+                ordering_key=event_id,
+                retain_raw=payload.get("retain_raw") is True,
+            ),
+        )
+
+    def route_matches(self, event: InboundEvent, match: dict[str, object], *, config_version: str) -> bool:
+        del config_version
+        return event.context.get("channel") == match.get("channel")
+
+    def default_route(
+        self,
+        event: InboundEvent,
+        ingress_config: dict[str, object],
+        *,
+        config_version: str,
+    ) -> DefaultRoute:
+        del ingress_config, config_version
+        return DefaultRoute(
+            external_ref_key="conversation",
+            provider_context={"channel": event.context["channel"]},
+            input_mapping={
+                "op": "object",
+                "fields": {
+                    "schema_version": {"op": "static", "value": "2"},
+                    "content": {"op": "static", "value": []},
+                    "structured_content": {"op": "select", "path": ["events"]},
+                },
+            },
+            input_batching=InputBatchingPolicy(min_interval_ms=100, max_batch_events=10),
+            provider_policy={},
+        )
+
+    def acknowledge(self, receipt: AdmissionReceipt) -> ProviderHttpResponse:
+        return ProviderHttpResponse(
+            status_code=202 if receipt.status == "pending" else 200,
+            headers={"content-type": "application/json"},
+            body=json.dumps(receipt.model_dump(mode="json"), sort_keys=True).encode(),
+        )
+
+    def failure_response(self, reason_code: str) -> ProviderHttpResponse:
+        return ProviderHttpResponse(status_code=503, body=reason_code.encode())
+
 
 def actor() -> AuthenticatedActor:
     return AuthenticatedActor(
@@ -83,16 +195,21 @@ def actor() -> AuthenticatedActor:
     )
 
 
-def adapter_registry() -> AdapterRegistry[FakeIngressAdapter]:
+def adapter_registry() -> AdapterRegistry[IngressAdapter]:
     return AdapterRegistry(
         (
-            AdapterDefinition(
+            AdapterDefinition[IngressAdapter](
                 key="fake",
                 config_versions=frozenset({"fake_http_v1"}),
                 factory=FakeIngressAdapter,
             ),
         )
     )
+
+
+@pytest.fixture
+def ingress_adapter_registry() -> AdapterRegistry[IngressAdapter]:
+    return adapter_registry()
 
 
 @pytest.fixture
@@ -217,16 +334,51 @@ async def connectivity_sessions(tmp_path: Path) -> AsyncIterator[async_sessionma
 
 
 @pytest.fixture
-def ingress_service(connectivity_sessions: async_sessionmaker[AsyncSession]) -> IngressService:
-    secrets = InternalSecretService(
+def connectivity_secrets(connectivity_sessions: async_sessionmaker[AsyncSession]) -> InternalSecretService:
+    return InternalSecretService(
         connectivity_sessions,
         SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"),
         clock=lambda: NOW,
     )
+
+
+@pytest.fixture
+def ingress_service(
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+    connectivity_secrets: InternalSecretService,
+) -> IngressService:
     return IngressService(
         connectivity_sessions,
         adapter_registry(),
-        secrets,
+        connectivity_secrets,
+        clock=lambda: NOW,
+    )
+
+
+@pytest.fixture
+async def connectivity_objects(tmp_path: Path) -> LocalObjectStore:
+    return await LocalObjectStore.create(tmp_path / "connectivity-objects")
+
+
+@pytest.fixture
+def ingress_event_service(
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+    connectivity_secrets: InternalSecretService,
+    connectivity_objects: LocalObjectStore,
+) -> IngressEventService:
+    return IngressEventService(
+        connectivity_sessions,
+        adapter_registry(),
+        connectivity_secrets,
+        IngressRawObjectStore(connectivity_objects),
+        request_max_bytes=1024 * 1024,
+        raw_retention_seconds=3600,
+        workspace_pending_max_count=100,
+        workspace_pending_max_bytes=1024 * 1024,
+        ingress_pending_max_count=100,
+        ingress_pending_max_bytes=1024 * 1024,
+        batch_max_bytes=1024 * 1024,
+        dedup_horizon_seconds=3600,
         clock=lambda: NOW,
     )
 

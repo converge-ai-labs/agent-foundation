@@ -175,14 +175,21 @@ def record_command(
     )
 
 
-def secret_context(*, organization_id: str, workspace_id: str, ingress_id: str, generation: int) -> SecretUseContext:
+def secret_context(
+    *,
+    organization_id: str,
+    workspace_id: str,
+    ingress_id: str,
+    generation: int,
+    operation: SecretOperation = SecretOperation.management,
+) -> SecretUseContext:
     return SecretUseContext(
         organization_id=organization_id,
         workspace_id=workspace_id,
         owner_type=SecretOwnerType.ingress,
         owner_id=ingress_id,
         key="credential_bundle",
-        operation=SecretOperation.management,
+        operation=operation,
         credential_generation=generation,
     )
 

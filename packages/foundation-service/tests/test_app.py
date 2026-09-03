@@ -206,6 +206,13 @@ def test_connectivity_role_exposes_no_control_plane_routes() -> None:
     assert request(app, "/healthz").json() == {"status": "ok", "role": "connectivity"}
     assert request(app, "/api/openapi.json").status_code == 404
     assert request(app, "/").status_code == 404
+    assert request(app, "/connectivity/v1/ingresses/ing_test/events", method="POST").status_code == 503
+
+
+def test_non_connectivity_roles_do_not_expose_provider_data_plane() -> None:
+    for role in (ServiceRole.control, ServiceRole.worker):
+        app = create_app(ServiceSettings(_env_file=None, role=role))
+        assert request(app, "/connectivity/v1/ingresses/ing_test/events", method="POST").status_code == 404
 
 
 def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:

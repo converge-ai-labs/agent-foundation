@@ -5,7 +5,16 @@ from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
-TABLES = {"connectivity_commands", "ingresses", "ingress_agents", "ingress_routes"}
+TABLES = {
+    "agent_thread_bindings",
+    "connectivity_commands",
+    "ingress_admissions",
+    "ingress_agents",
+    "ingress_batch_events",
+    "ingress_batches",
+    "ingress_routes",
+    "ingresses",
+}
 
 
 def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
@@ -19,6 +28,8 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         command_columns = {column["name"] for column in inspector.get_columns("connectivity_commands")}
         assert "idempotency_key_digest" in command_columns
         assert "idempotency_key" not in command_columns
+        admission_columns = {column["name"] for column in inspector.get_columns("ingress_admissions")}
+        assert {"provider_context_json", "mapping_digest", "dedup_expires_at"} <= admission_columns
     finally:
         engine.dispose()
     migrator.downgrade("base")

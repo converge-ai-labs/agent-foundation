@@ -28,6 +28,14 @@ from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.ingress.admission import IngressEventService
+from a13n_service.connectivity.ingress.admission_domain import (
+    FoundationInputAcceptor,
+    UnavailableFoundationInputAcceptor,
+)
+from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
+from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
+from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
 from a13n_service.connectivity.ingress.router import router as ingress_router
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
@@ -36,6 +44,7 @@ from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.environments.testing import EnvironmentAttachmentTester
 from a13n_service.iam import RequestAuthenticator
+from a13n_service.ids import new_object_id
 from a13n_service.models.connection_test import NativeModelConnectionTester
 from a13n_service.models.endpoint_policy import EndpointPolicy
 from a13n_service.models.model_factory import NativeModelFactory
@@ -120,6 +129,7 @@ class ServiceComponents:
     trace_query_provider_registry: TraceQueryProviderRegistry | None = None
     ingress_adapter_registry: AdapterRegistry[IngressAdapter] | None = None
     connector_adapter_registry: AdapterRegistry[ConnectorAdapter] | None = None
+    foundation_input_acceptor: FoundationInputAcceptor | None = None
     builtin_plugin_artifacts: tuple[BuiltinPluginArtifact, ...] = ()
 
 
@@ -212,6 +222,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
             plugin_objects = PluginObjectStore(storage.objects)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
+            ingress_admission_reconciler: IngressAdmissionReconciler | None = None
             plugin_runtime_command_coordinator: PluginRuntimeCommandCoordinator | None = None
             plugin_runner_supervisor: PluginRunnerSupervisor | None = None
             if settings.role in _WORKER_ROLES:
@@ -427,6 +438,44 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     max_attempts=settings.asset_cleanup_max_attempts,
                 )
                 app.state.asset_cleanup_reconciler = asset_cleanup_reconciler
+            if settings.role in _CONNECTIVITY_ROLES:
+                raw_objects = IngressRawObjectStore(storage.objects)
+                app.state.ingress_event_service = IngressEventService(
+                    storage.sessions,
+                    app.state.ingress_adapter_registry,
+                    app.state.internal_secret_service,
+                    raw_objects,
+                    request_max_bytes=settings.connectivity_provider_request_max_bytes,
+                    raw_retention_seconds=settings.connectivity_protected_raw_retention_seconds,
+                    workspace_pending_max_count=settings.connectivity_workspace_pending_max_count,
+                    workspace_pending_max_bytes=settings.connectivity_workspace_pending_max_bytes,
+                    ingress_pending_max_count=settings.connectivity_ingress_pending_max_count,
+                    ingress_pending_max_bytes=settings.connectivity_ingress_pending_max_bytes,
+                    batch_max_bytes=settings.connectivity_batch_max_bytes,
+                    dedup_horizon_seconds=settings.connectivity_dedup_horizon_seconds,
+                )
+                input_acceptor = app.state.components.foundation_input_acceptor
+                if input_acceptor is None:
+                    logger.warning(
+                        "connectivity_input_bridge_unavailable",
+                        extra={
+                            "event": "connectivity_input_bridge_unavailable",
+                            "role": settings.role.value,
+                        },
+                    )
+                    input_acceptor = UnavailableFoundationInputAcceptor(
+                        retry_seconds=settings.connectivity_admission_poll_interval_seconds
+                    )
+                ingress_admission_reconciler = IngressAdmissionReconciler(
+                    storage.sessions,
+                    input_acceptor,
+                    instance_id=settings.service_instance_id or new_object_id("svc"),
+                    poll_interval_seconds=settings.connectivity_admission_poll_interval_seconds,
+                    lease_seconds=settings.connectivity_admission_lease_seconds,
+                    max_attempts=settings.connectivity_admission_max_attempts,
+                    max_backoff_seconds=settings.connectivity_admission_max_backoff_seconds,
+                )
+                app.state.ingress_admission_reconciler = ingress_admission_reconciler
             if settings.role in _WORKER_ROLES:
                 app.state.native_model_factory = native_model_factory
                 app.state.skill_runtime_preparer = SkillRuntimePreparer(storage.sessions, package_store)
@@ -435,6 +484,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     background_tasks.start_soon(asset_cleanup_reconciler.run)
                 if plugin_runtime_command_coordinator is not None:
                     background_tasks.start_soon(plugin_runtime_command_coordinator.run)
+                if ingress_admission_reconciler is not None:
+                    background_tasks.start_soon(ingress_admission_reconciler.run)
                 logger.info(
                     "service_started",
                     extra={
@@ -537,6 +588,9 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
                 detail="required storage unavailable",
             ) from exc
         return {"status": "ready", "role": resolved_settings.role.value}
+
+    if resolved_settings.role in _CONNECTIVITY_ROLES:
+        app.include_router(ingress_data_router)
 
     if serves_control_plane:
         app.include_router(agent_router)
