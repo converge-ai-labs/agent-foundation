@@ -11,7 +11,7 @@ from pydantic import BaseModel, SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.connectivity.adapters import IngressAdapter
+from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.models import ConnectivityCommandRecord
 from a13n_service.iam.authorization import (
@@ -97,7 +97,7 @@ async def require_non_overlapping(
     session: AsyncSession,
     adapter: IngressAdapter,
     ingress_id: str,
-    candidate: dict[str, object],
+    candidate: JsonObject,
     *,
     exclude_route_id: str | None = None,
 ) -> None:

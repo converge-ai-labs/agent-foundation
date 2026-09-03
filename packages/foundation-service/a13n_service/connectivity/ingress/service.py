@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord
-from a13n_service.connectivity.adapters import IngressAdapter
+from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.iam.authorization import (
@@ -382,7 +382,7 @@ class IngressService:
             return record.to_resource(await ingress_agent_ids(session, ingress_id))
 
 
-def _validate_config(adapter: IngressAdapter, value: object, version: str) -> dict[str, object]:
+def _validate_config(adapter: IngressAdapter, value: object, version: str) -> JsonObject:
     try:
         return adapter.validate_config(value, config_version=version)
     except ValueError as error:
@@ -391,14 +391,14 @@ def _validate_config(adapter: IngressAdapter, value: object, version: str) -> di
         ) from error
 
 
-def _validate_credentials(adapter: IngressAdapter, value: dict[str, SecretStr], version: str) -> dict[str, object]:
+def _validate_credentials(adapter: IngressAdapter, value: dict[str, SecretStr], version: str) -> JsonObject:
     try:
         return adapter.validate_credentials(clear_credentials(value), config_version=version)
     except ValueError as error:
         raise IngressError("invalid_credentials", "Ingress credentials are invalid.", status_code=400) from error
 
 
-def _configuration_identity(adapter: IngressAdapter, value: dict[str, object], version: str) -> object:
+def _configuration_identity(adapter: IngressAdapter, value: JsonObject, version: str) -> object:
     return adapter.configuration_identity(value, config_version=version)
 
 

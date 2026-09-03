@@ -3,16 +3,16 @@
 from datetime import datetime
 from typing import Protocol
 
+from a13n_service.connectivity.ingress.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
     DefaultRoute,
     InboundEvent,
+    ProviderEventRouting,
     ProviderHttpResponse,
     ProviderRequest,
     ProviderRequestDecision,
 )
-
-JsonObject = dict[str, object]
 
 
 class IngressAdapter(Protocol):
@@ -54,6 +54,15 @@ class IngressAdapter(Protocol):
     def default_route(
         self, event: InboundEvent, ingress_config: JsonObject, *, config_version: str
     ) -> DefaultRoute: ...
+
+    def classify(
+        self,
+        event: InboundEvent,
+        provider_policy: JsonObject,
+        ingress_config: JsonObject,
+        *,
+        config_version: str,
+    ) -> ProviderEventRouting: ...
 
     def acknowledge(self, receipt: AdmissionReceipt) -> ProviderHttpResponse: ...
 

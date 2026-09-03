@@ -17,6 +17,7 @@ from a13n_service.connectivity.ingress.provider import (
     ExternalRef,
     InboundEvent,
     ProviderCompleteDecision,
+    ProviderEligibleEventRouting,
     ProviderEventDecision,
     ProviderHttpResponse,
     ProviderRequest,
@@ -160,8 +161,6 @@ class FakeIngressAdapter:
     ) -> DefaultRoute:
         del ingress_config, config_version
         return DefaultRoute(
-            external_ref_key="conversation",
-            provider_context={"channel": event.context["channel"]},
             input_mapping={
                 "op": "object",
                 "fields": {
@@ -172,6 +171,21 @@ class FakeIngressAdapter:
             },
             input_batching=InputBatchingPolicy(min_interval_ms=100, max_batch_events=10),
             provider_policy={},
+        )
+
+    def classify(
+        self,
+        event: InboundEvent,
+        provider_policy: dict[str, object],
+        ingress_config: dict[str, object],
+        *,
+        config_version: str,
+    ) -> ProviderEligibleEventRouting:
+        del provider_policy, ingress_config, config_version
+        return ProviderEligibleEventRouting(
+            kind="eligible",
+            external_ref_key="conversation",
+            provider_context={"channel": event.context["channel"]},
         )
 
     def acknowledge(self, receipt: AdmissionReceipt) -> ProviderHttpResponse:

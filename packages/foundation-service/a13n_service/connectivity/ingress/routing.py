@@ -18,7 +18,14 @@ from .admission_models import AgentThreadBindingRecord
 from .errors import IngressError
 from .mapping import CompiledMapping, MappingError, compile_mapping
 from .models import IngressRecord, RouteRecord
-from .provider import DefaultRoute, ExternalRef, InboundEvent
+from .provider import (
+    DefaultRoute,
+    ExternalRef,
+    InboundEvent,
+    ProviderEventRouting,
+    ProviderIrrelevantEventRouting,
+    ProviderRequiresBindingRouting,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +87,11 @@ async def resolve_routing(
         return IrrelevantRouting(kind="irrelevant", reason_code="route_disabled")
 
     default = _default_route(adapter, ingress, event)
-    external_ref = event.refs.get(default.external_ref_key)
+    provider_policy = route.provider_policy_json if route is not None else default.provider_policy
+    classification = _classify(adapter, ingress, event, provider_policy)
+    if isinstance(classification, ProviderIrrelevantEventRouting):
+        return IrrelevantRouting(kind="irrelevant", reason_code=classification.reason_code)
+    external_ref = event.refs.get(classification.external_ref_key)
     if external_ref is None:
         return RejectedRouting(kind="rejected", reason_code="correlation_ref_missing", route=route)
     binding = await session.scalar(
@@ -90,6 +101,8 @@ async def resolve_routing(
             AgentThreadBindingRecord.external_ref_id == external_ref.id,
         )
     )
+    if isinstance(classification, ProviderRequiresBindingRouting) and binding is None:
+        return IrrelevantRouting(kind="irrelevant", reason_code="binding_required")
     selected_agent_id = binding.agent_id if binding is not None else (route.agent_id if route is not None else None)
     if selected_agent_id is None:
         selected_agent_id = ingress.default_agent_id
@@ -104,7 +117,6 @@ async def resolve_routing(
         raise IngressError("invalid_input_mapping", "Frozen input mapping is invalid.", status_code=409) from error
     min_interval_ms = route.min_interval_ms if route is not None else default.input_batching.min_interval_ms
     max_batch_events = route.max_batch_events if route is not None else default.input_batching.max_batch_events
-    provider_policy = route.provider_policy_json if route is not None else default.provider_policy
     overlay = None
     if route is not None:
         value = route.capability_overlays_json.get(selected_agent_id)
@@ -118,9 +130,9 @@ async def resolve_routing(
             "external_ref": external_ref.model_dump(mode="json"),
             "binding_id": binding.id if binding is not None else None,
             "mapping_digest": mapping.digest,
-            "provider_context": default.provider_context,
+            "provider_context": classification.provider_context,
             "provider_policy": provider_policy,
-            "native_actions": default.native_actions,
+            "native_actions": classification.native_actions,
             "capability_overlay": overlay,
         }
     )
@@ -134,9 +146,9 @@ async def resolve_routing(
         mapping=mapping,
         min_interval_ms=min_interval_ms,
         max_batch_events=max_batch_events,
-        provider_context=default.provider_context,
+        provider_context=classification.provider_context,
         provider_policy=provider_policy,
-        native_actions=default.native_actions,
+        native_actions=classification.native_actions,
         capability_overlay=overlay,
         compatibility_digest=compatibility,
     )
@@ -153,6 +165,23 @@ def _default_route(adapter: IngressAdapter, ingress: IngressRecord, event: Inbou
         raise IngressError(
             "invalid_provider_event", "Provider event cannot use default routing.", status_code=400
         ) from error
+
+
+def _classify(
+    adapter: IngressAdapter,
+    ingress: IngressRecord,
+    event: InboundEvent,
+    provider_policy: dict[str, JsonValue],
+) -> ProviderEventRouting:
+    try:
+        return adapter.classify(
+            event,
+            provider_policy,
+            ingress.provider_config_json,
+            config_version=ingress.provider_config_version,
+        )
+    except ValueError as error:
+        raise IngressError("invalid_provider_event", "Provider event cannot be classified.", status_code=400) from error
 
 
 def _digest(value: object) -> str:

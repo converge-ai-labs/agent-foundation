@@ -12,7 +12,7 @@ from pydantic import JsonValue
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.adapters import IngressAdapter
+from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.ids import new_object_id
@@ -48,7 +48,7 @@ class _IngressSnapshot:
     workspace_id: str
     provider_key: str
     provider_config_version: str
-    provider_config_json: dict[str, object]
+    provider_config_json: JsonObject
     credential_generation: int
     version: int
 
@@ -151,7 +151,7 @@ class IngressEventService:
             await self._raw_objects.delete(raw_ref)
         return adapter.acknowledge(receipt)
 
-    async def _load_runtime(self, ingress_id: str) -> tuple[_IngressSnapshot, IngressAdapter, dict[str, object]]:
+    async def _load_runtime(self, ingress_id: str) -> tuple[_IngressSnapshot, IngressAdapter, JsonObject]:
         async with short_session(self._sessions) as session:
             try:
                 record = await require_ingress(session, ingress_id)

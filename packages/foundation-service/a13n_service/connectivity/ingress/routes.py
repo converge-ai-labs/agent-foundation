@@ -10,7 +10,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.adapters import IngressAdapter
+from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
@@ -261,7 +261,7 @@ def _validate_route(
     adapter: IngressAdapter,
     ingress: IngressRecord,
     request: CreateRouteRequest,
-) -> tuple[dict[str, object], dict[str, object]]:
+) -> tuple[JsonObject, JsonObject]:
     try:
         return adapter.validate_route(
             match=request.match,

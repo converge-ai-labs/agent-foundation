@@ -55,12 +55,33 @@ class InboundEvent(_StrictModel):
 
 
 class DefaultRoute(_StrictModel):
-    external_ref_key: str = Field(min_length=1, max_length=128)
-    provider_context: JsonObject = Field(repr=False)
     input_mapping: JsonObject
     input_batching: InputBatchingPolicy
     provider_policy: JsonObject
+
+
+class ProviderEligibleEventRouting(_StrictModel):
+    kind: Literal["eligible"] = "eligible"
+    external_ref_key: str = Field(min_length=1, max_length=128)
+    provider_context: JsonObject = Field(repr=False)
     native_actions: tuple[str, ...] = Field(default=(), max_length=64)
+
+
+class ProviderRequiresBindingRouting(_StrictModel):
+    kind: Literal["requires_binding"] = "requires_binding"
+    external_ref_key: str = Field(min_length=1, max_length=128)
+    provider_context: JsonObject = Field(repr=False)
+    native_actions: tuple[str, ...] = Field(default=(), max_length=64)
+
+
+class ProviderIrrelevantEventRouting(_StrictModel):
+    kind: Literal["irrelevant"] = "irrelevant"
+    reason_code: BoundedProviderName
+
+
+type ProviderEventRouting = (
+    ProviderEligibleEventRouting | ProviderRequiresBindingRouting | ProviderIrrelevantEventRouting
+)
 
 
 class ProviderEventDecision(_StrictModel):

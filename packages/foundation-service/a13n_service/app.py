@@ -34,6 +34,7 @@ from a13n_service.connectivity.ingress.admission_domain import (
     UnavailableFoundationInputAcceptor,
 )
 from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
+from a13n_service.connectivity.ingress.providers import built_in_ingress_adapter_registry
 from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
 from a13n_service.connectivity.ingress.router import router as ingress_router
@@ -544,7 +545,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
     )
     if resolved_settings.role in _CONNECTIVITY_RESOURCE_ROLES:
         app.state.ingress_adapter_registry = (
-            resolved_components.ingress_adapter_registry or AdapterRegistry[IngressAdapter]()
+            resolved_components.ingress_adapter_registry or built_in_ingress_adapter_registry()
         ).copy()
         app.state.connector_adapter_registry = (
             resolved_components.connector_adapter_registry or AdapterRegistry[ConnectorAdapter]()
