@@ -38,6 +38,7 @@ from .environment_bindings import (
 )
 from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
+from .inline_hooks import create_inline_run_hook
 from .input import AcceptedAgentInput
 from .lifecycle import (
     append_accepted_run_lifecycle,
@@ -161,6 +162,13 @@ class CompletionQueueHandoffService:
                 thread.queue_version += 1
                 thread.updated_at = now
                 await database.flush()
+                successor_hook_subscription_id = await create_inline_run_hook(
+                    database,
+                    run=successor_record,
+                    workspace_id=session_record_value.workspace_id,
+                    subscription=consumed.submission.hook_subscription,
+                    now=now,
+                )
                 mutation_id = new_mutation_id()
                 await append_run_with_attempt_lifecycle(
                     database,
@@ -190,6 +198,7 @@ class CompletionQueueHandoffService:
                         thread_version=thread.version,
                         run_id=successor_run.id,
                         run_version=successor_run.version,
+                        hook_subscription_id=successor_hook_subscription_id,
                     ),
                     queue_version=thread.queue_version,
                 )

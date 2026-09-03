@@ -5,7 +5,10 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.environments.models import RunEnvironmentBindingRecord
+from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
+from a13n_service.hooks.models import HookSubscriptionRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
     AttemptExecutionService,
@@ -37,6 +40,7 @@ from a13n_service.interactions.queue import (
     ThreadSubmissionAdmission,
     classify_thread_submission,
 )
+from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import ObjectStore, short_session, transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -47,6 +51,7 @@ from .conftest import (
     NOW,
     TENANT_ID,
     USER_ID,
+    WORKSPACE_ID,
     effective_agent_config,
     environment_execution_config,
 )
@@ -334,13 +339,42 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     interaction_object_store: ObjectStore,
 ) -> None:
     _, source, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    secret_id = "sec_5656565656565656"
+    hook = InlineHookSubscriptionInput(
+        hook_names=("run.accepted",),
+        webhook=WebhookDestinationConfig(
+            endpoint_url="https://hooks.example.com/queued",
+            signing_secret_id=secret_id,
+        ),
+    )
+    async with transaction(interaction_sessions) as database:
+        database.add(
+            SecretRecord(
+                id=secret_id,
+                organization_id=TENANT_ID,
+                workspace_id=WORKSPACE_ID,
+                owner_type="workspace",
+                owner_id=WORKSPACE_ID,
+                key="queued-hook-signing",
+                version=1,
+                ciphertext=b"ciphertext",
+                nonce=b"2" * 12,
+                encryption_key_id="test-key",
+                created_at=NOW,
+                value_updated_at=NOW,
+                deleted_at=None,
+            )
+        )
     queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW)
     first = await queue.enqueue(
         tenant_id=TENANT_ID,
         thread_id=source.thread_id,
         expected_thread_version=1,
         authority_principal=_principal(),
-        submission=_intent("first"),
+        submission=ThreadRunSubmissionIntent(
+            input=AgentInput(schema_version="1", content=(TextContent(text="first"),)),
+            hook_subscription=hook,
+        ),
         queued_submission_id="qsub_5555555555555555",
     )
     second = await queue.enqueue(
@@ -351,6 +385,8 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         submission=_intent("second"),
         queued_submission_id="qsub_6666666666666666",
     )
+    async with short_session(interaction_sessions) as database:
+        assert await database.scalar(select(HookSubscriptionRecord.id)) is None
     await _fail_current_run(interaction_sessions, run_id=source.id, thread_id=source.thread_id)
     assert await queue.scan_drainable(tenant_id=TENANT_ID) == (source.thread_id,)
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="first"),))
@@ -390,6 +426,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
 
     assert receipt.outcome == "run_accepted"
     assert receipt.run is not None and receipt.run.run_id == run.id
+    assert receipt.run.hook_subscription_id is not None
     assert receipt.queued_submission.state is QueuedSubmissionState.consumed
     consumed = await queue.get(
         tenant_id=TENANT_ID,
@@ -407,7 +444,11 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         binding = await database.scalar(
             select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == run.id)
         )
+        hook_head = await database.get(HookSubscriptionRecord, receipt.run.hook_subscription_id)
+        delivery = await database.scalar(select(OutboxRecord))
         assert thread is not None and accepted is not None and binding is not None
+        assert hook_head is not None and hook_head.inline_run_id == run.id
+        assert delivery is not None and delivery.destination_ref == hook_head.current_revision_id
         assert (thread.version, thread.queue_version, thread.current_run_id) == (3, 3, run.id)
         assert binding.target_key == environment.target_key
     assert await queue.scan_drainable(tenant_id=TENANT_ID) == ()

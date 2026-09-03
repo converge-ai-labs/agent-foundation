@@ -10,6 +10,7 @@ import rfc8785
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.hooks.persistence import append_matching_webhook_outbox
 from a13n_service.lifecycle import (
     LifecycleEntityType,
     LifecycleEventDraft,
@@ -17,6 +18,7 @@ from a13n_service.lifecycle import (
     new_lifecycle_event_id,
     new_mutation_id,
 )
+from a13n_service.lifecycle.models import LifecycleEventRecord
 
 from .models import RunAttemptRecord, RunRecord
 
@@ -108,7 +110,7 @@ async def append_run_lifecycle(
     actor_id: str | None,
     final_run_attempt_id: str | None = None,
 ) -> str:
-    record = await append_lifecycle_event(
+    record = await _append_lifecycle_with_hooks(
         database,
         LifecycleEventDraft(
             id=new_lifecycle_event_id() if event_id is None else event_id,
@@ -140,7 +142,7 @@ async def append_run_attempt_lifecycle(
     occurred_at: datetime,
     resulting_run_lifecycle_event_id: str | None = None,
 ) -> str:
-    record = await append_lifecycle_event(
+    record = await _append_lifecycle_with_hooks(
         database,
         LifecycleEventDraft(
             tenant_id=run.tenant_id,
@@ -164,6 +166,15 @@ async def append_run_attempt_lifecycle(
         ),
     )
     return record.id
+
+
+async def _append_lifecycle_with_hooks(
+    database: AsyncSession,
+    draft: LifecycleEventDraft,
+) -> LifecycleEventRecord:
+    record = await append_lifecycle_event(database, draft)
+    await append_matching_webhook_outbox(database, record)
+    return record
 
 
 def _run_payload(

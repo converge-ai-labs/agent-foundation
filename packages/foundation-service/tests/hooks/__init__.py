@@ -1,0 +1,1 @@
+"""Hook notification contract tests."""

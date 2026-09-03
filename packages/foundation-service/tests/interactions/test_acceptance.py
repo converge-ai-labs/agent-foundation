@@ -4,7 +4,10 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.environments.models import EnvironmentTargetRecord, RunEnvironmentBindingRecord
+from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
+from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
     MCPToolSnapshotRef,
@@ -31,6 +34,7 @@ from a13n_service.interactions.initialization import (
 )
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunStateStore
+from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import ObjectStore, short_session, transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -195,6 +199,113 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
 
     assert replay == receipt
     assert (replay.run_version, replay.status) == (1, "accepted")
+
+
+async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    secret_id = "sec_9191919191919191"
+    async with transaction(interaction_sessions) as database:
+        database.add(
+            SecretRecord(
+                id=secret_id,
+                organization_id=TENANT_ID,
+                workspace_id=WORKSPACE_ID,
+                owner_type="workspace",
+                owner_id=WORKSPACE_ID,
+                key="inline-hook-signing",
+                version=1,
+                ciphertext=b"ciphertext",
+                nonce=b"1" * 12,
+                encryption_key_id="test-key",
+                created_at=NOW,
+                value_updated_at=NOW,
+                deleted_at=None,
+            )
+        )
+    service = RunAcceptanceService(
+        interaction_sessions,
+        RunStateStore(interaction_object_store),
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW,
+    )
+    seed = RunStateSeed(
+        run_id="run_9191919191919191",
+        agent_id=AGENT_ID,
+        agent_revision_id=AGENT_REVISION_ID,
+        effective_agent_config=effective_agent_config(),
+    )
+    state = initialize_start_state(seed, thread_id=THREAD_ID)
+    run = _accepted_run(
+        run_id=seed.run_id,
+        thread_id=THREAD_ID,
+        idempotency_key="inline-hook",
+        request_fingerprint="9" * 64,
+    )
+    session = Session(
+        id=SESSION_ID,
+        tenant_id=TENANT_ID,
+        workspace_id=WORKSPACE_ID,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    thread = Thread(
+        id=THREAD_ID,
+        version=1,
+        queue_version=0,
+        tenant_id=TENANT_ID,
+        session_id=SESSION_ID,
+        role=ThreadRole.root,
+        origin_kind=ThreadOriginKind.new,
+        current_run_id=run.id,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    hook = InlineHookSubscriptionInput(
+        hook_names=("run.accepted", "run.completed"),
+        webhook=WebhookDestinationConfig(
+            endpoint_url="https://hooks.example.com/foundation",
+            signing_secret_id=secret_id,
+        ),
+    )
+
+    receipt = await service.accept_new_thread(
+        session=session,
+        thread=thread,
+        run=run,
+        state=state,
+        hook_subscription=hook,
+    )
+    replay = await service.accept_new_thread(
+        session=session,
+        thread=thread,
+        run=run,
+        state=state,
+        hook_subscription=hook,
+    )
+
+    assert receipt.hook_subscription_id is not None
+    assert replay == receipt
+    with pytest.raises(RunAcceptanceError, match="different inline Hook"):
+        await service.accept_new_thread(
+            session=session,
+            thread=thread,
+            run=run,
+            state=state,
+            hook_subscription=hook.model_copy(
+                update={"webhook": hook.webhook.model_copy(update={"endpoint_url": "https://other.example.com/hook"})}
+            ),
+        )
+    async with short_session(interaction_sessions) as database:
+        head = await database.get(HookSubscriptionRecord, receipt.hook_subscription_id)
+        assert head is not None
+        revision = await database.get(HookSubscriptionRevisionRecord, head.current_revision_id)
+        assert revision is not None
+        assert (revision.session_id, revision.thread_id, revision.run_id) == (SESSION_ID, THREAD_ID, run.id)
+        deliveries = (await database.scalars(select(OutboxRecord))).all()
+        assert len(deliveries) == 1
+        assert deliveries[0].destination_ref == revision.id
 
 
 async def test_acceptance_atomically_binds_exact_environment_and_replay_verifies_it(
