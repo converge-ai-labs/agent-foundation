@@ -5,24 +5,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from a13n_environment_provider import EnvironmentProviderError, EnvironmentProviderSpec
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
-from a13n_service.environments.domain import (
-    EnvironmentAccess,
-    EnvironmentCredentialBinding,
-    EnvironmentProviderLock,
-    environment_logical_digest,
+from a13n_service.environments.access import (
+    authorize_environment_workspace as _authorize,
 )
+from a13n_service.environments.access import (
+    require_credential_bindings as _require_credential_bindings,
+)
+from a13n_service.environments.access import (
+    require_provider_selection as _require_selection,
+)
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
+from a13n_service.environments.domain import EnvironmentAccess, environment_logical_digest
 from a13n_service.environments.errors import (
     EnvironmentManagementError,
     environment_provider_disabled,
     environment_revision_not_found,
 )
 from a13n_service.environments.models import EnvironmentRecord, EnvironmentRevisionRecord
-from a13n_service.environments.service import _authorize, _require_credential_bindings, _require_selection
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
@@ -30,9 +32,6 @@ from a13n_service.secrets.domain import InvokingUserSecretCredential
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import short_session
 
-from .domain import (
-    EnvironmentCredentialBinding as AgentEnvironmentCredentialBinding,
-)
 from .domain import (
     EnvironmentExecutionConfig,
     EnvironmentOverride,
@@ -129,8 +128,9 @@ class AgentEnvironmentSelectionResolver:
             workspace_id=prepared.workspace_id,
             action=WorkspaceAction.environment_use,
         )
-        lock = EnvironmentProviderLock.model_validate(prepared.resolved.provider_lock)
-        entry = self._catalog.entry(prepared.resolved.provider.provider_key)
+        lock = prepared.resolved.provider_lock
+        provider_key = prepared.resolved.connection.provider_key
+        entry = self._catalog.entry(provider_key)
         if entry.provider_lock != lock:
             raise EnvironmentManagementError(
                 "environment_provider_lock_changed",
@@ -141,7 +141,7 @@ class AgentEnvironmentSelectionResolver:
             session,
             organization_id=prepared.organization_id,
             workspace_id=prepared.workspace_id,
-            provider_key=prepared.resolved.provider.provider_key,
+            provider_key=provider_key,
             expected_lock=lock.model_dump(mode="json"),
             for_update=True,
         )
@@ -163,10 +163,7 @@ class AgentEnvironmentSelectionResolver:
             actor=prepared.actor,
             organization_id=prepared.organization_id,
             workspace_id=prepared.workspace_id,
-            bindings=tuple(
-                EnvironmentCredentialBinding.model_validate(item.model_dump(mode="json"))
-                for item in prepared.resolved.credential_bindings
-            ),
+            bindings=prepared.resolved.credential_bindings,
             require_bind_authority=False,
         )
         if prepared.purpose is EnvironmentResolutionPurpose.invoke:
@@ -209,7 +206,6 @@ class AgentEnvironmentSelectionResolver:
                     "The Environment Revision changed during acceptance.",
                     status_code=409,
                 )
-        self._validate_provider(prepared.resolved.provider)
         return prepared.resolved
 
     async def _prepare_named(
@@ -252,7 +248,7 @@ class AgentEnvironmentSelectionResolver:
                 )
             resource = revision.to_resource()
             lock = resource.provider_lock
-            catalog_entry = self._catalog.entry(resource.provider.provider_key)
+            catalog_entry = self._catalog.entry(resource.connection.provider_key)
             if catalog_entry.provider_lock != lock:
                 raise EnvironmentManagementError(
                     "environment_provider_lock_changed",
@@ -263,7 +259,7 @@ class AgentEnvironmentSelectionResolver:
                 session,
                 organization_id=organization_id,
                 workspace_id=workspace_id,
-                provider_key=resource.provider.provider_key,
+                provider_key=resource.connection.provider_key,
                 expected_lock=lock.model_dump(mode="json"),
                 for_update=False,
             )
@@ -285,17 +281,21 @@ class AgentEnvironmentSelectionResolver:
                     workspace_id=workspace_id,
                     bindings=resource.credential_bindings,
                 )
-        provider = self._validate_provider(resource.provider)
+        validated = self._catalog.validate_connection(resource.connection)
+        if validated.spec != resource.connection or validated.target_key != resource.target_key:
+            raise EnvironmentManagementError(
+                "environment_revision_changed",
+                "The selected Environment connection no longer matches its frozen target.",
+                status_code=409,
+            )
         resolved = EnvironmentExecutionConfig(
             source_environment_revision_id=resource.id,
-            provider=provider,
+            connection=validated.spec,
             provider_package_revision_id=resource.provider_package_revision_id,
-            provider_lock=lock.model_dump(mode="json"),
-            credential_bindings=tuple(
-                AgentEnvironmentCredentialBinding.model_validate(item.model_dump(mode="json"))
-                for item in resource.credential_bindings
-            ),
+            provider_lock=lock,
+            credential_bindings=resource.credential_bindings,
             access=resource.access.value,
+            target_key=resource.target_key,
             logical_digest_sha256=resource.logical_digest_sha256,
         )
         return PreparedEnvironmentSelection(
@@ -320,12 +320,7 @@ class AgentEnvironmentSelectionResolver:
         workspace_id: str,
         selection: InlineEnvironmentSelection,
     ) -> PreparedEnvironmentSelection:
-        entry = self._catalog.entry(selection.provider.provider_key)
-        provider = self._validate_provider(selection.provider)
-        bindings = tuple(
-            EnvironmentCredentialBinding.model_validate(item.model_dump(mode="json"))
-            for item in selection.credential_bindings
-        )
+        bindings = selection.credential_bindings
         async with short_session(self._sessions) as session:
             await _authorize(
                 session,
@@ -333,11 +328,13 @@ class AgentEnvironmentSelectionResolver:
                 workspace_id=workspace_id,
                 action=WorkspaceAction.environment_use,
             )
+            validated = self._catalog.validate_connection(selection.connection)
+            entry = self._catalog.entry(validated.spec.provider_key)
             provider_selection = await _require_selection(
                 session,
                 organization_id=organization_id,
                 workspace_id=workspace_id,
-                provider_key=provider.provider_key,
+                provider_key=validated.spec.provider_key,
                 expected_lock=entry.provider_lock.model_dump(mode="json"),
                 for_update=False,
             )
@@ -358,21 +355,21 @@ class AgentEnvironmentSelectionResolver:
             )
         access = EnvironmentAccess(selection.access)
         digest = environment_logical_digest(
-            provider=provider,
+            connection=validated.spec,
             provider_package_revision_id=provider_selection.provider_package_revision_id,
             provider_lock=entry.provider_lock,
             credential_bindings=bindings,
             access=access,
+            target_key=validated.target_key,
         )
         resolved = EnvironmentExecutionConfig(
             source_environment_revision_id=None,
-            provider=provider,
+            connection=validated.spec,
             provider_package_revision_id=provider_selection.provider_package_revision_id,
-            provider_lock=entry.provider_lock.model_dump(mode="json"),
-            credential_bindings=tuple(
-                AgentEnvironmentCredentialBinding.model_validate(item.model_dump(mode="json")) for item in bindings
-            ),
+            provider_lock=entry.provider_lock,
+            credential_bindings=bindings,
             access=access.value,
+            target_key=validated.target_key,
             logical_digest_sha256=digest,
         )
         return PreparedEnvironmentSelection(
@@ -387,28 +384,6 @@ class AgentEnvironmentSelectionResolver:
                 f"{workspace_id}:{provider_selection.provider_key}", provider_selection.updated_at
             ),
             resolved=resolved,
-        )
-
-    def _validate_provider(self, spec: EnvironmentProviderSpec) -> EnvironmentProviderSpec:
-        entry = self._catalog.entry(spec.provider_key)
-        if spec.schema_version not in entry.configuration_versions:
-            raise EnvironmentManagementError(
-                "provider_schema_unsupported",
-                "The Environment Provider configuration version is unsupported.",
-                status_code=400,
-            )
-        try:
-            configuration = self._catalog.providers[spec.provider_key].validate_configuration(
-                schema_version=spec.schema_version,
-                value=spec.configuration,
-            )
-        except EnvironmentProviderError as error:
-            safe = error.safe_projection()
-            raise EnvironmentManagementError(safe.code, safe.message, status_code=400) from error
-        return EnvironmentProviderSpec(
-            provider_key=spec.provider_key,
-            schema_version=spec.schema_version,
-            configuration=configuration.model_dump(mode="json"),
         )
 
 

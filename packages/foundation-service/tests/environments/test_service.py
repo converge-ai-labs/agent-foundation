@@ -1,33 +1,58 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 from a13n_environment_provider import (
+    DirectLocalProviderRuntime,
     Environment,
-    EnvironmentProvider,
-    EnvironmentState,
-    build_environment_provider_catalog,
 )
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
+from a13n_service.environments.catalog import (
+    FoundationEnvironmentProviderCatalog,
+    FoundationEnvironmentProviderRegistration,
+)
 from a13n_service.environments.domain import (
     CreateEnvironmentRequest,
     CreateEnvironmentRevisionRequest,
+    EnvironmentProviderLock,
     PutEnvironmentProviderSelectionRequest,
     UpdateEnvironmentRequest,
 )
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.environments.models import EnvironmentRecord, EnvironmentRevisionRecord
 from a13n_service.environments.service import EnvironmentManagementService
+from a13n_service.environments.testing import NativeEnvironmentAttachmentTester
 from a13n_service.etags import resource_etag
+from a13n_service.iam import AuthenticatedActor
+from a13n_service.secrets.domain import SecretCredentialSource
 from a13n_service.storage import transaction
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import SECRET_ID, WORKSPACE_ID, actor
+from .conftest import NOW, SECRET_ID, WORKSPACE_ID, actor
 
 PROVIDER_KEY = "a13n.direct-local"
+
+
+class _SecretResolver:
+    async def resolve(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        organization_id: str,
+        workspace_id: str,
+        credential: SecretCredentialSource,
+    ) -> str:
+        del actor, organization_id, workspace_id, credential
+        return "fresh-secret-value"
+
+
+async def _runtime_builder(*, provider_key: str, credentials: Mapping[str, str]) -> object:
+    assert provider_key == PROVIDER_KEY
+    assert credentials == {"token": "fresh-secret-value"}
+    return DirectLocalProviderRuntime()
 
 
 class _ThirdPartyConfig(BaseModel):
@@ -36,28 +61,30 @@ class _ThirdPartyConfig(BaseModel):
     workspace: str
 
 
-class _ThirdPartyProvider(EnvironmentProvider):
+class _ThirdPartyProvider:
     @property
-    def key(self) -> str:
+    def provider_key(self) -> str:
         return "acme.remote-workspace"
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
+    def connection_versions(self) -> frozenset[str]:
         return frozenset({"2026-09"})
 
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
+    def validate_connection(self, *, schema_version: str, parameters: JsonValue) -> BaseModel:
         if schema_version != "2026-09":
             raise ValueError("unsupported test schema")
-        return _ThirdPartyConfig.model_validate(value)
+        return _ThirdPartyConfig.model_validate(parameters)
 
-    def create_environment(
+    def target_key(self, *, connection: BaseModel) -> str:
+        return _ThirdPartyConfig.model_validate(connection).workspace
+
+    def create_attachment_environment(
         self,
         *,
-        configuration: BaseModel,
-        state: EnvironmentState | None,
-        runtime: object | None = None,
+        connection: BaseModel,
+        runtime: object,
     ) -> Environment:
-        del configuration, state, runtime
+        del connection, runtime
         raise AssertionError("management validation must not construct a runtime adapter")
 
 
@@ -65,10 +92,10 @@ def candidate(root: Path, *, environment_id: str = "workspace-local") -> CreateE
     return CreateEnvironmentRequest.model_validate(
         {
             "name": "Local Workspace",
-            "provider": {
+            "connection": {
                 "provider_key": PROVIDER_KEY,
                 "schema_version": "1",
-                "configuration": {
+                "parameters": {
                     "environment_id": environment_id,
                     "root": {"path": str(root), "read_only": False},
                 },
@@ -91,7 +118,7 @@ async def test_provider_selection_environment_and_revision_lifecycle(
 ) -> None:
     catalog = await environment_service.list_provider_catalog(actor=actor())
     assert [item.provider_key for item in catalog.items] == [PROVIDER_KEY]
-    assert catalog.items[0].configuration_versions == ("1",)
+    assert catalog.items[0].connection_versions == ("1",)
     assert catalog.items[0].provider_lock.distribution_name == "a13n-environment-provider"
 
     selected = await environment_service.put_provider_selection(
@@ -123,7 +150,11 @@ async def test_provider_selection_environment_and_revision_lifecycle(
     assert len(revisions.items) == 1
     first = revisions.items[0]
     assert first.id == created.current_revision_id
-    assert first.provider.configuration["root"]["path"] == str(tmp_path)
+    assert first.provider_key == PROVIDER_KEY
+    assert "connection" not in first.model_dump(mode="json")
+    detail = await environment_service.get_revision(actor=actor(), revision_id=first.id)
+    assert detail.connection.parameters["root"]["path"] == str(tmp_path)
+    assert detail.target_key == str(tmp_path.resolve())
 
     unchanged = await environment_service.create_revision(
         actor=actor(),
@@ -131,7 +162,7 @@ async def test_provider_selection_environment_and_revision_lifecycle(
         idempotency_key="revision-noop",
         request=CreateEnvironmentRevisionRequest(
             expected_version=1,
-            provider=candidate(tmp_path).provider,
+            connection=candidate(tmp_path).connection,
             credential_bindings=candidate(tmp_path).credential_bindings,
             access="full",
         ),
@@ -145,7 +176,7 @@ async def test_provider_selection_environment_and_revision_lifecycle(
         idempotency_key="revision-two",
         request=CreateEnvironmentRevisionRequest(
             expected_version=1,
-            provider=candidate(tmp_path, environment_id="workspace-local-v2").provider,
+            connection=candidate(tmp_path, environment_id="workspace-local-v2").connection,
             credential_bindings=candidate(tmp_path).credential_bindings,
             access="read_write",
         ),
@@ -168,6 +199,41 @@ async def test_provider_selection_environment_and_revision_lifecycle(
             actor=actor(), workspace_id=WORKSPACE_ID, limit=10, cursor=None, include_archived=False
         )
     ).items == ()
+
+
+@pytest.mark.anyio
+async def test_revision_attachment_test_uses_fresh_attach_only_adapter(
+    environment_sessions: async_sessionmaker[AsyncSession],
+    provider_catalog: FoundationEnvironmentProviderCatalog,
+    tmp_path: Path,
+) -> None:
+    tester = NativeEnvironmentAttachmentTester(
+        provider_catalog,
+        secret_resolver=_SecretResolver(),
+        runtime_builder=_runtime_builder,
+    )
+    service = EnvironmentManagementService(
+        environment_sessions,
+        provider_catalog,
+        clock=lambda: NOW,
+        attachment_tester=tester,
+    )
+    await service.put_provider_selection(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_key=PROVIDER_KEY,
+        request=PutEnvironmentProviderSelectionRequest(enabled=True),
+    )
+    created = await service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="attachment-test",
+        request=candidate(tmp_path),
+    )
+
+    result = await service.test_revision(actor=actor(), revision_id=created.current_revision_id)
+
+    assert result.code == "attachment_ready"
 
 
 @pytest.mark.anyio
@@ -199,15 +265,15 @@ async def test_disabled_provider_and_invalid_configuration_fail_atomically(
             request=CreateEnvironmentRequest.model_validate(
                 {
                     "name": "Invalid",
-                    "provider": {
+                    "connection": {
                         "provider_key": PROVIDER_KEY,
                         "schema_version": "1",
-                        "configuration": {"environment_id": "bad", "root": {"path": "relative"}},
+                        "parameters": {"environment_id": "bad", "root": {"path": "relative"}},
                     },
                 }
             ),
         )
-    assert invalid.value.code == "provider_spec_invalid"
+    assert invalid.value.code == "provider_connection_invalid"
     async with transaction(environment_sessions) as session:
         assert await session.scalar(select(func.count()).select_from(EnvironmentRecord)) == 0
         assert await session.scalar(select(func.count()).select_from(EnvironmentRevisionRecord)) == 0
@@ -263,11 +329,22 @@ async def test_environment_create_rejects_idempotency_key_reuse_with_different_r
 
 
 @pytest.mark.anyio
-async def test_third_party_provider_uses_shared_catalog_without_foundation_specific_code(
+async def test_third_party_provider_attachment_capability_is_registered(
     environment_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     catalog = FoundationEnvironmentProviderCatalog(
-        build_environment_provider_catalog(explicit_providers=(_ThirdPartyProvider(),))
+        (
+            FoundationEnvironmentProviderRegistration(
+                provider=_ThirdPartyProvider(),
+                provider_lock=EnvironmentProviderLock(
+                    provider_key="acme.remote-workspace",
+                    distribution_name="acme-environment-provider",
+                    distribution_version="1.0.0",
+                    builtin=False,
+                    registration_digest_sha256="f" * 64,
+                ),
+            ),
+        )
     )
     service = EnvironmentManagementService(environment_sessions, catalog)
     selected = await service.put_provider_selection(
@@ -283,10 +360,10 @@ async def test_third_party_provider_uses_shared_catalog_without_foundation_speci
         request=CreateEnvironmentRequest.model_validate(
             {
                 "name": "Remote Workspace",
-                "provider": {
+                "connection": {
                     "provider_key": "acme.remote-workspace",
                     "schema_version": "2026-09",
-                    "configuration": {"workspace": "tenant-one"},
+                    "parameters": {"workspace": "tenant-one"},
                 },
             }
         ),
@@ -294,6 +371,7 @@ async def test_third_party_provider_uses_shared_catalog_without_foundation_speci
     revision = await service.get_revision(actor=actor(), revision_id=created.current_revision_id)
 
     assert not selected.provider_lock.builtin
-    assert selected.provider_lock.distribution_name is None
-    assert revision.provider.configuration == {"workspace": "tenant-one"}
+    assert selected.provider_lock.distribution_name == "acme-environment-provider"
+    assert revision.connection.parameters == {"workspace": "tenant-one"}
+    assert revision.target_key == "tenant-one"
     assert revision.provider_lock == selected.provider_lock

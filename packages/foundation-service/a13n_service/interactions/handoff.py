@@ -21,18 +21,19 @@ from ._transitions import charge_attempt_usage, terminalize_attempt
 from .acceptance import (
     RunAcceptanceError,
     RunAcceptanceReceipt,
+    _require_session,
     _validate_advancement,
     _validate_prepared_run,
     _validate_queued_run_input,
 )
 from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority
 from .domain import Run, RunAttemptStatus, RunInputKind, RunLineageKind
+from .environment_bindings import add_run_with_environment_binding
 from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
 from .input import AcceptedAgentInput
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter, StoredRunState
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission
-from .records import run_record
 from .state import CompletedOutcomeCandidate, RunPayloadEnvelope, RunStateEnvelope
 
 
@@ -133,8 +134,13 @@ class CompletionQueueHandoffService:
                     candidate_payload=input_payload,
                     next_head_run_id=source.id,
                 )
-                database.add(run_record(successor_run))
-                await database.flush()
+                session_record_value = await _require_session(database, successor_run)
+                await add_run_with_environment_binding(
+                    database,
+                    run=successor_run,
+                    state=successor_state,
+                    workspace_id=session_record_value.workspace_id,
+                )
                 await bind_unbound_async_entries(
                     database,
                     tenant_id=successor_run.tenant_id,

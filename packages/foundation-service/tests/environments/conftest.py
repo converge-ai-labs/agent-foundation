@@ -121,7 +121,9 @@ async def environment_sessions(
 
 @pytest.fixture
 def provider_catalog() -> FoundationEnvironmentProviderCatalog:
-    return FoundationEnvironmentProviderCatalog(build_environment_provider_catalog(builtin_keys=("a13n.direct-local",)))
+    return FoundationEnvironmentProviderCatalog.from_environment_provider_catalog(
+        build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
+    )
 
 
 @pytest.fixture

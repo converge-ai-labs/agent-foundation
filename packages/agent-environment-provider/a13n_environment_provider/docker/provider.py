@@ -10,7 +10,7 @@ from typing import Any
 
 from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
-from pydantic import BaseModel, JsonValue, ValidationError
+from pydantic import ValidationError
 
 from ..attachments import HttpEIPSessionSource
 from ..eip._common import invoke
@@ -24,12 +24,8 @@ from ..eip.processes import (
 )
 from ..errors import (
     EnvironmentProviderError,
-    EnvironmentProviderErrorCategory,
-    EnvironmentProviderErrorContext,
-    EnvironmentProviderOutcomeCertainty,
-    EnvironmentProviderRecoveryHint,
 )
-from ..management import Environment, EnvironmentProvider
+from ..management import Environment
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
@@ -41,6 +37,24 @@ from ..models import (
     EnvironmentState,
 )
 from ..operations import EnvironmentOperations
+from ._errors import (
+    cleanup_failure as _cleanup_failure,
+)
+from ._errors import (
+    conflict_failure as _conflict_failure,
+)
+from ._errors import (
+    missing_failure as _missing_failure,
+)
+from ._errors import (
+    runtime_failure as _runtime_failure,
+)
+from ._errors import (
+    state_failure as _state_failure,
+)
+from ._errors import (
+    unknown_failure as _unknown_failure,
+)
 from .configuration import (
     DockerBindMountSource,
     DockerImagePullPolicy,
@@ -62,7 +76,6 @@ from .runtime import (
 )
 
 _PROVIDER_KEY = "a13n.docker"
-_CONFIGURATION_VERSION = "1"
 _STATE_VERSION = "1"
 _EIP_CONTAINER_PORT = 8787
 _BOOTSTRAP_CONTAINER_PATH = "/run/a13n/bootstrap"
@@ -116,64 +129,9 @@ _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
 }
 
 
-class DockerEnvironmentProvider(EnvironmentProvider):
-    """Reusable inert Docker provider plugin."""
-
-    @property
-    def key(self) -> str:
-        return _PROVIDER_KEY
-
-    @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({_CONFIGURATION_VERSION})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
-        if schema_version != _CONFIGURATION_VERSION:
-            raise _provider_error(
-                "Docker configuration version is unsupported.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                schema_version=schema_version,
-            )
-        try:
-            return DockerProviderConfiguration.model_validate(value)
-        except ValidationError as error:
-            raise _provider_error(
-                "Docker configuration is invalid.",
-                code="provider_spec_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-                schema_version=schema_version,
-            ) from error
-
-    def create_environment(
-        self,
-        *,
-        configuration: BaseModel,
-        state: EnvironmentState | None,
-        runtime: object | None = None,
-    ) -> Environment:
-        if not isinstance(configuration, DockerProviderConfiguration):
-            raise TypeError("Docker requires DockerProviderConfiguration")
-        if not isinstance(runtime, DockerProviderRuntime):
-            raise TypeError("Docker requires DockerProviderRuntime")
-        state_data = _decode_state(state, configuration)
-        return DockerEnvironment(configuration, state, state_data=state_data, runtime=runtime)
-
-
-class DockerEnvironment(Environment):
-    """Fresh single-use adapter for one exact Docker container."""
-
-    def __init__(
-        self,
-        configuration: DockerProviderConfiguration,
-        state: EnvironmentState | None,
-        *,
-        state_data: DockerProviderStateData | None,
-        runtime: DockerProviderRuntime,
-    ) -> None:
-        super().__init__(state.model_copy(deep=True) if state is not None else None)
-        self._configuration = configuration.model_copy(deep=True)
-        self._state_data = state_data.model_copy(deep=True) if state_data is not None else None
+class _DockerEIPSession:
+    def __init__(self, *, environment_id: str, runtime: DockerProviderRuntime) -> None:
+        self._environment_id = environment_id
         self._runtime = runtime
         self._descriptor: EnvironmentDescriptor | None = None
         self._availability = EnvironmentAvailability(status="preparing")
@@ -189,7 +147,7 @@ class DockerEnvironment(Environment):
 
     @property
     def environment_id(self) -> str:
-        return self._configuration.environment_id
+        return self._environment_id
 
     @property
     def descriptor(self) -> EnvironmentDescriptor:
@@ -204,6 +162,129 @@ class DockerEnvironment(Environment):
     @property
     def operations(self) -> EnvironmentOperations:
         return self._operations
+
+    async def _open_eip(
+        self,
+        inspection: DockerContainerInspection,
+        allocation: DockerBootstrapAllocation,
+        *,
+        mount_id: str,
+    ) -> None:
+        if (
+            inspection.status != "running"
+            or not inspection.eip_route_exact
+            or inspection.eip_host_ip != "127.0.0.1"
+            or inspection.eip_host_port is None
+        ):
+            raise _conflict_failure("Docker target has no exact active Host-loopback EIP route.")
+        source = HttpEIPSessionSource(
+            f"http://127.0.0.1:{inspection.eip_host_port}",
+            allocation.material.credential,
+            initialization_timeout=10.0,
+            request_timeout=30.0,
+            allow_plaintext_private_link=True,
+        )
+        context = source.open_session(
+            expected_environment_id=self.environment_id,
+            required_methods=_REQUIRED_EIP_METHODS,
+        )
+        try:
+            session = await context.__aenter__()
+            readiness = await invoke(session.readiness())
+            if not readiness.ready:
+                raise EnvironmentError(
+                    "Docker EIP environment is not ready",
+                    code="environment_unavailable",
+                    retry_hint="new_run",
+                )
+            descriptor = _convert_descriptor(session.descriptor)
+            operations, outputs, conversions = _compose_operations(
+                session,
+                environment_id=self.environment_id,
+                mount_id=mount_id,
+                descriptor=descriptor,
+            )
+        except BaseException as error:
+            try:
+                await context.__aexit__(type(error), error, error.__traceback__)
+            except BaseException as cleanup_error:
+                error.add_note(f"Docker EIP cleanup also failed: {cleanup_error!r}")
+            if isinstance(error, asyncio.CancelledError | EnvironmentProviderError):
+                raise
+            raise _runtime_failure("Docker EIP initialization or readiness failed.") from error
+        self._session_context = context
+        self._session = session
+        self._descriptor = descriptor
+        self._operations = operations
+        self._outputs = outputs
+        self._conversions = conversions
+        self._availability = EnvironmentAvailability(
+            status="available",
+            ready_families=descriptor.operation_families,
+        )
+
+    async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+        missing = operations - self.descriptor.operation_families
+        if missing:
+            raise EnvironmentError(
+                "Docker EIP does not expose the requested operation family",
+                code="environment_unsupported",
+            )
+        if self._session is None:
+            raise EnvironmentError("Docker EIP session is closed", code="environment_unavailable")
+        readiness = await invoke(self._session.readiness())
+        if not readiness.ready:
+            self._availability = EnvironmentAvailability(status="unavailable")
+            raise EnvironmentError(
+                "Docker EIP environment is not ready",
+                code="environment_unavailable",
+                retry_hint="new_run",
+            )
+
+    async def _close(self) -> None:
+        self._availability = EnvironmentAvailability(status="unavailable")
+        errors: list[BaseException] = []
+        if self._conversions is not None:
+            try:
+                await self._conversions.cleanup_owned()
+            except BaseException as error:
+                errors.append(error)
+        if self._outputs is not None:
+            try:
+                await self._outputs.cleanup_pending()
+            except BaseException as error:
+                errors.append(error)
+        if self._session_context is not None:
+            try:
+                await self._session_context.__aexit__(None, None, None)
+            except BaseException as error:
+                errors.append(error)
+        self._session_context = None
+        self._session = None
+        self._outputs = None
+        self._conversions = None
+        self._operations = EnvironmentOperations()
+        if len(errors) == 1:
+            raise errors[0]
+        if errors:
+            raise BaseExceptionGroup("Docker local cleanup failed", errors)
+
+
+class DockerEnvironment(_DockerEIPSession, Environment):
+    """Fresh single-use adapter for one exact Docker container."""
+
+    def __init__(
+        self,
+        configuration: DockerProviderConfiguration,
+        state: EnvironmentState | None,
+        *,
+        state_data: DockerProviderStateData | None,
+        runtime: DockerProviderRuntime,
+    ) -> None:
+        Environment.__init__(self, state.model_copy(deep=True) if state is not None else None)
+        _DockerEIPSession.__init__(self, environment_id=configuration.environment_id, runtime=runtime)
+        self._configuration = configuration.model_copy(deep=True)
+        self._state_data = state_data.model_copy(deep=True) if state_data is not None else None
 
     async def _enter(
         self,
@@ -425,112 +506,6 @@ class DockerEnvironment(Environment):
         self._state_data = state
         self._cache_state(envelope)
 
-    async def _open_eip(
-        self,
-        inspection: DockerContainerInspection,
-        allocation: DockerBootstrapAllocation,
-        *,
-        mount_id: str,
-    ) -> None:
-        if (
-            inspection.status != "running"
-            or not inspection.eip_route_exact
-            or inspection.eip_host_ip != "127.0.0.1"
-            or inspection.eip_host_port is None
-        ):
-            raise _conflict_failure("Docker target has no exact active Host-loopback EIP route.")
-        source = HttpEIPSessionSource(
-            f"http://127.0.0.1:{inspection.eip_host_port}",
-            allocation.material.credential,
-            initialization_timeout=10.0,
-            request_timeout=30.0,
-            allow_plaintext_private_link=True,
-        )
-        context = source.open_session(
-            expected_environment_id=self.environment_id,
-            required_methods=_REQUIRED_EIP_METHODS,
-        )
-        try:
-            session = await context.__aenter__()
-            readiness = await invoke(session.readiness())
-            if not readiness.ready:
-                raise EnvironmentError(
-                    "Docker EIP environment is not ready",
-                    code="environment_unavailable",
-                    retry_hint="new_run",
-                )
-            descriptor = _convert_descriptor(session.descriptor)
-            operations, outputs, conversions = _compose_operations(
-                session,
-                environment_id=self.environment_id,
-                mount_id=mount_id,
-                descriptor=descriptor,
-            )
-        except BaseException as error:
-            try:
-                await context.__aexit__(type(error), error, error.__traceback__)
-            except BaseException as cleanup_error:
-                error.add_note(f"Docker EIP cleanup also failed: {cleanup_error!r}")
-            if isinstance(error, asyncio.CancelledError | EnvironmentProviderError):
-                raise
-            raise _runtime_failure("Docker EIP initialization or readiness failed.") from error
-        self._session_context = context
-        self._session = session
-        self._descriptor = descriptor
-        self._operations = operations
-        self._outputs = outputs
-        self._conversions = conversions
-        self._availability = EnvironmentAvailability(
-            status="available",
-            ready_families=descriptor.operation_families,
-        )
-
-    async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
-        missing = operations - self.descriptor.operation_families
-        if missing:
-            raise EnvironmentError(
-                "Docker EIP does not expose the requested operation family",
-                code="environment_unsupported",
-            )
-        if self._session is None:
-            raise EnvironmentError("Docker EIP session is closed", code="environment_unavailable")
-        readiness = await invoke(self._session.readiness())
-        if not readiness.ready:
-            self._availability = EnvironmentAvailability(status="unavailable")
-            raise EnvironmentError(
-                "Docker EIP environment is not ready",
-                code="environment_unavailable",
-                retry_hint="new_run",
-            )
-
-    async def _close(self) -> None:
-        self._availability = EnvironmentAvailability(status="unavailable")
-        errors: list[BaseException] = []
-        if self._conversions is not None:
-            try:
-                await self._conversions.cleanup_owned()
-            except BaseException as error:
-                errors.append(error)
-        if self._outputs is not None:
-            try:
-                await self._outputs.cleanup_pending()
-            except BaseException as error:
-                errors.append(error)
-        if self._session_context is not None:
-            try:
-                await self._session_context.__aexit__(None, None, None)
-            except BaseException as error:
-                errors.append(error)
-        self._session_context = None
-        self._session = None
-        self._outputs = None
-        self._conversions = None
-        self._operations = EnvironmentOperations()
-        if len(errors) == 1:
-            raise errors[0]
-        if errors:
-            raise BaseExceptionGroup("Docker local cleanup failed", errors)
-
     async def _destroy(self) -> None:
         state = self._state_data
         if state is None:
@@ -656,7 +631,7 @@ def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDes
     )
 
 
-def _decode_state(
+def decode_state(
     state: EnvironmentState | None,
     configuration: DockerProviderConfiguration,
 ) -> DockerProviderStateData | None:
@@ -984,82 +959,3 @@ async def _remove_bootstrap(runtime: DockerProviderRuntime, correlation: str) ->
         await runtime.bootstrap_store.remove(correlation)
     except DockerBootstrapStoreError as error:
         raise _cleanup_failure("Docker bootstrap cleanup failed.") from error
-
-
-def _provider_error(
-    description: str,
-    *,
-    code: str,
-    category: EnvironmentProviderErrorCategory,
-    schema_version: str | None = None,
-    certainty: EnvironmentProviderOutcomeCertainty = EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-    recovery_hint: EnvironmentProviderRecoveryHint = EnvironmentProviderRecoveryHint.FIX_INPUT,
-) -> EnvironmentProviderError:
-    return EnvironmentProviderError(
-        description,
-        code=code,
-        category=category,
-        certainty=certainty,
-        recovery_hint=recovery_hint,
-        context=EnvironmentProviderErrorContext(
-            provider_key=_PROVIDER_KEY,
-            schema_version=schema_version,
-            state_version=_STATE_VERSION if schema_version is None else None,
-        ),
-    )
-
-
-def _state_failure(description: str) -> EnvironmentProviderError:
-    return _provider_error(
-        description,
-        code="provider_state_invalid",
-        category=EnvironmentProviderErrorCategory.INVALID,
-    )
-
-
-def _conflict_failure(description: str) -> EnvironmentProviderError:
-    return _provider_error(
-        description,
-        code="provider_state_conflict",
-        category=EnvironmentProviderErrorCategory.CONFLICT,
-    )
-
-
-def _missing_failure(description: str) -> EnvironmentProviderError:
-    return _provider_error(
-        description,
-        code="provider_target_missing",
-        category=EnvironmentProviderErrorCategory.MISSING,
-        certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-        recovery_hint=EnvironmentProviderRecoveryHint.NONE,
-    )
-
-
-def _runtime_failure(description: str) -> EnvironmentProviderError:
-    return _provider_error(
-        description,
-        code="provider_unavailable",
-        category=EnvironmentProviderErrorCategory.UNAVAILABLE,
-        certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-        recovery_hint=EnvironmentProviderRecoveryHint.REFRESH_RUNTIME,
-    )
-
-
-def _unknown_failure(description: str) -> EnvironmentProviderError:
-    return _provider_error(
-        description,
-        code="provider_unknown_outcome",
-        category=EnvironmentProviderErrorCategory.UNKNOWN_OUTCOME,
-        certainty=EnvironmentProviderOutcomeCertainty.UNKNOWN,
-        recovery_hint=EnvironmentProviderRecoveryHint.RECONCILE,
-    )
-
-
-def _cleanup_failure(description: str) -> EnvironmentProviderError:
-    return _provider_error(
-        description,
-        code="provider_cleanup_failed",
-        category=EnvironmentProviderErrorCategory.CLEANUP,
-        certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-        recovery_hint=EnvironmentProviderRecoveryHint.RETRY_SAME_OPERATION,
-    )

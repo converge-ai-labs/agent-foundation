@@ -115,7 +115,7 @@ def test_start_and_completed_continue_allocate_only_the_required_identity() -> N
 
     assert started.thread_id.startswith("thread-")
     assert continued.thread_id == parent.thread_id
-    assert continued.harness.environment_states == parent.harness.environment_states
+    assert continued.harness.environment_states == {}
     assert continued.host == HostContinuationState()
     assert continued.outcome_candidate is None
 

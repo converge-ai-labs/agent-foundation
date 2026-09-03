@@ -8,7 +8,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 import httpx2
-from a13n_environment_provider import EnvironmentProviderCatalog, build_environment_provider_catalog
+from a13n_environment_provider import build_environment_provider_catalog
 from anyio import create_task_group, fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
@@ -29,6 +29,7 @@ from a13n_service.assets.staging import AssetStaging
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
+from a13n_service.environments.testing import EnvironmentAttachmentTester
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.models.connection_test import NativeModelConnectionTester
 from a13n_service.models.endpoint_policy import EndpointPolicy
@@ -103,7 +104,8 @@ class ServiceComponents:
     plugin_runtime_candidate_resolver: PluginRuntimeCandidateResolver | None = None
     plugin_runtime_staging_authority: PluginRuntimeStagingAuthority | None = None
     model_connection_tester: ModelConnectionTester | None = None
-    environment_provider_catalog: EnvironmentProviderCatalog | None = None
+    environment_provider_catalog: FoundationEnvironmentProviderCatalog | None = None
+    environment_attachment_tester: EnvironmentAttachmentTester | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None
@@ -231,18 +233,22 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 else:
                     app.state.plugin_on_demand_runtime = OnDemandPluginRuntime(plugin_runtime_materializer)
             if settings.role in _CONTROL_PLANE_ROLES:
-                selected_environment_providers = app.state.components.environment_provider_catalog
-                if selected_environment_providers is None:
+                environment_provider_catalog = app.state.components.environment_provider_catalog
+                if environment_provider_catalog is None:
                     selected_environment_providers = build_environment_provider_catalog(
                         builtin_keys=settings.environment_provider_builtins,
                         extension_keys=settings.environment_provider_extensions,
                     )
-                app.state.environment_provider_catalog = FoundationEnvironmentProviderCatalog(
-                    selected_environment_providers
-                )
+                    environment_provider_catalog = (
+                        FoundationEnvironmentProviderCatalog.from_environment_provider_catalog(
+                            selected_environment_providers
+                        )
+                    )
+                app.state.environment_provider_catalog = environment_provider_catalog
                 app.state.environment_service = EnvironmentManagementService(
                     storage.sessions,
                     app.state.environment_provider_catalog,
+                    attachment_tester=app.state.components.environment_attachment_tester,
                 )
                 app.state.agent_plugin_selection_resolver = (
                     app.state.components.agent_plugin_selection_resolver

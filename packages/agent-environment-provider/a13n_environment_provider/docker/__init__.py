@@ -1,5 +1,7 @@
+from .attachment import DockerAttachmentEnvironment
 from .configuration import (
     DEFAULT_DOCKER_IMAGE,
+    DockerAttachmentConnection,
     DockerBindMountSource,
     DockerImagePullPolicy,
     DockerMountConfiguration,
@@ -9,7 +11,8 @@ from .configuration import (
     DockerShellProfile,
     DockerVolumeMountSource,
 )
-from .provider import DockerEnvironment, DockerEnvironmentProvider
+from .factory import DockerEnvironmentProvider
+from .provider import DockerEnvironment
 from .runtime import (
     DirectoryDockerBootstrapStore,
     DockerBootstrapAllocation,
@@ -29,6 +32,8 @@ from .runtime import (
 __all__ = [
     "DEFAULT_DOCKER_IMAGE",
     "DirectoryDockerBootstrapStore",
+    "DockerAttachmentConnection",
+    "DockerAttachmentEnvironment",
     "DockerBindMountSource",
     "DockerBootstrapAllocation",
     "DockerBootstrapMaterial",

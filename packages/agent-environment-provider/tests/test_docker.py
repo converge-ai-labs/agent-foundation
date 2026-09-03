@@ -10,6 +10,7 @@ import pytest
 from a13n_environment_provider import (
     DEFAULT_DOCKER_IMAGE,
     DirectoryDockerBootstrapStore,
+    DockerAttachmentEnvironment,
     DockerBootstrapMaterial,
     DockerContainerInspection,
     DockerContainerSpec,
@@ -42,6 +43,8 @@ class _FakeDockerEngine(DockerEngine):
         self.stop_error: DockerEngineError | None = None
         self.remove_error: DockerEngineError | None = None
         self.start_calls = 0
+        self.stop_calls = 0
+        self.remove_calls = 0
         self._counter = 0
 
     async def validate_local_topology(self) -> None:
@@ -94,6 +97,7 @@ class _FakeDockerEngine(DockerEngine):
 
     async def stop_container(self, container_id: str, *, timeout_seconds: int) -> None:
         del timeout_seconds
+        self.stop_calls += 1
         if self.stop_error is not None:
             error = self.stop_error
             self.stop_error = None
@@ -102,6 +106,7 @@ class _FakeDockerEngine(DockerEngine):
         self.containers[container_id] = self._inspection_from(current, "exited")
 
     async def remove_container(self, container_id: str) -> None:
+        self.remove_calls += 1
         if self.remove_error is not None:
             error = self.remove_error
             self.remove_error = None
@@ -358,6 +363,110 @@ async def test_docker_destroy_uses_fresh_adapter_and_clears_state(
     assert container_id not in engine.containers
     assert destroyer.dump_state() is None
     await destroyer.close()
+
+
+async def test_foundation_docker_attachment_uses_only_exact_running_container(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    existing = _environment(tmp_path, engine)
+    await existing.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
+    )
+    state = existing.dump_state()
+    assert state is not None
+    target = DockerProviderStateData.model_validate(state.state)
+    await existing.close()
+    provider = DockerEnvironmentProvider()
+    connection = provider.validate_connection(
+        schema_version="1",
+        parameters={
+            "environment_id": "environment-test",
+            "container_id": target.container_id.removeprefix("sha256:"),
+        },
+    )
+    assert provider.target_key(connection=connection) == target.container_id
+    attachment = provider.create_attachment_environment(
+        connection=connection,
+        runtime=DockerProviderRuntime(
+            engine=engine,
+            bootstrap_store=DirectoryDockerBootstrapStore((tmp_path / "bootstrap").resolve()),
+        ),
+    )
+    assert isinstance(attachment, DockerAttachmentEnvironment)
+
+    async def open_eip(self, inspection, allocation, *, mount_id: str) -> None:
+        del self, inspection, allocation, mount_id
+
+    monkeypatch.setattr(DockerAttachmentEnvironment, "_open_eip", open_eip)
+    lifecycle_calls = (len(engine.create_specs), engine.start_calls, engine.stop_calls, engine.remove_calls)
+
+    await attachment.enter(
+        thread_id="thread-2",
+        run_id="run-2",
+        agent_instance_id="agent-2",
+        mount_id="workspace",
+    )
+    assert attachment.dump_state() is None
+    await attachment.close()
+
+    assert (len(engine.create_specs), engine.start_calls, engine.stop_calls, engine.remove_calls) == lifecycle_calls
+    assert target.container_id in engine.containers
+
+
+async def test_foundation_docker_attachment_rejects_stopped_target_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    existing = _environment(tmp_path, engine)
+    await existing.enter(
+        thread_id="thread-1",
+        run_id="run-1",
+        agent_instance_id="agent-1",
+        mount_id="workspace",
+    )
+    state = existing.dump_state()
+    assert state is not None
+    target = DockerProviderStateData.model_validate(state.state)
+    await existing.close()
+    current = engine.containers[target.container_id]
+    engine.containers[target.container_id] = engine._inspection_from(current, "exited")
+    provider = DockerEnvironmentProvider()
+    connection = provider.validate_connection(
+        schema_version="1",
+        parameters={
+            "environment_id": "environment-test",
+            "container_id": target.container_id,
+        },
+    )
+    attachment = provider.create_attachment_environment(
+        connection=connection,
+        runtime=DockerProviderRuntime(
+            engine=engine,
+            bootstrap_store=DirectoryDockerBootstrapStore((tmp_path / "bootstrap").resolve()),
+        ),
+    )
+    lifecycle_calls = (len(engine.create_specs), engine.start_calls, engine.stop_calls, engine.remove_calls)
+
+    with pytest.raises(EnvironmentProviderError) as captured:
+        await attachment.enter(
+            thread_id="thread-2",
+            run_id="run-2",
+            agent_instance_id="agent-2",
+            mount_id="workspace",
+        )
+
+    assert captured.value.code == "provider_target_conflict"
+    assert attachment.dump_state() is None
+    await attachment.close()
+    assert (len(engine.create_specs), engine.start_calls, engine.stop_calls, engine.remove_calls) == lifecycle_calls
 
 
 async def test_docker_inspection_unavailable_does_not_create_speculative_replacement(

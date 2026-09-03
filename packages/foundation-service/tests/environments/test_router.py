@@ -8,6 +8,8 @@ from pathlib import Path
 import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
+from a13n_service.database.metadata import service_metadata
+from a13n_service.environments.domain import EnvironmentRevision
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.settings import ServiceSettings
@@ -19,6 +21,16 @@ from .conftest import ORG_ID, USER_ID, WORKSPACE_ID
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 PROVIDER_KEY = "a13n.direct-local"
+
+
+async def attachment_test(
+    *,
+    actor: AuthenticatedActor,
+    organization_id: str,
+    workspace_id: str,
+    revision: EnvironmentRevision,
+) -> None:
+    del actor, organization_id, workspace_id, revision
 
 
 async def authenticate(request: Request) -> AuthenticatedActor:
@@ -118,7 +130,13 @@ async def environment_api_client(
 ) -> AsyncIterator[httpx2.AsyncClient]:
     config = settings(tmp_path, service_sqlite_database)
     await seed_database(config)
-    app = create_app(config, components=ServiceComponents(request_authenticator=authenticate))
+    app = create_app(
+        config,
+        components=ServiceComponents(
+            request_authenticator=authenticate,
+            environment_attachment_tester=attachment_test,
+        ),
+    )
     async with app.router.lifespan_context(app):
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -141,10 +159,10 @@ async def test_environment_management_http_lifecycle(
 
     create_body = {
         "name": "Local",
-        "provider": {
+        "connection": {
             "provider_key": PROVIDER_KEY,
             "schema_version": "1",
-            "configuration": {
+            "parameters": {
                 "environment_id": "router-local",
                 "root": {"path": str(tmp_path)},
             },
@@ -170,13 +188,27 @@ async def test_environment_management_http_lifecycle(
     revisions = await environment_api_client.get(revisions_url)
     assert revisions.status_code == 200
     assert revisions.json()["items"][0]["id"] == environment["current_revision_id"]
+    assert "connection" not in revisions.json()["items"][0]
+
+    revision_url = f"/api/v1/environment-revisions/{environment['current_revision_id']}"
+    detail = await environment_api_client.get(revision_url)
+    assert detail.status_code == 200
+    assert detail.json()["connection"]["provider_key"] == PROVIDER_KEY
+    assert detail.json()["connection"]["parameters"]["environment_id"] == "router-local"
+    assert detail.json()["connection"]["parameters"]["root"]["path"] == str(tmp_path)
+    assert detail.headers["cache-control"] == "private, no-store"
+
+    tested = await environment_api_client.post(f"{revision_url}/test")
+    assert tested.status_code == 200
+    assert tested.json() == {"success": True, "code": "attachment_ready"}
+    assert tested.headers["cache-control"] == "private, no-store"
 
     no_op = await environment_api_client.post(
         revisions_url,
         headers={"Idempotency-Key": "router-revision-noop"},
         json={
             "expected_version": 1,
-            "provider": create_body["provider"],
+            "connection": create_body["connection"],
             "credential_bindings": [],
             "access": "full",
         },

@@ -90,6 +90,13 @@ def _initial_envelope(
     harness: HarnessState,
     host: HostContinuationState,
 ) -> RunStateEnvelope:
+    harness = HarnessState(
+        schema_version=harness.schema_version,
+        thread_id=harness.thread_id,
+        message_history=harness.message_history,
+        agent_context_state=harness.agent_context_state,
+        environment_states={},
+    )
     return RunStateEnvelope(
         run_id=seed.run_id,
         thread_id=harness.thread_id,

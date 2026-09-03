@@ -19,6 +19,7 @@ from .domain import (
     EnvironmentProviderSelection,
     EnvironmentRevision,
     EnvironmentRevisionCollection,
+    EnvironmentRevisionTestResult,
     PutEnvironmentProviderSelectionRequest,
     UpdateEnvironmentRequest,
 )
@@ -184,6 +185,7 @@ async def create_environment_revision(
         request=body,
     )
     response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
+    response.headers["Cache-Control"] = "private, no-store"
     return result.revision
 
 
@@ -209,7 +211,25 @@ async def list_environment_revisions(
 @router.get("/environment-revisions/{environment_revision_id}", response_model=EnvironmentRevision)
 async def get_environment_revision(
     request: Request,
+    response: Response,
     actor: Actor,
     environment_revision_id: str,
 ) -> EnvironmentRevision:
-    return await _service(request).get_revision(actor=actor, revision_id=environment_revision_id)
+    revision = await _service(request).get_revision(actor=actor, revision_id=environment_revision_id)
+    response.headers["Cache-Control"] = "private, no-store"
+    return revision
+
+
+@router.post(
+    "/environment-revisions/{environment_revision_id}/test",
+    response_model=EnvironmentRevisionTestResult,
+)
+async def test_environment_revision(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    environment_revision_id: str,
+) -> EnvironmentRevisionTestResult:
+    result = await _service(request).test_revision(actor=actor, revision_id=environment_revision_id)
+    response.headers["Cache-Control"] = "private, no-store"
+    return result

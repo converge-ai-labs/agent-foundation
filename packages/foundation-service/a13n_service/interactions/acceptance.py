@@ -25,6 +25,7 @@ from .domain import (
     ThreadOriginKind,
     ThreadRole,
 )
+from .environment_bindings import add_run_with_environment_binding, verify_environment_binding
 from .inbox_persistence import (
     abandon_waiting_entries,
     bind_unbound_async_entries,
@@ -34,7 +35,7 @@ from .input import AcceptedAgentInput
 from .models import RunRecord, SessionRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission
-from .records import run_record, session_record, thread_record
+from .records import session_record, thread_record
 from .state import RunPayloadEnvelope, RunStateEnvelope
 
 
@@ -68,7 +69,7 @@ class RunAcceptanceService:
     ) -> RunAcceptanceReceipt:
         _validate_prepared_run(run, state)
         _validate_new_thread(thread, run, session)
-        replay = await self._load_replay(run, accepted_thread_version=1)
+        replay = await self._load_replay(run, state, accepted_thread_version=1)
         if replay is not None:
             return replay
         await self._verify_input_payload(run)
@@ -76,17 +77,23 @@ class RunAcceptanceService:
         try:
             async with transaction(self._sessions) as database:
                 if session is None:
-                    await _require_session(database, run)
+                    session_record_value = await _require_session(database, run)
+                    workspace_id = session_record_value.workspace_id
                 else:
                     database.add(session_record(session))
+                    workspace_id = session.workspace_id
                 if thread.origin_kind is not ThreadOriginKind.new:
                     await _require_origin(database, thread, run)
                 database.add(thread_record(thread))
-                database.add(run_record(run))
-                await database.flush()
+                await add_run_with_environment_binding(
+                    database,
+                    run=run,
+                    state=state,
+                    workspace_id=workspace_id,
+                )
                 database.add(inbox_counter_record(thread))
         except IntegrityError as error:
-            return await self._reconcile_conflict(run, error, accepted_thread_version=1)
+            return await self._reconcile_conflict(run, state, error, accepted_thread_version=1)
         return _receipt(thread, run)
 
     async def advance_thread(
@@ -101,7 +108,7 @@ class RunAcceptanceService:
     ) -> RunAcceptanceReceipt:
         _validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
-        replay = await self._load_replay(run, accepted_thread_version=accepted_thread_version)
+        replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
             return replay
         candidate_payload = await self._verify_input_payload(run)
@@ -127,7 +134,13 @@ class RunAcceptanceService:
                     candidate_payload=candidate_payload,
                     next_head_run_id=next_head_run_id,
                 )
-                database.add(run_record(run))
+                session_record_value = await _require_session(database, run)
+                await add_run_with_environment_binding(
+                    database,
+                    run=run,
+                    state=state,
+                    workspace_id=session_record_value.workspace_id,
+                )
                 if run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
                     await database.flush()
                     assert run.parent_run_id is not None
@@ -164,6 +177,7 @@ class RunAcceptanceService:
         except IntegrityError as error:
             return await self._reconcile_conflict(
                 run,
+                state,
                 error,
                 accepted_thread_version=accepted_thread_version,
             )
@@ -187,7 +201,7 @@ class RunAcceptanceService:
 
         _validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
-        replay = await self._load_replay(run, accepted_thread_version=accepted_thread_version)
+        replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
             await self._validate_queue_replay(
                 run=run,
@@ -226,7 +240,13 @@ class RunAcceptanceService:
                     candidate_payload=candidate_payload,
                     next_head_run_id=next_head_run_id,
                 )
-                database.add(run_record(run))
+                session_record_value = await _require_session(database, run)
+                await add_run_with_environment_binding(
+                    database,
+                    run=run,
+                    state=state,
+                    workspace_id=session_record_value.workspace_id,
+                )
                 await database.flush()
                 await bind_unbound_async_entries(
                     database,
@@ -267,7 +287,7 @@ class RunAcceptanceService:
                     run_version=run.version,
                 )
         except IntegrityError as error:
-            replay = await self._load_replay(run, accepted_thread_version=accepted_thread_version)
+            replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
             if replay is not None:
                 await self._validate_queue_replay(
                     run=run,
@@ -280,7 +300,13 @@ class RunAcceptanceService:
             ) from error
         return receipt
 
-    async def _load_replay(self, run: Run, *, accepted_thread_version: int) -> RunAcceptanceReceipt | None:
+    async def _load_replay(
+        self,
+        run: Run,
+        state: RunStateEnvelope,
+        *,
+        accepted_thread_version: int,
+    ) -> RunAcceptanceReceipt | None:
         if run.idempotency_key is None:
             return None
         async with short_session(self._sessions) as database:
@@ -292,6 +318,7 @@ class RunAcceptanceService:
             )
             if record is None:
                 return None
+            await verify_environment_binding(database, run=record.to_resource(), state=state)
             return await _validate_replay(database, record, run, accepted_thread_version=accepted_thread_version)
 
     async def _publish_initial(self, run: Run, state: RunStateEnvelope) -> None:
@@ -345,11 +372,12 @@ class RunAcceptanceService:
     async def _reconcile_conflict(
         self,
         run: Run,
+        state: RunStateEnvelope,
         error: IntegrityError,
         *,
         accepted_thread_version: int,
     ) -> RunAcceptanceReceipt:
-        replay = await self._load_replay(run, accepted_thread_version=accepted_thread_version)
+        replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
             return replay
         raise RunAcceptanceError("run_acceptance_conflict", "Run acceptance lost a concurrent mutation") from error
@@ -436,12 +464,13 @@ def _validate_new_thread_origin(thread: Thread, run: Run) -> None:
         raise ValueError("new root Thread requires root Run lineage")
 
 
-async def _require_session(database: AsyncSession, run: Run) -> None:
-    exists = await database.scalar(
-        select(SessionRecord.id).where(SessionRecord.id == run.session_id, SessionRecord.tenant_id == run.tenant_id)
+async def _require_session(database: AsyncSession, run: Run) -> SessionRecord:
+    record = await database.scalar(
+        select(SessionRecord).where(SessionRecord.id == run.session_id, SessionRecord.tenant_id == run.tenant_id)
     )
-    if exists is None:
+    if record is None:
         raise RunAcceptanceError("session_not_found", "The interaction Session was not found")
+    return record
 
 
 async def _require_origin(database: AsyncSession, thread: Thread, run: Run) -> None:

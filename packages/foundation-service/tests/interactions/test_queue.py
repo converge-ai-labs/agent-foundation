@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.environments.models import RunEnvironmentBindingRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
     AttemptExecutionService,
@@ -33,9 +34,18 @@ from a13n_service.interactions.queue import (
     classify_thread_submission,
 )
 from a13n_service.storage import ObjectStore, short_session, transaction
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, TENANT_ID, USER_ID, effective_agent_config
+from .conftest import (
+    AGENT_ID,
+    AGENT_REVISION_ID,
+    NOW,
+    TENANT_ID,
+    USER_ID,
+    effective_agent_config,
+    environment_execution_config,
+)
 from .test_acceptance import _accepted_run
 from .test_attempt_execution import _accept_root, _authority, _completed_state, _worker
 
@@ -329,7 +339,8 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         thread.version += 1
     assert await queue.scan_drainable(tenant_id=TENANT_ID) == (source.thread_id,)
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="first"),))
-    config = effective_agent_config()
+    environment = environment_execution_config()
+    config = effective_agent_config(environment=environment)
     seed = RunStateSeed(
         run_id="run_6666666666666666",
         agent_id=AGENT_ID,
@@ -342,6 +353,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         thread_id=source.thread_id,
         idempotency_key="consume-first",
         request_fingerprint="6" * 64,
+        config=config,
     ).model_copy(update={"input": accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)})
     receipt = await RunAcceptanceService(
         interaction_sessions,
@@ -375,8 +387,12 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     async with short_session(interaction_sessions) as database:
         thread = await database.get(ThreadRecord, source.thread_id)
         accepted = await database.get(RunRecord, run.id)
-        assert thread is not None and accepted is not None
+        binding = await database.scalar(
+            select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == run.id)
+        )
+        assert thread is not None and accepted is not None and binding is not None
         assert (thread.version, thread.queue_version, thread.current_run_id) == (3, 3, run.id)
+        assert binding.target_key == environment.target_key
     assert await queue.scan_drainable(tenant_id=TENANT_ID) == ()
 
 
@@ -424,11 +440,13 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         queued_submission_id="qsub_7171717171717171",
     )
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="next"),))
+    environment = environment_execution_config()
+    successor_config = effective_agent_config(environment=environment)
     successor_seed = RunStateSeed(
         run_id="run_7171717171717171",
         agent_id=AGENT_ID,
         agent_revision_id=AGENT_REVISION_ID,
-        effective_agent_config=effective_agent_config(),
+        effective_agent_config=successor_config,
     )
     successor_state = initialize_completed_continuation_state(successor_seed, completed)
     successor = _accepted_run(
@@ -436,6 +454,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         thread_id=source.thread_id,
         idempotency_key="combined-next",
         request_fingerprint="7" * 64,
+        config=successor_config,
     ).model_copy(
         update={
             "parent_run_id": source.id,
@@ -469,7 +488,16 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         successor_row = await database.get(RunRecord, successor.id)
         attempt = await database.get(RunAttemptRecord, claimed.attempt.id)
         thread = await database.get(ThreadRecord, source.thread_id)
-        assert source_row is not None and successor_row is not None and attempt is not None and thread is not None
+        binding = await database.scalar(
+            select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == successor.id)
+        )
+        assert (
+            source_row is not None
+            and successor_row is not None
+            and attempt is not None
+            and thread is not None
+            and binding is not None
+        )
         assert source_row.status == "completed"
         assert successor_row.status == "accepted"
         assert attempt.status == "succeeded"
@@ -479,6 +507,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
             source.id,
             successor.id,
         )
+        assert binding.target_key == environment.target_key
 
 
 async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_completion(

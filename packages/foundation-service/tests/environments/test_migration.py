@@ -9,6 +9,7 @@ ENVIRONMENT_TABLES = {
     "environment_provider_selections",
     "environments",
     "environment_revisions",
+    "run_environment_bindings",
 }
 
 
@@ -18,6 +19,9 @@ def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         tables = set(inspect(engine).get_table_names())
         if present:
             assert ENVIRONMENT_TABLES <= tables
+            revision_columns = {column["name"] for column in inspect(engine).get_columns("environment_revisions")}
+            assert {"connection", "target_key"} <= revision_columns
+            assert "provider" not in revision_columns
         else:
             assert ENVIRONMENT_TABLES.isdisjoint(tables)
     finally:
