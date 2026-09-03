@@ -7,6 +7,14 @@ from a13n_service.settings import ServiceRole, ServiceSettings
 from .support import create_web_dist, request
 
 
+def test_app_exposes_settings_before_lifespan() -> None:
+    settings = ServiceSettings(_env_file=None, role=ServiceRole.worker)
+
+    app = create_app(settings)
+
+    assert app.state.settings is settings
+
+
 def test_health_reports_process_role() -> None:
     response = request(create_app(ServiceSettings(_env_file=None, role=ServiceRole.worker)), "/healthz")
 

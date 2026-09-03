@@ -96,6 +96,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         redoc_url="/api/redoc" if serves_control_plane else None,
         swagger_ui_oauth2_redirect_url="/api/docs/oauth2-redirect" if serves_control_plane else None,
     )
+    app.state.settings = resolved_settings
     install_api_conventions(app)
 
     @app.middleware("http")
