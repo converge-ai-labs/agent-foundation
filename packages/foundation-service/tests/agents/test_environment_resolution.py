@@ -59,10 +59,10 @@ async def _environment(
         request=CreateEnvironmentRequest.model_validate(
             {
                 "name": "Agent Workspace",
-                "provider": {
+                "connection": {
                     "provider_key": PROVIDER_KEY,
                     "schema_version": "1",
-                    "configuration": {
+                    "parameters": {
                         "environment_id": "agent-workspace",
                         "root": {"path": str(root)},
                     },
@@ -153,18 +153,19 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
     frozen_environment = revision_result.revision.resolved_environment
     assert frozen_environment is not None
     assert frozen_environment.source_environment_revision_id == environment_revision_id
-    assert frozen_environment.provider.provider_key == PROVIDER_KEY
+    assert frozen_environment.connection.provider_key == PROVIDER_KEY
+    assert frozen_environment.target_key == str(tmp_path.resolve())
     assert frozen_environment.access == "read_write"
-    assert frozen_environment.provider_lock["registration_digest_sha256"]
+    assert frozen_environment.provider_lock.registration_digest_sha256
     assert tuple(item.skill_id for item in revision_result.revision.resolved_skills) == (SKILL_ID,)
     assert revision_result.revision.resolved_skills[0].skill_key == "deploy"
     assert revision_result.revision.resolved_skills[0].version is None
 
     original = await agent_environment_service.get_revision(actor=actor(), revision_id=environment_revision_id)
-    next_provider = original.provider.model_copy(
+    next_connection = original.connection.model_copy(
         update={
-            "configuration": {
-                **original.provider.configuration,
+            "parameters": {
+                **original.connection.parameters,
                 "environment_id": "agent-workspace-v2",
             }
         }
@@ -175,7 +176,7 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
         idempotency_key="newer-agent-environment",
         request=CreateEnvironmentRevisionRequest(
             expected_version=1,
-            provider=next_provider,
+            connection=next_connection,
             credential_bindings=original.credential_bindings,
             access=original.access,
         ),
@@ -235,10 +236,10 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
     assert pinned_override_frozen.effective_config.skills[0].version == 1
 
     inline_read_only = {
-        "provider": {
+        "connection": {
             "provider_key": PROVIDER_KEY,
             "schema_version": "1",
-            "configuration": {
+            "parameters": {
                 "environment_id": "one-run",
                 "root": {"path": str(tmp_path), "read_only": True},
             },

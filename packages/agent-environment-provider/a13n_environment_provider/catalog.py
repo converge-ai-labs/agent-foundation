@@ -300,7 +300,7 @@ def _load_builtin_provider(
 
         provider_type = LocalEnvdEnvironmentProvider
     elif provider_key == "a13n.docker":
-        from .docker.provider import DockerEnvironmentProvider
+        from .docker.factory import DockerEnvironmentProvider
 
         provider_type = DockerEnvironmentProvider
     else:  # pragma: no cover - guarded by catalog preflight

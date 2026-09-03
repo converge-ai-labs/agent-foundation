@@ -15,6 +15,7 @@ from a13n_environment_provider import (
 )
 from a13n_harness.capabilities import DocumentsCapability, WebCapability
 from a13n_harness.capabilities.documents import DocumentsConfiguration
+from a13n_harness.capabilities.skills import FileSkillSource, SkillManager, SkillsCapability, SkillsPolicy
 from a13n_harness.capabilities.web import WebConfiguration
 from a13n_harness.capability_types import CapabilityTypeCatalog, first_party_declarative_capability_types
 from a13n_harness.environment import (
@@ -31,7 +32,7 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, validate_call
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator, validate_call
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability
 
 from a13n_ui.errors import CompositionError
@@ -47,6 +48,7 @@ _BUILTIN_PROVIDER_KEYS = frozenset({"a13n.direct-local", "a13n.local-envd", "a13
 _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "dynamic_environment": DynamicEnvironmentCapability,
     "documents": DocumentsCapability,
+    "skills": SkillsCapability,
     "web": WebCapability,
     **{
         name: item
@@ -55,6 +57,30 @@ _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     },
     **{name: item for name, item in CAPABILITY_TYPES.items() if name is not None},
 }
+
+
+class SkillsConfiguration(BaseModel):
+    """Agent UI source additions for the built-in Harness Skills Capability."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    roots: tuple[str, ...] = Field(default=(), max_length=128)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_roots(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if isinstance(normalized.get("roots"), list):
+            normalized["roots"] = tuple(normalized["roots"])
+        return normalized
+
+    @model_validator(mode="after")
+    def _unique_roots(self) -> SkillsConfiguration:
+        if len(set(self.roots)) != len(self.roots):
+            raise ValueError("Skill roots must be unique")
+        return self
 
 
 class CatalogReference(BaseModel):
@@ -153,6 +179,8 @@ class AgentUiExtensionCatalog:
     def capabilities(
         self,
         selections: tuple[tuple[str, dict[str, JsonValue]], ...],
+        *,
+        project_mount_count: int = 1,
     ) -> tuple[SelectedCapability, ...]:
         result: list[SelectedCapability] = []
         custom_types: list[type[AbstractCapability[Any]]] = []
@@ -195,7 +223,11 @@ class AgentUiExtensionCatalog:
                     distribution_name = entry.dist.metadata.get("Name")
                     distribution_version = entry.dist.version
             try:
-                capability = _construct_capability(capability_type, configuration)
+                capability = _construct_capability(
+                    capability_type,
+                    configuration,
+                    project_mount_count=project_mount_count,
+                )
             except (TypeError, ValidationError, ValueError) as exc:
                 raise CompositionError(
                     "Capability configuration is invalid.",
@@ -385,6 +417,8 @@ class AgentUiExtensionCatalog:
 def _construct_capability(
     capability_type: type[AbstractCapability[Any]],
     configuration: dict[str, JsonValue],
+    *,
+    project_mount_count: int,
 ) -> AbstractCapability[Any]:
     if capability_type is DynamicEnvironmentCapability:
         return DynamicEnvironmentCapability(DynamicEnvironmentConfiguration.model_validate(configuration, strict=True))
@@ -392,11 +426,59 @@ def _construct_capability(
         return DocumentsCapability(DocumentsConfiguration.model_validate(configuration, strict=True))
     if capability_type is WebCapability:
         return WebCapability(WebConfiguration.model_validate(configuration, strict=True))
+    if capability_type is SkillsCapability:
+        return _construct_skills_capability(configuration, project_mount_count=project_mount_count)
 
     initializer = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True))(capability_type.__init__)
     capability = capability_type.__new__(capability_type)
     initializer(capability, **configuration)
     return capability
+
+
+def _construct_skills_capability(
+    configuration: dict[str, JsonValue],
+    *,
+    project_mount_count: int,
+) -> SkillsCapability:
+    if project_mount_count < 1 or project_mount_count > 64:
+        raise ValueError("project_mount_count must be between one and 64")
+    parsed = SkillsConfiguration.model_validate(configuration, strict=True)
+    sources = [
+        FileSkillSource(
+            "agent-ui:user-skills",
+            ("/environment/user-skills",),
+            required=False,
+        )
+    ]
+    for index in range(project_mount_count, 1, -1):
+        sources.append(
+            FileSkillSource(
+                f"agent-ui:project:workspace-{index}",
+                (f"/environment/workspace-{index}/.agents/skills",),
+                required=False,
+            )
+        )
+    sources.append(
+        FileSkillSource(
+            "agent-ui:project:workspace",
+            ("/workspace/.agents/skills",),
+            required=False,
+        )
+    )
+    sources.extend(
+        FileSkillSource(
+            f"agent-ui:explicit:{index}",
+            (root,),
+            required=True,
+        )
+        for index, root in enumerate(parsed.roots, start=1)
+    )
+    return SkillsCapability(
+        SkillManager(
+            sources,
+            policy=SkillsPolicy(conflict="prefer_later"),
+        )
+    )
 
 
 def _capability_entry_points() -> dict[str, tuple[importlib.metadata.EntryPoint, ...]]:

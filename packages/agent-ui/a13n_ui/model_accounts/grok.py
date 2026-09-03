@@ -35,6 +35,23 @@ from .models import (
     StorePolicy,
 )
 
+DEFAULT_GROK_OAUTH_ISSUER = "https://auth.x.ai"
+DEFAULT_GROK_OAUTH_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
+DEFAULT_GROK_OAUTH_SCOPES = (
+    "openid",
+    "profile",
+    "email",
+    "offline_access",
+    "grok-cli:access",
+    "api:access",
+    "conversations:read",
+    "conversations:write",
+    "workspaces:read",
+    "workspaces:write",
+)
+DEFAULT_GROK_OIDC_SCOPES = ("openid", "profile", "email", "offline_access", "api:access")
+DEFAULT_GROK_OAUTH_SCOPE = f"{DEFAULT_GROK_OAUTH_ISSUER}::{DEFAULT_GROK_OAUTH_CLIENT_ID}"
+
 _DEFAULT_REFRESH_WINDOW = timedelta(minutes=5)
 _LEGACY_TOKEN_TTL = timedelta(days=30)
 _OAUTH_MODES = {"oidc", "external"}

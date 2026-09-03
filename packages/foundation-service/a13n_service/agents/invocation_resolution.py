@@ -833,10 +833,19 @@ def _validate_child_environment(
         if (
             root_environment is None
             or child_environment is None
-            or root_environment.logical_digest_sha256 != child_environment.logical_digest_sha256
+            or _environment_target_identity(root_environment) != _environment_target_identity(child_environment)
             or _access_rank(child_environment.access) > _access_rank(root_environment.access)
         ):
             raise agent_revision_not_executable("subagent_environment_incompatible")
+
+
+def _environment_target_identity(environment: EnvironmentExecutionConfig) -> tuple[object, ...]:
+    return (
+        environment.connection,
+        environment.provider_package_revision_id,
+        environment.provider_lock,
+        environment.target_key,
+    )
 
 
 def _access_rank(access: str) -> int:

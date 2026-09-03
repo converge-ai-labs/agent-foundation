@@ -5,14 +5,18 @@ from a13n_service.agents.domain import (
     AgentRunOverride,
     CreateAgentRequest,
     CreateAgentRevisionRequest,
+    EnvironmentExecutionConfig,
+    SubagentSelection,
 )
 from a13n_service.agents.errors import AgentError
 from a13n_service.agents.invocation import merge_agent_run_override
 from a13n_service.agents.invocation_resolution import (
     AgentInvocationResolver,
     AgentSelectorKind,
+    _validate_child_environment,
 )
 from a13n_service.agents.service import AgentService
+from a13n_service.environments.domain import EnvironmentConnectionSpec, EnvironmentProviderLock
 from a13n_service.models.models import ModelRecord
 from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -117,6 +121,46 @@ def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
     assert merged.config.subagents["researcher"].description is None
     assert merged.config.subagents["writer"].context.history == "none"
     assert merged.config.subagents["writer"].environment.mode == "none"
+
+
+def test_shared_root_child_accepts_narrower_access_to_the_exact_target() -> None:
+    connection = EnvironmentConnectionSpec(
+        provider_key="a13n.direct-local",
+        schema_version="1",
+        parameters={"environment_id": "shared", "root": {"path": "/tmp/shared"}},
+    )
+    lock = EnvironmentProviderLock(
+        provider_key=connection.provider_key,
+        distribution_name="a13n-environment-provider",
+        distribution_version="1.0.0",
+        builtin=True,
+        registration_digest_sha256="a" * 64,
+    )
+    root = EnvironmentExecutionConfig(
+        source_environment_revision_id="envr_1234567890abcdef",
+        connection=connection,
+        provider_lock=lock,
+        access="full",
+        target_key="/tmp/shared",
+        logical_digest_sha256="b" * 64,
+    )
+    child = root.model_copy(
+        update={
+            "source_environment_revision_id": "envr_abcdef1234567890",
+            "access": "read_only",
+            "logical_digest_sha256": "c" * 64,
+        }
+    )
+    selection = SubagentSelection(
+        agent_id="ap_1234567890abcdef",
+        environment={"mode": "shared_root"},
+    )
+
+    _validate_child_environment(root, child, selection)
+
+    with pytest.raises(AgentError) as incompatible:
+        _validate_child_environment(root, child.model_copy(update={"target_key": "/tmp/other"}), selection)
+    assert incompatible.value.details == {"reason": "subagent_environment_incompatible"}
 
 
 def test_connection_tool_patches_are_name_keyed() -> None:

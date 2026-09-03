@@ -3,12 +3,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import time
 from collections.abc import Iterator, Mapping
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import anyio
 import httpx2
+import jwt
 import pytest
 from a13n_harness.model_auth import (
     CodexCredentials,
@@ -17,11 +20,15 @@ from a13n_harness.model_auth import (
     CredentialPersistenceError,
     CredentialRefreshError,
     GrokCredentials,
+    GrokDeviceAuthorizationFlow,
+    GrokOAuthFlow,
     ModelAuthenticationError,
     build_codex_model,
     build_grok_model,
+    refresh_grok_credentials,
 )
 from a13n_harness.model_auth import runtime as model_auth_runtime
+from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import ModelRequestParameters
@@ -480,7 +487,13 @@ async def test_grok_refresh_bypasses_model_auth_when_oidc_uses_model_origin() ->
         if request.url.path == "/.well-known/openid-configuration":
             assert request.headers.get("authorization") is None
             events.append("discovery")
-            return httpx2.Response(200, json={"token_endpoint": "https://api.x.ai/oauth/token"})
+            return httpx2.Response(
+                200,
+                json={
+                    "issuer": "https://api.x.ai",
+                    "token_endpoint": "https://api.x.ai/oauth/token",
+                },
+            )
         if request.url.path == "/oauth/token":
             assert request.headers.get("authorization") is None
             events.append("token")
@@ -505,6 +518,27 @@ async def test_grok_refresh_bypasses_model_auth_when_oidc_uses_model_origin() ->
     assert events == ["discovery", "token", "model"]
     assert len(source.saved) == 1
     assert source.saved[0].access_token == "grok-access-new"
+
+
+async def test_grok_refresh_rejects_mismatched_discovery_issuer_before_token_exchange() -> None:
+    credentials = _grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1))
+    requests: list[httpx2.Request] = []
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(
+            200,
+            json={
+                "issuer": "https://other.example",
+                "token_endpoint": "https://other.example/oauth/token",
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        with pytest.raises(CredentialRefreshError, match="different issuer"):
+            await refresh_grok_credentials(credentials, http_client=client)
+
+    assert [request.method for request in requests] == ["GET"]
 
 
 async def test_concurrent_401s_share_failure_and_a_later_request_retries() -> None:
@@ -664,6 +698,13 @@ def test_codex_pkce_authorization_url_contains_challenge_but_not_verifier() -> N
     assert query["code_challenge"] == [expected_challenge]
     assert query["redirect_uri"] == [flow.redirect_uri]
     assert flow.code_verifier not in flow.authorization_url()
+
+
+def test_oauth_extra_params_cannot_replace_flow_security_parameters() -> None:
+    flow = CodexOAuthFlow(state="state-value")
+
+    with pytest.raises(UserError, match="cannot override OAuth parameter: state"):
+        flow.authorization_url(extra_params={"state": "replacement"})
 
 
 def test_codex_turn_state_capture_skips_unrelated_repeated_headers() -> None:
@@ -846,6 +887,251 @@ async def test_codex_turn_state_is_isolated_between_concurrent_runs() -> None:
     assert seen[("one", "continuation")][_CODEX_TURN_STATE_HEADER] == "state-one"
     assert seen[("two", "continuation")][_CODEX_TURN_STATE_HEADER] == "state-two"
     assert all(headers[_CODEX_ROUTING_HINT_HEADER] == "model=gpt-5" for headers in seen.values())
+
+
+async def test_grok_browser_oauth_discovers_endpoints_and_verifies_identity() -> None:
+    issuer = "https://issuer.example"
+    client_id = "public-client"
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = jwt.algorithms.RSAAlgorithm.to_jwk(private_key.public_key(), as_dict=True)
+    jwk["kid"] = "key-1"
+    requests: list[httpx2.Request] = []
+    flow: GrokOAuthFlow | None = None
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if request.url.path.endswith("/.well-known/openid-configuration"):
+            return httpx2.Response(
+                200,
+                json={
+                    "issuer": issuer,
+                    "authorization_endpoint": f"{issuer}/authorize",
+                    "token_endpoint": f"{issuer}/oauth2/token",
+                    "jwks_uri": f"{issuer}/.well-known/jwks.json",
+                    "id_token_signing_alg_values_supported": ["RS256"],
+                },
+            )
+        if request.url.path == "/oauth2/token":
+            assert flow is not None
+            id_token = jwt.encode(
+                {
+                    "iss": issuer,
+                    "aud": client_id,
+                    "sub": "user-1",
+                    "nonce": flow.nonce,
+                    "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
+                },
+                private_key,
+                algorithm="RS256",
+                headers={"kid": "key-1"},
+            )
+            return httpx2.Response(
+                200,
+                json={
+                    "access_token": "access-secret",
+                    "refresh_token": "refresh-secret",
+                    "id_token": id_token,
+                    "expires_in": 3600,
+                },
+            )
+        if request.url.path.endswith("/jwks.json"):
+            return httpx2.Response(200, json={"keys": [jwk]})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        flow = await GrokOAuthFlow.discover(
+            issuer=issuer,
+            client_id=client_id,
+            scopes=("openid", "offline_access"),
+            redirect_uri="http://127.0.0.1:43210/callback",
+            referrer="agent-ui",
+            http_client=client,
+        )
+        query = parse_qs(urlsplit(flow.authorization_url()).query)
+        credentials = await flow.exchange_code("authorization-code")
+
+    assert query == {
+        "response_type": ["code"],
+        "client_id": [client_id],
+        "redirect_uri": ["http://127.0.0.1:43210/callback"],
+        "scope": ["openid offline_access"],
+        "state": [flow.state],
+        "nonce": [flow.nonce],
+        "code_challenge": [flow.code_challenge],
+        "code_challenge_method": ["S256"],
+        "referrer": ["agent-ui"],
+    }
+    assert credentials.account_id == "user-1"
+    assert credentials.access_token == "access-secret"
+    assert credentials.refresh_token == "refresh-secret"
+    token_form = parse_qs(requests[1].content.decode())
+    assert token_form["code"] == ["authorization-code"]
+    assert token_form["code_verifier"] == [flow.code_verifier]
+
+
+async def test_grok_browser_oauth_rejects_mismatched_discovery_issuer() -> None:
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        del request
+        return httpx2.Response(200, json={"issuer": "https://other.example"})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        with pytest.raises(CredentialRefreshError, match="different issuer"):
+            await GrokOAuthFlow.discover(
+                issuer="https://issuer.example",
+                client_id="public-client",
+                scopes=("openid",),
+                redirect_uri="http://127.0.0.1:43210/callback",
+                http_client=client,
+            )
+
+
+async def test_grok_device_oauth_polls_pending_and_slow_down_without_exposing_device_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    issuer = "https://issuer.example"
+    token_attempts = 0
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal token_attempts
+        if request.url.path == "/oauth2/device/code":
+            return httpx2.Response(
+                200,
+                json={
+                    "device_code": "device-secret",
+                    "user_code": "ABCD-1234",
+                    "verification_uri": "https://accounts.example/device",
+                    "verification_uri_complete": "https://accounts.example/device?code=ABCD-1234",
+                    "expires_in": 600,
+                    "interval": 2,
+                },
+            )
+        token_attempts += 1
+        if token_attempts == 1:
+            return httpx2.Response(400, json={"error": "authorization_pending"})
+        if token_attempts == 2:
+            return httpx2.Response(400, json={"error": "slow_down"})
+        return httpx2.Response(
+            200,
+            json={
+                "access_token": _unsigned_jwt({"sub": "user-1"}),
+                "refresh_token": "refresh-secret",
+                "id_token": _unsigned_jwt({"sub": "user-1"}),
+                "expires_in": 3600,
+            },
+        )
+
+    monkeypatch.setattr("a13n_harness.model_auth.oauth.anyio.sleep", fake_sleep)
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        authorization = await GrokDeviceAuthorizationFlow.start(
+            issuer=issuer,
+            client_id="public-client",
+            scopes=("openid", "offline_access"),
+            referrer="agent-ui",
+            http_client=client,
+        )
+        credentials = await authorization.wait_for_credentials()
+
+    assert "device-secret" not in repr(authorization)
+    assert authorization.user_code == "ABCD-1234"
+    assert sleeps == [2.0, 2.0, 7.0]
+    assert credentials.account_id == "user-1"
+    assert credentials.refresh_token == "refresh-secret"
+
+
+async def test_grok_device_oauth_lifetime_starts_with_authorization_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = 100.0
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path != "/oauth2/device/code":
+            raise AssertionError("an expired device code must not be polled")
+        return httpx2.Response(
+            200,
+            json={
+                "device_code": "device-secret",
+                "user_code": "ABCD-1234",
+                "verification_uri": "https://accounts.example/device",
+                "expires_in": 1,
+            },
+        )
+
+    monkeypatch.setattr("a13n_harness.model_auth.oauth.time.monotonic", lambda: now)
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        authorization = await GrokDeviceAuthorizationFlow.start(
+            issuer="https://issuer.example",
+            client_id="public-client",
+            scopes=("openid",),
+            http_client=client,
+        )
+        now = 101.0
+        with pytest.raises(CredentialRefreshError, match="device code expired"):
+            await authorization.wait_for_credentials()
+
+
+async def test_grok_device_oauth_bounds_each_token_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_sleep(delay: float) -> None:
+        del delay
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/oauth2/device/code":
+            return httpx2.Response(
+                200,
+                json={
+                    "device_code": "device-secret",
+                    "user_code": "ABCD-1234",
+                    "verification_uri": "https://accounts.example/device",
+                    "expires_in": 600,
+                },
+            )
+        await anyio.Event().wait()
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr("a13n_harness.model_auth.oauth.anyio.sleep", fake_sleep)
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        authorization = await GrokDeviceAuthorizationFlow.start(
+            issuer="https://issuer.example",
+            client_id="public-client",
+            scopes=("openid",),
+            http_client=client,
+        )
+        authorization = replace(authorization, _expires_at=time.monotonic() + 0.01)
+        with pytest.raises(CredentialRefreshError, match="device code expired"):
+            await authorization.wait_for_credentials()
+
+
+async def test_grok_device_oauth_rejects_untrusted_verification_url() -> None:
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        del request
+        return httpx2.Response(
+            200,
+            json={
+                "device_code": "device-secret",
+                "user_code": "ABCD-1234",
+                "verification_uri": "javascript:alert(1)",
+                "expires_in": 600,
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        with pytest.raises(CredentialRefreshError, match="invalid verification_uri"):
+            await GrokDeviceAuthorizationFlow.start(
+                issuer="https://issuer.example",
+                client_id="public-client",
+                scopes=("openid",),
+                http_client=client,
+            )
+
+
+def _unsigned_jwt(payload: dict[str, object]) -> str:
+    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+    return f"header.{encoded}.signature"
 
 
 def test_codex_subscription_settings_use_harness_thread_affinity() -> None:

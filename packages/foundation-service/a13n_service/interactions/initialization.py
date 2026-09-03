@@ -17,18 +17,12 @@ class RunStateSeed(StrictModel):
     effective_agent_config: EffectiveAgentConfig
 
 
-def initialize_start_state(seed: RunStateSeed) -> RunStateEnvelope:
-    return _initial_envelope(seed, HarnessState.new(), HostContinuationState())
+def initialize_start_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunStateEnvelope:
+    return _initial_envelope(seed, HarnessState.new(thread_id=thread_id), HostContinuationState())
 
 
-def initialize_empty_thread_state(seed: RunStateSeed, *, thread_id: str) -> RunStateEnvelope:
-    harness = HarnessState(
-        schema_version="1",
-        thread_id=thread_id,
-        message_history=(),
-        environment_states={},
-    )
-    return _initial_envelope(seed, harness, HostContinuationState())
+def initialize_empty_thread_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunStateEnvelope:
+    return _initial_envelope(seed, HarnessState.new(thread_id=thread_id), HostContinuationState())
 
 
 def initialize_completed_continuation_state(
@@ -53,9 +47,14 @@ def initialize_waiting_continuation_state(
     return _initial_envelope(seed, _clone_harness(parent.harness), host)
 
 
-def initialize_fork_state(seed: RunStateSeed, parent: RunStateEnvelope) -> RunStateEnvelope:
+def initialize_fork_state(
+    seed: RunStateSeed,
+    parent: RunStateEnvelope,
+    *,
+    thread_id: ThreadId,
+) -> RunStateEnvelope:
     _require_parent(parent, checkpoint_kind="completed")
-    return _initial_envelope(seed, parent.harness.fork(), HostContinuationState())
+    return _initial_envelope(seed, parent.harness.fork(thread_id=thread_id), HostContinuationState())
 
 
 def initialize_retry_state(
@@ -74,7 +73,7 @@ def initialize_retry_state(
         raise ValueError("non-root retry requires the original state parent")
     if source_lineage_kind is RunLineageKind.fork:
         _require_parent(parent, checkpoint_kind="completed")
-        harness = _fork_harness_for_existing_thread(parent.harness, thread_id=thread_id)
+        harness = parent.harness.fork(thread_id=thread_id)
         return _initial_envelope(seed, harness, HostContinuationState())
     if source_input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
         state = initialize_waiting_continuation_state(seed, parent)
@@ -90,6 +89,13 @@ def _initial_envelope(
     harness: HarnessState,
     host: HostContinuationState,
 ) -> RunStateEnvelope:
+    harness = HarnessState(
+        schema_version=harness.schema_version,
+        thread_id=harness.thread_id,
+        message_history=harness.message_history,
+        agent_context_state=harness.agent_context_state,
+        environment_states={},
+    )
     return RunStateEnvelope(
         run_id=seed.run_id,
         thread_id=harness.thread_id,
@@ -116,16 +122,6 @@ def _require_parent(parent: RunStateEnvelope, *, checkpoint_kind: str) -> None:
 
 def _clone_harness(value: HarnessState) -> HarnessState:
     return HarnessState.model_validate(value.model_dump(mode="json", by_alias=True))
-
-
-def _fork_harness_for_existing_thread(value: HarnessState, *, thread_id: ThreadId) -> HarnessState:
-    return HarnessState(
-        schema_version="1",
-        thread_id=thread_id,
-        message_history=value.message_history,
-        agent_context_state=value.agent_context_state,
-        environment_states={},
-    )
 
 
 __all__ = [

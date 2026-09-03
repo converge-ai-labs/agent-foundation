@@ -8,9 +8,10 @@ from typing import Any
 
 import a13n_ui.cli as cli_module
 import pytest
-from a13n_harness.model_auth import CodexCredentials
+from a13n_harness.model_auth import CodexCredentials, GrokCredentials
 from a13n_ui.cli import main
 from a13n_ui.errors import ConfigurationError
+from a13n_ui.model_accounts import DEFAULT_GROK_OAUTH_SCOPE, GrokLoginRequest
 from a13n_ui.surfaces import (
     ContinuationSelectionView,
     EnvironmentOutcomeView,
@@ -36,14 +37,31 @@ def test_defaults_to_interactive_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls[0].command is None
 
 
-def test_account_login_parser_exposes_only_the_wired_codex_flow() -> None:
+def test_auth_login_interruption_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run(args: argparse.Namespace) -> None:
+        del args
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli_module, "_run", run)
+
+    with pytest.raises(SystemExit) as interrupted:
+        main(["auth", "login", "grok"])
+
+    assert interrupted.value.code == 130
+
+
+def test_auth_parser_exposes_codex_and_grok_native_flows() -> None:
     parser = cli_module._parser()
 
-    parsed = parser.parse_args(["account", "login", "codex"])
-    assert parsed.provider == "codex"
+    codex = parser.parse_args(["auth", "login", "codex"])
+    grok = parser.parse_args(["auth", "login", "grok", "--device-code"])
+    status = parser.parse_args(["auth", "status"])
 
-    with pytest.raises(SystemExit):
-        parser.parse_args(["account", "login", "grok"])
+    assert codex.provider == "codex"
+    assert codex.device_code is False
+    assert grok.provider == "grok"
+    assert grok.device_code is True
+    assert status.provider is None
 
 
 @pytest.mark.anyio
@@ -73,14 +91,109 @@ async def test_codex_cli_login_uses_harness_oauth_flow(
     assert "https://auth.example/authorize" in capsys.readouterr().err
 
 
+@pytest.mark.anyio
+async def test_grok_cli_login_uses_native_browser_oauth_flow(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    credentials = GrokCredentials(
+        account_id="account-1",
+        auth_mode="oidc",
+        create_time=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        issuer="https://auth.x.ai",
+        client_id="b1a00492-073a-47ea-816f-4c329264a828",
+        access_token="access-secret",
+        refresh_token="refresh-secret",
+    )
+    discovered: list[dict[str, object]] = []
+
+    class Flow:
+        @classmethod
+        async def discover(cls, **kwargs: object) -> Flow:
+            discovered.append(kwargs)
+            return cls()
+
+        def authorization_url(self) -> str:
+            return "https://auth.example/authorize"
+
+        async def exchange_code_from_callback(self, *, timeout_seconds: float) -> GrokCredentials:
+            assert timeout_seconds == 600
+            return credentials
+
+    monkeypatch.setattr(cli_module, "GrokOAuthFlow", Flow)
+
+    result = await cli_module._grok_cli_login(
+        GrokLoginRequest(scope=DEFAULT_GROK_OAUTH_SCOPE, replacing_shared_account=False),
+        device_code=False,
+    )
+
+    assert result is credentials
+    assert discovered[0]["issuer"] == "https://auth.x.ai"
+    assert "grok-cli:access" in discovered[0]["scopes"]
+    captured = capsys.readouterr()
+    assert "https://auth.example/authorize" in captured.err
+    assert "access-secret" not in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.anyio
+async def test_grok_cli_login_uses_device_authorization_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    credentials = GrokCredentials(
+        account_id="account-1",
+        auth_mode="oidc",
+        create_time=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        issuer="https://issuer.example",
+        client_id="client-id",
+        access_token="access-secret",
+        refresh_token="refresh-secret",
+    )
+
+    class Authorization:
+        verification_uri = "https://issuer.example/device"
+        verification_uri_complete = None
+        user_code = "ABCD-1234"
+
+        async def wait_for_credentials(self) -> GrokCredentials:
+            return credentials
+
+    class DeviceFlow:
+        @classmethod
+        async def start(cls, **kwargs: object) -> Authorization:
+            assert kwargs["issuer"] == "https://issuer.example"
+            assert kwargs["client_id"] == "client-id"
+            return Authorization()
+
+    monkeypatch.setattr(cli_module, "GrokDeviceAuthorizationFlow", DeviceFlow)
+
+    result = await cli_module._grok_cli_login(
+        GrokLoginRequest(
+            scope="https://issuer.example::client-id",
+            replacing_shared_account=False,
+        ),
+        device_code=True,
+    )
+
+    assert result is credentials
+    captured = capsys.readouterr()
+    assert "https://issuer.example/device" in captured.err
+    assert "ABCD-1234" in captured.err
+    assert "access-secret" not in captured.err
+    assert captured.out == ""
+
+
 def test_parses_management_commands_and_data_root() -> None:
     parser = cli_module._parser()
 
     validate = parser.parse_args(["--data-root", "/tmp/a13n-data", "config", "validate", "--format", "json"])
     import_subagents = parser.parse_args(
         [
-            "config",
-            "import-subagents",
+            "import",
+            "subagents",
             "--product",
             "codex",
             "--scope",

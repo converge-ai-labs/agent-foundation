@@ -10,10 +10,17 @@ from a13n_service.agents.domain import (
     AgentConfig,
     EffectiveAgentConfig,
     EffectiveAgentModel,
+    EnvironmentExecutionConfig,
     canonical_digest,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.database.metadata import service_metadata
+from a13n_service.environments.domain import (
+    EnvironmentAccess,
+    EnvironmentConnectionSpec,
+    EnvironmentProviderLock,
+    environment_logical_digest,
+)
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.interactions import HostContinuationState, RunStateEnvelope
 from a13n_service.models.domain import ModelExecutionSnapshot
@@ -32,11 +39,47 @@ ATTEMPT_ID = "rat_1234567890abcdef"
 TENANT_ID = "org_1234567890abcdef"
 WORKSPACE_ID = "ws_1234567890abcdef"
 SESSION_ID = "sess_1234567890abcdef"
+THREAD_ID = "thread-1234567890abcdef1234567890abcdef"
 USER_ID = "usr_1234567890abcdef"
 NOW = datetime(2026, 9, 3, 0, 30, tzinfo=UTC)
 
 
-def effective_agent_config() -> EffectiveAgentConfig:
+def environment_execution_config() -> EnvironmentExecutionConfig:
+    connection = EnvironmentConnectionSpec(
+        provider_key="test.attachment",
+        schema_version="1",
+        parameters={"target_id": "existing-target"},
+    )
+    provider_lock = EnvironmentProviderLock(
+        provider_key=connection.provider_key,
+        distribution_name="test-environment-provider",
+        distribution_version="1.0.0",
+        builtin=False,
+        registration_digest_sha256="e" * 64,
+    )
+    target_key = "existing-target"
+    logical_digest = environment_logical_digest(
+        connection=connection,
+        provider_package_revision_id=None,
+        provider_lock=provider_lock,
+        credential_bindings=(),
+        access=EnvironmentAccess.full,
+        target_key=target_key,
+    )
+    return EnvironmentExecutionConfig(
+        connection=connection,
+        provider_lock=provider_lock,
+        credential_bindings=(),
+        access="full",
+        target_key=target_key,
+        logical_digest_sha256=logical_digest,
+    )
+
+
+def effective_agent_config(
+    *,
+    environment: EnvironmentExecutionConfig | None = None,
+) -> EffectiveAgentConfig:
     base = AgentConfig.model_validate(
         {
             "model": {
@@ -68,6 +111,7 @@ def effective_agent_config() -> EffectiveAgentConfig:
             characteristics=base.model.characteristics,
         ),
         runtime_lock_digest="a" * 64,
+        resolved_environment=environment,
         instructions=base.instructions,
         input_adapter=base.input_adapter,
         client_tools=base.client_tools,
@@ -82,8 +126,8 @@ def effective_agent_config() -> EffectiveAgentConfig:
     return candidate.model_copy(update={"content_digest": canonical_digest(payload)})
 
 
-def initial_state() -> RunStateEnvelope:
-    harness = HarnessState.new()
+def initial_state(*, environment: EnvironmentExecutionConfig | None = None) -> RunStateEnvelope:
+    harness = HarnessState.new(thread_id=THREAD_ID)
     return RunStateEnvelope(
         run_id=RUN_ID,
         thread_id=harness.thread_id,
@@ -94,7 +138,7 @@ def initial_state() -> RunStateEnvelope:
         last_checkpoint_fence=0,
         agent_id=AGENT_ID,
         agent_revision_id=AGENT_REVISION_ID,
-        effective_agent_config=effective_agent_config(),
+        effective_agent_config=effective_agent_config(environment=environment),
         runtime_lock_digest="a" * 64,
         harness_schema_version="1",
         harness=harness,

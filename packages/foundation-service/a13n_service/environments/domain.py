@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from a13n_environment_provider import EnvironmentProviderSpec
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+import rfc8785
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
 from a13n_service.iam.domain import ObjectId, PrincipalRef
 from a13n_service.ids import new_object_id
@@ -22,10 +32,19 @@ ProviderKey = Annotated[
     StringConstraints(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", min_length=3, max_length=128),
 ]
 Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+SchemaVersion = Annotated[
+    str,
+    StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$", min_length=1, max_length=64),
+]
+TargetKey = Annotated[str, StringConstraints(min_length=1, max_length=1024)]
+JsonObject = dict[str, JsonValue]
 BoundedKey = Annotated[
     str,
     StringConstraints(pattern=r"^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$", min_length=1, max_length=128),
 ]
+
+_JSON_OBJECT_ADAPTER = TypeAdapter(JsonObject)
+_MAX_CONNECTION_PARAMETERS_BYTES = 256 * 1024
 
 
 def new_environment_id() -> str:
@@ -34,6 +53,10 @@ def new_environment_id() -> str:
 
 def new_environment_revision_id() -> str:
     return new_object_id("envr")
+
+
+def new_run_environment_binding_id() -> str:
+    return new_object_id("envb")
 
 
 class DomainModel(BaseModel):
@@ -59,7 +82,7 @@ class EnvironmentProviderLock(DomainModel):
 
 class EnvironmentProviderCatalogEntry(DomainModel):
     provider_key: ProviderKey
-    configuration_versions: tuple[str, ...] = Field(min_length=1, max_length=64)
+    connection_versions: tuple[SchemaVersion, ...] = Field(min_length=1, max_length=64)
     provider_lock: EnvironmentProviderLock
 
 
@@ -83,6 +106,24 @@ class EnvironmentCredentialBinding(DomainModel):
     credential: SecretCredentialSource
 
 
+class EnvironmentConnectionSpec(DomainModel):
+    provider_key: ProviderKey
+    schema_version: SchemaVersion
+    parameters: JsonObject
+
+    @field_validator("parameters", mode="before")
+    @classmethod
+    def validate_parameters(cls, value: object) -> JsonObject:
+        parameters = _JSON_OBJECT_ADAPTER.validate_python(value)
+        try:
+            encoded = rfc8785.dumps(parameters)
+        except rfc8785.CanonicalizationError as error:
+            raise ValueError("connection parameters must be finite JSON") from error
+        if len(encoded) > _MAX_CONNECTION_PARAMETERS_BYTES:
+            raise ValueError("connection parameters exceed the size limit")
+        return _JSON_OBJECT_ADAPTER.validate_json(encoded)
+
+
 class Environment(DomainModel):
     id: ObjectId
     organization_id: ObjectId
@@ -104,13 +145,60 @@ class EnvironmentRevision(DomainModel):
     organization_id: ObjectId
     workspace_id: ObjectId
     version: int = Field(ge=1)
-    provider: EnvironmentProviderSpec
+    connection: EnvironmentConnectionSpec
     provider_package_revision_id: ObjectId | None = None
     provider_lock: EnvironmentProviderLock
     credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
     access: EnvironmentAccess = EnvironmentAccess.full
+    target_key: TargetKey
     logical_digest_sha256: Sha256Digest
     created_by: PrincipalRef
+    created_at: datetime
+
+    def summary(self) -> EnvironmentRevisionSummary:
+        return EnvironmentRevisionSummary(
+            id=self.id,
+            environment_id=self.environment_id,
+            organization_id=self.organization_id,
+            workspace_id=self.workspace_id,
+            version=self.version,
+            provider_key=self.connection.provider_key,
+            provider_package_revision_id=self.provider_package_revision_id,
+            provider_lock=self.provider_lock,
+            access=self.access,
+            logical_digest_sha256=self.logical_digest_sha256,
+            created_by=self.created_by,
+            created_at=self.created_at,
+        )
+
+
+class EnvironmentRevisionSummary(DomainModel):
+    """Collection-safe Revision projection without connection or target details."""
+
+    id: ObjectId
+    environment_id: ObjectId
+    organization_id: ObjectId
+    workspace_id: ObjectId
+    version: int = Field(ge=1)
+    provider_key: ProviderKey
+    provider_package_revision_id: ObjectId | None = None
+    provider_lock: EnvironmentProviderLock
+    access: EnvironmentAccess
+    logical_digest_sha256: Sha256Digest
+    created_by: PrincipalRef
+    created_at: datetime
+
+
+class RunEnvironmentBinding(DomainModel):
+    id: ObjectId
+    organization_id: ObjectId
+    workspace_id: ObjectId
+    run_id: ObjectId
+    mount_name: Literal["workspace"] = "workspace"
+    source_environment_revision_id: ObjectId | None = None
+    provider_key: ProviderKey
+    target_key: TargetKey
+    environment_execution_config_digest_sha256: Sha256Digest
     created_at: datetime
 
 
@@ -120,7 +208,7 @@ class EnvironmentCollection(DomainModel):
 
 
 class EnvironmentRevisionCollection(DomainModel):
-    items: tuple[EnvironmentRevision, ...]
+    items: tuple[EnvironmentRevisionSummary, ...]
     next_cursor: str | None
 
 
@@ -135,7 +223,7 @@ class CreateEnvironmentRequest(BaseModel):
 
     name: EnvironmentName
     description: EnvironmentDescription | None = None
-    provider: EnvironmentProviderSpec
+    connection: EnvironmentConnectionSpec
     credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
     access: EnvironmentAccess = EnvironmentAccess.full
 
@@ -167,7 +255,7 @@ class CreateEnvironmentRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(ge=1)
-    provider: EnvironmentProviderSpec
+    connection: EnvironmentConnectionSpec
     credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
     access: EnvironmentAccess = EnvironmentAccess.full
 
@@ -178,27 +266,35 @@ class CreateEnvironmentRevisionRequest(BaseModel):
 
 class EnvironmentRevisionTestResult(DomainModel):
     success: Literal[True] = True
-    code: Literal["configuration_valid"] = "configuration_valid"
+    code: Literal["attachment_ready"] = "attachment_ready"
 
 
 def environment_logical_digest(
     *,
-    provider: EnvironmentProviderSpec,
+    connection: EnvironmentConnectionSpec,
     provider_package_revision_id: str | None,
     provider_lock: EnvironmentProviderLock,
     credential_bindings: tuple[EnvironmentCredentialBinding, ...],
     access: EnvironmentAccess,
+    target_key: str,
 ) -> str:
     payload = {
         "schema_version": "1",
-        "provider": provider.model_dump(mode="json"),
+        "connection": connection.model_dump(mode="json"),
         "provider_package_revision_id": provider_package_revision_id,
         "provider_lock": provider_lock.model_dump(mode="json"),
         "credential_bindings": [item.model_dump(mode="json") for item in credential_bindings],
         "access": access.value,
+        "target_key": target_key,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def validated_target_key(value: str) -> str:
+    if value != value.strip() or any(unicodedata.category(character) in {"Cc", "Cs"} for character in value):
+        raise ValueError("target key must be trimmed and contain no control or surrogate characters")
+    return TypeAdapter(TargetKey).validate_python(value)
 
 
 def _require_unique_bindings[RequestT: CreateEnvironmentRequest | CreateEnvironmentRevisionRequest](

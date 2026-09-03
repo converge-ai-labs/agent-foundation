@@ -2,25 +2,32 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
-from a13n_environment_provider import EnvironmentProviderError, EnvironmentProviderSpec
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
-from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor
-from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
-from a13n_service.iam.models import SecurityAuditRecord
-from a13n_service.ids import new_object_id
-from a13n_service.secrets.domain import WorkspaceSecretCredential
-from a13n_service.secrets.models import SecretRecord
+from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.storage import short_session, transaction
 
+from .access import (
+    authorize_environment_workspace as _authorize,
+)
+from .access import (
+    load_environment as _load_environment,
+)
+from .access import (
+    load_environment_revision as _load_revision,
+)
+from .access import (
+    require_credential_bindings as _require_credential_bindings,
+)
+from .access import (
+    require_provider_selection as _require_selection,
+)
 from .catalog import FoundationEnvironmentProviderCatalog
 from .cursors import (
     EnvironmentCursorError,
@@ -34,12 +41,12 @@ from .domain import (
     CreateEnvironmentRevisionRequest,
     Environment,
     EnvironmentCollection,
-    EnvironmentCredentialBinding,
     EnvironmentProviderCatalogEntry,
     EnvironmentProviderCatalogEntryCollection,
     EnvironmentProviderSelection,
     EnvironmentRevision,
     EnvironmentRevisionCollection,
+    EnvironmentRevisionTestResult,
     PutEnvironmentProviderSelectionRequest,
     UpdateEnvironmentRequest,
     environment_logical_digest,
@@ -48,16 +55,36 @@ from .domain import (
 )
 from .errors import (
     EnvironmentManagementError,
-    environment_not_found,
-    environment_provider_disabled,
     environment_provider_not_found,
-    environment_revision_not_found,
     environment_version_conflict,
 )
 from .models import EnvironmentProviderSelectionRecord, EnvironmentRecord, EnvironmentRevisionRecord
-
-IDEMPOTENCY_LIFETIME = timedelta(hours=24)
-_MAX_IDEMPOTENCY_KEY_BYTES = 512
+from .persistence import (
+    audit_record as _audit,
+)
+from .persistence import (
+    evidence_record as _evidence,
+)
+from .persistence import (
+    is_idempotency_race as _is_idempotency_race,
+)
+from .persistence import (
+    load_replay as _load_replay,
+)
+from .persistence import (
+    normalized_name as _normalized_name,
+)
+from .persistence import (
+    precondition_failed as _precondition_failed,
+)
+from .persistence import replay_environment_create, replay_environment_revision_create
+from .persistence import (
+    request_identity as _identity,
+)
+from .persistence import (
+    require_etag as _require_etag,
+)
+from .testing import EnvironmentAttachmentTester
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,10 +100,12 @@ class EnvironmentManagementService:
         catalog: FoundationEnvironmentProviderCatalog,
         *,
         clock=None,
+        attachment_tester: EnvironmentAttachmentTester | None = None,
     ) -> None:
         self._sessions = sessions
         self._catalog = catalog
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._attachment_tester = attachment_tester
 
     async def list_provider_catalog(
         self,
@@ -197,7 +226,6 @@ class EnvironmentManagementService:
         request: CreateEnvironmentRequest,
     ) -> Environment:
         identity = _identity(idempotency_key, request)
-        normalized_provider = self._validate_provider(request.provider)
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -223,14 +251,14 @@ class EnvironmentManagementService:
                         environment_id=replay[1],
                     )
                     return record.to_resource()
+                validated = self._catalog.validate_connection(request.connection)
+                entry = self._catalog.entry(validated.spec.provider_key)
                 selection = await _require_selection(
                     session,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
-                    provider_key=normalized_provider.provider_key,
-                    expected_lock=self._catalog.entry(normalized_provider.provider_key).provider_lock.model_dump(
-                        mode="json"
-                    ),
+                    provider_key=validated.spec.provider_key,
+                    expected_lock=entry.provider_lock.model_dump(mode="json"),
                     for_update=True,
                 )
                 await _require_credential_bindings(
@@ -244,11 +272,12 @@ class EnvironmentManagementService:
                 environment_id = new_environment_id()
                 revision_id = new_environment_revision_id()
                 digest = environment_logical_digest(
-                    provider=normalized_provider,
+                    connection=validated.spec,
                     provider_package_revision_id=selection.provider_package_revision_id,
-                    provider_lock=self._catalog.entry(normalized_provider.provider_key).provider_lock,
+                    provider_lock=entry.provider_lock,
                     credential_bindings=request.credential_bindings,
                     access=request.access,
+                    target_key=validated.target_key,
                 )
                 environment = EnvironmentRecord(
                     id=environment_id,
@@ -273,13 +302,12 @@ class EnvironmentManagementService:
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
                     version=1,
-                    provider=normalized_provider.model_dump(mode="json"),
+                    connection=validated.spec.model_dump(mode="json"),
                     provider_package_revision_id=selection.provider_package_revision_id,
-                    provider_lock=self._catalog.entry(normalized_provider.provider_key).provider_lock.model_dump(
-                        mode="json"
-                    ),
+                    provider_lock=entry.provider_lock.model_dump(mode="json"),
                     credential_bindings=[item.model_dump(mode="json") for item in request.credential_bindings],
                     access=request.access.value,
+                    target_key=validated.target_key,
                     logical_digest_sha256=digest,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
@@ -314,7 +342,8 @@ class EnvironmentManagementService:
                 return environment.to_resource()
         except IntegrityError as error:
             if _is_idempotency_race(error):
-                return await self._replay_create(
+                return await replay_environment_create(
+                    self._sessions,
                     actor=actor,
                     workspace_id=workspace_id,
                     identity=identity,
@@ -462,7 +491,6 @@ class EnvironmentManagementService:
         request: CreateEnvironmentRevisionRequest,
     ) -> EnvironmentRevisionMutationResult:
         identity = _identity(idempotency_key, request)
-        normalized_provider = self._validate_provider(request.provider)
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -491,6 +519,8 @@ class EnvironmentManagementService:
                         revision=revision.to_resource(),
                         created=replay[0] == "environment_revision_created",
                     )
+                validated = self._catalog.validate_connection(request.connection)
+                entry = self._catalog.entry(validated.spec.provider_key)
                 environment = await _load_environment(
                     session,
                     organization_id=workspace.organization_id,
@@ -510,10 +540,8 @@ class EnvironmentManagementService:
                     session,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace.workspace_id,
-                    provider_key=normalized_provider.provider_key,
-                    expected_lock=self._catalog.entry(normalized_provider.provider_key).provider_lock.model_dump(
-                        mode="json"
-                    ),
+                    provider_key=validated.spec.provider_key,
+                    expected_lock=entry.provider_lock.model_dump(mode="json"),
                     for_update=True,
                 )
                 await _require_credential_bindings(
@@ -524,13 +552,14 @@ class EnvironmentManagementService:
                     bindings=request.credential_bindings,
                     require_bind_authority=True,
                 )
-                lock = self._catalog.entry(normalized_provider.provider_key).provider_lock
+                lock = entry.provider_lock
                 digest = environment_logical_digest(
-                    provider=normalized_provider,
+                    connection=validated.spec,
                     provider_package_revision_id=selection.provider_package_revision_id,
                     provider_lock=lock,
                     credential_bindings=request.credential_bindings,
                     access=request.access,
+                    target_key=validated.target_key,
                 )
                 current = await _load_revision(
                     session,
@@ -547,11 +576,12 @@ class EnvironmentManagementService:
                         organization_id=workspace.organization_id,
                         workspace_id=workspace.workspace_id,
                         version=current.version + 1,
-                        provider=normalized_provider.model_dump(mode="json"),
+                        connection=validated.spec.model_dump(mode="json"),
                         provider_package_revision_id=selection.provider_package_revision_id,
                         provider_lock=lock.model_dump(mode="json"),
                         credential_bindings=[item.model_dump(mode="json") for item in request.credential_bindings],
                         access=request.access.value,
+                        target_key=validated.target_key,
                         logical_digest_sha256=digest,
                         created_by_type=actor.principal.principal_type.value,
                         created_by_id=actor.principal.principal_id,
@@ -594,12 +624,14 @@ class EnvironmentManagementService:
                 return EnvironmentRevisionMutationResult(revision=revision.to_resource(), created=created)
         except IntegrityError as error:
             if _is_idempotency_race(error):
-                return await self._replay_revision(
+                revision, created = await replay_environment_revision_create(
+                    self._sessions,
                     actor=actor,
                     environment_id=environment_id,
                     identity=identity,
                     now=now,
                 )
+                return EnvironmentRevisionMutationResult(revision=revision, created=created)
             raise
 
     async def list_revisions(
@@ -665,7 +697,7 @@ class EnvironmentManagementService:
                     scope=scope,
                 )
             return EnvironmentRevisionCollection(
-                items=tuple(item.to_resource() for item in page),
+                items=tuple(item.to_resource().summary() for item in page),
                 next_cursor=next_cursor,
             )
 
@@ -685,28 +717,74 @@ class EnvironmentManagementService:
             )
             return record.to_resource()
 
-    def _validate_provider(self, spec: EnvironmentProviderSpec) -> EnvironmentProviderSpec:
-        entry = self._catalog.entry(spec.provider_key)
-        if spec.schema_version not in entry.configuration_versions:
+    async def test_revision(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        revision_id: str,
+    ) -> EnvironmentRevisionTestResult:
+        if self._attachment_tester is None:
             raise EnvironmentManagementError(
-                "provider_schema_unsupported",
-                "The Environment Provider configuration version is unsupported.",
-                status_code=400,
+                "environment_attachment_testing_unavailable",
+                "Environment attachment testing is unavailable.",
+                status_code=503,
             )
-        provider = self._catalog.providers[spec.provider_key]
-        try:
-            configuration = provider.validate_configuration(
-                schema_version=spec.schema_version,
-                value=spec.configuration,
+        async with transaction(self._sessions) as session:
+            workspace = await _authorize(
+                session,
+                actor=actor,
+                workspace_id=actor.boundary_workspace_id,
+                action=WorkspaceAction.environment_test,
             )
-        except EnvironmentProviderError as error:
-            safe = error.safe_projection()
-            raise EnvironmentManagementError(safe.code, safe.message, status_code=400) from error
-        return EnvironmentProviderSpec(
-            provider_key=spec.provider_key,
-            schema_version=spec.schema_version,
-            configuration=configuration.model_dump(mode="json"),
+            record = await _load_revision(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace.workspace_id,
+                revision_id=revision_id,
+            )
+            environment = await _load_environment(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace.workspace_id,
+                environment_id=record.environment_id,
+            )
+            if environment.archived_at is not None:
+                raise EnvironmentManagementError(
+                    "environment_archived",
+                    "The Environment is archived.",
+                    status_code=409,
+                )
+            revision = record.to_resource()
+            entry = self._catalog.entry(revision.connection.provider_key)
+            await _require_selection(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace.workspace_id,
+                provider_key=revision.connection.provider_key,
+                expected_lock=revision.provider_lock.model_dump(mode="json"),
+                for_update=False,
+            )
+            if entry.provider_lock != revision.provider_lock:
+                raise EnvironmentManagementError(
+                    "environment_provider_lock_changed",
+                    "The Environment Provider lock no longer matches this deployment.",
+                    status_code=409,
+                )
+            await _require_credential_bindings(
+                session,
+                actor=actor,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace.workspace_id,
+                bindings=revision.credential_bindings,
+                require_bind_authority=False,
+            )
+        await self._attachment_tester(
+            actor=actor,
+            organization_id=workspace.organization_id,
+            workspace_id=workspace.workspace_id,
+            revision=revision,
         )
+        return EnvironmentRevisionTestResult()
 
     async def _authorize(
         self,
@@ -716,342 +794,3 @@ class EnvironmentManagementService:
     ) -> None:
         async with short_session(self._sessions) as session:
             await _authorize(session, actor=actor, workspace_id=workspace_id, action=action)
-
-    async def _replay_create(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        workspace_id: str,
-        identity: tuple[str, str],
-        now: datetime,
-    ) -> Environment:
-        async with transaction(self._sessions) as session:
-            workspace = await _authorize(
-                session,
-                actor=actor,
-                workspace_id=workspace_id,
-                action=WorkspaceAction.environment_manage,
-            )
-            replay = await _load_replay(
-                session,
-                actor=actor,
-                operation="environment.create",
-                scope_id=workspace_id,
-                identity=identity,
-                now=now,
-            )
-            if replay is None:
-                raise EnvironmentManagementError(
-                    "write_conflict", "The Environment could not be created.", status_code=409
-                )
-            return (
-                await _load_environment(
-                    session,
-                    organization_id=workspace.organization_id,
-                    workspace_id=workspace_id,
-                    environment_id=replay[1],
-                )
-            ).to_resource()
-
-    async def _replay_revision(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        environment_id: str,
-        identity: tuple[str, str],
-        now: datetime,
-    ) -> EnvironmentRevisionMutationResult:
-        async with transaction(self._sessions) as session:
-            workspace = await _authorize(
-                session,
-                actor=actor,
-                workspace_id=actor.boundary_workspace_id,
-                action=WorkspaceAction.environment_manage,
-            )
-            replay = await _load_replay(
-                session,
-                actor=actor,
-                operation="environment.revision.create",
-                scope_id=environment_id,
-                identity=identity,
-                now=now,
-            )
-            if replay is None:
-                raise EnvironmentManagementError(
-                    "write_conflict", "The Revision could not be created.", status_code=409
-                )
-            revision = await _load_revision(
-                session,
-                organization_id=workspace.organization_id,
-                workspace_id=workspace.workspace_id,
-                revision_id=replay[1],
-            )
-            return EnvironmentRevisionMutationResult(
-                revision=revision.to_resource(),
-                created=replay[0] == "environment_revision_created",
-            )
-
-
-async def _authorize(
-    session: AsyncSession,
-    *,
-    actor: AuthenticatedActor,
-    workspace_id: str,
-    action: WorkspaceAction,
-):
-    try:
-        return await authorize_workspace(session, actor=actor, workspace_id=workspace_id, action=action)
-    except AuthorizationError as error:
-        if error.concealed:
-            raise environment_not_found() from error
-        raise EnvironmentManagementError("forbidden", "The operation is not allowed.", status_code=403) from error
-
-
-async def _require_selection(
-    session: AsyncSession,
-    *,
-    organization_id: str,
-    workspace_id: str,
-    provider_key: str,
-    expected_lock: dict[str, object],
-    for_update: bool,
-) -> EnvironmentProviderSelectionRecord:
-    statement = select(EnvironmentProviderSelectionRecord).where(
-        EnvironmentProviderSelectionRecord.organization_id == organization_id,
-        EnvironmentProviderSelectionRecord.workspace_id == workspace_id,
-        EnvironmentProviderSelectionRecord.provider_key == provider_key,
-    )
-    if for_update:
-        statement = statement.with_for_update()
-    record = await session.scalar(statement)
-    if record is None or not record.enabled:
-        raise environment_provider_disabled()
-    if record.provider_lock != expected_lock:
-        raise EnvironmentManagementError(
-            "environment_provider_lock_changed",
-            "The enabled Environment Provider lock no longer matches this deployment.",
-            status_code=409,
-        )
-    return record
-
-
-async def _require_credential_bindings(
-    session: AsyncSession,
-    *,
-    actor: AuthenticatedActor,
-    organization_id: str,
-    workspace_id: str,
-    bindings: tuple[EnvironmentCredentialBinding, ...],
-    require_bind_authority: bool,
-) -> None:
-    workspace_credentials = tuple(
-        item.credential for item in bindings if isinstance(item.credential, WorkspaceSecretCredential)
-    )
-    if workspace_credentials and require_bind_authority:
-        await _authorize(
-            session,
-            actor=actor,
-            workspace_id=workspace_id,
-            action=WorkspaceAction.secrets_bind,
-        )
-    for credential in workspace_credentials:
-        available = await session.scalar(
-            select(SecretRecord.id).where(
-                SecretRecord.id == credential.secret_id,
-                SecretRecord.organization_id == organization_id,
-                SecretRecord.workspace_id == workspace_id,
-                SecretRecord.owner_type == "workspace",
-                SecretRecord.owner_id == workspace_id,
-                SecretRecord.deleted_at.is_(None),
-                SecretRecord.ciphertext.is_not(None),
-            )
-        )
-        if available is None:
-            raise EnvironmentManagementError(
-                "environment_credential_unavailable",
-                "An Environment credential is unavailable.",
-                status_code=409,
-            )
-
-
-async def _load_environment(
-    session: AsyncSession,
-    *,
-    organization_id: str,
-    workspace_id: str,
-    environment_id: str,
-    for_update: bool = False,
-) -> EnvironmentRecord:
-    statement = select(EnvironmentRecord).where(
-        EnvironmentRecord.id == environment_id,
-        EnvironmentRecord.organization_id == organization_id,
-        EnvironmentRecord.workspace_id == workspace_id,
-    )
-    if for_update:
-        statement = statement.with_for_update()
-    record = await session.scalar(statement)
-    if record is None:
-        raise environment_not_found()
-    return record
-
-
-async def _load_revision(
-    session: AsyncSession,
-    *,
-    organization_id: str,
-    workspace_id: str,
-    revision_id: str,
-    for_update: bool = False,
-) -> EnvironmentRevisionRecord:
-    statement = select(EnvironmentRevisionRecord).where(
-        EnvironmentRevisionRecord.id == revision_id,
-        EnvironmentRevisionRecord.organization_id == organization_id,
-        EnvironmentRevisionRecord.workspace_id == workspace_id,
-    )
-    if for_update:
-        statement = statement.with_for_update()
-    record = await session.scalar(statement)
-    if record is None:
-        raise environment_revision_not_found()
-    return record
-
-
-def _identity(idempotency_key: str, request) -> tuple[str, str]:
-    try:
-        encoded = idempotency_key.encode("ascii")
-    except UnicodeEncodeError as error:
-        raise _invalid_idempotency_key() from error
-    if not 1 <= len(encoded) <= _MAX_IDEMPOTENCY_KEY_BYTES or any(byte < 0x21 or byte > 0x7E for byte in encoded):
-        raise _invalid_idempotency_key()
-    request_digest = hashlib.sha256(request.model_dump_json(by_alias=True, exclude_none=False).encode()).hexdigest()
-    return hashlib.sha256(encoded).hexdigest(), request_digest
-
-
-async def _load_replay(
-    session: AsyncSession,
-    *,
-    actor: AuthenticatedActor,
-    operation: str,
-    scope_id: str,
-    identity: tuple[str, str],
-    now: datetime,
-) -> tuple[str, str] | None:
-    key_digest, request_digest = identity
-    evidence = await session.scalar(
-        select(IdempotencyEvidenceRecord).where(
-            IdempotencyEvidenceRecord.workspace_id == actor.boundary_workspace_id,
-            IdempotencyEvidenceRecord.actor_type == actor.principal.principal_type.value,
-            IdempotencyEvidenceRecord.actor_id == actor.principal.principal_id,
-            IdempotencyEvidenceRecord.operation == operation,
-            IdempotencyEvidenceRecord.scope_id == scope_id,
-            IdempotencyEvidenceRecord.key_digest == key_digest,
-            IdempotencyEvidenceRecord.expires_at > now,
-        )
-    )
-    if evidence is None:
-        return None
-    if evidence.request_digest != request_digest:
-        raise EnvironmentManagementError(
-            "idempotency_conflict",
-            "The Idempotency-Key was already used with different request content.",
-            status_code=409,
-        )
-    return evidence.result_kind, evidence.result_ref
-
-
-def _evidence(
-    *,
-    actor: AuthenticatedActor,
-    organization_id: str,
-    workspace_id: str,
-    operation: str,
-    scope_id: str,
-    identity: tuple[str, str],
-    result_kind: str,
-    result_ref: str,
-    now: datetime,
-) -> IdempotencyEvidenceRecord:
-    return IdempotencyEvidenceRecord(
-        id=new_object_id("idem"),
-        organization_id=organization_id,
-        workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
-        operation=operation,
-        scope_id=scope_id,
-        key_digest=identity[0],
-        request_digest=identity[1],
-        result_kind=result_kind,
-        result_ref=result_ref,
-        created_at=now,
-        expires_at=now + IDEMPOTENCY_LIFETIME,
-    )
-
-
-def _audit(
-    *,
-    actor: AuthenticatedActor,
-    organization_id: str,
-    workspace_id: str,
-    action: str,
-    resource_type: str,
-    resource_id: str,
-    now: datetime,
-) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("audit"),
-        organization_id=organization_id,
-        workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
-        action=action,
-        resource_type=resource_type,
-        resource_id=resource_id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
-        outcome="success",
-        occurred_at=now,
-        request_id=actor.request_id,
-        details=None,
-    )
-
-
-def _normalized_name(value: str) -> str:
-    return value.casefold()
-
-
-def _require_etag(
-    record: EnvironmentRecord | EnvironmentProviderSelectionRecord,
-    if_match: str | None,
-    *,
-    resource_id: str,
-) -> None:
-    current = resource_etag(resource_id, record.updated_at)
-    if if_match is None or not etag_matches(if_match, current):
-        raise _precondition_failed(current)
-
-
-def _precondition_failed(current_etag: str | None) -> EnvironmentManagementError:
-    details: dict[str, object] = {"current_etag": current_etag} if current_etag is not None else {}
-    return EnvironmentManagementError(
-        "precondition_failed",
-        "The resource changed after it was read.",
-        status_code=412,
-        details=details,
-    )
-
-
-def _invalid_idempotency_key() -> EnvironmentManagementError:
-    return EnvironmentManagementError(
-        "invalid_request",
-        "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
-        status_code=400,
-    )
-
-
-def _is_idempotency_race(error: IntegrityError) -> bool:
-    diagnostic = getattr(getattr(error, "orig", None), "diag", None)
-    if diagnostic is not None:
-        return getattr(diagnostic, "constraint_name", None) == "uq_idempotency_evidence_replay_scope"
-    message = str(error).lower()
-    return "unique constraint failed" in message and "idempotency_evidence.actor_type" in message

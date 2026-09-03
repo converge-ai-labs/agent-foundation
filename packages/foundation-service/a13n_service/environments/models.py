@@ -25,14 +25,17 @@ from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from .domain import (
     Environment,
     EnvironmentAccess,
+    EnvironmentConnectionSpec,
     EnvironmentCredentialBinding,
     EnvironmentProviderLock,
     EnvironmentProviderSelection,
     EnvironmentRevision,
+    RunEnvironmentBinding,
 )
 
 _LOCK_ADAPTER = TypeAdapter(EnvironmentProviderLock)
 _BINDINGS_ADAPTER = TypeAdapter(tuple[EnvironmentCredentialBinding, ...])
+_CONNECTION_ADAPTER = TypeAdapter(EnvironmentConnectionSpec)
 
 
 class EnvironmentProviderSelectionRecord(Base):
@@ -144,32 +147,96 @@ class EnvironmentRevisionRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    provider: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    connection: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     provider_package_revision_id: Mapped[str | None] = mapped_column(String(72))
     provider_lock: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     credential_bindings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     access: Mapped[str] = mapped_column(String(16), nullable=False)
+    target_key: Mapped[str] = mapped_column(String(1024), nullable=False)
     logical_digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     def to_resource(self) -> EnvironmentRevision:
-        from a13n_environment_provider import EnvironmentProviderSpec
-
         return EnvironmentRevision(
             id=self.id,
             environment_id=self.environment_id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
             version=self.version,
-            provider=EnvironmentProviderSpec.model_validate(self.provider),
+            connection=_CONNECTION_ADAPTER.validate_python(self.connection),
             provider_package_revision_id=self.provider_package_revision_id,
             provider_lock=_LOCK_ADAPTER.validate_python(self.provider_lock),
             credential_bindings=_BINDINGS_ADAPTER.validate_python(self.credential_bindings),
             access=EnvironmentAccess(self.access),
+            target_key=self.target_key,
             logical_digest_sha256=self.logical_digest_sha256,
             created_by=_principal(self.created_by_type, self.created_by_id),
+            created_at=_utc(self.created_at),
+        )
+
+
+class RunEnvironmentBindingRecord(Base):
+    __tablename__ = "run_environment_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("workspace_id", "organization_id"),
+            ("workspaces.id", "workspaces.organization_id"),
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ("organization_id", "run_id"),
+            ("runs.tenant_id", "runs.id"),
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ("source_environment_revision_id", "organization_id", "workspace_id"),
+            (
+                "environment_revisions.id",
+                "environment_revisions.organization_id",
+                "environment_revisions.workspace_id",
+            ),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("mount_name = 'workspace'", name="mount_name_workspace"),
+        CheckConstraint("length(target_key) BETWEEN 1 AND 1024", name="target_key_bounded"),
+        CheckConstraint(
+            "length(environment_execution_config_digest_sha256) = 64",
+            name="execution_config_digest_sha256",
+        ),
+        UniqueConstraint("organization_id", "run_id", name="uq_run_environment_bindings_run"),
+        Index(
+            "ix_run_environment_bindings_target",
+            "organization_id",
+            "workspace_id",
+            "provider_key",
+            "target_key",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    mount_name: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_environment_revision_id: Mapped[str | None] = mapped_column(String(72))
+    provider_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    environment_execution_config_digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    def to_resource(self) -> RunEnvironmentBinding:
+        return RunEnvironmentBinding(
+            id=self.id,
+            organization_id=self.organization_id,
+            workspace_id=self.workspace_id,
+            run_id=self.run_id,
+            mount_name="workspace",
+            source_environment_revision_id=self.source_environment_revision_id,
+            provider_key=self.provider_key,
+            target_key=self.target_key,
+            environment_execution_config_digest_sha256=self.environment_execution_config_digest_sha256,
             created_at=_utc(self.created_at),
         )
 

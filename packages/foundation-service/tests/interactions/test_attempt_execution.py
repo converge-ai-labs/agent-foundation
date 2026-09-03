@@ -57,6 +57,7 @@ from .conftest import (
     NOW,
     SESSION_ID,
     TENANT_ID,
+    THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
@@ -584,7 +585,7 @@ async def _accept_root(
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=config,
     )
-    state = initialize_start_state(seed)
+    state = initialize_start_state(seed, thread_id=THREAD_ID)
     run = Run(
         id=seed.run_id,
         version=1,

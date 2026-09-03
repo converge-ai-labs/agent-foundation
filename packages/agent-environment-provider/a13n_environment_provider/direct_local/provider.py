@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import tempfile
 from collections.abc import Mapping
@@ -76,6 +77,14 @@ class DirectLocalEnvironmentProvider(EnvironmentProvider):
     def configuration_versions(self) -> frozenset[str]:
         return frozenset({_CONFIGURATION_VERSION})
 
+    @property
+    def provider_key(self) -> str:
+        return self.key
+
+    @property
+    def connection_versions(self) -> frozenset[str]:
+        return self.configuration_versions
+
     def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
         if schema_version != _CONFIGURATION_VERSION:
             raise _provider_error(
@@ -111,11 +120,49 @@ class DirectLocalEnvironmentProvider(EnvironmentProvider):
             raise TypeError("Direct Local runtime must be DirectLocalProviderRuntime or None")
         return DirectLocalEnvironment(configuration)
 
+    def validate_connection(self, *, schema_version: str, parameters: JsonValue) -> BaseModel:
+        if schema_version != _CONFIGURATION_VERSION:
+            raise _provider_error(
+                "Direct Local connection version is unsupported.",
+                code="provider_schema_unsupported",
+                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
+            )
+        try:
+            connection = DirectLocalProviderConfiguration.model_validate(parameters)
+        except ValidationError as error:
+            raise _provider_error(
+                "Direct Local connection is invalid.",
+                code="provider_connection_invalid",
+                category=EnvironmentProviderErrorCategory.INVALID,
+            ) from error
+        root = connection.root.model_copy(
+            update={"path": Path(os.path.normpath(str(connection.root.path)))},
+        )
+        return connection.model_copy(update={"root": root})
+
+    def target_key(self, *, connection: BaseModel) -> str:
+        if not isinstance(connection, DirectLocalProviderConfiguration):
+            raise TypeError("Direct Local requires DirectLocalProviderConfiguration")
+        return str(connection.root.path)
+
+    def create_attachment_environment(
+        self,
+        *,
+        connection: BaseModel,
+        runtime: object,
+    ) -> Environment:
+        if not isinstance(connection, DirectLocalProviderConfiguration):
+            raise TypeError("Direct Local attachment requires DirectLocalProviderConfiguration")
+        if not isinstance(runtime, DirectLocalProviderRuntime):
+            raise TypeError("Direct Local attachment requires DirectLocalProviderRuntime")
+        return DirectLocalEnvironment(connection, exact_target=True)
+
 
 class DirectLocalEnvironment(Environment):
-    def __init__(self, configuration: DirectLocalProviderConfiguration) -> None:
+    def __init__(self, configuration: DirectLocalProviderConfiguration, *, exact_target: bool = False) -> None:
         super().__init__(None)
         self._configuration = configuration.model_copy(deep=True)
+        self._exact_target = exact_target
         self._descriptor: EnvironmentDescriptor | None = None
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
@@ -156,6 +203,12 @@ class DirectLocalEnvironment(Environment):
     ) -> None:
         del thread_id, run_id, agent_instance_id, host_refs
         root = await asyncio.to_thread(_resolve_shared_root, self._configuration.root.path)
+        if self._exact_target and root != self._configuration.root.path:
+            raise _provider_error(
+                "Direct Local attachment root resolves to a different target.",
+                code="provider_target_conflict",
+                category=EnvironmentProviderErrorCategory.CONFLICT,
+            )
         generation = f"generation-{uuid4().hex[:16]}"
         files = LocalFileOperator(
             root=root,

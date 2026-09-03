@@ -89,6 +89,7 @@ class AgentReconstructor:
                 subagent_operator=subagent_operator,
                 root_capabilities=tuple(root_capabilities),
                 root=True,
+                project_mount_count=len(composition.project_roots),
                 model_recipes=model_recipes,
             )
             executable = HarnessBuilder(configured_plugins_enabled=False).build(definition)
@@ -116,6 +117,7 @@ class AgentReconstructor:
         subagent_operator: SubagentOperator | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
         root: bool,
+        project_mount_count: int,
         model_recipes: dict[str, ResolvedModelRecipe],
     ) -> AgentDefinition[str]:
         recipe_id = model_recipe_id(node.model)
@@ -124,7 +126,8 @@ class AgentReconstructor:
             raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
 
         selected = self._catalog.capabilities(
-            tuple((item.capability, item.configuration) for item in node.capabilities)
+            tuple((item.capability, item.configuration) for item in node.capabilities),
+            project_mount_count=project_mount_count,
         )
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
         capabilities.extend(AgentUiMCP(item) for item in node.mcp_servers)
@@ -163,6 +166,7 @@ class AgentReconstructor:
                     subagent_operator=subagent_operator,
                     root_capabilities=(),
                     root=False,
+                    project_mount_count=project_mount_count,
                     model_recipes=model_recipes,
                 ),
             )

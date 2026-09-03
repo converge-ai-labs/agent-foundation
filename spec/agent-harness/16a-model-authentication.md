@@ -128,21 +128,31 @@ No OAuth token, authorization code, PKCE verifier, raw identity claim, complete 
 
 The module exposes provider-specific authorization and refresh primitives. `CodexOAuthFlow` is an authorization-code plus PKCE context: construction performs no I/O, `authorization_url()` creates the provider URL, and `exchange_code()` exchanges a callback code for `CodexCredentials`. A convenience one-shot localhost callback receiver is process-local; opening a browser and deciding whether and where to save the returned credentials remain caller-owned.
 
-Grok OIDC refresh follows the issuer and client identity in `GrokCredentials`, validates a secure discovered token endpoint, and returns another complete credential set. Codex and Grok do not share one token-response schema or one account identity rule.
+`GrokOAuthFlow` is a discovered OIDC authorization-code plus PKCE context. Its asynchronous constructor accepts an explicit issuer, public-client ID, loopback redirect URI, and ordered scopes; loads an issuer-matching discovery document; requires secure authorization, token, and JWKS endpoints; and creates independent random state, nonce, and PKCE values. `authorization_url()` emits the discovered authorization endpoint with `response_type=code`, client identity, redirect URI, scopes, PKCE S256, state, nonce, and an optional bounded provider referrer. Caller-supplied additional parameters cannot replace these flow-owned protocol values. The one-shot callback receiver binds only the selected loopback address, accepts only the exact callback path and state, has a finite caller-visible timeout, and always closes before token exchange completes.
+
+Browser-flow code exchange posts the authorization grant directly to the discovered token endpoint and requires an access token, refresh token, positive expiry, and ID token. The ID token is verified against the discovered signing keys and supported algorithm set, issuer, public-client audience, expiry, and flow nonce before its non-empty subject becomes the Grok account identity. An unverified browser-delivered identity claim never becomes credential authority.
+
+`GrokDeviceAuthorizationFlow.start()` implements the provider's RFC 8628 profile for the same explicit issuer, client identity, and scopes. It posts to the issuer's device authorization endpoint and returns a context whose public projection contains only the bounded user code, HTTPS verification URI, optional HTTPS complete verification URI, expiry, and poll interval; the device code remains secret. The bounded lifetime starts when that authorization response is accepted, not when a caller later begins waiting. `wait_for_credentials()` sleeps before its first token request, bounds every token request by the remaining lifetime, polls the issuer token endpoint with the device-code grant until that expiry, retains the interval for `authorization_pending`, increases it by five seconds for `slow_down`, and fails explicitly for denial, expiry, malformed responses, or other provider errors. Loopback HTTP verification URLs are accepted only for explicit local development or tests. A successful device exchange requires a usable access token, positive expiry, and account identity derived from the ID-token subject or selected access-token principal; it does not claim browser-flow ID-token verification because the response arrives only over the direct token channel.
+
+Grok refresh follows the issuer and client identity in `GrokCredentials`, requires a secure issuer-matching discovery document and token endpoint before sending the refresh token, and returns another complete credential set. Authorization and device-code values are short-lived process-local flow state. They are excluded from representations and never persisted by the Harness. The caller owns authorization URL presentation, optional browser opening, cancellation, and durable credential saving. Codex and Grok do not share one token-response schema or one account identity rule.
 
 ## Failure Semantics
 
-| Failure                                                   | Observable outcome                                                                                                       |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Source is absent, malformed, unauthorized, or unavailable | The Model interaction fails with bounded authentication-required or source-failure semantics                             |
-| Reloaded credential belongs to another account            | The interaction fails; a live Model instance does not silently switch accounts                                           |
-| OAuth refresh is rejected or malformed                    | The interaction fails; interactive login is not started                                                                  |
-| Rotated credentials cannot be saved                       | The interaction fails before the rotated access token is sent                                                            |
-| Another actor rotates the same account before refresh     | The provider adopts the reloaded set instead of spending its stale refresh token                                         |
-| Another actor wins during `save()`                        | The Host source's conflict or coordination behavior determines the failure; Harness does not claim distributed exclusion |
-| First Model request receives 401                          | Reload or refresh is attempted, then the request is replayed once                                                        |
-| Replayed request receives 401                             | The second response is returned without another replay                                                                   |
-| Codex response omits a usable turn state                  | The current Pydantic run remains stateless until a later successful response supplies one                                |
+| Failure                                                                           | Observable outcome                                                                                                       |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Source is absent, malformed, unauthorized, or unavailable                         | The Model interaction fails with bounded authentication-required or source-failure semantics                             |
+| Reloaded credential belongs to another account                                    | The interaction fails; a live Model instance does not silently switch accounts                                           |
+| OAuth refresh is rejected or malformed                                            | The interaction fails; interactive login is not started                                                                  |
+| Rotated credentials cannot be saved                                               | The interaction fails before the rotated access token is sent                                                            |
+| Another actor rotates the same account before refresh                             | The provider adopts the reloaded set instead of spending its stale refresh token                                         |
+| Another actor wins during `save()`                                                | The Host source's conflict or coordination behavior determines the failure; Harness does not claim distributed exclusion |
+| First Model request receives 401                                                  | Reload or refresh is attempted, then the request is replayed once                                                        |
+| Replayed request receives 401                                                     | The second response is returned without another replay                                                                   |
+| Codex response omits a usable turn state                                          | The current Pydantic run remains stateless until a later successful response supplies one                                |
+| Grok discovery or endpoint validation fails                                       | Interactive authorization fails before presenting or exchanging a provider grant                                         |
+| Grok callback state, ID-token signature, issuer, audience, nonce, or expiry fails | Browser authorization fails and produces no credentials                                                                  |
+| Grok device authorization is pending or slowed down                               | Polling continues within the provider interval and bounded device-code lifetime                                          |
+| Grok device authorization is denied or expires                                    | Login fails explicitly and produces no credentials                                                                       |
 
 ## Compatibility
 
@@ -152,12 +162,14 @@ Adding another provider is additive only when it has an explicit credential type
 
 ## Invariants
 
-1. Model OAuth is SDK-first and does not require a CLI credential store.
-2. The Harness owns process-local credential refresh, single-flight, request injection, and one 401 replay.
-3. The Host owns durable credential authority, authorization, and distributed coordination.
-4. Every outbound authenticated request consults its source, while refresh occurs only when needed or after rejection.
-5. A rotated credential is saved successfully before it can authenticate a Model request.
-6. Credentials are sent only to the selected provider's exact HTTPS origin.
-7. A Model request never starts interactive login or silently changes account identity.
-8. Credential bytes and Codex turn state never enter Harness continuation, Model context, events, logs, or telemetry.
-9. Codex routing is derived from the effective Model and tier, while turn state is first-write-wins and isolated to one live Pydantic run.
+01. Model OAuth is SDK-first and does not require a CLI credential store.
+02. The Harness owns process-local credential refresh, single-flight, request injection, and one 401 replay.
+03. The Host owns durable credential authority, authorization, and distributed coordination.
+04. Every outbound authenticated request consults its source, while refresh occurs only when needed or after rejection.
+05. A rotated credential is saved successfully before it can authenticate a Model request.
+06. Credentials are sent only to the selected provider's exact HTTPS origin.
+07. A Model request never starts interactive login or silently changes account identity.
+08. Credential bytes and Codex turn state never enter Harness continuation, Model context, events, logs, or telemetry.
+09. Codex routing is derived from the effective Model and tier, while turn state is first-write-wins and isolated to one live Pydantic run.
+10. Grok browser login uses discovered OIDC endpoints, PKCE, state, nonce, and verified ID-token identity; device login uses bounded RFC 8628 polling.
+11. Interactive flow state remains process-local, secret-bearing values are excluded from representations, and only the Host decides whether to persist successful credentials.

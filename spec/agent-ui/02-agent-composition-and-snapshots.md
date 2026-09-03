@@ -218,7 +218,7 @@ flowchart LR
     Generation & Thread --> Graph --> Validate --> Composition --> Native
 ```
 
-The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, Project roots, Environment profile selection, Environment Run Extensions, and dependency provenance. It contains no credential bytes, native client, Environment adapter, task, callback, or active state coordinator.
+The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, Project roots, Environment profile selection, Environment Run Extensions, and dependency provenance. A selected `skills` Capability captures only its ordered explicit Environment roots; automatic Project and user sources are derived during fresh reconstruction under [Environment Skill Sources](02b-environment-skill-sources.md). The composition contains no Skill bytes or discovered catalog, credential bytes, native client, Environment adapter, task, callback, or active state coordinator.
 
 ## Continuing Across Composition Changes
 
@@ -238,3 +238,4 @@ Every continuation bundle records the Run composition that produced it. This is 
 6. Canonical Markdown remains small and broadly compatible rather than encoding a complete authorization system.
 7. Claude Code, Cursor, and Codex import is explicit, previewable, diagnostic, and no-clobber.
 8. `HarnessState` can continue across supported composition changes without silently discarding component state.
+9. Skill source configuration is captured in the Agent node, while each independent Run derives and freezes its own Environment-routed catalog.

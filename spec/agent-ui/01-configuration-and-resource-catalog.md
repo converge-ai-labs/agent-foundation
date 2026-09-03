@@ -47,6 +47,8 @@ defaults:
   mcp_servers: []
 ```
 
+Web listener binding and process-local API access are intentionally absent from this desired-resource tree. They are executable-bound surface inputs owned by [HTTP Startup and Access](05-runtime-subagents-and-surfaces.md#http-startup-and-access).
+
 The data root is a bootstrap locator resolved before parsing this tree: explicit `--data-root`, then `A13N_UI_DATA_ROOT`, then `<config-directory>/data`. It is deliberately absent from `a13n-ui.yaml`, so an invalid root edit cannot hide the SQLite database that retains the prior accepted generation. Selecting another data root opens a distinct local workstation dataset and never implies migration.
 
 Relative process paths resolve from the root file's directory. Resource paths that represent Project roots must be explicit absolute paths after user expansion; their stored meaning never depends on the App's current working directory.
@@ -106,7 +108,9 @@ The accepted generation contains normalized credential-free definitions and exac
 
 Manual editing is always supported. A valid external save enters the next accepted generation; an invalid or incomplete save produces diagnostics while the previous generation remains active.
 
-CLI and WebUI mutation operations use source-content preconditions:
+WebUI mutation operations use source-content preconditions. The CLI can locate, validate, and show configuration and can invoke separately defined explicit imports, but it exposes no generic create, update, or delete operation for desired resources.
+
+The WebUI mutation request is:
 
 ```python
 class ResourceMutationRequest(BaseModel):
@@ -174,7 +178,7 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 | Malformed, unstable, or duplicate resource source   | Candidate generation is rejected                                                   |
 | Unknown resource reference                          | Candidate generation is rejected with the owning source location                   |
 | Catalog key unavailable or ambiguous                | Candidate generation is rejected; no similarly named fallback is chosen            |
-| Stale CLI or WebUI write                            | Mutation is rejected with the current source digest                                |
+| Stale WebUI write                                   | Mutation is rejected with the current source digest                                |
 | Credential lookup failure                           | Current Run fails before the dependent external dispatch                           |
 | Atomic publication fails before source replacement  | Previous accepted source and generation remain authoritative                       |
 | Generation selection fails after source publication | Previous accepted generation remains selected; reload retries the published source |
@@ -189,7 +193,7 @@ The root `schema_version` governs tree layout and global fields. Every resource 
 2. One resource file defines one stable resource ID.
 3. One accepted generation is complete and coherent across the whole tree.
 4. Invalid intermediate edits never partially replace the accepted generation.
-5. CLI and WebUI writes require expected source content and never knowingly clobber a newer observed revision.
+5. WebUI writes require expected source content and never knowingly clobber a newer observed revision; the CLI exposes no generic desired-resource write.
 6. Global defaults initialize new Threads and never live-update existing Threads.
 7. Credentials remain references until fresh Run construction.
 8. Installed package availability never grants selection.

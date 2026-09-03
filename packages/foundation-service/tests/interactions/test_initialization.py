@@ -21,7 +21,7 @@ from a13n_service.interactions.initialization import (
     initialize_waiting_continuation_state,
 )
 
-from .conftest import AGENT_ID, AGENT_REVISION_ID, ATTEMPT_ID, effective_agent_config, initial_state
+from .conftest import AGENT_ID, AGENT_REVISION_ID, ATTEMPT_ID, THREAD_ID, effective_agent_config, initial_state
 
 
 def _seed(run_id: str = "run_abcdef1234567890") -> RunStateSeed:
@@ -108,14 +108,14 @@ def _waiting_parent():
     return type(initial).model_validate(payload)
 
 
-def test_start_and_completed_continue_allocate_only_the_required_identity() -> None:
-    started = initialize_start_state(_seed())
+def test_start_and_completed_continue_use_the_selected_thread_identity() -> None:
+    started = initialize_start_state(_seed(), thread_id=THREAD_ID)
     parent = _completed_parent()
     continued = initialize_completed_continuation_state(_seed(), parent)
 
-    assert started.thread_id.startswith("thread-")
+    assert started.thread_id == THREAD_ID
     assert continued.thread_id == parent.thread_id
-    assert continued.harness.environment_states == parent.harness.environment_states
+    assert continued.harness.environment_states == {}
     assert continued.host == HostContinuationState()
     assert continued.outcome_candidate is None
 
@@ -132,7 +132,8 @@ def test_waiting_continue_preserves_deferred_values_but_not_parent_receipts() ->
 
 def test_fork_and_fork_retry_clear_environment_and_use_the_correct_thread_identity() -> None:
     parent = _completed_parent()
-    forked = initialize_fork_state(_seed(), parent)
+    fork_thread_id = "thread-fedcbafedcbafedcbafedcbafedcbafe"
+    forked = initialize_fork_state(_seed(), parent, thread_id=fork_thread_id)
     retry_thread_id = "thread-abcdefabcdefabcdefabcdefabcdefab"
     retried = initialize_retry_state(
         _seed("run_fedcba0987654321"),
@@ -142,7 +143,7 @@ def test_fork_and_fork_retry_clear_environment_and_use_the_correct_thread_identi
         parent=parent,
     )
 
-    assert forked.thread_id != parent.thread_id
+    assert forked.thread_id == fork_thread_id
     assert forked.harness.environment_states == {}
     assert retried.thread_id == retry_thread_id
     assert retried.harness.environment_states == {}

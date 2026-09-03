@@ -33,6 +33,7 @@ class ThreadSubmissionAdmission(StrEnum):
     queued = "queued"
     continuation = "continuation"
     root = "root"
+    reject = "reject"
 
 
 class QueuedSubmissionConflict(RuntimeError):
@@ -84,6 +85,8 @@ class QueuedSubmissionStore:
                 has_queued_submission=bool(rows),
                 waiting_resolution_requested=False,
             )
+            if admission is ThreadSubmissionAdmission.reject:
+                raise QueuedSubmissionConflict("failed or cancelled current Run cannot admit queued work")
             if admission is not ThreadSubmissionAdmission.queued:
                 raise QueuedSubmissionConflict("Thread is eligible for immediate Run acceptance")
             if len(rows) >= self._max_queued:
@@ -119,12 +122,11 @@ class QueuedSubmissionStore:
     ) -> QueuedSubmissionCollection:
         if limit < 1 or limit > 1000:
             raise ValueError("queue list limit must be between 1 and 1000")
-        consumed = state is QueuedSubmissionState.consumed
-        order = (
-            (QueuedSubmissionRecord.consumed_at, QueuedSubmissionRecord.id)
-            if consumed
-            else (QueuedSubmissionRecord.position, QueuedSubmissionRecord.id)
-        )
+        lifecycle_column = {
+            QueuedSubmissionState.queued: QueuedSubmissionRecord.position,
+            QueuedSubmissionState.consumed: QueuedSubmissionRecord.consumed_at,
+            QueuedSubmissionState.failed: QueuedSubmissionRecord.failed_at,
+        }[state]
         async with short_session(self._sessions) as database:
             exists = await database.scalar(
                 select(ThreadRecord.id).where(
@@ -141,13 +143,9 @@ class QueuedSubmissionStore:
                         .where(
                             QueuedSubmissionRecord.tenant_id == tenant_id,
                             QueuedSubmissionRecord.thread_id == thread_id,
-                            (
-                                QueuedSubmissionRecord.consumed_run_id.is_not(None)
-                                if consumed
-                                else QueuedSubmissionRecord.consumed_run_id.is_(None)
-                            ),
+                            lifecycle_column.is_not(None),
                         )
-                        .order_by(*order)
+                        .order_by(lifecycle_column, QueuedSubmissionRecord.id)
                         .limit(limit)
                     )
                 ).all()
@@ -170,7 +168,7 @@ class QueuedSubmissionStore:
             select(QueuedSubmissionRecord.id).where(
                 QueuedSubmissionRecord.tenant_id == ThreadRecord.tenant_id,
                 QueuedSubmissionRecord.thread_id == ThreadRecord.id,
-                QueuedSubmissionRecord.consumed_run_id.is_(None),
+                QueuedSubmissionRecord.position.is_not(None),
             )
         )
         async with short_session(self._sessions) as database:
@@ -212,7 +210,7 @@ class QueuedSubmissionStore:
             scope = await _scope(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=scope)
             row = await _lock_entry(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
-            if row.consumed_run_id is not None or row.version != expected_version:
+            if row.position is None or row.version != expected_version:
                 raise QueuedSubmissionConflict("queued submission version or lifecycle changed")
             resource = row.to_resource()
             if resource.authority_principal != actor_principal:
@@ -321,13 +319,19 @@ def classify_thread_submission(
         if current.status is not RunStatus.waiting or head is None or head.id != current.id:
             raise QueuedSubmissionConflict("waiting defaults require the selected current waiting head")
         return ThreadSubmissionAdmission.waiting_continue
+    if current.status in {RunStatus.failed, RunStatus.cancelled}:
+        if has_queued_submission or (head is not None and head.status is RunStatus.waiting):
+            return ThreadSubmissionAdmission.reject
+        if head is not None and head.status is RunStatus.completed:
+            return ThreadSubmissionAdmission.continuation
+        if head is None:
+            return ThreadSubmissionAdmission.root
+        return ThreadSubmissionAdmission.reject
     if has_queued_submission or current.status in {RunStatus.accepted, RunStatus.running, RunStatus.waiting}:
         return ThreadSubmissionAdmission.queued
     if head is not None and head.status is RunStatus.completed:
         return ThreadSubmissionAdmission.continuation
-    if head is None and current.status in {RunStatus.failed, RunStatus.cancelled}:
-        return ThreadSubmissionAdmission.root
-    return ThreadSubmissionAdmission.queued
+    return ThreadSubmissionAdmission.reject
 
 
 async def _scope(database: AsyncSession, *, tenant_id: str, queued_submission_id: str) -> str:
@@ -364,7 +368,7 @@ async def _lock_live(
                 .where(
                     QueuedSubmissionRecord.tenant_id == tenant_id,
                     QueuedSubmissionRecord.thread_id == thread_id,
-                    QueuedSubmissionRecord.consumed_run_id.is_(None),
+                    QueuedSubmissionRecord.position.is_not(None),
                 )
                 .order_by(QueuedSubmissionRecord.position, QueuedSubmissionRecord.id)
                 .with_for_update()

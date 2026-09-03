@@ -69,6 +69,30 @@ def _environment(tmp_path: Path) -> LocalEnvdEnvironment:
     return environment
 
 
+def test_foundation_local_envd_attachment_construction_is_inert(tmp_path: Path) -> None:
+    provider = LocalEnvdEnvironmentProvider()
+    workspace = tmp_path / "not-created-yet"
+    connection = provider.validate_connection(
+        schema_version="1",
+        parameters={
+            "environment_id": "attached-local-envd",
+            "workspace": {"path": str(workspace)},
+        },
+    )
+    assert provider.target_key(connection=connection) == str(workspace)
+
+    environment = provider.create_attachment_environment(
+        connection=connection,
+        runtime=LocalEnvdProviderRuntime(
+            executable=tmp_path / "not-inspected-agent-envd",
+            allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        ),
+    )
+
+    assert isinstance(environment, LocalEnvdEnvironment)
+    assert environment.dump_state() is None
+
+
 def _patch_entry(
     monkeypatch: pytest.MonkeyPatch,
     environment: LocalEnvdEnvironment,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -21,18 +22,21 @@ from ._transitions import charge_attempt_usage, terminalize_attempt
 from .acceptance import (
     RunAcceptanceError,
     RunAcceptanceReceipt,
+    _require_session,
     _validate_advancement,
     _validate_prepared_run,
     _validate_queued_run_input,
 )
 from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority
+from .control_domain import QueuedSubmission, QueuedSubmissionFailure, QueuedSubmissionState
 from .domain import Run, RunAttemptStatus, RunInputKind, RunLineageKind
+from .environment_bindings import add_run_with_environment_binding
 from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
 from .input import AcceptedAgentInput
+from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter, StoredRunState
-from .queue_persistence import QueueConsumptionConflict, consume_first_submission
-from .records import run_record
+from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
 from .state import CompletedOutcomeCandidate, RunPayloadEnvelope, RunStateEnvelope
 
 
@@ -41,8 +45,18 @@ class CombinedQueueHandoffReceipt:
     source_run_id: str
     source_run_version: int
     source_attempt_version: int
-    successor: RunAcceptanceReceipt
+    outcome: Literal["run_accepted", "submission_failed"]
+    queued_submission: QueuedSubmission
     queue_version: int
+    successor: RunAcceptanceReceipt | None = None
+
+    def __post_init__(self) -> None:
+        accepted = self.outcome == "run_accepted"
+        if self.outcome not in {"run_accepted", "submission_failed"} or accepted != (self.successor is not None):
+            raise ValueError("combined handoff outcome and successor are inconsistent")
+        expected_state = QueuedSubmissionState.consumed if accepted else QueuedSubmissionState.failed
+        if self.queued_submission.state is not expected_state:
+            raise ValueError("combined handoff outcome and queued submission are inconsistent")
 
 
 class CompletionQueueHandoffService:
@@ -89,41 +103,17 @@ class CompletionQueueHandoffService:
         now = _utc(self._clock())
         try:
             async with transaction(self._sessions) as database:
-                source, attempt, thread = await lock_attempt_authority(
+                source, attempt, thread = await _lock_and_seal_source(
                     database,
-                    authority,
-                    now,
-                    lock_inbox_origins=True,
-                )
-                if (
-                    thread.version != expected_thread_version
-                    or thread.queue_version != expected_queue_version
-                    or thread.current_run_id != source.id
-                    or thread.head_run_id != expected_head_run_id
-                ):
-                    raise RunAcceptanceError(
-                        "combined_handoff_conflict",
-                        "Thread or queue changed before combined handoff",
-                    )
-                validate_outcome_candidate_scope(source_state, source, thread)
-                _validate_successor_scope(successor_run, thread.tenant_id, thread.session_id, thread.id)
-                if attempt.status != RunAttemptStatus.running.value:
-                    raise AttemptMutationError("combined handoff requires Harness entry")
-
-                await apply_run_outcome(
-                    database,
-                    run=source,
-                    outcome="completed",
-                    state=source_state,
+                    authority=authority,
+                    source_state=source_state,
+                    candidate=candidate,
+                    expected_thread_version=expected_thread_version,
+                    expected_queue_version=expected_queue_version,
+                    expected_head_run_id=expected_head_run_id,
                     now=now,
                 )
-                apply_completed_outcome(source, candidate, now)
-                select_sealed_state(source, run_attempt_id=attempt.id, state=source_state, now=now)
-                terminalize_attempt(attempt, RunAttemptStatus.succeeded, now)
-                charge_attempt_usage(source, attempt)
-                source.current_run_attempt_id = None
-                source.updated_at = now
-                source.version += 1
+                _validate_successor_scope(successor_run, thread.tenant_id, thread.session_id, thread.id)
 
                 await _validate_advancement(
                     database,
@@ -133,8 +123,13 @@ class CompletionQueueHandoffService:
                     candidate_payload=input_payload,
                     next_head_run_id=source.id,
                 )
-                database.add(run_record(successor_run))
-                await database.flush()
+                session_record_value = await _require_session(database, successor_run)
+                await add_run_with_environment_binding(
+                    database,
+                    run=successor_run,
+                    state=successor_state,
+                    workspace_id=session_record_value.workspace_id,
+                )
                 await bind_unbound_async_entries(
                     database,
                     tenant_id=successor_run.tenant_id,
@@ -142,7 +137,7 @@ class CompletionQueueHandoffService:
                     target_run_id=successor_run.id,
                     now=now,
                 )
-                await _consume_queue_head(
+                consumed = await _consume_queue_head(
                     database,
                     run=successor_run,
                     queued_submission_id=queued_submission_id,
@@ -160,6 +155,8 @@ class CompletionQueueHandoffService:
                     source_run_id=source.id,
                     source_run_version=source.version,
                     source_attempt_version=attempt.version,
+                    outcome="run_accepted",
+                    queued_submission=consumed,
                     successor=RunAcceptanceReceipt(
                         session_id=thread.session_id,
                         thread_id=thread.id,
@@ -167,6 +164,69 @@ class CompletionQueueHandoffService:
                         run_id=successor_run.id,
                         run_version=successor_run.version,
                     ),
+                    queue_version=thread.queue_version,
+                )
+        except IntegrityError as error:
+            raise RunAcceptanceError(
+                "combined_handoff_conflict",
+                "Combined handoff lost a concurrent mutation",
+            ) from error
+
+    async def complete_and_fail_permanently(
+        self,
+        *,
+        authority: AttemptContext,
+        source_state: StoredRunState,
+        queued_submission_id: str,
+        submission_digest_sha256: str,
+        failure: QueuedSubmissionFailure,
+        expected_thread_version: int,
+        expected_queue_version: int,
+        expected_head_run_id: str | None,
+    ) -> CombinedQueueHandoffReceipt:
+        """Atomically seal completion and terminally fail an invalid queue head."""
+
+        candidate = await self._verify_source(authority=authority, source_state=source_state)
+        now = _utc(self._clock())
+        try:
+            async with transaction(self._sessions) as database:
+                source, attempt, thread = await _lock_and_seal_source(
+                    database,
+                    authority=authority,
+                    source_state=source_state,
+                    candidate=candidate,
+                    expected_thread_version=expected_thread_version,
+                    expected_queue_version=expected_queue_version,
+                    expected_head_run_id=expected_head_run_id,
+                    now=now,
+                )
+                try:
+                    failed = await fail_first_submission(
+                        database,
+                        tenant_id=source.tenant_id,
+                        thread_id=thread.id,
+                        queued_submission_id=queued_submission_id,
+                        submission_digest_sha256=submission_digest_sha256,
+                        failure=failure,
+                        now=now,
+                    )
+                except QueueConsumptionConflict as error:
+                    raise RunAcceptanceError(
+                        "queue_consumption_conflict",
+                        "Queued submission changed before combined handoff",
+                    ) from error
+                thread.head_run_id = source.id
+                thread.current_run_id = source.id
+                thread.version += 1
+                thread.queue_version += 1
+                thread.updated_at = now
+                await database.flush()
+                return CombinedQueueHandoffReceipt(
+                    source_run_id=source.id,
+                    source_run_version=source.version,
+                    source_attempt_version=attempt.version,
+                    outcome="submission_failed",
+                    queued_submission=failed.to_resource(),
                     queue_version=thread.queue_version,
                 )
         except IntegrityError as error:
@@ -184,12 +244,23 @@ class CompletionQueueHandoffService:
         successor_state: RunStateEnvelope,
         accepted_input: AcceptedAgentInput,
     ) -> tuple[CompletedOutcomeCandidate, RunPayloadEnvelope | None]:
+        candidate = await self._verify_source(authority=authority, source_state=source_state)
+        _validate_prepared_run(successor_run, successor_state)
+        _validate_combined_successor(authority, source_state, successor_run, successor_state)
+        input_payload = await self._verify_input_payload(successor_run)
+        _validate_queued_run_input(successor_run, input_payload, accepted_input)
+        return candidate, input_payload
+
+    async def _verify_source(
+        self,
+        *,
+        authority: AttemptContext,
+        source_state: StoredRunState,
+    ) -> CompletedOutcomeCandidate:
         validate_outcome_candidate(source_state, authority)
         candidate = source_state.envelope.outcome_candidate
         if not isinstance(candidate, CompletedOutcomeCandidate):
             raise RunAcceptanceError("combined_handoff_invalid", "Combined handoff requires completed source state")
-        _validate_prepared_run(successor_run, successor_state)
-        _validate_combined_successor(authority, source_state, successor_run, successor_state)
         if candidate.output_object is not None:
             await self._payloads.verify_reference(
                 authority.tenant_id,
@@ -197,9 +268,7 @@ class CompletionQueueHandoffService:
                 "output",
                 candidate.output_object,
             )
-        input_payload = await self._verify_input_payload(successor_run)
-        _validate_queued_run_input(successor_run, input_payload, accepted_input)
-        return candidate, input_payload
+        return candidate
 
     async def _verify_input_payload(self, run: Run) -> RunPayloadEnvelope | None:
         if run.input_object is None:
@@ -254,6 +323,72 @@ def _validate_successor_scope(run: Run, tenant_id: str, session_id: str, thread_
         )
 
 
+async def _lock_and_seal_source(
+    database: AsyncSession,
+    *,
+    authority: AttemptContext,
+    source_state: StoredRunState,
+    candidate: CompletedOutcomeCandidate,
+    expected_thread_version: int,
+    expected_queue_version: int,
+    expected_head_run_id: str | None,
+    now: datetime,
+) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
+    source, attempt, thread = await lock_attempt_authority(
+        database,
+        authority,
+        now,
+        lock_inbox_origins=True,
+    )
+    if (
+        thread.version != expected_thread_version
+        or thread.queue_version != expected_queue_version
+        or thread.current_run_id != source.id
+        or thread.head_run_id != expected_head_run_id
+    ):
+        raise RunAcceptanceError(
+            "combined_handoff_conflict",
+            "Thread or queue changed before combined handoff",
+        )
+    validate_outcome_candidate_scope(source_state, source, thread)
+    if attempt.status != RunAttemptStatus.running.value:
+        raise AttemptMutationError("combined handoff requires Harness entry")
+    await _seal_completed_source(
+        database,
+        source=source,
+        attempt=attempt,
+        source_state=source_state,
+        candidate=candidate,
+        now=now,
+    )
+    return source, attempt, thread
+
+
+async def _seal_completed_source(
+    database: AsyncSession,
+    *,
+    source: RunRecord,
+    attempt: RunAttemptRecord,
+    source_state: StoredRunState,
+    candidate: CompletedOutcomeCandidate,
+    now: datetime,
+) -> None:
+    await apply_run_outcome(
+        database,
+        run=source,
+        outcome="completed",
+        state=source_state,
+        now=now,
+    )
+    apply_completed_outcome(source, candidate, now)
+    select_sealed_state(source, run_attempt_id=attempt.id, state=source_state, now=now)
+    terminalize_attempt(attempt, RunAttemptStatus.succeeded, now)
+    charge_attempt_usage(source, attempt)
+    source.current_run_attempt_id = None
+    source.updated_at = now
+    source.version += 1
+
+
 async def _consume_queue_head(
     database: AsyncSession,
     *,
@@ -261,7 +396,7 @@ async def _consume_queue_head(
     queued_submission_id: str,
     submission_digest_sha256: str,
     now: datetime,
-) -> None:
+) -> QueuedSubmission:
     try:
         consumed = await consume_first_submission(
             database,
@@ -280,6 +415,7 @@ async def _consume_queue_head(
         ) from error
     if consumed.consumed_run_id != run.id:
         raise RuntimeError("combined handoff lost its queue correlation")
+    return consumed.to_resource()
 
 
 def _utc(value: datetime) -> datetime:

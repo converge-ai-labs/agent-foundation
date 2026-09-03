@@ -9,7 +9,6 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from a13n_environment_provider import EnvironmentProviderSpec
 from a13n_harness import HarnessModelCharacteristics
 from a13n_harness.tools.client import ClientToolDefinition
 from pydantic import (
@@ -25,10 +24,16 @@ from pydantic import (
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from a13n_service.environments.domain import (
+    EnvironmentConnectionSpec,
+    EnvironmentCredentialBinding,
+    EnvironmentProviderLock,
+    TargetKey,
+)
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
 from a13n_service.models.domain import ModelApi, ModelExecutionSnapshot, ModelKey
-from a13n_service.secrets.domain import SecretCredentialSource, SecretKey
+from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
 ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
@@ -299,13 +304,8 @@ class AgentConfig(StrictModel):
         return self
 
 
-class EnvironmentCredentialBinding(StrictModel):
-    requirement_key: BoundedKey
-    credential: SecretCredentialSource
-
-
 class InlineEnvironmentSelection(StrictModel):
-    provider: EnvironmentProviderSpec
+    connection: EnvironmentConnectionSpec
     credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
     access: Literal["read_only", "read_write", "full"] = "full"
 
@@ -407,11 +407,12 @@ class ResolvedSkillBinding(StrictModel):
 class EnvironmentExecutionConfig(StrictModel):
     schema_version: Literal["1"] = "1"
     source_environment_revision_id: ObjectId | None = None
-    provider: EnvironmentProviderSpec
+    connection: EnvironmentConnectionSpec
     provider_package_revision_id: ObjectId | None = None
-    provider_lock: JsonObject
+    provider_lock: EnvironmentProviderLock
     credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
     access: Literal["read_only", "read_write", "full"]
+    target_key: TargetKey
     logical_digest_sha256: Sha256Digest
 
 

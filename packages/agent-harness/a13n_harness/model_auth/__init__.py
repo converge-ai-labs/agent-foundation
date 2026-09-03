@@ -9,7 +9,15 @@ from .models import (
     GrokCredentialSource,
     ModelAuthenticationError,
 )
-from .oauth import CodexOAuthFlow, OAuthFlow, refresh_codex_credentials, refresh_grok_credentials
+from .oauth import (
+    CodexOAuthFlow,
+    GrokDeviceAuthorization,
+    GrokDeviceAuthorizationFlow,
+    GrokOAuthFlow,
+    OAuthFlow,
+    refresh_codex_credentials,
+    refresh_grok_credentials,
+)
 from .runtime import CodexSubscriptionModel, build_codex_model, build_grok_model
 
 __all__ = [
@@ -21,6 +29,9 @@ __all__ = [
     "CredentialRefreshError",
     "GrokCredentialSource",
     "GrokCredentials",
+    "GrokDeviceAuthorization",
+    "GrokDeviceAuthorizationFlow",
+    "GrokOAuthFlow",
     "ModelAuthenticationError",
     "OAuthFlow",
     "build_codex_model",

@@ -63,6 +63,14 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
     def configuration_versions(self) -> frozenset[str]:
         return frozenset({_CONFIGURATION_VERSION})
 
+    @property
+    def provider_key(self) -> str:
+        return self.key
+
+    @property
+    def connection_versions(self) -> frozenset[str]:
+        return self.configuration_versions
+
     def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
         if schema_version != _CONFIGURATION_VERSION:
             raise _provider_error(
@@ -100,16 +108,58 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
             raise TypeError("Local Envd requires LocalEnvdProviderRuntime")
         return LocalEnvdEnvironment(configuration, runtime)
 
+    def validate_connection(self, *, schema_version: str, parameters: JsonValue) -> BaseModel:
+        if schema_version != _CONFIGURATION_VERSION:
+            raise _provider_error(
+                "Local Envd connection version is unsupported.",
+                code="provider_schema_unsupported",
+                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
+                schema_version=schema_version,
+            )
+        try:
+            connection = LocalEnvdProviderConfiguration.model_validate(parameters)
+        except ValidationError as error:
+            raise _provider_error(
+                "Local Envd connection is invalid.",
+                code="provider_connection_invalid",
+                category=EnvironmentProviderErrorCategory.INVALID,
+                schema_version=schema_version,
+            ) from error
+        workspace = connection.workspace.model_copy(
+            update={"path": Path(os.path.normpath(str(connection.workspace.path)))},
+        )
+        return connection.model_copy(update={"workspace": workspace})
+
+    def target_key(self, *, connection: BaseModel) -> str:
+        if not isinstance(connection, LocalEnvdProviderConfiguration):
+            raise TypeError("Local Envd requires LocalEnvdProviderConfiguration")
+        return str(connection.workspace.path)
+
+    def create_attachment_environment(
+        self,
+        *,
+        connection: BaseModel,
+        runtime: object,
+    ) -> Environment:
+        if not isinstance(connection, LocalEnvdProviderConfiguration):
+            raise TypeError("Local Envd attachment requires LocalEnvdProviderConfiguration")
+        if not isinstance(runtime, LocalEnvdProviderRuntime):
+            raise TypeError("Local Envd attachment requires LocalEnvdProviderRuntime")
+        return LocalEnvdEnvironment(connection, runtime, exact_target=True)
+
 
 class LocalEnvdEnvironment(Environment):
     def __init__(
         self,
         configuration: LocalEnvdProviderConfiguration,
         runtime: LocalEnvdProviderRuntime,
+        *,
+        exact_target: bool = False,
     ) -> None:
         super().__init__(None)
         self._configuration = configuration.model_copy(deep=True)
         self._runtime = runtime
+        self._exact_target = exact_target
         self._descriptor: EnvironmentDescriptor | None = None
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
@@ -157,6 +207,12 @@ class LocalEnvdEnvironment(Environment):
         del thread_id, run_id, agent_instance_id, host_refs
         try:
             configuration = await asyncio.to_thread(_canonical_configuration, self._configuration)
+            if self._exact_target and configuration.workspace.path != self._configuration.workspace.path:
+                raise _provider_error(
+                    "Local Envd attachment workspace resolves to a different target.",
+                    code="provider_target_conflict",
+                    category=EnvironmentProviderErrorCategory.CONFLICT,
+                )
             await _validate_runtime(self._runtime.executable, configuration)
             self._configuration = configuration
             await self._launch_private_generation()

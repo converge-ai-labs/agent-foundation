@@ -431,6 +431,12 @@ class InterruptRequest(StrictModel):
 class QueuedSubmissionState(StrEnum):
     queued = "queued"
     consumed = "consumed"
+    failed = "failed"
+
+
+class QueuedSubmissionFailure(StrictModel):
+    code: BoundedKey
+    message: BoundedName
 
 
 class QueuedSubmission(StrictModel):
@@ -443,17 +449,33 @@ class QueuedSubmission(StrictModel):
     submission_digest_sha256: Sha256Digest
     state: QueuedSubmissionState
     consumed_run_id: ObjectId | None = None
+    failure: QueuedSubmissionFailure | None = None
     created_at: UtcDateTime
     updated_at: UtcDateTime
     consumed_at: UtcDateTime | None = None
+    failed_at: UtcDateTime | None = None
 
     @model_validator(mode="after")
     def state_is_derived(self) -> QueuedSubmission:
-        consumed = self.consumed_run_id is not None
-        if consumed != (self.state is QueuedSubmissionState.consumed):
-            raise ValueError("queued submission state must derive from consumed Run")
-        if consumed != (self.consumed_at is not None) or consumed == (self.position is not None):
-            raise ValueError("queued submission position and consumption fields are inconsistent")
+        consumed = self.consumed_run_id is not None and self.consumed_at is not None
+        failed = self.failure is not None and self.failed_at is not None
+        if (self.consumed_run_id is None) != (self.consumed_at is None):
+            raise ValueError("queued submission consumption fields must be present together")
+        if (self.failure is None) != (self.failed_at is None):
+            raise ValueError("queued submission failure fields must be present together")
+        if consumed and failed:
+            raise ValueError("queued submission consumption and failure are mutually exclusive")
+        expected_state = (
+            QueuedSubmissionState.consumed
+            if consumed
+            else QueuedSubmissionState.failed
+            if failed
+            else QueuedSubmissionState.queued
+        )
+        if self.state is not expected_state:
+            raise ValueError("queued submission state must derive from terminal evidence")
+        if (self.position is not None) != (expected_state is QueuedSubmissionState.queued):
+            raise ValueError("queued submission position must exist only while queued")
         if self.submission.digest_sha256() != self.submission_digest_sha256:
             raise ValueError("queued submission digest does not match its intent")
         return self
@@ -502,9 +524,20 @@ class RunAcceptanceReceipt(StrictModel):
 
 
 class QueuedSubmissionConsumptionReceipt(StrictModel):
-    queued_submission_id: ObjectId
+    outcome: Literal["run_accepted", "submission_failed"]
+    queued_submission: QueuedSubmission
     queue_version: int = Field(ge=0)
-    run: RunAcceptanceReceipt
+    run: RunAcceptanceReceipt | None = None
+
+    @model_validator(mode="after")
+    def outcome_matches_resources(self) -> QueuedSubmissionConsumptionReceipt:
+        accepted = self.outcome == "run_accepted"
+        if accepted != (self.run is not None):
+            raise ValueError("queue consumption outcome and Run receipt are inconsistent")
+        expected_state = QueuedSubmissionState.consumed if accepted else QueuedSubmissionState.failed
+        if self.queued_submission.state is not expected_state:
+            raise ValueError("queue consumption outcome and queued submission are inconsistent")
+        return self
 
 
 class ThreadQueueMutationReceipt(StrictModel):
@@ -564,6 +597,7 @@ __all__ = [
     "QueuedSubmission",
     "QueuedSubmissionCollection",
     "QueuedSubmissionConsumptionReceipt",
+    "QueuedSubmissionFailure",
     "QueuedSubmissionMutationReceipt",
     "QueuedSubmissionState",
     "RejectPendingResolution",

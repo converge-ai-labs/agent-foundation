@@ -54,6 +54,8 @@ from .direct_local.provider import (
 from .docker import (
     DEFAULT_DOCKER_IMAGE,
     DirectoryDockerBootstrapStore,
+    DockerAttachmentConnection,
+    DockerAttachmentEnvironment,
     DockerBindMountSource,
     DockerBootstrapAllocation,
     DockerBootstrapMaterial,
@@ -183,6 +185,8 @@ __all__ = [
     "DirectLocalRootConfiguration",
     "DirectLocalShellProfile",
     "DirectoryDockerBootstrapStore",
+    "DockerAttachmentConnection",
+    "DockerAttachmentEnvironment",
     "DockerBindMountSource",
     "DockerBootstrapAllocation",
     "DockerBootstrapMaterial",

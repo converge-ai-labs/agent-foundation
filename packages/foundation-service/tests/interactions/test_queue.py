@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.environments.models import RunEnvironmentBindingRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
     AttemptExecutionService,
@@ -13,7 +14,11 @@ from a13n_service.interactions import (
     ClaimedAttempt,
 )
 from a13n_service.interactions.acceptance import RunAcceptanceService
-from a13n_service.interactions.control_domain import QueuedSubmissionState, ThreadRunSubmissionIntent
+from a13n_service.interactions.control_domain import (
+    QueuedSubmissionFailure,
+    QueuedSubmissionState,
+    ThreadRunSubmissionIntent,
+)
 from a13n_service.interactions.domain import RunLineageKind, RunStatus
 from a13n_service.interactions.handoff import CompletionQueueHandoffService
 from a13n_service.interactions.inbox import ThreadInboxStore
@@ -33,9 +38,18 @@ from a13n_service.interactions.queue import (
     classify_thread_submission,
 )
 from a13n_service.storage import ObjectStore, short_session, transaction
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, TENANT_ID, USER_ID, effective_agent_config
+from .conftest import (
+    AGENT_ID,
+    AGENT_REVISION_ID,
+    NOW,
+    TENANT_ID,
+    USER_ID,
+    effective_agent_config,
+    environment_execution_config,
+)
 from .test_acceptance import _accepted_run
 from .test_attempt_execution import _accept_root, _authority, _completed_state, _worker
 
@@ -48,6 +62,23 @@ def _intent(text: str) -> ThreadRunSubmissionIntent:
 
 def _principal(principal_id: str = USER_ID) -> PrincipalRef:
     return PrincipalRef(principal_type=PrincipalType.user, principal_id=principal_id)
+
+
+async def _fail_current_run(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    run_id: str,
+    thread_id: str,
+) -> None:
+    async with transaction(sessions) as database:
+        source = await database.get(RunRecord, run_id)
+        thread = await database.get(ThreadRecord, thread_id)
+        assert source is not None and thread is not None
+        source.status = "failed"
+        source.failure_json = SafeFailure(code="test_failure", message="failed").model_dump(mode="json")
+        source.sealed_at = NOW
+        source.version += 1
+        thread.version += 1
 
 
 def test_existing_thread_submission_admission_order_is_explicit() -> None:
@@ -115,6 +146,16 @@ def test_existing_thread_submission_admission_order_is_explicit() -> None:
             waiting_resolution_requested=False,
         )
         is ThreadSubmissionAdmission.root
+    )
+    assert (
+        classify_thread_submission(
+            thread=no_head,
+            current=failed,
+            head=None,
+            has_queued_submission=True,
+            waiting_resolution_requested=False,
+        )
+        is ThreadSubmissionAdmission.reject
     )
 
 
@@ -233,15 +274,7 @@ async def test_enqueue_rejects_thread_that_can_accept_immediately(
     interaction_object_store: ObjectStore,
 ) -> None:
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    async with transaction(interaction_sessions) as database:
-        source = await database.get(RunRecord, run.id)
-        thread = await database.get(ThreadRecord, run.thread_id)
-        assert source is not None and thread is not None
-        source.status = "failed"
-        source.failure_json = SafeFailure(code="test_failure", message="failed").model_dump(mode="json")
-        source.sealed_at = NOW
-        source.version += 1
-        thread.version += 1
+    await _fail_current_run(interaction_sessions, run_id=run.id, thread_id=run.thread_id)
 
     queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW)
     with pytest.raises(QueuedSubmissionConflict, match="immediate Run acceptance"):
@@ -318,18 +351,11 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         submission=_intent("second"),
         queued_submission_id="qsub_6666666666666666",
     )
-    async with transaction(interaction_sessions) as database:
-        source_record = await database.get(RunRecord, source.id)
-        thread = await database.get(ThreadRecord, source.thread_id)
-        assert source_record is not None and thread is not None
-        source_record.status = "failed"
-        source_record.failure_json = SafeFailure(code="test_failure", message="failed").model_dump(mode="json")
-        source_record.sealed_at = NOW
-        source_record.version += 1
-        thread.version += 1
+    await _fail_current_run(interaction_sessions, run_id=source.id, thread_id=source.thread_id)
     assert await queue.scan_drainable(tenant_id=TENANT_ID) == (source.thread_id,)
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="first"),))
-    config = effective_agent_config()
+    environment = environment_execution_config()
+    config = effective_agent_config(environment=environment)
     seed = RunStateSeed(
         run_id="run_6666666666666666",
         agent_id=AGENT_ID,
@@ -342,6 +368,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         thread_id=source.thread_id,
         idempotency_key="consume-first",
         request_fingerprint="6" * 64,
+        config=config,
     ).model_copy(update={"input": accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)})
     receipt = await RunAcceptanceService(
         interaction_sessions,
@@ -361,7 +388,9 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         next_head_run_id=None,
     )
 
-    assert receipt.run_id == run.id
+    assert receipt.outcome == "run_accepted"
+    assert receipt.run is not None and receipt.run.run_id == run.id
+    assert receipt.queued_submission.state is QueuedSubmissionState.consumed
     consumed = await queue.get(
         tenant_id=TENANT_ID,
         queued_submission_id=first.queued_submission.queued_submission_id,
@@ -375,9 +404,83 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     async with short_session(interaction_sessions) as database:
         thread = await database.get(ThreadRecord, source.thread_id)
         accepted = await database.get(RunRecord, run.id)
-        assert thread is not None and accepted is not None
+        binding = await database.scalar(
+            select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == run.id)
+        )
+        assert thread is not None and accepted is not None and binding is not None
         assert (thread.version, thread.queue_version, thread.current_run_id) == (3, 3, run.id)
+        assert binding.target_key == environment.target_key
     assert await queue.scan_drainable(tenant_id=TENANT_ID) == ()
+
+
+async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    _, source, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW)
+    first = await queue.enqueue(
+        tenant_id=TENANT_ID,
+        thread_id=source.thread_id,
+        expected_thread_version=1,
+        authority_principal=_principal(),
+        submission=_intent("invalid"),
+        queued_submission_id="qsub_6767676767676767",
+    )
+    second = await queue.enqueue(
+        tenant_id=TENANT_ID,
+        thread_id=source.thread_id,
+        expected_thread_version=1,
+        authority_principal=_principal(),
+        submission=_intent("still eligible"),
+        queued_submission_id="qsub_6868686868686868",
+    )
+    await _fail_current_run(interaction_sessions, run_id=source.id, thread_id=source.thread_id)
+    failure = QueuedSubmissionFailure(
+        code="agent_revision_deleted",
+        message="The selected Agent Revision was deleted.",
+    )
+
+    receipt = await RunAcceptanceService(
+        interaction_sessions,
+        RunStateStore(interaction_object_store),
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW + timedelta(seconds=1),
+    ).fail_queued_permanently(
+        tenant_id=TENANT_ID,
+        thread_id=source.thread_id,
+        queued_submission_id=first.queued_submission.queued_submission_id,
+        submission_digest_sha256=first.queued_submission.submission_digest_sha256,
+        failure=failure,
+        expected_thread_version=2,
+        expected_queue_version=2,
+        expected_current_run_id=source.id,
+        expected_head_run_id=None,
+    )
+
+    assert receipt.outcome == "submission_failed"
+    assert receipt.run is None
+    assert receipt.queued_submission.state is QueuedSubmissionState.failed
+    assert receipt.queued_submission.failure == failure
+    assert receipt.queued_submission.failed_at == NOW + timedelta(seconds=1)
+    assert [
+        item.queued_submission_id
+        for item in (
+            await queue.list(
+                tenant_id=TENANT_ID,
+                thread_id=source.thread_id,
+                state=QueuedSubmissionState.failed,
+            )
+        ).items
+    ] == [first.queued_submission.queued_submission_id]
+    remaining = (await queue.list(tenant_id=TENANT_ID, thread_id=source.thread_id)).items
+    assert [(item.queued_submission_id, item.position) for item in remaining] == [
+        (second.queued_submission.queued_submission_id, 1)
+    ]
+    async with short_session(interaction_sessions) as database:
+        thread = await database.get(ThreadRecord, source.thread_id)
+        assert thread is not None
+        assert (thread.version, thread.queue_version, thread.current_run_id) == (2, 3, source.id)
 
 
 async def test_completion_time_handoff_seals_source_and_consumes_queue_atomically(
@@ -424,11 +527,13 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         queued_submission_id="qsub_7171717171717171",
     )
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="next"),))
+    environment = environment_execution_config()
+    successor_config = effective_agent_config(environment=environment)
     successor_seed = RunStateSeed(
         run_id="run_7171717171717171",
         agent_id=AGENT_ID,
         agent_revision_id=AGENT_REVISION_ID,
-        effective_agent_config=effective_agent_config(),
+        effective_agent_config=successor_config,
     )
     successor_state = initialize_completed_continuation_state(successor_seed, completed)
     successor = _accepted_run(
@@ -436,6 +541,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         thread_id=source.thread_id,
         idempotency_key="combined-next",
         request_fingerprint="7" * 64,
+        config=successor_config,
     ).model_copy(
         update={
             "parent_run_id": source.id,
@@ -462,14 +568,25 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         expected_head_run_id=None,
     )
 
-    assert receipt.successor.thread_version == 3
+    assert receipt.outcome == "run_accepted"
+    assert receipt.queued_submission.state is QueuedSubmissionState.consumed
+    assert receipt.successor is not None and receipt.successor.thread_version == 3
     assert receipt.queue_version == 2
     async with short_session(interaction_sessions) as database:
         source_row = await database.get(RunRecord, source.id)
         successor_row = await database.get(RunRecord, successor.id)
         attempt = await database.get(RunAttemptRecord, claimed.attempt.id)
         thread = await database.get(ThreadRecord, source.thread_id)
-        assert source_row is not None and successor_row is not None and attempt is not None and thread is not None
+        binding = await database.scalar(
+            select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == successor.id)
+        )
+        assert (
+            source_row is not None
+            and successor_row is not None
+            and attempt is not None
+            and thread is not None
+            and binding is not None
+        )
         assert source_row.status == "completed"
         assert successor_row.status == "accepted"
         assert attempt.status == "succeeded"
@@ -478,6 +595,103 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
             2,
             source.id,
             successor.id,
+        )
+        assert binding.target_key == environment.target_key
+
+
+async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head_atomically(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states, source, initial = await _accept_root(interaction_sessions, interaction_object_store)
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "lease-secret",
+        attempt_id_factory=lambda: "rat_7272727272727272",
+    )
+    claimed = await scheduler.claim(source.id, _worker())
+    assert isinstance(claimed, ClaimedAttempt)
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
+    authority = _authority(claimed)
+    preparation = await execution.commit_preparation_success(authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(
+        authority,
+        preparation=preparation,
+        harness_run_id="failed-combined-handoff",
+    )
+    authority = _authority(
+        claimed,
+        run_version=entered.run_version,
+        attempt_version=entered.attempt_version,
+    )
+    completed = _completed_state(initial, claimed.attempt.id, claimed.attempt.fence)
+    stored = await execution.publish_checkpoint(
+        authority,
+        states,
+        await states.read(TENANT_ID, source.id),
+        completed,
+    )
+    queue = QueuedSubmissionStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=3))
+    first = await queue.enqueue(
+        tenant_id=TENANT_ID,
+        thread_id=source.thread_id,
+        expected_thread_version=1,
+        authority_principal=_principal(),
+        submission=_intent("permanently invalid"),
+        queued_submission_id="qsub_7272727272727272",
+    )
+    second = await queue.enqueue(
+        tenant_id=TENANT_ID,
+        thread_id=source.thread_id,
+        expected_thread_version=1,
+        authority_principal=_principal(),
+        submission=_intent("still eligible"),
+        queued_submission_id="qsub_7373737373737373",
+    )
+    failure = QueuedSubmissionFailure(
+        code="agent_revision_deleted",
+        message="The selected Agent Revision was deleted.",
+    )
+
+    receipt = await CompletionQueueHandoffService(
+        interaction_sessions,
+        states,
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW + timedelta(seconds=4),
+    ).complete_and_fail_permanently(
+        authority=authority,
+        source_state=stored,
+        queued_submission_id=first.queued_submission.queued_submission_id,
+        submission_digest_sha256=first.queued_submission.submission_digest_sha256,
+        failure=failure,
+        expected_thread_version=1,
+        expected_queue_version=2,
+        expected_head_run_id=None,
+    )
+
+    assert receipt.outcome == "submission_failed"
+    assert receipt.successor is None
+    assert receipt.queued_submission.state is QueuedSubmissionState.failed
+    assert receipt.queued_submission.failure == failure
+    assert receipt.queue_version == 3
+    remaining = (await queue.list(tenant_id=TENANT_ID, thread_id=source.thread_id)).items
+    assert [(item.queued_submission_id, item.position) for item in remaining] == [
+        (second.queued_submission.queued_submission_id, 1)
+    ]
+    async with short_session(interaction_sessions) as database:
+        source_row = await database.get(RunRecord, source.id)
+        attempt = await database.get(RunAttemptRecord, claimed.attempt.id)
+        thread = await database.get(ThreadRecord, source.thread_id)
+        assert source_row is not None and attempt is not None and thread is not None
+        assert source_row.status == "completed"
+        assert attempt.status == "succeeded"
+        assert (thread.version, thread.queue_version, thread.head_run_id, thread.current_run_id) == (
+            2,
+            3,
+            source.id,
+            source.id,
         )
 
 

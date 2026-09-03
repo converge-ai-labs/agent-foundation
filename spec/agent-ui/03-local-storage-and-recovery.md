@@ -42,7 +42,7 @@ The conceptual groups are:
 
 Resource lookup rows are rebuildable projections of the accepted file generation. They accelerate queries but never authorize edits or survive as an alternate resource definition when the owning file is removed.
 
-One App serializes root admission per Thread and state changes per child execution. Separate local App processes can open the same store, but they do not share root receipts, active tasks, or control and do not take over one another's executions. Thread metadata and configuration updates compare their independent expected integer versions; continuation, child checkpoint, accepted generation, and Environment state selection compare expected references. A mismatch fails explicitly and never overwrites the newer head.
+One App serializes root admission per Thread and state changes per child execution. Separate local App processes can open the same store, but they do not share root receipts, active tasks, or control and do not take over one another's executions. Thread metadata and Thread configuration updates compare their independent expected integer versions; continuation, child checkpoint, accepted generation, and Environment state selection compare expected references. A mismatch fails explicitly and never overwrites the newer head.
 
 Agent UI does not use process lock files, PID inspection, heartbeats, or time-based leases to infer whether another App is alive. Current execution ownership is process-local.
 
@@ -186,7 +186,7 @@ External model, tool, and Environment effects can be unknown and may repeat afte
 
 01. Files own desired resources; SQLite owns accepted projections and mutable runtime heads.
 02. Thread configuration is sticky, exact, versioned, and replaceable between Runs.
-03. Thread metadata and configuration are independent versioned heads.
+03. Thread metadata and Thread configuration are independent versioned heads.
 04. Every admitted Run has one immutable resolved composition.
 05. A continuation records but is not permanently bound to its producing composition.
 06. Root receipts, input, and active Runs are not durable work records.

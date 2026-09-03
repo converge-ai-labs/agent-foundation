@@ -49,15 +49,15 @@ The Agent UI release-owned Model integration selected by the route declares whic
 
 ## Ownership
 
-| Concern                                                                                   | Owner                              |
-| ----------------------------------------------------------------------------------------- | ---------------------------------- |
-| Credential types and `load()` / `save()` protocols                                        | Harness `model_auth`               |
-| OAuth refresh, expiry, process-local single-flight, request headers, and one 401 replay   | Harness `model_auth`               |
-| Codex Responses subscription dialect and Grok native Model construction                   | Harness `model_auth`               |
-| Effective local product-store policy and path                                             | Agent UI provider adapter          |
-| Product file parsing, schema preservation, advisory locking, and optimistic digest checks | Agent UI provider adapter          |
-| Local account inspection, login confirmation, and logout surfaces                         | Agent UI                           |
-| Durable managed service storage and distributed coordination                              | Foundation Service or another Host |
+| Concern                                                                                                          | Owner                              |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Credential types and `load()` / `save()` protocols                                                               | Harness `model_auth`               |
+| OAuth browser/device exchange, refresh, expiry, process-local single-flight, request headers, and one 401 replay | Harness `model_auth`               |
+| Codex Responses subscription dialect and Grok native Model construction                                          | Harness `model_auth`               |
+| Effective local product-store policy and path                                                                    | Agent UI provider adapter          |
+| Product file parsing, schema preservation, advisory locking, and optimistic digest checks                        | Agent UI provider adapter          |
+| Local account inspection, login confirmation, and logout surfaces                                                | Agent UI                           |
+| Durable managed service storage and distributed coordination                                                     | Foundation Service or another Host |
 
 Agent UI does not wrap Harness authentication with another token callback or Model HTTP-auth layer. Its account stores directly implement the corresponding Harness credential-source protocol.
 
@@ -95,12 +95,42 @@ Agent UI resolves local account use in this order:
 
 1. resolve the canonical product home and effective compatible store policy;
 2. let the Harness Model load and reuse or refresh the selected account for requests;
-3. offer interactive login only when no reusable account exists or explicit user action is required; and
+3. start interactive login only for an explicit login operation; and
 4. persist a successful login through the same product adapter before reporting success.
 
-An expiring token with a refresh grant does not start another interactive login. Authentication rejection never starts browser login. Account switching and forced reauthentication are explicit operations and disclose that they update a shared product account.
+An expiring token with a refresh grant does not start another interactive login. Authentication rejection never starts browser login. Login is itself explicit reauthentication; it can replace the same account without another flag. Replacing a different shared account requires the caller's `allow_account_switch` confirmation and otherwise fails after authorization without changing the store.
 
-Host surfaces use the same typed operations to inspect compatible accounts, invoke a registered provider login, confirm account replacement, and log out. The Agent UI CLI wires the Harness `CodexOAuthFlow`; Grok login remains available only to an embedding surface that registers a product-compatible login collaborator and an explicit or already discoverable Grok scope. Status and logout remain available for discovered Grok product accounts. A surface must not expose a login action that has no registered provider flow.
+Host surfaces use the same typed operations to inspect compatible accounts, invoke a registered provider login, confirm account replacement, and log out. Agent UI natively registers Harness Codex and Grok login primitives for its executable surfaces; an embedding Host can replace these collaborators but a surface must not expose a login action when its App has no registered flow.
+
+### Grok Scope and First Login
+
+A Grok compatible store key is `<issuer-without-trailing-slash>::<client-id>`. On App startup, one existing OAuth scope is selected when it is unambiguous. Multiple compatible scopes require an explicit embedding selection and never produce an arbitrary winner.
+
+When no Grok OAuth scope exists, the Agent UI executable prepares the reviewed production Grok Build profile:
+
+- issuer `https://auth.x.ai`;
+- public-client ID `b1a00492-073a-47ea-816f-4c329264a828`; and
+- scopes `openid profile email offline_access grok-cli:access api:access conversations:read conversations:write workspaces:read workspaces:write`.
+
+This default creates only the matching in-memory adapter. No file entry exists until authorization succeeds. An existing custom scope retains its issuer and client identity; Agent UI does not silently rewrite it to the production profile. Native login uses the Harness provider-specific flow against that resolved identity.
+
+### Browser and Device Presentation
+
+Grok browser login discovers OIDC metadata, binds a random available `127.0.0.1` callback port, creates an authorization-code plus PKCE S256 flow with state and nonce, and waits at most ten minutes for the exact callback. Agent UI writes the authorization URL and progress to stderr and may ask the operating system to open it; failure to open a browser leaves the copyable URL usable. The callback and token exchange complete before the product-store write.
+
+`auth login grok --device-code` selects native RFC 8628 device authorization. Agent UI writes the validated verification URL, user code, and waiting progress to stderr, optionally opens the URL, and delegates bounded polling to Harness. `--device-code` is rejected for Codex. The device code, browser authorization code, PKCE verifier, OAuth tokens, and raw claims never use stdout or stderr.
+
+### CLI Contract
+
+```text
+a13n-ui auth status [codex|grok]
+a13n-ui auth login <codex|grok> [--allow-account-switch] [--device-code]
+a13n-ui auth logout <codex|grok>
+```
+
+`status` without a provider returns both provider projections in stable `codex`, then `grok` order; selecting a provider returns one. `login` and `logout` require a provider. Login uses browser authorization unless Grok device authorization is explicitly selected. Logout removes only the selected compatible provider record or Grok scope and preserves unrelated document fields and scopes.
+
+Every command supports detached text and JSON result rendering. Authorization progress and URLs use stderr in both formats; the final credential-free projection uses stdout. Login cancellation or failure exits nonzero and leaves the previous shared account unchanged.
 
 ## Run Capture and Information Boundary
 
@@ -110,16 +140,19 @@ Authentication diagnostics expose only bounded provider, account-status, expiry-
 
 ## Failure Semantics
 
-| Failure                                                        | Outcome                                                                 |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Compatible account is absent                                   | Run fails with explicit authentication-required semantics               |
-| Store is malformed or incompatible                             | Read or login fails without overwrite                                   |
-| Selected upstream backend cannot be shared safely              | Authentication is reported unsupported; no shadow credential is created |
-| Concurrent process publishes a newer credential before refresh | Harness adopts it when the account identity matches                     |
-| A source change is observed at the pre-replace digest check    | Agent UI fails the save without overwrite                               |
-| Reloaded credential belongs to another account                 | The current operation fails without silently switching the Run account  |
-| Refresh or persistence fails                                   | The Model request fails; interactive login is not started               |
-| Explicit login would replace a shared account                  | User confirmation is required before the compatible write               |
+| Failure                                                        | Outcome                                                                             |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Compatible account is absent                                   | Run fails with explicit authentication-required semantics                           |
+| Store is malformed or incompatible                             | Read or login fails without overwrite                                               |
+| Selected upstream backend cannot be shared safely              | Authentication is reported unsupported; no shadow credential is created             |
+| Concurrent process publishes a newer credential before refresh | Harness adopts it when the account identity matches                                 |
+| A source change is observed at the pre-replace digest check    | Agent UI fails the save without overwrite                                           |
+| Reloaded credential belongs to another account                 | The current operation fails without silently switching the Run account              |
+| Refresh or persistence fails                                   | The Model request fails; interactive login is not started                           |
+| Explicit login would replace a different shared account        | `--allow-account-switch` confirmation is required before the compatible write       |
+| Grok store has no existing OAuth scope                         | Native login uses the reviewed production profile and creates it only after success |
+| Grok store has multiple compatible OAuth scopes                | Startup or account use fails until an embedding Host selects one explicitly         |
+| Browser callback, OIDC validation, or device polling fails     | Login exits nonzero and leaves the previous compatible store unchanged              |
 
 ## Compatibility
 
@@ -129,11 +162,14 @@ Provider file schemas, path policy, and login presentation may evolve with upstr
 
 ## Invariants
 
-1. Codex and Grok subscription Models use Harness `model_auth` and prefer an existing compatible product login.
-2. Agent UI account stores implement Harness credential sources; Agent UI owns no duplicate request-auth or refresh lifecycle.
-3. Agent UI-originated login writes the corresponding compatible product store.
-4. Effective provider policy selects one source; stores are never merged.
-5. Refresh saves use an optimistic digest check plus product-compatible atomic replacement and preserve unrelated fields.
-6. Authentication kind is explicit and never falls back across providers.
-7. Run compositions capture authentication provenance, never credential bytes.
-8. Unknown or incompatible account stores fail without overwrite.
+01. Codex and Grok subscription Models use Harness `model_auth` and prefer an existing compatible product login.
+02. Agent UI account stores implement Harness credential sources; Agent UI owns no duplicate request-auth or refresh lifecycle.
+03. Agent UI-originated login writes the corresponding compatible product store.
+04. Effective provider policy selects one source; stores are never merged.
+05. Refresh saves use an optimistic digest check plus product-compatible atomic replacement and preserve unrelated fields.
+06. Authentication kind is explicit and never falls back across providers.
+07. Run compositions capture authentication provenance, never credential bytes.
+08. Unknown or incompatible account stores fail without overwrite.
+09. Agent UI executable surfaces natively support Codex and Grok browser login; Grok alone also supports explicit device-code login.
+10. A first Grok login uses the reviewed production profile, while an existing unambiguous compatible scope retains its own issuer and client identity.
+11. Auth command results and diagnostics never expose token material, authorization codes, device codes, PKCE values, or raw identity claims.

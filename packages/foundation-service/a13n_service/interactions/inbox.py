@@ -86,14 +86,14 @@ class ThreadInboxStore:
             thread, run = await _lock_current_run(database, tenant_id=tenant_id, run_id=run_id)
             target_run_id: str | None
             source_waiting_run_id: str | None
-            if run.status == "running":
+            if run.status in {"accepted", "running"}:
                 target_run_id = run.id
                 source_waiting_run_id = None
             elif run.status == "waiting" and thread.head_run_id == run.id:
                 target_run_id = None
                 source_waiting_run_id = run.id
             else:
-                raise ThreadInboxConflict("steer target is not the current running or selected waiting Run")
+                raise ThreadInboxConflict("steer target is not the current accepted, running, or selected waiting Run")
             entry = await allocate_steer(
                 database,
                 tenant_id=tenant_id,

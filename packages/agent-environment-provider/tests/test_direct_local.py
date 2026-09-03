@@ -82,6 +82,39 @@ async def test_direct_local_read_only_configuration_denies_writes(tmp_path: Path
     await environment.close()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic-link identity test requires POSIX")
+async def test_foundation_direct_local_attachment_rejects_retargetable_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "workspace-link"
+    link.symlink_to(target, target_is_directory=True)
+    provider = DirectLocalEnvironmentProvider()
+    connection = provider.validate_connection(
+        schema_version="1",
+        parameters={
+            "environment_id": "attached-local",
+            "root": {"path": str(link)},
+        },
+    )
+    assert provider.target_key(connection=connection) == str(link)
+    environment = provider.create_attachment_environment(
+        connection=connection,
+        runtime=DirectLocalProviderRuntime(),
+    )
+
+    with pytest.raises(EnvironmentProviderError) as captured:
+        await environment.enter(
+            thread_id="thread-1",
+            run_id="run-1",
+            agent_instance_id="agent-1",
+            mount_id="workspace",
+        )
+
+    assert captured.value.code == "provider_target_conflict"
+    assert environment.dump_state() is None
+    await environment.close()
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Direct Local process groups require POSIX")
 @pytest.mark.parametrize("denied_signal_name", ("SIGTERM", "SIGKILL"))
 async def test_process_group_cleanup_treats_permission_denial_as_terminal(
