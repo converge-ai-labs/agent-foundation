@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 
 from .models import ModelProviderRecord
-from .providers import CredentialFormat
+from .provider_adapters.types import CredentialFormat
 
 _OWNER_TYPE = "model_provider"
 _CREDENTIAL_KEY = "credential"

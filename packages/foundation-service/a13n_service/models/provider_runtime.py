@@ -16,15 +16,8 @@ from a13n_service.storage import short_session
 from .credentials import EncryptedProviderCredential, decrypt_provider_credential
 from .domain import ModelExecutionSnapshot
 from .models import ModelProviderRecord, ModelRecord
+from .provider_adapters.types import RuntimeProvider
 from .providers import ProviderRegistry
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeProvider:
-    type: str
-    config: dict[str, object]
-    endpoint: str | None
-    credential: str | None
 
 
 @dataclass(frozen=True, slots=True)

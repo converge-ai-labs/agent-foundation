@@ -408,11 +408,7 @@ class ModelProviderService:
             )
         except (ValueError, EndpointPolicyError) as error:
             raise ModelError("invalid_model_provider", "The Model Provider is invalid.", status_code=400) from error
-        normalized = dict(validated.config)
-        endpoint_key = "resource_endpoint" if provider_type == "azure_openai" else "base_url"
-        if provider_type in {"azure_openai", "ollama", "openai_compatible"}:
-            normalized[endpoint_key] = endpoint
-        return ValidatedProviderConfig(config=normalized, endpoint=endpoint)
+        return self._registry.with_validated_endpoint(provider_type, validated, endpoint)
 
     def _validate_credential(self, provider_type: str, credential: str | None) -> None:
         try:

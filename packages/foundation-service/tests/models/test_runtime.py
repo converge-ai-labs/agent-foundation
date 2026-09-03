@@ -142,7 +142,7 @@ async def test_factory_uses_explicit_calling_api_binding() -> None:
     async with httpx2.AsyncClient() as client:
         factory = NativeModelFactory(client)
         with patch(
-            "a13n_service.models.model_factory.parse_google_service_account",
+            "a13n_service.models.provider_adapters.google_vertex.parse_google_service_account",
             return_value=AnonymousCredentials(),
         ):
             for definition in built_in_provider_registry().definitions():
