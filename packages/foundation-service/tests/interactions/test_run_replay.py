@@ -140,6 +140,30 @@ async def test_object_backed_run_output_is_verified_and_retained_by_reference(
     assert snapshot.events[-1].event.payload["rawEvent"]["result_omitted"] is True
 
 
+async def test_replay_lookup_requires_an_authorized_sealed_run_first(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+    redis_client: Redis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    replays = RunReplayStore(interaction_object_store)
+
+    async def unexpected_replay_read(*args: object, **kwargs: object) -> None:
+        raise AssertionError("replay storage was consulted before the Run")
+
+    monkeypatch.setattr(replays, "read", unexpected_replay_read)
+    publisher = RunReplayPublisher(
+        interaction_sessions,
+        redis_client,
+        replays,
+        RunPayloadStore(interaction_object_store),
+        stream_ttl_seconds=60,
+    )
+
+    with pytest.raises(RunReplayUnavailable, match="Run is unavailable"):
+        await publisher.publish(tenant_id=TENANT_ID, run_id="run_missing11111111")
+
+
 @pytest.mark.parametrize("failure_kind", ["trimmed", "terminal_mismatch", "multiple_terminals"])
 async def test_incomplete_or_contradictory_stream_does_not_publish_replay(
     interaction_sessions: async_sessionmaker[AsyncSession],

@@ -82,14 +82,18 @@ class RunReplayPublisher:
         self._max_total_event_bytes = max_total_event_bytes
 
     async def publish(self, *, tenant_id: str, run_id: str) -> RunReplaySnapshot:
+        run = await self._read_sealed_run(tenant_id, run_id)
         try:
-            existing = await self._replays.read(tenant_id, run_id)
+            existing = await self._replays.read(
+                tenant_id,
+                run_id,
+                expected_thread_id=run.thread_id,
+            )
         except RunReplayUnavailable:
             pass
         else:
             await self._expire_stream(tenant_id, run_id)
             return existing
-        run = await self._read_sealed_run(tenant_id, run_id)
         events = await self._read_complete_stream(run)
         await self._verify_attempt_provenance(run, events)
         terminal_output, selected_output = await self._terminal_output(run)
