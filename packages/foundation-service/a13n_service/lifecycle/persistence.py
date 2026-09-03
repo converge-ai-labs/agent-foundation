@@ -224,19 +224,18 @@ async def fail_lifecycle_projection(
     *,
     failed_at: datetime,
     retry_after: timedelta,
-    max_attempts: int,
+    abandon: bool,
     failure: SafeFailure,
 ) -> bool:
-    if retry_after < timedelta(0) or max_attempts < 1:
+    if retry_after < timedelta(0):
         raise ValueError("projection retry policy is invalid")
     record = await _lock_projection_claim(database, claim, settled_at=failed_at)
     if record is None:
         return False
-    abandoned = record.projection_attempts >= max_attempts
     record.projection_state = (
-        LifecycleProjectionState.abandoned.value if abandoned else LifecycleProjectionState.retry_wait.value
+        LifecycleProjectionState.abandoned.value if abandon else LifecycleProjectionState.retry_wait.value
     )
-    record.projection_next_attempt_at = None if abandoned else failed_at + retry_after
+    record.projection_next_attempt_at = None if abandon else failed_at + retry_after
     record.projection_lease_owner = None
     record.projection_lease_expires_at = None
     record.projected_at = None
