@@ -179,7 +179,9 @@ class FoundationHarnessInvocation[OutputT]:
 class HarnessEventProjector(Protocol):
     """Project one canonical public Harness stream item into live presentation."""
 
-    async def project(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None: ...
+    def project(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 class HarnessDriver:
@@ -232,17 +234,20 @@ class HarnessDriver:
             usage=invocation.usage,
             usage_limits=invocation.usage_limits,
         )
-        async with stream as entered:
-            self._attach(entered, invocation.collaborators.instance, state.thread_id)
-            try:
-                await self._control.enter_harness(
-                    HarnessRunIdentity(thread_id=entered.thread_id, run_id=entered.run_id),
-                    preparation,
-                )
-                await self._control.after_stream_entry()
-                return await self._consume(entered)
-            finally:
-                self._detach()
+        try:
+            async with stream as entered:
+                self._attach(entered, invocation.collaborators.instance, state.thread_id)
+                try:
+                    await self._control.enter_harness(
+                        HarnessRunIdentity(thread_id=entered.thread_id, run_id=entered.run_id),
+                        preparation,
+                    )
+                    await self._control.after_stream_entry()
+                    return await self._consume(entered)
+                finally:
+                    self._detach()
+        finally:
+            await self._close_live_projection()
 
     def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> HarnessContextBinding:
         self._require_context(ctx)
@@ -335,14 +340,14 @@ class HarnessDriver:
                     )
                 terminal = item.result
                 if self._control.terminal_observation_allowed:
-                    await self._project_live(item)
+                    self._project_live(item)
                 continue
             if terminal is not None:
                 raise RunError(
                     "Harness stream emitted an observation after its terminal result.",
                     code="foundation_stream_event_after_terminal",
                 )
-            await self._project_live(item)
+            self._project_live(item)
         if terminal is None:
             raise RunError(
                 "Harness stream ended without a terminal result.",
@@ -350,9 +355,9 @@ class HarnessDriver:
             )
         return terminal
 
-    async def _project_live(self, item: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
+    def _project_live(self, item: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
         try:
-            await self._projector.project(item)
+            self._projector.project(item)
         except Exception:
             logger.exception(
                 "Harness live observation projection failed",
@@ -361,6 +366,15 @@ class HarnessDriver:
                     "harness_run_id": item.run_id,
                     "harness_sequence": item.sequence,
                 },
+            )
+
+    async def _close_live_projection(self) -> None:
+        try:
+            await self._projector.close()
+        except Exception:
+            logger.exception(
+                "Harness live observation projector close failed",
+                extra={"event": "harness_live_projection_close_failed"},
             )
 
     def _attach[OutputT](

@@ -109,3 +109,32 @@ async def test_one_open_stream_spans_attempt_generations_without_ttl(redis_clien
     assert keys
     ttls = [await redis_client.ttl(key) for key in keys]
     assert all(ttl == -1 for ttl in ttls)
+
+
+async def test_snapshot_requires_each_running_attempt_projection_marker(redis_client: Redis) -> None:
+    stream = RedisRunStream(redis_client)
+    running = _event(1, event_type="run_attempt.running").model_copy(
+        update={"payload": {"data": {"harness_run_id": "harness-run-1"}}}
+    )
+    await stream.append(TENANT_ID, running)
+    await stream.close(TENANT_ID, RUN_ID, closed_at=NOW)
+
+    with pytest.raises(RetainedReplayUnavailable, match="live presentation projection is incomplete"):
+        await stream.complete_source(TENANT_ID, RUN_ID)
+
+    await stream.complete_attempt_projection(
+        TENANT_ID,
+        RUN_ID,
+        run_attempt_id="rat_1234567890abcdef",
+        harness_run_id="harness-run-1",
+    )
+    source = await stream.complete_source(TENANT_ID, RUN_ID)
+    assert source.entries[0].event == running
+
+    with pytest.raises(RunStreamError, match="identity changed"):
+        await stream.complete_attempt_projection(
+            TENANT_ID,
+            RUN_ID,
+            run_attempt_id="rat_1234567890abcdef",
+            harness_run_id="harness-run-other",
+        )

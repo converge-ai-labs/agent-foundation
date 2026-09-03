@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 import pytest
 from a13n_harness import HarnessEvent, HarnessRunResult, HarnessRunResultEvent, HarnessState, SafeFailure
-from a13n_service.run_stream import RedisRunStream, RunStreamHarnessProjector
+from a13n_service.run_stream import (
+    RedisRunStream,
+    RetainedReplayUnavailable,
+    RunStreamEvent,
+    RunStreamHarnessProjector,
+    RunStreamReplayGap,
+    deterministic_run_stream_event_id,
+)
 from pydantic_ai.messages import (
     AgentStreamEvent,
     FunctionToolResultEvent,
@@ -25,6 +33,18 @@ THREAD_ID = "thread-1234567890abcdef1234567890abcdef"
 ATTEMPT_ID = "rat_1234567890abcdef"
 HARNESS_RUN_ID = "harness-run-1"
 NOW = datetime(2026, 9, 3, 8, tzinfo=UTC)
+
+
+class _BlockingRunStream(RedisRunStream):
+    def __init__(self, redis: Redis) -> None:
+        super().__init__(redis)
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def append(self, tenant_id: str, event: RunStreamEvent) -> str:
+        self.started.set()
+        await self.release.wait()
+        return await super().append(tenant_id, event)
 
 
 def _harness_event(sequence: int, event: AgentStreamEvent) -> HarnessEvent:
@@ -48,8 +68,9 @@ async def test_projects_agui_observations_with_stable_item_identity(redis_client
         harness_run_id=HARNESS_RUN_ID,
     )
 
-    await projector.project(_harness_event(0, PartStartEvent(index=0, part=TextPart("hello"))))
-    await projector.project(_harness_event(1, PartEndEvent(index=0, part=TextPart("hello"))))
+    projector.project(_harness_event(0, PartStartEvent(index=0, part=TextPart("hello"))))
+    projector.project(_harness_event(1, PartEndEvent(index=0, part=TextPart("hello"))))
+    await projector.close()
     page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
 
     assert tuple(entry.event.event_type for entry in page.items) == (
@@ -98,7 +119,7 @@ async def test_projects_terminal_harness_result(
         failure=failure,
     )
 
-    await projector.project(
+    projector.project(
         HarnessRunResultEvent(
             thread_id=THREAD_ID,
             run_id=HARNESS_RUN_ID,
@@ -107,6 +128,7 @@ async def test_projects_terminal_harness_result(
             result=result,
         )
     )
+    await projector.close()
     page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
 
     assert tuple(entry.event.event_type for entry in page.items) == (expected_type,)
@@ -124,7 +146,7 @@ async def test_tool_item_closes_only_after_successful_result(redis_client: Redis
         harness_run_id=HARNESS_RUN_ID,
     )
 
-    await projector.project(
+    projector.project(
         _harness_event(
             0,
             PartEndEvent(
@@ -133,14 +155,7 @@ async def test_tool_item_closes_only_after_successful_result(redis_client: Redis
             ),
         )
     )
-    before_result = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
-    assert tuple(entry.event.event_type for entry in before_result.items) == (
-        "agui.tool_call_start",
-        "agui.tool_call_args",
-        "agui.tool_call_end",
-    )
-
-    await projector.project(
+    projector.project(
         _harness_event(
             1,
             FunctionToolResultEvent(
@@ -152,8 +167,14 @@ async def test_tool_item_closes_only_after_successful_result(redis_client: Redis
             ),
         )
     )
+    await projector.close()
     page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
 
+    assert tuple(entry.event.event_type for entry in page.items[:3]) == (
+        "agui.tool_call_start",
+        "agui.tool_call_args",
+        "agui.tool_call_end",
+    )
     assert tuple(entry.event.event_type for entry in page.items[-2:]) == (
         "agui.tool_call_result",
         "item.completed",
@@ -172,7 +193,7 @@ async def test_failed_tool_result_emits_safe_item_failure(redis_client: Redis) -
         harness_run_id=HARNESS_RUN_ID,
     )
 
-    await projector.project(
+    projector.project(
         _harness_event(
             0,
             FunctionToolResultEvent(
@@ -185,6 +206,7 @@ async def test_failed_tool_result_emits_safe_item_failure(redis_client: Redis) -
             ),
         )
     )
+    await projector.close()
     page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
 
     assert tuple(entry.event.event_type for entry in page.items) == ("agui.custom", "item.failed")
@@ -193,6 +215,62 @@ async def test_failed_tool_result_emits_safe_item_failure(redis_client: Redis) -
         "message": "The tool returned a failed presentation outcome.",
     }
     assert "provider-private-body" not in str(page.items[-1].event.payload)
+
+
+async def test_queue_overflow_marks_stream_incomplete(redis_client: Redis) -> None:
+    stream = _BlockingRunStream(redis_client)
+    projector = RunStreamHarnessProjector(
+        stream,
+        tenant_id=TENANT_ID,
+        run_id=RUN_ID,
+        thread_id=THREAD_ID,
+        run_attempt_id=ATTEMPT_ID,
+        harness_run_id=HARNESS_RUN_ID,
+        max_pending_events=1,
+    )
+    projector.project(_harness_event(0, PartStartEvent(index=0, part=TextPart("first"))))
+    await stream.started.wait()
+    projector.project(_harness_event(1, PartEndEvent(index=0, part=TextPart("first"))))
+    projector.project(_harness_event(2, PartStartEvent(index=1, part=TextPart("dropped"))))
+    stream.release.set()
+
+    await projector.close()
+    await stream.close(TENANT_ID, RUN_ID, closed_at=NOW)
+
+    with pytest.raises(RunStreamReplayGap):
+        await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    with pytest.raises(RetainedReplayUnavailable, match="incomplete"):
+        await stream.complete_source(TENANT_ID, RUN_ID)
+
+
+async def test_empty_clean_attempt_still_records_projection_completion(redis_client: Redis) -> None:
+    stream = RedisRunStream(redis_client)
+    projector = RunStreamHarnessProjector(
+        stream,
+        tenant_id=TENANT_ID,
+        run_id=RUN_ID,
+        thread_id=THREAD_ID,
+        run_attempt_id=ATTEMPT_ID,
+        harness_run_id=HARNESS_RUN_ID,
+    )
+    await projector.close()
+    await stream.append(
+        TENANT_ID,
+        RunStreamEvent(
+            event_id=deterministic_run_stream_event_id("test", "attempt-running"),
+            event_type="run_attempt.running",
+            run_id=RUN_ID,
+            thread_id=THREAD_ID,
+            run_attempt_id=ATTEMPT_ID,
+            harness_run_id=HARNESS_RUN_ID,
+            occurred_at=NOW,
+            payload={"data": {"harness_run_id": HARNESS_RUN_ID}},
+        ),
+    )
+    await stream.close(TENANT_ID, RUN_ID, closed_at=NOW)
+
+    source = await stream.complete_source(TENANT_ID, RUN_ID)
+    assert len(source.entries) == 1
 
 
 async def test_rejects_harness_correlation_change(redis_client: Redis) -> None:
@@ -213,4 +291,4 @@ async def test_rejects_harness_correlation_change(redis_client: Redis) -> None:
     )
 
     with pytest.raises(ValueError, match="does not match"):
-        await projector.project(mismatched)
+        projector.project(mismatched)

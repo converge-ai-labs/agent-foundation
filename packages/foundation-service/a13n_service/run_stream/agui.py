@@ -37,8 +37,8 @@ class _ItemProjection:
     terminal_state: Literal["completed", "failed"] | None = None
 
 
-class RunStreamHarnessProjector:
-    """Convert each canonical Harness observation exactly once at the executor root."""
+class HarnessAguiRunStreamWriter:
+    """Convert one ordered Harness observation and append its presentation events."""
 
     def __init__(
         self,
@@ -60,7 +60,7 @@ class RunStreamHarnessProjector:
         self._observer = HarnessAguiObserver() if observer is None else observer
         self._item_first_stream_ids: dict[str, str] = {}
 
-    async def project(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
+    async def write(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
         if event.thread_id != self._thread_id or event.run_id != self._harness_run_id:
             raise ValueError("Harness observation does not match the selected RunAttempt")
         for index, observation in enumerate(self._observer.observe(event)):
@@ -212,4 +212,4 @@ def _failed_tool_result(source: HarnessEvent) -> ToolReturnPart | None:
     return None
 
 
-__all__ = ["RunStreamHarnessProjector"]
+__all__ = ["HarnessAguiRunStreamWriter"]

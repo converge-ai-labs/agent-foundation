@@ -125,6 +125,7 @@ class LifecycleRunStreamProjector:
                 run_id=event.run_id,
                 thread_id=event.thread_id,
                 run_attempt_id=event.run_attempt_id,
+                harness_run_id=_harness_run_id(event),
                 lifecycle_event_id=event.id,
                 occurred_at=event.occurred_at,
                 payload={
@@ -208,6 +209,15 @@ def _utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("projection clock must return an offset-aware timestamp")
     return value.astimezone(UTC)
+
+
+def _harness_run_id(event: LifecycleEvent) -> str | None:
+    if event.event_type != "run_attempt.running":
+        return None
+    value = event.payload.get("harness_run_id")
+    if not isinstance(value, str) or not value:
+        raise ValueError("RunAttempt running lifecycle event omitted Harness correlation")
+    return value
 
 
 __all__ = ["LifecycleRunStreamProjector"]

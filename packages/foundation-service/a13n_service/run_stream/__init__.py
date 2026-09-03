@@ -1,6 +1,5 @@
 """Run-scoped live presentation and retained replay persistence."""
 
-from .agui import RunStreamHarnessProjector
 from .domain import (
     CompleteRunStream,
     RetainedItem,
@@ -17,6 +16,7 @@ from .domain import (
     deterministic_run_stream_event_id,
 )
 from .projector import LifecycleRunStreamProjector
+from .publisher import RunStreamHarnessProjector
 from .redis import RedisRunStream, run_stream_key_digest_sha256
 from .replay import RUN_REPLAY_CONTENT_TYPE, RunReplayIntegrityError, RunReplayStore, run_replay_key
 

@@ -117,6 +117,73 @@ class RedisRunStream:
                     continue
         raise RunStreamError("Run Stream close contention exceeded the retry limit")
 
+    async def mark_incomplete(self, tenant_id: str, run_id: str) -> None:
+        """Permanently record that a live publisher lost at least one source event."""
+
+        stream_key, metadata_key = _keys(tenant_id, run_id)
+        for _ in range(self._transaction_retries):
+            async with self._redis.pipeline(transaction=True) as pipeline:
+                try:
+                    await pipeline.watch(metadata_key)
+                    await _require_identity(pipeline, metadata_key, tenant_id=tenant_id, run_id=run_id)
+                    closed = _as_text(await pipeline.hget(metadata_key, b"closed_at")) is not None
+                    pipeline.multi()
+                    pipeline.hset(
+                        metadata_key,
+                        mapping={
+                            b"tenant_id": tenant_id.encode(),
+                            b"run_id": run_id.encode(),
+                            b"incomplete": b"1",
+                        },
+                    )
+                    if not closed:
+                        pipeline.persist(stream_key)
+                        pipeline.persist(metadata_key)
+                    await pipeline.execute()
+                    return
+                except WatchError:
+                    continue
+        raise RunStreamError("Run Stream incomplete marker contention exceeded the retry limit")
+
+    async def complete_attempt_projection(
+        self,
+        tenant_id: str,
+        run_id: str,
+        *,
+        run_attempt_id: str,
+        harness_run_id: str,
+    ) -> None:
+        """Certify that one Attempt's bounded live publisher drained without loss."""
+
+        stream_key, metadata_key = _keys(tenant_id, run_id)
+        field = _attempt_projection_field(run_attempt_id)
+        for _ in range(self._transaction_retries):
+            async with self._redis.pipeline(transaction=True) as pipeline:
+                try:
+                    await pipeline.watch(metadata_key)
+                    await _require_identity(pipeline, metadata_key, tenant_id=tenant_id, run_id=run_id)
+                    existing = _as_text(await pipeline.hget(metadata_key, field))
+                    if existing is not None and existing != harness_run_id:
+                        raise RunStreamError("RunAttempt live projection identity changed")
+                    closed = _as_text(await pipeline.hget(metadata_key, b"closed_at")) is not None
+                    pipeline.multi()
+                    pipeline.hset(
+                        metadata_key,
+                        mapping={
+                            b"tenant_id": tenant_id.encode(),
+                            b"run_id": run_id.encode(),
+                            field: harness_run_id.encode(),
+                        },
+                    )
+                    if not closed:
+                        pipeline.persist(stream_key)
+                        pipeline.persist(metadata_key)
+                    await pipeline.execute()
+                    return
+                except WatchError:
+                    continue
+        raise RunStreamError("RunAttempt live projection marker contention exceeded the retry limit")
+
     async def read(
         self,
         tenant_id: str,
@@ -144,7 +211,9 @@ class RedisRunStream:
         floor = None if not boundary_rows else boundary_rows[0][0]
         high = None if not tail_rows else tail_rows[0][0]
         trimmed = metadata.get("trimmed") == "1"
-        if trimmed and floor is not None and _precedes(after_stream_id or _INITIAL_STREAM_ID, floor):
+        if metadata.get("incomplete") == "1" or (
+            trimmed and floor is not None and _precedes(after_stream_id or _INITIAL_STREAM_ID, floor)
+        ):
             raise RunStreamReplayGap(retained_floor=floor, high_watermark=high)
         rows = _entry_rows(page_value)
         entries = tuple(_decode_entry(row, expected_run_id=run_id) for row in rows)
@@ -162,8 +231,8 @@ class RedisRunStream:
         metadata = _metadata(await self._redis.hgetall(metadata_key))
         _validate_identity(metadata, tenant_id=tenant_id, run_id=run_id)
         closed_at = metadata.get("closed_at")
-        if closed_at is None or metadata.get("trimmed") == "1":
-            raise RetainedReplayUnavailable("Run Stream is open or its prefix was trimmed")
+        if closed_at is None or metadata.get("trimmed") == "1" or metadata.get("incomplete") == "1":
+            raise RetainedReplayUnavailable("Run Stream is open, incomplete, or its prefix was trimmed")
         rows = _entry_rows(await self._redis.xrange(stream_key, min=b"-", max=b"+"))
         if not rows or len(rows) > self._max_events:
             raise RetainedReplayUnavailable("Run Stream is empty or exceeds its retained event bound")
@@ -172,6 +241,7 @@ class RedisRunStream:
         except ValueError as error:
             raise RunStreamError("Run Stream close metadata is invalid") from error
         entries = tuple(_decode_entry(row, expected_run_id=run_id) for row in rows)
+        _require_attempt_projections(metadata, entries)
         return CompleteRunStream(
             entries=entries,
             closed_at=closed,
@@ -188,8 +258,8 @@ class RedisRunStream:
             metadata_value, rows_value = await pipeline.execute()
         metadata = _metadata(metadata_value)
         _validate_identity(metadata, tenant_id=tenant_id, run_id=run_id)
-        if metadata.get("trimmed") == "1":
-            raise RetainedReplayUnavailable("Run Stream prefix was trimmed")
+        if metadata.get("trimmed") == "1" or metadata.get("incomplete") == "1":
+            raise RetainedReplayUnavailable("Run Stream prefix is incomplete or was trimmed")
         rows = _entry_rows(rows_value)
         return tuple(_decode_entry(row, expected_run_id=run_id) for row in rows)
 
@@ -203,6 +273,27 @@ def _keys(tenant_id: str, run_id: str) -> tuple[bytes, bytes]:
 def run_stream_key_digest_sha256(tenant_id: str, run_id: str) -> str:
     stream_key, _ = _keys(tenant_id, run_id)
     return hashlib.sha256(stream_key).hexdigest()
+
+
+def _attempt_projection_field(run_attempt_id: str) -> bytes:
+    return f"attempt_projection:{run_attempt_id}".encode()
+
+
+def _require_attempt_projections(
+    metadata: Mapping[str, str],
+    entries: tuple[RunStreamEntry, ...],
+) -> None:
+    for entry in entries:
+        event = entry.event
+        if event.event_type != "run_attempt.running":
+            continue
+        attempt_id = event.run_attempt_id
+        harness_run_id = event.harness_run_id
+        if not isinstance(attempt_id, str) or not isinstance(harness_run_id, str):
+            raise RunStreamError("RunAttempt running projection omitted Harness correlation")
+        field = _attempt_projection_field(attempt_id).decode()
+        if metadata.get(field) != harness_run_id:
+            raise RetainedReplayUnavailable("RunAttempt live presentation projection is incomplete")
 
 
 async def _require_identity(pipeline: Pipeline, metadata_key: bytes, *, tenant_id: str, run_id: str) -> None:

@@ -151,10 +151,13 @@ class _EventProjector:
     events: list[HarnessEvent | HarnessRunResultEvent[object]] = field(default_factory=list)
     fail: bool = False
 
-    async def project(self, event: HarnessEvent | HarnessRunResultEvent[object]) -> None:
+    def project(self, event: HarnessEvent | HarnessRunResultEvent[object]) -> None:
         if self.fail:
             raise RuntimeError("presentation unavailable")
         self.events.append(event)
+
+    async def close(self) -> None:
+        pass
 
 
 async def _stored_state(objects, envelope) -> StoredRunState:

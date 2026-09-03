@@ -183,8 +183,11 @@ class _Wakeups:
 class _Projector:
     events: list[HarnessEvent | HarnessRunResultEvent[object]] = field(default_factory=list)
 
-    async def project(self, event: HarnessEvent | HarnessRunResultEvent[object]) -> None:
+    def project(self, event: HarnessEvent | HarnessRunResultEvent[object]) -> None:
         self.events.append(event)
+
+    async def close(self) -> None:
+        pass
 
 
 @dataclass
