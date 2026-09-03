@@ -12,7 +12,13 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
-from a13n_harness.model_auth import CodexCredentials, CodexOAuthFlow
+from a13n_harness.model_auth import (
+    CodexCredentials,
+    CodexOAuthFlow,
+    GrokCredentials,
+    GrokDeviceAuthorizationFlow,
+    GrokOAuthFlow,
+)
 from a13n_logging import LogFormat, configure_logging
 from pydantic import BaseModel
 
@@ -23,7 +29,13 @@ from a13n_ui.configuration import (
     LoadedAgentUiConfiguration,
 )
 from a13n_ui.errors import AgentUiError, ConfigurationError
-from a13n_ui.model_accounts import Provider
+from a13n_ui.model_accounts import (
+    DEFAULT_GROK_OAUTH_SCOPE,
+    DEFAULT_GROK_OAUTH_SCOPES,
+    DEFAULT_GROK_OIDC_SCOPES,
+    GrokLoginRequest,
+    Provider,
+)
 from a13n_ui.settings_loader import ensure_default_directories, load_agent_ui_settings
 from a13n_ui.surfaces import RootOperationStatus, RootOperationView, ThreadMetadataMutation, ThreadMetadataPatch
 from a13n_ui.terminal import run as run_cli
@@ -58,11 +70,15 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--title", help="title used when creating a Thread")
     _add_format(run)
 
-    config = commands.add_parser("config", help="validate, inspect, or import configuration")
+    config = commands.add_parser("config", help="locate, validate, or inspect configuration")
     config_commands = config.add_subparsers(dest="config_command", required=True)
+    _add_format(config_commands.add_parser("path", help="show the selected configuration and data paths"))
     _add_format(config_commands.add_parser("validate", help="validate the selected source tree"))
     _add_format(config_commands.add_parser("show", help="show the accepted configuration"))
-    import_subagents = config_commands.add_parser("import-subagents", help="preview or apply external subagent imports")
+
+    import_command = commands.add_parser("import", help="run an explicit external resource conversion")
+    import_commands = import_command.add_subparsers(dest="import_command", required=True)
+    import_subagents = import_commands.add_parser("subagents", help="preview or apply external subagent imports")
     import_subagents.add_argument(
         "--product",
         choices=tuple(item.value for item in ExternalSubagentProduct),
@@ -109,16 +125,19 @@ def _parser() -> argparse.ArgumentParser:
     doctor = commands.add_parser("doctor", help="inspect App and extension health")
     _add_format(doctor)
 
-    account = commands.add_parser("account", help="manage compatible Model accounts")
-    account_commands = account.add_subparsers(dest="account_command", required=True)
-    for name in ("status", "logout"):
-        account_command = account_commands.add_parser(name)
-        account_command.add_argument("provider", choices=tuple(item.value for item in Provider))
-        _add_format(account_command)
-    account_login = account_commands.add_parser("login")
-    account_login.add_argument("provider", choices=(Provider.CODEX.value,))
-    account_login.add_argument("--allow-account-switch", action="store_true")
-    _add_format(account_login)
+    auth = commands.add_parser("auth", help="inspect or manage compatible Model authentication")
+    auth_commands = auth.add_subparsers(dest="auth_command", required=True)
+    auth_status = auth_commands.add_parser("status")
+    auth_status.add_argument("provider", nargs="?", choices=tuple(item.value for item in Provider))
+    _add_format(auth_status)
+    auth_login = auth_commands.add_parser("login")
+    auth_login.add_argument("provider", choices=tuple(item.value for item in Provider))
+    auth_login.add_argument("--allow-account-switch", action="store_true")
+    auth_login.add_argument("--device-code", action="store_true")
+    _add_format(auth_login)
+    auth_logout = auth_commands.add_parser("logout")
+    auth_logout.add_argument("provider", choices=tuple(item.value for item in Provider))
+    _add_format(auth_logout)
     return parser
 
 
@@ -135,7 +154,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = _parser().parse_args(argv)
     try:
         exit_code = asyncio.run(_run(args))
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
+        if args.command == "auth" and args.auth_command == "login":
+            raise SystemExit(130) from exc
         return
     except AgentUiError as exc:
         if getattr(args, "format", "text") == "json":
@@ -161,12 +182,29 @@ async def _run(args: argparse.Namespace) -> int:
 
         await asyncio.to_thread(run_web)
         return 0
+    if (
+        args.command == "auth"
+        and args.auth_command == "login"
+        and args.provider == Provider.CODEX.value
+        and args.device_code
+    ):
+        raise ConfigurationError(
+            "--device-code is available only for Grok login.",
+            code="auth_device_code_unsupported",
+        )
+    use_grok_device_code = (
+        args.command == "auth"
+        and args.auth_command == "login"
+        and args.provider == Provider.GROK.value
+        and args.device_code
+    )
 
     async with open_agent_ui_app(
         settings,
         configuration_path=source.path,
         configuration_error=source.candidate_error,
         codex_login=_codex_cli_login,
+        grok_login=lambda request: _grok_cli_login(request, device_code=use_grok_device_code),
     ) as app:
         if args.command == "run":
             configuration = await app.current_configuration()
@@ -176,8 +214,13 @@ async def _run(args: argparse.Namespace) -> int:
                     code="configuration_unavailable",
                 )
             return await _run_one_shot(app, configuration, args)
-        if args.command in {"config", "project", "thread", "doctor", "account"}:
-            return await _run_management(app, args)
+        if args.command in {"config", "import", "project", "thread", "doctor", "auth"}:
+            return await _run_management(
+                app,
+                args,
+                configuration_path=source.path,
+                data_root=settings.storage.data_root,
+            )
         await run_cli(app)
     return 0
 
@@ -189,8 +232,62 @@ async def _codex_cli_login(request: object) -> CodexCredentials:
     return await flow.exchange_code_from_callback()
 
 
-async def _run_management(app: AgentUiApp, args: argparse.Namespace) -> int:
+async def _grok_cli_login(request: object, *, device_code: bool) -> GrokCredentials:
+    if not isinstance(request, GrokLoginRequest):
+        raise TypeError("Grok login requires GrokLoginRequest")
+    try:
+        issuer, client_id = request.scope.rsplit("::", 1)
+    except ValueError as exc:
+        raise ConfigurationError(
+            "The selected Grok authentication scope is invalid.",
+            code="account_scope_incompatible",
+        ) from exc
+    if not issuer or not client_id:
+        raise ConfigurationError(
+            "The selected Grok authentication scope is invalid.",
+            code="account_scope_incompatible",
+        )
+    scopes = DEFAULT_GROK_OAUTH_SCOPES if request.scope == DEFAULT_GROK_OAUTH_SCOPE else DEFAULT_GROK_OIDC_SCOPES
+    if device_code:
+        authorization = await GrokDeviceAuthorizationFlow.start(
+            issuer=issuer,
+            client_id=client_id,
+            scopes=scopes,
+            referrer="agent-ui",
+        )
+        url = authorization.verification_uri_complete or authorization.verification_uri
+        print(f"Open this URL to authenticate Grok:\n{url}", file=sys.stderr)
+        print(f"Confirm this code in your browser: {authorization.user_code}", file=sys.stderr)
+        print("Waiting for Grok authorization...", file=sys.stderr)
+        return await authorization.wait_for_credentials()
+
+    flow = await GrokOAuthFlow.discover(
+        issuer=issuer,
+        client_id=client_id,
+        scopes=scopes,
+        referrer="agent-ui",
+    )
+    print(f"Open this URL to authenticate Grok:\n{flow.authorization_url()}", file=sys.stderr)
+    return await flow.exchange_code_from_callback(timeout_seconds=600)
+
+
+async def _run_management(
+    app: AgentUiApp,
+    args: argparse.Namespace,
+    *,
+    configuration_path: Path | None = None,
+    data_root: Path | None = None,
+) -> int:
     if args.command == "config":
+        if args.config_command == "path":
+            _print_projection(
+                {
+                    "configuration_path": None if configuration_path is None else str(configuration_path),
+                    "data_root": None if data_root is None else str(data_root),
+                },
+                args.format,
+            )
+            return 0
         if args.config_command == "validate":
             status = await app.status()
             projection = {
@@ -211,6 +308,7 @@ async def _run_management(app: AgentUiApp, args: argparse.Namespace) -> int:
             configuration = await _require_configuration(app)
             _print_projection(configuration.model_dump(mode="json"), args.format)
             return 0
+    if args.command == "import":
         preview = await app.preview_subagent_import(
             product=args.product,
             scope=args.scope,
@@ -278,16 +376,24 @@ async def _run_management(app: AgentUiApp, args: argparse.Namespace) -> int:
         _print_projection(projection, args.format)
         return 0 if status.candidate_error_code is None else 1
 
-    provider = Provider(args.provider)
-    if args.account_command == "status":
-        result: object = await app.inspect_model_account(provider)
-    elif args.account_command == "login":
-        result = await app.login_model_account(
-            provider,
-            allow_account_switch=args.allow_account_switch,
-        )
+    if args.auth_command == "status" and args.provider is None:
+        result: object = {
+            "accounts": [
+                await app.inspect_model_account(Provider.CODEX),
+                await app.inspect_model_account(Provider.GROK),
+            ]
+        }
     else:
-        result = {"provider": provider.value, "logged_out": await app.logout_model_account(provider)}
+        provider = Provider(args.provider)
+        if args.auth_command == "status":
+            result = await app.inspect_model_account(provider)
+        elif args.auth_command == "login":
+            result = await app.login_model_account(
+                provider,
+                allow_account_switch=args.allow_account_switch,
+            )
+        else:
+            result = {"provider": provider.value, "logged_out": await app.logout_model_account(provider)}
     _print_projection(result, args.format)
     return 0
 

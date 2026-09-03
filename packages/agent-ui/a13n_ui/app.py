@@ -59,6 +59,7 @@ from a13n_ui.live import (
     SummarySubscription,
 )
 from a13n_ui.model_accounts import (
+    DEFAULT_GROK_OAUTH_SCOPE,
     AccountProjection,
     AccountStoreError,
     CodexAccountStore,
@@ -810,10 +811,8 @@ async def open_agent_ui_app(
             grok_account_error: AccountStoreError | None = None
             try:
                 grok_policy = resolve_grok_policy()
-                selected_grok_scope = grok_scope or await resolve_grok_scope(grok_policy)
-                grok_account = (
-                    None if selected_grok_scope is None else GrokAccountStore(grok_policy, scope=selected_grok_scope)
-                )
+                selected_grok_scope = grok_scope or await resolve_grok_scope(grok_policy) or DEFAULT_GROK_OAUTH_SCOPE
+                grok_account = GrokAccountStore(grok_policy, scope=selected_grok_scope)
             except AccountStoreError as exc:
                 grok_account = None
                 grok_account_error = exc

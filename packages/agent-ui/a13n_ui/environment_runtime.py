@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
@@ -14,6 +15,7 @@ from types import MappingProxyType
 from typing import Literal
 
 from a13n_environment_provider import (
+    DirectLocalEnvironmentProvider,
     DirectLocalProviderRuntime,
     Environment,
     EnvironmentProvider,
@@ -81,10 +83,11 @@ class EnvironmentFinalization:
 @dataclass(slots=True)
 class _PreparedMount:
     alias: str
-    key: EnvironmentBindingKey
+    key: EnvironmentBindingKey | None
     expected_state_ref: ObjectRef | None
     supplied_state: EnvironmentState | None
     environment: Environment
+    permission_ceiling: EnvironmentPermissionSet
 
 
 class _EnvironmentBinding(EnvironmentProviderBinding):
@@ -294,6 +297,8 @@ class EnvironmentRunPlan:
 
         publications: list[EnvironmentStatePublication] = []
         for mount in self._mounts:
+            if mount.key is None:
+                continue
             try:
                 final_state = mount.environment.dump_state()
             except Exception as exc:
@@ -365,9 +370,16 @@ class EnvironmentRunPlan:
 class EnvironmentRunService:
     """Prepare Project roots from an admitted immutable Run composition."""
 
-    def __init__(self, store: LocalStore, reconstructor: EnvironmentSnapshotReconstructor) -> None:
+    def __init__(
+        self,
+        store: LocalStore,
+        reconstructor: EnvironmentSnapshotReconstructor,
+        *,
+        user_skills_root: Path | None = None,
+    ) -> None:
         self._store = store
         self._reconstructor = reconstructor
+        self._user_skills_root = user_skills_root
 
     async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
         profile = composition.environment_profile
@@ -398,15 +410,17 @@ class EnvironmentRunService:
                         expected_state_ref=expected,
                         supplied_state=state,
                         environment=environment,
+                        permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                     )
                 )
+            if _root_selects_skills(composition):
+                mounts.append(await self._prepare_user_skills_mount())
             extensions = await self._reconstructor.create_extensions(composition)
-            permission_ceiling = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
             runtime = create_environment_runtime(
                 mounts={
                     item.alias: EnvironmentRuntimeMount(
                         binding=_EnvironmentBinding(item.environment),
-                        permission_ceiling=permission_ceiling,
+                        permission_ceiling=item.permission_ceiling,
                         working_directory="/",
                     )
                     for item in mounts
@@ -426,6 +440,43 @@ class EnvironmentRunService:
             profile=profile,
             mounts=mounts,
             runtime=runtime,
+        )
+
+    async def _prepare_user_skills_mount(self) -> _PreparedMount:
+        root = self._user_skills_root or Path.home() / ".agents" / "skills"
+        try:
+            normalized = await to_thread.run_sync(_prepare_user_skills_root, root)
+            provider = DirectLocalEnvironmentProvider()
+            configuration = provider.validate_configuration(
+                schema_version="1",
+                value={
+                    "environment_id": f"user-skills-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
+                    "root": {"path": os.fspath(normalized), "read_only": False},
+                    "shell_profiles": [],
+                    "allowed_executables": [],
+                    "allowed_ports": [],
+                    "allowed_environment_keys": [],
+                },
+            )
+            environment = provider.create_environment(
+                configuration=configuration,
+                state=None,
+                runtime=DirectLocalProviderRuntime(),
+            )
+        except Exception as exc:
+            raise EnvironmentLifecycleError(
+                "The user Skill directory could not be prepared.",
+                code="user_skills_mount_failed",
+                details={"root": os.fspath(root)},
+            ) from exc
+        file_actions = frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
+        return _PreparedMount(
+            alias="user-skills",
+            key=None,
+            expected_state_ref=None,
+            supplied_state=None,
+            environment=environment,
+            permission_ceiling=EnvironmentPermissionSet(operations=file_actions),
         )
 
     async def _load_state(
@@ -481,6 +532,20 @@ async def normalize_project_roots(roots: Sequence[Path | str]) -> tuple[Path, ..
         seen.add(path)
         normalized.append(path)
     return tuple(normalized)
+
+
+def _prepare_user_skills_root(value: Path) -> Path:
+    if "\x00" in os.fspath(value):
+        raise ValueError("root contains NUL")
+    value.mkdir(mode=0o700, parents=True, exist_ok=True)
+    resolved = value.resolve(strict=True)
+    if not resolved.is_dir() or not os.access(resolved, os.R_OK | os.W_OK | os.X_OK):
+        raise OSError("user Skill root is not an accessible writable directory")
+    return resolved
+
+
+def _root_selects_skills(composition: ResolvedRunComposition) -> bool:
+    return any(item.capability == "skills" for item in composition.root.capabilities)
 
 
 def _normalize_root(value: Path) -> Path:

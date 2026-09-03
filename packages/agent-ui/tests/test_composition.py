@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from a13n_harness.capabilities import SubagentOperator
+from a13n_harness.capabilities.skills import SkillsCapability
 from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
 from a13n_harness.plugins import AbstractHarnessPlugin
 from a13n_ui.composition import (
@@ -285,6 +286,79 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
     assert "a13n.dynamic-environment" in reconstructed.definition_capability_ids
     for child in reconstructed.executable.subagents.values():
         assert child.definition.definition_id != reconstructed.executable.definition.definition_id
+
+
+async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    workspace_2 = tmp_path / "workspace-2"
+    workspace_3 = tmp_path / "workspace-3"
+    workspace_2.mkdir()
+    workspace_3.mkdir()
+    project = tmp_path / "projects" / "main.yaml"
+    project.write_text(f"{project.read_text()}  - path: {workspace_2.as_posix()}\n  - path: {workspace_3.as_posix()}\n")
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(
+        agent.read_text().replace(
+            "harness_plugins: null",
+            "  - capability: skills\n    configuration: {}\nharness_plugins: null",
+        )
+    )
+    source = await load_agent_ui_configuration(path)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(
+        composition,
+        subagent_operator=_UnusedOperator(),
+    )
+
+    skills = next(
+        capability
+        for capability in reconstructed.executable.definition.capabilities
+        if isinstance(capability, SkillsCapability)
+    )
+    assert skills.manager.roots == (
+        "/environment/user-skills",
+        "/environment/workspace-3/.agents/skills",
+        "/environment/workspace-2/.agents/skills",
+        "/workspace/.agents/skills",
+    )
+
+
+def test_skills_capability_builds_deterministic_multi_mount_sources() -> None:
+    selected = AgentUiExtensionCatalog().capabilities(
+        (
+            (
+                "skills",
+                {
+                    "roots": [
+                        "/workspace/team-skills",
+                        "/environment/workspace-2/product-skills",
+                    ]
+                },
+            ),
+        ),
+        project_mount_count=3,
+    )[0]
+
+    assert isinstance(selected.capability, SkillsCapability)
+    assert selected.capability.manager.roots == (
+        "/environment/user-skills",
+        "/environment/workspace-3/.agents/skills",
+        "/environment/workspace-2/.agents/skills",
+        "/workspace/.agents/skills",
+        "/workspace/team-skills",
+        "/environment/workspace-2/product-skills",
+    )
+    assert selected.capability.manager.policy.conflict == "prefer_later"
+
+
+def test_skills_capability_rejects_duplicate_explicit_roots() -> None:
+    with pytest.raises(CompositionError) as invalid:
+        AgentUiExtensionCatalog().capabilities(
+            (("skills", {"roots": ["/workspace/team-skills", "/workspace/team-skills"]}),)
+        )
+
+    assert invalid.value.code == "capability_configuration_invalid"
 
 
 async def test_acceptance_publishes_complete_generation_before_atomic_selection(tmp_path: Path) -> None:

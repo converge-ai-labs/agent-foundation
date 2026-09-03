@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.12,<3",
     "pydantic-ai[bedrock,bedrock-mantle,cohere,google-realtime,groq,huggingface,mistral,openai-realtime,openrouter,retries,xai,xai-realtime]>=2.38,<3",
     "pydantic-monty>=0.0.19,<0.1",
+    "pyjwt[crypto]>=2.10,<3",
     "pyyaml>=6.0,<7",
     "tenacity>=9,<10",
     "typing-extensions>=4.15,<5",

@@ -8,12 +8,21 @@ from pathlib import Path
 import pytest
 from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder
 from a13n_harness.capabilities import SubagentCancelResult, SubagentSteerResult, WebCapability
+from a13n_harness.model_auth import GrokCredentials
 from a13n_ui.app import AgentUiIntegrations, AppState, open_agent_ui_app
 from a13n_ui.composition import ReconstructedAgent, ThreadCompositionSelection
 from a13n_ui.configuration import load_agent_ui_configuration
 from a13n_ui.environment_runtime import EnvironmentRunService
 from a13n_ui.errors import AppStateError, StoreConflictError
-from a13n_ui.model_accounts import AccountStoreError, Availability, Provider
+from a13n_ui.model_accounts import (
+    DEFAULT_GROK_OAUTH_CLIENT_ID,
+    DEFAULT_GROK_OAUTH_ISSUER,
+    DEFAULT_GROK_OAUTH_SCOPE,
+    AccountStoreError,
+    Availability,
+    GrokLoginRequest,
+    Provider,
+)
 from a13n_ui.model_runtime import AgentUiModelResolver
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
@@ -110,6 +119,41 @@ async def test_application_discovers_grok_account_without_startup_model(
         projection = await app.inspect_model_account(Provider.GROK)
 
     assert projection.availability is Availability.AVAILABLE
+
+
+async def test_first_grok_login_uses_default_compatible_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    auth_path = tmp_path / "grok-auth.json"
+    monkeypatch.setenv("GROK_AUTH_PATH", str(auth_path))
+
+    async def login(request: object) -> GrokCredentials:
+        assert isinstance(request, GrokLoginRequest)
+        assert request.scope == DEFAULT_GROK_OAUTH_SCOPE
+        return GrokCredentials(
+            account_id="account-1",
+            auth_mode="oidc",
+            create_time=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+            issuer=DEFAULT_GROK_OAUTH_ISSUER,
+            client_id=DEFAULT_GROK_OAUTH_CLIENT_ID,
+            access_token="access-secret",
+            refresh_token="refresh-secret",
+        )
+
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        grok_login=login,
+    ) as app:
+        before = await app.inspect_model_account(Provider.GROK)
+        after = await app.login_model_account(Provider.GROK)
+
+    assert before.availability is Availability.ABSENT
+    assert after.availability is Availability.AVAILABLE
+    document = json.loads(auth_path.read_text())
+    assert set(document) == {DEFAULT_GROK_OAUTH_SCOPE}
+    assert document[DEFAULT_GROK_OAUTH_SCOPE]["user_id"] == "account-1"
 
 
 async def test_broken_unused_grok_store_does_not_block_application_startup(
@@ -424,6 +468,47 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
         )
         published = await executor._compositions.publish(source, selection)
         plan = await executor._environments.prepare(published.value)
+        finalization = await plan.finalize(timeout_seconds=1)
+
+    assert finalization.cleanup_errors == ()
+    assert len(finalization.state_publications) == 1
+    assert finalization.state_publications[0].status == "unchanged"
+
+
+async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
+    user_skills = tmp_path / "home" / ".agents" / "skills"
+
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        created = await app.create_thread()
+        stored = await app._threads.get(created.thread_id)
+        source = await app.current_configuration()
+        assert source is not None
+        executor = app._root_runs._executor
+        assert isinstance(executor._environments, EnvironmentRunService)
+        executor._environments._user_skills_root = user_skills
+        selection = ThreadCompositionSelection(
+            thread_id=stored.thread_id,
+            version=stored.configuration.version,
+            project_id=stored.configuration.project_id,
+            agent_source_kind=stored.configuration.agent_source.kind,
+            agent_source_id=stored.configuration.agent_source.id,
+            environment_profile_id=stored.configuration.environment_profile_id,
+            harness_plugin_ids=stored.configuration.harness_plugin_ids,
+            environment_run_extension_ids=stored.configuration.environment_run_extension_ids,
+            mcp_server_ids=stored.configuration.mcp_server_ids,
+        )
+        published = await executor._compositions.publish(source, selection)
+        plan = await executor._environments.prepare(published.value)
+
+        assert tuple(plan.environments) == ("workspace", "user-skills")
+        assert plan.default_environment == "workspace"
+        assert user_skills.is_dir()
         finalization = await plan.finalize(timeout_seconds=1)
 
     assert finalization.cleanup_errors == ()

@@ -2,9 +2,9 @@
 
 ## Design Position
 
-A Project is the only Agent UI concept for grouping local roots. It is a mutable named ordered root list modeled after Codex Project. There is no separate Workspace resource, Workspace revision, or `WorkspaceBinding` input.
+A Project is the only Agent UI concept for grouping local roots and organizing root Threads. It is a mutable named ordered root list modeled after Codex Project and is selected by each Thread. Agent UI defines no separate Workspace resource, Workspace root collection, or `WorkspaceBinding` input.
 
-A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent changes do not affect the admitted Run.
+A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent Project or Thread changes do not affect the admitted Run.
 
 ## Projects
 
@@ -35,9 +35,15 @@ class Project(BaseModel):
     position: int
 ```
 
-Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and `workspace` mount. Later roots become `workspace-2`, `workspace-3`, and so on. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
+Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and receives mount ID `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are mount identifiers, not Workspace resources. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
 
 Changing Project roots affects later Runs of every Thread selecting the Project. A Run already admitted retains its captured roots. Removing a Project file removes it from the next accepted generation. Existing Threads retain the unresolved ID and reject later Runs until explicitly reassigned; no global fallback silently changes their local authority.
+
+### Current-directory Resolution
+
+The App can resolve a normalized current working directory to a Project for a local surface. Only each Project's first root participates in this launch lookup; later roots are additional Run mounts rather than independent Project entry points. A current directory equal to or beneath a first root matches that Project. The most specific containing first root wins, while an equally specific path shared by several Projects is ambiguous.
+
+Resolution returns a configured Project or an unmatched or ambiguous outcome. It never creates a Project, adds or reorders roots, or makes the launch directory a surface-owned authority. The selected Project retains its configured first root as the default working directory represented by mount ID `workspace`, even when the current directory is a descendant. A surface that does not expose Project management can use this result as its new-Thread context and default Project filter.
 
 ## Thread Identity
 
@@ -134,7 +140,7 @@ The accepted patch applies to this Run and subsequent Runs. A separate update du
 
 ## Thread Queries
 
-Root Thread lists use opaque keyset cursors over descending `(updated_at, thread_id)`, with the query, archive filter, and root-only scope bound into the cursor. Child execution and transcript pages likewise use deterministic opaque cursors for their own stable order. A cursor from another query shape is invalid rather than reinterpreted as an offset.
+Root Thread lists use opaque keyset cursors over descending `(updated_at, thread_id)`, with the optional Project filter, query, archive filter, and root-only shape bound into the cursor. Child execution and transcript pages likewise use deterministic opaque cursors for their own stable order. A cursor from another query shape is invalid rather than reinterpreted as an offset.
 
 The summary projection exposes metadata and configuration versions, selected resource IDs, continuation state, and current-process activity without exposing a storage contract. The detail projection adds deferred requests and available actions. Transcript entries are bounded typed presentation values derived from the selected `HarnessState`; they are not serialized Pydantic AI messages and do not authorize continuation.
 
@@ -150,10 +156,11 @@ For each captured Project root, the App:
 2. loads current Host-authoritative state under the complete binding key;
 3. asks the adapter to materialize root-specific validated Provider configuration;
 4. creates a fresh pre-entry-inert `Environment` adapter;
-5. constructs the deterministic Harness mount set;
-6. creates fresh selected Environment Run Extensions around that aggregate.
+5. constructs the deterministic Harness Project mount set;
+6. adds the dedicated user Skill mount when the Run root Agent selects `skills`; and
+7. creates fresh selected Environment Run Extensions around that aggregate.
 
-The Provider configuration and adapter do not own the Project root list. The adapter receives one root at a time and can reject roots it cannot represent.
+The Provider configuration and adapter do not own the Project root list. The adapter receives one root at a time and can reject roots it cannot represent. The user Skill mount is a separate Host-owned Direct Local route and follows [Environment Skill Sources](02b-environment-skill-sources.md); it neither changes Project roots nor participates in Project Environment-state publication.
 
 ## Host-authoritative Environment State
 
@@ -219,6 +226,8 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 | Failure                                  | Outcome                                                                     |
 | ---------------------------------------- | --------------------------------------------------------------------------- |
 | Invalid or inaccessible Project root     | Candidate generation or Run capture fails before native execution           |
+| Current directory matches no first root  | A launch surface receives an unmatched result without creating a Project    |
+| Current directory is equally ambiguous   | A launch surface receives an ambiguous result without choosing arbitrarily  |
 | Project removed from accepted generation | Existing Thread remains inspectable; next Run requires reassignment         |
 | Stale Thread configuration version       | Patch and admission are rejected without partial changes                    |
 | Provider or Host adapter missing         | Run capture fails; Native is not substituted                                |
@@ -229,15 +238,17 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 
 ## Invariants
 
-01. Project is the only local-root grouping concept.
-02. Project roots are mutable, ordered, and captured per Run.
-03. Thread metadata and configuration are independent mutable compare-and-select heads.
-04. Thread configuration is exact, versioned, and sticky.
-05. Omitted patch fields preserve prior Thread state; empty lists disable one complete axis.
-06. A Run captures one configuration generation, one Thread version, and one Project root list.
-07. Root and child Threads can change Agent, extension, MCP, Project, and Environment profile selections between Runs.
-08. Thread and transcript pagination uses query-bound deterministic keyset cursors.
-09. Every independent Run receives fresh Environment adapters and Run Extensions.
-10. Environment state is isolated by Thread, Environment profile behavior, adapter, and root path.
-11. Steering never changes an active Run's captured composition.
-12. Destructive Provider lifecycle remains outside ordinary Run cleanup.
+01. Project is the only local-root grouping and root-Thread organization concept; Agent UI defines no Workspace resource.
+02. Project roots are mutable, ordered, and captured per Run; `workspace` is only the first root's mount ID.
+03. Current-directory lookup uses only configured first roots and never creates or mutates a Project.
+04. Thread metadata and configuration are independent mutable compare-and-select heads.
+05. Thread configuration is exact, versioned, and sticky.
+06. Omitted patch fields preserve prior Thread state; empty lists disable one complete axis.
+07. A Run captures one configuration generation, one Thread version, and one Project root list.
+08. Root and child Threads can change Agent, extension, MCP, Project, and Environment profile selections between Runs.
+09. Thread and transcript pagination uses query-bound deterministic keyset cursors; root lists bind their optional Project filter.
+10. Every independent Run receives fresh Environment adapters and Run Extensions.
+11. Environment state is isolated by Thread, Environment profile behavior, adapter, and root path.
+12. Steering never changes an active Run's captured composition.
+13. Destructive Provider lifecycle remains outside ordinary Run cleanup.
+14. A selected Skills Capability can add only the dedicated user Skill mount and Environment-routed Skill sources; it does not broaden a Project Provider's Host paths.

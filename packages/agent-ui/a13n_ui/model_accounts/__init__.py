@@ -2,6 +2,11 @@
 
 from .codex import CodexAccountStore, CodexLoginCallback, CodexLoginRequest, resolve_codex_policy
 from .grok import (
+    DEFAULT_GROK_OAUTH_CLIENT_ID,
+    DEFAULT_GROK_OAUTH_ISSUER,
+    DEFAULT_GROK_OAUTH_SCOPE,
+    DEFAULT_GROK_OAUTH_SCOPES,
+    DEFAULT_GROK_OIDC_SCOPES,
     GrokAccountStore,
     GrokLoginCallback,
     GrokLoginRequest,
@@ -21,6 +26,11 @@ from .models import (
 )
 
 __all__ = [
+    "DEFAULT_GROK_OAUTH_CLIENT_ID",
+    "DEFAULT_GROK_OAUTH_ISSUER",
+    "DEFAULT_GROK_OAUTH_SCOPE",
+    "DEFAULT_GROK_OAUTH_SCOPES",
+    "DEFAULT_GROK_OIDC_SCOPES",
     "AccountProjection",
     "AccountStoreConflictError",
     "AccountStoreError",
