@@ -11,7 +11,8 @@ from pydantic import JsonValue, ValidationError
 from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.connectivity.ingress.domain import JsonObject
 
-from .github_actions import (
+from ..common.origins import provider_url_origin
+from .actions import (
     GitHubActionBinding,
     GitHubAddCommentArguments,
     GitHubAddCommentOutcome,
@@ -27,9 +28,8 @@ from .github_actions import (
     GitHubReadTargetArguments,
     GitHubTarget,
 )
-from .github_api import GitHubApiError, read_github_response
-from .github_token import GITHUB_API_VERSION, GitHubInstallationTokenProvider
-from .origins import provider_url_origin
+from .api import GitHubApiError, read_github_response
+from .token import GITHUB_API_VERSION, GitHubInstallationTokenProvider
 
 _RESPONSE_MAX_BYTES = 2 * 1024 * 1024
 _PATCH_MAX_BYTES = 16 * 1024

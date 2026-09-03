@@ -19,15 +19,15 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequestError,
 )
 
-from .github_token import load_github_private_key
-from .github_wire import GitHubIdentity, authenticate_and_normalize, event_actions
-from .mapping import default_event_mapping
-from .origins import (
+from ..common.mapping import default_event_mapping
+from ..common.origins import (
     normalize_provider_origins,
     provider_url_origin,
     require_provider_base_url,
     require_provider_origin,
 )
+from .token import load_github_private_key
+from .wire import GitHubIdentity, authenticate_and_normalize, event_actions
 
 _CONFIG_VERSION = "github_app_http_v1"
 _REQUEST_MAX_BYTES = 8 * 1024 * 1024

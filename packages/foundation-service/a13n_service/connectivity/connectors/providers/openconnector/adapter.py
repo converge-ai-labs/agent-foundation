@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.connectivity.ingress.domain import JsonObject
 
-from ..adapters import (
+from ...adapters import (
     AdapterConnectionStatus,
     AdapterStatusReason,
     ConnectionInspection,
@@ -21,8 +21,8 @@ from ..adapters import (
     SetupContext,
     SetupStarted,
 )
-from ..http import ConnectorHttpClient, required_api_key
-from .common import (
+from ...http import ConnectorHttpClient, required_api_key
+from ..common.validation import (
     model_json,
     normalized_endpoint,
     optional_string,

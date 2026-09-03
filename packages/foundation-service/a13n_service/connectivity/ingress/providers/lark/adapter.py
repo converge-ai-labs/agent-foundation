@@ -22,10 +22,10 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequiresBindingRouting,
 )
 
-from .lark_wire import LarkIdentity, authenticate_and_normalize, lark_acknowledgement
-from .mapping import default_event_mapping
-from .messaging import MessagingPolicy
-from .origins import normalize_provider_origins, require_provider_origin
+from ..common.mapping import default_event_mapping
+from ..common.messaging import MessagingPolicy
+from ..common.origins import normalize_provider_origins, require_provider_origin
+from .wire import LarkIdentity, authenticate_and_normalize, lark_acknowledgement
 
 _CONFIG_VERSION = "lark_http_v1"
 _REQUEST_MAX_BYTES = 1024 * 1024

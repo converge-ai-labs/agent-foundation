@@ -3,9 +3,9 @@
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 
+from .common.origins import normalize_provider_origins
 from .github import GitHubIngressAdapter
 from .lark import LarkIngressAdapter
-from .origins import normalize_provider_origins
 from .slack import SlackIngressAdapter
 
 

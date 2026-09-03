@@ -31,8 +31,8 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequiresBindingRouting,
 )
 
-from .mapping import default_event_mapping
-from .messaging import MessagingPolicy
+from ..common.mapping import default_event_mapping
+from ..common.messaging import MessagingPolicy
 
 _CONFIG_VERSION = "slack_http_v1"
 _REQUEST_MAX_BYTES = 1024 * 1024

@@ -5,7 +5,7 @@ import json
 import anyio
 import httpx2
 import pytest
-from a13n_service.connectivity.ingress.providers.lark_actions import (
+from a13n_service.connectivity.ingress.providers.lark.actions import (
     LarkActionBinding,
     LarkAutoReplyArguments,
     LarkForcedReplyArguments,
@@ -15,9 +15,9 @@ from a13n_service.connectivity.ingress.providers.lark_actions import (
     LarkReplySucceeded,
     LarkTextContent,
 )
-from a13n_service.connectivity.ingress.providers.lark_api import LarkApiError
-from a13n_service.connectivity.ingress.providers.lark_client import LarkNativeClient
-from a13n_service.connectivity.ingress.providers.lark_token import LarkTenantTokenProvider
+from a13n_service.connectivity.ingress.providers.lark.api import LarkApiError
+from a13n_service.connectivity.ingress.providers.lark.client import LarkNativeClient
+from a13n_service.connectivity.ingress.providers.lark.token import LarkTenantTokenProvider
 from pydantic import ValidationError
 
 _APP_SECRET = "private-app-secret"
