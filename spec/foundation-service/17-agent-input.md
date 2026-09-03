@@ -122,7 +122,7 @@ The canonical `environment_path` is `/workspace/.a13n/inputs/{input_instance_id}
 
 `model_content` and `model_url` stop after constructing model-native input; they never materialize a sandbox file. `environment_path` selects no temporary or persistent retention class. The materialized file is non-authoritative execution data whose lifetime follows the customer-owned target named by the frozen Environment connection. Materialization adds no file-specific lifecycle management. Harness close releases only process-local attachment resources; Foundation never deletes the file by managing the provider target lifecycle.
 
-For initial Run input, a replacement Attempt derives materialization behavior from existing durable model-request usage. If the Run's charged prior-attempt `model_requests` total is zero, it reads the source and replaces every `environment_path` target again before Harness execution. If the total is positive, it assumes the deterministic target was already written and does not read or rewrite it. This is a runtime decision, not a stored input flag. A pending steer is handled independently after it binds to a running Run: its source is read and its target is materialized until the existing inbox receipt makes that steer `consumed`.
+For initial Run input, a replacement Attempt derives materialization behavior from existing durable model-request usage. If the Run's charged prior-attempt `model_requests` total is zero, it reads the source and replaces every `environment_path` target again before Harness execution. If the total is positive, it assumes the deterministic target was already written and does not read or rewrite it. This is a runtime decision, not a stored input flag. A pending steer is handled independently after it binds to an accepted or running Run: its first or replacement Attempt reads the source and materializes its target until the existing inbox receipt makes that steer `consumed`.
 
 Foundation does not guarantee that a URL or Environment path yields identical bytes across acceptance, Worker replacement, or explicit Retry. Each read revalidates current source authority, safety, type, and bounds and fails closed if the source is unavailable or no longer valid. An Asset ID does select identical immutable bytes across those reads while the Asset remains active; deletion or content unavailability fails closed and never rebinds the ID.
 
@@ -144,19 +144,19 @@ The adapter returns `None` only for accepted empty input. It receives no credent
 
 ## Use by Control Operation
 
-| Operation             | Behavior                                                                                                                                                 |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Root invocation       | Stores new accepted input on the root Run.                                                                                                               |
-| Continuation          | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                                      |
-| Thread Run submission | Accepts input immediately when the Thread is eligible; otherwise stores the complete editable Run intent until consumption accepts a Run.                |
-| Fork                  | Stores new accepted input on the new Thread's first Run.                                                                                                 |
-| Ingress               | Places mapped bounded external data in `text` and `structured_content`, validating the optional protocol schema.                                         |
-| Asynchronous child    | Stores parent- or Host-supplied input on the child Run.                                                                                                  |
-| Async child result    | Uses the separate Host-owned inbox payload and active-or-successor delivery contract; it is not `AgentInput`.                                            |
-| Steer                 | Stores accepted input in the Thread inbox without creating a Run; it binds to the current running Run or records the current/head waiting Run as source. |
-| Retry                 | Copies the source Run's accepted input, preserving the same Asset ID or external source description, and reacquires any needed bytes for the new Run.    |
-| Waiting feedback      | Uses the separate [atomic feedback protocol](18-agent-control-input-and-continuation.md#deferred-interaction).                                           |
-| Waiting Continue      | Stores the input inside one composite `WaitingRunContinueInput`; the same first model request receives it and the default deferred results.              |
+| Operation             | Behavior                                                                                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root invocation       | Stores new accepted input on the root Run.                                                                                                                           |
+| Continuation          | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                                                  |
+| Thread Run submission | Accepts input immediately when the Thread is eligible; otherwise stores the complete editable Run intent until consumption accepts a Run.                            |
+| Fork                  | Stores new accepted input on the new Thread's first Run.                                                                                                             |
+| Ingress               | Places mapped bounded external data in `text` and `structured_content`, validating the optional protocol schema.                                                     |
+| Asynchronous child    | Stores parent- or Host-supplied input on the child Run.                                                                                                              |
+| Async child result    | Uses the separate Host-owned inbox payload and active-or-successor delivery contract; it is not `AgentInput`.                                                        |
+| Steer                 | Stores accepted input in the Thread inbox without creating a Run; it binds to the current accepted or running Run or records the current/head waiting Run as source. |
+| Retry                 | Copies the source Run's accepted input, preserving the same Asset ID or external source description, and reacquires any needed bytes for the new Run.                |
+| Waiting feedback      | Uses the separate [atomic feedback protocol](18-agent-control-input-and-continuation.md#deferred-interaction).                                                       |
+| Waiting Continue      | Stores the input inside one composite `WaitingRunContinueInput`; the same first model request receives it and the default deferred results.                          |
 
 ## Failure Semantics
 

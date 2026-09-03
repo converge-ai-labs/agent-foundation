@@ -188,23 +188,23 @@ Operational admission control, queue names, priority, and fairness may order or 
 
 ```mermaid
 sequenceDiagram
-    participant Loop as WorkerExecutionLoop
+    participant Claimant as WorkerExecutionLoop
     participant DB as PostgreSQL
     participant Executor as RunAttemptExecutor
     participant Objects as State and artifacts
     participant Harness
 
     loop bounded periodic scan
-        Loop->>DB: find compatible eligible Run
-        Loop->>Loop: reserve bounded executor slot
-        Loop->>DB: short claim or takeover transaction
+        Claimant->>DB: find compatible eligible Run
+        Claimant->>Claimant: reserve bounded executor slot
+        Claimant->>DB: short claim or takeover transaction
         alt transaction wins and budget permits
-            DB-->>Loop: new leased Attempt, fence, exact Run metadata
-            Loop->>Executor: start one async task with AttemptContext and slot
+            DB-->>Claimant: new leased Attempt, fence, exact Run metadata
+            Claimant->>Executor: start one async task with AttemptContext and slot
         else candidate changed or another Worker won
-            DB-->>Loop: no claim; release slot
+            DB-->>Claimant: no claim, release slot
         else budget exhausted
-            DB-->>Loop: old Attempt failed when present, Run failed; release slot
+            DB-->>Claimant: old Attempt failed when present and Run failed, release slot
         end
     end
     Executor->>Objects: outside transaction, read exact state and frozen artifacts
@@ -218,9 +218,9 @@ sequenceDiagram
         end
         Executor->>DB: fenced state, usage, and outcome writes
     else retry later
-        DB-->>Executor: Attempt failed; Run remains running with available_at
+        DB-->>Executor: Attempt failed and Run remains running with available_at
     else fail Run
-        DB-->>Executor: Attempt failed; Run sealed failed
+        DB-->>Executor: Attempt failed and Run sealed failed
     end
 ```
 
@@ -267,6 +267,90 @@ If the drain deadline arrives before any terminal transaction commits, the execu
 ## Recovery and Budget Enforcement
 
 Only the Run row authorizes another attempt under its accepted recovery, handoff, elapsed-time, and usage limits. A first or failure/expiry replacement claim consumes `recovery_attempts_started`; a successful yield consumes `handoffs_completed`, and its planned-handoff successor consumes neither another handoff nor recovery count. Every claim still increments `attempts_started` for complete audit history. Claim and takeover consume their applicable authority before external preparation begins; preparation never reserves a future generation.
+
+### Lease-Expiry Recovery Sequence
+
+The following sequence makes the ordinary cross-Worker lease-expiry recovery path explicit. It uses the same relational claim authority and deterministic state key as every other Attempt; it introduces no recovery controller, recovery queue, or second checkpoint selector. The `input_disposition` branches summarize the [Run resume contract](12-run-persistence.md#resume-semantics), which owns their complete semantics.
+
+```mermaid
+sequenceDiagram
+    participant Old as Old RunAttemptExecutor
+    participant OldHarness as Prior Harness Run
+    participant DB as PostgreSQL
+    participant Claimant as Compatible WorkerExecutionLoop
+    participant New as New RunAttemptExecutor
+    participant Objects as State object storage
+    participant Harness as Fresh Harness Run
+
+    Old-xDB: Lease renewal stops or cannot be confirmed
+    Note over DB: Attempt N lease reaches expiry and authorizes no further work
+    Claimant->>DB: Scan matching Run and expired selected Attempt N
+    Claimant->>Claimant: Preflight exact Runtime lock and reserve local capacity
+    Claimant->>DB: Lock Thread, Run, and Attempt N, then revalidate takeover
+    alt Recovery budget and eligibility permit a successor
+        DB->>DB: Fail Attempt N and charge its known usage
+        DB->>DB: Create and select Attempt N+1 with fence N+1 and a fresh lease
+        DB-->>Claimant: Return the claimed replacement Attempt and lease proof
+        Claimant->>New: Start one executor task with the reserved capacity
+        New->>Objects: Read the latest complete state.json and frozen artifacts
+        Objects-->>New: Return checkpoint, object version, and writer fence
+        Note over New,Harness: Work absent from this checkpoint can be re-driven without inferred external outcome
+        New->>New: Validate state, dependencies, compatibility, and current Principal authority
+        New->>New: Reconstruct fresh credentials, bindings, plugins, and Environment adapters
+        New->>DB: Commit fenced preparation decision for Attempt N+1
+        alt Preparation permits continuation
+            DB-->>New: Confirm current lease, fence, and relational versions
+            alt State contains a valid waiting or completed outcome candidate
+                New->>DB: Commit the prepared Run outcome idempotently
+                DB-->>New: Seal the Run and terminalize Attempt N+1
+            else State requires Harness execution
+                New->>Objects: Conditionally claim the current object version for fence N+1
+                Objects-->>New: Confirm the replacement writer fence and object version
+                alt input_disposition is pending
+                    New->>Harness: Enter with accepted input and previous_state
+                else input_disposition is applied
+                    New->>Harness: Enter with previous_state only
+                end
+                New->>DB: Bind harness_run_id and mark Attempt N+1 running
+                par Lease renewal
+                    loop While Attempt N+1 remains authoritative
+                        New->>DB: Renew the selected lease
+                    end
+                and Harness execution and checkpointing
+                    loop At complete progress boundaries
+                        Harness-->>New: Produce a complete progress boundary
+                        New->>Objects: Conditionally publish the next complete checkpoint
+                    end
+                    alt Harness returns waiting or completed
+                        Harness-->>New: Produce a waiting or completed result candidate
+                        New->>Objects: Conditionally publish the complete terminal checkpoint
+                        New->>DB: Commit the Attempt and Run outcome
+                        DB-->>New: Succeed Attempt N+1 and seal the Run
+                    else Harness fails or observes cancellation
+                        Harness-->>New: Produce a failed or cancelled terminal result
+                        New->>DB: Commit or reconcile the applicable fenced lifecycle decision
+                        DB-->>New: Retry later or seal the Run
+                    end
+                and Stale predecessor if it returns
+                    opt Old process becomes runnable again
+                        Old->>DB: Submit a late renewal, outcome, or authority check for Attempt N
+                        DB--xOld: Reject the deselected lease, old fence, or stale version
+                        Old->>Objects: Finish an in-flight write with its old object version
+                        Objects--xOld: Reject the stale conditional state replacement
+                        Old-xOldHarness: Fence and cancel its process-local Harness Run
+                    end
+                end
+            end
+        else Preparation is transiently retryable
+            New->>DB: Fail Attempt N+1, clear selection, and set available_at
+        else Preparation is permanent or budget is exhausted
+            New->>DB: Fail Attempt N+1 and seal the Run failed
+        end
+    else Recovery budget, deadline, or usage ceiling is exhausted
+        DB->>DB: Fail Attempt N, charge known usage, and seal the Run failed
+        DB-->>Claimant: Create no successor Attempt
+    end
+```
 
 After any new attempt owns the lease, its executor reads the exact state, attempt history, immutable artifacts, and the Run's immutable `authority_principal` outside a database transaction and satisfies the [active-control recovery contract](19-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment). It admits Harness entry only when all of these conditions hold:
 
