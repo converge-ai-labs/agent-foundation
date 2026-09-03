@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 import rfc8785
 from a13n_harness import SafeFailure
@@ -136,6 +136,22 @@ class LifecycleEvent(_StrictModel):
     projection_error: SafeFailure | None = None
 
 
+class WorkspaceEventPage(_StrictModel):
+    items: tuple[LifecycleEvent, ...]
+    next_cursor: str | None
+    retained_floor: str
+    high_watermark: str
+
+
+class ResourceLifecycleEventPage(_StrictModel):
+    resource_type: Literal["run", "run_attempt"]
+    resource_id: ResourceId
+    items: tuple[LifecycleEvent, ...]
+    next_resource_seq: int = Field(ge=0)
+    retained_resource_seq_floor: int = Field(ge=0)
+    high_watermark_resource_seq: int = Field(ge=0)
+
+
 def new_mutation_id() -> str:
     return new_object_id("mut")
 
@@ -160,6 +176,8 @@ __all__ = [
     "LifecycleEvent",
     "LifecycleEventDraft",
     "LifecycleProjectionState",
+    "ResourceLifecycleEventPage",
+    "WorkspaceEventPage",
     "deterministic_mutation_id",
     "new_lifecycle_event_id",
     "new_mutation_id",

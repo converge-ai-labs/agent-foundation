@@ -3,22 +3,32 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
+from dataclasses import dataclass
 
 import httpx2
 
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.hooks.publisher import WebhookPublisher
+from a13n_service.lifecycle.service import LifecycleEventService
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.settings import ServiceSettings
 
 
-async def build_hook_delivery_task(
+@dataclass(frozen=True, slots=True)
+class _HookBundle:
+    subscriptions: HookSubscriptionService
+    lifecycle_events: LifecycleEventService
+    delivery_task: BackgroundTask
+
+
+async def build_hook_bundle(
     settings: ServiceSettings,
     shared: SharedRuntime,
     stack: AsyncExitStack,
-) -> BackgroundTask:
-    """Construct the bounded webhook publisher owned by Control roles."""
+) -> _HookBundle:
+    """Construct Hook APIs and the bounded publisher owned by Control roles."""
 
     endpoint_policy = EndpointPolicy.from_operator_allowlist(
         private_domains=settings.webhook_private_endpoint_domains,
@@ -28,6 +38,11 @@ async def build_hook_delivery_task(
     async def validate_request(request: httpx2.Request) -> None:
         await endpoint_policy.validate(str(request.url), resolve_dns=True)
 
+    subscriptions = HookSubscriptionService(
+        shared.storage.sessions,
+        endpoint_policy,
+        validation_timeout_seconds=settings.webhook_request_timeout_seconds,
+    )
     http_client = await stack.enter_async_context(
         httpx2.AsyncClient(
             follow_redirects=False,
@@ -49,7 +64,11 @@ async def build_hook_delivery_task(
         delivery_timeout_seconds=settings.webhook_request_timeout_seconds,
         max_response_bytes=settings.webhook_max_response_bytes,
     )
-    return BackgroundTask("webhook publisher", publisher.run)
+    return _HookBundle(
+        subscriptions=subscriptions,
+        lifecycle_events=LifecycleEventService(shared.storage.sessions),
+        delivery_task=BackgroundTask("webhook publisher", publisher.run),
+    )
 
 
-__all__ = ["build_hook_delivery_task"]
+__all__ = ["build_hook_bundle"]

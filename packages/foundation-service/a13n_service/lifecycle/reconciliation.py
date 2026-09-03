@@ -1,0 +1,86 @@
+"""Relational reads backing authorized lifecycle reconciliation."""
+
+from __future__ import annotations
+
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord
+
+from .domain import LifecycleEntityType
+from .models import LifecycleEventRecord
+from .persistence import LifecycleReplayGap, LifecycleWorkspacePage
+
+
+async def read_workspace_events(
+    database: AsyncSession,
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    visible_agent_ids: frozenset[str] | None,
+    after_seq: int | None,
+    limit: int,
+) -> LifecycleWorkspacePage:
+    session_join = and_(
+        SessionRecord.tenant_id == LifecycleEventRecord.tenant_id,
+        SessionRecord.id == LifecycleEventRecord.session_id,
+    )
+    boundary = select(func.min(LifecycleEventRecord.seq), func.max(LifecycleEventRecord.seq)).join(
+        SessionRecord, session_join
+    )
+    events = select(LifecycleEventRecord).join(SessionRecord, session_join)
+    filters = (
+        LifecycleEventRecord.tenant_id == tenant_id,
+        SessionRecord.workspace_id == workspace_id,
+    )
+    if visible_agent_ids is not None:
+        run_join = and_(
+            RunRecord.tenant_id == LifecycleEventRecord.tenant_id,
+            RunRecord.id == LifecycleEventRecord.run_id,
+        )
+        boundary = boundary.join(RunRecord, run_join).where(RunRecord.agent_id.in_(visible_agent_ids))
+        events = events.join(RunRecord, run_join).where(RunRecord.agent_id.in_(visible_agent_ids))
+    floor, high = (await database.execute(boundary.where(*filters))).one()
+    if floor is None or high is None:
+        return LifecycleWorkspacePage((), None, 0, 0)
+    if after_seq is not None and after_seq + 1 < floor:
+        raise LifecycleReplayGap(retained_floor=floor, high_watermark=high)
+    lower_bound = 0 if after_seq is None else after_seq
+    records = (
+        await database.scalars(
+            events.where(*filters, LifecycleEventRecord.seq > lower_bound)
+            .order_by(LifecycleEventRecord.seq)
+            .limit(limit)
+        )
+    ).all()
+    items = tuple(record.to_resource() for record in records)
+    next_seq = items[-1].seq if items and items[-1].seq < high else None
+    return LifecycleWorkspacePage(items, next_seq, floor, high)
+
+
+async def load_owning_run(
+    database: AsyncSession,
+    *,
+    workspace_id: str,
+    resource_type: LifecycleEntityType,
+    resource_id: str,
+) -> RunRecord | None:
+    query = (
+        select(RunRecord)
+        .join(
+            SessionRecord,
+            (SessionRecord.tenant_id == RunRecord.tenant_id) & (SessionRecord.id == RunRecord.session_id),
+        )
+        .where(SessionRecord.workspace_id == workspace_id)
+    )
+    if resource_type is LifecycleEntityType.run:
+        return await database.scalar(query.where(RunRecord.id == resource_id))
+    return await database.scalar(
+        query.join(
+            RunAttemptRecord,
+            (RunAttemptRecord.tenant_id == RunRecord.tenant_id) & (RunAttemptRecord.run_id == RunRecord.id),
+        ).where(RunAttemptRecord.id == resource_id)
+    )
+
+
+__all__ = ["load_owning_run", "read_workspace_events"]

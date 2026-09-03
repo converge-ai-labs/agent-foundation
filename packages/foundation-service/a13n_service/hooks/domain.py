@@ -171,6 +171,7 @@ class HookSubscription(_StrictModel):
 
 class HookSubscriptionCollection(_StrictModel):
     items: tuple[HookSubscription, ...]
+    next_cursor: str | None = None
 
 
 def _canonical_durable_hook_names(value: tuple[str, ...]) -> tuple[str, ...]:

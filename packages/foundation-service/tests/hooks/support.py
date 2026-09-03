@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from a13n_service.iam import AuthenticatedActor, PrincipalRef
+from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions import (
     MCPToolSnapshotRef,
     RecoveryBudget,
@@ -32,6 +34,67 @@ from tests.interactions.conftest import (
 
 RUN_ID = "run_7171717171717171"
 SECRET_ID = "sec_7171717171717171"
+
+
+def hook_actor() -> AuthenticatedActor:
+    return AuthenticatedActor(
+        principal=PrincipalRef(principal_type="user", principal_id=USER_ID),
+        auth_method="session",
+        credential_id="ses_7171717171717171",
+        boundary_workspace_id=WORKSPACE_ID,
+        request_id="req-hook-management-test",
+    )
+
+
+async def seed_hook_actor_access(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    workspace_role: str = "builder",
+) -> None:
+    async with transaction(sessions) as database:
+        database.add(
+            UserRecord(
+                id=USER_ID,
+                email="hook-builder@example.com",
+                normalized_email="hook-builder@example.com",
+                name="Hook Builder",
+                status="active",
+                email_verified_at=NOW,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await database.flush()
+        database.add_all(
+            (
+                RoleBindingRecord(
+                    id="rb_hookorg71717171",
+                    organization_id=TENANT_ID,
+                    workspace_id=None,
+                    principal_type="user",
+                    principal_id=USER_ID,
+                    resource_type="organization",
+                    resource_id=TENANT_ID,
+                    role_key="member",
+                    created_by_user_id=USER_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                ),
+                RoleBindingRecord(
+                    id="rb_hookws717171717",
+                    organization_id=TENANT_ID,
+                    workspace_id=WORKSPACE_ID,
+                    principal_type="user",
+                    principal_id=USER_ID,
+                    resource_type="workspace",
+                    resource_id=WORKSPACE_ID,
+                    role_key=workspace_role,
+                    created_by_user_id=USER_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                ),
+            )
+        )
 
 
 async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> None:

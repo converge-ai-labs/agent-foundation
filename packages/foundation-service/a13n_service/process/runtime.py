@@ -11,7 +11,9 @@ if TYPE_CHECKING:
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
     from a13n_service.environments.service import EnvironmentManagementService
+    from a13n_service.hooks.management import HookSubscriptionService
     from a13n_service.iam import RequestAuthenticator
+    from a13n_service.lifecycle.service import LifecycleEventService
     from a13n_service.models.model_factory import NativeModelFactory
     from a13n_service.models.provider_service import ModelProviderService
     from a13n_service.models.service import ModelService
@@ -52,6 +54,8 @@ class ControlRuntime:
     models: ModelService
     model_providers: ModelProviderService
     assets: AssetService
+    hook_subscriptions: HookSubscriptionService
+    lifecycle_events: LifecycleEventService
 
 
 @dataclass(frozen=True, slots=True)

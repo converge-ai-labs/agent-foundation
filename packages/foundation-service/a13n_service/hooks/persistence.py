@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 
-from sqlalchemy import cast, func, or_, select
+from sqlalchemy import and_, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,14 +16,27 @@ from a13n_service.interactions.models import SessionRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.secrets.models import SecretRecord
 
-from .domain import InlineHookSubscriptionInput
+from .domain import CreateHookSubscriptionRequest, InlineHookSubscriptionInput
 from .models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 
 MAX_ACTIVE_HOOK_SUBSCRIPTIONS = 128
 
 
+class HookSubscriptionInvariantCode(StrEnum):
+    inline_conflict = "inline_conflict"
+    subscription_limit = "subscription_limit"
+    destination_limit = "destination_limit"
+    secret_unavailable = "secret_unavailable"
+    workspace_unavailable = "workspace_unavailable"
+    event_workspace_unavailable = "event_workspace_unavailable"
+
+
 class HookSubscriptionInvariantError(RuntimeError):
     """A persisted Hook subscription invariant would make source commits unsafe."""
+
+    def __init__(self, code: HookSubscriptionInvariantCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 async def create_inline_hook_subscription(
@@ -40,7 +54,36 @@ async def create_inline_hook_subscription(
 ) -> HookSubscriptionRecord:
     """Create an exact-Run subscription before its accepted lifecycle fact."""
 
-    await _lock_workspace(
+    return await create_hook_subscription(
+        database,
+        organization_id=organization_id,
+        workspace_id=workspace_id,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        subscription=subscription.bind_run_scope(
+            session_id=session_id,
+            thread_id=thread_id,
+            run_id=run_id,
+        ),
+        now=now,
+        inline_run_id=run_id,
+    )
+
+
+async def create_hook_subscription(
+    database: AsyncSession,
+    *,
+    organization_id: str,
+    workspace_id: str,
+    actor_type: str,
+    actor_id: str,
+    subscription: CreateHookSubscriptionRequest,
+    now: datetime,
+    inline_run_id: str | None = None,
+) -> HookSubscriptionRecord:
+    """Create one managed or exact-Run Hook head and immutable Revision v1."""
+
+    await lock_hook_workspace(
         database,
         organization_id=organization_id,
         workspace_id=workspace_id,
@@ -51,28 +94,26 @@ async def create_inline_hook_subscription(
         workspace_id=workspace_id,
         secret_id=subscription.webhook.signing_secret_id,
     )
-    existing = await database.scalar(
-        select(HookSubscriptionRecord).where(
-            HookSubscriptionRecord.organization_id == organization_id,
-            HookSubscriptionRecord.inline_run_id == run_id,
+    if inline_run_id is not None:
+        existing = await database.scalar(
+            select(HookSubscriptionRecord).where(
+                HookSubscriptionRecord.organization_id == organization_id,
+                HookSubscriptionRecord.inline_run_id == inline_run_id,
+            )
         )
+        if existing is not None:
+            revision = await database.get(HookSubscriptionRevisionRecord, existing.current_revision_id)
+            if revision is None or revision.configuration() != subscription:
+                raise HookSubscriptionInvariantError(
+                    HookSubscriptionInvariantCode.inline_conflict,
+                    "inline Run already names a different Hook subscription",
+                )
+            return existing
+    await require_hook_capacity(
+        database,
+        organization_id=organization_id,
+        workspace_id=workspace_id,
     )
-    if existing is not None:
-        revision = await database.get(HookSubscriptionRevisionRecord, existing.current_revision_id)
-        expected = subscription.bind_run_scope(session_id=session_id, thread_id=thread_id, run_id=run_id)
-        if revision is None or revision.configuration() != expected:
-            raise HookSubscriptionInvariantError("inline Run already names a different Hook subscription")
-        return existing
-    active_count = await database.scalar(
-        select(func.count(HookSubscriptionRecord.id)).where(
-            HookSubscriptionRecord.organization_id == organization_id,
-            HookSubscriptionRecord.workspace_id == workspace_id,
-            HookSubscriptionRecord.enabled.is_(True),
-            HookSubscriptionRecord.deleted_at.is_(None),
-        )
-    )
-    if active_count is None or active_count >= MAX_ACTIVE_HOOK_SUBSCRIPTIONS:
-        raise HookSubscriptionInvariantError("active Hook subscription limit exceeded")
 
     subscription_id = new_object_id("hsub")
     revision_id = new_object_id("hsubr")
@@ -83,7 +124,7 @@ async def create_inline_hook_subscription(
         version=1,
         current_revision_id=revision_id,
         enabled=True,
-        inline_run_id=run_id,
+        inline_run_id=inline_run_id,
         deleted_at=None,
         created_by_type=actor_type,
         created_by_id=actor_id,
@@ -99,9 +140,9 @@ async def create_inline_hook_subscription(
         hook_subscription_id=subscription_id,
         version=1,
         hook_names=list(subscription.hook_names),
-        session_id=session_id,
-        thread_id=thread_id,
-        run_id=run_id,
+        session_id=subscription.session_id,
+        thread_id=subscription.thread_id,
+        run_id=subscription.run_id,
         endpoint_url=subscription.webhook.endpoint_url,
         signing_secret_id=subscription.webhook.signing_secret_id,
         signature_profile=subscription.webhook.signature_profile,
@@ -112,6 +153,27 @@ async def create_inline_hook_subscription(
     database.add_all((record, revision))
     await database.flush()
     return record
+
+
+async def require_hook_capacity(
+    database: AsyncSession,
+    *,
+    organization_id: str,
+    workspace_id: str,
+) -> None:
+    active_count = await database.scalar(
+        select(func.count(HookSubscriptionRecord.id)).where(
+            HookSubscriptionRecord.organization_id == organization_id,
+            HookSubscriptionRecord.workspace_id == workspace_id,
+            HookSubscriptionRecord.enabled.is_(True),
+            HookSubscriptionRecord.deleted_at.is_(None),
+        )
+    )
+    if active_count is None or active_count >= MAX_ACTIVE_HOOK_SUBSCRIPTIONS:
+        raise HookSubscriptionInvariantError(
+            HookSubscriptionInvariantCode.subscription_limit,
+            "active Hook subscription limit exceeded",
+        )
 
 
 async def require_active_workspace_secret(
@@ -133,7 +195,52 @@ async def require_active_workspace_secret(
         )
     )
     if available is None:
-        raise HookSubscriptionInvariantError("the selected Hook signing Secret is unavailable")
+        raise HookSubscriptionInvariantError(
+            HookSubscriptionInvariantCode.secret_unavailable,
+            "the selected Hook signing Secret is unavailable",
+        )
+
+
+async def read_hook_subscriptions(
+    database: AsyncSession,
+    *,
+    organization_id: str,
+    workspace_id: str,
+    limit: int,
+    after: tuple[datetime, str] | None,
+) -> tuple[tuple[HookSubscriptionRecord, HookSubscriptionRevisionRecord], ...]:
+    query = (
+        select(HookSubscriptionRecord, HookSubscriptionRevisionRecord)
+        .join(
+            HookSubscriptionRevisionRecord,
+            HookSubscriptionRevisionRecord.id == HookSubscriptionRecord.current_revision_id,
+        )
+        .where(
+            HookSubscriptionRecord.organization_id == organization_id,
+            HookSubscriptionRecord.workspace_id == workspace_id,
+            HookSubscriptionRecord.deleted_at.is_(None),
+        )
+    )
+    if after is not None:
+        updated_at, subscription_id = after
+        query = query.where(
+            or_(
+                HookSubscriptionRecord.updated_at < updated_at,
+                and_(
+                    HookSubscriptionRecord.updated_at == updated_at,
+                    HookSubscriptionRecord.id < subscription_id,
+                ),
+            )
+        )
+    rows = (
+        await database.execute(
+            query.order_by(
+                HookSubscriptionRecord.updated_at.desc(),
+                HookSubscriptionRecord.id.desc(),
+            ).limit(limit)
+        )
+    ).all()
+    return tuple((head, revision) for head, revision in rows)
 
 
 async def append_matching_webhook_outbox(
@@ -175,7 +282,10 @@ async def append_matching_webhook_outbox(
         statement = statement.where(HookSubscriptionRevisionRecord.hook_names.op("@>")(cast([event.event_type], JSONB)))
     candidates = (await database.execute(statement)).all()
     if len(candidates) > MAX_ACTIVE_HOOK_SUBSCRIPTIONS:
-        raise HookSubscriptionInvariantError("active Hook destination limit exceeded")
+        raise HookSubscriptionInvariantError(
+            HookSubscriptionInvariantCode.destination_limit,
+            "active Hook destination limit exceeded",
+        )
 
     now = event.created_at
     records = tuple(
@@ -226,7 +336,7 @@ async def load_inline_hook_subscription(
     return None if row is None else (row[0], row[1])
 
 
-async def _lock_workspace(
+async def lock_hook_workspace(
     database: AsyncSession,
     *,
     organization_id: str,
@@ -242,7 +352,10 @@ async def _lock_workspace(
         .with_for_update()
     )
     if workspace is None:
-        raise HookSubscriptionInvariantError("the Hook Workspace is unavailable")
+        raise HookSubscriptionInvariantError(
+            HookSubscriptionInvariantCode.workspace_unavailable,
+            "the Hook Workspace is unavailable",
+        )
     return workspace
 
 
@@ -265,15 +378,23 @@ async def _lock_event_workspace(
         .with_for_update()
     )
     if workspace is None:
-        raise HookSubscriptionInvariantError("lifecycle event has no active Hook Workspace")
+        raise HookSubscriptionInvariantError(
+            HookSubscriptionInvariantCode.event_workspace_unavailable,
+            "lifecycle event has no active Hook Workspace",
+        )
     return workspace
 
 
 __all__ = [
     "MAX_ACTIVE_HOOK_SUBSCRIPTIONS",
+    "HookSubscriptionInvariantCode",
     "HookSubscriptionInvariantError",
     "append_matching_webhook_outbox",
+    "create_hook_subscription",
     "create_inline_hook_subscription",
     "load_inline_hook_subscription",
+    "lock_hook_workspace",
+    "read_hook_subscriptions",
     "require_active_workspace_secret",
+    "require_hook_capacity",
 ]

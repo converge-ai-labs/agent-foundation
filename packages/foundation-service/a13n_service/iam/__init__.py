@@ -9,6 +9,7 @@ from .authorization import (
     WorkspaceAction,
     authorize_agent,
     authorize_agent_collection,
+    authorize_agent_scoped_collection,
     authorize_agent_skill_binding,
     authorize_workspace,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "authenticate_request",
     "authorize_agent",
     "authorize_agent_collection",
+    "authorize_agent_scoped_collection",
     "authorize_agent_skill_binding",
     "authorize_workspace",
 ]

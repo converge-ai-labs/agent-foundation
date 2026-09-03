@@ -95,6 +95,8 @@ class ServiceRuntimeFactory:
         request_authenticator: RequestAuthenticator | None = None,
         agents: object | None = None,
         trace_queries: object | None = None,
+        hook_subscriptions: object | None = None,
+        lifecycle_events: object | None = None,
         ingress_events: IngressEventService | None = None,
     ) -> ServiceRuntime:
         placeholder = Mock()
@@ -110,8 +112,10 @@ class ServiceRuntimeFactory:
                 models=placeholder,
                 model_providers=placeholder,
                 assets=placeholder,
+                hook_subscriptions=hook_subscriptions if hook_subscriptions is not None else placeholder,
+                lifecycle_events=lifecycle_events if lifecycle_events is not None else placeholder,
             )
-            if agents is not None or trace_queries is not None
+            if any(value is not None for value in (agents, trace_queries, hook_subscriptions, lifecycle_events))
             else None
         )
         connectivity = (
