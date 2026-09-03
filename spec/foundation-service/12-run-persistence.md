@@ -556,7 +556,7 @@ sequenceDiagram
     alt transaction commits
         DB-->>Control: Thread advanced and Run accepted
     else transaction fails
-        DB-->>Control: Thread unchanged; objects remain cleanup candidates
+        DB-->>Control: Thread unchanged and objects remain cleanup candidates
     end
 ```
 

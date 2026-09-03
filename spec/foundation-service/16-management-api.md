@@ -111,6 +111,40 @@ Collection fields, filters, order, and payload limits are defined by the owning 
 
 [Agent Input](17-agent-input.md) owns the versioned `AgentInput` protocol. [Agent Control: Input and Continuation](18-agent-control-input-and-continuation.md) owns start, the existing-Thread Run submission request and immediate-acceptance branches, explicit historical same-Thread continuation, fork, retry, atomic waiting feedback, and explicit waiting Continue with defaults. [Agent Control: Active Execution](19-agent-control-active-execution.md) owns the Thread inbox FIFO plus the Run steer, exact steer-status read, and interrupt routes. The Thread inbox remains an internal persistence model rather than a generic public resource. [Agent Control: Queued Submissions](20-agent-control-queued-submissions.md) owns the existing-Thread route's queue branch, queued-submission resources, ordering, editing, three-way consumption failure classification, state-first completion handoff, terminal recovery drain, atomic consumption into a Run, and permanent failure without a Run. These operations follow the common API, authorization, idempotency, and durable mutation conventions referenced by this catalog. The owning contracts define the exact AgentRevision and Runtime-lock selection, input validation, Thread advancement, inbox receipt, and acceptance receipt rather than duplicating those schemas here.
 
+### Run-Status Eligibility Summary
+
+The following tables summarize public Agent-control eligibility. `continue` groups ordinary Continue, Continue From, and explicit waiting Continue with defaults. For a target-scoped command, Run status describes its named source or target; for `continue` and `queue`, it can instead describe the Thread's current Run where the qualification below says so. `queue` means that the existing-Thread submission actually creates a `QueuedSubmission`, not merely that the caller invokes the queue-aware route. The owning control contracts remain authoritative for authorization, selected-head, queue-order, input, and concurrency predicates.
+
+| Run status             | Allowed control operations                |
+| ---------------------- | ----------------------------------------- |
+| No Run in a new Thread | `start`                                   |
+| `accepted`             | `steer`, `interrupt`, `queue`             |
+| `running`              | `steer`, `interrupt`, `queue`             |
+| `waiting`              | `continue`, `feedback`, `steer`, `queue`  |
+| `completed`            | `continue`, `fork`, conditionally `queue` |
+| `failed`               | conditionally `continue`, `retry`         |
+| `cancelled`            | conditionally `continue`, `retry`         |
+
+| Control operation | Allowed Run status                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| `start`           | No existing Run; creates a new Thread and its first Run                                        |
+| `continue`        | `waiting`, `completed`, or conditionally a Thread whose current Run is `failed` or `cancelled` |
+| `feedback`        | `waiting`                                                                                      |
+| `fork`            | `completed`                                                                                    |
+| `retry`           | `failed`, `cancelled`                                                                          |
+| `steer`           | `accepted`, `running`, `waiting`                                                               |
+| `interrupt`       | `accepted`, `running`                                                                          |
+| `queue`           | `accepted`, `running`, `waiting`; conditionally `completed`                                    |
+
+The status rows have these qualifications:
+
+- steer requires the named `accepted` or `running` Run to remain current; a waiting target must remain both current and selected head;
+- interrupt requires the named `accepted` or `running` Run to remain current and active;
+- feedback and waiting Continue require the waiting target to remain both current and selected head;
+- Continue From can select any retained readable completed Run in its Thread only while that Thread has no current `accepted` or `running` Run; fork can independently use any retained readable completed source;
+- an ordinary submission against a `failed` or `cancelled` current Run creates a Run only with an empty queue and either a completed selected head or a null head; it continues from the completed head or creates a root-like Run respectively, and never uses the failed or cancelled Run as state parent; and
+- `completed` produces a queue outcome only when live queued intent already has precedence. With no live queue it accepts an immediate continuation. A `failed` or `cancelled` current Run never admits a new queue entry.
+
 Every input-bearing Run command can additionally carry one exact Run-scoped HookSubscription input. Immediate acceptance normalizes it into the same resource exposed by the Hook-subscription routes and returns its ID in the Run acceptance receipt. When an existing-Thread Run submission queues, its Hook input remains editable unaccepted intent and creates no subscription until the queued submission is consumed into a Run. [Hook Notifications](26-hook-notifications.md#durable-hook-subscriptions) owns the input, authorization, transaction, and delivery semantics.
 
 ## Thread Reads
