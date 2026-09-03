@@ -14,13 +14,24 @@ from a13n_harness import (
 from a13n_harness.errors import RunError
 
 from .harness_results import HarnessOutcomeAdapter, RunTerminalCommitter, RunTerminalReceipt
-from .run_control import FoundationRunControlCoordinator
 
 
 class HarnessEventProjector(Protocol):
     """Await one non-terminal canonical Harness observation with backpressure."""
 
     async def project(self, event: HarnessEvent) -> None: ...
+
+
+class HarnessResultCoordinator(Protocol):
+    """Select the authoritative Foundation transition for one Harness result."""
+
+    async def commit_terminal_result[OutputT](
+        self,
+        result: HarnessRunResult[OutputT],
+        *,
+        adapter: HarnessOutcomeAdapter,
+        committer: RunTerminalCommitter,
+    ) -> RunTerminalReceipt | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +66,7 @@ class HarnessStreamConsumer:
     async def consume[OutputT](
         self,
         stream: HarnessRunStream[OutputT],
-        coordinator: FoundationRunControlCoordinator,
+        coordinator: HarnessResultCoordinator,
     ) -> HarnessStreamConsumption[OutputT]:
         if self._consumed:
             raise RunError(
@@ -106,6 +117,7 @@ class HarnessStreamConsumer:
 __all__ = [
     "HarnessEventProjector",
     "HarnessHandoffConsumption",
+    "HarnessResultCoordinator",
     "HarnessStreamConsumer",
     "HarnessStreamConsumption",
     "HarnessTerminalConsumption",
