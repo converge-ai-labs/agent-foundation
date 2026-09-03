@@ -36,7 +36,8 @@ from a13n_service.interactions.records import thread_record
 from a13n_service.interactions.state import RunStateEnvelope
 from a13n_service.storage import short_session, transaction
 
-from .domain import ChildRunRelationship
+from .authorization import ChildRunAuthorizationError, authorize_parent_child_action
+from .domain import ChildRunRelationship, child_relationship_is_visible
 from .models import ChildRunRelationshipRecord
 from .preparation import (
     PreparedChildRunAcceptance,
@@ -262,13 +263,30 @@ class ChildRunAcceptanceService:
                     )
                     .with_for_update()
                 )
+                source_parent_run = await database.scalar(
+                    select(RunRecord)
+                    .where(
+                        RunRecord.tenant_id == prepared.run.tenant_id,
+                        RunRecord.id == prepared.source_parent_run_id,
+                    )
+                    .with_for_update()
+                )
                 _validate_locked_resume_source(
                     prepared,
-                    parent_thread_id=authority.thread_id,
+                    current_parent=parent_resource,
                     child_thread=child_thread,
                     source_run=source_run,
                     source_relationship=source_relationship,
+                    source_parent_run=source_parent_run,
                     source_state=source_state,
+                )
+                assert source_run is not None and source_parent_run is not None
+                await _reauthorize_resume_source(
+                    database,
+                    parent=parent_resource,
+                    source_parent=source_parent_run.to_resource(),
+                    source_child=source_run.to_resource(),
+                    workspace_id=session.workspace_id,
                 )
                 await add_run_with_environment_binding(
                     database,
@@ -398,6 +416,7 @@ def _validate_resume_bundle(prepared: PreparedChildRunResume) -> None:
         or run.delegation_id != relationship.id
         or run.trigger_entity_id != relationship.id
         or prepared.resumed_from_relationship_id == relationship.id
+        or not prepared.source_parent_run_id
         or prepared.source_thread_version < 1
     ):
         raise ValueError("prepared resumed child Run and relationship identities do not match")
@@ -458,38 +477,45 @@ def _validate_parent_authority(
 def _validate_locked_resume_source(
     prepared: PreparedChildRunResume,
     *,
-    parent_thread_id: str,
+    current_parent: Run,
     child_thread: ThreadRecord | None,
     source_run: RunRecord | None,
     source_relationship: ChildRunRelationshipRecord | None,
+    source_parent_run: RunRecord | None,
     source_state: StoredRunState,
 ) -> None:
-    if child_thread is None or source_run is None or source_relationship is None:
+    if child_thread is None or source_run is None or source_relationship is None or source_parent_run is None:
         raise ChildRunAcceptanceError(
             "child_run_resume_source_missing",
             "Retained child continuation source was not found",
         )
     source = source_run.to_resource()
     relationship = source_relationship.to_resource()
+    source_parent = source_parent_run.to_resource()
     if (
         child_thread.version != prepared.source_thread_version
         or child_thread.session_id != prepared.run.session_id
         or child_thread.role != "child"
         or child_thread.origin_kind != "child"
-        or child_thread.origin_thread_id != parent_thread_id
-        or child_thread.origin_run_id != prepared.relationship.parent_run_id
+        or child_thread.origin_thread_id != source_parent.thread_id
+        or child_thread.origin_run_id != source_parent.id
         or child_thread.current_run_id != source.id
         or child_thread.head_run_id != source.id
         or relationship.id != prepared.resumed_from_relationship_id
-        or relationship.parent_run_id != prepared.relationship.parent_run_id
+        or relationship.parent_run_id != prepared.source_parent_run_id
         or relationship.subagent_name != prepared.relationship.subagent_name
         or relationship.child_thread_id != child_thread.id
         or relationship.child_run_id != source.id
+        or source_parent.id != prepared.source_parent_run_id
+        or not child_relationship_is_visible(
+            relationship,
+            origin_parent=source_parent,
+            requesting_parent=current_parent,
+        )
         or source.status.value != "completed"
         or source.thread_id != child_thread.id
-        or source.agent_id != prepared.run.agent_id
-        or source.agent_revision_id != prepared.run.agent_revision_id
         or source_state.envelope != prepared.source_state
+        or source_state.envelope.harness_schema_version != prepared.state.harness_schema_version
     ):
         raise ChildRunAcceptanceError(
             "child_run_resume_source_conflict",
@@ -515,6 +541,30 @@ def _validate_locked_resume_source(
             "child_run_resume_state_conflict",
             "Retained child source state does not match its sealed Run reference",
         )
+
+
+async def _reauthorize_resume_source(
+    database: AsyncSession,
+    *,
+    parent: Run,
+    source_parent: Run,
+    source_child: Run,
+    workspace_id: str,
+) -> None:
+    try:
+        await authorize_parent_child_action(
+            database,
+            parent=parent,
+            source_parent_agent_ids=(source_parent.agent_id,),
+            child_agent_ids=(source_child.agent_id,),
+            workspace_id=workspace_id,
+            action=WorkspaceAction.run_continue,
+        )
+    except ChildRunAuthorizationError as error:
+        raise ChildRunAcceptanceError(
+            "child_run_authorization_denied",
+            "Persisted parent Principal is no longer authorized to continue the retained child Agent",
+        ) from error
 
 
 async def _require_session(database: AsyncSession, parent: RunRecord) -> SessionRecord:

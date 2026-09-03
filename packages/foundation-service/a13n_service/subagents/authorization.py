@@ -16,6 +16,7 @@ async def authorize_parent_child_action(
     database: AsyncSession,
     *,
     parent: Run,
+    source_parent_agent_ids: tuple[str, ...] = (),
     child_agent_ids: tuple[str, ...],
     workspace_id: str,
     action: WorkspaceAction,
@@ -35,6 +36,14 @@ async def authorize_parent_child_action(
             agent_id=parent.agent_id,
             action=WorkspaceAction.run_read,
         )
+        for source_parent_agent_id in source_parent_agent_ids:
+            await authorize_agent(
+                database,
+                actor=actor,
+                workspace_id=workspace_id,
+                agent_id=source_parent_agent_id,
+                action=WorkspaceAction.run_read,
+            )
         for child_agent_id in child_agent_ids:
             await authorize_agent(
                 database,

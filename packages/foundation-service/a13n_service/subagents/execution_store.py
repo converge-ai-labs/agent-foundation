@@ -1,4 +1,4 @@
-"""Authorized read model for child executions owned by one parent Attempt."""
+"""Authorized read model for child executions visible to one parent Attempt."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from a13n_harness.capabilities import (
     SubagentStatus,
 )
 from pydantic import JsonValue, ValidationError
-from sqlalchemy import and_, func, literal, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
@@ -53,6 +53,7 @@ class RetainedChildExecution:
     """Authorized relational facts for one durable child execution segment."""
 
     relationship: ChildRunRelationship
+    parent_run: Run
     run: Run
     thread: Thread
     resumed_from_relationship_id: str | None
@@ -73,7 +74,7 @@ class ExecutionPage:
 
 
 class SubagentExecutionStore:
-    """Query parent-owned child executions and reauthorize every projection."""
+    """Query scope-visible child executions and reauthorize every projection."""
 
     def __init__(
         self,
@@ -122,7 +123,7 @@ class SubagentExecutionStore:
         if not page.items:
             raise FoundationSubagentOperatorError(
                 "subagent_execution_not_found",
-                "Subagent execution was not found in this parent Run",
+                "Subagent execution was not found in the visible parent scope",
             )
         return page.items[0]
 
@@ -157,21 +158,38 @@ class SubagentExecutionStore:
         async with short_session(self._sessions) as database:
             parent, _, _ = await read_attempt_authority(database, authority, _utc(self._clock()))
             session = await _require_session(database, parent)
+            origin_parent = aliased(RunRecord)
             filters = [
                 ChildRunRelationshipRecord.tenant_id == authority.tenant_id,
-                ChildRunRelationshipRecord.parent_run_id == authority.run_id,
+                origin_parent.session_id == parent.session_id,
+                or_(
+                    origin_parent.thread_id == parent.thread_id,
+                    ChildRunRelationshipRecord.result_visibility == "session",
+                ),
             ]
             if execution_id is not None:
                 filters.append(ChildRunRelationshipRecord.id == execution_id)
             if operation_id is not None:
+                filters.append(ChildRunRelationshipRecord.parent_run_id == authority.run_id)
                 filters.append(ChildRunRelationshipRecord.spawn_operation_id == operation_id)
+            relationship_scope = and_(
+                origin_parent.tenant_id == ChildRunRelationshipRecord.tenant_id,
+                origin_parent.id == ChildRunRelationshipRecord.parent_run_id,
+            )
             total = int(
-                await database.scalar(select(func.count()).select_from(ChildRunRelationshipRecord).where(*filters)) or 0
+                await database.scalar(
+                    select(func.count())
+                    .select_from(ChildRunRelationshipRecord)
+                    .join(origin_parent, relationship_scope)
+                    .where(*filters)
+                )
+                or 0
             )
             rows = tuple(
                 (
                     await database.scalars(
                         select(ChildRunRelationshipRecord)
+                        .join(origin_parent, relationship_scope)
                         .where(*filters)
                         .order_by(ChildRunRelationshipRecord.created_at, ChildRunRelationshipRecord.id)
                         .offset(query_offset)
@@ -184,6 +202,7 @@ class SubagentExecutionStore:
                 await authorize_parent_child_action(
                     database,
                     parent=parent.to_resource(),
+                    source_parent_agent_ids=tuple(sorted({item.parent_run.agent_id for item in executions})),
                     child_agent_ids=tuple(sorted({item.run.agent_id for item in executions})),
                     workspace_id=session.workspace_id,
                     action=action,
@@ -203,6 +222,14 @@ async def _load_executions(
     if not relationships:
         return ()
     tenant_id = relationships[0].tenant_id
+    parent_ids = tuple({row.parent_run_id for row in relationships})
+    parent_runs = tuple(
+        (
+            await database.scalars(
+                select(RunRecord).where(RunRecord.tenant_id == tenant_id, RunRecord.id.in_(parent_ids))
+            )
+        ).all()
+    )
     child_ids = tuple(row.child_run_id for row in relationships)
     child_runs = tuple(
         (
@@ -219,14 +246,12 @@ async def _load_executions(
             )
         ).all()
     )
-    parent_run_id = relationships[0].parent_run_id
     source_child_ids = tuple({row.parent_run_id for row in child_runs if row.parent_run_id is not None})
     source_relationships = tuple(
         (
             await database.scalars(
                 select(ChildRunRelationshipRecord).where(
                     ChildRunRelationshipRecord.tenant_id == tenant_id,
-                    ChildRunRelationshipRecord.parent_run_id == parent_run_id,
                     ChildRunRelationshipRecord.child_run_id.in_(source_child_ids),
                 )
             )
@@ -247,18 +272,20 @@ async def _load_executions(
         ).all()
     )
     children_by_id = {row.id: row for row in child_runs}
+    parents_by_id = {row.id: row for row in parent_runs}
     threads_by_id = {row.id: row for row in threads}
     relationships_by_child = {row.child_run_id: row.id for row in source_relationships}
     revisions_by_id = {row.id: row for row in revisions}
     result: list[RetainedChildExecution] = []
     for relationship_record in relationships:
+        parent = parents_by_id.get(relationship_record.parent_run_id)
         child = children_by_id.get(relationship_record.child_run_id)
         thread = threads_by_id.get(relationship_record.child_thread_id)
         revision = None if child is None else revisions_by_id.get(child.agent_revision_id)
-        if child is None or thread is None or revision is None:
+        if parent is None or child is None or thread is None or revision is None:
             raise FoundationSubagentOperatorError(
                 "subagent_execution_corrupt",
-                "Subagent relationship lost its child Run or Thread",
+                "Subagent relationship lost its parent Run, child Run, or Thread",
             )
         child_resource = child.to_resource()
         resumed_from = relationships_by_child.get(child.parent_run_id) if child.parent_run_id is not None else None
@@ -271,6 +298,7 @@ async def _load_executions(
         result.append(
             RetainedChildExecution(
                 relationship=relationship_record.to_resource(),
+                parent_run=parent.to_resource(),
                 run=child_resource,
                 thread=thread.to_resource(),
                 resumed_from_relationship_id=resumed_from,

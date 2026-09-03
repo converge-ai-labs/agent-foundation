@@ -154,6 +154,7 @@ class FoundationChildRunAdmissionPreparer:
             child_agent_revision_id=profile.agent_revision_id,
             child_effective_config=profile.effective_config,
             source_relationship=source.relationship,
+            source_parent_run=source.parent_run,
             source_thread=source.thread,
             source_run=source.run,
             source_state=source_state.envelope,

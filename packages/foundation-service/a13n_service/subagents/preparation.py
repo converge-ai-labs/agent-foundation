@@ -38,6 +38,7 @@ from .domain import (
     ChildCancellationPolicy,
     ChildResultVisibility,
     ChildRunRelationship,
+    child_relationship_is_visible,
 )
 
 
@@ -62,6 +63,7 @@ class PreparedChildRunResume:
     child_definition_id: str
     resumed_from_relationship_id: str
     resumed_from_child_run_id: str
+    source_parent_run_id: str
     source_thread_version: int
     source_state: RunStateEnvelope
 
@@ -200,6 +202,7 @@ def prepare_child_resume(
     child_agent_revision_id: str,
     child_effective_config: EffectiveAgentConfig,
     source_relationship: ChildRunRelationship,
+    source_parent_run: Run,
     source_thread: Thread,
     source_run: Run,
     source_state: RunStateEnvelope,
@@ -227,6 +230,7 @@ def prepare_child_resume(
         parent_run=parent_run,
         subagent_name=subagent_name,
         source_relationship=source_relationship,
+        source_parent_run=source_parent_run,
         source_thread=source_thread,
         source_run=source_run,
         source_state=source_state,
@@ -301,6 +305,7 @@ def prepare_child_resume(
         child_definition_id=child_definition_id,
         resumed_from_relationship_id=source_relationship.id,
         resumed_from_child_run_id=source_run.id,
+        source_parent_run_id=source_parent_run.id,
         source_thread_version=source_thread.version,
         source_state=source_state,
     )
@@ -413,21 +418,26 @@ def _validate_resume_source(
     parent_run: Run,
     subagent_name: str,
     source_relationship: ChildRunRelationship,
+    source_parent_run: Run,
     source_thread: Thread,
     source_run: Run,
     source_state: RunStateEnvelope,
 ) -> None:
     if (
-        source_relationship.parent_run_id != parent_run.id
-        or source_relationship.subagent_name != subagent_name
+        source_relationship.subagent_name != subagent_name
         or source_relationship.child_thread_id != source_thread.id
         or source_relationship.child_run_id != source_run.id
+        or not child_relationship_is_visible(
+            source_relationship,
+            origin_parent=source_parent_run,
+            requesting_parent=parent_run,
+        )
         or source_thread.tenant_id != parent_run.tenant_id
         or source_thread.session_id != parent_run.session_id
         or source_thread.role is not ThreadRole.child
         or source_thread.origin_kind is not ThreadOriginKind.child
-        or source_thread.origin_thread_id != parent_run.thread_id
-        or source_thread.origin_run_id != parent_run.id
+        or source_thread.origin_thread_id != source_parent_run.thread_id
+        or source_thread.origin_run_id != source_parent_run.id
         or source_thread.current_run_id != source_run.id
         or source_thread.head_run_id != source_run.id
         or source_run.tenant_id != parent_run.tenant_id

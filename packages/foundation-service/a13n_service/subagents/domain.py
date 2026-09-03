@@ -11,6 +11,7 @@ from pydantic import Field, JsonValue, StringConstraints, field_validator, model
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.domain import (
     ObjectId,
+    Run,
     Sha256Digest,
     StrictModel,
     ThreadId,
@@ -52,6 +53,25 @@ class ChildRunRelationship(StrictModel):
         return self
 
 
+def child_relationship_is_visible(
+    relationship: ChildRunRelationship,
+    *,
+    origin_parent: Run,
+    requesting_parent: Run,
+) -> bool:
+    """Apply the retained child relationship's Thread-or-Session read boundary."""
+
+    return (
+        relationship.parent_run_id == origin_parent.id
+        and origin_parent.tenant_id == requesting_parent.tenant_id
+        and origin_parent.session_id == requesting_parent.session_id
+        and (
+            origin_parent.thread_id == requesting_parent.thread_id
+            or relationship.result_visibility is ChildResultVisibility.session
+        )
+    )
+
+
 class AsyncSubagentResultInboxPayload(StrictModel):
     schema_version: Literal["1"] = "1"
     relationship_id: ObjectId
@@ -91,5 +111,6 @@ __all__ = [
     "ChildCancellationPolicy",
     "ChildResultVisibility",
     "ChildRunRelationship",
+    "child_relationship_is_visible",
     "new_child_run_relationship_id",
 ]

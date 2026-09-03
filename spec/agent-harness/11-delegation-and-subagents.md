@@ -112,6 +112,7 @@ class ResolvedDelegationContext:
 
 @dataclass(frozen=True, slots=True)
 class SubagentDelegationPlan:
+    operation_id: str
     child: BuiltSubagent
     child_identity: AgentIdentityRef
     context: ResolvedDelegationContext
@@ -119,7 +120,7 @@ class SubagentDelegationPlan:
     parent: SubagentOperatorContext
 ```
 
-The plan contains the exact currently built roster child, derived child Identity, already-applied child input and context policy, intersection of parent Run limits, child definition limits, and authored edge limits, plus detached parent correlation. Initial `delegate` executes that exact child; the Host may narrow policy but cannot substitute another definition.
+The plan contains the exact currently built roster child, the current Pydantic tool-call ID as its bounded opaque `operation_id`, derived child Identity, already-applied child input and context policy, intersection of parent Run limits, child definition limits, and authored edge limits, plus detached parent correlation. The Host uses `operation_id` only as its idempotent admission identity; it does not complete the tool call with a later child result. Initial `delegate` executes that exact child; the Host may narrow policy but cannot substitute another definition.
 
 On async resume, the current roster child can differ from the definition recorded by the prior execution. A Host that exposes a separately authorized mutable child-Thread configuration may resolve that retained Thread's current Agent definition instead of the roster child's definition. That selection comes only from Host authority, never from model arguments, and the stable roster name remains the parent-side admission gate.
 

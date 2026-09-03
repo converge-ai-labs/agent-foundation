@@ -46,7 +46,10 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import NOW, effective_agent_config
+from .conftest import (
+    NOW,
+    effective_agent_config,
+)
 from .test_attempt_execution import _authority, _worker
 from .test_subagent_acceptance import (
     CHILD_AGENT_ID,
@@ -80,7 +83,7 @@ async def test_operator_delegates_reads_steers_waits_and_cancels(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
-    operator, context, delegate_plan, _, run_ids = await _operator(
+    operator, context, delegate_plan, _, run_ids, _ = await _operator(
         interaction_sessions,
         interaction_object_store,
     )
@@ -119,7 +122,7 @@ async def test_operator_resumes_only_the_selected_completed_child_head(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
-    operator, context, delegate_plan, states, run_ids = await _operator(
+    operator, context, delegate_plan, states, run_ids, _ = await _operator(
         interaction_sessions,
         interaction_object_store,
     )
@@ -163,7 +166,7 @@ async def test_operator_projects_bounded_closed_child_output_activity(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
-    operator, context, delegate_plan, states, _ = await _operator(
+    operator, context, delegate_plan, states, _, _ = await _operator(
         interaction_sessions,
         interaction_object_store,
     )
@@ -209,6 +212,7 @@ async def _operator(
     SubagentDelegationPlan,
     RunStateStore,
     IdSequence,
+    AuthorityBox,
 ]:
     await _grant_and_seed_child(sessions)
     states, parent, _ = await _accept_parent(sessions, objects)
@@ -252,9 +256,10 @@ async def _operator(
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=2),
     )
+    authority_box = AuthorityBox(authority)
     operator = FoundationSubagentOperator(
         sessions,
-        AuthorityBox(authority),
+        authority_box,
         admission,
         acceptance,
         ThreadInboxStore(sessions, clock=lambda: NOW + timedelta(seconds=4)),
@@ -265,7 +270,7 @@ async def _operator(
         wait_poll_interval_seconds=0.001,
         clock=lambda: NOW + timedelta(seconds=2),
     )
-    return operator, context, _plan(context), states, run_ids
+    return operator, context, _plan(context), states, run_ids, authority_box
 
 
 def _plan(
@@ -273,11 +278,12 @@ def _plan(
     *,
     operation_id: str = "delegate-call-1",
     delegated_input: str = '{"delegated_task":"research"}',
+    child_definition_id: str = CHILD_DEFINITION_ID,
 ) -> SubagentDelegationPlan:
     child = AgentDefinition(
         agent=AgentSpec(),
         output_type=str,
-        definition_id=CHILD_DEFINITION_ID,
+        definition_id=child_definition_id,
         model=TestModel(),
     )
     executable = HarnessBuilder().build(child)

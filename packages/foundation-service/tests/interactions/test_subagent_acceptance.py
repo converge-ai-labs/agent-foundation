@@ -360,6 +360,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         child_agent_revision_id=CHILD_REVISION_ID,
         child_effective_config=child_config,
         source_relationship=source_relationship,
+        source_parent_run=running_parent,
         source_thread=source_thread,
         source_run=completed_child,
         source_state=source_state.envelope,
