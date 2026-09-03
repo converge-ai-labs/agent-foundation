@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -1038,17 +1039,18 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
     assert '<context-reminder source="a13n.handoff">' in tool_results_text
 
 
-async def test_runtime_and_file_context_preserve_history_and_refresh_current_values(tmp_path: Path) -> None:
+async def test_runtime_and_file_context_preserve_exact_prefix_across_multiple_turns(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("Repository guidance v1")
-    seen: list[list[ModelMessage]] = []
+    seen_messages: list[list[ModelMessage]] = []
+    seen_info: list[AgentInfo] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del info
-        seen.append(messages)
+        seen_messages.append(deepcopy(messages))
+        seen_info.append(deepcopy(info))
         yield "done"
 
     executable = HarnessBuilder().build(
-        AgentSpec(),
+        AgentSpec(instructions="Keep this stable instruction prefix."),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -1061,7 +1063,15 @@ async def test_runtime_and_file_context_preserve_history_and_refresh_current_val
         bindings=RunBindings.embedded(
             environment=_local_binding(tmp_path), metadata={"tenant": "alpha", "secret": "no"}
         ),
+        previous_state=HarnessState.new(thread_id="thr_prefixstable"),
     )
+    assert first.state is not None
+    first_history_length = len(first.state.message_history)
+    first_history_json = ModelMessagesTypeAdapter.dump_json(list(first.state.message_history))
+    first_persisted_prefix_json = ModelMessagesTypeAdapter.dump_json(
+        list(first.state.message_history[: len(seen_messages[0])])
+    )
+
     (tmp_path / "AGENTS.md").write_text("Repository guidance v2")
     second = await executable.run(
         "Continue",
@@ -1070,19 +1080,70 @@ async def test_runtime_and_file_context_preserve_history_and_refresh_current_val
         ),
         previous_state=first.state,
     )
+    assert second.state is not None
+    second_history_length = len(second.state.message_history)
+    second_history_json = ModelMessagesTypeAdapter.dump_json(list(second.state.message_history))
+    second_persisted_prefix_json = ModelMessagesTypeAdapter.dump_json(
+        list(second.state.message_history[: len(seen_messages[1])])
+    )
 
-    assert second.output_or_raise() == "done"
-    first_text = _user_text(seen[0])
-    second_text = _user_text(seen[1])
+    (tmp_path / "AGENTS.md").write_text("Repository guidance v3")
+    third = await executable.run(
+        "Finish",
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path), metadata={"tenant": "gamma", "secret": "no"}
+        ),
+        previous_state=second.state,
+    )
+
+    assert [result.output_or_raise() for result in (first, second, third)] == ["done"] * 3
+    assert third.state is not None
+    assert len(seen_messages) == 3
+    third_persisted_prefix_json = ModelMessagesTypeAdapter.dump_json(
+        list(third.state.message_history[: len(seen_messages[2])])
+    )
+
+    for current_messages, persisted_prefix_json in zip(
+        seen_messages,
+        (first_persisted_prefix_json, second_persisted_prefix_json, third_persisted_prefix_json),
+        strict=True,
+    ):
+        assert ModelMessagesTypeAdapter.dump_json(current_messages) == persisted_prefix_json
+
+    for history_length, history_json, current_messages in (
+        (first_history_length, first_history_json, seen_messages[1]),
+        (second_history_length, second_history_json, seen_messages[2]),
+    ):
+        current_prefix = current_messages[:history_length]
+        assert ModelMessagesTypeAdapter.dump_json(current_prefix) == history_json
+
+    first_info = seen_info[0]
+    for current_info in seen_info[1:]:
+        assert current_info.instructions == first_info.instructions
+        assert current_info.function_tools == first_info.function_tools
+        assert current_info.output_tools == first_info.output_tools
+        assert current_info.allow_text_output == first_info.allow_text_output
+        assert current_info.model_request_parameters == first_info.model_request_parameters
+        assert current_info.model_settings == first_info.model_settings
+    assert first_info.model_settings is not None
+    assert first_info.model_settings["openai_prompt_cache_key"] == "thr_prefixstable"
+    assert first_info.model_settings["extra_headers"] == {"x-session-id": "thr_prefixstable"}
+
+    first_text = _user_text(seen_messages[0])
+    second_text = _user_text(seen_messages[1])
+    third_text = _user_text(seen_messages[2])
     assert "Repository guidance v1" in first_text
-    assert ModelMessagesTypeAdapter.dump_json([seen[1][0]]) == ModelMessagesTypeAdapter.dump_json([seen[0][0]])
     assert "Repository guidance v1" in second_text
     assert "Repository guidance v2" in second_text
-    assert '"tenant":"alpha"' in second_text
-    assert '"tenant":"beta"' in second_text
-    assert "secret" not in second_text
-    assert second_text.count('<runtime-context source="a13n-harness">') == 2
-    assert second_text.count('<file-context source="a13n-harness">') == 2
+    assert "Repository guidance v1" in third_text
+    assert "Repository guidance v2" in third_text
+    assert "Repository guidance v3" in third_text
+    assert '"tenant":"alpha"' in third_text
+    assert '"tenant":"beta"' in third_text
+    assert '"tenant":"gamma"' in third_text
+    assert "secret" not in third_text
+    assert third_text.count('<runtime-context source="a13n-harness">') == 3
+    assert third_text.count('<file-context source="a13n-harness">') == 3
 
 
 def _user_text(messages: list[ModelMessage]) -> str:

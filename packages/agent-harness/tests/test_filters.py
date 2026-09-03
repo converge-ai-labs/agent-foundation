@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -13,6 +14,7 @@ from a13n_harness.filters import (
 from pydantic_ai import AgentSpec
 from pydantic_ai.messages import (
     ModelMessage,
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
@@ -63,7 +65,7 @@ async def test_message_integrity_filter_keeps_only_one_result_for_the_current_ca
     assert messages[-1].parts[:3] == [orphan, current, duplicate]
 
 
-async def test_message_integrity_filter_persists_the_processed_history() -> None:
+async def test_message_integrity_filter_persists_history_and_preserves_the_next_prefix() -> None:
     current = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content="current")
     duplicate = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content="duplicate")
     orphan = ToolReturnPart(tool_name="lookup", tool_call_id="call-1", content="orphan")
@@ -79,7 +81,7 @@ async def test_message_integrity_filter_persists_the_processed_history() -> None
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del info
-        seen.append(messages)
+        seen.append(deepcopy(messages))
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -87,9 +89,19 @@ async def test_message_integrity_filter_persists_the_processed_history() -> None
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
-    result = await executable.run("next", bindings=RunBindings.embedded(), previous_state=previous)
+    result = await executable.run(bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.state is not None
+    persisted_request_json = ModelMessagesTypeAdapter.dump_json(list(result.state.message_history[: len(seen[0])]))
+    expected_prefix_length = len(result.state.message_history)
+    expected_prefix_json = ModelMessagesTypeAdapter.dump_json(list(result.state.message_history))
+
+    continued = await executable.run("again", bindings=RunBindings.embedded(), previous_state=result.state)
+    assert continued.state is not None
+
+    assert persisted_request_json == ModelMessagesTypeAdapter.dump_json(seen[0])
+    actual_prefix = seen[1][:expected_prefix_length]
+    assert ModelMessagesTypeAdapter.dump_json(actual_prefix) == expected_prefix_json
 
     def tool_results(messages: list[ModelMessage] | tuple[ModelMessage, ...]) -> list[ToolReturnPart]:
         return [
