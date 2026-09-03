@@ -14,7 +14,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
-from .attempts import AttemptAuthority
+from .attempts import AttemptContext
 from .domain import JsonObject, PendingCallKind, PendingCallSummary, RunPendingSummary, RunWaitReason
 from .objects import RunPayloadStore, StoredRunState
 from .state import (
@@ -81,19 +81,19 @@ class RunTerminalCommitter(Protocol):
 
     async def commit_state_outcome(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
     ) -> RunTerminalReceipt: ...
 
     async def commit_failure(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         failure: SafeFailure,
     ) -> RunTerminalReceipt: ...
 
     async def reconcile_cancelled(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
     ) -> RunTerminalReceipt: ...
 
 

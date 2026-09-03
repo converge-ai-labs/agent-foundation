@@ -31,16 +31,42 @@ class AttemptMutationError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class AttemptAuthority:
+class AttemptContext:
+    """Claim-derived process-local correlation, authority, and fixed execution policy."""
+
     tenant_id: str
+    thread_id: str
     run_id: str
     run_attempt_id: str
     fence: int
     lease_token: str = field(repr=False)
     worker_id: str
     worker_generation: str
+    worker_build_id: str
+    runtime_lock_digest: str
     expected_run_version: int
     expected_attempt_version: int
+    lease_expires_at: datetime
+    lease_duration: timedelta
+    renewal_interval: timedelta
+    renewal_timeout: timedelta
+    reconciliation_timeout: timedelta
+    cleanup_timeout: timedelta
+
+    def __post_init__(self) -> None:
+        if self.fence < 1 or self.expected_run_version < 1 or self.expected_attempt_version < 1:
+            raise ValueError("Attempt context versions and fence must be positive")
+        if self.lease_duration <= timedelta(0):
+            raise ValueError("Attempt lease duration must be positive")
+        if not timedelta(0) < self.renewal_interval < self.lease_duration:
+            raise ValueError("Attempt renewal interval must be positive and shorter than the lease")
+        if not timedelta(0) < self.renewal_timeout < self.lease_duration:
+            raise ValueError("Attempt renewal timeout must be positive and shorter than the lease")
+        if self.reconciliation_timeout <= timedelta(0):
+            raise ValueError("Attempt reconciliation timeout must be positive")
+        if self.cleanup_timeout <= timedelta(0):
+            raise ValueError("Attempt cleanup timeout must be positive")
+        object.__setattr__(self, "lease_expires_at", _utc(self.lease_expires_at))
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +106,7 @@ class AttemptExecutionService:
         self._sessions = sessions
         self._clock = clock
 
-    async def validate(self, authority: AttemptAuthority) -> AttemptMutationReceipt:
+    async def validate(self, authority: AttemptContext) -> AttemptMutationReceipt:
         """Revalidate current lease and fence without mutating durable state."""
 
         now = _utc(self._clock())
@@ -90,7 +116,7 @@ class AttemptExecutionService:
 
     async def heartbeat(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         *,
         lease_duration: timedelta,
     ) -> AttemptMutationReceipt:
@@ -107,7 +133,7 @@ class AttemptExecutionService:
 
     async def enter_harness(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         *,
         preparation: AttemptPreparationAccepted,
         harness_run_id: str,
@@ -118,7 +144,7 @@ class AttemptExecutionService:
             preparation.run_attempt_id != authority.run_attempt_id
             or preparation.fence != authority.fence
             or preparation.mutation.run_version != authority.expected_run_version
-            or preparation.mutation.attempt_version != authority.expected_attempt_version
+            or preparation.mutation.attempt_version > authority.expected_attempt_version
         ):
             raise AttemptMutationError("Harness entry requires the matching successful preparation decision")
         now = _utc(self._clock())
@@ -139,7 +165,7 @@ class AttemptExecutionService:
 
     async def commit_preparation_success(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
     ) -> AttemptPreparationResult:
         """Commit the decision after exact state, dependency, and Principal preflight succeeds."""
 
@@ -171,7 +197,7 @@ class AttemptExecutionService:
 
     async def add_usage(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         delta: RecoveryUsage,
     ) -> AttemptMutationReceipt:
         now = _utc(self._clock())
@@ -189,14 +215,14 @@ class AttemptExecutionService:
             attempt.version += 1
             return _receipt(run, attempt)
 
-    async def increment_model_request(self, authority: AttemptAuthority) -> AttemptMutationReceipt:
+    async def increment_model_request(self, authority: AttemptContext) -> AttemptMutationReceipt:
         """Durably cross the model-request boundary before provider I/O begins."""
 
         return await self.add_usage(authority, RecoveryUsage(model_requests=1))
 
     async def publish_checkpoint(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         states: RunStateStore,
         current: StoredRunState,
         successor: RunStateEnvelope,
@@ -215,7 +241,7 @@ class AttemptExecutionService:
 
     async def fail(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         failure: SafeFailure,
         *,
         retryable: bool,
@@ -246,7 +272,7 @@ class AttemptExecutionService:
 
     async def yield_attempt(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         reason: RunAttemptYieldReason,
     ) -> AttemptMutationReceipt:
         now = _utc(self._clock())
@@ -266,7 +292,7 @@ class AttemptExecutionService:
 
 async def lock_attempt_authority(
     database: AsyncSession,
-    authority: AttemptAuthority,
+    authority: AttemptContext,
     now: datetime,
     *,
     lock_inbox_origins: bool = False,
@@ -318,7 +344,7 @@ async def lock_attempt_authority(
 
 async def read_attempt_authority(
     database: AsyncSession,
-    authority: AttemptAuthority,
+    authority: AttemptContext,
     now: datetime,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
     result = await database.execute(
@@ -347,7 +373,7 @@ def _validate_authority(
     run: RunRecord | None,
     attempt: RunAttemptRecord | None,
     thread: ThreadRecord | None,
-    authority: AttemptAuthority,
+    authority: AttemptContext,
     now: datetime,
 ) -> None:
     if run is None or attempt is None or thread is None:
@@ -356,6 +382,7 @@ def _validate_authority(
     if (
         run.version != authority.expected_run_version
         or attempt.version != authority.expected_attempt_version
+        or run.thread_id != authority.thread_id
         or thread.current_run_id != run.id
         or run.status != RunStatus.running.value
         or run.current_run_attempt_id != attempt.id
@@ -363,6 +390,9 @@ def _validate_authority(
         or attempt.fence != authority.fence
         or attempt.worker_id != authority.worker_id
         or attempt.worker_generation != authority.worker_generation
+        or attempt.worker_build_id != authority.worker_build_id
+        or run.runtime_lock_digest != authority.runtime_lock_digest
+        or attempt.runtime_lock_digest != authority.runtime_lock_digest
         or not token_matches
         or _utc(attempt.lease_expires_at) <= now
     ):
@@ -417,8 +447,8 @@ def _utc(value: datetime) -> datetime:
 
 
 __all__ = [
-    "AttemptAuthority",
     "AttemptAuthorityError",
+    "AttemptContext",
     "AttemptExecutionService",
     "AttemptMutationError",
     "AttemptMutationReceipt",

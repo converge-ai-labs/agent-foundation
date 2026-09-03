@@ -25,7 +25,7 @@ from .acceptance import (
     _validate_prepared_run,
     _validate_queued_run_input,
 )
-from .attempts import AttemptAuthority, AttemptMutationError, lock_attempt_authority
+from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority
 from .domain import Run, RunAttemptStatus, RunInputKind, RunLineageKind
 from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
@@ -64,7 +64,7 @@ class CompletionQueueHandoffService:
     async def complete_and_consume(
         self,
         *,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         source_state: StoredRunState,
         successor_run: Run,
         successor_state: RunStateEnvelope,
@@ -178,7 +178,7 @@ class CompletionQueueHandoffService:
     async def _verify_prepared(
         self,
         *,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         source_state: StoredRunState,
         successor_run: Run,
         successor_state: RunStateEnvelope,
@@ -219,7 +219,7 @@ class CompletionQueueHandoffService:
 
 
 def _validate_combined_successor(
-    authority: AttemptAuthority,
+    authority: AttemptContext,
     source_state: StoredRunState,
     run: Run,
     state: RunStateEnvelope,

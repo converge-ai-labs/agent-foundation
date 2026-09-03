@@ -22,7 +22,7 @@ from ._outcome_transitions import (
     validate_outcome_candidate_scope,
 )
 from ._transitions import charge_attempt_usage, terminalize_attempt
-from .attempts import AttemptAuthority, AttemptMutationError, lock_attempt_authority, read_attempt_authority
+from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority, read_attempt_authority
 from .domain import RunAttemptStatus, RunStatus
 from .inbox import ThreadControlSignalPublisher
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
@@ -59,7 +59,7 @@ class RunOutcomeService:
 
     async def commit_state_outcome(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
         *,
         expected_thread_version: int,
@@ -183,7 +183,7 @@ class RunOutcomeService:
 
     async def _verify_output_payload(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
         expected_thread_version: int,
         now: datetime,

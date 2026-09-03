@@ -23,7 +23,7 @@ from a13n_harness import (
 from a13n_harness.errors import RunError
 from a13n_service.interactions import (
     AdaptedThreadInboxEntry,
-    AttemptAuthority,
+    AttemptContext,
     AttemptExecutionService,
     AttemptMutationReceipt,
     AttemptPreparationAccepted,
@@ -69,13 +69,13 @@ class _RecordingAttemptExecution(AttemptExecutionService):
     trace: list[str]
     yielded: RunAttemptYieldReason | None = None
 
-    async def validate(self, authority: AttemptAuthority) -> AttemptMutationReceipt:
+    async def validate(self, authority: AttemptContext) -> AttemptMutationReceipt:
         self.trace.append("attempt:validate")
         return _receipt(authority)
 
     async def enter_harness(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         *,
         preparation: AttemptPreparationAccepted,
         harness_run_id: str,
@@ -86,13 +86,13 @@ class _RecordingAttemptExecution(AttemptExecutionService):
         self.trace.append("attempt:enter")
         return _receipt(authority, run_delta=1, attempt_delta=1)
 
-    async def increment_model_request(self, authority: AttemptAuthority) -> AttemptMutationReceipt:
+    async def increment_model_request(self, authority: AttemptContext) -> AttemptMutationReceipt:
         self.trace.append("attempt:model")
         return _receipt(authority, attempt_delta=1)
 
     async def publish_checkpoint(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         states: RunStateStore,
         current: StoredRunState,
         successor: RunStateEnvelope,
@@ -107,7 +107,7 @@ class _RecordingAttemptExecution(AttemptExecutionService):
 
     async def yield_attempt(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         reason: RunAttemptYieldReason,
     ) -> AttemptMutationReceipt:
         self.trace.append("attempt:yield")
@@ -123,7 +123,7 @@ class _RecordingThreadInbox:
 
     async def confirm_checkpoint(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
     ) -> AttemptMutationReceipt:
         assert state.envelope.run_id == authority.run_id
@@ -132,7 +132,7 @@ class _RecordingThreadInbox:
 
     async def read_eligible(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
     ) -> Sequence[AdaptedThreadInboxEntry]:
         assert authority.run_id == RUN_ID
         self.trace.append("inbox:read")
@@ -158,7 +158,7 @@ class _RecordingTerminalCommitter:
 
     async def commit_state_outcome(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
     ) -> RunTerminalReceipt:
         self.states.append(state)
@@ -167,7 +167,7 @@ class _RecordingTerminalCommitter:
 
     async def commit_failure(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         failure: SafeFailure,
     ) -> RunTerminalReceipt:
         self.failures.append(failure)
@@ -175,28 +175,37 @@ class _RecordingTerminalCommitter:
 
     async def reconcile_cancelled(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
     ) -> RunTerminalReceipt:
         self.cancelled += 1
         return _terminal_receipt(authority, RunTerminalDisposition.cancelled)
 
 
-def _authority() -> AttemptAuthority:
-    return AttemptAuthority(
+def _context(thread_id: str) -> AttemptContext:
+    return AttemptContext(
         tenant_id=TENANT_ID,
+        thread_id=thread_id,
         run_id=RUN_ID,
         run_attempt_id=ATTEMPT_ID,
         fence=1,
         lease_token="lease-token",
         worker_id="worker-1",
         worker_generation="generation-1",
+        worker_build_id="build-1",
+        runtime_lock_digest="a" * 64,
         expected_run_version=1,
         expected_attempt_version=1,
+        lease_expires_at=NOW + timedelta(minutes=5),
+        lease_duration=timedelta(seconds=30),
+        renewal_interval=timedelta(seconds=10),
+        renewal_timeout=timedelta(seconds=5),
+        reconciliation_timeout=timedelta(seconds=5),
+        cleanup_timeout=timedelta(seconds=5),
     )
 
 
 def _receipt(
-    authority: AttemptAuthority,
+    authority: AttemptContext,
     *,
     run_delta: int = 0,
     attempt_delta: int = 0,
@@ -208,7 +217,7 @@ def _receipt(
     )
 
 
-def _preparation(authority: AttemptAuthority) -> AttemptPreparationAccepted:
+def _preparation(authority: AttemptContext) -> AttemptPreparationAccepted:
     return AttemptPreparationAccepted(
         run_attempt_id=authority.run_attempt_id,
         fence=authority.fence,
@@ -217,7 +226,7 @@ def _preparation(authority: AttemptAuthority) -> AttemptPreparationAccepted:
 
 
 def _terminal_receipt(
-    authority: AttemptAuthority,
+    authority: AttemptContext,
     disposition: RunTerminalDisposition,
 ) -> RunTerminalReceipt:
     return RunTerminalReceipt(
@@ -341,7 +350,7 @@ async def _run(
             collaborators=FoundationHarnessCollaborators(instance=bindings.instance),
             deferred_resume=deferred_resume,
         ),
-        preparation=_preparation(control.current_authority),
+        preparation=_preparation(control.current_context),
     )
 
 
@@ -378,12 +387,12 @@ async def test_checkpoint_commits_inbox_receipt_only_after_native_delivery(
     trace: list[str] = []
     calls: list[tuple[ModelMessage, ...]] = []
     states, stored = await _stored_state(interaction_object_store, initial_state())
-    authority = _authority()
+    context = _context(stored.envelope.thread_id)
     bindings = RunBindings.embedded()
     execution = _RecordingAttemptExecution(trace)
     inbox = _RecordingThreadInbox(trace, entries=(_inbox_entry(),))
     coordinator = RunAttemptControl(
-        authority=authority,
+        context=context,
         execution=execution,
         states=states,
         state=stored,
@@ -416,7 +425,7 @@ async def test_waiting_successor_withholds_inbox_until_first_response(
     states, stored = await _stored_state(interaction_object_store, waiting)
     bindings = RunBindings.embedded()
     coordinator = RunAttemptControl(
-        authority=_authority(),
+        context=_context(stored.envelope.thread_id),
         execution=_RecordingAttemptExecution(trace),
         states=states,
         state=stored,
@@ -452,7 +461,7 @@ async def test_waiting_gate_survives_internal_model_recovery(
     states, stored = await _stored_state(interaction_object_store, waiting)
     bindings = RunBindings.embedded()
     coordinator = RunAttemptControl(
-        authority=_authority(),
+        context=_context(stored.envelope.thread_id),
         execution=_RecordingAttemptExecution(trace),
         states=states,
         state=stored,
@@ -497,7 +506,7 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     projector = _RecordingEventProjector()
     terminal = _RecordingTerminalCommitter()
     coordinator = RunAttemptControl(
-        authority=_authority(),
+        context=_context(stored.envelope.thread_id),
         execution=execution,
         states=states,
         state=stored,
@@ -524,7 +533,7 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     assert terminal.cancelled == 0
 
     assert execution.yielded is RunAttemptYieldReason.service_drain
-    assert mutation.run_version == coordinator.current_authority.expected_run_version
+    assert mutation.run_version == coordinator.current_context.expected_run_version
     assert trace.index("attempt:checkpoint") < trace.index("attempt:yield")
 
 
@@ -538,7 +547,7 @@ async def test_driver_projects_events_and_control_commits_one_completed_result(
     projector = _RecordingEventProjector()
     terminal = _RecordingTerminalCommitter()
     coordinator = RunAttemptControl(
-        authority=_authority(),
+        context=_context(stored.envelope.thread_id),
         execution=_RecordingAttemptExecution(trace),
         states=states,
         state=stored,
@@ -573,7 +582,7 @@ async def test_control_rejects_provider_target_state_from_foundation_attachment(
     bindings = RunBindings.embedded()
     terminal = _RecordingTerminalCommitter()
     coordinator = RunAttemptControl(
-        authority=_authority(),
+        context=_context(stored.envelope.thread_id),
         execution=_RecordingAttemptExecution(trace),
         states=states,
         state=stored,
@@ -628,7 +637,7 @@ async def test_control_commits_native_suspension_as_waiting(
     bindings = RunBindings.embedded()
     terminal = _RecordingTerminalCommitter()
     coordinator = RunAttemptControl(
-        authority=_authority(),
+        context=_context(stored.envelope.thread_id),
         execution=_RecordingAttemptExecution(trace),
         states=states,
         state=stored,
@@ -664,7 +673,7 @@ async def test_control_delegates_safe_harness_failure(
     bindings = RunBindings.embedded()
     terminal = _RecordingTerminalCommitter()
     coordinator = RunAttemptControl(
-        authority=_authority(),
+        context=_context(stored.envelope.thread_id),
         execution=_RecordingAttemptExecution(trace),
         states=states,
         state=stored,
@@ -697,7 +706,7 @@ async def test_control_reconciles_non_handoff_cancellation_candidate(
     bindings = RunBindings.embedded()
     terminal = _RecordingTerminalCommitter()
     coordinator = RunAttemptControl(
-        authority=_authority(),
+        context=_context(stored.envelope.thread_id),
         execution=_RecordingAttemptExecution(trace),
         states=states,
         state=stored,

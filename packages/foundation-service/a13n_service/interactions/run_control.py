@@ -22,11 +22,13 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_graph import End
 
 from .attempts import (
-    AttemptAuthority,
     AttemptAuthorityError,
+    AttemptContext,
     AttemptExecutionService,
     AttemptMutationReceipt,
     AttemptPreparationAccepted,
+    AttemptPreparationRejected,
+    AttemptPreparationResult,
 )
 from .domain import RunAttemptYieldReason
 from .harness_control import (
@@ -70,13 +72,13 @@ class ThreadInboxReconciler(Protocol):
 
     async def confirm_checkpoint(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
     ) -> AttemptMutationReceipt: ...
 
     async def read_eligible(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
     ) -> Sequence[AdaptedThreadInboxEntry]: ...
 
 
@@ -112,18 +114,18 @@ class RunAttemptControl:
     def __init__(
         self,
         *,
-        authority: AttemptAuthority,
+        context: AttemptContext,
         execution: AttemptExecutionService,
         states: RunStateStore,
         state: StoredRunState,
         inbox: ThreadInboxReconciler,
     ) -> None:
         envelope = state.envelope
-        if envelope.run_id != authority.run_id:
-            raise ValueError("Run state and Attempt authority must name the same Run")
+        if envelope.run_id != context.run_id or envelope.thread_id != context.thread_id:
+            raise ValueError("Run state and Attempt context must name the same Run and Thread")
         if envelope.outcome_candidate is not None:
             raise ValueError("A sealed outcome candidate cannot start active run control")
-        self._authority = authority
+        self._context = context
         self._execution = execution
         self._states = states
         self._state = state
@@ -175,7 +177,7 @@ class RunAttemptControl:
             self._gate.identity = identity
             try:
                 mutation = await self._execution.enter_harness(
-                    self._authority,
+                    self._context,
                     preparation=preparation,
                     harness_run_id=identity.run_id,
                 )
@@ -229,7 +231,7 @@ class RunAttemptControl:
                     return
                 if not waiting_first_request:
                     await self._offer_pending(boundary)
-                mutation = await self._execution.increment_model_request(self._authority)
+                mutation = await self._execution.increment_model_request(self._context)
                 self._advance(mutation)
             except AttemptAuthorityError:
                 await self._fence()
@@ -298,6 +300,58 @@ class RunAttemptControl:
                 )
             self._gate.handoff_reason = reason
 
+    async def commit_preparation(self) -> AttemptPreparationResult:
+        """Commit preflight using the latest context after concurrent lease renewal."""
+
+        async with self._gate.lock:
+            self._require_open()
+            try:
+                decision = await self._execution.commit_preparation_success(self._context)
+                self._advance(decision.mutation)
+                if isinstance(decision, AttemptPreparationRejected):
+                    self._gate.phase = _CoordinatorPhase.terminal
+                return decision
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+
+    async def renew_lease(self) -> None:
+        """Renew only this exact Attempt under the same serialized authority context."""
+
+        async with self._gate.lock:
+            if self._gate.phase in {_CoordinatorPhase.terminal, _CoordinatorPhase.yielded}:
+                return
+            self._require_open()
+            self._advance(
+                await self._execution.heartbeat(
+                    self._context,
+                    lease_duration=self._context.lease_duration,
+                )
+            )
+
+    async def reconcile(self) -> None:
+        """Reread durable control facts and offer active input only after stream entry."""
+
+        async with self._gate.lock:
+            if self._gate.phase in {_CoordinatorPhase.terminal, _CoordinatorPhase.yielded}:
+                return
+            self._require_open()
+            try:
+                await self._prepare_boundary()
+                if (
+                    self._gate.identity is None
+                    or self._gate.delivery_gate is not _DeliveryGate.open
+                    or self._gate.handoff_reason is not None
+                ):
+                    return
+                driver = self._require_driver()
+                for entry in await self._eligible_entries():
+                    await driver.steer(entry.input)
+                    self._gate.offered.append(entry.receipt)
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+
     async def finalize(
         self,
         result: HarnessRunResult[Any],
@@ -319,7 +373,7 @@ class RunAttemptControl:
                 if reason is None:  # pragma: no cover - maintained by the private gate
                     raise RuntimeError("handoff-ready control is missing its reason")
                 try:
-                    mutation = await self._execution.yield_attempt(self._authority, reason)
+                    mutation = await self._execution.yield_attempt(self._context, reason)
                     self._advance(mutation)
                     self._gate.phase = _CoordinatorPhase.yielded
                     return mutation
@@ -329,7 +383,7 @@ class RunAttemptControl:
             self._require_open()
             try:
                 if result.status == "cancelled":
-                    receipt = await committer.reconcile_cancelled(self._authority)
+                    receipt = await committer.reconcile_cancelled(self._context)
                     _require_terminal_disposition(receipt, RunTerminalDisposition.cancelled)
                 else:
                     await self._validate_authority()
@@ -337,7 +391,7 @@ class RunAttemptControl:
                         failure = result.failure
                         if failure is None:  # pragma: no cover - enforced by HarnessRunResult
                             raise RuntimeError("failed Harness result is missing its failure")
-                        receipt = await committer.commit_failure(self._authority, failure)
+                        receipt = await committer.commit_failure(self._context, failure)
                         _require_terminal_disposition(
                             receipt,
                             RunTerminalDisposition.retrying,
@@ -347,7 +401,7 @@ class RunAttemptControl:
                         projection = await adapter.project(result)
                         await self._publish_terminal(projection)
                         await self._confirm_state()
-                        receipt = await committer.commit_state_outcome(self._authority, self._state)
+                        receipt = await committer.commit_state_outcome(self._context, self._state)
                         expected = (
                             RunTerminalDisposition.completed
                             if isinstance(projection.candidate, CompletedOutcomeCandidate)
@@ -380,8 +434,8 @@ class RunAttemptControl:
                 await self._fence()
 
     @property
-    def current_authority(self) -> AttemptAuthority:
-        return self._authority
+    def current_context(self) -> AttemptContext:
+        return self._context
 
     @property
     def current_state(self) -> StoredRunState:
@@ -396,10 +450,10 @@ class RunAttemptControl:
         await self._confirm_state()
 
     async def _validate_authority(self) -> None:
-        self._advance(await self._execution.validate(self._authority))
+        self._advance(await self._execution.validate(self._context))
 
     async def _confirm_state(self) -> None:
-        self._advance(await self._inbox.confirm_checkpoint(self._authority, self._state))
+        self._advance(await self._inbox.confirm_checkpoint(self._context, self._state))
 
     async def _checkpoint(
         self,
@@ -454,8 +508,8 @@ class RunAttemptControl:
             checkpoint_seq=prior.checkpoint_seq + 1,
             checkpoint_kind=checkpoint_kind,
             input_disposition="applied",
-            last_checkpoint_run_attempt_id=self._authority.run_attempt_id,
-            last_checkpoint_fence=self._authority.fence,
+            last_checkpoint_run_attempt_id=self._context.run_attempt_id,
+            last_checkpoint_fence=self._context.fence,
             harness_schema_version=harness.schema_version,
             harness=harness,
             host=host,
@@ -465,7 +519,7 @@ class RunAttemptControl:
 
     async def _publish(self, successor: RunStateEnvelope) -> None:
         self._state = await self._execution.publish_checkpoint(
-            self._authority,
+            self._context,
             self._states,
             self._state,
             successor,
@@ -473,13 +527,16 @@ class RunAttemptControl:
         self._gate.offered.clear()
 
     async def _offer_pending(self, boundary: HarnessHookBoundary) -> None:
-        if self._gate.offered:
-            return
-        entries = tuple(await self._inbox.read_eligible(self._authority))
-        _validate_delivery_batch(entries, self._state.envelope)
-        for entry in entries:
+        for entry in await self._eligible_entries():
             await boundary.enqueue(entry.input, priority="asap")
             self._gate.offered.append(entry.receipt)
+
+    async def _eligible_entries(self) -> tuple[AdaptedThreadInboxEntry, ...]:
+        if self._gate.offered:
+            return ()
+        entries = tuple(await self._inbox.read_eligible(self._context))
+        _validate_delivery_batch(entries, self._state.envelope)
+        return entries
 
     def _require_boundary(self, boundary: HarnessHookBoundary) -> None:
         self._require_open()
@@ -516,14 +573,15 @@ class RunAttemptControl:
 
     def _advance(self, mutation: AttemptMutationReceipt) -> None:
         if (
-            mutation.run_version < self._authority.expected_run_version
-            or mutation.attempt_version < self._authority.expected_attempt_version
+            mutation.run_version < self._context.expected_run_version
+            or mutation.attempt_version < self._context.expected_attempt_version
         ):
             raise RuntimeError("Attempt mutation receipt moved authority versions backwards")
-        self._authority = replace(
-            self._authority,
+        self._context = replace(
+            self._context,
             expected_run_version=mutation.run_version,
             expected_attempt_version=mutation.attempt_version,
+            lease_expires_at=mutation.lease_expires_at,
         )
 
     async def _quiesce_for_handoff(self) -> None:

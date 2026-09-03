@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.storage import short_session, transaction
 
 from .attempts import (
-    AttemptAuthority,
+    AttemptContext,
     AttemptMutationReceipt,
     lock_attempt_authority,
     read_attempt_authority,
@@ -197,7 +197,7 @@ class DatabaseThreadInboxReconciler:
 
     async def confirm_checkpoint(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
     ) -> AttemptMutationReceipt:
         now = _utc(self._clock())
@@ -217,7 +217,7 @@ class DatabaseThreadInboxReconciler:
 
     async def read_eligible(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
     ) -> Sequence[AdaptedThreadInboxEntry]:
         now = _utc(self._clock())
         async with short_session(self._sessions) as database:

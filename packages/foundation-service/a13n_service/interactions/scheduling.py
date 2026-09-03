@@ -47,6 +47,7 @@ class WorkerClaim:
 @dataclass(frozen=True, slots=True)
 class ClaimedAttempt:
     attempt: RunAttempt
+    thread_id: str
     run_version: int
     lease_token: str = field(repr=False)
 
@@ -236,7 +237,12 @@ class AttemptScheduler:
             run.version += 1
             run.updated_at = now
             await database.flush()
-            return ClaimedAttempt(attempt=attempt, run_version=run.version, lease_token=token)
+            return ClaimedAttempt(
+                attempt=attempt,
+                thread_id=run.thread_id,
+                run_version=run.version,
+                lease_token=token,
+            )
 
     async def _lock_predecessor(
         self,

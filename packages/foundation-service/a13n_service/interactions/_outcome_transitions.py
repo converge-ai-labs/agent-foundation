@@ -13,14 +13,14 @@ from .objects import RUN_STATE_CONTENT_TYPE, StoredRunState
 from .state import CompletedOutcomeCandidate, WaitingOutcomeCandidate
 
 if TYPE_CHECKING:
-    from .attempts import AttemptAuthority
+    from .attempts import AttemptContext
 
 
 class RunOutcomeError(RuntimeError):
     """The prepared outcome is stale or inconsistent with relational authority."""
 
 
-def validate_outcome_candidate(state: StoredRunState, authority: AttemptAuthority) -> None:
+def validate_outcome_candidate(state: StoredRunState, authority: AttemptContext) -> None:
     envelope = state.envelope
     if (
         envelope.run_id != authority.run_id
