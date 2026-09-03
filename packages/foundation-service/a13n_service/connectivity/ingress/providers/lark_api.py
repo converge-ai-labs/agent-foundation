@@ -7,14 +7,13 @@ import json
 import httpx2
 from pydantic import TypeAdapter, ValidationError
 
+from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body, retry_after_seconds
 from a13n_service.connectivity.ingress.domain import JsonObject
-
-from .native_http import NativeActionError, bounded_response_body, retry_after_seconds
 
 _JSON_OBJECT = TypeAdapter(JsonObject)
 
 
-LarkApiError = NativeActionError
+LarkApiError = ConnectivityHttpError
 
 
 async def read_lark_response(response: httpx2.Response, *, max_bytes: int) -> JsonObject:

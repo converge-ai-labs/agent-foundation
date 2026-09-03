@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Protocol
 
+from a13n_service.connectivity.connectors.adapters import ConnectorAdapter as ConnectorAdapter
 from a13n_service.connectivity.ingress.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
@@ -67,8 +68,3 @@ class IngressAdapter(Protocol):
     def acknowledge(self, receipt: AdmissionReceipt) -> ProviderHttpResponse: ...
 
     def failure_response(self, reason_code: str) -> ProviderHttpResponse: ...
-
-
-class ConnectorAdapter(Protocol):
-    driver_key: str
-    config_versions: frozenset[str]

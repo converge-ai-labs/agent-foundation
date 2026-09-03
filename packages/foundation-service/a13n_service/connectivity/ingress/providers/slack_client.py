@@ -14,8 +14,7 @@ import httpx2
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError
 
 from a13n_service.connectivity.adapters import JsonObject
-
-from .native_http import NativeActionError, bounded_response_body, retry_after_seconds
+from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body, retry_after_seconds
 
 _RESPONSE_MAX_BYTES = 1024 * 1024
 _MEMBER_CACHE_MAX_ENTRIES = 512
@@ -105,7 +104,7 @@ class SlackMessagePage(_StrictModel):
     has_more: bool
 
 
-SlackNativeActionError = NativeActionError
+SlackNativeActionError = ConnectivityHttpError
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,8 +8,9 @@ from time import monotonic
 import anyio
 import httpx2
 
+from a13n_service.connectivity.http import EndpointValidator
+
 from .lark_api import LarkApiError, read_lark_response
-from .native_http import EndpointValidator
 
 _TOKEN_RESPONSE_MAX_BYTES = 64 * 1024
 

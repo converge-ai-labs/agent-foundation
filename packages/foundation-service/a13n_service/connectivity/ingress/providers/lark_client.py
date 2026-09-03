@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.connectivity.ingress.domain import JsonObject
 
 from .lark_actions import (
@@ -32,7 +33,6 @@ from .lark_actions import (
 )
 from .lark_api import LarkApiError, read_lark_response
 from .lark_token import LarkTenantTokenProvider
-from .native_http import EndpointValidator
 
 _RESPONSE_MAX_BYTES = 1024 * 1024
 _JSON_OBJECT = TypeAdapter(JsonObject)

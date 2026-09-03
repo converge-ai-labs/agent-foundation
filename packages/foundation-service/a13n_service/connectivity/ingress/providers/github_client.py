@@ -8,6 +8,7 @@ from urllib.parse import quote, urlsplit
 import httpx2
 from pydantic import JsonValue, ValidationError
 
+from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.connectivity.ingress.domain import JsonObject
 
 from .github_actions import (
@@ -28,7 +29,6 @@ from .github_actions import (
 )
 from .github_api import GitHubApiError, read_github_response
 from .github_token import GITHUB_API_VERSION, GitHubInstallationTokenProvider
-from .native_http import EndpointValidator
 from .origins import provider_url_origin
 
 _RESPONSE_MAX_BYTES = 2 * 1024 * 1024

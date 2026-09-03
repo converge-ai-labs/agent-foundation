@@ -14,10 +14,10 @@ import httpx2
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.connectivity.ingress.domain import JsonObject
 
 from .github_api import GitHubApiError, read_github_response
-from .native_http import EndpointValidator
 
 GITHUB_API_VERSION = "2026-03-10"
 _TOKEN_RESPONSE_MAX_BYTES = 256 * 1024

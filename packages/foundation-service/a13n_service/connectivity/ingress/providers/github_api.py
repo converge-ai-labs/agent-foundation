@@ -7,9 +7,9 @@ import json
 import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from .native_http import NativeActionError, bounded_response_body, retry_after_seconds
+from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body, retry_after_seconds
 
-GitHubApiError = NativeActionError
+GitHubApiError = ConnectivityHttpError
 _JSON_VALUE = TypeAdapter(JsonValue)
 
 

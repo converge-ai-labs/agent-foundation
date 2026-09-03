@@ -1,4 +1,4 @@
-"""Shared bounded HTTP response mechanics for provider-native actions."""
+"""Shared bounded HTTP response mechanics for Connectivity adapters."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ class EndpointValidator(Protocol):
     async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str: ...
 
 
-class NativeActionError(Exception):
+class ConnectivityHttpError(Exception):
     def __init__(self, code: str, *, retry_after_seconds: int | None = None) -> None:
         super().__init__(code)
         self.code = code
@@ -24,16 +24,16 @@ async def bounded_response_body(response: httpx2.Response, *, max_bytes: int) ->
         try:
             parsed = int(content_length)
         except ValueError as error:
-            raise NativeActionError("invalid_provider_response") from error
+            raise ConnectivityHttpError("invalid_provider_response") from error
         if parsed < 0:
-            raise NativeActionError("invalid_provider_response")
+            raise ConnectivityHttpError("invalid_provider_response")
         if parsed > max_bytes:
-            raise NativeActionError("response_too_large")
+            raise ConnectivityHttpError("response_too_large")
     body = bytearray()
     async for chunk in response.aiter_bytes():
         body.extend(chunk)
         if len(body) > max_bytes:
-            raise NativeActionError("response_too_large")
+            raise ConnectivityHttpError("response_too_large")
     return bytes(body)
 
 
