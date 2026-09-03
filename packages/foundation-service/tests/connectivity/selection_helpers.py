@@ -22,7 +22,7 @@ CONNECTOR_CONNECTION_ID = "cconn_1234567890abcdef"
 MCP_CONNECTION_ID = "mcpc_1234567890abcdef"
 CONNECTOR_SECRET_ID = "sec_connector12345678"
 CONNECTOR_CATALOG_ID = "tcat_1234567890abcdef"
-MCP_CATALOG_ID = "mcat_1234567890abcdef"
+MCP_CATALOG_ID = "tcat_1234567890abcdef"
 
 
 async def seed_selection_sources(

@@ -176,7 +176,7 @@ class MCPCatalogService:
             if existing is None:
                 session.add(
                     MCPToolCatalogRecord(
-                        id=new_object_id("mcat"),
+                        id=new_object_id("tcat"),
                         organization_id=source.organization_id,
                         workspace_id=source.workspace_id,
                         mcp_connection_id=source.connection_id,
