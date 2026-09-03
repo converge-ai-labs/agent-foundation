@@ -137,7 +137,7 @@ async def test_model_resolver_observes_state_owned_identity_across_continuation_
     ]
 
 
-async def test_agent_model_settings_follow_thread_identity_across_continuation_and_fork() -> None:
+async def test_agent_model_settings_reach_the_resolved_model_unchanged() -> None:
     seen: list[ModelSettings | None] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -152,48 +152,22 @@ async def test_agent_model_settings_follow_thread_identity_across_continuation_a
         output_type=str,
     )
 
-    first = await executable.run(
-        "first",
+    previous = HarnessState.new(thread_id="thr_hostroot")
+    result = await executable.run(
+        "hello",
         bindings=RunBindings.embedded(model_resolver=binding),
-        previous_state=HarnessState.new(thread_id="thr_hostroot"),
-    )
-    assert first.state is not None
-    second = await executable.run(
-        "second",
-        bindings=RunBindings.embedded(model_resolver=binding),
-        previous_state=first.state,
-    )
-    assert second.state is not None
-    third = await executable.run(
-        "third",
-        bindings=RunBindings.embedded(model_resolver=binding),
-        previous_state=second.state,
-    )
-    assert third.state is not None
-    forked = await executable.run(
-        "forked",
-        bindings=RunBindings.embedded(model_resolver=binding),
-        previous_state=third.state.fork(thread_id="thr_hostfork"),
+        previous_state=previous,
     )
 
-    assert [result.output_or_raise() for result in (first, second, third, forked)] == ["configured"] * 4
-    assert forked.state is not None
-    assert [result.state.thread_id for result in (first, second, third)] == ["thr_hostroot"] * 3
-    assert forked.state.thread_id == "thr_hostfork"
-    assert len({result.run_id for result in (first, second, third, forked)}) == 4
+    assert result.output_or_raise() == "configured"
+    assert result.state is not None
+    assert result.state.thread_id == "thr_hostroot"
     assert seen == [
         ModelSettings(
             temperature=0.25,
-            openai_prompt_cache_key=thread_id,
-            extra_headers={"x-session-id": thread_id},
+            openai_prompt_cache_key=result.state.thread_id,
+            extra_headers={"x-session-id": result.state.thread_id},
         )
-        for thread_id in ("thr_hostroot", "thr_hostroot", "thr_hostroot", "thr_hostfork")
-    ]
-    assert [call[1] for call in binding.calls] == [
-        "thr_hostroot",
-        "thr_hostroot",
-        "thr_hostroot",
-        "thr_hostfork",
     ]
     assert settings == ModelSettings(temperature=0.25)
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from copy import deepcopy
+from itertools import pairwise
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -28,8 +30,10 @@ from a13n_harness.model_context import (
 )
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
+from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import (
     ModelMessage,
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
@@ -39,7 +43,8 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.tools import Tool
 from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
@@ -88,6 +93,33 @@ class _ProjectionCapability(AbstractModelContextCapability):
                     source_id=self.id,
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content="plugin context",
+                ),
+            )
+        )
+
+
+class _SequencedProjectionCapability(AbstractModelContextCapability):
+    id = "test.sequenced-projection-capability"
+
+    def __init__(self, requests: list[ModelContextProjectionRequest]) -> None:
+        self._requests = requests
+
+    async def wrap_model_context(
+        self,
+        ctx: RunContext[AgentContext],
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection:
+        del ctx
+        projection = await handler(request)
+        self._requests.append(request)
+        return ModelContextProjection(
+            blocks=(
+                *projection.blocks,
+                ModelContextBlock(
+                    source_id=self.id,
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=f"capability context {len(self._requests)}",
                 ),
             )
         )
@@ -196,6 +228,87 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     persisted_text = [part.content for part in persisted_request.parts if isinstance(part, UserPromptPart)]
     assert persisted_text == text
     assert persisted_request.metadata == request.metadata
+
+
+async def test_capability_injection_preserves_the_active_prefix_across_model_requests() -> None:
+    projection_requests: list[ModelContextProjectionRequest] = []
+    seen: list[list[ModelMessage]] = []
+
+    def advance(step: int) -> str:
+        return f"advanced {step}"
+
+    async def stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        assert "advance" in {tool.name for tool in info.function_tools}
+        request_number = len(seen) + 1
+        seen.append(deepcopy(messages))
+        if request_number < 3:
+            yield {
+                0: DeltaToolCall(
+                    name="advance",
+                    json_args=f'{{"step":{request_number}}}',
+                    tool_call_id=f"call-{request_number}",
+                )
+            }
+            return
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            _SequencedProjectionCapability(projection_requests),
+            Capability(tools=[Tool(advance)]),
+        ),
+    )
+
+    result = await executable.run("start", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    assert projection_requests == [
+        ModelContextProjectionRequest(
+            kind=ModelContextRequestKind.INPUT,
+            input_origin=ModelContextInputOrigin.USER,
+        ),
+        ModelContextProjectionRequest(
+            kind=ModelContextRequestKind.TOOL_RESULTS,
+            tool_call_ids=("call-1",),
+        ),
+        ModelContextProjectionRequest(
+            kind=ModelContextRequestKind.TOOL_RESULTS,
+            tool_call_ids=("call-2",),
+        ),
+    ]
+    assert len(seen) == 3
+
+    for previous, current in pairwise(seen):
+        current_prefix = current[: len(previous)]
+        assert ModelMessagesTypeAdapter.dump_json(current_prefix) == ModelMessagesTypeAdapter.dump_json(previous)
+
+    injected_context = [
+        [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+            and isinstance(part.content, str)
+            and part.content.startswith("capability context ")
+        ]
+        for messages in seen
+    ]
+    assert injected_context == [
+        ["capability context 1"],
+        ["capability context 1", "capability context 2"],
+        ["capability context 1", "capability context 2", "capability context 3"],
+    ]
+    for request_number, messages in enumerate(seen, start=1):
+        current_request = messages[-1]
+        assert isinstance(current_request, ModelRequest)
+        assert current_request.parts[-1].content == f"capability context {request_number}"
 
 
 async def test_host_can_short_circuit_default_projection_without_bypassing_commit() -> None:
