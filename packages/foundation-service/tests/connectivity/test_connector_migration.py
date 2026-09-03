@@ -38,7 +38,7 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         assert {"digest_sha256", "object_key", "connector_credential_generation"} <= catalog_columns
     finally:
         engine.dispose()
-    migrator.downgrade("0832d4a1ad9f")
+    migrator.downgrade("-1")
     engine = create_engine(sync_database_url(config))
     try:
         assert TABLES.isdisjoint(inspect(engine).get_table_names())

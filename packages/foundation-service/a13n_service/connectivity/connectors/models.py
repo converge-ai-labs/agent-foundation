@@ -261,7 +261,7 @@ class ConnectorOperationRecord(Base):
         CheckConstraint("kind IN ('revoke')", name="kind_valid"),
         CheckConstraint("status IN ('pending', 'succeeded', 'unknown', 'failed')", name="status_valid"),
         CheckConstraint("generation >= 1", name="generation_positive"),
-        CheckConstraint("claim_generation >= 0", name="claim_generation_non_negative"),
+        CheckConstraint("claim_generation >= 0", name="claim_generation_valid"),
         Index(
             "uq_connector_connection_operations_generation",
             "connector_connection_id",
@@ -301,7 +301,7 @@ class ConnectorToolCatalogRecord(Base):
         CheckConstraint("length(digest_sha256) = 64", name="digest_bounded"),
         CheckConstraint("size_bytes >= 1", name="size_positive"),
         CheckConstraint("tool_count >= 0", name="tool_count_non_negative"),
-        CheckConstraint("connector_credential_generation >= 1", name="connector_credential_generation_positive"),
+        CheckConstraint("connector_credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint("connection_setup_generation >= 1", name="connection_setup_generation_positive"),
         Index("uq_connector_tool_catalogs_digest", "connector_connection_id", "digest_sha256", unique=True),
         Index("ix_connector_tool_catalogs_latest", "connector_connection_id", "published_at", "id"),
