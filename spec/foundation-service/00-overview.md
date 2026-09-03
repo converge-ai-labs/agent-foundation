@@ -6,7 +6,7 @@ Foundation Service is the optional modular durable Host for Agent Foundation. It
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Run`, and `Item`. Foundation persists each hosted Thread as an independent versioned relational resource, uses `Run` as the durable Agent-work, scheduling, recovery, state, outcome, and authority-Principal boundary, and uses `RunAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Run with one immutable User or Service Account Principal whose current authority is re-evaluated for execution; Foundation defines no separate durable Execution resource.
 
-The worker embeds the public Harness Python API through the deployment's selected [Plugin Runtime profile](36-managed-harness-plugins-and-runtime.md). Run acceptance pins an internal Runtime lock. The default on-demand Worker preflights exact PluginVersions before claim; the optional runner profile starts clean lock-scoped child processes. The selected execution loop reconstructs process-local Agent values, materializes exact [managed Skill revisions](31-skill-management.md) as inert Environment content, and uses an exact trusted `EnvironmentProvider` to construct fresh adapters from current Host state. Harness enters and closes those adapters non-destructively; Foundation owns state publication, explicit cleanup, and orphan prune. Foundation supplies no hosted-process run capability: background shell uses the Harness Run-owned controller, receives active-Run completion readiness, and has no cross-Run lookup or idle wake. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
+The worker embeds the public Harness Python API through the deployment's selected [Plugin Runtime profile](36-managed-harness-plugins-and-runtime.md). Run acceptance pins an internal Runtime lock. The default on-demand `WorkerExecutionLoop` preflights exact PluginVersions before claim; the optional runner profile starts clean lock-scoped child processes whose loops scan only their exact lock. After reserving bounded local capacity, a winning claim starts one process-local `RunAttemptExecutor` root task with `LeaseMonitor` and `ControlWatcher` as its only Foundation child tasks. One non-task `RunAttemptControl` facade serializes local control through a private gate, while one non-task `HarnessDriver` runs in the root task and owns every Harness stream call. Each Capability hook borrows its raw Harness context only long enough for the driver to wrap it in a callback-scoped `HarnessHookBoundary`; the control facade receives only that boundary. The executor reconstructs process-local Agent values, materializes exact [managed Skill revisions](31-skill-management.md) as inert Environment content, and uses an exact trusted Foundation attachment capability to construct a fresh adapter for the Run's customer-owned target. Harness enters and closes that adapter non-destructively; Foundation never creates or manages the provider-side target lifecycle. Foundation supplies no hosted-process run capability: background shell uses the Harness Run-owned controller, receives active-Run completion readiness, and has no cross-Run lookup or idle wake. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
 
@@ -41,7 +41,8 @@ flowchart LR
     ControlBus[Thread control signal Redis Streams]
 
     subgraph WorkerRole[Worker role]
-        Runtime[On-demand loop or Runner]
+        Loop[WorkerExecutionLoop<br/>on-demand or lock-scoped Runner]
+        Executor[RunAttemptExecutor]
         Reconstruct[Trusted reconstruction]
         EnvProvider[Environment Provider adapter construction]
         MCPClients[a13n and user Remote MCP clients]
@@ -65,23 +66,24 @@ flowchart LR
     Auth --> Authoring & Interaction & Lifecycle & ConnectivityControl & Feedback & Queue & ActiveControl
     Authoring & Interaction & Lifecycle & ConnectivityControl & Feedback & Queue & ActiveControl --> Database
     AsyncResult -->|scan pending results and accept eligible Runs| Database
-    ActiveControl -. best-effort wakeup .-> ControlBus --> Runtime
-    Runtime -->|scan, preflight, claim, and takeover| Database
-    Runtime --> Reconstruct --> Harness
-    Runtime --> EnvProvider --> Harness
+    ActiveControl -. best-effort wakeup .-> ControlBus --> Executor
+    Loop -->|scan, preflight, claim, and takeover| Database
+    Loop -->|reserved slot and claimed Attempt| Executor
+    Executor --> Reconstruct --> Harness
+    Executor --> EnvProvider --> Harness
     EnvProvider --> Envd
     Harness --> MCPClients
     MCPClients --> MCPGateway --> Adapters --> External
     MCPClients --> External
     ProviderEvent --> EventIngress --> ConnectivityOps
     ConnectivityOps -->|same Foundation application operations| Database
-    Harness --> Observer --> Runtime
-    Runtime -. live AG-UI .-> LiveBus -. authorized subscription .-> API
-    Runtime --> Database & Objects
+    Harness --> Observer --> Executor
+    Executor -. live AG-UI .-> LiveBus -. authorized subscription .-> API
+    Executor --> Database & Objects
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, including immutable Asset publication records, eligible external-event admission and deduplication facts, Thread advancement and queue versions, head selection, queued submissions, the durable Thread inbox and its independent delivery-sequence counter, Runs, current RunAttempt generations, waiting pending summaries, current Thread-associated Environment state, and terminal outcomes. Ordinary steer and asynchronous results use one PostgreSQL acceptance-order FIFO. Each Worker discovers claim, takeover, and pending-inbox work directly from that durable state; control replicas scan pending asynchronous results for inactive-Thread advancement. Redis carries domain-owned live data flow, including each Run's stable bounded-replay message stream and each active Thread's expiring control-signal Stream; Redis publication or consumer-group progress never proves a relational transition or inbox consumption. Shared object storage holds immutable Asset content plus the Run's complete conditionally replaced state, including exact pending requests, consumed inbox receipts, immutable replay snapshot, and bounded large content. The detailed authorities belong to [External Connectivity](40-connectivity/README.md), [Asset Management](32-asset-management.md), [Durable Thread Persistence](11-thread-persistence.md), [Durable Run State](12-run-persistence.md), [Agent Control: Active Execution](19-agent-control-active-execution.md), [Agent Control: Queued Submissions](20-agent-control-queued-submissions.md), [Environment Configuration and Re-entry](29-environment-management.md), [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](25-events-usage-and-delivery.md).
+PostgreSQL is the distributed authority for accepted resources, including immutable Asset publication records, eligible external-event admission and deduplication facts, Thread advancement and queue versions, head selection, queued submissions, the durable Thread inbox and its independent delivery-sequence counter, Runs, immutable Run-to-Environment bindings, current RunAttempt generations, waiting pending summaries, and terminal outcomes. Ordinary steer and asynchronous results use one PostgreSQL acceptance-order FIFO. Each `WorkerExecutionLoop` discovers claim and takeover candidates from that durable state; each current Attempt executor reconciles pending inbox work from PostgreSQL, while control replicas scan pending asynchronous results for inactive-Thread advancement. Redis carries domain-owned live data flow, including each Run's stable bounded-replay message stream and each active Thread's expiring control-signal Stream; Redis publication or consumer-group progress never proves a relational transition or inbox consumption. Shared object storage holds immutable Asset content plus the Run's complete conditionally replaced state, including exact pending requests, consumed inbox receipts, immutable replay snapshot, and bounded large content. The detailed authorities belong to [External Connectivity](40-connectivity/README.md), [Asset Management](32-asset-management.md), [Durable Thread Persistence](11-thread-persistence.md), [Durable Run State](12-run-persistence.md), [Agent Control: Active Execution](19-agent-control-active-execution.md), [Agent Control: Queued Submissions](20-agent-control-queued-submissions.md), [Environment Connections and Runtime Attachments](29-environment-management.md), [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](25-events-usage-and-delivery.md).
 
 ### Simplified Architecture Overview
 
@@ -132,7 +134,7 @@ flowchart TB
 
     Control <-...->|"Control and Wake-up Signals ↓<br/>↑ Consume Run Events"| Redis
 
-    Workers <-...->|"Publish Run Events ↓<br/>↑ Wake an Available Worker<br/>to Process Control Commands"| Redis
+    Workers <-...->|"Publish Run Events ↓<br/>↑ Wake the Current Attempt Executor<br/>to Reconcile Control"| Redis
 
     Workers <-->|"Scan / Atomic Claim<br/>Lease / Fence / Commit Results"| PG
 
@@ -145,34 +147,47 @@ flowchart TB
 ### Foundation Worker-Harness Interaction
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Worker["Foundation Worker"]
-        direction LR
+        Loop["WorkerExecutionLoop<br/>scan · preflight · capacity · claim"]
 
-        subgraph Integration["Foundation–Harness Integration"]
-            direction TB
+        subgraph Executor["one RunAttemptExecutor async scope"]
+            Root["Executor root task<br/>lifecycle · outcome · cleanup"]
+            Lease["LeaseMonitor<br/>child task"]
+            Watch["ControlWatcher<br/>child task"]
+            Control["RunAttemptControl<br/>sole control facade; not a task"]
+            Gate["private RunControlGate<br/>lock + local state only"]
+            Driver["HarnessDriver<br/>runs in root task<br/>sole Harness API adapter"]
+            Boundary["HarnessHookBoundary<br/>callback-scoped context wrapper"]
+            Hooks["FoundationRunControlCapability<br/>not a task"]
 
-            Hooks["Capability / Plugin Hooks<br/>(Injected into Harness through public APIs)"]
-        end
+            subgraph Harness["Agent Harness"]
+                HarnessRuntime["Harness Runtime<br/>Build · Run · Environment · State"]
+                AgentLoop["Pydantic Agent Loop<br/>Capabilities · Toolsets · Model"]
+                Stream[["HarnessRunStream"]]
 
-        subgraph Harness["Agent Harness"]
-            direction TB
-
-            HarnessRuntime["Harness Runtime<br/>Build · Run · Plugin<br/>Environment · State"]
-
-            subgraph PydanticAI["Pydantic AI"]
-                AgentLoop["Agent Loop<br/>Capabilities · Toolsets · Model"]
+                HarnessRuntime <--> AgentLoop
+                HarnessRuntime --> Stream
             end
 
-            AsyncQueue[["Async Event Queue<br/>HarnessStreamEvent"]]
-
-            HarnessRuntime <-->|"Build Agent / Drive Execution"| AgentLoop
-            HarnessRuntime -->|"Emit Events and Results"| AsyncQueue
+            Root -->|"start and join"| Lease & Watch
+            Root -->|"await run in this task"| Driver
+            Lease -->|"await authority_lost"| Control
+            Watch -->|"await reconcile after PG reread"| Control
+            AgentLoop -->|"await hooks"| Hooks
+            Hooks -->|"borrow context"| Driver
+            Driver -.->|"create for one hook"| Boundary
+            Hooks -->|"await control with boundary"| Control
+            Control -.->|"owns privately"| Gate
+            Control -->|"active steer · cancel · direct export"| Driver
+            Control -->|"hook-local enqueue · export"| Boundary
+            Boundary -.->|"wrapped context"| AgentLoop
+            Driver <-->|"construct · enter · sole iteration"| HarnessRuntime
+            Stream -->|"ordered event/result"| Driver
+            Driver -->|"event/outcome candidate"| Root
         end
 
-        Integration -->|"Public API Calls<br/>Capability · Plugin · Collaborators<br/>Environment · State"| Harness
-        Harness -->|"Capability / Plugin Hook Calls"| Hooks
-        AsyncQueue -.->|"Async Notification"| Integration
+        Loop -->|"reserved slot + successful claim"| Root
     end
 ```
 
@@ -192,9 +207,9 @@ flowchart LR
 | Run and RunAttempt                                                      | Foundation                                                                                            | Own durable scheduling, state, fencing, recovery, and outcome                                                      |
 | Queue-if-busy existing-Thread Run intent                                | [Queued Submissions](20-agent-control-queued-submissions.md)                                          | Accepts immediately when eligible or remains editable outside the Run DAG                                          |
 | Thread inbox, steer, asynchronous results, and interrupt                | [Active Execution](19-agent-control-active-execution.md) and [Async Subagents](34-async-subagents.md) | Persists one cross-kind FIFO, binds waiting delivery, reconciles durable receipts, and uses Redis only for wakeups |
-| Environment, EnvironmentRevision, and Run execution configuration       | [Environment Configuration](29-environment-management.md)                                             | Freezes exact desired Provider configuration in Run state                                                          |
-| Current Environment state and Thread associations                       | Foundation Host                                                                                       | Selects authoritative state and publishes changed values                                                           |
-| Fresh Environment construction and backing-target lifecycle             | Worker and trusted Environment Provider                                                               | Constructs one adapter per independent Run; Host policy owns warmup and destroy                                    |
+| Environment, EnvironmentRevision, and Run execution configuration       | [Environment Connections](29-environment-management.md)                                               | Freezes one exact existing-target connection in Run state                                                          |
+| Run-to-Environment binding                                              | Foundation                                                                                            | Correlates each accepted Run with its exact provider target                                                        |
+| Fresh attach-only Environment adapter                                   | Worker and trusted attachment capability                                                              | Constructs one adapter per independent Run without managing target lifecycle                                       |
 | Process-local Agent composition and loop                                | Harness                                                                                               | Built by a trusted Foundation reconstruction adapter                                                               |
 | Current Environment mount set, provider-neutral operations, and routing | Harness                                                                                               | Enters fresh adapters and closes them non-destructively                                                            |
 | Background shell process lifetime and active readiness                  | Harness                                                                                               | Run-owned only; no Foundation process record, cross-Run lookup, or idle wake                                       |
@@ -212,7 +227,7 @@ One artifact supports three independently deployable roles and their all-in-one 
 
 - `all` owns control, worker, and Connectivity components in one process;
 - `control` owns product APIs, authorization, domain-owned control work including Connectivity management operations, deferred feedback, and outbox publication;
-- `worker` owns periodic Run scanning, transactional claim and expired-lease takeover, Agent reconstruction, fresh Environment construction and finalization, Harness invocation, observation consumption, and fenced publication; and
+- `worker` owns `WorkerExecutionLoop` scanning and claim plus one structured `RunAttemptExecutor` root task per successful claim, including two child monitors, one control facade, one root-task `HarnessDriver`, Agent and Environment reconstruction, sole observation consumption, and fenced publication; and
 - `connectivity` owns provider event ingress and polling, the a13n MCP, Ingress native action adapters, and Connector runtime dispatch.
 
 These names describe deployment roles, not product resources. Connectivity remains an internal Foundation Service module and process role, not a separate service or database. A `Run` remains the durable scheduled-work resource regardless of which role processes it. The [runtime contract](01-runtime-configuration-and-deployment.md) owns the complete component matrix, deployment profiles, readiness, and drain behavior. Worker- and Connectivity-only processes expose operational probes but no `/api/v1` product surface and never migrate the schema.
@@ -224,27 +239,35 @@ sequenceDiagram
     participant Caller
     participant Control
     participant DB as Durable store
-    participant Worker as Profile-selected Worker loop
-    participant Provider as Environment Provider
+    participant Loop as WorkerExecutionLoop
+    participant Executor as RunAttemptExecutor
+    participant Provider as Environment Attachment Provider
     participant Harness
 
     Caller->>Control: submit Run with idempotency key
     Control->>Control: authorize, resolve Agent Revision and typed override into EffectiveAgentConfig
     Control->>DB: publish initial state and commit Thread advancement and Run
     Control-->>Caller: durable acceptance
-    Worker->>DB: scan and profile-preflight eligible Runtime lock
-    Worker->>DB: transactionally claim next compatible RunAttempt generation
-    Worker->>Worker: validate state, dependencies, and current authority
-    Worker->>DB: commit fenced preparation decision
-    Worker->>Worker: reconstruct Agent and safe local inputs
-    Worker->>DB: load current Thread-associated Environment states
-    Worker->>Provider: construct fresh adapters without I/O
-    Provider-->>Worker: Environment adapters
-    Worker->>Harness: call in-process API with RunBindings, adapters, and SkillManager
-    Harness->>Harness: enter adapters and materialize exact Skills before Agent work
-    Harness-->>Worker: observations, usage records, state, and result candidates
-    Worker->>Provider: dump state and close adapters in finalization
-    Worker->>DB: publish changed Environment state and fenced Run state/outcome
+    Loop->>DB: scan and profile-preflight eligible Runtime lock
+    Loop->>Loop: reserve bounded executor capacity
+    Loop->>DB: transactionally claim next compatible RunAttempt generation
+    Loop->>Executor: start one async task with AttemptContext
+    par lease renewal
+        Executor->>DB: renew exact Attempt lease
+    and control watching
+        Executor->>DB: reconcile control after Redis wakeups
+    end
+    Executor->>Executor: validate state, dependencies, and current authority
+    Executor->>DB: commit fenced preparation decision
+    Executor->>Executor: reconstruct Agent and safe local inputs
+    Executor->>DB: load exact RunEnvironmentBinding
+    Executor->>Provider: construct fresh attach-only adapter without I/O
+    Provider-->>Executor: Environment adapter
+    Executor->>Harness: call in-process API with RunBindings, adapter, and SkillManager
+    Harness->>Harness: attach exact target and materialize exact Skills before Agent work
+    Harness-->>Executor: observations, usage records, state, and result candidates
+    Executor->>Provider: close process-local attachment in finalization
+    Executor->>DB: publish fenced Run state/outcome
     DB-->>Caller: retained interaction and lifecycle delivery
 ```
 
@@ -262,7 +285,7 @@ flowchart LR
     Applications --> Ports[Authorization, storage, coordination, and reconstruction ports]
     Adapters[Database, Redis, object store, and ingress adapters] --> Ports
     Applications --> Connectivity[Connectivity application operations]
-    Applications --> EnvProvider[Construct fresh Environments]
+    Applications --> EnvProvider[Construct exact-target attachment]
     Applications --> HostedHarness[Hosted Harness adapter]
     HostedHarness --> Harness[agent-harness]
     HostedHarness --> MCPClients[a13n and user Remote MCP clients]

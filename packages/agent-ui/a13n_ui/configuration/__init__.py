@@ -12,7 +12,7 @@ from .external_subagents import (
     preview_external_subagent_import,
     preview_subagent_import,
 )
-from .loader import empty_agent_ui_configuration, load_agent_ui_configuration
+from .loader import configuration_tree_fingerprint, empty_agent_ui_configuration, load_agent_ui_configuration
 from .models import (
     AgentResource,
     AgentSubagentSelection,
@@ -87,6 +87,7 @@ __all__ = [
     "apply_external_subagent_import",
     "apply_subagent_import",
     "canonical_digest",
+    "configuration_tree_fingerprint",
     "delete_configuration_source",
     "delete_resource_source",
     "empty_agent_ui_configuration",

@@ -63,7 +63,7 @@ flowchart LR
     A13nMCP --> ConnectorAdapter[Connector adapter] --> ConnectorService[Connector service] --> SaaS[External SaaS]
 ```
 
-The `connectivity` process role receives provider traffic, operates the a13n MCP, dispatches Connector calls, and invokes the same Foundation application operations used by the control role. It does not call another Foundation pod's private API, execute Agents, or own Run lifecycle. The Worker invokes Harness and constructs the effective Toolset from the accepted Run selections.
+The `connectivity` process role receives provider traffic, operates the a13n MCP, dispatches Connector calls, and invokes the same Foundation application operations used by the control role. It does not call another Foundation pod's private API, execute Agents, or own Run lifecycle. The current `RunAttemptExecutor` in the Worker role invokes Harness and constructs the effective Toolset from the accepted Run selections.
 
 Inbound completion means that an event was rejected safely, ignored by policy, or durably admitted for Foundation input processing. It never waits for Agent execution. Outbound completion is one independently authorized tool outcome.
 

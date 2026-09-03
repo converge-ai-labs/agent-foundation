@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from collections.abc import AsyncGenerator, Mapping, Sequence
@@ -9,7 +10,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import (
@@ -62,7 +63,7 @@ from ag_ui.core.events import (
 )
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after
 from anyio.abc import TaskGroup
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import ToolDenied, ToolReturn
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
@@ -80,14 +81,13 @@ from a13n_ui.composition import (
 )
 from a13n_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
 from a13n_ui.errors import AgentUiError, RunCoordinationError, StoreError
-from a13n_ui.live import AgentUiLiveHub
+from a13n_ui.live import AgentUiLiveHub, AgentUiSummaryHub
 from a13n_ui.model_runtime import SubscriptionSource
 from a13n_ui.storage import (
     AgentResourceSource,
     ChildExecutionHead,
     CompactChildActivity,
     CompactChildDisplay,
-    ExecutionStatus,
     LocalStore,
     MarkdownSubagentSource,
     ObjectKind,
@@ -96,6 +96,14 @@ from a13n_ui.storage import (
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
+)
+from a13n_ui.surfaces import (
+    ChildActivityView,
+    ChildExecutionPage,
+    ChildExecutionView,
+    ChildToolCallView,
+    FailureView,
+    SurfaceModel,
 )
 
 _JSON_ADAPTER = TypeAdapter(JsonValue)
@@ -106,6 +114,9 @@ _MAX_FINAL_ANSWER = 64 * 1024
 _MAX_DISPLAY_ACTIVITIES = 512
 _MAX_TOOL_VALUE_TEXT = 8 * 1024
 _MAX_LIVE_ACTIVITY_EVENTS = 2048
+_MAX_FAILURE_CODE = 256
+_MAX_FAILURE_MESSAGE = 32 * 1024
+_MAX_FAILURE_DETAILS_BYTES = 64 * 1024
 _SENSITIVE_FIELD_NAMES = frozenset(
     {
         "access_token",
@@ -143,6 +154,8 @@ class ParentRunScope:
     """Exact active parent correlation and immutable composition authority."""
 
     thread_id: str
+    root_thread_id: str
+    parent_thread_id: str | None
     run_id: str
     instance: AgentInstanceContext
     composition: ResolvedRunComposition
@@ -152,35 +165,11 @@ class ParentRunScope:
         return self.instance.agent_instance_id
 
 
-class ChildExecutionProjection(BaseModel):
-    """Detached bounded child execution view for Agent UI surfaces."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
-
-    execution_id: str
+class _ChildCursor(SurfaceModel):
+    version: Literal["1"] = "1"
     parent_thread_id: str
-    child_thread_id: str
-    child_run_id: str
-    segment_index: int = Field(ge=0)
-    run_composition: ObjectRef
-    subagent_name: str
-    child_definition_id: str
-    status: ExecutionStatus
-    resumed_from: str | None = None
-    failure: SafeFailure | None = None
-    resumable: bool
-    activity: SubagentActivitySnapshot
-
-
-class ChildExecutionPage(BaseModel):
-    """One detached page of child executions."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
-
-    executions: tuple[ChildExecutionProjection, ...]
-    execution_offset: int = Field(ge=0)
-    total: int = Field(ge=0)
-    next_offset: int | None = Field(default=None, ge=0)
+    created_at: datetime
+    execution_id: str
 
 
 @dataclass(slots=True)
@@ -221,6 +210,7 @@ class AgentUiSubagentOperator(SubagentOperator):
         environment_service: EnvironmentRunService,
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         live_hub: AgentUiLiveHub | None = None,
+        summary_hub: AgentUiSummaryHub | None = None,
         cleanup_timeout_seconds: float = 30.0,
     ) -> None:
         self._store = store
@@ -230,6 +220,7 @@ class AgentUiSubagentOperator(SubagentOperator):
         self._environments = environment_service
         self._subscription_sources = dict(subscription_sources or {})
         self._live_hub = live_hub
+        self._summary_hub = summary_hub
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._lock = Lock()
         self._parents: dict[tuple[str, str, str], ParentRunScope] = {}
@@ -264,6 +255,9 @@ class AgentUiSubagentOperator(SubagentOperator):
 
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        owned_task_group = self._task_group
+        if owned_task_group is not None:
+            owned_task_group.cancel_scope.shield = True
         async with self._lock:
             self._accepting = False
             active = tuple(self._active.values())
@@ -274,28 +268,31 @@ class AgentUiSubagentOperator(SubagentOperator):
         if context is None or task_group is None:
             return
 
-        with move_on_after(timeout_seconds, shield=True) as scope:
+        with move_on_after(timeout_seconds, shield=True) as grace:
             for segment in active:
                 await segment.done.wait()
-        if scope.cancel_called:
+        if grace.cancel_called:
             task_group.cancel_scope.cancel()
-        await context.__aexit__(None, None, None)
-
-        with CancelScope(shield=True):
-            for segment in active:
-                if not segment.done.is_set():
-                    head = await self._store.child_executions.get(segment.execution_id)
-                    if head is not None and head.status == "running":
-                        await self._lose_after_acceptance(
-                            segment.execution_id,
-                            expected_checkpoint=head.selected_checkpoint,
-                        )
-        async with self._lock:
-            self._task_group_context = None
-            self._task_group = None
-            self._parents.clear()
-            self._active.clear()
-            self._signal_change_locked()
+        try:
+            # Do not abandon children that can still write through the App-owned store.
+            # The timeout is a graceful-cancellation bound, not forced Python preemption.
+            await context.__aexit__(None, None, None)
+        finally:
+            with CancelScope(shield=True):
+                for segment in active:
+                    if not segment.done.is_set():
+                        head = await self._store.child_executions.get(segment.execution_id)
+                        if head is not None and head.status == "running":
+                            await self._lose_after_acceptance(
+                                segment.execution_id,
+                                expected_checkpoint=head.selected_checkpoint,
+                            )
+                async with self._lock:
+                    self._task_group_context = None
+                    self._task_group = None
+                    self._parents.clear()
+                    self._active.clear()
+                    self._signal_change_locked()
 
     @asynccontextmanager
     async def bind_parent_run(
@@ -321,8 +318,11 @@ class AgentUiSubagentOperator(SubagentOperator):
         if thread is None:
             raise RunCoordinationError("The parent Thread is unavailable.", code="subagent_parent_scope_invalid")
         key = (thread_id, run_id, instance.agent_instance_id)
+        root_thread_id = await self._root_thread_id(thread)
         scope = ParentRunScope(
             thread_id=thread_id,
+            root_thread_id=root_thread_id,
+            parent_thread_id=thread.parent_thread_id,
             run_id=run_id,
             instance=instance,
             composition=composition,
@@ -448,6 +448,7 @@ class AgentUiSubagentOperator(SubagentOperator):
                 timeout_seconds=self._cleanup_timeout_seconds,
             )
             raise
+        await self._publish_summary(head)
         return _async_view(
             head,
             subagent_name=request.subagent_name,
@@ -503,30 +504,54 @@ class AgentUiSubagentOperator(SubagentOperator):
         *,
         parent_thread_id: str,
         execution_id: str | None = None,
-        execution_offset: int = 0,
-        execution_limit: int = 20,
+        cursor: str | None = None,
+        limit: int = 20,
     ) -> ChildExecutionPage:
         """Query saved child executions without requiring a live parent Run."""
 
+        if not 1 <= limit <= 100:
+            raise RunCoordinationError("Child execution page is invalid.", code="child_page_invalid")
         if execution_id is not None:
+            if cursor is not None:
+                raise RunCoordinationError(
+                    "A child cursor cannot be combined with one execution ID.",
+                    code="child_cursor_invalid",
+                )
             head = await self._require_execution_for_parent(parent_thread_id, execution_id)
             return ChildExecutionPage(
                 executions=(await self._execution_projection(head),),
-                execution_offset=0,
                 total=1,
             )
-        heads, total = await self._store.child_executions.list_for_parent(
+        after: tuple[datetime, str] | None = None
+        if cursor is not None:
+            decoded = _decode_child_cursor(cursor)
+            if decoded.parent_thread_id != parent_thread_id:
+                raise RunCoordinationError(
+                    "Child cursor belongs to another parent Thread.",
+                    code="child_cursor_mismatch",
+                )
+            after = (decoded.created_at, decoded.execution_id)
+        heads, total = await self._store.child_executions.page_for_parent(
             parent_thread_id,
-            offset=execution_offset,
-            limit=execution_limit,
+            after=after,
+            limit=limit + 1,
         )
-        projections = tuple([await self._execution_projection(head) for head in heads])
-        next_offset = execution_offset + len(projections)
+        visible = heads[:limit]
+        projections = tuple([await self._execution_projection(head) for head in visible])
+        next_cursor = None
+        if len(heads) > limit:
+            last = visible[-1]
+            next_cursor = _encode_child_cursor(
+                _ChildCursor(
+                    parent_thread_id=parent_thread_id,
+                    created_at=last.created_at,
+                    execution_id=last.execution_id,
+                )
+            )
         return ChildExecutionPage(
             executions=projections,
-            execution_offset=execution_offset,
             total=total,
-            next_offset=next_offset if next_offset < total else None,
+            next_cursor=next_cursor,
         )
 
     async def wait_child_executions(
@@ -534,40 +559,32 @@ class AgentUiSubagentOperator(SubagentOperator):
         *,
         parent_thread_id: str,
         execution_id: str | None = None,
-        execution_offset: int = 0,
-        execution_limit: int = 20,
+        cursor: str | None = None,
+        limit: int = 20,
         timeout_seconds: float | None = None,
     ) -> ChildExecutionPage:
         """Wait only for matching locally owned segments, then return saved state."""
 
-        timeout = min(timeout_seconds or _DEFAULT_WAIT_SECONDS, _MAX_WAIT_SECONDS)
-        if execution_id is not None:
-            head = await self._require_execution_for_parent(parent_thread_id, execution_id)
-            if head.status == "running":
-                event = await self._wait_event(head.execution_id)
-                with move_on_after(timeout):
-                    await event.wait()
-            return await self.query_child_executions(
-                parent_thread_id=parent_thread_id,
-                execution_id=execution_id,
-            )
-
-        heads, _total = await self._store.child_executions.list_for_parent(
-            parent_thread_id,
-            offset=execution_offset,
-            limit=execution_limit,
+        timeout = _wait_timeout(timeout_seconds)
+        page = await self.query_child_executions(
+            parent_thread_id=parent_thread_id,
+            execution_id=execution_id,
+            cursor=cursor,
+            limit=limit,
         )
         async with self._lock:
             active_ids = frozenset(self._active)
             changed = self._changed
-        if any(head.status == "running" and head.execution_id in active_ids for head in heads):
+        if any(item.local_status == "active" and item.execution_id in active_ids for item in page.executions):
             with move_on_after(timeout):
                 await changed.wait()
-        return await self.query_child_executions(
-            parent_thread_id=parent_thread_id,
-            execution_offset=execution_offset,
-            execution_limit=execution_limit,
-        )
+            return await self.query_child_executions(
+                parent_thread_id=parent_thread_id,
+                execution_id=execution_id,
+                cursor=cursor,
+                limit=limit,
+            )
+        return page
 
     async def wait(
         self,
@@ -594,7 +611,7 @@ class AgentUiSubagentOperator(SubagentOperator):
     ) -> SubagentWaitResult:
         """Bound waiting to locally owned segments and return detached projections."""
 
-        timeout = min(timeout_seconds or _DEFAULT_WAIT_SECONDS, _MAX_WAIT_SECONDS)
+        timeout = _wait_timeout(timeout_seconds)
         if execution_id is not None:
             head = await self._require_execution_for_parent(parent_thread_id, execution_id)
             if head.status == "running":
@@ -788,6 +805,7 @@ class AgentUiSubagentOperator(SubagentOperator):
                 timeout_seconds=self._cleanup_timeout_seconds,
             )
             raise
+        await self._publish_summary(head)
         return _async_view(
             head,
             subagent_name=subagent_name,
@@ -910,6 +928,7 @@ class AgentUiSubagentOperator(SubagentOperator):
                     expected_checkpoint,
                     terminal_events,
                 )
+                await self._publish_summary(current.head)
                 await self._publish_live(current, durable_events)
                 return
         except BaseException as exc:
@@ -1189,6 +1208,7 @@ class AgentUiSubagentOperator(SubagentOperator):
             )
         except StoreError:
             return
+        await self._publish_summary_by_execution(execution_id)
 
     async def _lose_after_acceptance(
         self,
@@ -1205,6 +1225,28 @@ class AgentUiSubagentOperator(SubagentOperator):
             )
         except StoreError:
             return
+        await self._publish_summary_by_execution(execution_id)
+
+    async def _publish_summary_by_execution(self, execution_id: str) -> None:
+        head = await self._store.child_executions.get(execution_id)
+        if head is not None:
+            await self._publish_summary(head)
+
+    async def _publish_summary(self, head: ChildExecutionHead) -> None:
+        if self._summary_hub is None:
+            return
+        child = await self._store.threads.get(head.child_thread_id)
+        if child is None:
+            return
+        try:
+            await self._summary_hub.publish(
+                kind="child_execution",
+                root_thread_id=await self._root_thread_id(child),
+                thread_id=head.child_thread_id,
+                execution_id=head.execution_id,
+            )
+        except Exception:
+            return
 
     async def _publish_live(
         self,
@@ -1216,6 +1258,8 @@ class AgentUiSubagentOperator(SubagentOperator):
         try:
             await self._live_hub.publish(
                 run_kind="child",
+                root_thread_id=prepared.scope.root_thread_id,
+                parent_thread_id=prepared.head.parent_thread_id,
                 thread_id=prepared.stream.thread_id,
                 run_id=prepared.stream.run_id,
                 execution_id=prepared.head.execution_id,
@@ -1296,6 +1340,25 @@ class AgentUiSubagentOperator(SubagentOperator):
             )
         return checkpoint
 
+    async def _root_thread_id(self, thread: Thread) -> str:
+        current = thread
+        seen: set[str] = set()
+        while current.parent_thread_id is not None:
+            if current.thread_id in seen:
+                raise RunCoordinationError(
+                    "The Thread parent lineage contains a cycle.",
+                    code="subagent_parent_scope_invalid",
+                )
+            seen.add(current.thread_id)
+            parent = await self._store.threads.get(current.parent_thread_id)
+            if parent is None:
+                raise RunCoordinationError(
+                    "The Thread parent lineage is incomplete.",
+                    code="subagent_parent_scope_invalid",
+                )
+            current = parent
+        return current.thread_id
+
     async def _execution_identity(self, head: ChildExecutionHead) -> tuple[str, str]:
         first = await self._store.child_executions.first_for_child(head.child_thread_id)
         if first is None or first.parent_thread_id != head.parent_thread_id:
@@ -1321,26 +1384,36 @@ class AgentUiSubagentOperator(SubagentOperator):
     async def _execution_projection(
         self,
         head: ChildExecutionHead,
-    ) -> ChildExecutionProjection:
+    ) -> ChildExecutionView:
         view = await self._execution_view(head)
         assert view.thread_id is not None
         assert view.child_run_id is not None
         assert view.segment_index is not None
         activity = view.activity or SubagentActivitySnapshot(sequence=0)
-        return ChildExecutionProjection(
+        child = await self._require_child_thread(head)
+        async with self._lock:
+            active = self._active.get(head.execution_id)
+        locally_active = head.status == "running" and active is not None
+        return ChildExecutionView(
             execution_id=head.execution_id,
+            root_thread_id=await self._root_thread_id(child),
             parent_thread_id=head.parent_thread_id,
             child_thread_id=view.thread_id,
             child_run_id=view.child_run_id,
             segment_index=view.segment_index,
-            run_composition=head.run_composition,
+            composition_id=head.run_composition.logical_digest,
             subagent_name=view.subagent_name,
             child_definition_id=view.child_definition_id,
-            status=head.status,
+            persisted_status=head.status,
+            local_status="active" if locally_active else "unavailable",
             resumed_from=head.resumed_from,
-            failure=head.failure,
+            failure=None if head.failure is None else _surface_failure(head.failure),
             resumable=head.resumable,
-            activity=activity,
+            activity=_surface_activity(activity),
+            available_actions=("wait", "steer", "cancel") if locally_active else (),
+            created_at=head.created_at,
+            updated_at=head.updated_at,
+            completed_at=head.completed_at,
         )
 
     async def _execution_view(self, head: ChildExecutionHead) -> SubagentExecutionView:
@@ -1777,15 +1850,80 @@ def _terminal_persistence_error(
     )
 
 
+def _encode_child_cursor(value: _ChildCursor) -> str:
+    return base64.urlsafe_b64encode(value.model_dump_json().encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _decode_child_cursor(value: str) -> _ChildCursor:
+    if not value or len(value) > 4096:
+        raise RunCoordinationError("Child cursor is invalid.", code="child_cursor_invalid")
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        payload = base64.b64decode(padded, altchars=b"-_", validate=True)
+        return _ChildCursor.model_validate_json(payload, strict=True)
+    except (ValueError, ValidationError) as exc:
+        raise RunCoordinationError("Child cursor is invalid.", code="child_cursor_invalid") from exc
+
+
+def _surface_activity(value: SubagentActivitySnapshot) -> ChildActivityView:
+    return ChildActivityView(
+        sequence=value.sequence,
+        output_preview=value.output_preview,
+        output_truncated=value.output_truncated,
+        active_tool_calls=tuple(_surface_tool_call(item) for item in value.active_tool_calls),
+        recent_tool_calls=tuple(_surface_tool_call(item) for item in value.recent_tool_calls),
+        dropped_tool_calls=value.dropped_tool_calls,
+    )
+
+
+def _surface_tool_call(value: SubagentToolCallSnapshot) -> ChildToolCallView:
+    return ChildToolCallView(
+        tool_call_id=value.tool_call_id,
+        tool_name=value.tool_name,
+        status=value.status,
+        arguments=value.arguments,
+        result=value.result,
+    )
+
+
+def _surface_failure(value: SafeFailure) -> FailureView:
+    message = value.message
+    if len(message) > _MAX_FAILURE_MESSAGE:
+        message = message[: _MAX_FAILURE_MESSAGE - 23] + "\n...[message truncated]"
+    return FailureView(
+        code=value.code[:_MAX_FAILURE_CODE],
+        message=message,
+        details=_bounded_failure_details(value.details),
+        retry_hint=value.retry_hint,
+    )
+
+
+def _bounded_failure_details(value: object) -> dict[str, JsonValue] | None:
+    try:
+        details = _JSON_ADAPTER.validate_python(value)
+        if not isinstance(details, dict):
+            return None
+        encoded = json.dumps(details, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    except (TypeError, ValueError, ValidationError):
+        return None
+    return details if len(encoded) <= _MAX_FAILURE_DETAILS_BYTES else None
+
+
+def _wait_timeout(value: float | None) -> float:
+    if value is None:
+        return _DEFAULT_WAIT_SECONDS
+    if not 0 <= value <= _MAX_WAIT_SECONDS:
+        raise RunCoordinationError(
+            "Child wait timeout is outside supported bounds.",
+            code="child_wait_invalid",
+        )
+    return value
+
+
 def _safe_failure(exc: BaseException, *, fallback_code: str) -> SafeFailure:
     code = exc.code if isinstance(exc, AgentUiError) else fallback_code
     message = _redact_text(str(exc).strip()) or "The asynchronous child execution failed."
     return SafeFailure(code=code[:128], message=message[:4096])
 
 
-__all__ = [
-    "AgentUiSubagentOperator",
-    "ChildExecutionPage",
-    "ChildExecutionProjection",
-    "ParentRunScope",
-]
+__all__ = ["AgentUiSubagentOperator", "ParentRunScope"]

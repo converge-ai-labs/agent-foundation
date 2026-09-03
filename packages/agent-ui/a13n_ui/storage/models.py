@@ -73,6 +73,7 @@ class ThreadRecord(Base):
     parent_thread_id: Mapped[str | None] = mapped_column(
         String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=True, index=True
     )
+    metadata_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)

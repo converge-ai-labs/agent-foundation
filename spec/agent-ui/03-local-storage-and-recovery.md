@@ -13,19 +13,19 @@ The store supports local restart and inspection, not durable work scheduling. Ag
 
 ## Persisted Values
 
-| Value                                                                              | Storage                      | Authority                                                     |
-| ---------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------- |
-| Desired resource definitions and global defaults                                   | YAML and Markdown files      | Human-editable desired behavior                               |
-| Accepted configuration generation and resource indexes                             | SQLite plus immutable object | Current complete validated file generation                    |
-| Thread metadata, sticky configuration, and initial-state reference                 | SQLite                       | Identity, defaults, and first-Run bootstrap                   |
-| Empty initial `HarnessState`                                                       | Immutable object             | Harness-generated Thread identity before any selected Run     |
-| Resolved Run composition                                                           | Immutable object             | Exact behavior and dependency provenance captured for one Run |
-| Root or child continuation bundle                                                  | Immutable object             | Exact selected `HarnessState` resume authority                |
-| Child execution heads                                                              | SQLite                       | Segment correlation, saved status, and selected checkpoint    |
-| Compact child display                                                              | Immutable child checkpoint   | Inspection history only                                       |
-| Environment-state references                                                       | SQLite plus immutable files  | Current Host-authoritative state                              |
-| Active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory               | Current App only                                              |
-| Logs and OpenTelemetry                                                             | Configured process outputs   | Diagnostics only                                              |
+| Value                                                                                             | Storage                      | Authority                                                         |
+| ------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------- |
+| Desired resource definitions and global defaults                                                  | YAML and Markdown files      | Human-editable desired behavior                                   |
+| Accepted configuration generation and resource indexes                                            | SQLite plus immutable object | Current complete validated file generation                        |
+| Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                       | Identity, mutable presentation, defaults, and first-Run bootstrap |
+| Empty initial `HarnessState`                                                                      | Immutable object             | Harness-generated Thread identity before any selected Run         |
+| Resolved Run composition                                                                          | Immutable object             | Exact behavior and dependency provenance captured for one Run     |
+| Root or child continuation bundle                                                                 | Immutable object             | Exact selected `HarnessState` resume authority                    |
+| Child execution heads                                                                             | SQLite                       | Segment correlation, saved status, and selected checkpoint        |
+| Compact child display                                                                             | Immutable child checkpoint   | Inspection history only                                           |
+| Environment-state references                                                                      | SQLite plus immutable files  | Current Host-authoritative state                                  |
+| Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory               | Current App only                                                  |
+| Logs and OpenTelemetry                                                                            | Configured process outputs   | Diagnostics only                                                  |
 
 ## SQLite Contract
 
@@ -33,18 +33,24 @@ SQLite uses WAL, foreign keys, a bounded busy timeout, UTC-aware persistence val
 
 The conceptual groups are:
 
-| Group            | Representative facts                                                                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Configuration    | Accepted generation digest, source/resource digests, and safe diagnostics                                            |
-| Threads          | Identity, parent, metadata, initial state, sticky configuration version, exact selections, and selected continuation |
-| Child executions | Execution ID, child Run ID, segment index, saved status, composition, checkpoint, and failure                        |
-| Environments     | Complete Thread/configuration/root binding key and current state reference                                           |
+| Group            | Representative facts                                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Configuration    | Accepted generation digest, source/resource digests, and safe diagnostics                                                               |
+| Threads          | Identity, parent, metadata version and values, initial state, sticky configuration version, exact selections, and selected continuation |
+| Child executions | Execution ID, child Run ID, segment index, saved status, composition, checkpoint, and failure                                           |
+| Environments     | Complete Thread/configuration/root binding key and current state reference                                                              |
 
 Resource lookup rows are rebuildable projections of the accepted file generation. They accelerate queries but never authorize edits or survive as an alternate resource definition when the owning file is removed.
 
-One App serializes root admission per Thread and state changes per child execution. Separate local App processes can open the same store, but they do not share active tasks or take over one another's executions. Thread configuration updates compare an expected integer version; continuation, child checkpoint, accepted generation, and Environment state selection compare expected references. A mismatch fails explicitly and never overwrites the newer head.
+One App serializes root admission per Thread and state changes per child execution. Separate local App processes can open the same store, but they do not share root receipts, active tasks, or control and do not take over one another's executions. Thread metadata and configuration updates compare their independent expected integer versions; continuation, child checkpoint, accepted generation, and Environment state selection compare expected references. A mismatch fails explicitly and never overwrites the newer head.
 
 Agent UI does not use process lock files, PID inspection, heartbeats, or time-based leases to infer whether another App is alive. Current execution ownership is process-local.
+
+## Thread Metadata Head
+
+Each Thread has one mutable metadata head containing `version`, nullable `title`, and `archived`. A title/archive mutation compares its required expected version, changes both supplied fields in one short transaction, and increments the version once. A no-op can retain the current version. Metadata changes update Thread recency independently from configuration and continuation selection.
+
+Metadata compare-and-select prevents a stale surface from silently overwriting a title or archive change. Process-local active status is not stored in this head. Root archive admission additionally checks current-process activity; another process remains an ordinary concurrent writer and is handled by the metadata version rather than a liveness protocol.
 
 ## Thread Configuration Head
 
@@ -92,7 +98,9 @@ class StoredContinuation(BaseModel):
 
 The composition reference explains which Agent, Project roots, Capability, Plugin, MCP, Provider, and Run Extension behavior produced the checkpoint. It does not constrain the next Run to use the same composition.
 
-At an acceptable complete or suspended result, Agent UI publishes the continuation and compare-and-selects it against the reference loaded at admission. Publication or selection failure leaves the prior or concurrently selected continuation current. Root input, partial output, live AG-UI events, Environment files, and child display never synthesize a continuation.
+Deferred requests are stored only as part of the complete suspended continuation. Surface projections use the selected continuation digest as an opaque continuation ID and never expose the object reference or native request value. A deferred response compares that exact selected reference and reconstructs its complete native request/result pair in memory.
+
+At an acceptable complete or suspended result, Agent UI publishes the continuation and compare-and-selects it against the reference loaded at admission. Publication or selection failure leaves the prior or concurrently selected continuation current. Root receipts, input, partial output, live AG-UI events, Environment files, and child display never synthesize a continuation.
 
 ## Child Threads and Execution Segments
 
@@ -114,7 +122,7 @@ class ChildExecutionHead(BaseModel):
 
 The composition identifies the Agent definition used by that segment. It is historical provenance, not a permanent child-definition compatibility gate. A later child segment can use a different Agent, Capability, Plugin, MCP, Project, or Environment profile selection while continuing the same child Harness history.
 
-A saved `running` status means only that no terminal checkpoint or explicit local loss was selected. It is not evidence that a process, task, or connection remains alive. Another App can inspect saved projections but cannot steer, cancel, wait on, or take over a vanished local execution.
+A saved `running` status means only that no terminal checkpoint or explicit local loss was selected. It is not evidence that a process, task, or connection remains alive. A surface view therefore reports persisted status separately from current-process activity and available actions. Another App can inspect saved projections but cannot steer, cancel, wait on, or take over a vanished local execution.
 
 ### Child Checkpoint
 
@@ -147,7 +155,7 @@ The profile digest reuses the accepted generation's canonical normalized content
 
 ## Recovery
 
-Startup validates retained values lazily and reloads the file configuration independently. It does not replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display.
+Startup validates retained values lazily and reloads the file configuration independently. It does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display.
 
 A Thread resumes from its selected continuation using its current sticky configuration unless the next admission applies a patch. A Thread with no selected continuation starts its first Run from the immutable empty `HarnessState` created with `HarnessState.new()` when the Thread was inserted. The generated Harness `thread_id` is the Agent UI Thread ID. If selected resources are missing from the current accepted generation or cannot reconstruct against installed dependencies, the Run fails before dispatch; recovery does not fall back to the composition that produced the prior continuation.
 
@@ -176,11 +184,13 @@ External model, tool, and Environment effects can be unknown and may repeat afte
 
 ## Invariants
 
-1. Files own desired resources; SQLite owns accepted projections and mutable runtime heads.
-2. Thread configuration is sticky, exact, versioned, and replaceable between Runs.
-3. Every admitted Run has one immutable resolved composition.
-4. A continuation records but is not permanently bound to its producing composition.
-5. Root input and active Runs are not durable work records.
-6. Compact display never becomes Harness continuation state.
-7. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery.
-8. Transactions remain short and outside file or external execution I/O.
+01. Files own desired resources; SQLite owns accepted projections and mutable runtime heads.
+02. Thread configuration is sticky, exact, versioned, and replaceable between Runs.
+03. Thread metadata and configuration are independent versioned heads.
+04. Every admitted Run has one immutable resolved composition.
+05. A continuation records but is not permanently bound to its producing composition.
+06. Root receipts, input, and active Runs are not durable work records.
+07. Deferred response authority is the exact selected suspended continuation.
+08. Compact display never becomes Harness continuation state.
+09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery.
+10. Transactions remain short and outside file or external execution I/O.

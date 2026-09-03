@@ -271,7 +271,7 @@ Run acceptance resolves the final list into `EffectiveAgentConfig.skills`, inclu
 
 ## Worker Materialization and Harness Use
 
-Before Harness entry, the Worker verifies the exact locks in `EffectiveAgentConfig.skills`, then reads and verifies their package content. It constructs an explicit `SkillManager` with the exact Host materializer and supplies `SkillSelectionRunCapability` with every effective Skill name. After Harness enters the fresh primary Environment, but before model or tool work, `SkillsCapability`:
+Before Harness entry, the current `RunAttemptExecutor` verifies the exact locks in `EffectiveAgentConfig.skills`, then reads and verifies their package content. It constructs an explicit `SkillManager` with the exact Host materializer and supplies `SkillSelectionRunCapability` with every effective Skill name. After Harness enters the fresh primary Environment, but before model or tool work, `SkillsCapability`:
 
 1. invokes the materializer to write those files through the current version-pinned `FileOperator` into a Host-reserved content-addressed root;
 2. verifies the complete root and writes a Host completion manifest last;
@@ -291,7 +291,7 @@ Materialization outcomes are:
 | `skill_materialization_stale`       | The Environment mount incarnation, Provider generation, or RunAttempt fence changed; abandon the attempt and reacquire authority    |
 | `skill_materialization_cancelled`   | Cancellation or shutdown won; preserve the ordinary cancelled or interrupted lifecycle                                              |
 
-Materialization is content-addressed Host preparation, not an Agent tool call or a backing-target recovery record. A replacement attempt uses its fresh Environment, verifies or recreates the same exact root when available, and never substitutes the current Skill head. No failure above publishes Skill instructions, paths, model requests, or Agent tool calls.
+Materialization is content-addressed Host preparation, not an Agent tool call or an Environment attachment record. A replacement attempt attaches to the same frozen customer-owned target, verifies or recreates the same exact root when available, and never substitutes the current Skill head. No failure above publishes Skill instructions, paths, model requests, or Agent tool calls.
 
 ## Compatibility
 

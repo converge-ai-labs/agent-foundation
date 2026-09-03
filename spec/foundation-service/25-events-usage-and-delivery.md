@@ -28,11 +28,14 @@ Messages, permitted reasoning units, tool calls, commands, file changes, approva
 ```mermaid
 flowchart LR
     subgraph Worker[Worker role]
-        Harness[HarnessRunStream]
-        Observer[HarnessAguiObserver]
-        Processor[Foundation visibility processor]
-        Publisher[Bounded Run Stream publisher]
-        Harness --> Observer --> Processor --> Publisher
+        subgraph Executor[RunAttemptExecutor root task]
+            Harness[HarnessRunStream]
+            Driver[HarnessDriver]
+            Observer[HarnessAguiObserver]
+            Processor[Foundation visibility processor]
+            Publisher[Bounded Run Stream publisher]
+            Harness --> Driver --> Observer --> Processor --> Publisher
+        end
     end
 
     Redis[Run-scoped Redis Stream]
@@ -48,9 +51,9 @@ flowchart LR
     Publisher --> Redis --> Subscriber
 ```
 
-One observer belongs to one Harness Run and is consumed by its current worker. The Foundation visibility processor applies authorization, redaction, and stable Item projection policy without changing upstream event meaning. Credentials, private state, arbitrary logs, and unbounded content never enter the Run Stream.
+One observer belongs to one Harness Run. The current executor root runs one `HarnessDriver`, which is the sole Harness-stream consumer and drives that observer; `LeaseMonitor` and `ControlWatcher` never consume Harness events. The Foundation visibility processor applies authorization, redaction, and stable Item projection policy without changing upstream event meaning. Credentials, private state, arbitrary logs, and unbounded content never enter the Run Stream.
 
-Before publishing its first live observation, the worker durably binds the immutable Harness Run identity to the current RunAttempt. It then appends bounded messages to the one stable tenant-scoped Redis Stream owned by the Run. Replacement RunAttempts create fresh Harness Runs but continue the same Run Stream; every entry carries exact RunAttempt and Harness Run provenance.
+Before publishing its first live observation, the executor durably binds the immutable Harness Run identity to the current RunAttempt. It then appends bounded messages to the one stable tenant-scoped Redis Stream owned by the Run. Replacement RunAttempts create fresh Harness Runs but continue the same Run Stream; every entry carries exact RunAttempt and Harness Run provenance.
 
 Expected planned handoff is a Foundation Attempt transition, not a Harness Run outcome. Closing the old process-local stream for `run_attempt.yielded` emits no AG-UI `RUN_FINISHED`, `RUN_ERROR`, or synthetic cancelled result, does not close the Run Stream, and does not repeat `run.running`. The successor's fresh Harness Run continues observations in the same Run Stream under new Attempt and Run provenance.
 

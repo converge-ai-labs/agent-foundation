@@ -15,7 +15,6 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpcore2
 import httpx2
-import mammoth
 from a13n_harness.capabilities import (
     DocumentConversionError,
     DocumentConversionRequest,
@@ -35,13 +34,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
 from anyio import getaddrinfo, to_thread
-from markdownify import markdownify
-from openpyxl import load_workbook
-from pptx import Presentation
-from pptx.shapes.autoshape import Shape
-from pptx.shapes.placeholder import BasePlaceholder
 from pydantic_ai.capabilities import AbstractCapability
-from pypdf import PdfReader
 
 _MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024
 _USER_AGENT = "a13n-ui/0 web tools"
@@ -309,6 +302,8 @@ class HtmlScrapeProvider:
             if "html" not in content_type and "text/" not in content_type:
                 raise WebProviderError("web_content_type_unsupported")
             source = (await _read_body(response)).decode("utf-8", errors="replace")
+            from markdownify import markdownify
+
             converted = markdownify(source, heading_style="ATX").strip()
             if len(converted.encode("utf-8")) > request.max_markdown_bytes:
                 raise WebProviderError("web_body_too_large")
@@ -426,6 +421,8 @@ def _convert_document(request: DocumentConversionRequest) -> DocumentConversionR
         if request.kind == "pdf":
             return _convert_pdf(request)
         if suffix == ".docx":
+            import mammoth
+
             return _text_result(mammoth.convert_to_markdown(BytesIO(request.source_bytes)).value, request)
         if suffix == ".pptx":
             return _convert_presentation(request)
@@ -441,6 +438,8 @@ def _convert_document(request: DocumentConversionRequest) -> DocumentConversionR
 
 
 def _convert_pdf(request: DocumentConversionRequest) -> DocumentConversionResult:
+    from pypdf import PdfReader
+
     reader = PdfReader(BytesIO(request.source_bytes))
     total = len(reader.pages)
     start = request.page_start or 1
@@ -465,6 +464,10 @@ def _convert_pdf(request: DocumentConversionRequest) -> DocumentConversionResult
 
 
 def _convert_presentation(request: DocumentConversionRequest) -> DocumentConversionResult:
+    from pptx import Presentation
+    from pptx.shapes.autoshape import Shape
+    from pptx.shapes.placeholder import BasePlaceholder
+
     presentation = Presentation(BytesIO(request.source_bytes))
     slides: list[str] = []
     for index, slide in enumerate(presentation.slides, start=1):
@@ -478,6 +481,8 @@ def _convert_presentation(request: DocumentConversionRequest) -> DocumentConvers
 
 
 def _convert_workbook(request: DocumentConversionRequest) -> DocumentConversionResult:
+    from openpyxl import load_workbook
+
     workbook = load_workbook(BytesIO(request.source_bytes), read_only=True, data_only=True)
     try:
         sheets: list[str] = []
@@ -500,6 +505,8 @@ def _convert_workbook(request: DocumentConversionRequest) -> DocumentConversionR
 
 def _convert_epub(request: DocumentConversionRequest) -> DocumentConversionResult:
     import zipfile
+
+    from markdownify import markdownify
 
     sections: list[str] = []
     with TemporaryDirectory() as temporary:

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-A Foundation hook is a stable, filterable notification name for an existing Foundation fact or public run observation. It is not a remote execution extension point, another Agent loop, or another lifecycle authority. The Worker embeds Harness in-process, consumes its public callbacks through `HarnessAguiObserver`, and combines those process-local observations with Foundation-owned lifecycle and projection sources.
+A Foundation hook is a stable, filterable notification name for an existing Foundation fact or public run observation. It is not a remote execution extension point, another Agent loop, or another lifecycle authority. A Worker's `RunAttemptExecutor` embeds Harness in-process, consumes its public stream through `HarnessAguiObserver`, and combines those process-local observations with Foundation-owned lifecycle and projection sources.
 
 Hook delivery preserves the authority of its source:
 
@@ -21,7 +21,7 @@ flowchart LR
 
     subgraph Foundation[Foundation Service]
         subgraph WorkerRole[Worker role]
-            WorkerOps[Worker orchestration]
+            WorkerOps[Worker loop and Attempt executor]
             Harness[Embedded Harness]
             Observer[HarnessAguiObserver]
             Adapter[Hook source adapter]
@@ -63,7 +63,7 @@ flowchart LR
 
 The shared-domain box is a logical code layer, not an independently deployed service. A `control` process invokes the Run and RunAttempt domain services in-process for Run acceptance and caller control commands, and invokes the Hook subscription service for subscription mutations. Inline creation composes both domain services inside the same short Run-acceptance transaction. A `worker` process invokes the same Run and RunAttempt contracts in-process for claim, fencing, Attempt transitions, and Run outcome commits. Separate roles coordinate through authoritative PostgreSQL records and do not call a Domain network endpoint. The `all` role loads both call paths in one process.
 
-The Worker invokes Harness through its public process-local API rather than a Foundation SDK or network hop. The Hook source adapter assigns Foundation correlation and routing names without changing the meaning of an AG-UI event. The [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) contract owns PostgreSQL lifecycle facts and the Run-scoped Redis Stream. [Events, Interaction Projection, Usage, and Delivery](25-events-usage-and-delivery.md) owns the common delivery envelope and source-authority separation. [Durable Operations and Outbox](06-durable-operations-and-outbox.md) owns reliable external publication. [Native Streaming and Notifications](21-native-streaming-and-notifications.md) owns Run SSE, Workspace lifecycle event reads, and the best-effort Native notification WebSocket. Those three surfaces keep their own envelopes, filters, cursors, and delivery guarantees.
+The Attempt executor invokes Harness through its public process-local API rather than a Foundation SDK or network hop. The Hook source adapter assigns Foundation correlation and routing names without changing the meaning of an AG-UI event. The [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) contract owns PostgreSQL lifecycle facts and the Run-scoped Redis Stream. [Events, Interaction Projection, Usage, and Delivery](25-events-usage-and-delivery.md) owns the common delivery envelope and source-authority separation. [Durable Operations and Outbox](06-durable-operations-and-outbox.md) owns reliable external publication. [Native Streaming and Notifications](21-native-streaming-and-notifications.md) owns Run SSE, Workspace lifecycle event reads, and the best-effort Native notification WebSocket. Those three surfaces keep their own envelopes, filters, cursors, and delivery guarantees.
 
 The diagram contains no database-to-caller push path. Control reads `lifecycle_events` only when a caller invokes the event API. It does not poll the lifecycle table for new hooks. The only PostgreSQL polling loop shown is the Webhook publisher claiming `pending` Outbox rows. Ordinary resource or large-content retrieval is outside this Hook contract.
 
@@ -71,17 +71,17 @@ An Outbox is the PostgreSQL `outbox_records` table, not another middleware servi
 
 ## Boundaries and Hook Model
 
-| Concern                                                | Owner                                | Hook relationship                                               |
-| ------------------------------------------------------ | ------------------------------------ | --------------------------------------------------------------- |
-| Model, tool, and Harness Run observation               | Harness and Pydantic AI              | Supplies process-local source observations                      |
-| Harness-to-AG-UI conversion                            | Agent Stream Protocol                | Supplies standard AG-UI types and complete `CUSTOM` fallback    |
-| Run and RunAttempt state                               | Foundation owning domain             | Supplies authoritative committed lifecycle facts                |
-| Item state                                             | Foundation presentation projection   | Supplies live, non-lifecycle semantic units                     |
-| Managed Environment state and backing-target lifecycle | Foundation Host and Provider adapter | Supplies bounded Run-local entry and finalization observations  |
-| Environment adapter operations                         | Fresh process-local Environment      | Never makes a live observation durable authority                |
-| Hook name registry and subscription matching           | This contract                        | Selects existing source semantics without changing them         |
-| Transport, retry, and destination acknowledgement      | Foundation delivery                  | Never changes the source fact or Agent outcome                  |
-| Caller business workflow                               | Caller                               | Reacts to notifications and reconciles from authoritative reads |
+| Concern                                           | Owner                              | Hook relationship                                               |
+| ------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------- |
+| Model, tool, and Harness Run observation          | Harness and Pydantic AI            | Supplies process-local source observations                      |
+| Harness-to-AG-UI conversion                       | Agent Stream Protocol              | Supplies standard AG-UI types and complete `CUSTOM` fallback    |
+| Run and RunAttempt state                          | Foundation owning domain           | Supplies authoritative committed lifecycle facts                |
+| Item state                                        | Foundation presentation projection | Supplies live, non-lifecycle semantic units                     |
+| Run Environment binding and attachment            | Foundation and Provider adapter    | Supplies bounded Run-local attachment observations              |
+| Environment adapter operations                    | Fresh process-local Environment    | Never makes a live observation durable authority                |
+| Hook name registry and subscription matching      | This contract                      | Selects existing source semantics without changing them         |
+| Transport, retry, and destination acknowledgement | Foundation delivery                | Never changes the source fact or Agent outcome                  |
+| Caller business workflow                          | Caller                             | Reacts to notifications and reconciles from authoritative reads |
 
 Every durable Hook delivery over Webhook uses the common `DeliveryEnvelope`. This contract owns the finite hook-name registry; the delivery contract owns the durable envelope fields and transport meaning. Native Run SSE uses `RunStreamEvent`, Workspace lifecycle reads use `LifecycleEvent`, and the notification WebSocket uses `NotificationFrame`; none is translated into the durable Hook envelope. Common correlation for durable Hook delivery includes the Workspace and, when applicable, Session, Thread, Run, RunAttempt, Harness Run, source, owning resource, resource sequence and version, schema version, occurrence time, subscription, and delivery identity. A field is absent rather than guessed when the source does not own it.
 
@@ -249,7 +249,7 @@ Native clients use two notification surfaces owned by [Native Streaming and Noti
 ```mermaid
 sequenceDiagram
     participant Harness
-    participant Worker
+    participant Executor as RunAttemptExecutor
     participant Redis as Run Redis Stream
     participant Control
     participant Caller
@@ -257,16 +257,16 @@ sequenceDiagram
     Caller->>Control: open authorized Run SSE with cursor
     Control->>Control: authenticate, authorize, and close the database session
     Control->>Redis: establish replay-to-live subscription
-    Harness-->>Worker: public callback or result observation
-    Worker->>Worker: AG-UI conversion, visibility policy, and bounded enqueue
-    Worker->>Redis: append RunStreamEvent
+    Harness-->>Executor: public stream item
+    Executor->>Executor: AG-UI conversion, visibility policy, and bounded enqueue
+    Executor->>Redis: append RunStreamEvent
     Redis-->>Control: retained or live entry
     Control-->>Caller: RunStreamEvent over SSE
     Caller--xControl: disconnect
-    Note over Harness,Worker: Agent work continues independently
+    Note over Harness,Executor: Agent work continues independently
 ```
 
-The Worker performs no caller network I/O while processing a Harness callback. Bounded queues isolate Harness progress from Redis and client speed. Overflow or a slow client closes the affected attachment or produces an explicit replay gap; it never cancels or seals the Run. Live-only AG-UI observations do not advance the durable lifecycle replay cursor.
+The Attempt executor performs no caller network I/O while processing a Harness stream item. Bounded queues isolate Harness progress from Redis and client speed. Overflow or a slow client closes the affected attachment or produces an explicit replay gap; it never cancels or seals the Run. Live-only AG-UI observations do not advance the durable lifecycle replay cursor.
 
 The caller owns the Run SSE consumption cursor. It durably records the `id` of the last event that its local processing completely applied, and sends that value as `Last-Event-ID` when reconnecting. Receiving bytes alone does not advance the caller checkpoint. The Native notification WebSocket has no cursor or replay contract; after a disconnect or missed wake-up, the caller reconciles through the lifecycle or resource APIs.
 
@@ -366,7 +366,7 @@ Foundation SDKs expose idiomatic asynchronous iterators, callbacks, or polling h
 
 ### Harness and Agent Stream Protocol Hooks
 
-The Worker consumes each public Harness stream item once through `HarnessAguiObserver`. Standard AG-UI mappings retain their upstream type and payload. Observations without a standard mapping retain the exact `CUSTOM` name and public source representation. Foundation adds only envelope correlation, authorization, visibility processing, Item projection, retention, and delivery.
+The executor root's `HarnessDriver` consumes each public Harness stream item once through `HarnessAguiObserver`; `LeaseMonitor` and `ControlWatcher` never consume it. Standard AG-UI mappings retain their upstream type and payload. Observations without a standard mapping retain the exact `CUSTOM` name and public source representation. Foundation adds only envelope correlation, authorization, visibility processing, Item projection, retention, and delivery.
 
 | Hook name or family                                                 | Trigger                                                                 | Information                                                                                 |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -443,17 +443,16 @@ An Item hook never proves model, tool, provider, or Run completion. Item hooks u
 
 ### Environment and Sandbox-Related Hooks
 
-Foundation owns current state, finalization, and backing-target cleanup, while each RunAttempt uses fresh process-local adapters. The Worker can emit these live observations:
+Foundation owns the immutable Run binding, while each RunAttempt uses a fresh process-local attach-only adapter. The Worker can emit these live observations:
 
-| Hook name                              | Trigger                                                                                                   | Information                                                                                 |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `environment.entry.started`            | A fenced RunAttempt begins entering an exact desired Environment                                          | Environment/revision/Provider and RunAttempt correlation                                    |
-| `environment.entry.ready`              | The fresh adapter enters successfully and exposes its bounded descriptor                                  | Correlation plus bounded safe capability and readiness summary                              |
-| `environment.entry.failed`             | Construction, authorization, state validation, entry, or compatibility fails                              | Correlation and bounded safe failure; no state payload, target credential, or provider body |
-| `environment.state.publication_failed` | Unconditional finalization cannot publish a known changed state                                           | Correlation, bounded safe failure, and independent RunAttempt classification                |
-| `environment.adapter.closed`           | Non-destructive local close finishes or fails after success, cancellation, lease loss, or Worker shutdown | Correlation and bounded close outcome; no claim that a backing target was destroyed         |
+| Hook name                    | Trigger                                                                                                   | Information                                                                                         |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `environment.entry.started`  | A fenced RunAttempt begins attaching to its exact accepted target                                         | Safe Environment/binding/Provider and RunAttempt correlation; no target key                         |
+| `environment.entry.ready`    | The fresh adapter attaches successfully and exposes its bounded descriptor                                | Correlation plus bounded safe capability and readiness summary                                      |
+| `environment.entry.failed`   | Construction, authorization, connection validation, attachment, or compatibility fails                    | Correlation and bounded safe failure; no connection parameters, target credential, or provider body |
+| `environment.adapter.closed` | Non-destructive local close finishes or fails after success, cancellation, lease loss, or Worker shutdown | Correlation and bounded close outcome; no claim that the customer-owned target lifecycle changed    |
 
-These hooks are live Run SSE observations only. They are not current-state, cleanup, or prune authority. Explicit Host destruction and prune use Foundation lifecycle jobs and do not follow Harness close automatically. A missing, incompatible, or unavailable backing target appears through `environment.entry.failed` and the authoritative RunAttempt outcome. The boundary remains owned by [Environment Configuration and Re-entry](29-environment-management.md#runattempt-construction-and-finalization).
+These hooks are live Run SSE observations only. They are not attachment state or provider-target lifecycle authority. A missing, stopped, incompatible, inaccessible, or unavailable target appears through `environment.entry.failed` and the authoritative RunAttempt outcome; Foundation does not create, resume, replace, or destroy it. The boundary remains owned by [Environment Connections and Runtime Attachments](29-environment-management.md#runattempt-attachment).
 
 ## Execution, Backpressure, and Blocking
 
@@ -472,42 +471,41 @@ A Hook subscription cannot modify input, output, tool arguments, tool results, R
 
 The following table is the public Foundation hook routing registry. Subscription configuration contains exact names supported by the selected API version.
 
-| Hook name                              | Source                                | Trigger time                                              | Notification methods    | Information summary                                                      |
-| -------------------------------------- | ------------------------------------- | --------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------ |
-| `agui.text_message_start`              | Harness through Agent Stream Protocol | Public assistant text begins                              | Run SSE                 | Run/message/part correlation, role, time                                 |
-| `agui.text_message_content`            | Harness through Agent Stream Protocol | Public assistant text delta                               | Run SSE                 | Correlation and bounded visible delta                                    |
-| `agui.text_message_end`                | Harness through Agent Stream Protocol | Public assistant text ends                                | Run SSE                 | Correlation and part completion                                          |
-| `agui.reasoning_message_start`         | Harness through Agent Stream Protocol | Public reasoning begins                                   | Run SSE                 | Run/message/part correlation and time                                    |
-| `agui.reasoning_message_content`       | Harness through Agent Stream Protocol | Public reasoning delta                                    | Run SSE                 | Correlation and policy-permitted reasoning delta                         |
-| `agui.reasoning_encrypted_value`       | Harness through Agent Stream Protocol | Public encrypted reasoning value is observed              | Run SSE                 | Correlation and policy-permitted encrypted value                         |
-| `agui.reasoning_message_end`           | Harness through Agent Stream Protocol | Public reasoning ends                                     | Run SSE                 | Correlation and reasoning-part completion                                |
-| `agui.tool_call_start`                 | Harness through Agent Stream Protocol | Complete requested tool call begins AG-UI projection      | Run SSE                 | Tool-call ID and public tool name                                        |
-| `agui.tool_call_args`                  | Harness through Agent Stream Protocol | Complete public tool arguments are projected              | Run SSE                 | Tool-call ID and policy-permitted arguments                              |
-| `agui.tool_call_end`                   | Harness through Agent Stream Protocol | Requested tool call projection closes                     | Run SSE                 | Tool-call correlation; not dispatch proof                                |
-| `agui.tool_call_result`                | Harness through Agent Stream Protocol | Successful public tool return is observed                 | Run SSE                 | Tool-call correlation and visible result                                 |
-| `agui.run_finished`                    | Harness through Agent Stream Protocol | Successful terminal Harness result after cleanup          | Run SSE                 | Harness Run identity and JSON-safe result when available                 |
-| `agui.run_error`                       | Harness through Agent Stream Protocol | Failed or cancelled terminal Harness result after cleanup | Run SSE                 | Harness Run identity and bounded public code                             |
-| `agui.custom`                          | Harness through Agent Stream Protocol | Public observation lacks a standard AG-UI mapping         | Run SSE                 | Exact custom name, source correlation, sequence and public payload       |
-| `run.accepted`                         | Foundation Run domain                 | Run acceptance commits                                    | Native wake-up, Webhook | Run lineage, selections, version and scheduling summary                  |
-| `run.running`                          | Foundation Run domain                 | First Attempt is leased and the Run leaves `accepted`     | Native wake-up, Webhook | Current Attempt, claim time and safe model observation                   |
-| `run.waiting`                          | Foundation Run domain                 | Deferred outcome and waiting state seal                   | Native wake-up, Webhook | Wait reason and bounded pending summary                                  |
-| `run.completed`                        | Foundation Run domain                 | Output and final state seal                               | Native wake-up, Webhook | Output/reference, Items, version and sealed time                         |
-| `run.failed`                           | Foundation Run domain                 | Terminal failure seals Run                                | Native wake-up, Webhook | Safe failure, final Attempt and sealed time                              |
-| `run.cancelled`                        | Foundation Run domain                 | Cancellation seals Run                                    | Native wake-up, Webhook | Safe cancellation, actor/source and sealed time                          |
-| `run_attempt.leased`                   | Foundation RunAttempt domain          | Worker generation is claimed and fenced                   | Native wake-up, Webhook | Attempt number, fence, replacement, lease and recovery summary           |
-| `run_attempt.running`                  | Foundation RunAttempt domain          | Harness Run identity commits                              | Native wake-up, Webhook | Attempt/Harness Run correlation, model observation and start time        |
-| `run_attempt.succeeded`                | Foundation RunAttempt domain          | Attempt commits owning Run outcome                        | Native wake-up, Webhook | Usage summary, finish time and Run correlation                           |
-| `run_attempt.yielded`                  | Foundation RunAttempt domain          | Planned handoff commits from a complete safe boundary     | Native wake-up, Webhook | Yield reason, prior `worker_build_id`, usage and replacement eligibility |
-| `run_attempt.failed`                   | Foundation RunAttempt domain          | Attempt generation becomes terminal failed                | Native wake-up, Webhook | Safe failure, recovery reason, usage and replacement eligibility         |
-| `run_attempt.cancelled`                | Foundation RunAttempt domain          | Attempt generation becomes terminal cancelled             | Native wake-up, Webhook | Safe cancellation and finish time                                        |
-| `item.completed`                       | Foundation Item projection            | Semantic Item closes successfully                         | Run SSE                 | Item identity, kind, parent, cursors and bounded content/reference       |
-| `item.failed`                          | Foundation Item projection            | Semantic Item closes failed                               | Run SSE                 | Item correlation and safe failure projection                             |
-| `item.interrupted`                     | Foundation Item projection            | Closed Run contains an incomplete Item                    | Run SSE                 | Item correlation and interruption projection                             |
-| `environment.entry.started`            | Foundation Worker                     | Exact RunAttempt Environment entry begins                 | Run SSE                 | Environment/revision/Provider and Attempt correlation                    |
-| `environment.entry.ready`              | Foundation Worker                     | Fresh Environment adapter is ready                        | Run SSE                 | Correlation and safe readiness/capability summary                        |
-| `environment.entry.failed`             | Foundation Worker                     | Construction, state validation, or entry fails            | Run SSE                 | Correlation and bounded safe failure                                     |
-| `environment.state.publication_failed` | Foundation Host                       | Changed-state publication fails in finalization           | Run SSE                 | Correlation, safe failure and independent Attempt classification         |
-| `environment.adapter.closed`           | Foundation Worker                     | Non-destructive process-local close finishes or fails     | Run SSE                 | Correlation and bounded close outcome                                    |
+| Hook name                        | Source                                | Trigger time                                              | Notification methods    | Information summary                                                      |
+| -------------------------------- | ------------------------------------- | --------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------ |
+| `agui.text_message_start`        | Harness through Agent Stream Protocol | Public assistant text begins                              | Run SSE                 | Run/message/part correlation, role, time                                 |
+| `agui.text_message_content`      | Harness through Agent Stream Protocol | Public assistant text delta                               | Run SSE                 | Correlation and bounded visible delta                                    |
+| `agui.text_message_end`          | Harness through Agent Stream Protocol | Public assistant text ends                                | Run SSE                 | Correlation and part completion                                          |
+| `agui.reasoning_message_start`   | Harness through Agent Stream Protocol | Public reasoning begins                                   | Run SSE                 | Run/message/part correlation and time                                    |
+| `agui.reasoning_message_content` | Harness through Agent Stream Protocol | Public reasoning delta                                    | Run SSE                 | Correlation and policy-permitted reasoning delta                         |
+| `agui.reasoning_encrypted_value` | Harness through Agent Stream Protocol | Public encrypted reasoning value is observed              | Run SSE                 | Correlation and policy-permitted encrypted value                         |
+| `agui.reasoning_message_end`     | Harness through Agent Stream Protocol | Public reasoning ends                                     | Run SSE                 | Correlation and reasoning-part completion                                |
+| `agui.tool_call_start`           | Harness through Agent Stream Protocol | Complete requested tool call begins AG-UI projection      | Run SSE                 | Tool-call ID and public tool name                                        |
+| `agui.tool_call_args`            | Harness through Agent Stream Protocol | Complete public tool arguments are projected              | Run SSE                 | Tool-call ID and policy-permitted arguments                              |
+| `agui.tool_call_end`             | Harness through Agent Stream Protocol | Requested tool call projection closes                     | Run SSE                 | Tool-call correlation; not dispatch proof                                |
+| `agui.tool_call_result`          | Harness through Agent Stream Protocol | Successful public tool return is observed                 | Run SSE                 | Tool-call correlation and visible result                                 |
+| `agui.run_finished`              | Harness through Agent Stream Protocol | Successful terminal Harness result after cleanup          | Run SSE                 | Harness Run identity and JSON-safe result when available                 |
+| `agui.run_error`                 | Harness through Agent Stream Protocol | Failed or cancelled terminal Harness result after cleanup | Run SSE                 | Harness Run identity and bounded public code                             |
+| `agui.custom`                    | Harness through Agent Stream Protocol | Public observation lacks a standard AG-UI mapping         | Run SSE                 | Exact custom name, source correlation, sequence and public payload       |
+| `run.accepted`                   | Foundation Run domain                 | Run acceptance commits                                    | Native wake-up, Webhook | Run lineage, selections, version and scheduling summary                  |
+| `run.running`                    | Foundation Run domain                 | First Attempt is leased and the Run leaves `accepted`     | Native wake-up, Webhook | Current Attempt, claim time and safe model observation                   |
+| `run.waiting`                    | Foundation Run domain                 | Deferred outcome and waiting state seal                   | Native wake-up, Webhook | Wait reason and bounded pending summary                                  |
+| `run.completed`                  | Foundation Run domain                 | Output and final state seal                               | Native wake-up, Webhook | Output/reference, Items, version and sealed time                         |
+| `run.failed`                     | Foundation Run domain                 | Terminal failure seals Run                                | Native wake-up, Webhook | Safe failure, final Attempt and sealed time                              |
+| `run.cancelled`                  | Foundation Run domain                 | Cancellation seals Run                                    | Native wake-up, Webhook | Safe cancellation, actor/source and sealed time                          |
+| `run_attempt.leased`             | Foundation RunAttempt domain          | Worker generation is claimed and fenced                   | Native wake-up, Webhook | Attempt number, fence, replacement, lease and recovery summary           |
+| `run_attempt.running`            | Foundation RunAttempt domain          | Harness Run identity commits                              | Native wake-up, Webhook | Attempt/Harness Run correlation, model observation and start time        |
+| `run_attempt.succeeded`          | Foundation RunAttempt domain          | Attempt commits owning Run outcome                        | Native wake-up, Webhook | Usage summary, finish time and Run correlation                           |
+| `run_attempt.yielded`            | Foundation RunAttempt domain          | Planned handoff commits from a complete safe boundary     | Native wake-up, Webhook | Yield reason, prior `worker_build_id`, usage and replacement eligibility |
+| `run_attempt.failed`             | Foundation RunAttempt domain          | Attempt generation becomes terminal failed                | Native wake-up, Webhook | Safe failure, recovery reason, usage and replacement eligibility         |
+| `run_attempt.cancelled`          | Foundation RunAttempt domain          | Attempt generation becomes terminal cancelled             | Native wake-up, Webhook | Safe cancellation and finish time                                        |
+| `item.completed`                 | Foundation Item projection            | Semantic Item closes successfully                         | Run SSE                 | Item identity, kind, parent, cursors and bounded content/reference       |
+| `item.failed`                    | Foundation Item projection            | Semantic Item closes failed                               | Run SSE                 | Item correlation and safe failure projection                             |
+| `item.interrupted`               | Foundation Item projection            | Closed Run contains an incomplete Item                    | Run SSE                 | Item correlation and interruption projection                             |
+| `environment.entry.started`      | Foundation Worker                     | Exact RunAttempt target attachment begins                 | Run SSE                 | Safe Environment/binding/Provider and Attempt correlation                |
+| `environment.entry.ready`        | Foundation Worker                     | Fresh Environment attachment is ready                     | Run SSE                 | Correlation and safe readiness/capability summary                        |
+| `environment.entry.failed`       | Foundation Worker                     | Construction, connection validation, or attachment fails  | Run SSE                 | Correlation and bounded safe failure; no target key                      |
+| `environment.adapter.closed`     | Foundation Worker                     | Non-destructive process-local close finishes or fails     | Run SSE                 | Correlation and bounded close outcome                                    |
 
 ## Failure Semantics
 

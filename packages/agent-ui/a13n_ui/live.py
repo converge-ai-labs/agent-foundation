@@ -1,4 +1,4 @@
-"""Bounded process-local live event fan-out for Agent UI surfaces."""
+"""Bounded process-local live and summary streams for Agent UI surfaces."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Literal
+from uuid import uuid4
 
 from ag_ui.core import Event as AguiEvent
 from anyio import (
@@ -18,7 +19,9 @@ from anyio import (
     create_memory_object_stream,
 )
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+
+from a13n_ui.errors import LivePresentationError
 
 _LIVE_PAYLOAD_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _DEFAULT_RING_SIZE = 256
@@ -26,13 +29,23 @@ _DEFAULT_SUBSCRIBER_BUFFER_SIZE = 64
 _MAX_EVENT_BYTES = 64 * 1024
 
 
-class LiveEvent(BaseModel):
-    """Detached bounded AG-UI event correlated to one root or child Run."""
-
+class _StreamModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
+
+class LiveCursor(_StreamModel):
+    epoch: str = Field(min_length=1, max_length=80)
+    sequence: int = Field(ge=0)
+
+
+class LiveEvent(_StreamModel):
+    """Detached bounded AG-UI event correlated to one complete root lineage."""
+
+    epoch: str = Field(min_length=1, max_length=80)
     sequence: int = Field(ge=1)
     run_kind: Literal["root", "child"]
+    root_thread_id: str = Field(min_length=1, max_length=80)
+    parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str = Field(min_length=1, max_length=80)
     run_id: str = Field(min_length=1, max_length=80)
     execution_id: str | None = Field(default=None, min_length=1, max_length=80)
@@ -41,11 +54,33 @@ class LiveEvent(BaseModel):
     payload_omitted: bool
 
 
-class LiveSubscription:
-    """One App-owned best-effort live stream."""
+class _LiveSubscriber:
+    def __init__(
+        self,
+        *,
+        send: MemoryObjectSendStream[LiveEvent],
+        receive: MemoryObjectReceiveStream[LiveEvent],
+        root_thread_id: str | None,
+    ) -> None:
+        self.send = send
+        self.receive = receive
+        self.root_thread_id = root_thread_id
+        self.gap = False
 
-    def __init__(self, receive: MemoryObjectReceiveStream[LiveEvent]) -> None:
-        self._receive = receive
+    def accepts(self, event: LiveEvent) -> bool:
+        return self.root_thread_id is None or self.root_thread_id == event.root_thread_id
+
+
+class LiveSubscription:
+    """One App-owned best-effort detailed stream with an explicit cutover."""
+
+    def __init__(self, subscriber: _LiveSubscriber, cursor: LiveCursor) -> None:
+        self._subscriber = subscriber
+        self._cursor = cursor
+
+    @property
+    def cursor(self) -> LiveCursor:
+        return self._cursor.model_copy(deep=True)
 
     def __aiter__(self) -> AsyncIterator[LiveEvent]:
         return self
@@ -57,67 +92,70 @@ class LiveSubscription:
             raise StopAsyncIteration from None
 
     async def receive(self) -> LiveEvent:
-        """Wait for the next retained or live event."""
-
-        event = await self._receive.receive()
+        if self._subscriber.gap:
+            raise LivePresentationError(
+                "The detailed live subscriber fell behind its bounded buffer.",
+                code="live_cursor_expired",
+            )
+        event = await self._subscriber.receive.receive()
+        if self._subscriber.gap:
+            raise LivePresentationError(
+                "The detailed live subscriber fell behind its bounded buffer.",
+                code="live_cursor_expired",
+            )
         return event.model_copy(deep=True)
 
 
-class _Subscriber:
-    def __init__(
-        self,
-        *,
-        send: MemoryObjectSendStream[LiveEvent],
-        receive: MemoryObjectReceiveStream[LiveEvent],
-        thread_id: str | None,
-    ) -> None:
-        self.send = send
-        self.receive = receive
-        self.thread_id = thread_id
-
-    def accepts(self, event: LiveEvent) -> bool:
-        return self.thread_id is None or self.thread_id == event.thread_id
-
-
 class AgentUiLiveHub:
-    """Keep a small ring and fan out without waiting on subscribers."""
+    """Keep a small detailed ring and fan out complete root lineages without waiting."""
 
     def __init__(
         self,
         *,
+        epoch: str | None = None,
         ring_size: int = _DEFAULT_RING_SIZE,
         subscriber_buffer_size: int = _DEFAULT_SUBSCRIBER_BUFFER_SIZE,
     ) -> None:
         if ring_size < 1 or subscriber_buffer_size < 1:
             raise ValueError("live hub bounds must be positive")
+        self._epoch = epoch or f"live-{uuid4().hex}"
         self._ring: deque[LiveEvent] = deque(maxlen=ring_size)
         self._subscriber_buffer_size = subscriber_buffer_size
-        self._subscribers: set[_Subscriber] = set()
+        self._subscribers: set[_LiveSubscriber] = set()
         self._sequence = 0
         self._closed = False
         self._lock = Lock()
+
+    @property
+    def epoch(self) -> str:
+        return self._epoch
 
     async def publish(
         self,
         *,
         run_kind: Literal["root", "child"],
+        root_thread_id: str,
+        parent_thread_id: str | None,
         thread_id: str,
         run_id: str,
         events: Sequence[AguiEvent],
         execution_id: str | None = None,
     ) -> None:
-        """Publish detached events while dropping old work for slow subscribers."""
+        """Publish detached events while marking slow subscribers for reset."""
 
         async with self._lock:
             if self._closed:
                 return
-            stale: list[_Subscriber] = []
+            stale: list[_LiveSubscriber] = []
             for source in events:
                 self._sequence += 1
                 payload, omitted = _bounded_payload(source)
                 event = LiveEvent(
+                    epoch=self._epoch,
                     sequence=self._sequence,
                     run_kind=run_kind,
+                    root_thread_id=root_thread_id,
+                    parent_thread_id=parent_thread_id,
                     thread_id=thread_id,
                     run_id=run_id,
                     execution_id=execution_id,
@@ -127,71 +165,245 @@ class AgentUiLiveHub:
                 )
                 self._ring.append(event.model_copy(deep=True))
                 for subscriber in self._subscribers:
-                    if not subscriber.accepts(event):
+                    if not subscriber.accepts(event) or subscriber.gap:
                         continue
                     try:
                         subscriber.send.send_nowait(event.model_copy(deep=True))
                     except WouldBlock:
-                        try:
-                            subscriber.receive.receive_nowait()
-                            subscriber.send.send_nowait(event.model_copy(deep=True))
-                        except WouldBlock:
-                            pass
-                        except (BrokenResourceError, ClosedResourceError, EndOfStream):
-                            stale.append(subscriber)
+                        subscriber.gap = True
                     except (BrokenResourceError, ClosedResourceError):
                         stale.append(subscriber)
             for subscriber in stale:
-                self._subscribers.discard(subscriber)
-                subscriber.send.close()
-                subscriber.receive.close()
+                self._discard_subscriber(subscriber)
 
-    async def snapshot(
-        self,
-        *,
-        thread_id: str | None = None,
-    ) -> tuple[LiveEvent, ...]:
-        """Return a detached filtered view of the current ring."""
-
+    async def snapshot(self, *, root_thread_id: str | None = None) -> tuple[LiveEvent, ...]:
         async with self._lock:
             return tuple(
-                event.model_copy(deep=True) for event in self._ring if thread_id is None or event.thread_id == thread_id
+                event.model_copy(deep=True)
+                for event in self._ring
+                if root_thread_id is None or event.root_thread_id == root_thread_id
             )
 
     @asynccontextmanager
     async def subscribe(
         self,
         *,
-        thread_id: str | None = None,
+        root_thread_id: str | None = None,
+        after: LiveCursor | None = None,
     ) -> AsyncGenerator[LiveSubscription]:
-        """Replay the matching ring and follow future best-effort events."""
+        """Install a subscriber atomically at the current or supplied sequence cutover."""
 
-        capacity = max(len(self._ring), self._subscriber_buffer_size)
-        send, receive = create_memory_object_stream[LiveEvent](capacity)
-        subscriber = _Subscriber(
-            send=send,
-            receive=receive,
-            thread_id=thread_id,
-        )
         async with self._lock:
             if self._closed:
-                send.close()
-            else:
-                matching = [event for event in self._ring if subscriber.accepts(event)]
-                for event in matching[-capacity:]:
-                    send.send_nowait(event.model_copy(deep=True))
-                self._subscribers.add(subscriber)
+                raise LivePresentationError("The detailed live hub is closed.", code="live_unavailable")
+            start_sequence = self._validate_cursor(after)
+            replay = [
+                event
+                for event in self._ring
+                if event.sequence > start_sequence
+                and (root_thread_id is None or event.root_thread_id == root_thread_id)
+            ]
+            capacity = max(len(replay), self._subscriber_buffer_size)
+            send, receive = create_memory_object_stream[LiveEvent](capacity)
+            subscriber = _LiveSubscriber(
+                send=send,
+                receive=receive,
+                root_thread_id=root_thread_id,
+            )
+            for event in replay:
+                send.send_nowait(event.model_copy(deep=True))
+            self._subscribers.add(subscriber)
+            subscription = LiveSubscription(
+                subscriber,
+                LiveCursor(epoch=self._epoch, sequence=start_sequence),
+            )
         try:
-            yield LiveSubscription(receive)
+            yield subscription
         finally:
             async with self._lock:
-                self._subscribers.discard(subscriber)
-                send.close()
-                receive.close()
+                self._discard_subscriber(subscriber)
+
+    def _validate_cursor(self, after: LiveCursor | None) -> int:
+        if after is None:
+            return self._sequence
+        if after.epoch != self._epoch:
+            raise LivePresentationError("The detailed live epoch changed.", code="live_epoch_changed")
+        if after.sequence > self._sequence:
+            raise LivePresentationError("The detailed live cursor is invalid.", code="live_cursor_invalid")
+        if self._ring and after.sequence < self._ring[0].sequence - 1:
+            raise LivePresentationError("The detailed live cursor is no longer retained.", code="live_cursor_expired")
+        return after.sequence
+
+    def _discard_subscriber(self, subscriber: _LiveSubscriber) -> None:
+        self._subscribers.discard(subscriber)
+        subscriber.send.close()
+        subscriber.receive.close()
 
     async def close(self) -> None:
-        """Close all subscribers and discard transient retained events."""
+        async with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            subscribers = tuple(self._subscribers)
+            self._subscribers.clear()
+            self._ring.clear()
+            for subscriber in subscribers:
+                subscriber.send.close()
+                subscriber.receive.close()
 
+
+class SummaryCursor(_StreamModel):
+    epoch: str = Field(min_length=1, max_length=80)
+    sequence: int = Field(ge=0)
+
+
+class SummaryInvalidation(_StreamModel):
+    epoch: str = Field(min_length=1, max_length=80)
+    sequence: int = Field(ge=1)
+    kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution"]
+    root_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
+    thread_id: str | None = Field(default=None, min_length=1, max_length=80)
+    execution_id: str | None = Field(default=None, min_length=1, max_length=80)
+
+
+class _SummarySubscriber:
+    def __init__(
+        self,
+        send: MemoryObjectSendStream[SummaryInvalidation],
+        receive: MemoryObjectReceiveStream[SummaryInvalidation],
+    ) -> None:
+        self.send = send
+        self.receive = receive
+        self.gap = False
+
+
+class SummarySubscription:
+    def __init__(self, subscriber: _SummarySubscriber, cursor: SummaryCursor) -> None:
+        self._subscriber = subscriber
+        self._cursor = cursor
+
+    @property
+    def cursor(self) -> SummaryCursor:
+        return self._cursor.model_copy(deep=True)
+
+    def __aiter__(self) -> AsyncIterator[SummaryInvalidation]:
+        return self
+
+    async def __anext__(self) -> SummaryInvalidation:
+        try:
+            return await self.receive()
+        except (ClosedResourceError, EndOfStream):
+            raise StopAsyncIteration from None
+
+    async def receive(self) -> SummaryInvalidation:
+        if self._subscriber.gap:
+            raise LivePresentationError(
+                "The summary subscriber fell behind its bounded buffer.",
+                code="summary_cursor_expired",
+            )
+        event = await self._subscriber.receive.receive()
+        if self._subscriber.gap:
+            raise LivePresentationError(
+                "The summary subscriber fell behind its bounded buffer.",
+                code="summary_cursor_expired",
+            )
+        return event.model_copy(deep=True)
+
+
+class AgentUiSummaryHub:
+    """Fan out lightweight App-wide refetch hints independently from detailed live payloads."""
+
+    def __init__(
+        self,
+        *,
+        epoch: str,
+        ring_size: int = _DEFAULT_RING_SIZE,
+        subscriber_buffer_size: int = _DEFAULT_SUBSCRIBER_BUFFER_SIZE,
+    ) -> None:
+        if ring_size < 1 or subscriber_buffer_size < 1:
+            raise ValueError("summary hub bounds must be positive")
+        self._epoch = epoch
+        self._ring: deque[SummaryInvalidation] = deque(maxlen=ring_size)
+        self._subscriber_buffer_size = subscriber_buffer_size
+        self._subscribers: set[_SummarySubscriber] = set()
+        self._sequence = 0
+        self._closed = False
+        self._lock = Lock()
+
+    async def publish(
+        self,
+        *,
+        kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution"],
+        root_thread_id: str | None = None,
+        thread_id: str | None = None,
+        execution_id: str | None = None,
+    ) -> None:
+        async with self._lock:
+            if self._closed:
+                return
+            self._sequence += 1
+            event = SummaryInvalidation(
+                epoch=self._epoch,
+                sequence=self._sequence,
+                kind=kind,
+                root_thread_id=root_thread_id,
+                thread_id=thread_id,
+                execution_id=execution_id,
+            )
+            self._ring.append(event)
+            stale: list[_SummarySubscriber] = []
+            for subscriber in self._subscribers:
+                if subscriber.gap:
+                    continue
+                try:
+                    subscriber.send.send_nowait(event.model_copy(deep=True))
+                except WouldBlock:
+                    subscriber.gap = True
+                except (BrokenResourceError, ClosedResourceError):
+                    stale.append(subscriber)
+            for subscriber in stale:
+                self._discard_subscriber(subscriber)
+
+    @asynccontextmanager
+    async def subscribe(self, *, after: SummaryCursor | None = None) -> AsyncGenerator[SummarySubscription]:
+        async with self._lock:
+            if self._closed:
+                raise LivePresentationError("The summary hub is closed.", code="summary_unavailable")
+            start_sequence = self._validate_cursor(after)
+            replay = [event for event in self._ring if event.sequence > start_sequence]
+            capacity = max(len(replay), self._subscriber_buffer_size)
+            send, receive = create_memory_object_stream[SummaryInvalidation](capacity)
+            subscriber = _SummarySubscriber(send, receive)
+            for event in replay:
+                send.send_nowait(event.model_copy(deep=True))
+            self._subscribers.add(subscriber)
+            subscription = SummarySubscription(
+                subscriber,
+                SummaryCursor(epoch=self._epoch, sequence=start_sequence),
+            )
+        try:
+            yield subscription
+        finally:
+            async with self._lock:
+                self._discard_subscriber(subscriber)
+
+    def _validate_cursor(self, after: SummaryCursor | None) -> int:
+        if after is None:
+            return self._sequence
+        if after.epoch != self._epoch:
+            raise LivePresentationError("The summary epoch changed.", code="summary_epoch_changed")
+        if after.sequence > self._sequence:
+            raise LivePresentationError("The summary cursor is invalid.", code="summary_cursor_invalid")
+        if self._ring and after.sequence < self._ring[0].sequence - 1:
+            raise LivePresentationError("The summary cursor is no longer retained.", code="summary_cursor_expired")
+        return after.sequence
+
+    def _discard_subscriber(self, subscriber: _SummarySubscriber) -> None:
+        self._subscribers.discard(subscriber)
+        subscriber.send.close()
+        subscriber.receive.close()
+
+    async def close(self) -> None:
         async with self._lock:
             if self._closed:
                 return
@@ -205,11 +417,23 @@ class AgentUiLiveHub:
 
 
 def _bounded_payload(event: AguiEvent) -> tuple[dict[str, JsonValue] | None, bool]:
-    payload = _LIVE_PAYLOAD_ADAPTER.validate_python(event.model_dump(mode="json"))
-    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    try:
+        payload = _LIVE_PAYLOAD_ADAPTER.validate_python(event.model_dump(mode="json"))
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    except (TypeError, ValueError, ValidationError):
+        return None, True
     if len(encoded) > _MAX_EVENT_BYTES:
         return None, True
     return payload, False
 
 
-__all__ = ["AgentUiLiveHub", "LiveEvent", "LiveSubscription"]
+__all__ = [
+    "AgentUiLiveHub",
+    "AgentUiSummaryHub",
+    "LiveCursor",
+    "LiveEvent",
+    "LiveSubscription",
+    "SummaryCursor",
+    "SummaryInvalidation",
+    "SummarySubscription",
+]

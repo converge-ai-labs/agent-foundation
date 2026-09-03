@@ -1,10 +1,9 @@
-"""Root-only Agent UI Thread tools over the shared application service."""
+"""Root-only Thread tools over detached Agent UI commands and queries."""
 
 from __future__ import annotations
 
-import base64
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
@@ -15,20 +14,70 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_ui.errors import AgentUiError
-from a13n_ui.storage import Thread
-
-if TYPE_CHECKING:
-    from a13n_ui.thread_service import ThreadService
+from a13n_ui.root_run import RootRunCoordinator
+from a13n_ui.surfaces import RootOperationStatus
+from a13n_ui.thread_projection import ThreadProjectionService
 
 _THREAD_CAPABILITY_ID = "a13n.agent-ui.threads"
 _MAX_OUTPUT_CHARS = 64 * 1024
+
+
+class ThreadToolController:
+    """Narrow detached command/query boundary consumed by the root Capability."""
+
+    def __init__(self, *, projections: ThreadProjectionService, root_runs: RootRunCoordinator) -> None:
+        self._projections = projections
+        self._root_runs = root_runs
+
+    async def list_threads(
+        self,
+        *,
+        query: str | None,
+        cursor: str | None,
+        limit: int,
+    ) -> dict[str, Any]:
+        page = await self._projections.list_threads(query=query, cursor=cursor, limit=limit)
+        return page.model_dump(mode="json")
+
+    async def get_thread(
+        self,
+        *,
+        thread_id: str,
+        history_cursor: str | None,
+        history_limit: int,
+    ) -> dict[str, Any]:
+        detail = await self._projections.detail(thread_id)
+        transcript = await self._projections.transcript(
+            thread_id=thread_id,
+            cursor=history_cursor,
+            limit=history_limit,
+        )
+        return {
+            "thread": detail.model_dump(mode="json"),
+            "transcript": transcript.model_dump(mode="json"),
+        }
+
+    async def run_thread(self, *, thread_id: str, prompt: str) -> dict[str, Any]:
+        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt)
+        operation = await self._root_runs.wait(receipt.receipt_id)
+        return operation.model_dump(mode="json")
+
+    async def steer_thread(self, *, thread_id: str, message: str) -> dict[str, Any]:
+        operation = await self._root_runs.active(thread_id)
+        if operation is None:
+            return {"accepted": False, "receipt_id": None, "enqueue_id": None}
+        result = await self._root_runs.steer(
+            receipt_id=operation.receipt.receipt_id,
+            message=message,
+        )
+        return result.model_dump(mode="json")
 
 
 @dataclass(kw_only=True, slots=True)
 class AgentUiThreadCapability(AbstractCapability[AgentContext]):
     """Expose bounded cross-Thread operations only to one root invocation."""
 
-    service: ThreadService
+    controller: ThreadToolController
     source_thread_id: str
     id: str | None = _THREAD_CAPABILITY_ID
 
@@ -68,14 +117,9 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
     ) -> dict[str, Any]:
         self._require_context(ctx)
         try:
-            offset = _decode_cursor(cursor)
-            threads, total = await self.service.list(query=query, offset=offset, limit=limit)
-            next_offset = offset + len(threads)
             return {
                 "ok": True,
-                "threads": [_thread_projection(item) for item in threads],
-                "total": total,
-                "next_cursor": _encode_cursor(next_offset) if next_offset < total else None,
+                **await self.controller.list_threads(query=query, cursor=cursor, limit=limit),
             }
         except (AgentUiError, ValueError) as exc:
             return _failure(exc, "thread_list_failed")
@@ -89,19 +133,13 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
     ) -> dict[str, Any]:
         self._require_context(ctx)
         try:
-            offset = _decode_cursor(history_cursor)
-            thread, history, total = await self.service.inspect(
-                thread_id=thread_id,
-                history_offset=offset,
-                history_limit=history_limit,
-            )
-            next_offset = offset + len(history)
             return {
                 "ok": True,
-                "thread": _thread_projection(thread),
-                "history": history,
-                "history_total": total,
-                "next_history_cursor": _encode_cursor(next_offset) if next_offset < total else None,
+                **await self.controller.get_thread(
+                    thread_id=thread_id,
+                    history_cursor=history_cursor,
+                    history_limit=history_limit,
+                ),
             }
         except (AgentUiError, ValueError) as exc:
             return _failure(exc, "thread_get_failed")
@@ -119,24 +157,10 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
                 "A Thread cannot recursively run itself from its active root invocation.",
             )
         try:
-            outcome = await self.service.run(thread_id=thread_id, prompt=prompt)
-            failure = outcome.result.failure
-            failure_projection = (
-                None
-                if failure is None
-                else {
-                    "code": failure.code,
-                    "message": _bounded(failure.message),
-                    "retry_hint": failure.retry_hint,
-                }
-            )
+            operation = await self.controller.run_thread(thread_id=thread_id, prompt=prompt)
             return {
-                "ok": (outcome.result.status == "completed" and outcome.continuation.status == "selected"),
-                "thread_id": thread_id,
-                "status": outcome.result.status,
-                "output": _bounded(outcome.result.output if isinstance(outcome.result.output, str) else None),
-                "failure": failure_projection,
-                "continuation_status": outcome.continuation.status,
+                "ok": operation["status"] == RootOperationStatus.completed.value,
+                "operation": operation,
             }
         except AgentUiError as exc:
             return _failure(exc, "thread_run_failed")
@@ -154,13 +178,8 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
                 "A Thread cannot steer itself from its active root invocation.",
             )
         try:
-            result = await self.service.steer(thread_id=thread_id, message=message)
-            return {
-                "ok": result.accepted,
-                "thread_id": result.thread_id,
-                "accepted": result.accepted,
-                "enqueue_id": result.enqueue_id,
-            }
+            result = await self.controller.steer_thread(thread_id=thread_id, message=message)
+            return {"ok": result["accepted"], **result}
         except AgentUiError as exc:
             return _failure(exc, "thread_steer_failed")
 
@@ -170,26 +189,6 @@ class AgentUiThreadCapability(AbstractCapability[AgentContext]):
                 "Agent UI Thread tools cannot cross root Run scope.",
                 code="capability_scope_invalid",
             )
-
-
-def _thread_projection(thread: Thread) -> dict[str, Any]:
-    configuration = thread.configuration
-    return {
-        "thread_id": thread.thread_id,
-        "title": thread.title,
-        "created_at": thread.created_at.isoformat(),
-        "updated_at": thread.updated_at.isoformat(),
-        "archived": thread.archived,
-        "configuration": {
-            "version": configuration.version,
-            "project_id": configuration.project_id,
-            "agent_source": configuration.agent_source.model_dump(mode="json"),
-            "environment_profile_id": configuration.environment_profile_id,
-            "harness_plugin_ids": list(configuration.harness_plugin_ids),
-            "environment_run_extension_ids": list(configuration.environment_run_extension_ids),
-            "mcp_server_ids": list(configuration.mcp_server_ids),
-        },
-    }
 
 
 def _tool(
@@ -217,28 +216,8 @@ def _tool(
     )
 
 
-def _encode_cursor(offset: int) -> str:
-    return base64.urlsafe_b64encode(f"v1:{offset}".encode()).decode().rstrip("=")
-
-
-def _decode_cursor(value: str | None) -> int:
-    if value is None:
-        return 0
-    if len(value) > 128:
-        raise ValueError("Thread cursor is invalid")
-    try:
-        padded = value + "=" * (-len(value) % 4)
-        version, raw_offset = base64.urlsafe_b64decode(padded).decode().split(":", 1)
-        offset = int(raw_offset)
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise ValueError("Thread cursor is invalid") from exc
-    if version != "v1" or offset < 0:
-        raise ValueError("Thread cursor is invalid")
-    return offset
-
-
-def _bounded(value: str | None) -> str | None:
-    if value is None or len(value) <= _MAX_OUTPUT_CHARS:
+def _bounded(value: str) -> str:
+    if len(value) <= _MAX_OUTPUT_CHARS:
         return value
     return value[: _MAX_OUTPUT_CHARS - 23] + "\n...[output truncated]"
 
@@ -253,4 +232,4 @@ def _failure_code(code: str, message: str) -> dict[str, Any]:
     return {"ok": False, "error": {"code": code, "message": _bounded(message)}}
 
 
-__all__ = ["AgentUiThreadCapability"]
+__all__ = ["AgentUiThreadCapability", "ThreadToolController"]

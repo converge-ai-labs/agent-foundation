@@ -6,13 +6,11 @@ import argparse
 import asyncio
 import json
 import sys
-from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from a13n_harness.model_auth import CodexCredentials, CodexOAuthFlow
 from a13n_logging import LogFormat, configure_logging
@@ -27,11 +25,9 @@ from a13n_ui.configuration import (
 from a13n_ui.errors import AgentUiError, ConfigurationError
 from a13n_ui.model_accounts import Provider
 from a13n_ui.settings_loader import ensure_default_directories, load_agent_ui_settings
+from a13n_ui.surfaces import RootOperationStatus, RootOperationView, ThreadMetadataMutation, ThreadMetadataPatch
 from a13n_ui.terminal import run as run_cli
-from a13n_ui.thread_service import RootRunOutcome, RootThreadDefaults
-
-_MAX_OUTPUT_BYTES = 256 * 1024
-_TRUNCATION_MARKER = "\n...[output truncated]\n"
+from a13n_ui.thread_service import RootThreadDefaults
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -96,16 +92,17 @@ def _parser() -> argparse.ArgumentParser:
     thread_list = thread_commands.add_parser("list", help="list Threads")
     thread_list.add_argument("--query")
     thread_list.add_argument("--include-archived", action="store_true")
-    thread_list.add_argument("--offset", type=int, default=0)
+    thread_list.add_argument("--cursor")
     thread_list.add_argument("--limit", type=int, default=20)
     _add_format(thread_list)
     thread_show = thread_commands.add_parser("show", help="inspect one Thread")
     thread_show.add_argument("thread_id")
-    thread_show.add_argument("--history-offset", type=int, default=0)
+    thread_show.add_argument("--history-cursor")
     thread_show.add_argument("--history-limit", type=int, default=50)
     _add_format(thread_show)
     thread_archive = thread_commands.add_parser("archive", help="archive one Thread")
     thread_archive.add_argument("thread_id")
+    thread_archive.add_argument("--expected-version", type=int, required=True)
     thread_archive.add_argument("--restore", action="store_true")
     _add_format(thread_archive)
 
@@ -241,31 +238,29 @@ async def _run_management(app: AgentUiApp, args: argparse.Namespace) -> int:
 
     if args.command == "thread":
         if args.thread_command == "list":
-            threads, total = await app.list_threads(
+            page = await app.list_threads(
                 query=args.query,
                 include_archived=args.include_archived,
-                offset=args.offset,
+                cursor=args.cursor,
                 limit=args.limit,
             )
-            _print_projection(
-                {"threads": threads, "offset": args.offset, "total": total},
-                args.format,
-            )
+            _print_projection(page, args.format)
             return 0
         if args.thread_command == "show":
-            thread, history, total = await app.inspect_thread(
+            thread = await app.get_thread(args.thread_id)
+            history = await app.get_thread_transcript(
                 thread_id=args.thread_id,
-                history_offset=args.history_offset,
-                history_limit=args.history_limit,
+                cursor=args.history_cursor,
+                limit=args.history_limit,
             )
-            _print_projection(
-                {"thread": thread, "history": history, "history_total": total},
-                args.format,
-            )
+            _print_projection({"thread": thread, "transcript": history}, args.format)
             return 0
-        thread = await app.archive_thread(
+        thread = await app.update_thread_metadata(
             thread_id=args.thread_id,
-            archived=not args.restore,
+            mutation=ThreadMetadataMutation(
+                expected_version=args.expected_version,
+                patch=ThreadMetadataPatch(archived=not args.restore),
+            ),
         )
         _print_projection(thread, args.format)
         return 0
@@ -332,13 +327,13 @@ async def _run_one_shot(
         thread = await app.create_thread(defaults=defaults, title=args.title)
         thread_id = thread.thread_id
 
-    outcome = await app.run_thread(thread_id=thread_id, prompt=args.prompt)
-    projection = _run_projection(thread_id, outcome)
+    receipt = await app.submit_thread(thread_id=thread_id, prompt=args.prompt)
+    operation = await app.wait_root_operation(receipt.receipt_id)
     if args.format == "json":
-        print(json.dumps(projection, ensure_ascii=False, separators=(",", ":")))
+        print(operation.model_dump_json())
     else:
-        _print_text_result(projection)
-    return 0 if outcome.result.status == "completed" and outcome.continuation.status == "selected" else 1
+        _print_text_result(operation)
+    return 0 if operation.status is RootOperationStatus.completed else 1
 
 
 def _new_thread_defaults(
@@ -377,75 +372,22 @@ def _new_thread_defaults(
     )
 
 
-def _run_projection(thread_id: str, outcome: RootRunOutcome) -> dict[str, Any]:
-    result = outcome.result
-    output, output_truncated = _bounded_text(result.output if isinstance(result.output, str) else None)
-    failure = result.failure
-    continuation_ref = outcome.continuation.reference
-    publications = Counter(item.status for item in outcome.environment.state_publications)
-    return {
-        "thread_id": thread_id,
-        "run_id": result.run_id,
-        "status": result.status,
-        "output": output,
-        "output_truncated": output_truncated,
-        "failure": (
-            None
-            if failure is None
-            else {
-                "code": failure.code,
-                "message": _bounded_text(failure.message)[0],
-                "retry_hint": failure.retry_hint,
-            }
-        ),
-        "suspend_reason": result.suspend_reason,
-        "composition": outcome.composition.model_dump(mode="json"),
-        "continuation": {
-            "status": outcome.continuation.status,
-            "reference": (continuation_ref.model_dump(mode="json") if continuation_ref is not None else None),
-        },
-        "environment": {
-            "cleanup_error_count": len(outcome.environment.cleanup_errors),
-            "state_publications": dict(sorted(publications.items())),
-        },
-    }
-
-
-def _print_text_result(projection: dict[str, Any]) -> None:
-    status = projection["status"]
-    if status == "completed":
-        print(projection["output"] or "")
-        continuation = projection["continuation"]
-        if isinstance(continuation, dict) and continuation["status"] != "selected":
-            print(
-                f"Thread continuation was not selected: {continuation['status']}.",
-                file=sys.stderr,
-            )
-        environment = projection["environment"]
-        if isinstance(environment, dict) and environment["cleanup_error_count"]:
-            print(
-                f"Environment cleanup reported {environment['cleanup_error_count']} error(s).",
-                file=sys.stderr,
-            )
+def _print_text_result(operation: RootOperationView) -> None:
+    outcome = operation.outcome
+    if operation.status is RootOperationStatus.completed and outcome is not None:
+        output = outcome.execution.output
+        print(output if isinstance(output, str) else json.dumps(output, ensure_ascii=False))
+        cleanup_count = len(outcome.environment.cleanup_failures)
+        if cleanup_count:
+            print(f"Environment cleanup reported {cleanup_count} error(s).", file=sys.stderr)
         return
-    failure = projection["failure"]
-    if isinstance(failure, dict):
-        print(f"{failure['code']}: {failure['message']}", file=sys.stderr)
-    elif status == "suspended":
+    failure = operation.failure or (None if outcome is None else outcome.execution.failure)
+    if failure is not None:
+        print(f"{failure.code}: {failure.message}", file=sys.stderr)
+    elif operation.status is RootOperationStatus.suspended:
         print("Run suspended with deferred tool requests.", file=sys.stderr)
     else:
-        print(f"Run {status}.", file=sys.stderr)
-
-
-def _bounded_text(value: str | None) -> tuple[str | None, bool]:
-    if value is None:
-        return None, False
-    encoded = value.encode("utf-8")
-    if len(encoded) <= _MAX_OUTPUT_BYTES:
-        return value, False
-    budget = _MAX_OUTPUT_BYTES - len(_TRUNCATION_MARKER.encode("utf-8"))
-    prefix = encoded[:budget].decode("utf-8", errors="ignore")
-    return prefix + _TRUNCATION_MARKER, True
+        print(f"Run {operation.status.value}.", file=sys.stderr)
 
 
 def _print_projection(value: object, output_format: str) -> None:

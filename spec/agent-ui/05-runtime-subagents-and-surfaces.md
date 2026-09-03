@@ -47,13 +47,14 @@ The App owns:
 - stable multi-file loading, accepted-generation selection, diagnostics, and expected-digest mutations;
 - Capability and three-plane extension catalog projection;
 - Project and configured-resource queries;
-- Thread create, configuration update, list, inspect, root admission, cancel, and steer;
+- Thread creation, metadata and configuration mutation, keyset queries, and transcript projection;
+- process-local root admission, receipt correlation, execution, deferred response, waiting, cancellation, and steering;
 - immutable Run composition and continuation publication;
 - Project-root Environment binding and state lifecycle;
 - async child admission, execution, checkpointing, query, wait, steering, cancellation, and linked resume;
-- detached presentation and bounded shutdown.
+- detached presentation, root-lineage live delivery, summary invalidation, and bounded graceful shutdown.
 
-It does not expose database sessions, storage paths as authority, native Models, credentials, Provider objects, Environment adapters, Harness contexts, tasks, locks, or callbacks through a surface API.
+It does not expose database sessions, storage paths as authority, native Models, credentials, Provider objects, Environment adapters, Harness contexts or results, Pydantic AI message objects, tasks, locks, callbacks, or Python exceptions through a surface API.
 
 ## App Lifetime
 
@@ -66,29 +67,46 @@ One App lifetime:
 5. starts bounded configuration change observation;
 6. attaches the selected CLI or Web surface;
 7. serves commands until shutdown;
-8. stops new admissions, cancels owned Runs, performs bounded cleanup, and closes collaborators.
+8. stops new admissions, requests cancellation after a bounded graceful-drain interval, joins owned tasks, and then closes collaborators.
+
+The shutdown timeout bounds graceful draining before cooperative cancellation. Agent UI retains structured ownership and keeps storage open until its tasks exit, so it does not claim a hard return deadline against arbitrary trusted Python code that ignores cancellation or creates an unbounded shield. Built-in collaborators and extension cleanup paths have their own finite bounds; a process supervisor owns any required hard process-termination deadline.
 
 A source change triggers a stable complete-tree candidate load. Invalid intermediate saves do not replace the accepted generation. Module import starts no task, process, listener, or database connection.
 
 ## Root Run Coordination
 
-One App admits at most one root Run for a Thread. Another root submission while active is rejected rather than queued. Steering targets the current active Run and has no durable acceptance before Harness incorporates it.
+### Process-local Operations
 
-For an admitted input, the App:
+One App admits at most one root operation for a Thread. Another root submission while that operation is preparing or running is rejected rather than queued. Admission returns a detached receipt immediately; the receipt ID is unpredictable, unique within the App lifetime, and is the exact correlation used by active queries, waits, steering, and cancellation.
 
-01. loads the Thread, optional patch, required expected configuration version for a non-empty patch, and selected continuation;
+A root operation progresses from `preparing` to `running`, then to `completed`, `suspended`, `failed`, or `cancelled`. Preparation failure is `failed`; `completed` or `suspended` requires the corresponding acceptable continuation to be selected. Its view can acquire a Harness Run ID after native stream construction and retains separate Harness execution, continuation-selection, Environment-state, and cleanup facts. The App retains the detached terminal view for the remainder of its lifetime, but persists neither the receipt nor the submitted input. A process restart therefore exposes the Thread and its last selected continuation but no prior operation, wait target, or control authority.
+
+Cancellation is accepted against the exact receipt during both preparation and Harness execution. During preparation it cancels the App-owned operation scope; once a stream exists it also requests cancellation from that exact stream. Steering is available only while the receipt names the current running stream. A stale receipt can neither steer nor cancel a later Run on the same Thread. Wait observes the operation's state transition and has no effect on execution.
+
+For an admitted prompt or deferred response, the App:
+
+01. loads the root Thread, optional patch, required expected configuration version for a non-empty patch, and selected continuation;
 02. validates and commits the sticky configuration update when present;
-03. captures the current accepted generation and selected Project roots;
-04. resolves the exact Agent graph, Capabilities, tool visibility, Harness Plugins, MCP servers, Environment Provider, and Environment Run Extensions;
-05. publishes the immutable resolved Run composition;
-06. creates fresh native collaborators; each subscription-backed Model request resolves and refreshes its compatible OAuth credential when needed;
-07. starts one Harness stream and observer from the prior `HarnessState`;
-08. forwards public live events best effort;
-09. finalizes Environment adapters and publishes changed state;
-10. publishes and compare-and-selects an acceptable complete or suspended continuation;
-11. returns independent execution, continuation, Environment-state, and cleanup outcomes.
+03. validates that the selected continuation accepts the input kind and, for a deferred response, still matches the caller's expected continuation ID;
+04. captures the current accepted generation and selected Project roots;
+05. resolves the exact Agent graph, Capabilities, tool visibility, Harness Plugins, MCP servers, Environment Provider, and Environment Run Extensions;
+06. publishes the immutable resolved Run composition;
+07. creates fresh native collaborators; each subscription-backed Model request resolves and refreshes its compatible OAuth credential when needed;
+08. starts one Harness stream and observer from the selected `HarnessState`;
+09. forwards public live events best effort;
+10. finalizes Environment adapters and publishes changed state;
+11. publishes and compare-and-selects an acceptable complete or suspended continuation;
+12. selects a detached terminal operation outcome with independent execution, continuation, Environment-state, and cleanup facts.
 
-No database transaction spans file I/O, catalog import, native construction, or steps 6 through 10. If capture fails, an already committed explicit Thread patch remains the Thread's desired next state and the Run reports why it could not start.
+No database transaction spans file I/O, catalog import, native construction, or steps 7 through 11. If capture fails, an already committed explicit Thread patch remains the Thread's desired next state and the operation reports why it could not start.
+
+### Root Deferred Response
+
+A suspended root continuation exposes a bounded detached request list. Each item has its tool-call ID, request kind, tool name, JSON arguments, and presentation-safe metadata. An ordinary prompt cannot skip a selected deferred request set.
+
+A response command names the exact selected continuation and supplies exactly one response for every pending item. Approval responses approve, optionally with replacement JSON arguments, or deny with a bounded message. External-call responses supply a JSON result or a bounded denial. The App rejects stale continuation IDs, missing or additional IDs, duplicate IDs, kind mismatches, and values that cannot be represented by the corresponding native deferred result.
+
+Only the App reconstructs the native deferred request and result batch. A response is a new root operation with fresh Run composition and collaborators; it does not reuse the suspended operation's runtime objects. The selected suspended continuation remains current unless the response operation publishes and compare-and-selects another acceptable continuation.
 
 ## Agent UI Subagent Operator
 
@@ -133,15 +151,32 @@ A child suspension is not forwarded to the user or parent Thread. The operator s
 
 ### Queries and Control
 
-The public execution view contains execution, parent Thread, child Thread, child Run, segment, composition, status, bounded failure, resumability, and compact activity. It contains no raw unbounded output or private state.
+The public execution view contains execution, root lineage, parent Thread, child Thread, child Run, segment, opaque composition identity, persisted status, bounded failure, resumability, compact activity, and current-process control availability. Persisted status and local activity are separate fields: a saved `running` fact can be locally `active` or `unavailable`. Available actions are derived from the exact local segment and never inferred from the saved status alone. The view contains no raw unbounded output or private state.
 
-Steering, cancellation, and bounded live waiting operate only when the current App owns the segment in its process-local registry. A saved `running` value without a matching local runtime is inspectable but grants no control. Execution references are scoped to their originating parent relationship.
+Steering, cancellation, and bounded live waiting operate only when the current App owns the segment in its process-local registry. A saved `running` value without a matching local runtime is inspectable but grants no control. Execution references are scoped to their originating parent relationship, and a stale execution ID cannot control a later segment.
 
 ### Loss and Retention
 
 Orderly shutdown requests cancellation for locally owned segments. A durably completed cancellation becomes `cancelled`; a segment that cannot reach a terminal checkpoint becomes `lost`. Abrupt loss can leave a saved `running` head. Another App does not infer liveness, replay, or take over it.
 
 Linked resume is permitted from a successful terminal execution whose exact selected checkpoint remains resumable, whose stable child roster name still resolves in the current parent, and whose current Host policy authorizes the operation. Compatibility applies to `HarnessState` schema and current selected component state, not equality with the prior Agent definition or Run composition.
+
+## Detached Surface Contracts
+
+All Thread, root-operation, child-execution, and presentation command results, query results, and stream items are strict, frozen, bounded, serializable values. A returned collection is immutable and every nested mutable payload is copied. Opaque digests or IDs can correlate a later command, but a surface never receives an immutable-object path, object kind, or storage read authority.
+
+Thread queries provide:
+
+- a summary containing identity, parent identity, metadata version, title, archive state, timestamps, sticky configuration, selected-continuation state, and current-process root activity;
+- a detail containing the summary, selected continuation ID, deferred request projection, and available actions;
+- a transcript page of typed presentation entries rather than serialized native Pydantic AI messages;
+- a child execution page whose durable status and current-process control availability are distinct.
+
+Thread and transcript pages use opaque keyset cursors bound to the query shape and deterministic sort key. Thread ordering is descending `(updated_at, thread_id)`; transcript ordering follows immutable message position. A newer insertion does not shift unaffected entries across an existing page boundary. Updating a Thread can move it across that boundary, so summary invalidation prompts a fresh first-page query. Invalid, mismatched, or expired cursors fail explicitly. Project recency is aggregated over all associated non-archived Threads in storage rather than a bounded Thread page.
+
+Thread title and archive state share a metadata head independent from sticky configuration. A metadata mutation supplies its exact expected metadata version and changes title, archive state, or both atomically. Archiving an active root Thread is rejected. Unarchiving is valid, and a title can be explicitly cleared. Child metadata is managed only through parent-scoped child operations.
+
+Failures are presentation-safe structured values with bounded code, message, details, and retry hint. Root operation outcomes contain scalar or JSON output, status, usage projection, continuation selection, Environment-state publication summaries, and cleanup failures; they never contain a native `HarnessRunResult`, `HarnessState`, deferred request object, or `Exception`.
 
 ## Root-only Thread Capability
 
@@ -154,15 +189,21 @@ run_thread(thread_id: str, prompt: str)
 steer_thread(thread_id: str, message: str)
 ```
 
-`run_thread` accepts only a root Thread, uses that target's sticky configuration, and accepts no Project roots or configuration changes from model arguments. Async children continue through `resume_subagent`, which retains the current parent roster and delegation ceilings. `steer_thread` preserves the active Run composition. Same-active-Thread recursive run or steer is rejected.
+`run_thread` accepts only a root Thread, uses that target's sticky configuration, and accepts no Project roots or configuration changes from model arguments. It submits through the same receipt boundary and waits for the detached terminal outcome. Async children continue through `resume_subagent`, which retains the current parent roster and delegation ceilings. `steer_thread` resolves the target's current receipt once and controls that exact receipt; it never falls through to a replacement Run. Same-active-Thread recursive run or steer is rejected.
 
 The Toolset appears only on root invocation. Children cannot obtain it through Markdown, Capability selection, Plugin contribution, or tool visibility.
 
 ## Live Presentation
 
-Each root or child Harness Run has one observer. The live hub performs bounded best-effort fan-out and can retain a small in-memory ring. A slow or disconnected subscriber never blocks execution, state publication, or continuation selection.
+Each App lifetime has an opaque live epoch and monotonic sequence. Each root or child Harness Run has one observer. A detailed live event identifies the root Thread, immediate parent Thread when present, producing Thread, Run kind, Run ID, and child execution ID when present. A subscription focused on one root receives that root's entire descendant lineage; child events are not hidden merely because their producing Thread ID differs from the root.
 
-Retained history comes from selected continuations and child compact checkpoints. Current-process activity is merged only for presentation and never written back as continuation truth outside its owning checkpoint path.
+The detailed live hub performs bounded best-effort fan-out and retains only a small in-memory ring. A slow subscriber can lose events and a reconnect outside the retained range receives an explicit reset requirement. Epoch mismatch likewise requires a new snapshot. A slow or disconnected subscriber never blocks execution, state publication, or continuation selection.
+
+A focused watch establishes its subscription and sequence cutover before assembling detached Thread, child, deferred, and local-activity projections. Events after the cutover remain buffered while the snapshot is read. The returned snapshot names the epoch and cutover sequence; the surface renders it, then consumes only later events from that subscription. This prevents a state transition between query and subscription from disappearing, without treating the live ring as durable history.
+
+A separate lightweight App-wide stream emits bounded invalidation hints for configuration, catalog, Project, Thread metadata/configuration/continuation, root operation, and child execution changes. Each hint identifies only the affected summary scope needed for refetch. It carries no transcript or checkpoint payload and is not durable truth. A surface that misses hints refetches its summaries.
+
+Retained transcript comes from selected continuations and child compact checkpoints. Current-process activity is merged only for presentation and never written back as continuation truth outside its owning checkpoint path.
 
 ## CLI
 
@@ -203,25 +244,28 @@ Unknown API or health routes do not fall back to browser HTML. The loopback adap
 
 ## Failure and Shutdown Semantics
 
-| Condition                              | Outcome                                                                                     |
-| -------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Invalid source candidate               | Previous accepted generation remains active; diagnostics identify the source                |
-| Stale WebUI or CLI mutation            | Mutation conflicts and returns the current source digest                                    |
-| Root composition or credential failure | Run fails before model dispatch; prior continuation remains selected                        |
-| Root process loss                      | Active input and partial output disappear; prior continuation remains selected              |
-| Child admission persistence fails      | Delegate or resume is rejected before acceptance                                            |
-| Child terminal persistence fails       | Execution is not reported as succeeded                                                      |
-| Provider or extension cleanup fails    | Failure is reported independently; known state and continuation publication still proceed   |
-| App shutdown deadline expires          | Remaining local tasks are cancelled; saved nonterminal facts do not become invented success |
+| Condition                              | Outcome                                                                                                        |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Invalid source candidate               | Previous accepted generation remains active; diagnostics identify the source                                   |
+| Stale WebUI or CLI mutation            | Mutation conflicts and returns the current source digest                                                       |
+| Root composition or credential failure | Run fails before model dispatch; prior continuation remains selected                                           |
+| Root process loss                      | Receipts, active input, and partial output disappear; prior continuation remains selected                      |
+| Child admission persistence fails      | Delegate or resume is rejected before acceptance                                                               |
+| Child terminal persistence fails       | Execution is not reported as succeeded                                                                         |
+| Provider or extension cleanup fails    | Failure is reported independently; known state and continuation publication still proceed                      |
+| App graceful-drain timeout expires     | Remaining local tasks receive cooperative cancellation; saved nonterminal facts do not become invented success |
 
 ## Invariants
 
-1. `AgentUiApp` is the only local application boundary.
-2. File editing, CLI, WebUI, and Thread tools converge on the same configuration and App operations.
-3. Thread configuration patches are sticky; active Run compositions are immutable.
-4. Root and child Runs use fresh native collaborators.
-5. A child can resume with a different current composition while retaining the same Harness Thread history.
-6. Saved nonterminal status never proves liveness or authorizes takeover.
-7. Compact display and live delivery never become continuation authority.
-8. The browser cannot bypass Project or expected-digest file authority.
-9. Shutdown is bounded and does not invent completion.
+01. `AgentUiApp` is the only local application boundary.
+02. File editing, CLI, WebUI, and Thread tools converge on the same configuration and App operations.
+03. Surface values are detached and never expose native runtime or storage authority.
+04. Thread metadata and configuration use independent compare-and-select heads; active Run compositions are immutable.
+05. Root receipts and controls are exact and process-local; they are not durable work acceptance.
+06. A selected deferred request set can be continued only by an exact complete response batch.
+07. Root and child Runs use fresh native collaborators.
+08. A child can resume with a different current composition while retaining the same Harness Thread history.
+09. Saved nonterminal status never proves liveness or authorizes takeover.
+10. Root-lineage live delivery and summary invalidation never become continuation authority.
+11. The browser cannot bypass Project or expected-digest file authority.
+12. Shutdown is bounded and does not invent completion.
