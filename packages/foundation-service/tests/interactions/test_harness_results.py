@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+
 import pytest
+import rfc8785
 from a13n_harness import HarnessRunResult
 from a13n_service.interactions import (
     CompletedOutcomeCandidate,
@@ -75,9 +78,27 @@ async def test_completed_output_rejects_values_beyond_accepted_limit(
         await adapter.project(_completed("too long"))
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+async def test_completed_output_rejects_non_finite_numbers(
+    interaction_object_store: ObjectStore,
+    value: float,
+) -> None:
+    adapter = FoundationHarnessOutcomeAdapter(
+        tenant_id=TENANT_ID,
+        run_id=RUN_ID,
+        payloads=RunPayloadStore(interaction_object_store),
+        max_output_bytes=1024,
+        inline_output_bytes=128,
+    )
+
+    with pytest.raises(HarnessOutcomeProjectionError, match="not finite JSON"):
+        await adapter.project(_completed({"value": value}))
+
+
 async def test_suspended_result_preserves_native_requests_and_classifies_pending_calls(
     interaction_object_store: ObjectStore,
 ) -> None:
+    client_tool_surface = [{"toolset_id": "foundation", "tools": [{"name": "client_action"}]}]
     deferred = DeferredToolRequests(
         calls=[
             ToolCallPart(
@@ -105,7 +126,7 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
         payloads=RunPayloadStore(interaction_object_store),
         max_output_bytes=1024,
         inline_output_bytes=128,
-        client_tool_surface={"toolsets": [{"name": "client_action"}]},
+        client_tool_surface=client_tool_surface,
     )
 
     projection = await adapter.project(_suspended(deferred))
@@ -122,8 +143,11 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
         deferred,
         mode="json",
     )
-    assert projection.deferred.effective_client_tool_surface == {"toolsets": [{"name": "client_action"}]}
-    assert projection.deferred.effective_surface_digest_sha256 is not None
+    assert projection.deferred.effective_client_tool_surface == client_tool_surface
+    assert (
+        projection.deferred.effective_surface_digest_sha256
+        == hashlib.sha256(rfc8785.dumps(client_tool_surface)).hexdigest()
+    )
 
 
 async def test_client_tool_suspension_requires_frozen_effective_surface(

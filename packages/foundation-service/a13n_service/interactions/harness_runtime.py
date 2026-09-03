@@ -116,7 +116,6 @@ class FoundationHarnessCollaborators:
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
     observation: HarnessObservationContext | None = None
-    toolset_instructions: bool | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.instance, AgentInstanceContext):
@@ -130,7 +129,6 @@ class FoundationHarnessCollaborators:
         return RunBindings(
             instance=self.instance,
             model_resolver=self.model_resolver,
-            toolset_instructions=self.toolset_instructions,
             capabilities=self.capabilities,
             metadata=self.metadata,
             model_context=self.model_context,

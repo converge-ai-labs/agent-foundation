@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
+import hashlib
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Protocol
 
 import rfc8785
 from a13n_harness import HarnessRunResult, HarnessState, SafeFailure
 from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.tools import DeferredToolRequests
-from pydantic_core import PydanticSerializationError
-
-from a13n_service.agents.domain import canonical_digest
+from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from .attempts import AttemptAuthority
 from .domain import JsonObject, PendingCallKind, PendingCallSummary, RunPendingSummary, RunWaitReason
@@ -49,7 +47,7 @@ class HarnessOutcomeProjection:
 class HarnessOutcomeAdapter(Protocol):
     """Map one successful Harness result into Foundation-owned state fields."""
 
-    async def project(self, result: HarnessRunResult[Any]) -> HarnessOutcomeProjection: ...
+    async def project[OutputT](self, result: HarnessRunResult[OutputT]) -> HarnessOutcomeProjection: ...
 
 
 class RunTerminalDisposition(StrEnum):
@@ -111,7 +109,7 @@ class FoundationHarnessOutcomeAdapter:
         max_output_bytes: int,
         inline_output_bytes: int,
         output_schema_version: str = "1",
-        client_tool_surface: JsonObject | None = None,
+        client_tool_surface: JsonValue | None = None,
     ) -> None:
         if max_output_bytes < 1:
             raise ValueError("max_output_bytes must be positive")
@@ -125,13 +123,17 @@ class FoundationHarnessOutcomeAdapter:
         self._max_output_bytes = max_output_bytes
         self._inline_output_bytes = inline_output_bytes
         self._output_schema_version = output_schema_version
-        self._client_tool_surface = (
-            None
-            if client_tool_surface is None
-            else deepcopy(_JSON_OBJECT_ADAPTER.validate_python(client_tool_surface, strict=True))
-        )
+        if client_tool_surface is None:
+            self._client_tool_surface = None
+            self._client_tool_surface_digest = None
+        else:
+            self._client_tool_surface, encoded_surface = _encode_json_value(
+                client_tool_surface,
+                description="effective client-tool surface",
+            )
+            self._client_tool_surface_digest = hashlib.sha256(encoded_surface).hexdigest()
 
-    async def project(self, result: HarnessRunResult[Any]) -> HarnessOutcomeProjection:
+    async def project[OutputT](self, result: HarnessRunResult[OutputT]) -> HarnessOutcomeProjection:
         state = result.state
         if state is None:
             raise HarnessOutcomeProjectionError("successful Harness result is missing complete state")
@@ -150,7 +152,7 @@ class FoundationHarnessOutcomeAdapter:
             )
         raise HarnessOutcomeProjectionError("only successful Harness results produce outcome state")
 
-    async def _completed(self, output: Any) -> CompletedOutcomeCandidate:
+    async def _completed(self, output: object) -> CompletedOutcomeCandidate:
         value, encoded = _encode_json_value(output)
         if len(encoded) > self._max_output_bytes:
             raise HarnessOutcomeProjectionError("Harness output exceeds the accepted output limit")
@@ -206,7 +208,7 @@ class FoundationHarnessOutcomeAdapter:
         continuation = DeferredContinuationState(
             requests=serialized,
             effective_client_tool_surface=surface,
-            effective_surface_digest_sha256=None if surface is None else canonical_digest(surface),
+            effective_surface_digest_sha256=self._client_tool_surface_digest,
         )
         return continuation, WaitingOutcomeCandidate(
             wait_reason=wait_reason,
@@ -214,13 +216,17 @@ class FoundationHarnessOutcomeAdapter:
         )
 
 
-def _encode_json_value(value: Any) -> tuple[JsonValue, bytes]:
+def _encode_json_value(
+    value: object,
+    *,
+    description: str = "Harness output",
+) -> tuple[JsonValue, bytes]:
     try:
-        serialized = _JSON_VALUE_ADAPTER.dump_json(value, warnings="error")
-        validated = _JSON_VALUE_ADAPTER.validate_json(serialized)
+        serialized = to_jsonable_python(value, inf_nan_mode="constants")
+        validated = _JSON_VALUE_ADAPTER.validate_python(serialized, strict=True)
         return validated, rfc8785.dumps(validated)
-    except (PydanticSerializationError, ValidationError, rfc8785.CanonicalizationError) as error:
-        raise HarnessOutcomeProjectionError("Harness output is not finite JSON") from error
+    except (TypeError, ValueError) as error:
+        raise HarnessOutcomeProjectionError(f"{description} is not finite JSON") from error
 
 
 def _serialize_deferred(requests: DeferredToolRequests) -> JsonObject:
