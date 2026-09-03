@@ -104,6 +104,9 @@ class _SequencedProjectionCapability(AbstractModelContextCapability):
     def __init__(self, requests: list[ModelContextProjectionRequest]) -> None:
         self._requests = requests
 
+    def get_instructions(self) -> str:
+        return "Keep injected model context append-only."
+
     async def wrap_model_context(
         self,
         ctx: RunContext[AgentContext],
@@ -233,6 +236,7 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
 async def test_capability_injection_preserves_the_active_prefix_across_model_requests() -> None:
     projection_requests: list[ModelContextProjectionRequest] = []
     seen: list[list[ModelMessage]] = []
+    seen_instructions: list[str | None] = []
 
     def advance(step: int) -> str:
         return f"advanced {step}"
@@ -244,6 +248,7 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
         assert "advance" in {tool.name for tool in info.function_tools}
         request_number = len(seen) + 1
         seen.append(deepcopy(messages))
+        seen_instructions.append(info.instructions)
         if request_number < 3:
             yield {
                 0: DeltaToolCall(
@@ -283,10 +288,17 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
         ),
     ]
     assert len(seen) == 3
+    assert seen_instructions == [seen_instructions[0]] * 3
+    assert seen_instructions[0] is not None
+    assert "Keep injected model context append-only." in seen_instructions[0]
 
     for previous, current in pairwise(seen):
         current_prefix = current[: len(previous)]
         assert ModelMessagesTypeAdapter.dump_json(current_prefix) == ModelMessagesTypeAdapter.dump_json(previous)
+
+    canonical_messages = list(result.all_messages())
+    canonical_request_prefix = canonical_messages[: len(seen[-1])]
+    assert ModelMessagesTypeAdapter.dump_json(canonical_request_prefix) == ModelMessagesTypeAdapter.dump_json(seen[-1])
 
     injected_context = [
         [
@@ -298,11 +310,12 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
             and isinstance(part.content, str)
             and part.content.startswith("capability context ")
         ]
-        for messages in seen
+        for messages in (*seen, canonical_messages)
     ]
     assert injected_context == [
         ["capability context 1"],
         ["capability context 1", "capability context 2"],
+        ["capability context 1", "capability context 2", "capability context 3"],
         ["capability context 1", "capability context 2", "capability context 3"],
     ]
     for request_number, messages in enumerate(seen, start=1):
