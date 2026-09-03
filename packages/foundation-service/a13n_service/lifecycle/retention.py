@@ -127,9 +127,7 @@ class LifecycleRetentionReconciler:
         )
         blocking_prior = exists().where(
             prior.tenant_id == LifecycleEventRecord.tenant_id,
-            prior.entity_type == LifecycleEventRecord.entity_type,
-            prior.entity_id == LifecycleEventRecord.entity_id,
-            prior.resource_seq < LifecycleEventRecord.resource_seq,
+            prior.seq < LifecycleEventRecord.seq,
             or_(
                 prior.created_at >= event_cutoff,
                 prior.projection_state.not_in(settled_states),

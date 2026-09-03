@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
+from a13n_harness import SafeFailure
 from a13n_service.durable_operations.models import OutboxRecord
-from a13n_service.interactions.lifecycle import append_run_lifecycle
+from a13n_service.interactions.lifecycle import RunEventType, append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle.domain import LifecycleProjectionState
 from a13n_service.lifecycle.models import LifecycleEventRecord
@@ -17,25 +18,43 @@ from tests.interactions.conftest import NOW
 
 pytestmark = pytest.mark.anyio
 
+SECOND_RUN_ID = "run_2222222222222222"
+
 
 async def _append_event(
     sessions: async_sessionmaker[AsyncSession],
     *,
     suffix: int,
     occurred_at: datetime,
+    run_id: str = RUN_ID,
+    event_type: RunEventType = "run.running",
 ) -> str:
     async with transaction(sessions) as database:
-        run = await database.get(RunRecord, RUN_ID)
+        run = await database.get(RunRecord, run_id)
         assert run is not None
         return await append_run_lifecycle(
             database,
             run,
-            "run.running",
+            event_type,
             mutation_id=f"mut_{suffix:016d}",
             occurred_at=occurred_at,
             actor_type="worker",
             actor_id="worker-1",
         )
+
+
+async def _clone_run(sessions: async_sessionmaker[AsyncSession], *, run_id: str) -> None:
+    async with transaction(sessions) as database:
+        source = await database.get(RunRecord, RUN_ID)
+        assert source is not None
+        values = {column.name: getattr(source, column.name) for column in RunRecord.__table__.columns}
+        values.update(
+            id=run_id,
+            status="failed",
+            failure_json=SafeFailure(code="test_failure", message="Failed before execution.").model_dump(mode="json"),
+            sealed_at=source.created_at,
+        )
+        database.add(RunRecord(**values))
 
 
 async def _settle_events(
@@ -206,6 +225,52 @@ async def test_retention_sweeps_events_in_bounded_batches(
     assert second.lifecycle_events_deleted == 1
     async with short_session(lifecycle_interaction_sessions) as database:
         assert list(await database.scalars(select(LifecycleEventRecord.id))) == []
+
+
+async def test_retention_preserves_tenant_cursor_prefix_across_resources(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await seed_run_and_secret(lifecycle_interaction_sessions)
+    await _clone_run(lifecycle_interaction_sessions, run_id=SECOND_RUN_ID)
+    now = NOW + timedelta(days=100)
+    pinned_id = await _append_event(
+        lifecycle_interaction_sessions,
+        suffix=13,
+        occurred_at=now - timedelta(days=20),
+    )
+    blocked_id = await _append_event(
+        lifecycle_interaction_sessions,
+        suffix=14,
+        occurred_at=now - timedelta(days=20),
+        run_id=SECOND_RUN_ID,
+        event_type="run.failed",
+    )
+    await _settle_events(lifecycle_interaction_sessions, pinned_id, blocked_id)
+    async with transaction(lifecycle_interaction_sessions) as database:
+        database.add(
+            _delivery(
+                suffix=13,
+                source_id=pinned_id,
+                status="pending",
+                timestamp=now - timedelta(days=20),
+            )
+        )
+    reconciler = LifecycleRetentionReconciler(
+        lifecycle_interaction_sessions,
+        event_horizon=timedelta(days=10),
+        published_delivery_horizon=timedelta(days=5),
+        dead_letter_horizon=timedelta(days=5),
+        poll_interval_seconds=60,
+        batch_limit=100,
+        clock=lambda: now,
+    )
+
+    sweep = await reconciler.reconcile_once()
+
+    assert sweep.lifecycle_events_deleted == 0
+    async with short_session(lifecycle_interaction_sessions) as database:
+        event_ids = tuple(await database.scalars(select(LifecycleEventRecord.id).order_by(LifecycleEventRecord.seq)))
+    assert event_ids == (pinned_id, blocked_id)
 
 
 async def test_retention_prefix_query_runs_on_postgresql(
