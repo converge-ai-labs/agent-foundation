@@ -122,30 +122,14 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
     }
 )
 
-_BUILDER_ACTIONS = _RUNNER_ACTIONS | frozenset(
+_PLUGIN_OPERATOR_ACTIONS = frozenset(
     {
-        WorkspaceAction.agent_create,
-        WorkspaceAction.agent_update,
-        WorkspaceAction.agent_revision_create,
-        WorkspaceAction.agent_current_revision_set,
-        WorkspaceAction.agent_lifecycle,
-        WorkspaceAction.agent_duplicate,
-        WorkspaceAction.asset_delete,
-        WorkspaceAction.models_manage,
-        WorkspaceAction.secrets_manage,
-        WorkspaceAction.secrets_bind,
-        WorkspaceAction.skill_create,
-        WorkspaceAction.skill_update,
-        WorkspaceAction.skill_delete,
-        WorkspaceAction.skill_bind,
-        WorkspaceAction.environment_provider_select,
-        WorkspaceAction.environment_manage,
-        WorkspaceAction.environment_test,
-        WorkspaceAction.route_manage,
+        WorkspaceAction.plugin_manage,
+        WorkspaceAction.plugin_runtime_manage,
     }
 )
 
-_ADMIN_ACTIONS = _BUILDER_ACTIONS | frozenset(
+_CONNECTIVITY_ADMIN_ACTIONS = frozenset(
     {
         WorkspaceAction.ingress_manage,
         WorkspaceAction.connector_manage,
@@ -153,6 +137,9 @@ _ADMIN_ACTIONS = _BUILDER_ACTIONS | frozenset(
         WorkspaceAction.mcp_connection_manage,
     }
 )
+
+_BUILDER_ACTIONS = frozenset(WorkspaceAction) - _PLUGIN_OPERATOR_ACTIONS - _CONNECTIVITY_ADMIN_ACTIONS
+_ADMIN_ACTIONS = frozenset(WorkspaceAction) - _PLUGIN_OPERATOR_ACTIONS
 
 _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
     "viewer": _READ_ACTIONS,

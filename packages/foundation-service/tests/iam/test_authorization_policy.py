@@ -23,6 +23,7 @@ def test_workspace_roles_grant_connectivity_actions_explicitly() -> None:
 
     assert read_actions <= viewer <= runner <= builder <= admin
     assert WorkspaceAction.route_manage in builder
+    assert WorkspaceAction.skill_revision_publish in builder
     assert admin_only.isdisjoint(builder)
     assert admin_only <= admin
     assert WorkspaceAction.plugin_manage not in admin
