@@ -29,42 +29,18 @@ from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.catalog import ConnectorCatalogService
-from a13n_service.connectivity.connectors.catalog_objects import ConnectorCatalogObjectStore
-from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
-from a13n_service.connectivity.connectors.providers import built_in_connector_adapter_registry
-from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
 from a13n_service.connectivity.connectors.router import router as connector_router
-from a13n_service.connectivity.connectors.service import ConnectorService
-from a13n_service.connectivity.ingress.admission import IngressEventService
-from a13n_service.connectivity.ingress.admission_domain import (
-    FoundationInputAcceptor,
-    UnavailableFoundationInputAcceptor,
-)
+from a13n_service.connectivity.ingress.admission_domain import FoundationInputAcceptor
 from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
 from a13n_service.connectivity.ingress.providers import built_in_ingress_adapter_registry
-from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
-from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
-from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
 from a13n_service.connectivity.ingress.router import router as ingress_router
-from a13n_service.connectivity.ingress.routes import RouteService
-from a13n_service.connectivity.ingress.service import IngressService
-from a13n_service.connectivity.mcp.catalog_objects import MCPCatalogObjectStore
-from a13n_service.connectivity.mcp.catalog_service import MCPCatalogService
-from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
-from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
-from a13n_service.connectivity.mcp.protocol import MCPProtocolClient
-from a13n_service.connectivity.mcp.reconciler import MCPReconciler
+from a13n_service.connectivity.lifespan import BackgroundComponent, install_connectivity_lifespan
 from a13n_service.connectivity.mcp.router import router as mcp_router
-from a13n_service.connectivity.mcp.service import MCPConnectionService
-from a13n_service.connectivity.retention import CatalogRetentionReconciler
-from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.environments.testing import EnvironmentAttachmentTester
 from a13n_service.iam import RequestAuthenticator
-from a13n_service.ids import new_object_id
 from a13n_service.models.connection_test import NativeModelConnectionTester
 from a13n_service.models.endpoint_policy import EndpointPolicy
 from a13n_service.models.model_factory import NativeModelFactory
@@ -101,7 +77,6 @@ from a13n_service.plugins.runtime_resolver import (
 )
 from a13n_service.plugins.service import PluginService
 from a13n_service.plugins.staging import PluginStaging
-from a13n_service.secrets import InternalSecretService
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
 from a13n_service.skills.catalog import SkillCatalogService
 from a13n_service.skills.credentials import DatabaseGitHubCredentialResolver
@@ -212,29 +187,15 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     authorizer=app.state.components.trace_access_authorizer,
                 )
             secret_protector = settings.secret_protector()
-            mcp_http_client: httpx2.AsyncClient | None = None
-            if settings.role in _CONTROL_PLANE_ROLES:
-                app.state.connectivity_public_origin = settings.validated_connectivity_public_origin()
-            if settings.role in _CONNECTIVITY_RESOURCE_ROLES:
-                app.state.internal_secret_service = InternalSecretService(storage.sessions, secret_protector)
-                connector_http_client = await stack.enter_async_context(
-                    httpx2.AsyncClient(
-                        follow_redirects=False,
-                        timeout=settings.connectivity_total_timeout_seconds,
-                    )
-                )
-                if app.state.uses_builtin_connector_adapters:
-                    app.state.connector_adapter_registry = built_in_connector_adapter_registry(
-                        connector_http_client,
-                        app.state.connectivity_endpoint_policy,
-                        response_max_bytes=settings.connectivity_response_max_bytes,
-                    )
-                mcp_http_client = await stack.enter_async_context(
-                    httpx2.AsyncClient(
-                        follow_redirects=False,
-                        timeout=settings.connectivity_total_timeout_seconds,
-                    )
-                )
+            connectivity_background_components = await install_connectivity_lifespan(
+                app,
+                settings,
+                storage,
+                stack,
+                secret_protector,
+                control_plane=settings.role in _CONTROL_PLANE_ROLES,
+                data_plane=settings.role in _CONNECTIVITY_ROLES,
+            )
             model_http_client = await stack.enter_async_context(
                 httpx2.AsyncClient(
                     follow_redirects=False,
@@ -266,11 +227,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
             plugin_objects = PluginObjectStore(storage.objects)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
-            connector_reconciler: ConnectorReconciler | None = None
-            mcp_reconciler: MCPReconciler | None = None
-            ingress_admission_reconciler: IngressAdmissionReconciler | None = None
-            catalog_retention_reconciler: CatalogRetentionReconciler | None = None
-            ingress_retention_reconciler: IngressRetentionReconciler | None = None
             plugin_runtime_command_coordinator: PluginRuntimeCommandCoordinator | None = None
             plugin_runner_supervisor: PluginRunnerSupervisor | None = None
             if settings.role in _WORKER_ROLES:
@@ -306,8 +262,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 else:
                     app.state.plugin_on_demand_runtime = OnDemandPluginRuntime(plugin_runtime_materializer)
             if settings.role in _CONTROL_PLANE_ROLES:
-                if mcp_http_client is None:
-                    raise RuntimeError("control role requires the Connectivity HTTP client")
                 environment_provider_catalog = app.state.components.environment_provider_catalog
                 if environment_provider_catalog is None:
                     selected_environment_providers = build_environment_provider_catalog(
@@ -426,10 +380,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     storage.sessions,
                     app.state.environment_provider_catalog,
                 )
-                app.state.connectivity_selection_resolver = ConnectivitySelectionResolver(
-                    storage.sessions,
-                    storage.objects,
-                )
                 app.state.agent_resolver = app.state.components.agent_resolver or AgentResolver(
                     storage.sessions,
                     app.state.accepted_model_selector,
@@ -454,105 +404,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     app.state.agent_resolver,
                     app.state.agent_invocation_resolver,
                 )
-                app.state.ingress_service = IngressService(
-                    storage.sessions,
-                    app.state.ingress_adapter_registry,
-                    app.state.internal_secret_service,
-                )
-                app.state.route_service = RouteService(
-                    storage.sessions,
-                    app.state.ingress_adapter_registry,
-                    batch_max_events=settings.connectivity_batch_max_events,
-                    batch_max_wait_seconds=settings.connectivity_batch_max_wait_seconds,
-                )
-                app.state.connector_service = ConnectorService(
-                    storage.sessions,
-                    app.state.connector_adapter_registry,
-                    app.state.internal_secret_service,
-                )
-                correlation_secret = settings.connectivity_setup_correlation_secret
-                app.state.connector_connection_service = ConnectorConnectionService(
-                    storage.sessions,
-                    app.state.connector_adapter_registry,
-                    app.state.internal_secret_service,
-                    correlation_secret=(
-                        correlation_secret.get_secret_value().encode() if correlation_secret is not None else None
-                    ),
-                    public_origin=app.state.connectivity_public_origin,
-                    setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
-                )
-                connector_instance_id = settings.service_instance_id or new_object_id("svc")
-                catalog_service = ConnectorCatalogService(
-                    storage.sessions,
-                    app.state.connector_adapter_registry,
-                    app.state.internal_secret_service,
-                    ConnectorCatalogObjectStore(storage.objects),
-                    instance_id=connector_instance_id,
-                    lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
-                    retention_seconds=settings.connectivity_catalog_retention_seconds,
-                )
-                app.state.connector_catalog_service = catalog_service
-                connector_reconciler = ConnectorReconciler(
-                    storage.sessions,
-                    app.state.connector_adapter_registry,
-                    app.state.connector_connection_service.setup_coordinator,
-                    app.state.connector_connection_service,
-                    catalog_service,
-                    instance_id=connector_instance_id,
-                    poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
-                    lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
-                )
-                app.state.connector_reconciler = connector_reconciler
-                mcp_instance_id = settings.service_instance_id or new_object_id("svc")
-                mcp_catalog_service = MCPCatalogService(
-                    storage.sessions,
-                    MCPProtocolClient(
-                        mcp_http_client,
-                        app.state.connectivity_endpoint_policy,
-                        response_max_bytes=settings.connectivity_catalog_max_bytes,
-                        max_redirects=settings.connectivity_max_redirects,
-                    ),
-                    app.state.internal_secret_service,
-                    MCPCatalogObjectStore(storage.objects),
-                    instance_id=mcp_instance_id,
-                    lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
-                    retention_seconds=settings.connectivity_catalog_retention_seconds,
-                )
-                app.state.mcp_catalog_service = mcp_catalog_service
-                mcp_oauth_client = MCPOAuthClient(
-                    mcp_http_client,
-                    app.state.connectivity_endpoint_policy,
-                    response_max_bytes=settings.connectivity_response_max_bytes,
-                    max_redirects=settings.connectivity_max_redirects,
-                )
-                app.state.mcp_oauth_client = mcp_oauth_client
-                app.state.mcp_connection_service = MCPConnectionService(
-                    storage.sessions,
-                    app.state.connectivity_endpoint_policy,
-                    app.state.internal_secret_service,
-                    mcp_catalog_service,
-                    registration_cleaner=mcp_oauth_client,
-                )
-                app.state.mcp_oauth_service = MCPOAuthService(
-                    storage.sessions,
-                    mcp_oauth_client,
-                    app.state.internal_secret_service,
-                    mcp_catalog_service,
-                    public_origin=app.state.connectivity_public_origin,
-                    client_name=settings.connectivity_oauth_client_name,
-                    instance_id=mcp_instance_id,
-                    setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
-                    claim_lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
-                )
-                mcp_reconciler = MCPReconciler(
-                    storage.sessions,
-                    app.state.mcp_connection_service,
-                    app.state.mcp_oauth_service,
-                    mcp_catalog_service,
-                    poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
-                    refresh_skew_seconds=settings.connectivity_provider_token_expiry_skew_seconds,
-                )
-                app.state.mcp_reconciler = mcp_reconciler
                 app.state.model_service = ModelService(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -582,109 +433,23 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     max_attempts=settings.asset_cleanup_max_attempts,
                 )
                 app.state.asset_cleanup_reconciler = asset_cleanup_reconciler
-            if settings.role in _CONNECTIVITY_ROLES:
-                raw_objects = IngressRawObjectStore(storage.objects)
-                app.state.ingress_event_service = IngressEventService(
-                    storage.sessions,
-                    app.state.ingress_adapter_registry,
-                    app.state.internal_secret_service,
-                    raw_objects,
-                    request_max_bytes=settings.connectivity_provider_request_max_bytes,
-                    raw_retention_seconds=settings.connectivity_protected_raw_retention_seconds,
-                    workspace_pending_max_count=settings.connectivity_workspace_pending_max_count,
-                    workspace_pending_max_bytes=settings.connectivity_workspace_pending_max_bytes,
-                    ingress_pending_max_count=settings.connectivity_ingress_pending_max_count,
-                    ingress_pending_max_bytes=settings.connectivity_ingress_pending_max_bytes,
-                    batch_max_bytes=settings.connectivity_batch_max_bytes,
-                    dedup_horizon_seconds=settings.connectivity_dedup_horizon_seconds,
-                )
-                input_acceptor = app.state.components.foundation_input_acceptor
-                if input_acceptor is None:
-                    logger.warning(
-                        "connectivity_input_bridge_unavailable",
-                        extra={
-                            "event": "connectivity_input_bridge_unavailable",
-                            "role": settings.role.value,
-                        },
-                    )
-                    input_acceptor = UnavailableFoundationInputAcceptor(
-                        retry_seconds=settings.connectivity_admission_poll_interval_seconds
-                    )
-                ingress_admission_reconciler = IngressAdmissionReconciler(
-                    storage.sessions,
-                    input_acceptor,
-                    instance_id=settings.service_instance_id or new_object_id("svc"),
-                    poll_interval_seconds=settings.connectivity_admission_poll_interval_seconds,
-                    lease_seconds=settings.connectivity_admission_lease_seconds,
-                    max_attempts=settings.connectivity_admission_max_attempts,
-                    max_backoff_seconds=settings.connectivity_admission_max_backoff_seconds,
-                )
-                app.state.ingress_admission_reconciler = ingress_admission_reconciler
-            if settings.role in _CONTROL_PLANE_ROLES:
-                catalog_retention_reconciler = CatalogRetentionReconciler(
-                    storage.sessions,
-                    storage.objects,
-                    instance_id=settings.service_instance_id or new_object_id("svc"),
-                    poll_interval_seconds=settings.connectivity_retention_poll_interval_seconds,
-                    lease_seconds=settings.connectivity_retention_lease_seconds,
-                    object_grace_seconds=settings.connectivity_object_cleanup_grace_seconds,
-                    batch_size=settings.connectivity_retention_batch_size,
-                )
-                app.state.catalog_retention_reconciler = catalog_retention_reconciler
-            if settings.role in _CONNECTIVITY_ROLES:
-                ingress_retention_reconciler = IngressRetentionReconciler(
-                    storage.sessions,
-                    storage.objects,
-                    poll_interval_seconds=settings.connectivity_retention_poll_interval_seconds,
-                    object_grace_seconds=settings.connectivity_object_cleanup_grace_seconds,
-                    batch_size=settings.connectivity_retention_batch_size,
-                )
-                app.state.ingress_retention_reconciler = ingress_retention_reconciler
             if settings.role in _WORKER_ROLES:
                 app.state.native_model_factory = native_model_factory
                 app.state.skill_runtime_preparer = SkillRuntimePreparer(storage.sessions, package_store)
+            background_components: list[BackgroundComponent] = []
+            if asset_cleanup_reconciler is not None:
+                background_components.append(("asset cleanup reconciler", asset_cleanup_reconciler.run))
+            if plugin_runtime_command_coordinator is not None:
+                background_components.append(
+                    ("plugin runtime command coordinator", plugin_runtime_command_coordinator.run)
+                )
+            background_components.extend(connectivity_background_components)
             async with create_task_group() as background_tasks:
-                if asset_cleanup_reconciler is not None:
+                for name, run in background_components:
                     background_tasks.start_soon(
                         _run_critical_component,
-                        "asset cleanup reconciler",
-                        asset_cleanup_reconciler.run,
-                    )
-                if plugin_runtime_command_coordinator is not None:
-                    background_tasks.start_soon(
-                        _run_critical_component,
-                        "plugin runtime command coordinator",
-                        plugin_runtime_command_coordinator.run,
-                    )
-                if ingress_admission_reconciler is not None:
-                    background_tasks.start_soon(
-                        _run_critical_component,
-                        "Ingress admission reconciler",
-                        ingress_admission_reconciler.run,
-                    )
-                if catalog_retention_reconciler is not None:
-                    background_tasks.start_soon(
-                        _run_critical_component,
-                        "catalog retention reconciler",
-                        catalog_retention_reconciler.run,
-                    )
-                if ingress_retention_reconciler is not None:
-                    background_tasks.start_soon(
-                        _run_critical_component,
-                        "Ingress retention reconciler",
-                        ingress_retention_reconciler.run,
-                    )
-                if connector_reconciler is not None:
-                    background_tasks.start_soon(
-                        _run_critical_component,
-                        "Connector reconciler",
-                        connector_reconciler.run,
-                    )
-                if mcp_reconciler is not None:
-                    background_tasks.start_soon(
-                        _run_critical_component,
-                        "MCP reconciler",
-                        mcp_reconciler.run,
+                        name,
+                        run,
                     )
                 logger.info(
                     "service_started",
