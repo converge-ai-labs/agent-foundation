@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+from a13n_service.interactions import (
+    MCPToolSnapshotRef,
+    RecoveryBudget,
+    RecoveryUsage,
+    Run,
+    RunInputKind,
+    RunLineageKind,
+    RunStatus,
+    Session,
+    Thread,
+    ThreadOriginKind,
+    ThreadRole,
+)
+from a13n_service.interactions.records import run_record, session_record, thread_record
+from a13n_service.secrets.models import SecretRecord
+from a13n_service.storage import transaction
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from tests.interactions.conftest import (
+    AGENT_ID,
+    AGENT_REVISION_ID,
+    NOW,
+    SESSION_ID,
+    TENANT_ID,
+    THREAD_ID,
+    USER_ID,
+    WORKSPACE_ID,
+    effective_agent_config,
+)
+
+RUN_ID = "run_7171717171717171"
+SECRET_ID = "sec_7171717171717171"
+
+
+async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> None:
+    config = effective_agent_config()
+    async with transaction(sessions) as database:
+        database.add(
+            SecretRecord(
+                id=SECRET_ID,
+                organization_id=TENANT_ID,
+                workspace_id=WORKSPACE_ID,
+                owner_type="workspace",
+                owner_id=WORKSPACE_ID,
+                key="hook-signing",
+                version=1,
+                ciphertext=b"ciphertext",
+                nonce=b"0" * 12,
+                encryption_key_id="test-key",
+                created_at=NOW,
+                value_updated_at=NOW,
+                deleted_at=None,
+            )
+        )
+        database.add(
+            session_record(
+                Session(
+                    id=SESSION_ID,
+                    tenant_id=TENANT_ID,
+                    workspace_id=WORKSPACE_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+        )
+        database.add(
+            thread_record(
+                Thread(
+                    id=THREAD_ID,
+                    version=1,
+                    queue_version=0,
+                    tenant_id=TENANT_ID,
+                    session_id=SESSION_ID,
+                    role=ThreadRole.root,
+                    origin_kind=ThreadOriginKind.new,
+                    current_run_id=RUN_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+        )
+        database.add(
+            run_record(
+                Run(
+                    id=RUN_ID,
+                    version=1,
+                    tenant_id=TENANT_ID,
+                    authority_principal={"principal_type": "user", "principal_id": USER_ID},
+                    session_id=SESSION_ID,
+                    thread_id=THREAD_ID,
+                    lineage_kind=RunLineageKind.root,
+                    trigger_type="user_input",
+                    agent_id=AGENT_ID,
+                    agent_revision_id=AGENT_REVISION_ID,
+                    effective_agent_config_digest=config.content_digest,
+                    runtime_lock_digest=config.runtime_lock_digest,
+                    model_execution_observation=config.resolved_model.execution.observation(),
+                    mcp_tool_snapshot=MCPToolSnapshotRef(
+                        digest_sha256="e" * 64,
+                        size_bytes=2,
+                        content_type="application/vnd.a13n.mcp-tool-snapshot+json",
+                        schema_version="1",
+                    ),
+                    priority=0,
+                    queue_name="default",
+                    available_at=NOW,
+                    next_attempt_fence=1,
+                    recovery_budget=RecoveryBudget(
+                        policy_version="1",
+                        max_recovery_attempts=1,
+                        max_handoffs=1,
+                    ),
+                    attempts_started=0,
+                    recovery_attempts_started=0,
+                    handoffs_completed=0,
+                    usage_charged=RecoveryUsage(),
+                    request_fingerprint="f" * 64,
+                    status=RunStatus.accepted,
+                    input_kind=RunInputKind.agent_input,
+                    input={"message": "hello"},
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+        )

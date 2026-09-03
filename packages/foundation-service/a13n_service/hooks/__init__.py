@@ -1,5 +1,6 @@
 """Durable Hook subscription and Webhook delivery contracts."""
 
+from .delivery import DeliveryEnvelope
 from .domain import (
     DURABLE_WEBHOOK_HOOK_NAMES,
     HOOK_NAMES,
@@ -19,6 +20,7 @@ __all__ = [
     "HOOK_NAMES",
     "LIVE_HOOK_NAMES",
     "CreateHookSubscriptionRequest",
+    "DeliveryEnvelope",
     "HookSubscription",
     "HookSubscriptionCollection",
     "HookSubscriptionRevision",
