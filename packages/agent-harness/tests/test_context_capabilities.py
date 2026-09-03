@@ -145,7 +145,7 @@ def test_agent_spec_model_config_derives_context_capability_thresholds() -> None
     }
     assert handoff.configuration.include_summary_reminder
     assert handoff.configuration.summary_reminder_tokens == 130_000
-    assert compaction.policy == CompactionPolicy(trigger_tokens=180_000)
+    assert compaction.policy is None
 
 
 def test_handoff_model_config_distinguishes_unknown_context_from_disabled_reminder() -> None:

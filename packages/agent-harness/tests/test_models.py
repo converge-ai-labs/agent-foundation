@@ -12,11 +12,13 @@ from a13n_harness import (
     AgentDefinition,
     DefinitionError,
     HarnessBuilder,
+    HarnessModelCharacteristics,
     HarnessState,
     ModelResolutionError,
     RunBindings,
     SubagentDefinition,
 )
+from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness.models import (
     MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
     MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
@@ -48,8 +50,32 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.providers import Provider
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RequestUsage
 
 pytestmark = pytest.mark.anyio
+
+
+class _ModelProfileObserver(AbstractCapability[AgentContext]):
+    id = "test.model-profile-observer"
+
+    def __init__(self, observed: list[tuple[int | None, float | None, bool]]) -> None:
+        self._observed = observed
+
+    async def before_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        request_context: ModelRequestContext,
+    ) -> ModelRequestContext:
+        assert isinstance(ctx.model, Model)
+        profile = ctx.model.profile
+        self._observed.append(
+            (
+                profile.get("context_window"),
+                ctx.context_window_used,
+                profile.get("supports_json_object_output", False),
+            )
+        )
+        return request_context
 
 
 class RecordingModelResolver:
@@ -64,6 +90,52 @@ class RecordingModelResolver:
     ) -> Model:
         self.calls.append((context.deps.run_id, context.deps.thread_id, model_id))
         return self.model
+
+
+@pytest.mark.parametrize("model_source", ["definition", "resolver", "inference"])
+async def test_harness_context_window_is_shared_through_native_model_profile(
+    model_source: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[tuple[int | None, float | None, bool]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "done"
+
+    model = FunctionModel(
+        stream_function=stream,
+        profile={"context_window": 1_000, "supports_json_object_output": True},
+    )
+    if model_source == "inference":
+        monkeypatch.setattr(execution_module, "infer_model", lambda *args, **kwargs: model)
+    spec = HarnessAgentSpec(
+        model=None if model_source == "definition" else "logical:primary",
+        model_characteristics=HarnessModelCharacteristics(context_window=2_000),
+    )
+    executable = HarnessBuilder().build(
+        spec,
+        output_type=str,
+        model=model if model_source == "definition" else None,
+        capabilities=(_ModelProfileObserver(observed),),
+    )
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart("previous")]),
+            ModelResponse(
+                parts=[TextPart("previous response")],
+                usage=RequestUsage(input_tokens=1_200, output_tokens=100),
+            ),
+        )
+    )
+    bindings = RunBindings.embedded(
+        model_resolver=RecordingModelResolver(model) if model_source == "resolver" else None,
+    )
+
+    result = await executable.run("continue", previous_state=previous, bindings=bindings)
+
+    assert result.output_or_raise() == "done"
+    assert observed == [(2_000, 0.65, True)]
 
 
 async def test_logical_model_is_resolved_from_an_async_function() -> None:

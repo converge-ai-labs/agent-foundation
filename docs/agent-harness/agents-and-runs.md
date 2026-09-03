@@ -276,7 +276,7 @@ Within each resolver, aliases apply in declaration order and concrete overrides 
 
 ### Model characteristics
 
-The `model_characteristics` construction and serialization key holds resolved characteristics that complement Pydantic AI's provider `ModelProfile`; it is not provider request settings. Python code reads the value through `spec.model_characteristics` without conflicting with Pydantic's class-level `model_config`. It defines explicit Harness model capabilities together with the context window and proactive summarize and compaction ratios:
+The `model_characteristics` construction and serialization key holds resolved Harness-managed characteristics; it is not provider request settings or a second provider profile. Python code reads the value through `spec.model_characteristics` without conflicting with Pydantic's class-level `model_config`. It defines explicit Harness model capabilities together with the context window and proactive summarize and compaction ratios. An explicit Harness context window is also projected onto the effective native `ModelProfile`, so external Pydantic AI Capabilities can read the same value through the upstream model abstraction:
 
 ```python
 spec = AgentSpec(
@@ -289,7 +289,7 @@ spec = AgentSpec(
 )
 ```
 
-When selected, `HandoffCapability()` derives its summarize reminder at 65% and `CompactionCapability()` derives its trigger at 90%. Explicit Capability token thresholds take precedence, and model characteristics never enable either Capability by itself. A Host may resolve these values from its own preset catalog, the Harness official model catalog, or characteristics aliases; `HarnessBuilder` never infers one from the model name. Native Pydantic AI `AgentSpec` remains accepted when this extension is not needed.
+When selected, `HandoffCapability()` derives its summarize reminder at 65%. `CompactionCapability()` evaluates its 90% threshold at each request from native `RunContext.model.context_window` and `RunContext.context_window_used`, then falls back to Harness characteristics and captured provider usage when the native values are unavailable. An explicit Capability token threshold takes precedence. Model characteristics never enable either Capability by themselves. A Host may resolve these values from its own preset catalog, the Harness official model catalog, or characteristics aliases; `HarnessBuilder` never infers one from the model name. Native Pydantic AI `AgentSpec` remains accepted when this extension is not needed.
 
 ### Automatic model request affinity
 

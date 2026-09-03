@@ -45,7 +45,6 @@ from a13n_harness.capabilities.context import (
     RUNTIME_CONTEXT_CAPABILITY_ID,
     WORKSPACE_OUTLINE_CAPABILITY_ID,
     CompactionCapability,
-    CompactionPolicy,
     FileContextCapability,
     HandoffCapability,
     RuntimeContextCapability,
@@ -157,6 +156,7 @@ from a13n_harness.model_context import (
 )
 from a13n_harness.models.binding import RunModelResolver, resolve_run_model
 from a13n_harness.models.inference import GatewayModelProviderFactory, infer_model
+from a13n_harness.models.profile import project_context_window
 from a13n_harness.models.request_headers import (
     MODEL_REQUEST_HEADERS_CAPABILITY_ID,
     ModelRequestHeadersCapability,
@@ -562,17 +562,6 @@ def _resolve_model_characteristics_capabilities(
     model_characteristics = agent.model_characteristics if isinstance(agent, HarnessAgentSpec) else None
     resolved: list[AbstractCapability[AgentContext]] = []
     for capability in capabilities:
-        if isinstance(capability, CompactionCapability) and capability.policy is None:
-            trigger_tokens = (
-                model_characteristics.compaction_trigger_tokens if model_characteristics is not None else None
-            )
-            if trigger_tokens is None:
-                raise DefinitionError(
-                    "Automatic compaction requires AgentSpec.model_characteristics.context_window.",
-                    code="compaction_policy_unresolved",
-                )
-            resolved.append(CompactionCapability(CompactionPolicy(trigger_tokens=trigger_tokens)))
-            continue
         if isinstance(capability, HandoffCapability) and model_characteristics is not None:
             configuration = capability.configuration
             threshold_fields = {"include_summary_reminder", "summary_reminder_tokens"}
@@ -781,6 +770,10 @@ class HarnessBuilder:
             definition.agent,
             (*definition.capabilities, *plugin_capabilities),
         )
+        model_characteristics = (
+            definition.agent.model_characteristics if isinstance(definition.agent, HarnessAgentSpec) else None
+        )
+        profile_context_window = model_characteristics.context_window if model_characteristics is not None else None
         selected_model_costs = _model_cost_capabilities(definition.capabilities)
         if len(selected_model_costs) > 1:
             raise DefinitionError(
@@ -804,7 +797,7 @@ class HarnessBuilder:
                         code="instrumentation_owner_conflict",
                         details={"model_id": model_id},
                     )
-                return resolved
+                return project_context_window(resolved, profile_context_window)
             inferred = infer_model(
                 model_id,
                 gateway_provider_factory=self._gateway_provider_factory,
@@ -815,10 +808,15 @@ class HarnessBuilder:
                     code="instrumentation_owner_conflict",
                     details={"model_id": model_id},
                 )
-            return inferred
+            return project_context_window(inferred, profile_context_window)
 
         try:
             construction_spec, business_output, output_adapter = _resolve_business_output(definition)
+            definition_model = (
+                project_context_window(definition.model, profile_context_window)
+                if definition.model is not None
+                else None
+            )
             structured_output_capabilities = (
                 (StructuredOutputAutoToolChoiceCapability(),) if _uses_tool_based_output(business_output) else ()
             )
@@ -848,7 +846,7 @@ class HarnessBuilder:
                     *first_party_declarative_capability_types(),
                     *self._capability_type_catalog.custom_capability_types,
                 ),
-                model=definition.model,
+                model=definition_model,
                 output_type=complete_output,
                 capabilities=capabilities,
                 defer_model_check=True,

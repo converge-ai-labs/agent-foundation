@@ -82,6 +82,7 @@ _COMPACTION_PROMPT = (
 _PREVIOUS_ASSISTANT_REFERENCE_MAX_CHARS = 32_000
 _PREVIOUS_ASSISTANT_REFERENCE_KEEP_HEAD = 24_000
 _PREVIOUS_ASSISTANT_REFERENCE_KEEP_TAIL = 6_000
+_DEFAULT_COMPACTION_THRESHOLD = 0.90
 
 
 class RuntimeContextConfiguration(BaseModel):
@@ -686,11 +687,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                     code="capability_type_mismatch",
                 )
             return existing
-        if self.policy is None:
-            raise DefinitionError(
-                "Compaction requires a policy or a model characteristics with a context window.",
-                code="compaction_policy_unresolved",
-            )
         replacement = CompactionCapability(self.policy)
         ctx.deps._record_run_capability(COMPACTION_CAPABILITY_ID, replacement)
         return replacement
@@ -700,24 +696,23 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        if self.policy is None:
-            raise DefinitionError("Compaction policy was not resolved.", code="compaction_policy_unresolved")
         if self._depth > 0 or _requires_exact_boundary(ctx, request_context.messages):
             return request_context
         await ctx.deps._steering.resolve_delivered(request_context.messages)
-        request_tokens = _latest_request_tokens(request_context.messages)
-        if request_tokens is None:
+        snapshot = _compaction_snapshot(ctx, request_context.messages, self.policy)
+        if snapshot is None:
             return request_context
+        request_tokens, trigger_tokens, threshold_reached = snapshot
         await emit_harness_event(
             ctx.deps.events,
             kind="context",
             payload=ContextSnapshotPayload(
                 request_index=active_model_request_index(ctx),
                 request_tokens=request_tokens,
-                trigger_tokens=self.policy.trigger_tokens,
+                trigger_tokens=trigger_tokens,
             ),
         )
-        if request_tokens < self.policy.trigger_tokens:
+        if not threshold_reached:
             return request_context
 
         compaction_context = _replace_messages(
@@ -1045,9 +1040,47 @@ def _xml_attribute(value: str) -> str:
 def _latest_request_tokens(messages: list[ModelMessage]) -> int | None:
     for message in reversed(messages):
         if isinstance(message, ModelResponse) and message.usage is not None:
-            usage = message.usage
-            return usage.input_tokens + usage.output_tokens
+            request_tokens = message.usage.total_tokens
+            return request_tokens if request_tokens > 0 else None
     return None
+
+
+def _ratio_trigger_tokens(context_window: int, threshold: float) -> int:
+    lower = 1
+    upper = context_window
+    while lower < upper:
+        candidate = (lower + upper) // 2
+        if candidate / context_window >= threshold:
+            upper = candidate
+        else:
+            lower = candidate + 1
+    return lower
+
+
+def _compaction_snapshot(
+    ctx: RunContext[AgentContext],
+    messages: list[ModelMessage],
+    policy: CompactionPolicy | None,
+) -> tuple[int, int, bool] | None:
+    request_tokens = _latest_request_tokens(messages)
+    if request_tokens is None:
+        return None
+    if policy is not None:
+        return request_tokens, policy.trigger_tokens, request_tokens >= policy.trigger_tokens
+
+    characteristics = ctx.deps.model_characteristics
+    threshold = characteristics.compact_threshold if characteristics is not None else _DEFAULT_COMPACTION_THRESHOLD
+    context_window = ctx.model.context_window
+    if context_window is None and characteristics is not None:
+        context_window = characteristics.context_window
+    if context_window is None or context_window <= 0:
+        return None
+
+    trigger_tokens = _ratio_trigger_tokens(context_window, threshold)
+    context_window_used = ctx.context_window_used
+    if context_window_used is None:
+        context_window_used = request_tokens / context_window
+    return request_tokens, trigger_tokens, context_window_used >= threshold
 
 
 def _mark_current_restored_boundary(messages: list[ModelMessage]) -> list[ModelMessage]:
