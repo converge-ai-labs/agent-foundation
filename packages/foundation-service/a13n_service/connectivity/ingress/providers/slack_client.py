@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
+from collections.abc import Callable
+from dataclasses import dataclass
+from hashlib import sha256
+from time import monotonic
 from typing import Annotated, Literal
 
 import httpx2
@@ -13,6 +18,8 @@ from a13n_service.connectivity.adapters import JsonObject
 from .native_http import NativeActionError, bounded_response_body, retry_after_seconds
 
 _RESPONSE_MAX_BYTES = 1024 * 1024
+_MEMBER_CACHE_MAX_ENTRIES = 512
+_MEMBER_CACHE_TTL_SECONDS = 300.0
 _JSON_OBJECT = TypeAdapter(JsonObject)
 BoundedText = Annotated[str, StringConstraints(min_length=1, max_length=40_000)]
 BoundedCursor = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
@@ -101,6 +108,12 @@ class SlackMessagePage(_StrictModel):
 SlackNativeActionError = NativeActionError
 
 
+@dataclass(frozen=True, slots=True)
+class _CachedMember:
+    member: SlackMember
+    expires_at: float
+
+
 class SlackNativeClient:
     def __init__(
         self,
@@ -108,14 +121,25 @@ class SlackNativeClient:
         *,
         api_origin: str = "https://slack.com",
         response_max_bytes: int = _RESPONSE_MAX_BYTES,
+        member_cache_max_entries: int = _MEMBER_CACHE_MAX_ENTRIES,
+        member_cache_ttl_seconds: float = _MEMBER_CACHE_TTL_SECONDS,
+        clock: Callable[[], float] = monotonic,
     ) -> None:
         if api_origin.rstrip("/") != "https://slack.com":
             raise ValueError("Slack API origin must be https://slack.com")
         if not 1 <= response_max_bytes <= _RESPONSE_MAX_BYTES:
             raise ValueError("Slack response byte limit is invalid")
+        if not 1 <= member_cache_max_entries <= _MEMBER_CACHE_MAX_ENTRIES:
+            raise ValueError("Slack member cache bound is invalid")
+        if not 1 <= member_cache_ttl_seconds <= _MEMBER_CACHE_TTL_SECONDS:
+            raise ValueError("Slack member cache TTL is invalid")
         self._http_client = http_client
         self._api_origin = api_origin.rstrip("/")
         self._response_max_bytes = response_max_bytes
+        self._member_cache_max_entries = member_cache_max_entries
+        self._member_cache_ttl_seconds = member_cache_ttl_seconds
+        self._clock = clock
+        self._member_cache: OrderedDict[tuple[bytes, str], _CachedMember] = OrderedDict()
 
     async def reply(
         self,
@@ -173,9 +197,33 @@ class SlackNativeClient:
         raw_members = response.get("members")
         if not isinstance(raw_members, list) or len(raw_members) > arguments.limit:
             raise SlackNativeActionError("invalid_provider_response")
-        items = tuple(SlackMember(user_id=value) for value in raw_members if isinstance(value, str) and value)
+        member_ids: list[str] = []
+        for value in raw_members:
+            if not isinstance(value, str) or not value:
+                raise SlackNativeActionError("invalid_provider_response")
+            member_ids.append(value)
+        token_scope = sha256(bot_token.encode()).digest()
+        items = tuple([await self._member(value, token_scope=token_scope, bot_token=bot_token) for value in member_ids])
         cursor = _next_cursor(response)
         return SlackMemberPage(items=items, cursor=cursor, has_more=cursor is not None)
+
+    async def _member(self, user_id: str, *, token_scope: bytes, bot_token: str) -> SlackMember:
+        key = (token_scope, user_id)
+        now = self._clock()
+        cached = self._member_cache.get(key)
+        if cached is not None and now < cached.expires_at:
+            self._member_cache.move_to_end(key)
+            return cached.member
+        response = await self._request("users.info", {"user": user_id}, bot_token=bot_token)
+        member = _member(response.get("user"), expected_user_id=user_id)
+        self._member_cache[key] = _CachedMember(
+            member=member,
+            expires_at=now + self._member_cache_ttl_seconds,
+        )
+        self._member_cache.move_to_end(key)
+        while len(self._member_cache) > self._member_cache_max_entries:
+            self._member_cache.popitem(last=False)
+        return member
 
     async def read_messages(
         self,
@@ -269,6 +317,33 @@ def _message(value: object) -> SlackMessage:
         text=text,
         root_thread_ts=root_thread_ts,
     )
+
+
+def _member(value: object, *, expected_user_id: str) -> SlackMember:
+    if not isinstance(value, dict) or value.get("id") != expected_user_id:
+        raise SlackNativeActionError("invalid_provider_response")
+    profile = value.get("profile")
+    if profile is not None and not isinstance(profile, dict):
+        raise SlackNativeActionError("invalid_provider_response")
+    profile = profile or {}
+    display_name = profile.get("display_name") or profile.get("real_name") or value.get("name")
+    if display_name is not None and not isinstance(display_name, str):
+        raise SlackNativeActionError("invalid_provider_response")
+    is_bot = value.get("is_bot")
+    deleted = value.get("deleted")
+    if is_bot is not None and not isinstance(is_bot, bool):
+        raise SlackNativeActionError("invalid_provider_response")
+    if deleted is not None and not isinstance(deleted, bool):
+        raise SlackNativeActionError("invalid_provider_response")
+    try:
+        return SlackMember(
+            user_id=expected_user_id,
+            display_name=display_name or None,
+            is_bot=is_bot,
+            deleted=deleted,
+        )
+    except ValidationError as error:
+        raise SlackNativeActionError("invalid_provider_response") from error
 
 
 def _next_cursor(value: JsonObject) -> str | None:

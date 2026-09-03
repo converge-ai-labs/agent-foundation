@@ -140,6 +140,32 @@ async def test_slack_reads_are_bounded_and_return_provider_cursor() -> None:
                 200,
                 json={
                     "ok": True,
+                    "user": {
+                        "id": "U1",
+                        "name": "one",
+                        "is_bot": False,
+                        "deleted": False,
+                        "profile": {"display_name": "One"},
+                    },
+                },
+            ),
+            httpx2.Response(
+                200,
+                json={
+                    "ok": True,
+                    "user": {
+                        "id": "U2",
+                        "name": "two",
+                        "is_bot": True,
+                        "deleted": False,
+                        "profile": {"display_name": ""},
+                    },
+                },
+            ),
+            httpx2.Response(
+                200,
+                json={
+                    "ok": True,
                     "messages": [{"ts": "125.000", "user": "U1", "text": "safe"}],
                     "response_metadata": {"next_cursor": "next-messages"},
                 },
@@ -160,11 +186,49 @@ async def test_slack_reads_are_bounded_and_return_provider_cursor() -> None:
         )
 
     assert tuple(item.user_id for item in members.items) == ("U1", "U2")
+    assert tuple(item.display_name for item in members.items) == ("One", "two")
+    assert tuple(item.is_bot for item in members.items) == (False, True)
     assert members.cursor == "next-members"
     assert messages.items[0].text == "safe"
     assert messages.cursor == "next-messages"
     with pytest.raises(ValidationError):
         SlackReadMessagesArguments(scope="conversation", limit=16)
+
+
+@pytest.mark.anyio
+async def test_slack_member_enrichment_cache_is_bounded_and_scoped_by_token() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        operation = request.url.path.rsplit("/", maxsplit=1)[-1]
+        payload = json.loads(request.content)
+        if operation == "conversations.members":
+            return httpx2.Response(200, json={"ok": True, "members": ["U1"]})
+        return httpx2.Response(
+            200,
+            json={
+                "ok": True,
+                "user": {
+                    "id": payload["user"],
+                    "name": request.headers["authorization"],
+                    "profile": {"display_name": "cached"},
+                },
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
+        client = SlackNativeClient(http_client, member_cache_max_entries=1)
+        arguments = SlackListMembersArguments(limit=1)
+        await client.list_members(_binding(), arguments, bot_token="token-one")
+        await client.list_members(_binding(), arguments, bot_token="token-one")
+        await client.list_members(_binding(), arguments, bot_token="token-two")
+        await client.list_members(_binding(), arguments, bot_token="token-one")
+
+    info_requests = [request for request in requests if request.url.path.endswith("/users.info")]
+    assert len(info_requests) == 3
+    assert "token-one" not in repr(client._member_cache)
+    assert "token-two" not in repr(client._member_cache)
 
 
 @pytest.mark.anyio
