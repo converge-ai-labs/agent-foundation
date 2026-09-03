@@ -3,6 +3,7 @@
 FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
 SANDBOX_IMAGE ?= agent-foundation-sandbox:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
+PYTHON_TEST_DIRS := $(sort $(wildcard packages/*/tests) scripts/tests)
 LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
@@ -218,7 +219,9 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 
 .PHONY: test
 test: sync ## Run Python workspace tests
-	@uv run --locked python -m pytest -n 2 --dist loadgroup
+	@for directory in $(PYTHON_TEST_DIRS); do \
+		uv run --locked python -m pytest -n 2 --dist loadgroup "$$directory" || exit $$?; \
+	done
 
 .PHONY: eip-generate
 eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspection artifacts
