@@ -10,10 +10,13 @@ from a13n_harness import (
     AgentContext,
     AgentDefinition,
     AgentSpec,
+    ExecutableAgent,
     HarnessBuilder,
+    HarnessEvent,
     HarnessRunResult,
     ModelRecoveryPolicy,
     RunBindings,
+    SafeFailure,
 )
 from a13n_service.interactions import (
     AdaptedThreadInboxEntry,
@@ -23,11 +26,19 @@ from a13n_service.interactions import (
     AttemptPreparationAccepted,
     ConsumedThreadInboxEntry,
     DeferredContinuationState,
+    FoundationHarnessOutcomeAdapter,
     FoundationRunControlCoordinator,
+    HarnessHandoffConsumption,
+    HarnessStreamConsumer,
+    HarnessStreamConsumption,
+    HarnessTerminalConsumption,
     HostContinuationState,
     RunAttemptYieldReason,
+    RunPayloadStore,
     RunStateEnvelope,
     RunStateStore,
+    RunTerminalDisposition,
+    RunTerminalReceipt,
     StoredRunState,
     compose_run_control,
 )
@@ -120,6 +131,45 @@ class _RecordingThreadInbox:
         return self.entries
 
 
+@dataclass
+class _RecordingEventProjector:
+    events: list[HarnessEvent] = field(default_factory=list)
+
+    async def project(self, event: HarnessEvent) -> None:
+        self.events.append(event)
+
+
+@dataclass
+class _RecordingTerminalCommitter:
+    states: list[StoredRunState] = field(default_factory=list)
+    failures: list[SafeFailure] = field(default_factory=list)
+    cancelled: int = 0
+
+    async def commit_state_outcome(
+        self,
+        authority: AttemptAuthority,
+        state: StoredRunState,
+    ) -> RunTerminalReceipt:
+        self.states.append(state)
+        disposition = RunTerminalDisposition(state.envelope.checkpoint_kind)
+        return _terminal_receipt(authority, disposition)
+
+    async def commit_failure(
+        self,
+        authority: AttemptAuthority,
+        failure: SafeFailure,
+    ) -> RunTerminalReceipt:
+        self.failures.append(failure)
+        return _terminal_receipt(authority, RunTerminalDisposition.failed)
+
+    async def reconcile_cancelled(
+        self,
+        authority: AttemptAuthority,
+    ) -> RunTerminalReceipt:
+        self.cancelled += 1
+        return _terminal_receipt(authority, RunTerminalDisposition.cancelled)
+
+
 def _authority() -> AttemptAuthority:
     return AttemptAuthority(
         tenant_id=TENANT_ID,
@@ -152,6 +202,18 @@ def _preparation(authority: AttemptAuthority) -> AttemptPreparationAccepted:
         run_attempt_id=authority.run_attempt_id,
         fence=authority.fence,
         mutation=_receipt(authority),
+    )
+
+
+def _terminal_receipt(
+    authority: AttemptAuthority,
+    disposition: RunTerminalDisposition,
+) -> RunTerminalReceipt:
+    return RunTerminalReceipt(
+        disposition=disposition,
+        run_version=authority.expected_run_version + 1,
+        attempt_version=authority.expected_attempt_version + 1,
+        thread_version=None if disposition is RunTerminalDisposition.retrying else 2,
     )
 
 
@@ -196,17 +258,12 @@ async def _run(
     capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
     model_recovery: ModelRecoveryPolicy | None = None,
 ) -> HarnessRunResult[str]:
-    definition = compose_run_control(
-        AgentDefinition(
-            agent=AgentSpec(),
-            output_type=str,
-            model=model,
-            capabilities=capabilities,
-            model_recovery=model_recovery or ModelRecoveryPolicy(),
-        ),
-        coordinator,
+    executable = _executable(
+        coordinator=coordinator,
+        model=model,
+        capabilities=capabilities,
+        model_recovery=model_recovery,
     )
-    executable = HarnessBuilder(instrumentation=None).build(definition)
     authority = coordinator.current_authority
     async with executable.stream(
         "accepted input",
@@ -218,6 +275,50 @@ async def _run(
         result = stream.result
         assert result is not None
         return result
+
+
+def _executable(
+    *,
+    coordinator: FoundationRunControlCoordinator,
+    model: FunctionModel,
+    capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
+    model_recovery: ModelRecoveryPolicy | None = None,
+) -> ExecutableAgent[str]:
+    definition = compose_run_control(
+        AgentDefinition(
+            agent=AgentSpec(),
+            output_type=str,
+            model=model,
+            capabilities=capabilities,
+            model_recovery=model_recovery or ModelRecoveryPolicy(),
+        ),
+        coordinator,
+    )
+    return HarnessBuilder(instrumentation=None).build(definition)
+
+
+async def _consume(
+    *,
+    coordinator: FoundationRunControlCoordinator,
+    bindings: RunBindings,
+    state: StoredRunState,
+    model: FunctionModel,
+    consumer: HarnessStreamConsumer,
+    capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
+) -> HarnessStreamConsumption[str]:
+    executable = _executable(
+        coordinator=coordinator,
+        model=model,
+        capabilities=capabilities,
+    )
+    authority = coordinator.current_authority
+    async with executable.stream(
+        "accepted input",
+        bindings=bindings,
+        previous_state=state.envelope.harness,
+    ) as stream:
+        await coordinator.attach_stream(stream, _preparation(authority))
+        return await consumer.consume(stream, coordinator)
 
 
 async def test_checkpoint_commits_inbox_receipt_only_after_native_delivery(
@@ -349,6 +450,8 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     states, stored = await _stored_state(interaction_object_store, initial_state())
     bindings = RunBindings.embedded()
     execution = _RecordingAttemptExecution(trace)
+    projector = _RecordingEventProjector()
+    terminal = _RecordingTerminalCommitter()
     coordinator = FoundationRunControlCoordinator(
         authority=_authority(),
         execution=execution,
@@ -359,22 +462,217 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     )
     await coordinator.request_handoff(RunAttemptYieldReason.service_drain)
 
-    result = await _run(
+    consumption = await _consume(
         coordinator=coordinator,
         bindings=bindings,
         state=stored,
         model=_model(trace, calls),
+        consumer=HarnessStreamConsumer(
+            projector=projector,
+            outcome_adapter=FoundationHarnessOutcomeAdapter(
+                tenant_id=TENANT_ID,
+                run_id=RUN_ID,
+                payloads=RunPayloadStore(interaction_object_store),
+                max_output_bytes=1024,
+                inline_output_bytes=128,
+            ),
+            terminal_committer=terminal,
+        ),
     )
-    assert result.status == "cancelled"
+    assert consumption.result.status == "cancelled"
+    assert isinstance(consumption, HarnessHandoffConsumption)
     assert calls == []
     assert coordinator.handoff_ready
     assert coordinator.current_state.envelope.input_disposition == "applied"
+    assert terminal.states == []
+    assert terminal.failures == []
+    assert terminal.cancelled == 0
     mutation = await coordinator.complete_handoff()
 
     assert not coordinator.handoff_ready
     assert execution.yielded is RunAttemptYieldReason.service_drain
     assert mutation.run_version == coordinator.current_authority.expected_run_version
     assert trace.index("attempt:checkpoint") < trace.index("attempt:yield")
+
+
+async def test_stream_consumer_projects_events_and_commits_one_completed_result(
+    interaction_object_store: ObjectStore,
+) -> None:
+    trace: list[str] = []
+    calls: list[tuple[ModelMessage, ...]] = []
+    states, stored = await _stored_state(interaction_object_store, initial_state())
+    bindings = RunBindings.embedded()
+    projector = _RecordingEventProjector()
+    terminal = _RecordingTerminalCommitter()
+    coordinator = FoundationRunControlCoordinator(
+        authority=_authority(),
+        execution=_RecordingAttemptExecution(trace),
+        states=states,
+        state=stored,
+        instance=bindings.instance,
+        inbox=_RecordingThreadInbox(trace),
+    )
+    consumer = HarnessStreamConsumer(
+        projector=projector,
+        outcome_adapter=FoundationHarnessOutcomeAdapter(
+            tenant_id=TENANT_ID,
+            run_id=RUN_ID,
+            payloads=RunPayloadStore(interaction_object_store),
+            max_output_bytes=1024,
+            inline_output_bytes=128,
+        ),
+        terminal_committer=terminal,
+    )
+
+    consumption = await _consume(
+        coordinator=coordinator,
+        bindings=bindings,
+        state=stored,
+        model=_model(trace, calls),
+        consumer=consumer,
+    )
+
+    assert consumption.result.output_or_raise() == "turn-1"
+    assert isinstance(consumption, HarnessTerminalConsumption)
+    assert consumption.terminal.disposition is RunTerminalDisposition.completed
+    assert projector.events
+    assert len(terminal.states) == 1
+    candidate = terminal.states[0].envelope.outcome_candidate
+    assert candidate is not None and candidate.outcome == "completed"
+    assert candidate.output == "turn-1"
+    assert coordinator.current_state.envelope.checkpoint_kind == "completed"
+
+
+async def test_stream_consumer_commits_native_suspension_as_waiting(
+    interaction_object_store: ObjectStore,
+) -> None:
+    trace: list[str] = []
+    calls: list[tuple[ModelMessage, ...]] = []
+    states, stored = await _stored_state(interaction_object_store, initial_state())
+    bindings = RunBindings.embedded()
+    terminal = _RecordingTerminalCommitter()
+    coordinator = FoundationRunControlCoordinator(
+        authority=_authority(),
+        execution=_RecordingAttemptExecution(trace),
+        states=states,
+        state=stored,
+        instance=bindings.instance,
+        inbox=_RecordingThreadInbox(trace),
+    )
+
+    consumption = await _consume(
+        coordinator=coordinator,
+        bindings=bindings,
+        state=stored,
+        model=_approval_model(trace, calls),
+        capabilities=(Capability(id="test.approval", tools=[Tool(_step, requires_approval=True)]),),
+        consumer=HarnessStreamConsumer(
+            projector=_RecordingEventProjector(),
+            outcome_adapter=FoundationHarnessOutcomeAdapter(
+                tenant_id=TENANT_ID,
+                run_id=RUN_ID,
+                payloads=RunPayloadStore(interaction_object_store),
+                max_output_bytes=1024,
+                inline_output_bytes=128,
+            ),
+            terminal_committer=terminal,
+        ),
+    )
+
+    assert consumption.result.status == "suspended"
+    assert isinstance(consumption, HarnessTerminalConsumption)
+    assert consumption.terminal.disposition is RunTerminalDisposition.waiting
+    assert len(terminal.states) == 1
+    candidate = terminal.states[0].envelope.outcome_candidate
+    assert candidate is not None and candidate.outcome == "waiting"
+    assert terminal.states[0].envelope.host.deferred is not None
+
+
+async def test_stream_consumer_delegates_safe_harness_failure(
+    interaction_object_store: ObjectStore,
+) -> None:
+    trace: list[str] = []
+    calls: list[tuple[ModelMessage, ...]] = []
+    states, stored = await _stored_state(interaction_object_store, initial_state())
+    bindings = RunBindings.embedded()
+    terminal = _RecordingTerminalCommitter()
+    coordinator = FoundationRunControlCoordinator(
+        authority=_authority(),
+        execution=_RecordingAttemptExecution(trace),
+        states=states,
+        state=stored,
+        instance=bindings.instance,
+        inbox=_RecordingThreadInbox(trace),
+    )
+
+    consumption = await _consume(
+        coordinator=coordinator,
+        bindings=bindings,
+        state=stored,
+        model=_failing_model(trace, calls),
+        consumer=HarnessStreamConsumer(
+            projector=_RecordingEventProjector(),
+            outcome_adapter=FoundationHarnessOutcomeAdapter(
+                tenant_id=TENANT_ID,
+                run_id=RUN_ID,
+                payloads=RunPayloadStore(interaction_object_store),
+                max_output_bytes=1024,
+                inline_output_bytes=128,
+            ),
+            terminal_committer=terminal,
+        ),
+    )
+
+    assert consumption.result.status == "failed"
+    assert isinstance(consumption, HarnessTerminalConsumption)
+    assert consumption.terminal.disposition is RunTerminalDisposition.failed
+    assert len(terminal.failures) == 1
+    assert terminal.states == []
+
+
+async def test_stream_consumer_reconciles_non_handoff_cancellation(
+    interaction_object_store: ObjectStore,
+) -> None:
+    trace: list[str] = []
+    calls: list[tuple[ModelMessage, ...]] = []
+    states, stored = await _stored_state(interaction_object_store, initial_state())
+    bindings = RunBindings.embedded()
+    terminal = _RecordingTerminalCommitter()
+    coordinator = FoundationRunControlCoordinator(
+        authority=_authority(),
+        execution=_RecordingAttemptExecution(trace),
+        states=states,
+        state=stored,
+        instance=bindings.instance,
+        inbox=_RecordingThreadInbox(trace),
+    )
+    executable = _executable(coordinator=coordinator, model=_model(trace, calls))
+    consumer = HarnessStreamConsumer(
+        projector=_RecordingEventProjector(),
+        outcome_adapter=FoundationHarnessOutcomeAdapter(
+            tenant_id=TENANT_ID,
+            run_id=RUN_ID,
+            payloads=RunPayloadStore(interaction_object_store),
+            max_output_bytes=1024,
+            inline_output_bytes=128,
+        ),
+        terminal_committer=terminal,
+    )
+
+    async with executable.stream(
+        "accepted input",
+        bindings=bindings,
+        previous_state=stored.envelope.harness,
+    ) as stream:
+        await coordinator.attach_stream(stream, _preparation(coordinator.current_authority))
+        stream.cancel()
+        consumption = await consumer.consume(stream, coordinator)
+
+    assert consumption.result.status == "cancelled"
+    assert isinstance(consumption, HarnessTerminalConsumption)
+    assert consumption.terminal.disposition is RunTerminalDisposition.cancelled
+    assert terminal.cancelled == 1
+    assert calls == []
 
 
 async def _step() -> str:
@@ -425,6 +723,45 @@ def _recovering_model(
         if len(calls) == 1:
             raise RuntimeError("provider interrupted")
         yield f"turn-{len(calls)}"
+
+    return FunctionModel(stream_function=stream)
+
+
+def _approval_model(
+    trace: list[str],
+    calls: list[tuple[ModelMessage, ...]],
+) -> FunctionModel:
+    async def stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[DeltaToolCalls]:
+        del info
+        calls.append(tuple(messages))
+        trace.append(f"model:{len(calls)}")
+        yield {
+            0: DeltaToolCall(
+                name="_step",
+                json_args=json.dumps({}),
+                tool_call_id="approval-1",
+            )
+        }
+
+    return FunctionModel(stream_function=stream)
+
+
+def _failing_model(
+    trace: list[str],
+    calls: list[tuple[ModelMessage, ...]],
+) -> FunctionModel:
+    async def stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str]:
+        del info
+        calls.append(tuple(messages))
+        trace.append(f"model:{len(calls)}")
+        raise RuntimeError("provider failed")
+        yield "unreachable"
 
     return FunctionModel(stream_function=stream)
 
