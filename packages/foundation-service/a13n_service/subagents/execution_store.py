@@ -15,13 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from a13n_service.agents.models import AgentRevisionRecord
-from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam import WorkspaceAction
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.interactions.domain import Run, RunStatus, Thread
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.storage import short_session
 
+from .authorization import ChildRunAuthorizationError, authorize_parent_child_action
 from .domain import ChildRunRelationship
 from .models import ChildRunRelationshipRecord
 
@@ -173,13 +174,19 @@ class SubagentExecutionStore:
                 ).all()
             )
             executions = await _load_executions(database, rows)
-            await _authorize_run_action(
-                database,
-                parent=parent.to_resource(),
-                child_agent_ids=tuple(sorted({item.run.agent_id for item in executions})),
-                workspace_id=session.workspace_id,
-                action=action,
-            )
+            try:
+                await authorize_parent_child_action(
+                    database,
+                    parent=parent.to_resource(),
+                    child_agent_ids=tuple(sorted({item.run.agent_id for item in executions})),
+                    workspace_id=session.workspace_id,
+                    action=action,
+                )
+            except ChildRunAuthorizationError as error:
+                raise FoundationSubagentOperatorError(
+                    "subagent_authorization_denied",
+                    "Persisted parent Principal is no longer authorized for this subagent operation",
+                ) from error
         return ExecutionPage(items=executions, offset=query_offset, total=total)
 
 
@@ -325,44 +332,6 @@ async def _require_session(database: AsyncSession, parent: RunRecord) -> Session
             "Parent Session was not found",
         )
     return session
-
-
-async def _authorize_run_action(
-    database: AsyncSession,
-    *,
-    parent: Run,
-    child_agent_ids: tuple[str, ...],
-    workspace_id: str,
-    action: WorkspaceAction,
-) -> None:
-    actor = AuthenticatedActor(
-        principal=parent.authority_principal,
-        auth_method="run_authority",
-        credential_id=f"run_{parent.id}",
-        boundary_workspace_id=workspace_id,
-        request_id=parent.id,
-    )
-    try:
-        await authorize_agent(
-            database,
-            actor=actor,
-            workspace_id=workspace_id,
-            agent_id=parent.agent_id,
-            action=WorkspaceAction.run_read,
-        )
-        for child_agent_id in child_agent_ids:
-            await authorize_agent(
-                database,
-                actor=actor,
-                workspace_id=workspace_id,
-                agent_id=child_agent_id,
-                action=action,
-            )
-    except AuthorizationError as error:
-        raise FoundationSubagentOperatorError(
-            "subagent_authorization_denied",
-            "Persisted parent Principal is no longer authorized for this subagent operation",
-        ) from error
 
 
 def execution_input(run: Run) -> str:

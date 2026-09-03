@@ -32,6 +32,7 @@ from a13n_service.interactions import (
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.storage import ObjectNotFound, ObjectStore, short_session, transaction
 from a13n_service.subagents import (
+    ChildCancellationPolicy,
     ChildRunAcceptanceError,
     ChildRunAcceptanceService,
     prepare_child_resume,
@@ -430,6 +431,8 @@ def _prepared_child(
     child_config: EffectiveAgentConfig,
     *,
     suffix: str,
+    spawn_operation_id: str = "delegate-call-1",
+    cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
 ):
     return prepare_child_run(
         parent_run=parent,
@@ -437,7 +440,7 @@ def _prepared_child(
         parent_run_attempt_id=attempt_id,
         parent_run_attempt_generation=fence,
         parent_agent_instance_id="agent-parent",
-        spawn_operation_id="delegate-call-1",
+        spawn_operation_id=spawn_operation_id,
         subagent_name="researcher",
         delegated_input='{"delegated_task":"research"}',
         child_definition_id=CHILD_DEFINITION_ID,
@@ -450,6 +453,7 @@ def _prepared_child(
         mcp_tool_snapshot=parent.mcp_tool_snapshot,
         recovery_budget=parent.recovery_budget,
         created_at=NOW + timedelta(seconds=2),
+        cancellation_policy=cancellation_policy,
     )
 
 

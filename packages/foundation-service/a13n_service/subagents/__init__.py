@@ -6,6 +6,11 @@ from .acceptance import (
     ChildRunAcceptanceService,
 )
 from .admission import ChildRunAdmissionProfile, FoundationChildRunAdmissionPreparer
+from .cancellation import (
+    ChildCancellationBatch,
+    ChildCancellationError,
+    ChildCancellationReconciler,
+)
 from .domain import (
     MAX_INLINE_ASYNC_RESULT_BYTES,
     AsyncSubagentResultInboxPayload,
@@ -55,7 +60,10 @@ __all__ = [
     "AsyncSubagentSuccessorReceipt",
     "AsyncSubagentSuccessorReconciler",
     "AttemptAuthoritySource",
+    "ChildCancellationBatch",
+    "ChildCancellationError",
     "ChildCancellationPolicy",
+    "ChildCancellationReconciler",
     "ChildResultVisibility",
     "ChildRunAcceptanceError",
     "ChildRunAcceptanceReceipt",
