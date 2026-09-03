@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 
 from .models import MCPOAuthSessionRecord
 from .oauth_client import MCPOAuthError, OAuthPreparation

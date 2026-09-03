@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from a13n_service.public_errors import PublicError
+
 from .github import GitHubAcquisitionError
 from .objects import SkillPackageStoreError
 
 
-class SkillError(Exception):
+class SkillError(PublicError):
     def __init__(
         self,
         code: str,
@@ -16,11 +18,8 @@ class SkillError(Exception):
         details: dict[str, object] | None = None,
         retry_after_seconds: int | None = None,
     ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-        self.details = details or {}
+        headers = {"Retry-After": str(retry_after_seconds)} if retry_after_seconds is not None else None
+        super().__init__(code, message, status_code=status_code, details=details, headers=headers)
         self.retry_after_seconds = retry_after_seconds
 
 

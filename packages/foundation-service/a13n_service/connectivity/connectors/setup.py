@@ -19,7 +19,7 @@ from a13n_service.connectivity.connectors.adapters import (
     SetupContext,
     SetupStarted,
 )
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_digest
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation

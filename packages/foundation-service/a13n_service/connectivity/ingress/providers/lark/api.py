@@ -7,8 +7,8 @@ import json
 import httpx2
 from pydantic import TypeAdapter, ValidationError
 
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body, retry_after_seconds
-from a13n_service.connectivity.ingress.domain import JsonObject
 
 _JSON_OBJECT = TypeAdapter(JsonObject)
 

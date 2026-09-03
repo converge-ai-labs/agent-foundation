@@ -10,8 +10,8 @@ from uuid import NAMESPACE_URL, uuid5
 import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import EndpointValidator
-from a13n_service.connectivity.ingress.domain import JsonObject
 
 from .actions import (
     LarkActionBinding,

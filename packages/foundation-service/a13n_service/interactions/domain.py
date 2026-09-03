@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -21,6 +21,7 @@ from pydantic import (
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
 from a13n_service.models.domain import ModelExecutionObservation
+from a13n_service.temporal import require_aware_utc
 
 ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
 ThreadId = Annotated[str, StringConstraints(pattern=r"^thread-[a-f0-9]{32}$", max_length=39)]
@@ -32,9 +33,10 @@ JsonObject = dict[str, JsonValue]
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("timestamp must include a UTC offset")
-    return value.astimezone(UTC)
+    try:
+        return require_aware_utc(value)
+    except ValueError as error:
+        raise ValueError("timestamp must include a UTC offset") from error
 
 
 UtcDateTime = Annotated[datetime, AfterValidator(_utc)]

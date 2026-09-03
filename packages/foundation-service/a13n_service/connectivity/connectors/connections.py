@@ -11,7 +11,7 @@ from a13n_service.connectivity.connectors.adapters import (
     ConnectorAdapter,
 )
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import (
     ConnectivityManagementValueError,
     canonical_digest,

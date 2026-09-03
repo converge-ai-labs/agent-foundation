@@ -53,7 +53,7 @@ async def open_service_runtime(
                 storage=storage,
                 secret_protector=settings.secret_protector(),
             )
-            connectivity, connectivity_background = await build_connectivity_runtime(
+            connectivity, connectivity_selection, connectivity_background = await build_connectivity_runtime(
                 settings,
                 storage,
                 shared.secret_protector,
@@ -90,7 +90,7 @@ async def open_service_runtime(
                     shared,
                     execution,
                     worker,
-                    connectivity,
+                    connectivity_selection,
                     trace_query_provider_registry,
                     stack,
                 )

@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     ExternalRef,
     InboundEvent,

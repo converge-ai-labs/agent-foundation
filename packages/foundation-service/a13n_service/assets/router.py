@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from a13n_service.iam import AuthenticatedActor, authenticate_request
-from a13n_service.process.runtime import get_control_runtime, get_service_runtime
+from a13n_service.request_runtime import get_control_runtime, get_service_runtime
 
 from .domain import Asset, AssetCollection, AssetSourceKind
 from .errors import AssetError, asset_limit

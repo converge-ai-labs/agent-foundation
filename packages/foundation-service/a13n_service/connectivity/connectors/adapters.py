@@ -7,7 +7,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 
 
 class StrictModel(BaseModel):

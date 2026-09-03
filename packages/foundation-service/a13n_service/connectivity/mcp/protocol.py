@@ -11,12 +11,12 @@ import httpx2
 from pydantic import TypeAdapter, ValidationError
 
 from a13n_service.connectivity.bounds import CATALOG_MAX_BYTES, CATALOG_MAX_PAGES, CATALOG_MAX_TOOLS, MAX_REDIRECTS
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import (
     BoundedHttpResponse,
     ConnectivityHttpError,
     cookie_free_bounded_request,
 )
-from a13n_service.connectivity.ingress.domain import JsonObject
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
 from .domain import MCP_PROTOCOL_REVISION, MCPTool

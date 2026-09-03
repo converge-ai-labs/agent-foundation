@@ -8,8 +8,8 @@ from urllib.parse import quote, urlsplit
 import httpx2
 from pydantic import JsonValue, ValidationError
 
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import EndpointValidator
-from a13n_service.connectivity.ingress.domain import JsonObject
 
 from ..common.origins import provider_url_origin
 from .actions import (

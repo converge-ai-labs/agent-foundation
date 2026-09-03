@@ -13,7 +13,7 @@ from anyio import to_thread
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from a13n_service.connectivity.bounds import CATALOG_MAX_BYTES
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_json
 from a13n_service.interactions import MCPToolSnapshotRef
 from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectStore, ObjectStoreError

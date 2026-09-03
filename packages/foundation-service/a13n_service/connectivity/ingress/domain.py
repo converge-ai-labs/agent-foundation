@@ -4,17 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from a13n_service.agents.domain import AgentRunOverride
+from a13n_service.connectivity.domain import AdapterKey, BoundedName, ConfigVersion, JsonObject
 from a13n_service.iam.domain import PrincipalRef
-
-BoundedName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
-AdapterKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
-ConfigVersion = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
-JsonObject = dict[str, JsonValue]
 
 
 class StrictModel(BaseModel):

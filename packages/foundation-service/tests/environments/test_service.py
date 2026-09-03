@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from a13n_environment_provider import (
     DirectLocalProviderRuntime,
     Environment,
 )
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.environments.catalog import (
     FoundationEnvironmentProviderCatalog,
     FoundationEnvironmentProviderRegistration,
@@ -326,6 +328,43 @@ async def test_environment_create_rejects_idempotency_key_reuse_with_different_r
             request=candidate(tmp_path, environment_id="different"),
         )
     assert conflict.value.code == "idempotency_conflict"
+
+
+@pytest.mark.anyio
+async def test_expired_environment_evidence_allows_reusing_the_key(
+    environment_service: EnvironmentManagementService,
+    environment_sessions: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    await environment_service.put_provider_selection(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_key=PROVIDER_KEY,
+        request=PutEnvironmentProviderSelectionRequest(enabled=True),
+    )
+    first = await environment_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="expired-environment-key",
+        request=candidate(tmp_path),
+    )
+    async with transaction(environment_sessions) as session:
+        evidence = await session.scalar(
+            select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "environment.create")
+        )
+        assert evidence is not None
+        evidence.created_at = NOW - timedelta(hours=24)
+        evidence.expires_at = NOW
+
+    request = candidate(tmp_path, environment_id="second").model_copy(update={"name": "Second Workspace"})
+    second = await environment_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="expired-environment-key",
+        request=request,
+    )
+
+    assert second.id != first.id
 
 
 @pytest.mark.anyio

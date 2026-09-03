@@ -1,9 +1,7 @@
 """Safe MCPConnection management errors."""
 
+from a13n_service.public_errors import PublicError
 
-class MCPConnectionError(Exception):
-    def __init__(self, code: str, message: str, *, status_code: int) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status_code = status_code
+
+class MCPConnectionError(PublicError):
+    pass

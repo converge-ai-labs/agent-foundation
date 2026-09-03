@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.management import ConnectivityManagementValueError
 from a13n_service.iam import AuthenticatedActor, PrincipalType
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
@@ -109,20 +110,16 @@ def audit(
     action: str,
     now: datetime,
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("aud"),
+    return security_audit_record(
+        audit_id=new_object_id("aud"),
+        actor=actor,
         organization_id=connection.organization_id,
         workspace_id=connection.workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
         action=action,
         resource_type="mcp_connection",
         resource_id=connection.id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
         outcome="success",
         occurred_at=now,
-        request_id=actor.request_id,
         details=None,
     )
 

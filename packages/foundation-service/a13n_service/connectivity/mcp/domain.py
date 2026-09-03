@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
-from a13n_service.connectivity.ingress.domain import BoundedName, JsonObject
+from a13n_service.connectivity.domain import BoundedName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
 MCP_PROTOCOL_REVISION = "2025-11-25"

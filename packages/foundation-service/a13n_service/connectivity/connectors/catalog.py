@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connectors.adapters import ConnectorAdapter, ConnectorAdapterError, ConnectorTool
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_json
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation

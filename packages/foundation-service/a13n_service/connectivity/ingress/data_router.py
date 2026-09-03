@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, Response
 from pydantic import ValidationError
 
-from a13n_service.process.runtime import get_connectivity_data_runtime, get_service_runtime
+from a13n_service.request_runtime import get_connectivity_data_runtime, get_service_runtime
 
 from .admission import IngressEventService
 from .errors import IngressError

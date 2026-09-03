@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.models import ConnectivityCommandRecord
+from a13n_service.durable_operations.idempotency import InvalidIdempotencyKey, digest_visible_ascii_key
 from a13n_service.iam.authorization import AuthenticatedActor
 from a13n_service.ids import new_object_id
 
@@ -100,9 +101,6 @@ def canonical_json(value: object) -> str:
 
 def idempotency_key_digest(value: str) -> str:
     try:
-        encoded = value.encode("ascii")
-    except UnicodeEncodeError as error:
+        return digest_visible_ascii_key(value)
+    except InvalidIdempotencyKey as error:
         raise ConnectivityManagementValueError("invalid_idempotency_key") from error
-    if not 1 <= len(encoded) <= 512 or any(byte < 0x21 or byte > 0x7E for byte in encoded):
-        raise ConnectivityManagementValueError("invalid_idempotency_key")
-    return hashlib.sha256(encoded).hexdigest()

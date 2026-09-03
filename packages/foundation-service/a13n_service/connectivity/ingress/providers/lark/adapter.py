@@ -7,7 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
-from a13n_service.connectivity.ingress.domain import InputBatchingPolicy, JsonObject
+from a13n_service.connectivity.domain import JsonObject
+from a13n_service.connectivity.ingress.domain import InputBatchingPolicy
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
     DefaultRoute,

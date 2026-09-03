@@ -22,11 +22,13 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.router import router as environment_router
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.router import router as model_router
+from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.plugins.router import router as plugin_router
 from a13n_service.process.components import ServiceComponents, snapshot_service_components
 from a13n_service.process.lifecycle import open_service_runtime
 from a13n_service.process.roles import owns_connectivity_data, owns_control
-from a13n_service.process.runtime import ProcessStatus, get_service_runtime
+from a13n_service.process.runtime import ProcessStatus
+from a13n_service.request_runtime import get_service_runtime
 from a13n_service.settings import ServiceSettings, get_settings
 from a13n_service.skills.router import router as skill_router
 from a13n_service.storage import short_session
@@ -118,7 +120,11 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
                 detail="service not ready",
             )
         storage = runtime.shared.storage
-        on_demand_runtime = runtime.worker.on_demand_plugins if runtime.worker is not None else None
+        on_demand_runtime = (
+            runtime.worker.plugin_runtime
+            if runtime.worker is not None and isinstance(runtime.worker.plugin_runtime, OnDemandPluginRuntime)
+            else None
+        )
         if on_demand_runtime is not None and not on_demand_runtime.ready:
             logger.warning(
                 "plugin_runtime_readiness_failed",

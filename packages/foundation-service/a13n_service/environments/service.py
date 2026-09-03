@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.storage import short_session, transaction
@@ -64,9 +65,6 @@ from .persistence import (
 )
 from .persistence import (
     evidence_record as _evidence,
-)
-from .persistence import (
-    is_idempotency_race as _is_idempotency_race,
 )
 from .persistence import (
     load_replay as _load_replay,
@@ -341,7 +339,7 @@ class EnvironmentManagementService:
                 await session.flush()
                 return environment.to_resource()
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 return await replay_environment_create(
                     self._sessions,
                     actor=actor,
@@ -623,7 +621,7 @@ class EnvironmentManagementService:
                 await session.flush()
                 return EnvironmentRevisionMutationResult(revision=revision.to_resource(), created=created)
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 revision, created = await replay_environment_revision_create(
                     self._sessions,
                     actor=actor,

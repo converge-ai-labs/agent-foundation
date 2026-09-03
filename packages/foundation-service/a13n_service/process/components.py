@@ -21,7 +21,8 @@ from a13n_service.plugins.commands import (
     PluginRuntimeCommandDispatcher,
     PluginRuntimeStagingAuthority,
 )
-from a13n_service.settings import ServiceRole, ServiceSettings
+from a13n_service.process.roles import owns_control, owns_worker
+from a13n_service.settings import ServiceSettings
 from a13n_service.skills.github import GitHubSkillAcquirer
 from a13n_service.skills.sources import GitHubCredentialResolver
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
@@ -55,14 +56,14 @@ class ServiceComponents:
 def snapshot_service_components(settings: ServiceSettings, components: ServiceComponents) -> ServiceComponents:
     """Freeze mutable distribution registries at application construction."""
 
-    if settings.role is ServiceRole.worker:
+    if owns_worker(settings.role) and not owns_control(settings.role):
         return components
     ingress_adapters = (
         components.ingress_adapter_registry
         or built_in_ingress_adapter_registry(allowed_provider_origins=settings.connectivity_provider_origins)
     ).copy()
     connector_adapters = components.connector_adapter_registry
-    if settings.role not in {ServiceRole.all, ServiceRole.control} or connector_adapters is None:
+    if not owns_control(settings.role) or connector_adapters is None:
         connector_adapters = None
     else:
         connector_adapters = connector_adapters.copy()

@@ -107,7 +107,7 @@ class PreparedAgentInvocation:
     revision: AgentRevision
     merged: MergedAgentRun
     model: PreparedInvocationModel
-    plugins: PreparedPluginSelections | None
+    plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillLock, ...]
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     environment: PreparedEnvironmentSelection | None
@@ -457,15 +457,11 @@ class AgentInvocationResolver:
                 raise agent_revision_not_executable(error.code) from error
             _require_writable_skill_environment(skills, environment)
             try:
-                plugins = (
-                    await self._plugin_resolver.freeze_in_transaction(
-                        session,
-                        actor=prepared.actor,
-                        workspace_id=prepared.workspace_id,
-                        prepared=prepared.plugins,
-                    )
-                    if prepared.plugins is not None
-                    else prepared.resolved_plugin_versions
+                plugins = await self._plugin_resolver.freeze_in_transaction(
+                    session,
+                    actor=prepared.actor,
+                    workspace_id=prepared.workspace_id,
+                    prepared=prepared.plugins,
                 )
             except PluginSelectionError as error:
                 raise agent_revision_not_executable(error.reason) from error
@@ -487,8 +483,6 @@ class AgentInvocationResolver:
                     mode=prepared.revision.plugin_runtime_mode.value,
                 )
             else:
-                if prepared.plugins is None:
-                    raise PluginRuntimeLockError("plugin_runtime_lock_unavailable")
                 runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
                     session,
                     prepared=prepared.plugins,

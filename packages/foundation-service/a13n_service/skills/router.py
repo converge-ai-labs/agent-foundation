@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
-from a13n_service.process.runtime import get_control_runtime
+from a13n_service.request_runtime import get_control_runtime
 
 from .catalog import SkillCatalogService
 from .domain import (

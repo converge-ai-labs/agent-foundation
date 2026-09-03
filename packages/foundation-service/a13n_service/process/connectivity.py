@@ -78,15 +78,15 @@ async def build_connectivity_runtime(
     input_acceptor: FoundationInputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
-) -> tuple[ConnectivityRuntime | None, tuple[BackgroundTask, ...]]:
+) -> tuple[ConnectivityRuntime | None, ConnectivitySelectionResolver | None, tuple[BackgroundTask, ...]]:
     """Construct only the Connectivity capabilities owned by this role."""
 
     if not control_plane and not data_plane:
-        return None, ()
+        return None, None, ()
     if ingress_adapters is None:
         raise RuntimeError("Connectivity ingress adapters were not prepared")
     internal_secrets = InternalSecretService(storage.sessions, secret_protector)
-    control, control_components = (
+    control, selection_resolver, control_components = (
         await _build_control_runtime(
             settings,
             storage,
@@ -96,7 +96,7 @@ async def build_connectivity_runtime(
             stack,
         )
         if control_plane
-        else (None, ())
+        else (None, None, ())
     )
     data, data_components = (
         _build_data_runtime(settings, input_acceptor, storage, ingress_adapters, internal_secrets)
@@ -105,11 +105,10 @@ async def build_connectivity_runtime(
     )
     return (
         ConnectivityRuntime(
-            ingress_adapters=ingress_adapters,
-            internal_secrets=internal_secrets,
             control=control,
             data=data,
         ),
+        selection_resolver,
         (*control_components, *data_components),
     )
 
@@ -121,7 +120,7 @@ async def _build_control_runtime(
     connector_adapters: AdapterRegistry[ConnectorAdapter] | None,
     internal_secrets: InternalSecretService,
     stack: AsyncExitStack,
-) -> tuple[ConnectivityControlRuntime, tuple[BackgroundTask, ...]]:
+) -> tuple[ConnectivityControlRuntime, ConnectivitySelectionResolver, tuple[BackgroundTask, ...]]:
     public_origin = settings.validated_connectivity_public_origin()
     endpoint_policy = settings.connectivity_endpoint_policy()
     if connector_adapters is None:
@@ -169,9 +168,6 @@ async def _build_control_runtime(
     )
     runtime = ConnectivityControlRuntime(
         public_origin=public_origin,
-        connector_adapters=connector_adapters,
-        endpoint_policy=endpoint_policy,
-        selection_resolver=selection_resolver,
         ingresses=IngressService(storage.sessions, ingress_adapters, internal_secrets),
         routes=RouteService(
             storage.sessions,
@@ -181,9 +177,6 @@ async def _build_control_runtime(
         ),
         connectors=connector.service,
         connector_connections=connector.connections,
-        connector_catalog=connector.catalog,
-        mcp_catalog=mcp.catalog,
-        mcp_oauth_client=mcp.oauth_client,
         mcp_connections=mcp.connections,
         mcp_oauth=mcp.oauth,
     )
@@ -192,7 +185,7 @@ async def _build_control_runtime(
         BackgroundTask("connector reconciler", connector.reconciler.run),
         BackgroundTask("MCP reconciler", mcp.reconciler.run),
     )
-    return runtime, background_components
+    return runtime, selection_resolver, background_components
 
 
 def _build_connector_control(

@@ -8,13 +8,13 @@ from typing import Literal
 import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import (
     ConnectivityHttpError,
     EndpointValidator,
     bounded_response_body,
     retry_after_seconds,
 )
-from a13n_service.connectivity.ingress.domain import JsonObject
 
 from .adapters import ConnectorAdapterError
 

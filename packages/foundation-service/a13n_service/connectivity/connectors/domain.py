@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
-from a13n_service.connectivity.ingress.domain import AdapterKey, BoundedName, ConfigVersion, JsonObject
+from a13n_service.connectivity.domain import AdapterKey, BoundedName, ConfigVersion, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
 Endpoint = Annotated[str, StringConstraints(min_length=1, max_length=2048)]

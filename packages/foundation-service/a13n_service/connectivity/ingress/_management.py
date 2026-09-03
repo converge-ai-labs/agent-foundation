@@ -19,6 +19,7 @@ from a13n_service.connectivity.management import (
     replay_command as shared_replay_command,
 )
 from a13n_service.connectivity.models import ConnectivityCommandRecord
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
     AuthorizationError,
@@ -191,19 +192,15 @@ def audit(
     resource_id: str,
     now: datetime,
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("aud"),
+    return security_audit_record(
+        audit_id=new_object_id("aud"),
+        actor=actor,
         organization_id=organization_id,
         workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
         action=action,
         resource_type="ingress" if action.startswith("ingress.") else "route",
         resource_id=resource_id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
         outcome="success",
         occurred_at=now.astimezone(UTC),
-        request_id=actor.request_id,
         details=None,
     )

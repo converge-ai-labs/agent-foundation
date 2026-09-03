@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+from a13n_service.public_errors import PublicError
+
 ProviderFailure = Literal[
     "unavailable",
     "version_unsupported",
@@ -19,17 +21,5 @@ class TraceQueryProviderError(Exception):
         self.failure = failure
 
 
-class TraceQueryError(Exception):
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        *,
-        status_code: int,
-        details: dict[str, object] | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-        self.details = details or {}
+class TraceQueryError(PublicError):
+    pass

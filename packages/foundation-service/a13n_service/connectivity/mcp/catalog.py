@@ -16,7 +16,7 @@ from a13n_service.connectivity.bounds import (
     TOOL_NAME_MAX_BYTES,
     TOOL_SCHEMA_MAX_BYTES,
 )
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_json
 
 from .domain import MCP_PROTOCOL_REVISION, MCPTool

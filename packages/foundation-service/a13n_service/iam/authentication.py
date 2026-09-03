@@ -6,7 +6,7 @@ from typing import Protocol
 
 from fastapi import Request
 
-from a13n_service.process.runtime import get_service_runtime
+from a13n_service.request_runtime import get_service_runtime
 
 from .authorization import AuthenticatedActor
 

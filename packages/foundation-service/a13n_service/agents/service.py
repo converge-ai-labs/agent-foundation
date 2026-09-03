@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 from pydantic import TypeAdapter
@@ -11,6 +10,16 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.durable_operations.idempotency import (
+    EvidenceScope,
+    IdempotencyConflict,
+    IdempotencyIdentity,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
+    is_evidence_unique_race,
+    load_evidence,
+    new_evidence,
+)
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import (
@@ -20,6 +29,7 @@ from a13n_service.iam import (
     authorize_agent_collection,
     authorize_workspace,
 )
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
@@ -64,8 +74,6 @@ from .invocation_resolution import AgentInvocationResolver, PreparedAgentRevisio
 from .models import AgentRecord, AgentRevisionRecord
 from .resolution import AgentResolver, PreparedRevisionResolution, resolution_error
 
-IDEMPOTENCY_LIFETIME = timedelta(hours=24)
-_MAX_IDEMPOTENCY_KEY_BYTES = 512
 _CONFIG_ADAPTER = TypeAdapter(AgentConfig)
 
 
@@ -418,7 +426,7 @@ class AgentService:
         except AuthorizationError as error:
             raise _authorization_error(error) from error
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 async with transaction(self._sessions) as session:
                     replay_ref = await _load_replay(
                         session,
@@ -699,7 +707,7 @@ class AgentService:
         except AuthorizationError as error:
             raise _authorization_error(error, exact=True) from error
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 replay = await self._revision_create_replay(
                     actor=actor,
                     agent_id=agent_id,
@@ -844,7 +852,7 @@ class AgentService:
         except AuthorizationError as error:
             raise _authorization_error(error, exact=True) from error
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 replay = await self._duplicate_replay(actor=actor, agent_id=agent_id, identity=identity)
                 if replay is not None:
                     return replay
@@ -859,7 +867,7 @@ class AgentService:
         *,
         actor: AuthenticatedActor,
         agent_id: str,
-        identity: tuple[str, str],
+        identity: IdempotencyIdentity,
     ) -> Agent | None:
         async with transaction(self._sessions) as session:
             source_workspace = await _authorize_agent(
@@ -983,7 +991,7 @@ class AgentService:
         except AuthorizationError as error:
             raise _authorization_error(error, exact=True) from error
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 replay = await self._agent_command_replay(
                     actor=actor,
                     agent_id=agent_id,
@@ -1091,7 +1099,7 @@ class AgentService:
         agent_id: str,
         expected_version: int,
         operation: str,
-        identity: tuple[str, str],
+        identity: IdempotencyIdentity,
         prepared: PreparedRevisionResolution,
         source_revision_id: str | None,
     ) -> AgentRevisionCreateResult:
@@ -1161,7 +1169,7 @@ class AgentService:
         except AuthorizationError as error:
             raise _authorization_error(error, exact=True) from error
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 replay = await self._revision_create_replay(
                     actor=actor,
                     agent_id=agent_id,
@@ -1178,7 +1186,7 @@ class AgentService:
         actor: AuthenticatedActor,
         agent_id: str,
         operation: str,
-        identity: tuple[str, str],
+        identity: IdempotencyIdentity,
     ) -> AgentRevisionCreateResult | None:
         async with transaction(self._sessions) as session:
             await _authorize_agent(
@@ -1203,7 +1211,7 @@ class AgentService:
         actor: AuthenticatedActor,
         agent_id: str,
         operation: str,
-        identity: tuple[str, str],
+        identity: IdempotencyIdentity,
         action: WorkspaceAction,
     ) -> Agent | None:
         async with transaction(self._sessions) as session:
@@ -1237,7 +1245,7 @@ class AgentService:
         workspace_id: str,
         operation: str,
         scope_id: str,
-        identity: tuple[str, str],
+        identity: IdempotencyIdentity,
     ) -> Agent:
         async with transaction(self._sessions) as session:
             workspace = await authorize_workspace(
@@ -1602,7 +1610,7 @@ def _add_command_evidence_and_audit(
     actor: AuthenticatedActor,
     record: AgentRecord,
     operation: str,
-    identity: tuple[str, str],
+    identity: IdempotencyIdentity,
     result_kind: str,
     result_ref: str,
     now: datetime,
@@ -1632,25 +1640,20 @@ def _add_command_evidence_and_audit(
     )
 
 
-def _identity(idempotency_key: str, request) -> tuple[str, str]:
+def _identity(idempotency_key: str, request) -> IdempotencyIdentity:
     try:
-        encoded = idempotency_key.encode("ascii")
-    except UnicodeEncodeError as error:
+        key_digest = digest_visible_ascii_key(idempotency_key)
+    except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
-    if not 1 <= len(encoded) <= _MAX_IDEMPOTENCY_KEY_BYTES or any(byte < 0x21 or byte > 0x7E for byte in encoded):
-        raise _invalid_idempotency_key()
-    request_digest = canonical_digest(request)
-    return hashlib.sha256(encoded).hexdigest(), request_digest
+    return IdempotencyIdentity(key_digest, canonical_digest(request))
 
 
-def _identity_payload(idempotency_key: str, payload: JsonObject) -> tuple[str, str]:
+def _identity_payload(idempotency_key: str, payload: JsonObject) -> IdempotencyIdentity:
     try:
-        encoded = idempotency_key.encode("ascii")
-    except UnicodeEncodeError as error:
+        key_digest = digest_visible_ascii_key(idempotency_key)
+    except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
-    if not 1 <= len(encoded) <= _MAX_IDEMPOTENCY_KEY_BYTES or any(byte < 0x21 or byte > 0x7E for byte in encoded):
-        raise _invalid_idempotency_key()
-    return hashlib.sha256(encoded).hexdigest(), canonical_digest(payload)
+    return IdempotencyIdentity(key_digest, canonical_digest(payload))
 
 
 async def _load_replay(
@@ -1659,25 +1662,26 @@ async def _load_replay(
     actor: AuthenticatedActor,
     operation: str,
     scope_id: str,
-    identity: tuple[str, str],
+    identity: IdempotencyIdentity,
     now: datetime,
 ) -> str | None:
-    key_digest, request_digest = identity
-    evidence = await session.scalar(
-        select(IdempotencyEvidenceRecord).where(
-            IdempotencyEvidenceRecord.workspace_id == actor.boundary_workspace_id,
-            IdempotencyEvidenceRecord.actor_type == actor.principal.principal_type.value,
-            IdempotencyEvidenceRecord.actor_id == actor.principal.principal_id,
-            IdempotencyEvidenceRecord.operation == operation,
-            IdempotencyEvidenceRecord.scope_id == scope_id,
-            IdempotencyEvidenceRecord.key_digest == key_digest,
-            IdempotencyEvidenceRecord.expires_at > now,
+    try:
+        evidence = await load_evidence(
+            session,
+            scope=EvidenceScope(
+                workspace_id=actor.boundary_workspace_id,
+                actor_type=actor.principal.principal_type.value,
+                actor_id=actor.principal.principal_id,
+                operation=operation,
+                scope_id=scope_id,
+            ),
+            identity=identity,
+            now=now,
         )
-    )
+    except IdempotencyConflict as error:
+        raise _idempotency_conflict() from error
     if evidence is None:
         return None
-    if evidence.request_digest != request_digest:
-        raise _idempotency_conflict()
     return evidence.result_ref
 
 
@@ -1688,26 +1692,24 @@ def _evidence(
     workspace_id: str,
     operation: str,
     scope_id: str,
-    identity: tuple[str, str],
+    identity: IdempotencyIdentity,
     result_kind: str,
     result_ref: str,
     now: datetime,
 ) -> IdempotencyEvidenceRecord:
-    key_digest, request_digest = identity
-    return IdempotencyEvidenceRecord(
-        id=new_object_id("idem"),
+    return new_evidence(
         organization_id=organization_id,
-        workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
-        operation=operation,
-        scope_id=scope_id,
-        key_digest=key_digest,
-        request_digest=request_digest,
+        scope=EvidenceScope(
+            workspace_id=workspace_id,
+            actor_type=actor.principal.principal_type.value,
+            actor_id=actor.principal.principal_id,
+            operation=operation,
+            scope_id=scope_id,
+        ),
+        identity=identity,
         result_kind=result_kind,
         result_ref=result_ref,
-        created_at=now,
-        expires_at=now + IDEMPOTENCY_LIFETIME,
+        now=now,
     )
 
 
@@ -1720,20 +1722,16 @@ def _audit(
     agent_id: str,
     now: datetime,
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("audit"),
+    return security_audit_record(
+        audit_id=new_object_id("audit"),
+        actor=actor,
         organization_id=organization_id,
         workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
         action=action,
         resource_type="agent",
         resource_id=agent_id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
         outcome="success",
         occurred_at=now,
-        request_id=actor.request_id,
         details=None,
     )
 
@@ -1766,11 +1764,3 @@ def _idempotency_conflict() -> AgentError:
         "The Idempotency-Key was already used with different request content.",
         status_code=409,
     )
-
-
-def _is_idempotency_race(error: IntegrityError) -> bool:
-    diagnostic = getattr(getattr(error, "orig", None), "diag", None)
-    if diagnostic is not None:
-        return getattr(diagnostic, "constraint_name", None) == "uq_idempotency_evidence_replay_scope"
-    message = str(error).lower()
-    return "unique constraint failed" in message and "idempotency_evidence.actor_type" in message

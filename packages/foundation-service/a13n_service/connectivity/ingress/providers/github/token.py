@@ -13,8 +13,8 @@ import httpx2
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import EndpointValidator
-from a13n_service.connectivity.ingress.domain import JsonObject
 from a13n_service.temporal import Clock, utc_now
 
 from .api import GitHubApiError, read_github_response

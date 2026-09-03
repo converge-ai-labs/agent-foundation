@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from a13n_service.agents.domain import (
     CreateAgentRequest,
@@ -11,9 +13,13 @@ from a13n_service.agents.domain import (
 )
 from a13n_service.agents.errors import AgentError
 from a13n_service.agents.service import AgentService
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
+from a13n_service.storage import transaction
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import WORKSPACE_ID, actor, agent_config
+from .conftest import NOW, WORKSPACE_ID, actor, agent_config
 
 
 @pytest.mark.anyio
@@ -35,6 +41,35 @@ async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_service: Agent
     assert len(created.revision.runtime_lock_digest) == 64
     assert created.revision.connector_tools == ()
     assert created.revision.mcp_tools == ()
+
+
+@pytest.mark.anyio
+async def test_expired_agent_evidence_allows_reusing_the_key(
+    agent_service: AgentService,
+    agent_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    first = await agent_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="expired-agent-key",
+        request=CreateAgentRequest(name="First", config=agent_config()),
+    )
+    async with transaction(agent_sessions) as session:
+        evidence = await session.scalar(
+            select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "agent.create")
+        )
+        assert evidence is not None
+        evidence.created_at = NOW - timedelta(hours=24)
+        evidence.expires_at = NOW
+
+    second = await agent_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="expired-agent-key",
+        request=CreateAgentRequest(name="Second", config=agent_config(instructions="Second")),
+    )
+
+    assert second.agent.id != first.agent.id
 
 
 @pytest.mark.anyio

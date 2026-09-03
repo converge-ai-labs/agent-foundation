@@ -8,11 +8,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from shutil import copyfile
 from time import monotonic, sleep
+from typing import TYPE_CHECKING
+from unittest.mock import Mock
 from uuid import uuid4
 
 import anyio
 import pytest
+from a13n_service.connectivity.runtime import ConnectivityDataRuntime, ConnectivityRuntime
 from a13n_service.database.metadata import service_metadata
+from a13n_service.observability import ObservabilityRuntime
+from a13n_service.process.runtime import ControlRuntime, ProcessStatus, ServiceRuntime, SharedRuntime
+from a13n_service.settings import ServiceSettings
 from a13n_service.storage.config import RedisMemoryConfig, RedisServerConfig
 from a13n_service.storage.object_store import LocalObjectStore, ObjectStore, S3ObjectStore
 from a13n_service.storage.redis import open_redis
@@ -23,6 +29,10 @@ from botocore.exceptions import BotoCoreError, ClientError
 from redis.asyncio import Redis
 from sqlalchemy import create_engine
 from testcontainers.core.container import DockerContainer
+
+if TYPE_CHECKING:
+    from a13n_service.connectivity.ingress.admission import IngressEventService
+    from a13n_service.iam import RequestAuthenticator
 
 MINIO_IMAGE = "quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
 
@@ -72,6 +82,61 @@ class S3Service:
     endpoint_url: str
     access_key: str
     secret_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceRuntimeFactory:
+    """Build real process-runtime dataclasses for isolated router tests."""
+
+    def __call__(
+        self,
+        *,
+        settings: ServiceSettings | None = None,
+        request_authenticator: RequestAuthenticator | None = None,
+        agents: object | None = None,
+        trace_queries: object | None = None,
+        ingress_events: IngressEventService | None = None,
+    ) -> ServiceRuntime:
+        placeholder = Mock()
+        control = (
+            ControlRuntime(
+                trace_queries=trace_queries if trace_queries is not None else placeholder,
+                environments=placeholder,
+                plugins=placeholder,
+                skill_uploads=placeholder,
+                skill_publication=placeholder,
+                skill_catalog=placeholder,
+                agents=agents if agents is not None else placeholder,
+                models=placeholder,
+                model_providers=placeholder,
+                assets=placeholder,
+            )
+            if agents is not None or trace_queries is not None
+            else None
+        )
+        connectivity = (
+            ConnectivityRuntime(
+                control=None,
+                data=ConnectivityDataRuntime(ingress_events=ingress_events),
+            )
+            if ingress_events is not None
+            else None
+        )
+        return ServiceRuntime(
+            settings=settings or ServiceSettings(_env_file=None),
+            status=ProcessStatus(startup_complete=True),
+            request_authenticator=request_authenticator,
+            observability=Mock(spec=ObservabilityRuntime),
+            shared=Mock(spec=SharedRuntime),
+            control=control,
+            worker=None,
+            connectivity=connectivity,
+        )
+
+
+@pytest.fixture
+def service_runtime_factory() -> ServiceRuntimeFactory:
+    return ServiceRuntimeFactory()
 
 
 @pytest.fixture(scope="session")

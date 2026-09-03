@@ -45,10 +45,8 @@ async def build_worker_runtime(
         timeout_seconds=settings.plugin_runtime_resolver_timeout_seconds,
         limiter=shared.storage.file_limiter,
     )
-    runner: PluginRunnerSupervisor | None = None
-    on_demand: OnDemandPluginRuntime | None = None
     if settings.plugin_runtime_mode is PluginRuntimeMode.runner:
-        runner = await stack.enter_async_context(
+        plugin_runtime: OnDemandPluginRuntime | PluginRunnerSupervisor = await stack.enter_async_context(
             PluginRunnerSupervisor(
                 materializer,
                 ready_timeout_seconds=settings.plugin_runner_ready_timeout_seconds,
@@ -58,12 +56,11 @@ async def build_worker_runtime(
             )
         )
     else:
-        on_demand = OnDemandPluginRuntime(materializer)
+        plugin_runtime = OnDemandPluginRuntime(materializer)
 
     return WorkerRuntime(
         plugin_materializer=materializer,
-        plugin_runner=runner,
-        on_demand_plugins=on_demand,
+        plugin_runtime=plugin_runtime,
         native_model_factory=execution.native_model_factory,
         skill_runtime=SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store),
     )

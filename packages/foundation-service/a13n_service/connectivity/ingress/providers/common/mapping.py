@@ -1,6 +1,6 @@
 """Provider-neutral default mapping for one bounded event batch."""
 
-from a13n_service.connectivity.ingress.domain import JsonObject
+from a13n_service.connectivity.domain import JsonObject
 
 
 def default_event_mapping() -> JsonObject:

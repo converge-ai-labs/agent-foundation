@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.durable_operations.idempotency import (
+    EvidenceScope,
+    IdempotencyConflict,
+    IdempotencyIdentity,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
+    load_evidence,
+    new_evidence,
+)
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
@@ -23,19 +31,14 @@ from .domain import Environment, EnvironmentRevision
 from .errors import EnvironmentManagementError
 from .models import EnvironmentProviderSelectionRecord, EnvironmentRecord
 
-IDEMPOTENCY_LIFETIME = timedelta(hours=24)
-_MAX_IDEMPOTENCY_KEY_BYTES = 512
 
-
-def request_identity(idempotency_key: str, request: BaseModel) -> tuple[str, str]:
+def request_identity(idempotency_key: str, request: BaseModel) -> IdempotencyIdentity:
     try:
-        encoded = idempotency_key.encode("ascii")
-    except UnicodeEncodeError as error:
+        key_digest = digest_visible_ascii_key(idempotency_key)
+    except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
-    if not 1 <= len(encoded) <= _MAX_IDEMPOTENCY_KEY_BYTES or any(byte < 0x21 or byte > 0x7E for byte in encoded):
-        raise _invalid_idempotency_key()
     request_digest = hashlib.sha256(request.model_dump_json(by_alias=True, exclude_none=False).encode()).hexdigest()
-    return hashlib.sha256(encoded).hexdigest(), request_digest
+    return IdempotencyIdentity(key_digest, request_digest)
 
 
 async def load_replay(
@@ -44,29 +47,30 @@ async def load_replay(
     actor: AuthenticatedActor,
     operation: str,
     scope_id: str,
-    identity: tuple[str, str],
+    identity: IdempotencyIdentity,
     now: datetime,
 ) -> tuple[str, str] | None:
-    key_digest, request_digest = identity
-    evidence = await session.scalar(
-        select(IdempotencyEvidenceRecord).where(
-            IdempotencyEvidenceRecord.workspace_id == actor.boundary_workspace_id,
-            IdempotencyEvidenceRecord.actor_type == actor.principal.principal_type.value,
-            IdempotencyEvidenceRecord.actor_id == actor.principal.principal_id,
-            IdempotencyEvidenceRecord.operation == operation,
-            IdempotencyEvidenceRecord.scope_id == scope_id,
-            IdempotencyEvidenceRecord.key_digest == key_digest,
-            IdempotencyEvidenceRecord.expires_at > now,
+    try:
+        evidence = await load_evidence(
+            session,
+            scope=EvidenceScope(
+                workspace_id=actor.boundary_workspace_id,
+                actor_type=actor.principal.principal_type.value,
+                actor_id=actor.principal.principal_id,
+                operation=operation,
+                scope_id=scope_id,
+            ),
+            identity=identity,
+            now=now,
         )
-    )
-    if evidence is None:
-        return None
-    if evidence.request_digest != request_digest:
+    except IdempotencyConflict as error:
         raise EnvironmentManagementError(
             "idempotency_conflict",
             "The Idempotency-Key was already used with different request content.",
             status_code=409,
-        )
+        ) from error
+    if evidence is None:
+        return None
     return evidence.result_kind, evidence.result_ref
 
 
@@ -77,25 +81,24 @@ def evidence_record(
     workspace_id: str,
     operation: str,
     scope_id: str,
-    identity: tuple[str, str],
+    identity: IdempotencyIdentity,
     result_kind: str,
     result_ref: str,
     now: datetime,
 ) -> IdempotencyEvidenceRecord:
-    return IdempotencyEvidenceRecord(
-        id=new_object_id("idem"),
+    return new_evidence(
         organization_id=organization_id,
-        workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
-        operation=operation,
-        scope_id=scope_id,
-        key_digest=identity[0],
-        request_digest=identity[1],
+        scope=EvidenceScope(
+            workspace_id=workspace_id,
+            actor_type=actor.principal.principal_type.value,
+            actor_id=actor.principal.principal_id,
+            operation=operation,
+            scope_id=scope_id,
+        ),
+        identity=identity,
         result_kind=result_kind,
         result_ref=result_ref,
-        created_at=now,
-        expires_at=now + IDEMPOTENCY_LIFETIME,
+        now=now,
     )
 
 
@@ -109,20 +112,16 @@ def audit_record(
     resource_id: str,
     now: datetime,
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("audit"),
+    return security_audit_record(
+        audit_id=new_object_id("audit"),
+        actor=actor,
         organization_id=organization_id,
         workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
         outcome="success",
         occurred_at=now,
-        request_id=actor.request_id,
         details=None,
     )
 
@@ -152,20 +151,12 @@ def precondition_failed(current_etag: str | None) -> EnvironmentManagementError:
     )
 
 
-def is_idempotency_race(error: IntegrityError) -> bool:
-    diagnostic = getattr(getattr(error, "orig", None), "diag", None)
-    if diagnostic is not None:
-        return getattr(diagnostic, "constraint_name", None) == "uq_idempotency_evidence_replay_scope"
-    message = str(error).lower()
-    return "unique constraint failed" in message and "idempotency_evidence.actor_type" in message
-
-
 async def replay_environment_create(
     sessions: async_sessionmaker[AsyncSession],
     *,
     actor: AuthenticatedActor,
     workspace_id: str,
-    identity: tuple[str, str],
+    identity: IdempotencyIdentity,
     now: datetime,
 ) -> Environment:
     async with transaction(sessions) as session:
@@ -204,7 +195,7 @@ async def replay_environment_revision_create(
     *,
     actor: AuthenticatedActor,
     environment_id: str,
-    identity: tuple[str, str],
+    identity: IdempotencyIdentity,
     now: datetime,
 ) -> tuple[EnvironmentRevision, bool]:
     async with transaction(sessions) as session:
@@ -248,7 +239,6 @@ def _invalid_idempotency_key() -> EnvironmentManagementError:
 __all__ = [
     "audit_record",
     "evidence_record",
-    "is_idempotency_race",
     "load_replay",
     "normalized_name",
     "precondition_failed",

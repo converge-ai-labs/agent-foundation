@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import and_, func, or_, select
@@ -15,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.agents.models import AgentRevisionRecord
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, is_evidence_unique_race
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session, transaction
@@ -57,12 +56,15 @@ from .errors import (
     plugin_version_conflict,
     plugin_version_not_found,
 )
+from .idempotency import (
+    load_plugin_evidence,
+    new_plugin_evidence,
+    plugin_key_digest,
+    plugin_request_digest,
+)
 from .models import PluginRecord, PluginRuntimeStateRecord, PluginVersionRecord
 from .objects import PluginObjectStore
 from .staging import PluginStaging
-
-IDEMPOTENCY_LIFETIME = timedelta(hours=24)
-_MAX_IDEMPOTENCY_KEY_BYTES = 512
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,7 +183,7 @@ class PluginService:
         if not filename.lower().endswith(".whl"):
             raise plugin_artifact_invalid("wheel_extension_required")
         organization_id = await self._authorize(actor, WorkspaceAction.plugin_manage)
-        key_digest = _idempotency_key_digest(idempotency_key)
+        key_digest = plugin_key_digest(idempotency_key)
         staged = await self._staging.stage(
             body,
             max_size_bytes=self._max_wheel_bytes,
@@ -195,7 +197,7 @@ class PluginService:
             )
             operation = "plugin.version.upload" if plugin_id is not None else "plugin.upload"
             scope_id = plugin_id or "plugins"
-            request_digest = _request_digest(
+            request_digest = plugin_request_digest(
                 {
                     "plugin_id": plugin_id,
                     "content_digest": staged.content_digest,
@@ -225,7 +227,18 @@ class PluginService:
                     size_bytes=staged.size_bytes,
                     content_digest=staged.content_digest,
                 )
-            except IntegrityError:
+            except IntegrityError as error:
+                if is_evidence_unique_race(error):
+                    replay = await self._load_version_replay(
+                        actor=actor,
+                        operation=operation,
+                        scope_id=scope_id,
+                        key_digest=key_digest,
+                        request_digest=request_digest,
+                    )
+                    if replay is not None:
+                        return PluginUploadResult(version=replay, created=False)
+                    raise plugin_idempotency_conflict() from error
                 replay = await self._load_semantic_upload(
                     actor=actor,
                     plugin_id=plugin_id,
@@ -355,8 +368,8 @@ class PluginService:
     ) -> Plugin:
         organization_id = await self._authorize(actor, WorkspaceAction.plugin_manage)
         operation = f"plugin.{action}"
-        key_digest = _idempotency_key_digest(idempotency_key)
-        request_digest = _request_digest({"plugin_id": plugin_id, "action": action})
+        key_digest = plugin_key_digest(idempotency_key)
+        request_digest = plugin_request_digest({"plugin_id": plugin_id, "action": action})
         replay = await self._load_plugin_replay(
             actor=actor,
             operation=operation,
@@ -391,7 +404,7 @@ class PluginService:
                 record.archived_at = None
             record.updated_at = now
             session.add(
-                _evidence(
+                new_plugin_evidence(
                     actor=actor,
                     organization_id=organization_id,
                     operation=operation,
@@ -404,7 +417,13 @@ class PluginService:
                 )
             )
             session.add(
-                _audit(actor=actor, organization_id=organization_id, action=operation, resource_id=plugin_id, now=now)
+                _audit(
+                    actor=actor,
+                    organization_id=organization_id,
+                    action=operation,
+                    resource_id=plugin_id,
+                    now=now,
+                )
             )
             await session.flush()
             return record.to_resource()
@@ -532,7 +551,7 @@ class PluginService:
                 session.add(version)
                 created = True
             session.add(
-                _evidence(
+                new_plugin_evidence(
                     actor=actor,
                     organization_id=organization_id,
                     operation=operation,
@@ -792,11 +811,22 @@ class PluginService:
         request_digest: str,
     ) -> PluginVersion | None:
         await self._authorize(actor, WorkspaceAction.plugin_manage)
-        async with short_session(self._sessions) as session:
-            evidence = await _load_evidence(session, actor, operation, scope_id, key_digest)
+        async with transaction(self._sessions) as session:
+            try:
+                evidence = await load_plugin_evidence(
+                    session,
+                    actor=actor,
+                    operation=operation,
+                    scope_id=scope_id,
+                    key_digest=key_digest,
+                    request_digest=request_digest,
+                    now=self._clock(),
+                )
+            except IdempotencyConflict as error:
+                raise plugin_idempotency_conflict() from error
             if evidence is None:
                 return None
-            if evidence.request_digest != request_digest or evidence.result_kind != "plugin_version":
+            if evidence.result_kind != "plugin_version":
                 raise plugin_idempotency_conflict()
             version = await session.get(PluginVersionRecord, evidence.result_ref)
         if version is None:
@@ -813,11 +843,22 @@ class PluginService:
         request_digest: str,
     ) -> Plugin | None:
         await self._authorize(actor, WorkspaceAction.plugin_manage)
-        async with short_session(self._sessions) as session:
-            evidence = await _load_evidence(session, actor, operation, scope_id, key_digest)
+        async with transaction(self._sessions) as session:
+            try:
+                evidence = await load_plugin_evidence(
+                    session,
+                    actor=actor,
+                    operation=operation,
+                    scope_id=scope_id,
+                    key_digest=key_digest,
+                    request_digest=request_digest,
+                    now=self._clock(),
+                )
+            except IdempotencyConflict as error:
+                raise plugin_idempotency_conflict() from error
             if evidence is None:
                 return None
-            if evidence.request_digest != request_digest or evidence.result_kind != "plugin":
+            if evidence.result_kind != "plugin":
                 raise plugin_idempotency_conflict()
             plugin = await session.get(PluginRecord, evidence.result_ref)
         if plugin is None:
@@ -855,53 +896,6 @@ class PluginService:
         return version.to_resource()
 
 
-async def _load_evidence(
-    session: AsyncSession,
-    actor: AuthenticatedActor,
-    operation: str,
-    scope_id: str,
-    key_digest: str,
-) -> IdempotencyEvidenceRecord | None:
-    return await session.scalar(
-        select(IdempotencyEvidenceRecord).where(
-            IdempotencyEvidenceRecord.actor_type == actor.principal.principal_type.value,
-            IdempotencyEvidenceRecord.actor_id == actor.principal.principal_id,
-            IdempotencyEvidenceRecord.operation == operation,
-            IdempotencyEvidenceRecord.scope_id == scope_id,
-            IdempotencyEvidenceRecord.key_digest == key_digest,
-        )
-    )
-
-
-def _evidence(
-    *,
-    actor: AuthenticatedActor,
-    organization_id: str,
-    operation: str,
-    scope_id: str,
-    key_digest: str,
-    request_digest: str,
-    result_kind: str,
-    result_ref: str,
-    now: datetime,
-) -> IdempotencyEvidenceRecord:
-    return IdempotencyEvidenceRecord(
-        id=new_object_id("idem"),
-        organization_id=organization_id,
-        workspace_id=actor.boundary_workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
-        operation=operation,
-        scope_id=scope_id,
-        key_digest=key_digest,
-        request_digest=request_digest,
-        result_kind=result_kind,
-        result_ref=result_ref,
-        created_at=now,
-        expires_at=now + IDEMPOTENCY_LIFETIME,
-    )
-
-
 def _audit(
     *,
     actor: AuthenticatedActor,
@@ -910,37 +904,18 @@ def _audit(
     resource_id: str,
     now: datetime,
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("audit"),
+    return security_audit_record(
+        audit_id=new_object_id("audit"),
+        actor=actor,
         organization_id=organization_id,
         workspace_id=actor.boundary_workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
         action=action,
         resource_type="plugin",
         resource_id=resource_id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
         outcome="success",
         occurred_at=now,
-        request_id=actor.request_id,
         details=None,
     )
-
-
-def _idempotency_key_digest(value: str) -> str:
-    try:
-        encoded = value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise PluginError("invalid_request", "Idempotency-Key is invalid.", status_code=400) from error
-    if not encoded or len(encoded) > _MAX_IDEMPOTENCY_KEY_BYTES:
-        raise PluginError("invalid_request", "Idempotency-Key is invalid.", status_code=400)
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _request_digest(value: dict[str, object]) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _builtin_manifest_matches(

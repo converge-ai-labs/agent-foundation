@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import json
 from datetime import datetime
 
+from a13n_service.collection_cursors import (
+    CollectionCursorMismatchError,
+    InvalidCollectionCursorError,
+    decode_collection_cursor,
+    encode_collection_cursor,
+)
 from a13n_service.temporal import assume_utc
 
 
@@ -15,35 +18,29 @@ class CursorError(ValueError):
 
 
 def encode_cursor(*, updated_at: datetime, object_id: str, scope: dict[str, object]) -> str:
-    payload = {
-        "v": "1",
-        "updated_at": assume_utc(updated_at).isoformat().replace("+00:00", "Z"),
-        "id": object_id,
-        "scope": _scope_digest(scope),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return base64.urlsafe_b64encode(encoded).rstrip(b"=").decode()
+    return encode_collection_cursor(
+        {
+            "updated_at": assume_utc(updated_at).isoformat().replace("+00:00", "Z"),
+            "id": object_id,
+        },
+        scope=scope,
+    )
 
 
 def decode_cursor(value: str, *, scope: dict[str, object], id_prefix: str) -> tuple[datetime, str]:
-    if not value or len(value) > 2048:
-        raise CursorError("invalid cursor")
     try:
-        padded = value + "=" * (-len(value) % 4)
-        payload = json.loads(base64.b64decode(padded, altchars=b"-_", validate=True))
-        if not isinstance(payload, dict) or payload.get("v") != "1" or payload.get("scope") != _scope_digest(scope):
-            raise CursorError("cursor does not match this query")
+        payload = decode_collection_cursor(value, scope=scope)
+    except CollectionCursorMismatchError as error:
+        raise CursorError("cursor does not match this query") from error
+    except InvalidCollectionCursorError as error:
+        raise CursorError("invalid cursor") from error
+    try:
         updated_at = datetime.fromisoformat(str(payload["updated_at"]).replace("Z", "+00:00"))
         object_id = payload["id"]
         if not isinstance(object_id, str) or not object_id.startswith(f"{id_prefix}_"):
             raise CursorError("invalid cursor")
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (KeyError, TypeError, ValueError) as error:
         if isinstance(error, CursorError):
             raise
         raise CursorError("invalid cursor") from error
     return assume_utc(updated_at), object_id
-
-
-def _scope_digest(scope: dict[str, object]) -> str:
-    encoded = json.dumps(scope, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return hashlib.sha256(encoded).hexdigest()

@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import timedelta
 
 import pytest
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
+from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.plugins.domain import BuiltinPluginRegistration, PluginSource
 from a13n_service.plugins.errors import PluginError
 from a13n_service.plugins.models import PluginRecord, PluginVersionRecord
 from a13n_service.plugins.service import PluginService
-from a13n_service.storage import short_session
+from a13n_service.storage import short_session, transaction
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import ADMIN_ID, BUILDER_ID, RecordingRuntimeDispatcher, actor, build_wheel, wheel_body
+from .conftest import ADMIN_ID, BUILDER_ID, NOW, ORG_ID, RecordingRuntimeDispatcher, actor, build_wheel, wheel_body
 
 BUILTIN_PLUGIN_ID = "plg_builtinaudit0001"
 BUILTIN_PLUGIN_VERSION_ID = "plgv_builtinauditv100"
@@ -96,6 +100,89 @@ async def test_upload_creates_stable_plugin_and_immutable_versions(plugin_servic
     assert plugin.distribution_name == "acme-audit"
     assert plugin.top_level_package == "acme_audit"
     assert plugin.active_version_id is None
+
+
+@pytest.mark.anyio
+async def test_plugin_upload_preserves_utf8_idempotency_keys(plugin_service: PluginService) -> None:
+    wheel = build_wheel()
+
+    first = await _upload(plugin_service, wheel, key="重试-🔁")
+    replay = await _upload(plugin_service, wheel, key="重试-🔁")
+
+    assert first.created is True
+    assert replay.created is False
+    assert replay.version.id == first.version.id
+
+
+@pytest.mark.anyio
+async def test_plugin_upload_replays_deployment_wide_key_across_workspaces(
+    plugin_service: PluginService,
+    plugin_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    second_workspace_id = "ws_second1234567890"
+    async with transaction(plugin_sessions) as session:
+        session.add(
+            WorkspaceRecord(
+                id=second_workspace_id,
+                organization_id=ORG_ID,
+                name="Second",
+                normalized_name="second",
+                created_at=NOW,
+                updated_at=NOW,
+                deleted_at=None,
+            )
+        )
+
+    wheel = build_wheel()
+    first = await _upload(plugin_service, wheel, key="deployment-wide-retry")
+    replay = await plugin_service.upload(
+        actor=actor(workspace_id=second_workspace_id),
+        idempotency_key="deployment-wide-retry",
+        filename="plugin.whl",
+        body=wheel_body(wheel),
+        content_length=len(wheel),
+    )
+
+    assert first.created is True
+    assert replay.created is False
+    assert replay.version.id == first.version.id
+
+
+@pytest.mark.anyio
+async def test_plugin_evidence_expires_at_the_exact_ttl_boundary(
+    plugin_service: PluginService,
+    plugin_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    key = "plugin-expiry-boundary"
+    first = await _upload(plugin_service, build_wheel(), key=key)
+    async with transaction(plugin_sessions) as session:
+        evidence = await session.scalar(
+            select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "plugin.upload")
+        )
+        assert evidence is not None
+        evidence.expires_at = NOW + timedelta(microseconds=1)
+
+    different_wheel = build_wheel(
+        plugin_key="acme.second",
+        distribution_name="acme-second",
+        package="acme_second",
+    )
+    with pytest.raises(PluginError) as conflict:
+        await _upload(plugin_service, different_wheel, key=key)
+    assert conflict.value.code == "idempotency_conflict"
+
+    async with transaction(plugin_sessions) as session:
+        evidence = await session.scalar(
+            select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "plugin.upload")
+        )
+        assert evidence is not None
+        evidence.created_at = NOW - timedelta(hours=24)
+        evidence.expires_at = NOW
+
+    second = await _upload(plugin_service, different_wheel, key=key)
+
+    assert second.created is True
+    assert second.version.plugin_id != first.version.plugin_id
 
 
 @pytest.mark.anyio
