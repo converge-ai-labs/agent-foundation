@@ -58,7 +58,7 @@ from .test_subagent_acceptance import (
     CHILD_REVISION_ID,
     _complete_run,
 )
-from .test_subagent_operator import AuthorityBox, _operator, _plan, _run
+from .test_subagent_operator import AuthorityBox, IdSequence, _operator, _plan, _run
 
 pytestmark = pytest.mark.anyio
 
@@ -101,14 +101,31 @@ async def test_later_parent_run_can_resume_retained_child_from_same_thread(
         _plan(later_context, operation_id="later-resume", delegated_input='{"delegated_task":"continue"}'),
         AsyncResumeRequest(execution_id=delegated.execution_id, prompt="continue"),
     )
+    await _complete_delegated_child(
+        interaction_sessions,
+        interaction_object_store,
+        states,
+        resumed.child_run_id,
+        attempt_id="rat_6a6a6a6a6a6a6a6a",
+        clock_seconds=9,
+    )
+    resumed_again = await later_operator.resume(
+        _plan(later_context, operation_id="later-resume-again", delegated_input='{"delegated_task":"finish"}'),
+        AsyncResumeRequest(execution_id=resumed.execution_id, prompt="finish"),
+    )
 
     assert visible.executions[0].resumable is True
     assert resumed.resumed_from == delegated.execution_id
     assert resumed.thread_id == delegated.thread_id
+    assert resumed_again.resumed_from == resumed.execution_id
+    assert resumed_again.thread_id == delegated.thread_id
+    assert resumed_again.segment_index == 2
     async with short_session(interaction_sessions) as database:
         relationship = await database.get(ChildRunRelationshipRecord, resumed.execution_id)
-        assert relationship is not None
+        later_relationship = await database.get(ChildRunRelationshipRecord, resumed_again.execution_id)
+        assert relationship is not None and later_relationship is not None
         assert relationship.parent_run_id == later_context.parent_run_id
+        assert later_relationship.parent_run_id == later_context.parent_run_id
 
 
 async def test_session_visibility_controls_cross_thread_retained_child_reads(
@@ -232,21 +249,28 @@ async def _complete_delegated_child(
     child_run_id: str | None,
     *,
     attempt_id: str,
+    clock_seconds: int = 3,
 ) -> None:
     assert child_run_id is not None
     child_claim = await AttemptScheduler(
         sessions,
-        clock=lambda: NOW + timedelta(seconds=3),
+        clock=lambda: NOW + timedelta(seconds=clock_seconds),
         token_factory=lambda: "child-lease",
         attempt_id_factory=lambda: attempt_id,
     ).claim(child_run_id, _worker())
     assert child_claim is not None
+    child = await _run(sessions, child_run_id)
+    async with short_session(sessions) as database:
+        child_thread = await database.get(ThreadRecord, child.thread_id)
+        assert child_thread is not None
     await _complete_run(
         sessions,
         objects,
         states,
-        await _run(sessions, child_run_id),
+        child,
         _authority(child_claim),
+        time_offset_seconds=clock_seconds + 1,
+        expected_thread_version=child_thread.version,
     )
 
 
@@ -426,8 +450,8 @@ def _operator_for_parent(
             )
         },
         thread_id_factory=lambda: "thread-70707070707070707070707070707070",
-        run_id_factory=lambda: "run_7171717171717171",
-        relationship_id_factory=lambda: "crr_7171717171717171",
+        run_id_factory=IdSequence(("run_7171717171717171", "run_7474747474747474")),
+        relationship_id_factory=IdSequence(("crr_7171717171717171", "crr_7474747474747474")),
         clock=lambda: NOW + timedelta(seconds=8),
     )
     return (

@@ -399,8 +399,10 @@ async def _complete_run(
     authority,
     *,
     outcome: CompletedOutcomeCandidate | None = None,
+    time_offset_seconds: int = 3,
+    expected_thread_version: int = 1,
 ) -> Run:
-    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=3))
+    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=time_offset_seconds))
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
     entered = await execution.enter_harness(
@@ -424,8 +426,8 @@ async def _complete_run(
     await RunOutcomeService(
         sessions,
         RunPayloadStore(objects),
-        clock=lambda: NOW + timedelta(seconds=4),
-    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+        clock=lambda: NOW + timedelta(seconds=time_offset_seconds + 1),
+    ).commit_state_outcome(authority, stored, expected_thread_version=expected_thread_version)
     async with short_session(sessions) as database:
         row = await database.get(RunRecord, run.id)
         assert row is not None

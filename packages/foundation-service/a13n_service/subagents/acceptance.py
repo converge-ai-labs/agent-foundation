@@ -497,8 +497,6 @@ def _validate_locked_resume_source(
         or child_thread.session_id != prepared.run.session_id
         or child_thread.role != "child"
         or child_thread.origin_kind != "child"
-        or child_thread.origin_thread_id != source_parent.thread_id
-        or child_thread.origin_run_id != source_parent.id
         or child_thread.current_run_id != source.id
         or child_thread.head_run_id != source.id
         or relationship.id != prepared.resumed_from_relationship_id

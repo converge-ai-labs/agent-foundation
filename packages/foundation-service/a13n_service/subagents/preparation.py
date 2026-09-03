@@ -436,8 +436,6 @@ def _validate_resume_source(
         or source_thread.session_id != parent_run.session_id
         or source_thread.role is not ThreadRole.child
         or source_thread.origin_kind is not ThreadOriginKind.child
-        or source_thread.origin_thread_id != source_parent_run.thread_id
-        or source_thread.origin_run_id != source_parent_run.id
         or source_thread.current_run_id != source_run.id
         or source_thread.head_run_id != source_run.id
         or source_run.tenant_id != parent_run.tenant_id
