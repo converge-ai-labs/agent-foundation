@@ -84,6 +84,44 @@ def test_populated_session_store_upgrade_fails_before_schema_change(tmp_path: Pa
         engine.dispose()
 
 
+def test_thread_metadata_migration_backfills_existing_rows(tmp_path: Path) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(  # pyright: ignore[reportPrivateUsage]
+        lambda config: command.upgrade(config, "f293cefc6ea1"),
+        write=True,
+    )
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO thread "
+                    "(thread_id, parent_thread_id, title, archived, created_at, updated_at, "
+                    "initial_state_schema_version, initial_state_digest, continuation_schema_version, "
+                    "continuation_digest) VALUES "
+                    "(:thread_id, NULL, :title, 0, :created_at, :updated_at, '1', :digest, NULL, NULL)"
+                ),
+                {
+                    "thread_id": "thread-existing",
+                    "title": "Existing",
+                    "created_at": datetime.now(UTC).replace(tzinfo=None),
+                    "updated_at": datetime.now(UTC).replace(tzinfo=None),
+                    "digest": "1" * 64,
+                },
+            )
+        migrator.upgrade()
+        with engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT metadata_version FROM thread WHERE thread_id = 'thread-existing'")
+                ).scalar_one()
+                == 1
+            )
+    finally:
+        engine.dispose()
+
+
 def test_thread_store_downgrade_is_rejected_before_schema_change(tmp_path: Path) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)

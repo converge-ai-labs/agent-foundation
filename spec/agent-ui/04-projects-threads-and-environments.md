@@ -35,19 +35,25 @@ class Project(BaseModel):
     position: int
 ```
 
-Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and `workspace` mount. Later roots become `workspace-2`, `workspace-3`, and so on. Project position provides stable user ordering; recency can be computed from associated non-archived Threads and does not belong in the file.
+Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and `workspace` mount. Later roots become `workspace-2`, `workspace-3`, and so on. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
 
 Changing Project roots affects later Runs of every Thread selecting the Project. A Run already admitted retains its captured roots. Removing a Project file removes it from the next accepted generation. Existing Threads retain the unresolved ID and reject later Runs until explicitly reassigned; no global fallback silently changes their local authority.
 
 ## Thread Identity
 
 ```python
+class ThreadMetadata(BaseModel):
+    version: int
+    title: str | None
+    archived: bool
+
+
 class Thread(BaseModel):
     thread_id: ThreadId
     parent_thread_id: ThreadId | None
     created_at: datetime
     updated_at: datetime
-    title: str | None
+    metadata: ThreadMetadata
     configuration: ThreadConfiguration
     initial_state: ObjectRef
     continuation: ContinuationRef | None
@@ -55,7 +61,9 @@ class Thread(BaseModel):
 
 A root Thread has no parent. An async child records its immediate parent and shares no mutable runtime object with it. The selected `HarnessState.thread_id` equals the Agent UI Thread ID; Agent UI does not add a second Session identity for the same conversation.
 
-Current Run status, subscribers, steering queues, and live output remain process-local. A Thread can exist with no live Run. Thread creation calls `HarnessState.new()` once, uses its generated `thread_id` as the Agent UI Thread ID, and publishes that empty value as `initial_state`. The Thread initially has no selected continuation. Its first admitted Run uses `initial_state`; only a completed or suspended Run boundary can publish and select the first continuation.
+Current Run receipts, status, subscribers, steering queues, and live output remain process-local. A Thread can exist with no live Run. Thread creation calls `HarnessState.new()` once, uses its generated `thread_id` as the Agent UI Thread ID, and publishes that empty value as `initial_state`. The Thread initially has metadata version one and no selected continuation. Its first admitted Run uses `initial_state`; only a completed or suspended Run boundary can publish and select the first continuation.
+
+Title and archive state form one metadata compare-and-select head independent from sticky configuration. A metadata command names the exact expected metadata version and atomically updates either or both fields. A changed head increments once; a no-op can retain its version. Title can be explicitly cleared. Root archive is rejected while that Thread has a current-process root operation, so an accepted operation cannot become hidden mid-Run. Child metadata changes require the parent-scoped child boundary.
 
 ## Sticky Thread Configuration
 
@@ -123,6 +131,14 @@ Every non-empty patch, including one admitted with Run input, requires `expected
 8. starts the Harness Run with the selected continuation's `HarnessState`, or the Thread's immutable `initial_state` when no continuation is selected.
 
 The accepted patch applies to this Run and subsequent Runs. A separate update during an active Run is allowed but affects only the next admission. Steering never changes captured configuration.
+
+## Thread Queries
+
+Root Thread lists use opaque keyset cursors over descending `(updated_at, thread_id)`, with the query, archive filter, and root-only scope bound into the cursor. Child execution and transcript pages likewise use deterministic opaque cursors for their own stable order. A cursor from another query shape is invalid rather than reinterpreted as an offset.
+
+The summary projection exposes metadata and configuration versions, selected resource IDs, continuation state, and current-process activity without exposing a storage contract. The detail projection adds deferred requests and available actions. Transcript entries are bounded typed presentation values derived from the selected `HarnessState`; they are not serialized Pydantic AI messages and do not authorize continuation.
+
+Project recency is the maximum `updated_at` over every associated non-archived Thread. The repository computes it as an aggregate independent from page limits, so Projects with older or child Threads are not omitted by an arbitrary scan bound.
 
 ## Environment Profile and Binding
 
@@ -194,9 +210,9 @@ The executable cache carries no Thread, Project, root, or Environment authority.
 
 ## Thread Tools and Project Authority
 
-Model-visible root Thread tools can list and inspect Threads, start or continue another root Thread, and steer an active Run. `run_thread` rejects a child target, defaults to the root target's sticky configuration, and accepts no arbitrary local root paths from model arguments. Async child continuation uses the linked `resume_subagent` path so the current parent roster and delegation ceilings remain available. Changing Project requires an explicit authorized Thread configuration operation through the App boundary.
+Model-visible root Thread tools can list and inspect Threads, start or continue another root Thread, and steer an active Run. `run_thread` rejects a child target, defaults to the root target's sticky configuration, and accepts no arbitrary local root paths from model arguments. It cannot bypass a selected deferred request set. Async child continuation uses the linked `resume_subagent` path so the current parent roster and delegation ceilings remain available. Changing Project requires an explicit authorized Thread configuration operation through the App boundary.
 
-`steer_thread` targets an active Run and preserves that Run's captured composition. Same-active-Thread recursive run or steer calls are rejected.
+`steer_thread` resolves and targets one exact process-local root receipt and preserves that Run's captured composition. Same-active-Thread recursive run or steer calls are rejected.
 
 ## Failure Semantics
 
@@ -215,11 +231,13 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 
 01. Project is the only local-root grouping concept.
 02. Project roots are mutable, ordered, and captured per Run.
-03. Thread configuration is mutable, exact, versioned, and sticky.
-04. Omitted patch fields preserve prior Thread state; empty lists disable one complete axis.
-05. A Run captures one configuration generation, one Thread version, and one Project root list.
-06. Root and child Threads can change Agent, extension, MCP, Project, and Environment profile selections between Runs.
-07. Every independent Run receives fresh Environment adapters and Run Extensions.
-08. Environment state is isolated by Thread, Environment profile behavior, adapter, and root path.
-09. Steering never changes an active Run's captured composition.
-10. Destructive Provider lifecycle remains outside ordinary Run cleanup.
+03. Thread metadata and configuration are independent mutable compare-and-select heads.
+04. Thread configuration is exact, versioned, and sticky.
+05. Omitted patch fields preserve prior Thread state; empty lists disable one complete axis.
+06. A Run captures one configuration generation, one Thread version, and one Project root list.
+07. Root and child Threads can change Agent, extension, MCP, Project, and Environment profile selections between Runs.
+08. Thread and transcript pagination uses query-bound deterministic keyset cursors.
+09. Every independent Run receives fresh Environment adapters and Run Extensions.
+10. Environment state is isolated by Thread, Environment profile behavior, adapter, and root path.
+11. Steering never changes an active Run's captured composition.
+12. Destructive Provider lifecycle remains outside ordinary Run cleanup.

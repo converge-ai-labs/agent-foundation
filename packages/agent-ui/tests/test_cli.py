@@ -11,7 +11,16 @@ import pytest
 from a13n_harness.model_auth import CodexCredentials
 from a13n_ui.cli import main
 from a13n_ui.errors import ConfigurationError
-from a13n_ui.storage import ObjectKind, ObjectRef
+from a13n_ui.surfaces import (
+    ContinuationSelectionView,
+    EnvironmentOutcomeView,
+    FailureView,
+    RootExecutionView,
+    RootOperationStatus,
+    RootOperationView,
+    RootRunOutcomeView,
+    RootRunReceipt,
+)
 
 
 def test_defaults_to_interactive_cli(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,7 +90,7 @@ def test_parses_management_commands_and_data_root() -> None:
             "--apply",
         ]
     )
-    thread = parser.parse_args(["thread", "archive", "thread-1", "--restore"])
+    thread = parser.parse_args(["thread", "archive", "thread-1", "--expected-version", "3", "--restore"])
 
     assert validate.data_root.as_posix() == "/tmp/a13n-data"
     assert validate.config_command == "validate"
@@ -91,6 +100,7 @@ def test_parses_management_commands_and_data_root() -> None:
     assert import_subagents.apply is True
     assert thread.thread_id == "thread-1"
     assert thread.restore is True
+    assert thread.expected_version == 3
 
 
 def test_parses_headless_thread_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,17 +161,18 @@ async def test_headless_run_continues_thread_and_emits_structured_failure(
     assert app.created == []
     assert app.runs == [("thread-existing", "retry")]
     payload = json.loads(capsys.readouterr().out)
-    assert payload["thread_id"] == "thread-existing"
+    assert payload["receipt"]["thread_id"] == "thread-existing"
     assert payload["run_id"] == "run-1"
     assert payload["status"] == "failed"
-    assert payload["failure"] == {
+    assert payload["outcome"]["execution"]["failure"] == {
         "code": "model_failed",
         "message": "provider unavailable",
+        "details": None,
         "retry_hint": "safe",
     }
-    assert payload["continuation"] == {"status": "not_available", "reference": None}
-    assert payload["environment"] == {"cleanup_error_count": 0, "state_publications": {}}
-    assert payload["composition"]["object_kind"] == "run-composition"
+    assert payload["outcome"]["continuation"]["status"] == "not_available"
+    assert payload["outcome"]["environment"]["cleanup_failures"] == []
+    assert payload["outcome"]["composition_id"] == "1" * 64
 
 
 @pytest.mark.anyio
@@ -200,8 +211,12 @@ class _FakeApp:
         self.created.append((defaults.project_id, defaults.agent_id, defaults.environment_profile_id, title))
         return SimpleNamespace(thread_id="thread-new")
 
-    async def run_thread(self, *, thread_id: str, prompt: str) -> Any:
+    async def submit_thread(self, *, thread_id: str, prompt: str) -> RootRunReceipt:
         self.runs.append((thread_id, prompt))
+        return self._outcome.receipt
+
+    async def wait_root_operation(self, receipt_id: str) -> Any:
+        assert receipt_id == self._outcome.receipt.receipt_id
         return self._outcome
 
 
@@ -221,39 +236,47 @@ def _configuration(*, project: str | None = "project-main", agent: str | None = 
     )
 
 
-def _composition() -> ObjectRef:
-    return ObjectRef(
-        object_kind=ObjectKind.run_composition,
-        object_schema_version="1",
-        logical_digest="1" * 64,
+def _receipt() -> RootRunReceipt:
+    return RootRunReceipt(
+        receipt_id="receipt-1",
+        thread_id="thread-existing",
+        submitted_at=datetime.now(UTC),
     )
 
 
-def _completed_outcome(output: str) -> Any:
-    return SimpleNamespace(
-        result=SimpleNamespace(
-            run_id="run-1",
-            status="completed",
-            output=output,
-            failure=None,
-            suspend_reason=None,
+def _completed_outcome(output: str) -> RootOperationView:
+    receipt = _receipt().model_copy(update={"thread_id": "thread-new"})
+    return RootOperationView(
+        receipt=receipt,
+        status=RootOperationStatus.completed,
+        run_id="run-1",
+        completed_at=datetime.now(UTC),
+        outcome=RootRunOutcomeView(
+            execution=RootExecutionView(status="completed", output=output),
+            continuation=ContinuationSelectionView(status="selected", continuation_id="2" * 64),
+            environment=EnvironmentOutcomeView(unchanged=0, published=0, failed=0),
+            composition_id="1" * 64,
         ),
-        composition=_composition(),
-        continuation=SimpleNamespace(status="selected", reference=None),
-        environment=SimpleNamespace(cleanup_errors=(), state_publications=()),
     )
 
 
-def _failed_outcome(failure: Any) -> Any:
-    return SimpleNamespace(
-        result=SimpleNamespace(
-            run_id="run-1",
-            status="failed",
-            output=None,
-            failure=failure,
-            suspend_reason=None,
+def _failed_outcome(failure: Any) -> RootOperationView:
+    return RootOperationView(
+        receipt=_receipt(),
+        status=RootOperationStatus.failed,
+        run_id="run-1",
+        completed_at=datetime.now(UTC),
+        outcome=RootRunOutcomeView(
+            execution=RootExecutionView(
+                status="failed",
+                failure=FailureView(
+                    code=failure.code,
+                    message=failure.message,
+                    retry_hint=failure.retry_hint,
+                ),
+            ),
+            continuation=ContinuationSelectionView(status="not_available"),
+            environment=EnvironmentOutcomeView(unchanged=0, published=0, failed=0),
+            composition_id="1" * 64,
         ),
-        composition=_composition(),
-        continuation=SimpleNamespace(status="not_available", reference=None),
-        environment=SimpleNamespace(cleanup_errors=(), state_publications=()),
     )

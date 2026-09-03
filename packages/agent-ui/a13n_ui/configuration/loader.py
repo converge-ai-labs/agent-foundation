@@ -48,6 +48,19 @@ _RESOURCE_TYPES: dict[str, type[Any]] = {
 _EXTENSION_ADAPTER = TypeAdapter(ExtensionResource)
 
 
+type ConfigurationTreeFingerprint = tuple[tuple[str, tuple[int, int, int, int]], ...]
+
+
+async def configuration_tree_fingerprint(path: Path) -> ConfigurationTreeFingerprint:
+    """Return a bounded metadata-only fingerprint for change observation."""
+
+    selected = path.expanduser().resolve(strict=False)
+    if selected.suffix != ".yaml":
+        raise _error("settings_path_invalid", "Agent UI configuration must use lower-case .yaml.", selected)
+    scanned = await to_thread.run_sync(_scan_tree, selected)
+    return tuple((relative_path, fingerprint) for relative_path, _source_path, fingerprint in scanned)
+
+
 async def load_agent_ui_configuration(path: Path) -> LoadedAgentUiConfiguration:
     """Read and validate one coherent complete source-tree generation."""
 

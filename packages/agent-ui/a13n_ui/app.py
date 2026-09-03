@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from a13n_environment_provider import EnvironmentProvider
-from a13n_harness.capabilities import SubagentCancelResult, SubagentSteerResult
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.model_auth import CodexCredentials, GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
@@ -33,6 +32,7 @@ from a13n_ui.configuration import (
     LoadedAgentUiConfiguration,
     ResourceMutationRequest,
     apply_external_subagent_import,
+    configuration_tree_fingerprint,
     delete_configuration_source,
     empty_agent_ui_configuration,
     load_agent_ui_configuration,
@@ -50,7 +50,14 @@ from a13n_ui.extensions import (
     CatalogReference,
     EnvironmentProjectAdapter,
 )
-from a13n_ui.live import AgentUiLiveHub, LiveSubscription
+from a13n_ui.live import (
+    AgentUiLiveHub,
+    AgentUiSummaryHub,
+    LiveCursor,
+    LiveSubscription,
+    SummaryCursor,
+    SummarySubscription,
+)
 from a13n_ui.model_accounts import (
     AccountProjection,
     AccountStoreError,
@@ -64,22 +71,29 @@ from a13n_ui.model_accounts import (
     resolve_grok_scope,
 )
 from a13n_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
+from a13n_ui.root_execution import RootRunExecutor
+from a13n_ui.root_run import RootRunCoordinator
 from a13n_ui.settings import AgentUiSettings
-from a13n_ui.storage import (
-    LocalStore,
-    Thread,
-    ThreadConfigurationMutation,
-    open_local_store,
+from a13n_ui.storage import LocalStore, ThreadConfigurationMutation, open_local_store
+from a13n_ui.subagent_operator import AgentUiSubagentOperator
+from a13n_ui.surfaces import (
+    ChildControlResult,
+    ChildExecutionPage,
+    ProjectSummary,
+    RootControlResult,
+    RootOperationView,
+    RootRunReceipt,
+    ThreadDeferredResponse,
+    ThreadDetail,
+    ThreadFocusSnapshot,
+    ThreadMetadataMutation,
+    ThreadPage,
+    ThreadSummary,
+    TranscriptPage,
 )
-from a13n_ui.subagent_operator import AgentUiSubagentOperator, ChildExecutionPage
-from a13n_ui.thread_service import (
-    ProjectProjection,
-    RootCancelResult,
-    RootRunOutcome,
-    RootSteerResult,
-    RootThreadDefaults,
-    ThreadService,
-)
+from a13n_ui.thread_capability import AgentUiThreadCapability, ThreadToolController
+from a13n_ui.thread_projection import ThreadProjectionService
+from a13n_ui.thread_service import RootThreadDefaults, ThreadService
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +129,12 @@ class AppStatus(BaseModel):
     candidate_error_message: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ThreadWatch:
+    snapshot: ThreadFocusSnapshot
+    events: LiveSubscription
+
+
 class AgentUiApp:
     """The only application boundary shared by Agent UI surfaces."""
 
@@ -127,8 +147,11 @@ class AgentUiApp:
         catalog: AgentUiExtensionCatalog,
         configurations: CompositionAcceptanceService,
         threads: ThreadService,
+        projections: ThreadProjectionService,
+        root_runs: RootRunCoordinator,
         subagent_operator: AgentUiSubagentOperator,
         live_hub: AgentUiLiveHub,
+        summary_hub: AgentUiSummaryHub,
         codex_account: CodexAccountStore,
         grok_account: GrokAccountStore | None,
         grok_account_error: AccountStoreError | None,
@@ -142,8 +165,11 @@ class AgentUiApp:
         self._catalog = catalog
         self._configurations = configurations
         self._threads = threads
+        self._projections = projections
+        self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
+        self._summary_hub = summary_hub
         self._codex_account = codex_account
         self._grok_account = grok_account
         self._grok_account_error = grok_account_error
@@ -151,6 +177,7 @@ class AgentUiApp:
         self._grok_login = grok_login
         self._candidate_error = candidate_error
         self._configuration_seen = configuration_path is not None and configuration_path.exists()
+        self._configuration_fingerprint: tuple[tuple[str, tuple[int, int, int, int]], ...] | None = None
         self._state = AppState.starting
         self._operation_lock = Lock()
         self._operation_scopes: set[CancelScope] = set()
@@ -186,14 +213,20 @@ class AgentUiApp:
     async def _reload_configuration_from_path(self) -> None:
         path = self._require_configuration_path()
         if not path.exists():
-            if self._configuration_seen:
-                self._candidate_error = ConfigurationError(
+            if not self._configuration_seen:
+                return
+            diagnostic_changed = self._replace_candidate_error(
+                ConfigurationError(
                     "The Agent UI configuration root is unavailable.",
                     code="settings_unavailable",
                     details={"path": str(path)},
                 )
+            )
+            if diagnostic_changed:
+                await self._summary_hub.publish(kind="configuration")
             return
         self._configuration_seen = True
+        generation_changed = False
         try:
             candidate = await load_agent_ui_configuration(path)
             current = await self._store.configurations.current_digest()
@@ -202,15 +235,33 @@ class AgentUiApp:
                     candidate,
                     expected_current_digest=current,
                 )
-            self._candidate_error = None
+                generation_changed = True
+            candidate_error: AgentUiError | None = None
         except AgentUiError as exc:
-            self._candidate_error = exc
+            candidate_error = exc
+        diagnostic_changed = self._replace_candidate_error(candidate_error)
+        if generation_changed or diagnostic_changed:
+            await self._summary_hub.publish(kind="configuration")
+        if generation_changed:
+            await self._summary_hub.publish(kind="project")
 
     async def _observe_configuration(self) -> None:
         while self._state is AppState.ready:
             await sleep(0.5)
             if self._state is not AppState.ready:
                 return
+            path = self._require_configuration_path()
+            try:
+                fingerprint = await configuration_tree_fingerprint(path)
+            except AgentUiError as exc:
+                diagnostic_changed = self._replace_candidate_error(exc)
+                self._configuration_fingerprint = None
+                if diagnostic_changed:
+                    await self._summary_hub.publish(kind="configuration")
+                continue
+            if fingerprint == self._configuration_fingerprint:
+                continue
+            self._configuration_fingerprint = fingerprint
             await self._reload_configuration_from_path()
 
     async def mutate_configuration(
@@ -283,108 +334,155 @@ class AgentUiApp:
 
     async def refresh_catalog(self) -> tuple[CatalogReference, ...]:
         async with self._operation():
-            return self._catalog.refresh()
+            references = self._catalog.refresh()
+            await self._summary_hub.publish(kind="catalog")
+            return references
 
-    async def projects(self) -> tuple[ProjectProjection, ...]:
+    async def projects(self) -> tuple[ProjectSummary, ...]:
         async with self._operation():
-            return await self._threads.projects()
+            return await self._projections.projects()
 
     async def create_thread(
         self,
         *,
         defaults: RootThreadDefaults | None = None,
         title: str | None = None,
-    ) -> Thread:
+    ) -> ThreadSummary:
         async with self._operation():
-            return await self._threads.create(defaults=defaults, title=title)
+            thread = await self._threads.create(defaults=defaults, title=title)
+            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
+            return await self._projections.get_thread(thread.thread_id)
 
-    async def get_thread(self, thread_id: str) -> Thread:
+    async def get_thread(self, thread_id: str) -> ThreadDetail:
         async with self._operation():
-            return await self._threads.get(thread_id)
+            return await self._projections.detail(thread_id)
 
     async def list_threads(
         self,
         *,
         query: str | None = None,
         include_archived: bool = False,
-        offset: int = 0,
+        cursor: str | None = None,
         limit: int = 20,
-    ) -> tuple[tuple[Thread, ...], int]:
+    ) -> ThreadPage:
         async with self._operation():
-            return await self._threads.list(
+            return await self._projections.list_threads(
                 query=query,
                 include_archived=include_archived,
-                offset=offset,
+                cursor=cursor,
                 limit=limit,
             )
 
-    async def inspect_thread(
+    async def get_thread_transcript(
         self,
         *,
         thread_id: str,
-        history_offset: int = 0,
-        history_limit: int = 50,
-    ) -> tuple[Thread, list[object], int]:
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> TranscriptPage:
         async with self._operation():
-            thread, history, total = await self._threads.inspect(
+            return await self._projections.transcript(
                 thread_id=thread_id,
-                history_offset=history_offset,
-                history_limit=history_limit,
+                cursor=cursor,
+                limit=limit,
             )
-            return thread, list(history), total
 
     async def update_thread_configuration(
         self,
         *,
         thread_id: str,
         mutation: ThreadConfigurationMutation,
-    ) -> Thread:
+    ) -> ThreadSummary:
         async with self._operation():
-            return await self._threads.update_configuration(
+            await self._threads.update_configuration(
                 thread_id=thread_id,
                 mutation=mutation,
             )
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
 
-    async def archive_thread(self, *, thread_id: str, archived: bool = True) -> Thread:
+    async def update_thread_metadata(
+        self,
+        *,
+        thread_id: str,
+        mutation: ThreadMetadataMutation,
+    ) -> ThreadSummary:
         async with self._operation():
-            return await self._threads.archive(thread_id=thread_id, archived=archived)
+            if mutation.patch.archived is True:
+                async with self._root_runs.require_inactive(thread_id):
+                    await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
+            else:
+                await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
 
-    async def run_thread(
+    async def submit_thread(
         self,
         *,
         thread_id: str,
         prompt: str,
         mutation: ThreadConfigurationMutation | None = None,
-    ) -> RootRunOutcome:
+    ) -> RootRunReceipt:
         async with self._operation():
-            return await self._threads.run(
+            return await self._root_runs.submit_prompt(
                 thread_id=thread_id,
                 prompt=prompt,
                 mutation=mutation,
             )
 
-    async def steer_thread(self, *, thread_id: str, message: str) -> RootSteerResult:
+    async def respond_thread(
+        self,
+        *,
+        thread_id: str,
+        response: ThreadDeferredResponse,
+        mutation: ThreadConfigurationMutation | None = None,
+    ) -> RootRunReceipt:
         async with self._operation():
-            return await self._threads.steer(thread_id=thread_id, message=message)
+            return await self._root_runs.submit_response(
+                thread_id=thread_id,
+                response=response,
+                mutation=mutation,
+            )
 
-    async def cancel_thread(self, *, thread_id: str) -> RootCancelResult:
+    async def get_root_operation(self, receipt_id: str) -> RootOperationView:
         async with self._operation():
-            return await self._threads.cancel(thread_id=thread_id)
+            return await self._root_runs.get(receipt_id)
+
+    async def active_root_operation(self, thread_id: str) -> RootOperationView | None:
+        async with self._operation():
+            return await self._root_runs.active(thread_id)
+
+    async def wait_root_operation(
+        self,
+        receipt_id: str,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> RootOperationView:
+        async with self._operation():
+            return await self._root_runs.wait(receipt_id, timeout_seconds=timeout_seconds)
+
+    async def steer_root_operation(self, *, receipt_id: str, message: str) -> RootControlResult:
+        async with self._operation():
+            return await self._root_runs.steer(receipt_id=receipt_id, message=message)
+
+    async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
+        async with self._operation():
+            return await self._root_runs.cancel(receipt_id)
 
     async def query_child_executions(
         self,
         *,
         parent_thread_id: str,
         execution_id: str | None = None,
-        offset: int = 0,
+        cursor: str | None = None,
         limit: int = 20,
     ) -> ChildExecutionPage:
         async with self._operation():
             return await self._subagent_operator.query_child_executions(
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
-                execution_offset=offset,
-                execution_limit=limit,
+                cursor=cursor,
+                limit=limit,
             )
 
     async def wait_child_executions(
@@ -392,7 +490,7 @@ class AgentUiApp:
         *,
         parent_thread_id: str,
         execution_id: str | None = None,
-        offset: int = 0,
+        cursor: str | None = None,
         limit: int = 20,
         timeout_seconds: float | None = None,
     ) -> ChildExecutionPage:
@@ -400,8 +498,8 @@ class AgentUiApp:
             return await self._subagent_operator.wait_child_executions(
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
-                execution_offset=offset,
-                execution_limit=limit,
+                cursor=cursor,
+                limit=limit,
                 timeout_seconds=timeout_seconds,
             )
 
@@ -411,12 +509,17 @@ class AgentUiApp:
         parent_thread_id: str,
         execution_id: str,
         message: str,
-    ) -> SubagentSteerResult:
+    ) -> ChildControlResult:
         async with self._operation():
-            return await self._subagent_operator.steer_execution(
+            result = await self._subagent_operator.steer_execution(
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
                 message=message,
+            )
+            return ChildControlResult(
+                execution_id=result.execution_id,
+                accepted=result.accepted,
+                enqueue_id=result.enqueue_id,
             )
 
     async def cancel_child_execution(
@@ -424,11 +527,16 @@ class AgentUiApp:
         *,
         parent_thread_id: str,
         execution_id: str,
-    ) -> SubagentCancelResult:
+    ) -> ChildControlResult:
         async with self._operation():
-            return await self._subagent_operator.cancel_execution(
+            result = await self._subagent_operator.cancel_execution(
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
+            )
+            return ChildControlResult(
+                execution_id=result.execution_id,
+                accepted=result.accepted,
+                persisted_status=result.status,
             )
 
     async def inspect_model_account(self, provider: Provider | str) -> AccountProjection:
@@ -474,10 +582,49 @@ class AgentUiApp:
     async def live_events(
         self,
         *,
-        thread_id: str | None = None,
+        root_thread_id: str | None = None,
+        after: LiveCursor | None = None,
     ) -> AsyncGenerator[LiveSubscription]:
         self._require_ready()
-        async with self._live_hub.subscribe(thread_id=thread_id) as subscription:
+        async with self._live_hub.subscribe(root_thread_id=root_thread_id, after=after) as subscription:
+            yield subscription
+
+    @asynccontextmanager
+    async def watch_thread(
+        self,
+        *,
+        root_thread_id: str,
+        child_limit: int = 20,
+    ) -> AsyncGenerator[ThreadWatch]:
+        self._require_ready()
+        async with self._live_hub.subscribe(root_thread_id=root_thread_id) as subscription:
+            async with self._operation():
+                thread = await self._projections.detail(root_thread_id)
+                if thread.thread.parent_thread_id is not None:
+                    raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
+                children = await self._subagent_operator.query_child_executions(
+                    parent_thread_id=root_thread_id,
+                    limit=child_limit,
+                )
+            cursor = subscription.cursor
+            yield ThreadWatch(
+                snapshot=ThreadFocusSnapshot(
+                    epoch=cursor.epoch,
+                    cutover_sequence=cursor.sequence,
+                    thread=thread,
+                    children=children,
+                ),
+                events=subscription,
+            )
+
+    @asynccontextmanager
+    async def summary_events(
+        self,
+        *,
+        after: SummaryCursor | None = None,
+    ) -> AsyncGenerator[SummarySubscription]:
+        self._require_ready()
+        async with self._summary_hub.subscribe(after=after) as subscription:
             yield subscription
 
     async def _accept_mutation(self, result: ConfigurationMutationResult) -> None:
@@ -488,9 +635,20 @@ class AgentUiApp:
                 expected_current_digest=expected,
             )
         except AgentUiError as exc:
-            self._candidate_error = exc
+            diagnostic_changed = self._replace_candidate_error(exc)
+            if diagnostic_changed:
+                await self._summary_hub.publish(kind="configuration")
             raise
-        self._candidate_error = None
+        self._replace_candidate_error(None)
+        self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
+        await self._summary_hub.publish(kind="configuration")
+        await self._summary_hub.publish(kind="project")
+
+    def _replace_candidate_error(self, replacement: AgentUiError | None) -> bool:
+        previous = None if self._candidate_error is None else (self._candidate_error.code, str(self._candidate_error))
+        current = None if replacement is None else (replacement.code, str(replacement))
+        self._candidate_error = replacement
+        return current != previous
 
     def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore:
         if provider is Provider.CODEX:
@@ -543,6 +701,7 @@ class AgentUiApp:
                 return
             self._state = AppState.stopping
             idle = self._operations_idle
+        await self._root_runs.stop_admission()
         await self._subagent_operator.stop_admission()
 
         with move_on_after(self._settings.shutdown_timeout_seconds) as drain_scope:
@@ -560,9 +719,16 @@ class AgentUiApp:
 
     async def _close_collaborators(self) -> None:
         try:
-            await self._subagent_operator.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
+            await self._root_runs.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
         finally:
-            await self._live_hub.close()
+            try:
+                await self._subagent_operator.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
+            finally:
+                with CancelScope(shield=True):
+                    try:
+                        await self._live_hub.close()
+                    finally:
+                        await self._summary_hub.close()
 
     def _require_ready(self) -> None:
         if self._state is not AppState.ready:
@@ -635,6 +801,7 @@ async def open_agent_ui_app(
             environment_service = EnvironmentRunService(store, environment_reconstructor)
             agent_reconstructor = AgentReconstructor(catalog)
             live_hub = AgentUiLiveHub()
+            summary_hub = AgentUiSummaryHub(epoch=live_hub.epoch)
             cleanup_timeout = min(
                 settings.shutdown_timeout_seconds,
                 settings.storage.cleanup_timeout_seconds,
@@ -670,10 +837,16 @@ async def open_agent_ui_app(
                 environment_service=environment_service,
                 subscription_sources=subscription_sources,
                 live_hub=live_hub,
+                summary_hub=summary_hub,
                 cleanup_timeout_seconds=cleanup_timeout,
             )
             threads = ThreadService(
                 store=store,
+                configurations=configurations,
+            )
+            root_executor = RootRunExecutor(
+                store=store,
+                threads=threads,
                 configurations=configurations,
                 compositions=compositions,
                 agent_reconstructor=agent_reconstructor,
@@ -683,6 +856,19 @@ async def open_agent_ui_app(
                 live_hub=live_hub,
                 cleanup_timeout_seconds=cleanup_timeout,
             )
+            root_runs = RootRunCoordinator(root_executor, summary_hub=summary_hub)
+            projections = ThreadProjectionService(
+                store=store,
+                configurations=configurations,
+                root_activity=root_runs.activity,
+            )
+            thread_tools = ThreadToolController(projections=projections, root_runs=root_runs)
+            root_executor.set_root_capability_factory(
+                lambda thread_id: AgentUiThreadCapability(
+                    controller=thread_tools,
+                    source_thread_id=thread_id,
+                )
+            )
             app = AgentUiApp(
                 settings,
                 store,
@@ -690,8 +876,11 @@ async def open_agent_ui_app(
                 catalog=catalog,
                 configurations=configurations,
                 threads=threads,
+                projections=projections,
+                root_runs=root_runs,
                 subagent_operator=operator,
                 live_hub=live_hub,
+                summary_hub=summary_hub,
                 codex_account=codex_account,
                 grok_account=grok_account,
                 grok_account_error=grok_account_error,
@@ -701,6 +890,7 @@ async def open_agent_ui_app(
             )
             try:
                 await operator.start()
+                await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
                     if configuration_path is not None:
@@ -726,5 +916,6 @@ __all__ = [
     "AgentUiIntegrations",
     "AppState",
     "AppStatus",
+    "ThreadWatch",
     "open_agent_ui_app",
 ]

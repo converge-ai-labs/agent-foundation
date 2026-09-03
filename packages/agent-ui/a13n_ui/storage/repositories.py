@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_ui.errors import StoreConflictError, StoreIntegrityError
@@ -169,6 +169,7 @@ class ThreadRepository:
             record = ThreadRecord(
                 thread_id=thread_id,
                 parent_thread_id=parent_thread_id,
+                metadata_version=1,
                 title=title,
                 archived=False,
                 created_at=now,
@@ -200,11 +201,13 @@ class ThreadRepository:
         query: str | None = None,
         include_children: bool = False,
         include_archived: bool = False,
-        offset: int = 0,
+        before: tuple[datetime, str] | None = None,
         limit: int = 20,
     ) -> tuple[tuple[Thread, ...], int]:
-        if offset < 0 or not 1 <= limit <= 100:
+        if not 1 <= limit <= 101:
             raise ValueError("Thread page is outside supported bounds")
+        if before is not None and (not before[1] or before[0].tzinfo is None or before[0].utcoffset() is None):
+            raise ValueError("Thread page cursor is invalid")
         async with short_session(self._sessions) as session:
             statement = select(ThreadRecord)
             count_statement = select(func.count()).select_from(ThreadRecord)
@@ -225,19 +228,44 @@ class ThreadRepository:
             if predicates:
                 statement = statement.where(*predicates)
                 count_statement = count_statement.where(*predicates)
-            rows = (
-                await session.execute(
-                    statement.order_by(ThreadRecord.updated_at.desc(), ThreadRecord.thread_id.desc())
-                    .offset(offset)
-                    .limit(limit)
+            if before is not None:
+                before_updated_at, before_thread_id = before
+                statement = statement.where(
+                    or_(
+                        ThreadRecord.updated_at < before_updated_at,
+                        and_(
+                            ThreadRecord.updated_at == before_updated_at,
+                            ThreadRecord.thread_id < before_thread_id,
+                        ),
+                    )
                 )
-            ).scalars()
+            records = tuple(
+                (
+                    await session.execute(
+                        statement.order_by(ThreadRecord.updated_at.desc(), ThreadRecord.thread_id.desc()).limit(limit)
+                    )
+                ).scalars()
+            )
+            configuration_rows = (
+                ()
+                if not records
+                else tuple(
+                    (
+                        await session.execute(
+                            select(ThreadConfigurationRecord).where(
+                                ThreadConfigurationRecord.thread_id.in_(tuple(record.thread_id for record in records))
+                            )
+                        )
+                    ).scalars()
+                )
+            )
+            configurations = {row.thread_id: row for row in configuration_rows}
             values: list[Thread] = []
-            for row in rows:
-                configuration = await session.get(ThreadConfigurationRecord, row.thread_id)
+            for record in records:
+                configuration = configurations.get(record.thread_id)
                 if configuration is None:
                     raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
-                values.append(_thread_value(row, _configuration_value(configuration)))
+                values.append(_thread_value(record, _configuration_value(configuration)))
             total = int((await session.execute(count_statement)).scalar_one())
             return tuple(values), total
 
@@ -264,10 +292,12 @@ class ThreadRepository:
             await session.flush()
             return _thread_value(record, replacement)
 
-    async def set_archived(
+    async def update_metadata(
         self,
         *,
         thread_id: str,
+        expected_version: int,
+        title: str | None,
         archived: bool,
         updated_at: datetime | None = None,
     ) -> Thread:
@@ -277,10 +307,29 @@ class ThreadRepository:
             configuration = await session.get(ThreadConfigurationRecord, thread_id)
             if record is None or configuration is None:
                 raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            if record.metadata_version != expected_version:
+                _conflict("thread_metadata_conflict", expected_version, record.metadata_version)
+            if record.title == title and record.archived is archived:
+                return _thread_value(record, _configuration_value(configuration))
+            record.metadata_version += 1
+            record.title = title
             record.archived = archived
             record.updated_at = now
             await session.flush()
             return _thread_value(record, _configuration_value(configuration))
+
+    async def project_recency(self) -> dict[str, datetime]:
+        async with short_session(self._sessions) as session:
+            rows = await session.execute(
+                select(
+                    ThreadConfigurationRecord.project_id,
+                    func.max(ThreadRecord.updated_at),
+                )
+                .join(ThreadRecord, ThreadRecord.thread_id == ThreadConfigurationRecord.thread_id)
+                .where(ThreadRecord.archived.is_(False))
+                .group_by(ThreadConfigurationRecord.project_id)
+            )
+            return {project_id: updated_at for project_id, updated_at in rows if updated_at is not None}
 
     async def select_continuation(
         self,
@@ -417,6 +466,48 @@ class ChildExecutionRepository:
                     .limit(limit)
                 )
             ).scalars()
+            total = int(
+                (
+                    await session.execute(select(func.count()).select_from(ChildExecutionRecord).where(predicate))
+                ).scalar_one()
+            )
+            return tuple(_child_value(row) for row in rows), total
+
+    async def page_for_parent(
+        self,
+        parent_thread_id: str,
+        *,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 20,
+    ) -> tuple[tuple[ChildExecutionHead, ...], int]:
+        if not 1 <= limit <= 101:
+            raise ValueError("child execution page is outside supported bounds")
+        predicate = ChildExecutionRecord.parent_thread_id == parent_thread_id
+        statement = select(ChildExecutionRecord).where(predicate)
+        if after is not None:
+            after_created_at, after_execution_id = after
+            if not after_execution_id or after_created_at.tzinfo is None or after_created_at.utcoffset() is None:
+                raise ValueError("child execution cursor is invalid")
+            statement = statement.where(
+                or_(
+                    ChildExecutionRecord.created_at > after_created_at,
+                    and_(
+                        ChildExecutionRecord.created_at == after_created_at,
+                        ChildExecutionRecord.execution_id > after_execution_id,
+                    ),
+                )
+            )
+        async with short_session(self._sessions) as session:
+            rows = tuple(
+                (
+                    await session.execute(
+                        statement.order_by(
+                            ChildExecutionRecord.created_at,
+                            ChildExecutionRecord.execution_id,
+                        ).limit(limit)
+                    )
+                ).scalars()
+            )
             total = int(
                 (
                     await session.execute(select(func.count()).select_from(ChildExecutionRecord).where(predicate))
@@ -594,6 +685,7 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
         parent_thread_id=record.parent_thread_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        metadata_version=record.metadata_version,
         title=record.title,
         archived=record.archived,
         configuration=configuration,

@@ -9,17 +9,28 @@ import pytest
 from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder
 from a13n_harness.capabilities import SubagentCancelResult, SubagentSteerResult, WebCapability
 from a13n_ui.app import AgentUiIntegrations, AppState, open_agent_ui_app
-from a13n_ui.composition import ReconstructedAgent
+from a13n_ui.composition import ReconstructedAgent, ThreadCompositionSelection
 from a13n_ui.configuration import load_agent_ui_configuration
-from a13n_ui.errors import AppStateError
+from a13n_ui.environment_runtime import EnvironmentRunService
+from a13n_ui.errors import AppStateError, StoreConflictError
 from a13n_ui.model_accounts import AccountStoreError, Availability, Provider
 from a13n_ui.model_runtime import AgentUiModelResolver
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
-from a13n_ui.subagent_operator import ChildExecutionPage
+from a13n_ui.surfaces import (
+    ChildExecutionPage,
+    ExternalToolResult,
+    RootOperationStatus,
+    ThreadDeferredResponse,
+    ThreadMetadataMutation,
+    ThreadMetadataPatch,
+)
 from anyio import Event, create_task_group, fail_after, sleep, sleep_forever
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import ModelMessage, ToolReturnPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.toolsets import ExternalToolset
 
 pytestmark = pytest.mark.anyio
 
@@ -201,6 +212,65 @@ async def test_startup_retains_last_accepted_generation_until_repaired_tree_is_s
         assert status.candidate_error_code is None
 
 
+async def test_configuration_observer_reloads_only_after_metadata_fingerprint_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import a13n_ui.app as app_module
+
+    root = _write_configuration(tmp_path)
+    calls = 0
+    original = app_module.load_agent_ui_configuration
+
+    async def counted(path: Path):
+        nonlocal calls
+        calls += 1
+        return await original(path)
+
+    monkeypatch.setattr(app_module, "load_agent_ui_configuration", counted)
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ):
+        await sleep(1.2)
+        assert calls == 2
+        (tmp_path / "agents/assistant.yaml").write_text(
+            (tmp_path / "agents/assistant.yaml").read_text().replace("Help the user.", "Help carefully.")
+        )
+        with fail_after(3):
+            while calls < 3:
+                await sleep(0.05)
+        stable_calls = calls
+        await sleep(0.7)
+        assert calls == stable_calls
+
+
+async def test_configuration_observer_invalidates_diagnostic_changes_without_generation_change(
+    tmp_path: Path,
+) -> None:
+    root = _write_configuration(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    accepted_source = agent_path.read_text()
+
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        async with app.summary_events() as summaries:
+            agent_path.write_text("invalid: [\n")
+            with fail_after(3):
+                invalid = await summaries.receive()
+            assert invalid.kind == "configuration"
+            assert (await app.status()).candidate_error_code is not None
+
+            agent_path.write_text(accepted_source)
+            with fail_after(3):
+                repaired = await summaries.receive()
+            assert repaired.kind == "configuration"
+            status = await app.status()
+            assert status.candidate_error_code is None
+
+
 async def test_application_catalog_includes_host_integrations_and_returns_detached_values(
     tmp_path: Path,
 ) -> None:
@@ -222,7 +292,7 @@ async def test_application_exposes_detached_child_query_and_control(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, dict[str, object]]] = []
-    page = ChildExecutionPage(executions=(), execution_offset=0, total=0)
+    page = ChildExecutionPage(executions=(), total=0)
 
     async with open_agent_ui_app(_settings(tmp_path / "state")) as app:
 
@@ -277,24 +347,212 @@ async def test_application_exposes_detached_child_query_and_control(
     assert all(arguments["parent_thread_id"] == "thread-parent" for _, arguments in calls)
 
 
+async def test_application_thread_queries_are_detached_keyset_views_with_metadata_cas(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        first = await app.create_thread(title="First")
+        second = await app.create_thread(title="Second")
+        third = await app.create_thread(title="Third")
+
+        page = await app.list_threads(limit=2)
+        assert [item.thread_id for item in page.threads] == [third.thread_id, second.thread_id]
+        assert page.next_cursor is not None
+        remaining = await app.list_threads(cursor=page.next_cursor, limit=2)
+        assert [item.thread_id for item in remaining.threads] == [first.thread_id]
+
+        renamed = await app.update_thread_metadata(
+            thread_id=first.thread_id,
+            mutation=ThreadMetadataMutation(
+                expected_version=first.metadata_version,
+                patch=ThreadMetadataPatch(title="Renamed"),
+            ),
+        )
+        assert renamed.title == "Renamed"
+        assert renamed.metadata_version == first.metadata_version + 1
+        with pytest.raises(StoreConflictError) as stale:
+            await app.update_thread_metadata(
+                thread_id=first.thread_id,
+                mutation=ThreadMetadataMutation(
+                    expected_version=first.metadata_version,
+                    patch=ThreadMetadataPatch(title=None),
+                ),
+            )
+        assert stale.value.code == "thread_metadata_conflict"
+
+        detail = await app.get_thread(first.thread_id)
+        dumped = detail.model_dump(mode="json")
+        assert detail.available_actions == ("run", "archive")
+        assert "initial_state" not in json.dumps(dumped)
+        assert "object_kind" not in json.dumps(dumped)
+
+        archived = await app.update_thread_metadata(
+            thread_id=first.thread_id,
+            mutation=ThreadMetadataMutation(
+                expected_version=renamed.metadata_version,
+                patch=ThreadMetadataPatch(archived=True),
+            ),
+        )
+        assert archived.archived
+        assert (await app.get_thread(first.thread_id)).available_actions == ()
+
+
+async def test_environment_run_service_directly_prepares_and_finalizes_native_project_roots(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        created = await app.create_thread()
+        stored = await app._threads.get(created.thread_id)
+        source = await app.current_configuration()
+        assert source is not None
+        executor = app._root_runs._executor
+        assert isinstance(executor._environments, EnvironmentRunService)
+        selection = ThreadCompositionSelection(
+            thread_id=stored.thread_id,
+            version=stored.configuration.version,
+            project_id=stored.configuration.project_id,
+            agent_source_kind=stored.configuration.agent_source.kind,
+            agent_source_id=stored.configuration.agent_source.id,
+            environment_profile_id=stored.configuration.environment_profile_id,
+            harness_plugin_ids=stored.configuration.harness_plugin_ids,
+            environment_run_extension_ids=stored.configuration.environment_run_extension_ids,
+            mcp_server_ids=stored.configuration.mcp_server_ids,
+        )
+        published = await executor._compositions.publish(source, selection)
+        plan = await executor._environments.prepare(published.value)
+        finalization = await plan.finalize(timeout_seconds=1)
+
+    assert finalization.cleanup_errors == ()
+    assert len(finalization.state_publications) == 1
+    assert finalization.state_publications[0].status == "unchanged"
+
+
 async def test_application_creates_and_runs_root_thread(tmp_path: Path) -> None:
     root = _write_configuration(tmp_path)
     async with open_agent_ui_app(
         _settings(tmp_path / "state"),
         configuration_path=root,
     ) as app:
-        app._threads._agents = _CompletedReconstructor()
+        app._root_runs._executor._agents = _CompletedReconstructor()
         thread = await app.create_thread(title="Example")
         assert thread.parent_thread_id is None
         assert thread.configuration.project_id == "project-main"
         assert thread.configuration.agent_source.id == "agent-assistant"
 
-        outcome = await app.run_thread(thread_id=thread.thread_id, prompt="hello")
-        assert outcome.result.output_or_raise() == "root complete"
-        assert outcome.continuation.status == "selected"
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="hello")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed
+        assert operation.outcome is not None
+        assert operation.outcome.execution.output == "root complete"
+        assert operation.outcome.continuation.status == "selected"
         selected = await app.get_thread(thread.thread_id)
-        assert selected.continuation is not None
-        assert selected.continuation == outcome.continuation.reference
+        assert selected.continuation_id is not None
+        assert selected.continuation_id == operation.outcome.continuation.continuation_id
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id, limit=1)
+        assert transcript.total >= 1
+        assert transcript.entries[0].message_kind == "request"
+        assert transcript.entries[0].parts
+
+
+async def test_focused_watch_cuts_over_before_snapshot_and_summary_stream_invalidates(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        async with app.summary_events() as summaries:
+            async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+                assert watch.snapshot.thread.thread.thread_id == thread.thread_id
+                receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="watch")
+                with fail_after(3):
+                    event = await watch.events.receive()
+                assert event.root_thread_id == thread.thread_id
+                assert event.sequence > watch.snapshot.cutover_sequence
+                operation = await app.wait_root_operation(receipt.receipt_id)
+                assert operation.status is RootOperationStatus.completed
+            with fail_after(3):
+                invalidation = await summaries.receive()
+                invalidation_kinds = {invalidation.kind}
+                while "thread" not in invalidation_kinds:
+                    invalidation_kinds.add((await summaries.receive()).kind)
+            assert invalidation.kind == "root_operation"
+            assert invalidation.root_thread_id == thread.thread_id
+            assert "thread" in invalidation_kinds
+
+
+async def test_root_deferred_response_requires_exact_selected_request_batch(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        app._root_runs._executor._agents = _DeferredReconstructor()
+        thread = await app.create_thread()
+
+        first_receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="defer")
+        first = await app.wait_root_operation(first_receipt.receipt_id)
+        assert first.status is RootOperationStatus.suspended
+        detail = await app.get_thread(thread.thread_id)
+        assert detail.continuation_id is not None
+        assert len(detail.deferred_requests) == 1
+        request = detail.deferred_requests[0]
+        assert request.kind == "external"
+        assert request.request_id == "deferred-1"
+
+        incomplete_receipt = await app.respond_thread(
+            thread_id=thread.thread_id,
+            response=ThreadDeferredResponse(
+                expected_continuation_id=detail.continuation_id,
+                responses=(ExternalToolResult(request_id="unexpected", result="wrong"),),
+            ),
+        )
+        incomplete = await app.wait_root_operation(incomplete_receipt.receipt_id)
+        assert incomplete.status is RootOperationStatus.failed
+        assert incomplete.failure is not None
+        assert incomplete.failure.code == "thread_deferred_response_incomplete"
+
+        stale_receipt = await app.respond_thread(
+            thread_id=thread.thread_id,
+            response=ThreadDeferredResponse(
+                expected_continuation_id="0" * 64,
+                responses=(
+                    ExternalToolResult(
+                        request_id=request.request_id,
+                        result="external result",
+                    ),
+                ),
+            ),
+        )
+        stale = await app.wait_root_operation(stale_receipt.receipt_id)
+        assert stale.status is RootOperationStatus.failed
+        assert stale.failure is not None
+        assert stale.failure.code == "thread_continuation_conflict"
+
+        response_receipt = await app.respond_thread(
+            thread_id=thread.thread_id,
+            response=ThreadDeferredResponse(
+                expected_continuation_id=detail.continuation_id,
+                responses=(
+                    ExternalToolResult(
+                        request_id=request.request_id,
+                        result="external result",
+                    ),
+                ),
+            ),
+        )
+        resumed = await app.wait_root_operation(response_receipt.receipt_id)
+        assert resumed.status is RootOperationStatus.completed
+        assert resumed.outcome is not None
+        assert "external result" in str(resumed.outcome.execution.output)
+        refreshed = await app.get_thread(thread.thread_id)
+        assert refreshed.deferred_requests == ()
+        assert refreshed.continuation_id != detail.continuation_id
 
 
 async def test_root_control_targets_live_run_and_thread_is_readmitted_after_cancel(
@@ -302,34 +560,34 @@ async def test_root_control_targets_live_run_and_thread_is_readmitted_after_canc
 ) -> None:
     root = _write_configuration(tmp_path)
     started = Event()
-    outcomes = []
-
     async with open_agent_ui_app(
         _settings(tmp_path / "state"),
         configuration_path=root,
     ) as app:
-        app._threads._agents = _SlowReconstructor(started)
+        app._root_runs._executor._agents = _SlowReconstructor(started)
         thread = await app.create_thread()
 
-        async def run_root() -> None:
-            outcomes.append(await app.run_thread(thread_id=thread.thread_id, prompt="wait"))
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="wait")
+        await started.wait()
+        active = await app.active_root_operation(thread.thread_id)
+        assert active is not None
+        assert active.receipt.receipt_id == receipt.receipt_id
+        steering = await app.steer_root_operation(receipt_id=receipt.receipt_id, message="focus")
+        assert steering.accepted
+        assert steering.enqueue_id is not None
+        cancellation = await app.cancel_root_operation(receipt.receipt_id)
+        assert cancellation.accepted
 
-        async with create_task_group() as tasks:
-            tasks.start_soon(run_root)
-            await started.wait()
-            steering = await app.steer_thread(thread_id=thread.thread_id, message="focus")
-            assert steering.accepted
-            assert steering.enqueue_id is not None
-            cancellation = await app.cancel_thread(thread_id=thread.thread_id)
-            assert cancellation.accepted
+        cancelled = await app.wait_root_operation(receipt.receipt_id)
+        assert cancelled.status is RootOperationStatus.cancelled
+        assert not (await app.cancel_root_operation(receipt.receipt_id)).accepted
 
-        assert outcomes[0].result.status == "cancelled"
-        assert outcomes[0].continuation.status == "not_available"
-        assert not (await app.cancel_thread(thread_id=thread.thread_id)).accepted
-
-        app._threads._agents = _CompletedReconstructor()
-        retried = await app.run_thread(thread_id=thread.thread_id, prompt="retry")
-        assert retried.result.output_or_raise() == "root complete"
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        retry_receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="retry")
+        retried = await app.wait_root_operation(retry_receipt.receipt_id)
+        assert retried.status is RootOperationStatus.completed
+        assert retried.outcome is not None
+        assert retried.outcome.execution.output == "root complete"
 
 
 async def test_shutdown_stops_new_admissions_and_cancels_stalled_operation(
@@ -373,6 +631,27 @@ async def test_shutdown_stops_new_admissions_and_cancels_stalled_operation(
     assert [item.code for item in errors] == ["app_stopping"]
 
 
+async def test_cancelled_application_lifetime_still_closes_owned_coordinators(tmp_path: Path) -> None:
+    ready = Event()
+    captured = []
+
+    async def app_lifetime() -> None:
+        async with open_agent_ui_app(_settings(tmp_path / "state")) as app:
+            captured.append(app)
+            ready.set()
+            await sleep_forever()
+
+    async with create_task_group() as tasks:
+        tasks.start_soon(app_lifetime)
+        await ready.wait()
+        tasks.cancel_scope.cancel()
+
+    app = captured[0]
+    assert app.state is AppState.closed
+    assert app._root_runs._task_group is None
+    assert app._subagent_operator._task_group is None
+
+
 async def _candidate_error(path: Path):
     from a13n_ui.errors import ConfigurationError
 
@@ -392,6 +671,66 @@ class _CompletedReconstructor:
             yield "root complete"
 
         return _reconstructed(model, root_capabilities)
+
+
+class _DeferredReconstructor:
+    def reconstruct(self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None):
+        del composition, subagent_operator, subscription_sources
+
+        async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+            del info
+            returns = [
+                part
+                for message in messages
+                if message.kind == "request"
+                for part in message.parts
+                if isinstance(part, ToolReturnPart)
+            ]
+            if not returns:
+                yield {
+                    0: DeltaToolCall(
+                        name="dynamic_action",
+                        json_args=json.dumps({"value": 7}),
+                        tool_call_id="deferred-1",
+                    )
+                }
+                return
+            yield f"handled: {returns[-1].content}"
+
+        definition = AgentDefinition(
+            agent=AgentSpec(),
+            output_type=str,
+            definition_id="agent-ui:agent:agent-assistant",
+            model=FunctionModel(stream_function=model),
+            capabilities=(
+                Capability(
+                    toolsets=(
+                        ExternalToolset(
+                            [
+                                ToolDefinition(
+                                    name="dynamic_action",
+                                    parameters_json_schema={
+                                        "type": "object",
+                                        "properties": {"value": {"type": "integer"}},
+                                        "required": ["value"],
+                                        "additionalProperties": False,
+                                    },
+                                )
+                            ],
+                            id="external-tools",
+                        ),
+                    ),
+                    id="dynamic-tools",
+                ),
+                *root_capabilities,
+            ),
+        )
+        executable = HarnessBuilder().build(definition)
+        return ReconstructedAgent(
+            executable=executable,
+            model_resolver=AgentUiModelResolver({}),
+            definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
+        )
 
 
 class _SlowReconstructor:

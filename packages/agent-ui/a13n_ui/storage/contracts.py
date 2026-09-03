@@ -101,6 +101,7 @@ class Thread(StoredContract):
     parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     created_at: datetime
     updated_at: datetime
+    metadata_version: int = Field(ge=1)
     title: str | None = Field(default=None, max_length=512)
     archived: bool = False
     configuration: ThreadConfiguration
