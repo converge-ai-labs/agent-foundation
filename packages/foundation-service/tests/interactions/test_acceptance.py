@@ -41,6 +41,7 @@ from .conftest import (
     NOW,
     SESSION_ID,
     TENANT_ID,
+    THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
@@ -131,7 +132,7 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=effective_agent_config(),
     )
-    state = initialize_start_state(seed)
+    state = initialize_start_state(seed, thread_id=THREAD_ID)
     run = _accepted_run(
         run_id=seed.run_id,
         thread_id=state.thread_id,
@@ -286,7 +287,7 @@ async def test_acceptance_rejects_input_payload_owned_by_another_run(
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=effective_agent_config(),
     )
-    state = initialize_start_state(seed)
+    state = initialize_start_state(seed, thread_id=THREAD_ID)
     inline = _accepted_run(
         run_id=seed.run_id,
         thread_id=state.thread_id,
@@ -350,7 +351,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=config,
     )
-    first_state = initialize_start_state(first_seed)
+    first_state = initialize_start_state(first_seed, thread_id=THREAD_ID)
     first_inline = _accepted_run(
         run_id=first_seed.run_id,
         thread_id=first_state.thread_id,
@@ -513,7 +514,7 @@ async def test_new_session_cannot_begin_with_a_child_thread(
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=effective_agent_config(),
     )
-    state = initialize_start_state(seed)
+    state = initialize_start_state(seed, thread_id=THREAD_ID)
     run = _accepted_run(
         run_id=seed.run_id,
         thread_id=state.thread_id,
@@ -567,7 +568,7 @@ async def test_existing_session_cannot_accept_another_root_thread(
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=effective_agent_config(),
     )
-    state = initialize_start_state(seed)
+    state = initialize_start_state(seed, thread_id=THREAD_ID)
     run = _accepted_run(
         run_id=seed.run_id,
         thread_id=state.thread_id,

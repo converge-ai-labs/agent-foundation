@@ -39,6 +39,7 @@ ATTEMPT_ID = "rat_1234567890abcdef"
 TENANT_ID = "org_1234567890abcdef"
 WORKSPACE_ID = "ws_1234567890abcdef"
 SESSION_ID = "sess_1234567890abcdef"
+THREAD_ID = "thread-1234567890abcdef1234567890abcdef"
 USER_ID = "usr_1234567890abcdef"
 NOW = datetime(2026, 9, 3, 0, 30, tzinfo=UTC)
 
@@ -126,7 +127,7 @@ def effective_agent_config(
 
 
 def initial_state(*, environment: EnvironmentExecutionConfig | None = None) -> RunStateEnvelope:
-    harness = HarnessState.new()
+    harness = HarnessState.new(thread_id=THREAD_ID)
     return RunStateEnvelope(
         run_id=RUN_ID,
         thread_id=harness.thread_id,
