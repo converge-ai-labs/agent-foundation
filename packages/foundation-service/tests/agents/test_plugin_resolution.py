@@ -17,7 +17,6 @@ from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.agents.service import AgentService
-from a13n_service.connectivity.outbound_policy import EndpointPolicy
 from a13n_service.etags import resource_etag
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
