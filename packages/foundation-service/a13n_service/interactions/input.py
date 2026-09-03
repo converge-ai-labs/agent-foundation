@@ -29,7 +29,7 @@ from pydantic_ai.messages import UserContent
 
 from a13n_service.agents.domain import InputAdapterConfig
 from a13n_service.assets.domain import Asset, normalize_asset_filename, normalize_media_type
-from a13n_service.models.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_service.connectivity.outbound_policy import EndpointPolicy, EndpointPolicyError
 
 from .domain import BoundedKey, JsonObject, ObjectId, StrictModel
 
