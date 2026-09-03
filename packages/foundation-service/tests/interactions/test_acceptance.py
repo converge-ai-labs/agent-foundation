@@ -214,7 +214,7 @@ async def test_acceptance_atomically_binds_exact_environment_and_replay_verifies
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=config,
     )
-    state = initialize_start_state(seed)
+    state = initialize_start_state(seed, thread_id=THREAD_ID)
     run = _accepted_run(
         run_id=seed.run_id,
         thread_id=state.thread_id,

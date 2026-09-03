@@ -1,7 +1,7 @@
 """add queued submission failure evidence.
 
 Revision ID: 93f7e255236d
-Revises: a5dae1fc588f
+Revises: 18f466b3ccf1
 Create Date: 2026-09-03 10:04:54.279651+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "93f7e255236d"
-down_revision: str | Sequence[str] | None = "a5dae1fc588f"
+down_revision: str | Sequence[str] | None = "18f466b3ccf1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
