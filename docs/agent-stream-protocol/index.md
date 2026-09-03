@@ -65,9 +65,10 @@ The observer uses standard AG-UI events when the semantics match directly:
 | Successful tool result                                   | `TOOL_CALL_RESULT`                                               |
 | Completed Run result                                     | `RUN_FINISHED`                                                   |
 | Failed or cancelled Run result                           | `RUN_ERROR`                                                      |
+| Native Pydantic AI `CapabilityEvent`                     | `a13n.pydantic_ai.capability` `CUSTOM` event                     |
 | Suspended result or another unmatched public observation | Namespaced `CUSTOM` event                                        |
 
-Unmatched Harness extensions use names such as `a13n.harness.lifecycle`. Unmatched Pydantic AI events use names such as `a13n.pydantic_ai.final_result`. The custom value retains the public Thread, Run, sequence, timestamp, and source-event representation.
+Unmatched Harness extensions use names such as `a13n.harness.lifecycle`. Unmatched Pydantic AI events use names such as `a13n.pydantic_ai.final_result`. A native `CapabilityEvent` retains its concrete kind, Capability ID, optional Tool-call correlation, and public payload. Every custom value also retains the public Thread, Run, sequence, timestamp, and source-event representation.
 
 ### Serialize events
 

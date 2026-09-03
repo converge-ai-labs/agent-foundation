@@ -40,13 +40,6 @@ class HarnessModelCharacteristics(BaseModel):
             return None
         return int(self.context_window * self.proactive_context_management_threshold)
 
-    @property
-    def compaction_trigger_tokens(self) -> int | None:
-        """Return the absolute compaction threshold when it is known."""
-        if self.context_window is None:
-            return None
-        return max(1, int(self.context_window * self.compact_threshold))
-
 
 def _default_usage_limits() -> UsageLimits:
     return UsageLimits(request_limit=1000)

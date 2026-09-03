@@ -356,6 +356,15 @@ class RunRecord(Base):
         ),
         UniqueConstraint("tenant_id", "id", name="uq_runs_tenant_id"),
         UniqueConstraint("tenant_id", "thread_id", "id", name="uq_runs_tenant_thread_id"),
+        Index(
+            "uq_runs_thread_authority",
+            "tenant_id",
+            "thread_id",
+            "id",
+            "authority_principal_type",
+            "authority_principal_id",
+            unique=True,
+        ),
         UniqueConstraint(
             "tenant_id",
             "session_id",

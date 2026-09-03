@@ -7,8 +7,8 @@ import pytest
 from a13n_harness import SafeFailure
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
-    AttemptAuthority,
     AttemptAuthorityError,
+    AttemptContext,
     AttemptExecutionService,
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
@@ -93,6 +93,12 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
     authority = _authority(claim)
     preparation = await execution.commit_preparation_success(authority)
     assert isinstance(preparation, AttemptPreparationAccepted)
+    renewed = await execution.heartbeat(authority, lease_duration=timedelta(seconds=30))
+    authority = _authority(
+        claim,
+        run_version=renewed.run_version,
+        attempt_version=renewed.attempt_version,
+    )
     entered = await execution.enter_harness(
         authority,
         preparation=preparation,
@@ -670,17 +676,28 @@ def _authority(
     run_version: int | None = None,
     attempt_version: int | None = None,
     lease_token: str | None = None,
-) -> AttemptAuthority:
-    return AttemptAuthority(
+) -> AttemptContext:
+    lease_expires_at = claim.attempt.lease_expires_at
+    lease_duration = lease_expires_at - claim.attempt.heartbeat_at
+    return AttemptContext(
         tenant_id=TENANT_ID,
+        thread_id=claim.thread_id,
         run_id=claim.attempt.run_id,
         run_attempt_id=claim.attempt.id,
         fence=claim.attempt.fence,
         lease_token=claim.lease_token if lease_token is None else lease_token,
         worker_id=claim.attempt.worker_id,
         worker_generation=claim.attempt.worker_generation,
+        worker_build_id=claim.attempt.worker_build_id,
+        runtime_lock_digest=claim.attempt.runtime_lock_digest,
         expected_run_version=claim.run_version if run_version is None else run_version,
         expected_attempt_version=claim.attempt.version if attempt_version is None else attempt_version,
+        lease_expires_at=lease_expires_at,
+        lease_duration=lease_duration,
+        renewal_interval=lease_duration / 3,
+        renewal_timeout=lease_duration / 6,
+        reconciliation_timeout=timedelta(seconds=5),
+        cleanup_timeout=timedelta(seconds=5),
     )
 
 

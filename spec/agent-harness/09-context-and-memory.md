@@ -309,7 +309,9 @@ class CompactionCapability:
     def __init__(self, policy: CompactionPolicy | None = None) -> None: ...
 ```
 
-An explicit `trigger_tokens` remains an absolute Host-selected threshold and takes precedence. `CompactionCapability()` without a policy asks the builder to derive the absolute trigger from Harness `AgentSpec.model_characteristics` as `int(context_window * compact_threshold)`; the default ratio is 90%. Automatic resolution requires a known context window and does not infer one from the model name. The Capability consults only the most recent `ModelResponse.usage` reported by the provider and triggers when its input-plus-output token count reaches the resolved threshold. A history with no provider usage does not compact; the Harness does not serialize messages to estimate tokens.
+An explicit `trigger_tokens` remains an absolute Host-selected threshold and takes precedence. `CompactionCapability()` without a policy resolves the threshold at each eligible model-request boundary. Its ratio remains Harness-owned: an explicit `AgentSpec.model_characteristics.compact_threshold` wins, otherwise the `HarnessModelCharacteristics` default is 90%. The context window comes first from the effective native `RunContext.model.context_window`; if unavailable, the Capability falls back to Harness `model_characteristics.context_window`. Because the builder projects an explicit Harness window into the effective native Model profile, that managed definition takes precedence while remaining visible through the upstream API. The integer `trigger_tokens` observation rounds the ratio threshold upward so it names the first reachable token count that satisfies the ratio.
+
+Automatic compaction first compares native `RunContext.context_window_used` with the ratio. If Pydantic AI cannot provide that value, the Capability falls back to the latest captured provider-reported input-plus-output token count divided by the resolved context window. The same latest token count is used for the bounded context snapshot and for an explicit absolute policy. If either required window or provider usage remains unknown, the Capability skips compaction on that boundary. It does not fail Agent construction, infer a window from the model name, or serialize messages to estimate tokens.
 
 ```mermaid
 sequenceDiagram
@@ -318,8 +320,8 @@ sequenceDiagram
     participant Model
     participant State as AgentContextState
 
-    PAI->>Compact: complete history before model request
-    Compact->>Compact: inspect latest provider usage
+    PAI->>Compact: RunContext and complete history before model request
+    Compact->>Compact: resolve native window and usage, then Harness fallbacks
     alt threshold reached
         Compact->>Compact: remove owned overlays from a detached history view
         Compact->>Model: same Agent and Model, cleaned history plus plain-text compact request

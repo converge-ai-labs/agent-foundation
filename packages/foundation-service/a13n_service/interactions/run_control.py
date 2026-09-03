@@ -3,21 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Literal, Protocol
 
 from a13n_harness import (
     AgentContext,
-    AgentInstanceContext,
     HarnessRunResult,
-    HarnessRunStream,
     HarnessState,
     RunInputValue,
 )
 from a13n_harness.errors import RunError
-from pydantic_ai import RunContext
 from pydantic_ai.capabilities import NodeResult
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
@@ -25,13 +22,21 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_graph import End
 
 from .attempts import (
-    AttemptAuthority,
     AttemptAuthorityError,
+    AttemptContext,
     AttemptExecutionService,
     AttemptMutationReceipt,
     AttemptPreparationAccepted,
+    AttemptPreparationRejected,
+    AttemptPreparationResult,
 )
 from .domain import RunAttemptYieldReason
+from .harness_control import (
+    HarnessContextBinding,
+    HarnessControlDriver,
+    HarnessHookBoundary,
+    HarnessRunIdentity,
+)
 from .harness_results import (
     HarnessOutcomeAdapter,
     HarnessOutcomeProjection,
@@ -67,13 +72,13 @@ class ThreadInboxReconciler(Protocol):
 
     async def confirm_checkpoint(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
     ) -> AttemptMutationReceipt: ...
 
     async def read_eligible(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
     ) -> Sequence[AdaptedThreadInboxEntry]: ...
 
 
@@ -91,214 +96,294 @@ class _CoordinatorPhase(StrEnum):
     fenced = "fenced"
 
 
-@dataclass(frozen=True, slots=True)
-class _RunAttachment:
-    stream: HarnessRunStream[Any]
-    context: AgentContext
+@dataclass(slots=True)
+class _RunControlGate:
+    """Private serialization and local state for one Attempt control facade."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    identity: HarnessRunIdentity | None = None
+    offered: list[ConsumedThreadInboxEntry] = field(default_factory=list)
+    delivery_gate: _DeliveryGate = _DeliveryGate.open
+    handoff_reason: RunAttemptYieldReason | None = None
+    phase: _CoordinatorPhase = _CoordinatorPhase.active
 
 
-class FoundationRunControlCoordinator:
-    """Serialize control, checkpoint, and handoff work for one current RunAttempt."""
+class RunAttemptControl:
+    """Sole process-local control facade for one current RunAttempt."""
 
     def __init__(
         self,
         *,
-        authority: AttemptAuthority,
+        context: AttemptContext,
         execution: AttemptExecutionService,
         states: RunStateStore,
         state: StoredRunState,
-        instance: AgentInstanceContext,
         inbox: ThreadInboxReconciler,
     ) -> None:
         envelope = state.envelope
-        if envelope.run_id != authority.run_id:
-            raise ValueError("Run state and Attempt authority must name the same Run")
+        if envelope.run_id != context.run_id or envelope.thread_id != context.thread_id:
+            raise ValueError("Run state and Attempt context must name the same Run and Thread")
         if envelope.outcome_candidate is not None:
             raise ValueError("A sealed outcome candidate cannot start active run control")
-        self._authority = authority
+        self._context = context
         self._execution = execution
         self._states = states
         self._state = state
-        self._instance = instance
         self._inbox = inbox
-        self._lock = asyncio.Lock()
-        self._attachment: _RunAttachment | None = None
-        self._offered: list[ConsumedThreadInboxEntry] = []
-        self._delivery_gate = (
+        self._gate = _RunControlGate()
+        self._gate.delivery_gate = (
             _DeliveryGate.first_response
             if envelope.input_disposition == "pending" and envelope.host.deferred is not None
             else _DeliveryGate.open
         )
-        self._handoff_reason: RunAttemptYieldReason | None = None
-        self._phase = _CoordinatorPhase.active
+        self._driver: HarnessControlDriver | None = None
+        self._cancel_executor: Callable[[], None] | None = None
 
-    async def attach_stream(
+    def bind_executor(
         self,
-        stream: HarnessRunStream[Any],
+        driver: HarnessControlDriver,
+        cancel_executor: Callable[[], None],
+    ) -> None:
+        """Bind the only driver and executor cancellation scope before execution."""
+
+        if self._driver is not None or self._cancel_executor is not None:
+            raise RunError(
+                "Foundation run control is already bound to an executor.",
+                code="foundation_control_reused",
+            )
+        self._driver = driver
+        self._cancel_executor = cancel_executor
+
+    async def enter_harness(
+        self,
+        identity: HarnessRunIdentity,
         preparation: AttemptPreparationAccepted,
     ) -> None:
         """Bind the entered Harness identity before any stream observation is consumed."""
 
-        async with self._lock:
+        async with self._gate.lock:
             self._require_open()
-            if self._attachment is not None:
+            self._require_driver()
+            if self._gate.identity is not None:
                 raise RunError(
                     "Foundation run control already has an active Harness Run.",
                     code="foundation_control_reused",
                 )
-            context = stream.context
-            if stream.thread_id != self._state.envelope.thread_id or context.instance is not self._instance:
+            if identity.thread_id != self._state.envelope.thread_id:
                 raise RunError(
                     "Harness Run identity does not match Foundation preparation.",
                     code="foundation_control_identity_mismatch",
                 )
-            self._attachment = _RunAttachment(stream=stream, context=context)
+            self._gate.identity = identity
             try:
                 mutation = await self._execution.enter_harness(
-                    self._authority,
+                    self._context,
                     preparation=preparation,
-                    harness_run_id=stream.run_id,
+                    harness_run_id=identity.run_id,
                 )
             except AttemptAuthorityError:
-                self._fence()
+                await self._fence()
                 raise
             self._advance(mutation)
 
-    async def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> None:
-        async with self._lock:
-            self._require_callback_context(ctx)
+    async def after_stream_entry(self) -> None:
+        """Honor a pre-existing handoff at the first direct complete boundary."""
+
+        async with self._gate.lock:
+            self._require_open()
+            driver = self._require_driver()
+            try:
+                if self._gate.handoff_reason is None:
+                    return
+                await self._prepare_boundary()
+                await self._checkpoint_state(await driver.export_state())
+                await self._confirm_state()
+                await self._quiesce_for_handoff()
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+
+    async def bind_model_attempt(self, binding: HarnessContextBinding) -> None:
+        async with self._gate.lock:
+            self._require_open()
+            self._require_driver().validate_binding(binding)
             try:
                 await self._validate_authority()
             except AttemptAuthorityError:
-                self._fence()
+                await self._fence()
                 raise
 
     async def before_model_request(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         request_context: ModelRequestContext,
     ) -> None:
-        async with self._lock:
-            self._require_callback_context(ctx)
+        async with self._gate.lock:
+            self._require_boundary(boundary)
             try:
                 await self._prepare_boundary()
-                waiting_first_request = self._delivery_gate is _DeliveryGate.first_response
-                if self._handoff_reason is not None:
-                    if not waiting_first_request:
-                        await self._checkpoint(ctx, request_context.messages)
-                        await self._confirm_state()
-                    self._quiesce_for_handoff()
+                waiting_first_request = self._gate.delivery_gate is _DeliveryGate.first_response
+                if not waiting_first_request:
+                    await self._checkpoint(boundary, request_context.messages)
+                    await self._confirm_state()
+                if self._gate.handoff_reason is not None:
+                    await self._quiesce_for_handoff()
                     return
                 if not waiting_first_request:
-                    await self._checkpoint(ctx, request_context.messages)
-                    await self._confirm_state()
-                    await self._offer_pending(ctx)
-                mutation = await self._execution.increment_model_request(self._authority)
+                    await self._offer_pending(boundary)
+                mutation = await self._execution.increment_model_request(self._context)
                 self._advance(mutation)
             except AttemptAuthorityError:
-                self._fence()
+                await self._fence()
                 raise
 
     async def after_model_response(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         response: ModelResponse,
     ) -> None:
-        async with self._lock:
-            self._require_callback_context(ctx)
+        async with self._gate.lock:
+            self._require_boundary(boundary)
             try:
                 await self._validate_authority()
-                if self._delivery_gate is not _DeliveryGate.first_response:
+                if self._gate.delivery_gate is not _DeliveryGate.first_response:
                     return
                 await self._confirm_state()
                 if any(isinstance(part, ToolCallPart) for part in response.parts):
-                    self._delivery_gate = _DeliveryGate.first_tool_batch
+                    self._gate.delivery_gate = _DeliveryGate.first_tool_batch
                     return
-                self._delivery_gate = _DeliveryGate.open
-                await self._offer_pending(ctx)
+                self._gate.delivery_gate = _DeliveryGate.open
+                await self._offer_pending(boundary)
             except AttemptAuthorityError:
-                self._fence()
+                await self._fence()
                 raise
 
     async def after_tool_batch(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         result: NodeResult[AgentContext],
+        complete_messages: Sequence[ModelMessage],
     ) -> None:
-        async with self._lock:
-            self._require_callback_context(ctx)
+        async with self._gate.lock:
+            self._require_boundary(boundary)
             try:
                 await self._validate_authority()
+                if self._gate.delivery_gate is _DeliveryGate.first_response:
+                    return
                 if isinstance(result, End):
-                    if self._delivery_gate is not _DeliveryGate.first_tool_batch or _is_deferred(result):
+                    if self._gate.delivery_gate is not _DeliveryGate.first_tool_batch or _is_deferred(result):
                         return
                     await self._confirm_state()
-                    self._delivery_gate = _DeliveryGate.open
-                    await self._offer_pending(ctx)
+                    self._gate.delivery_gate = _DeliveryGate.open
+                    await self._offer_pending(boundary)
                     return
                 await self._confirm_state()
-                await self._checkpoint(ctx, ctx.messages)
+                await self._checkpoint(boundary, complete_messages)
                 await self._confirm_state()
-                if self._delivery_gate is _DeliveryGate.first_tool_batch:
-                    self._delivery_gate = _DeliveryGate.open
-                if self._handoff_reason is not None:
-                    self._quiesce_for_handoff()
+                if self._gate.delivery_gate is _DeliveryGate.first_tool_batch:
+                    self._gate.delivery_gate = _DeliveryGate.open
+                if self._gate.handoff_reason is not None:
+                    await self._quiesce_for_handoff()
                 else:
-                    await self._offer_pending(ctx)
+                    await self._offer_pending(boundary)
             except AttemptAuthorityError:
-                self._fence()
+                await self._fence()
                 raise
 
     async def request_handoff(self, reason: RunAttemptYieldReason) -> None:
-        async with self._lock:
+        async with self._gate.lock:
             self._require_open()
-            if self._handoff_reason is not None and self._handoff_reason is not reason:
+            if self._gate.handoff_reason is not None and self._gate.handoff_reason is not reason:
                 raise RunError(
                     "Foundation run control already has another handoff request.",
                     code="foundation_handoff_conflict",
                 )
-            self._handoff_reason = reason
+            self._gate.handoff_reason = reason
 
-    async def complete_handoff(self) -> AttemptMutationReceipt:
-        """Commit yielded only after a safe-boundary cancellation closed local admission."""
+    async def commit_preparation(self) -> AttemptPreparationResult:
+        """Commit preflight using the latest context after concurrent lease renewal."""
 
-        async with self._lock:
-            if self._phase is not _CoordinatorPhase.handoff_ready or self._handoff_reason is None:
-                raise RunError(
-                    "Foundation handoff has not reached a confirmed safe boundary.",
-                    code="foundation_handoff_not_ready",
-                )
+        async with self._gate.lock:
+            self._require_open()
             try:
-                mutation = await self._execution.yield_attempt(self._authority, self._handoff_reason)
-                self._advance(mutation)
-                self._phase = _CoordinatorPhase.yielded
-                return mutation
+                decision = await self._execution.commit_preparation_success(self._context)
+                self._advance(decision.mutation)
+                if isinstance(decision, AttemptPreparationRejected):
+                    self._gate.phase = _CoordinatorPhase.terminal
+                return decision
             except AttemptAuthorityError:
-                self._fence()
+                await self._fence()
                 raise
 
-    async def commit_terminal_result(
+    async def renew_lease(self) -> None:
+        """Renew only this exact Attempt under the same serialized authority context."""
+
+        async with self._gate.lock:
+            if self._gate.phase in {_CoordinatorPhase.terminal, _CoordinatorPhase.yielded}:
+                return
+            self._require_open()
+            self._advance(
+                await self._execution.heartbeat(
+                    self._context,
+                    lease_duration=self._context.lease_duration,
+                )
+            )
+
+    async def reconcile(self) -> None:
+        """Reread durable control facts and offer active input only after stream entry."""
+
+        async with self._gate.lock:
+            if self._gate.phase in {_CoordinatorPhase.terminal, _CoordinatorPhase.yielded}:
+                return
+            self._require_open()
+            try:
+                await self._prepare_boundary()
+                if (
+                    self._gate.identity is None
+                    or self._gate.delivery_gate is not _DeliveryGate.open
+                    or self._gate.handoff_reason is not None
+                ):
+                    return
+                driver = self._require_driver()
+                for entry in await self._eligible_entries():
+                    await driver.steer(entry.input)
+                    self._gate.offered.append(entry.receipt)
+            except AttemptAuthorityError:
+                await self._fence()
+                raise
+
+    async def finalize(
         self,
         result: HarnessRunResult[Any],
         *,
         adapter: HarnessOutcomeAdapter,
         committer: RunTerminalCommitter,
-    ) -> RunTerminalReceipt | None:
-        """Select one ordinary terminal result, or preserve a prepared handoff."""
+    ) -> RunTerminalReceipt | AttemptMutationReceipt:
+        """Commit the winning ordinary result or a prepared planned handoff."""
 
-        async with self._lock:
+        async with self._gate.lock:
             self._require_result_identity(result)
-            if self._phase is _CoordinatorPhase.handoff_ready:
+            if self._gate.phase is _CoordinatorPhase.handoff_ready:
                 if result.status != "cancelled":
                     raise RunError(
                         "Harness produced a non-cancelled result after handoff quiescence.",
                         code="foundation_handoff_result_invalid",
                     )
-                return None
+                reason = self._gate.handoff_reason
+                if reason is None:  # pragma: no cover - maintained by the private gate
+                    raise RuntimeError("handoff-ready control is missing its reason")
+                try:
+                    mutation = await self._execution.yield_attempt(self._context, reason)
+                    self._advance(mutation)
+                    self._gate.phase = _CoordinatorPhase.yielded
+                    return mutation
+                except AttemptAuthorityError:
+                    await self._fence()
+                    raise
             self._require_open()
             try:
                 if result.status == "cancelled":
-                    receipt = await committer.reconcile_cancelled(self._authority)
+                    receipt = await committer.reconcile_cancelled(self._context)
                     _require_terminal_disposition(receipt, RunTerminalDisposition.cancelled)
                 else:
                     await self._validate_authority()
@@ -306,7 +391,7 @@ class FoundationRunControlCoordinator:
                         failure = result.failure
                         if failure is None:  # pragma: no cover - enforced by HarnessRunResult
                             raise RuntimeError("failed Harness result is missing its failure")
-                        receipt = await committer.commit_failure(self._authority, failure)
+                        receipt = await committer.commit_failure(self._context, failure)
                         _require_terminal_disposition(
                             receipt,
                             RunTerminalDisposition.retrying,
@@ -316,22 +401,41 @@ class FoundationRunControlCoordinator:
                         projection = await adapter.project(result)
                         await self._publish_terminal(projection)
                         await self._confirm_state()
-                        receipt = await committer.commit_state_outcome(self._authority, self._state)
+                        receipt = await committer.commit_state_outcome(self._context, self._state)
                         expected = (
                             RunTerminalDisposition.completed
                             if isinstance(projection.candidate, CompletedOutcomeCandidate)
                             else RunTerminalDisposition.waiting
                         )
                         _require_terminal_disposition(receipt, expected)
-                self._phase = _CoordinatorPhase.terminal
+                self._gate.phase = _CoordinatorPhase.terminal
                 return receipt
             except AttemptAuthorityError:
-                self._fence()
+                await self._fence()
                 raise
 
+    async def authority_lost(self) -> None:
+        """Terminally fence local control after lease authority cannot be confirmed."""
+
+        async with self._gate.lock:
+            if self._gate.phase in {
+                _CoordinatorPhase.fenced,
+                _CoordinatorPhase.terminal,
+                _CoordinatorPhase.yielded,
+            }:
+                return
+            await self._fence()
+
+    async def close_admission(self) -> None:
+        """Prevent later control work during executor teardown."""
+
+        async with self._gate.lock:
+            if self._gate.phase is _CoordinatorPhase.active:
+                await self._fence()
+
     @property
-    def current_authority(self) -> AttemptAuthority:
-        return self._authority
+    def current_context(self) -> AttemptContext:
+        return self._context
 
     @property
     def current_state(self) -> StoredRunState:
@@ -339,29 +443,31 @@ class FoundationRunControlCoordinator:
 
     @property
     def handoff_ready(self) -> bool:
-        return self._phase is _CoordinatorPhase.handoff_ready
+        return self._gate.phase is _CoordinatorPhase.handoff_ready
 
     async def _prepare_boundary(self) -> None:
         await self._validate_authority()
         await self._confirm_state()
 
     async def _validate_authority(self) -> None:
-        self._advance(await self._execution.validate(self._authority))
+        self._advance(await self._execution.validate(self._context))
 
     async def _confirm_state(self) -> None:
-        self._advance(await self._inbox.confirm_checkpoint(self._authority, self._state))
+        self._advance(await self._inbox.confirm_checkpoint(self._context, self._state))
 
     async def _checkpoint(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         messages: Sequence[ModelMessage],
     ) -> None:
-        harness = await ctx.deps.export_state(messages)
+        await self._checkpoint_state(await boundary.export_state(messages))
+
+    async def _checkpoint_state(self, harness: HarnessState) -> None:
         prior = self._state.envelope
-        receipts = (*prior.host.consumed_inbox_entries, *self._offered)
+        receipts = (*prior.host.consumed_inbox_entries, *self._gate.offered)
         host = HostContinuationState(consumed_inbox_entries=receipts)
         if prior.input_disposition == "applied" and prior.harness == harness and prior.host == host:
-            self._offered.clear()
+            self._gate.offered.clear()
             return
         await self._publish(self._successor(harness, host, "progress", None))
 
@@ -369,7 +475,10 @@ class FoundationRunControlCoordinator:
         prior = self._state.envelope
         host = HostContinuationState(
             deferred=projection.deferred,
-            consumed_inbox_entries=(*prior.host.consumed_inbox_entries, *self._offered),
+            consumed_inbox_entries=(
+                *prior.host.consumed_inbox_entries,
+                *self._gate.offered,
+            ),
         )
         checkpoint_kind = "completed" if isinstance(projection.candidate, CompletedOutcomeCandidate) else "waiting"
         await self._publish(
@@ -388,14 +497,19 @@ class FoundationRunControlCoordinator:
         checkpoint_kind: Literal["progress", "waiting", "completed"],
         candidate: RunStateOutcomeCandidate | None,
     ) -> RunStateEnvelope:
+        if harness.environment_states:
+            raise RunError(
+                "Foundation Environment attachments must not publish provider target state.",
+                code="foundation_environment_state_invalid",
+            )
         prior = self._state.envelope
         payload = prior.model_dump(mode="python", by_alias=True)
         payload.update(
             checkpoint_seq=prior.checkpoint_seq + 1,
             checkpoint_kind=checkpoint_kind,
             input_disposition="applied",
-            last_checkpoint_run_attempt_id=self._authority.run_attempt_id,
-            last_checkpoint_fence=self._authority.fence,
+            last_checkpoint_run_attempt_id=self._context.run_attempt_id,
+            last_checkpoint_fence=self._context.fence,
             harness_schema_version=harness.schema_version,
             harness=harness,
             host=host,
@@ -405,53 +519,36 @@ class FoundationRunControlCoordinator:
 
     async def _publish(self, successor: RunStateEnvelope) -> None:
         self._state = await self._execution.publish_checkpoint(
-            self._authority,
+            self._context,
             self._states,
             self._state,
             successor,
         )
-        self._offered.clear()
+        self._gate.offered.clear()
 
-    async def _offer_pending(self, ctx: RunContext[AgentContext]) -> None:
-        if self._offered:
-            return
-        entries = tuple(await self._inbox.read_eligible(self._authority))
+    async def _offer_pending(self, boundary: HarnessHookBoundary) -> None:
+        for entry in await self._eligible_entries():
+            await boundary.enqueue(entry.input, priority="asap")
+            self._gate.offered.append(entry.receipt)
+
+    async def _eligible_entries(self) -> tuple[AdaptedThreadInboxEntry, ...]:
+        if self._gate.offered:
+            return ()
+        entries = tuple(await self._inbox.read_eligible(self._context))
         _validate_delivery_batch(entries, self._state.envelope)
-        for entry in entries:
-            enqueue_id = (
-                ctx.enqueue(entry.input, priority="asap")
-                if isinstance(entry.input, str)
-                else ctx.enqueue(*entry.input, priority="asap")
-            )
-            if enqueue_id is None:
-                raise RunError(
-                    "A Thread inbox entry produced no Harness input.",
-                    code="foundation_inbox_input_invalid",
-                )
-            self._offered.append(entry.receipt)
+        return entries
 
-    def _require_callback_context(self, ctx: RunContext[AgentContext]) -> None:
+    def _require_boundary(self, boundary: HarnessHookBoundary) -> None:
         self._require_open()
-        attachment = self._attachment
-        if (
-            attachment is None
-            or ctx.deps is not attachment.context
-            or ctx.deps.instance is not self._instance
-            or ctx.deps.thread_id != self._state.envelope.thread_id
-            or ctx.deps.run_id != attachment.stream.run_id
-        ):
-            raise RunError(
-                "Foundation run control received an incompatible Harness context.",
-                code="foundation_control_identity_mismatch",
-            )
+        self._require_driver().validate_boundary(boundary)
 
     def _require_result_identity(self, result: HarnessRunResult[Any]) -> None:
-        attachment = self._attachment
+        identity = self._gate.identity
         if (
-            attachment is None
+            identity is None
             or result.thread_id != self._state.envelope.thread_id
-            or result.thread_id != attachment.stream.thread_id
-            or result.run_id != attachment.stream.run_id
+            or result.thread_id != identity.thread_id
+            or result.run_id != identity.run_id
         ):
             raise RunError(
                 "Foundation run control received an incompatible Harness result.",
@@ -459,35 +556,50 @@ class FoundationRunControlCoordinator:
             )
 
     def _require_open(self) -> None:
-        if self._phase is not _CoordinatorPhase.active:
+        if self._gate.phase is not _CoordinatorPhase.active:
             raise RunError(
                 "Foundation run control is terminally fenced.",
                 code="foundation_control_fenced",
             )
 
+    def _require_driver(self) -> HarnessControlDriver:
+        driver = self._driver
+        if driver is None:
+            raise RunError(
+                "Foundation run control is not bound to its Harness driver.",
+                code="foundation_control_unbound",
+            )
+        return driver
+
     def _advance(self, mutation: AttemptMutationReceipt) -> None:
         if (
-            mutation.run_version < self._authority.expected_run_version
-            or mutation.attempt_version < self._authority.expected_attempt_version
+            mutation.run_version < self._context.expected_run_version
+            or mutation.attempt_version < self._context.expected_attempt_version
         ):
             raise RuntimeError("Attempt mutation receipt moved authority versions backwards")
-        self._authority = replace(
-            self._authority,
+        self._context = replace(
+            self._context,
             expected_run_version=mutation.run_version,
             expected_attempt_version=mutation.attempt_version,
+            lease_expires_at=mutation.lease_expires_at,
         )
 
-    def _quiesce_for_handoff(self) -> None:
-        attachment = self._attachment
-        if attachment is None:
-            raise RuntimeError("Harness stream is missing at a handoff boundary")
-        self._phase = _CoordinatorPhase.handoff_ready
-        attachment.stream.cancel()
+    async def _quiesce_for_handoff(self) -> None:
+        await self._require_driver().cancel()
+        self._gate.phase = _CoordinatorPhase.handoff_ready
 
-    def _fence(self) -> None:
-        self._phase = _CoordinatorPhase.fenced
-        if self._attachment is not None:
-            self._attachment.stream.cancel()
+    async def _fence(self) -> None:
+        self._gate.phase = _CoordinatorPhase.fenced
+        cancel_executor = self._cancel_executor
+        if cancel_executor is None:
+            raise RunError(
+                "Foundation run control is not bound to its executor cancellation scope.",
+                code="foundation_control_unbound",
+            )
+        try:
+            await self._require_driver().cancel()
+        finally:
+            cancel_executor()
 
 
 def _is_deferred(result: End[Any]) -> bool:
@@ -528,6 +640,6 @@ def _require_terminal_disposition(
 
 __all__ = [
     "AdaptedThreadInboxEntry",
-    "FoundationRunControlCoordinator",
+    "RunAttemptControl",
     "ThreadInboxReconciler",
 ]

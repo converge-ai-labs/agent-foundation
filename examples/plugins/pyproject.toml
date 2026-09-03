@@ -9,7 +9,7 @@ dependencies = [
     "a13n-environment-provider",
     "a13n-harness",
     "pydantic>=2.12,<3",
-    "pydantic-ai-slim>=2.33,<2.34",
+    "pydantic-ai-slim>=2.38,<3",
 ]
 
 [project.entry-points."a13n_environment_provider.providers"]

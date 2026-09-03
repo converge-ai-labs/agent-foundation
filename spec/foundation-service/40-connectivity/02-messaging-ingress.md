@@ -84,7 +84,7 @@ class AgentThreadBinding:
 
 A top-level App mention can supply the future provider thread root before the Bot replies, so its first input creates the Foundation Agent Thread without requiring an empty external thread. A later App mention inside the same bound provider Discussion continues the existing Agent Thread. Route edits never silently rebind an existing external reference to another Agent or Thread.
 
-Every message admitted by `discussion` after binding or by `chat` is input to the fixed Agent. There is no hard-coded attention gate. The Agent can decide that no outbound response is appropriate. The Route's common [input batching policy](01-ingress-and-routing.md#input-batching-and-frequency) combines compatible ordered bursts by destination Agent Thread and bounds submission frequency. A compatible current running or current/head waiting Run receives only Steer, and Foundation's Thread inbox remains the only durable active-input authority.
+Every message admitted by `discussion` after binding or by `chat` is input to the fixed Agent. There is no hard-coded attention gate. The Agent can decide that no outbound response is appropriate. The Route's common [input batching policy](01-ingress-and-routing.md#input-batching-and-frequency) combines compatible ordered bursts by destination Agent Thread and bounds submission frequency. A compatible current accepted or running Run or current/head waiting Run receives only Steer, and Foundation's Thread inbox remains the only durable active-input authority.
 
 ## Capability Resolution
 

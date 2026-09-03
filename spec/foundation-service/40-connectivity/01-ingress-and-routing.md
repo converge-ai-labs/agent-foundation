@@ -199,11 +199,11 @@ After routing, the Ingress delegates completely to Foundation Service:
 
 - a new destination uses ordinary new-Thread and root Run acceptance;
 - an idle existing Thread uses ordinary existing-Thread Run acceptance;
-- a compatible current running or current/head waiting Run uses only the common active [Steer contract](../19-agent-control-active-execution.md#public-steer-api) and never creates a queued submission;
+- a compatible current accepted or running Run, or current/head waiting Run, uses only the common active [Steer contract](../19-agent-control-active-execution.md#steer-command) and never creates a queued submission;
 - when a busy Run lacks the same Ingress context or accepted capability surface, the durably admitted event remains pending at the Ingress admission boundary until the Thread can accept a compatible Run rather than changing the active Run's tools; and
 - any bounded burst coalescing occurs before one canonical Steer or Run submission and never replaces the durable Foundation Thread inbox.
 
-If a Steer loses the race with a Run transition, routing rereads the Thread: it Steers the then-current compatible running or current/head waiting Run, retains the admission while work is accepted but not yet running, or accepts an ordinary successor Run when the Thread is inactive. The original external event identity makes this retry idempotent.
+If a Steer loses the race with a Run transition, routing rereads the Thread: it Steers the then-current compatible accepted or running Run or current/head waiting Run, or accepts an ordinary successor Run when the Thread is inactive. The original external event identity makes this retry idempotent.
 
 ## Failure Semantics
 
@@ -232,7 +232,7 @@ If a Steer loses the race with a Run transition, routing rereads the Thread: it 
 05. Native ingress owns no parallel Agent inbox, Run queue, or Agent-execution retry lifecycle; its bounded admission retry ends at Run or Steer acceptance.
 06. Every activation-eligible provider event is durable before acknowledgement; deterministically irrelevant traffic creates no admission record.
 07. One inbound messaging event activates at most one Agent.
-08. Ingress input never creates a queued submission; a compatible current running or current/head waiting Run receives only Steer.
+08. Ingress input never creates a queued submission; a compatible current accepted or running Run or current/head waiting Run receives only Steer.
 09. Input batching preserves eligible event order and bounds Run or Steer frequency without silently dropping acknowledged input.
 10. A durable admission moves only from `pending` to exact Run or Steer `accepted`, or to terminal `rejected` with one safe reason.
 11. Durable admission freezes one effective routing decision; retries reauthorize that decision and never reroute it through current mutable configuration.

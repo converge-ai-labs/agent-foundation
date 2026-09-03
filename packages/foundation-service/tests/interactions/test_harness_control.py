@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,6 +17,8 @@ from a13n_harness.errors import DefinitionError
 from a13n_service.interactions.harness_control import (
     FOUNDATION_RUN_CONTROL_CAPABILITY_ID,
     FoundationRunControlCapability,
+    HarnessContextBinding,
+    HarnessHookBoundary,
     compose_run_control,
 )
 from pydantic_ai import RunContext
@@ -30,32 +33,66 @@ pytestmark = pytest.mark.anyio
 @dataclass
 class _RecordingCoordinator:
     trace: list[str] = field(default_factory=list)
-    calls: list[tuple[str, AgentContext]] = field(default_factory=list)
+    calls: list[tuple[str, object]] = field(default_factory=list)
 
-    async def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> None:
-        self.calls.append(("bind", ctx.deps))
+    async def bind_model_attempt(self, binding: HarnessContextBinding) -> None:
+        self.calls.append(("bind", binding))
 
     async def before_model_request(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         request_context: ModelRequestContext,
     ) -> None:
         del request_context
         self.trace.append("control_before_model")
-        self.calls.append(("before_model", ctx.deps))
+        self.calls.append(("before_model", boundary))
 
     async def after_model_response(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         response: ModelResponse,
     ) -> None:
         del response
         self.trace.append("control_after_model")
-        self.calls.append(("after_model", ctx.deps))
+        self.calls.append(("after_model", boundary))
 
-    async def after_tool_batch(self, ctx: RunContext[AgentContext], result: Any) -> None:
-        del result
-        self.calls.append(("after_tools", ctx.deps))
+    async def after_tool_batch(
+        self,
+        boundary: HarnessHookBoundary,
+        result: Any,
+        complete_messages: Sequence[ModelMessage],
+    ) -> None:
+        del result, complete_messages
+        self.calls.append(("after_tools", boundary))
+
+
+@dataclass
+class _RecordingDriver:
+    contexts: list[AgentContext] = field(default_factory=list)
+    _driver_token: object = field(default_factory=object)
+    _run_token: object = field(default_factory=object)
+
+    def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> HarnessContextBinding:
+        self.contexts.append(ctx.deps)
+        return HarnessContextBinding(self._driver_token, self._run_token, object())
+
+    @asynccontextmanager
+    async def hook_boundary(
+        self,
+        ctx: RunContext[AgentContext],
+        binding: HarnessContextBinding | None,
+    ) -> AsyncIterator[HarnessHookBoundary]:
+        assert binding is not None
+        assert ctx.deps is self.contexts[-1]
+        yield _RecordingBoundary()
+
+
+class _RecordingBoundary:
+    async def enqueue(self, input, *, priority):
+        raise AssertionError("the control stub does not enqueue")
+
+    async def export_state(self, complete_messages):
+        raise AssertionError("the control stub does not export state")
 
 
 @dataclass
@@ -110,8 +147,9 @@ def _definition(*capabilities: AbstractCapability[AgentContext]) -> AgentDefinit
 async def test_control_capability_is_outermost_and_preserves_harness_values() -> None:
     trace: list[str] = []
     coordinator = _RecordingCoordinator(trace=trace)
+    driver = _RecordingDriver()
     ordinary_outer = _OuterRecordingCapability(trace=trace)
-    definition = compose_run_control(_definition(ordinary_outer), coordinator)
+    definition = compose_run_control(_definition(ordinary_outer), coordinator, driver)
 
     control = definition.capabilities[0]
     assert isinstance(control, FoundationRunControlCapability)
@@ -137,27 +175,29 @@ async def test_control_capability_is_outermost_and_preserves_harness_values() ->
         "ordinary_after_model",
         "control_after_model",
     ]
-    contexts = [context for _, context in coordinator.calls]
-    assert all(context is contexts[0] for context in contexts)
+    boundaries = [value for name, value in coordinator.calls if name != "bind"]
+    assert len({id(boundary) for boundary in boundaries}) == 3
+    assert len(driver.contexts) == 1
 
 
 async def test_control_capability_binds_fresh_logical_run_contexts() -> None:
     coordinator = _RecordingCoordinator()
-    executable = HarnessBuilder(instrumentation=None).build(compose_run_control(_definition(), coordinator))
+    driver = _RecordingDriver()
+    executable = HarnessBuilder(instrumentation=None).build(compose_run_control(_definition(), coordinator, driver))
 
     await executable.run("first", bindings=RunBindings.embedded())
     await executable.run("second", bindings=RunBindings.embedded())
 
-    contexts = [context for name, context in coordinator.calls if name == "bind"]
-    assert len(contexts) == 2
-    assert contexts[0] is not contexts[1]
+    assert len(driver.contexts) == 2
+    assert driver.contexts[0] is not driver.contexts[1]
 
 
 async def test_harness_rejects_a_duplicate_reserved_control_id() -> None:
     coordinator = _RecordingCoordinator()
+    driver = _RecordingDriver()
     duplicate = _OuterRecordingCapability(id=FOUNDATION_RUN_CONTROL_CAPABILITY_ID)
 
     with pytest.raises(DefinitionError) as error:
-        HarnessBuilder(instrumentation=None).build(compose_run_control(_definition(duplicate), coordinator))
+        HarnessBuilder(instrumentation=None).build(compose_run_control(_definition(duplicate), coordinator, driver))
 
     assert error.value.code == "agent_build_failed"

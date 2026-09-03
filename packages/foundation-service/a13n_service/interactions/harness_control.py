@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
-from a13n_harness import AgentContext, AgentDefinition
-from a13n_harness.errors import DefinitionError
+from a13n_harness import AgentContext, AgentDefinition, HarnessState, RunInputValue
 from pydantic_ai import CallToolsNode, RunContext
 from pydantic_ai.capabilities import (
     AbstractCapability,
@@ -14,33 +15,103 @@ from pydantic_ai.capabilities import (
     CapabilityOrdering,
     NodeResult,
 )
-from pydantic_ai.messages import ModelResponse
+from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import ModelRequestContext
+
+from .attempts import AttemptPreparationAccepted
+from .objects import StoredRunState
 
 FOUNDATION_RUN_CONTROL_CAPABILITY_ID = "a13n.foundation.run-control"
 
 
-class RunControlCoordinator(Protocol):
-    """Attempt-scoped Foundation operations awaited by the control Capability."""
+@dataclass(frozen=True, slots=True)
+class HarnessContextBinding:
+    """Opaque driver-issued identity for one internal Harness ModelAttempt."""
 
-    async def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> None: ...
+    _driver_token: object
+    _run_token: object
+    _model_attempt_token: object
+
+
+@dataclass(frozen=True, slots=True)
+class HarnessRunIdentity:
+    """Bounded identity exposed by the driver after entering one Harness stream."""
+
+    thread_id: str
+    run_id: str
+
+
+class HarnessHookBoundary(Protocol):
+    """Callback-local access to the two Harness context operations Foundation needs."""
+
+    async def enqueue(
+        self,
+        input: RunInputValue,
+        *,
+        priority: Literal["asap"],
+    ) -> str: ...
+
+    async def export_state(
+        self,
+        complete_messages: Sequence[ModelMessage],
+    ) -> HarnessState: ...
+
+
+class HarnessControlDriver(Protocol):
+    """Narrow driver surface available to the Capability and run-control facade."""
+
+    def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> HarnessContextBinding: ...
+
+    def hook_boundary(
+        self,
+        ctx: RunContext[AgentContext],
+        binding: HarnessContextBinding | None,
+    ) -> AbstractAsyncContextManager[HarnessHookBoundary]: ...
+
+    def validate_binding(self, binding: HarnessContextBinding) -> None: ...
+
+    def validate_boundary(self, boundary: HarnessHookBoundary) -> None: ...
+
+    async def steer(self, input: RunInputValue) -> str: ...
+
+    async def cancel(self) -> None: ...
+
+    async def export_state(self) -> HarnessState: ...
+
+
+class RunControlPort(Protocol):
+    """Attempt-scoped Foundation operations awaited by the driver and Capability."""
+
+    @property
+    def current_state(self) -> StoredRunState: ...
+
+    async def enter_harness(
+        self,
+        identity: HarnessRunIdentity,
+        preparation: AttemptPreparationAccepted,
+    ) -> None: ...
+
+    async def after_stream_entry(self) -> None: ...
+
+    async def bind_model_attempt(self, binding: HarnessContextBinding) -> None: ...
 
     async def before_model_request(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         request_context: ModelRequestContext,
     ) -> None: ...
 
     async def after_model_response(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         response: ModelResponse,
     ) -> None: ...
 
     async def after_tool_batch(
         self,
-        ctx: RunContext[AgentContext],
+        boundary: HarnessHookBoundary,
         result: NodeResult[AgentContext],
+        complete_messages: Sequence[ModelMessage],
     ) -> None: ...
 
 
@@ -50,8 +121,16 @@ class FoundationRunControlCapability(AbstractCapability[AgentContext]):
 
     id = FOUNDATION_RUN_CONTROL_CAPABILITY_ID
 
-    def __init__(self, coordinator: RunControlCoordinator) -> None:
-        self._coordinator = coordinator
+    def __init__(
+        self,
+        control: RunControlPort,
+        driver: HarnessControlDriver,
+        *,
+        binding: HarnessContextBinding | None = None,
+    ) -> None:
+        self._control = control
+        self._driver = driver
+        self._binding = binding
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
@@ -60,25 +139,21 @@ class FoundationRunControlCapability(AbstractCapability[AgentContext]):
         self,
         ctx: RunContext[AgentContext],
     ) -> AbstractCapability[AgentContext]:
-        await self._coordinator.bind_model_attempt(ctx)
-        return _ActiveRunControlCapability(self._coordinator, ctx.deps)
-
-
-@dataclass(init=False)
-class _ActiveRunControlCapability(FoundationRunControlCapability):
-    """One ModelAttempt binding that cannot be reused by another logical Run."""
-
-    def __init__(self, coordinator: RunControlCoordinator, context: AgentContext) -> None:
-        super().__init__(coordinator)
-        self._context = context
+        binding = self._driver.bind_model_attempt(ctx)
+        await self._control.bind_model_attempt(binding)
+        return FoundationRunControlCapability(
+            self._control,
+            self._driver,
+            binding=binding,
+        )
 
     async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        self._require_context(ctx)
-        await self._coordinator.before_model_request(ctx, request_context)
+        async with self._driver.hook_boundary(ctx, self._binding) as boundary:
+            await self._control.before_model_request(boundary, request_context)
         return request_context
 
     async def after_model_request(
@@ -89,8 +164,8 @@ class _ActiveRunControlCapability(FoundationRunControlCapability):
         response: ModelResponse,
     ) -> ModelResponse:
         del request_context
-        self._require_context(ctx)
-        await self._coordinator.after_model_response(ctx, response)
+        async with self._driver.hook_boundary(ctx, self._binding) as boundary:
+            await self._control.after_model_response(boundary, response)
         return response
 
     async def after_node_run(
@@ -100,28 +175,22 @@ class _ActiveRunControlCapability(FoundationRunControlCapability):
         node: AgentNode[AgentContext],
         result: NodeResult[AgentContext],
     ) -> NodeResult[AgentContext]:
-        self._require_context(ctx)
         if isinstance(node, CallToolsNode):
-            await self._coordinator.after_tool_batch(ctx, result)
+            async with self._driver.hook_boundary(ctx, self._binding) as boundary:
+                await self._control.after_tool_batch(boundary, result, ctx.messages)
         return result
-
-    def _require_context(self, ctx: RunContext[AgentContext]) -> None:
-        if ctx.deps is not self._context:
-            raise DefinitionError(
-                "Foundation run control cannot cross logical Harness Runs.",
-                code="capability_scope_invalid",
-            )
 
 
 def compose_run_control[OutputT](
     definition: AgentDefinition[OutputT],
-    coordinator: RunControlCoordinator,
+    control: RunControlPort,
+    driver: HarnessControlDriver,
 ) -> AgentDefinition[OutputT]:
     """Prepend the mandatory control Capability to one reconstructed root definition."""
 
     return definition.with_updates(
         capabilities=(
-            FoundationRunControlCapability(coordinator),
+            FoundationRunControlCapability(control, driver),
             *definition.capabilities,
         )
     )
@@ -130,6 +199,10 @@ def compose_run_control[OutputT](
 __all__ = [
     "FOUNDATION_RUN_CONTROL_CAPABILITY_ID",
     "FoundationRunControlCapability",
-    "RunControlCoordinator",
+    "HarnessContextBinding",
+    "HarnessControlDriver",
+    "HarnessHookBoundary",
+    "HarnessRunIdentity",
+    "RunControlPort",
     "compose_run_control",
 ]

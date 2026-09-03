@@ -2,26 +2,35 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from a13n_harness import SafeFailure
-from sqlalchemy import JSON, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import short_session, transaction
 
+from ._outcome_transitions import (
+    RunOutcomeError,
+    apply_completed_outcome,
+    apply_waiting_outcome,
+    select_sealed_state,
+    validate_outcome_candidate,
+    validate_outcome_candidate_scope,
+)
 from ._transitions import charge_attempt_usage, terminalize_attempt
-from .attempts import AttemptAuthority, AttemptMutationError, lock_attempt_authority, read_attempt_authority
+from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority, read_attempt_authority
 from .domain import RunAttemptStatus, RunStatus
+from .inbox import ThreadControlSignalPublisher
+from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
-from .objects import RUN_STATE_CONTENT_TYPE, RunPayloadStore, StoredRunState
+from .objects import RunPayloadStore, StoredRunState
 from .state import CompletedOutcomeCandidate, WaitingOutcomeCandidate
 
-
-class RunOutcomeError(RuntimeError):
-    """The prepared outcome is stale or inconsistent with relational authority."""
+logger = logging.getLogger("a13n_service.interactions.outcomes")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,15 +49,17 @@ class RunOutcomeService:
         sessions: async_sessionmaker[AsyncSession],
         payloads: RunPayloadStore,
         *,
+        control_signals: ThreadControlSignalPublisher | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._sessions = sessions
         self._payloads = payloads
+        self._control_signals = control_signals
         self._clock = clock
 
     async def commit_state_outcome(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
         *,
         expected_thread_version: int,
@@ -56,37 +67,37 @@ class RunOutcomeService:
         """Adopt an already-published waiting or completed state candidate."""
 
         now = _utc(self._clock())
-        _validate_candidate(state, authority)
+        validate_outcome_candidate(state, authority)
         await self._verify_output_payload(authority, state, expected_thread_version, now)
         async with transaction(self._sessions) as database:
-            run, attempt, thread = await lock_attempt_authority(database, authority, now)
+            run, attempt, thread = await lock_attempt_authority(
+                database,
+                authority,
+                now,
+                lock_inbox_origins=True,
+            )
             if thread.version != expected_thread_version:
                 raise RunOutcomeError("Thread outcome precondition changed")
-            _validate_candidate_scope(state, run, thread)
+            validate_outcome_candidate_scope(state, run, thread)
             if attempt.status != RunAttemptStatus.running.value:
                 raise AttemptMutationError("a successful outcome requires Harness entry")
             envelope = state.envelope
             candidate = envelope.outcome_candidate
             if isinstance(candidate, WaitingOutcomeCandidate):
-                _apply_waiting(run, candidate, now)
+                await apply_run_outcome(database, run=run, outcome="waiting", state=state, now=now)
+                apply_waiting_outcome(run, candidate, now)
                 status = RunStatus.waiting
             elif isinstance(candidate, CompletedOutcomeCandidate):
-                _apply_completed(run, candidate, now)
+                await apply_run_outcome(database, run=run, outcome="completed", state=state, now=now)
+                apply_completed_outcome(run, candidate, now)
                 status = RunStatus.completed
-            else:  # pragma: no cover - guarded by _validate_candidate
+            else:  # pragma: no cover - guarded by validate_outcome_candidate
                 raise RunOutcomeError("Run state does not contain a supported outcome candidate")
 
             terminalize_attempt(attempt, RunAttemptStatus.succeeded, now)
             charge_attempt_usage(run, attempt)
             run.current_run_attempt_id = None
-            run.sealed_state_digest_sha256 = state.digest_sha256
-            run.sealed_state_size_bytes = state.info.size
-            run.sealed_state_content_type = state.info.content_type
-            run.sealed_state_envelope_schema_version = envelope.schema_version
-            run.sealed_state_harness_schema_version = envelope.harness_schema_version
-            run.sealed_state_checkpoint_seq = envelope.checkpoint_seq
-            run.sealed_state_committed_by_run_attempt_id = attempt.id
-            run.sealed_at = now
+            select_sealed_state(run, run_attempt_id=attempt.id, state=state, now=now)
             run.updated_at = now
             run.version += 1
             thread.head_run_id = run.id
@@ -117,9 +128,13 @@ class RunOutcomeService:
                 .where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == thread_id)
                 .with_for_update()
             )
-            run = await database.scalar(
-                select(RunRecord).where(RunRecord.tenant_id == tenant_id, RunRecord.id == run_id).with_for_update()
+            locked_runs = await lock_inbox_related_runs(
+                database,
+                tenant_id=tenant_id,
+                thread_id=thread_id,
+                required_run_ids=(run_id,),
             )
+            run = next((item for item in locked_runs if item.id == run_id), None)
             if (
                 run is None
                 or thread is None
@@ -147,6 +162,7 @@ class RunOutcomeService:
                     raise RunOutcomeError("selected RunAttempt cannot be cancelled")
                 terminalize_attempt(attempt, RunAttemptStatus.cancelled, now, failure=failure)
                 charge_attempt_usage(run, attempt)
+            await apply_run_outcome(database, run=run, outcome="cancelled", now=now)
             run.status = RunStatus.cancelled.value
             run.current_run_attempt_id = None
             run.failure_json = failure.model_dump(mode="json", by_alias=True)
@@ -155,16 +171,19 @@ class RunOutcomeService:
             run.version += 1
             thread.version += 1
             thread.updated_at = now
-            return RunOutcomeReceipt(
+            receipt = RunOutcomeReceipt(
                 RunStatus.cancelled,
                 run.version,
                 None if attempt is None else attempt.version,
                 thread.version,
             )
+            cancelled_thread_id = thread.id
+        await self._best_effort_signal(tenant_id=tenant_id, thread_id=cancelled_thread_id)
+        return receipt
 
     async def _verify_output_payload(
         self,
-        authority: AttemptAuthority,
+        authority: AttemptContext,
         state: StoredRunState,
         expected_thread_version: int,
         now: datetime,
@@ -176,7 +195,7 @@ class RunOutcomeService:
             run, _, thread = await read_attempt_authority(database, authority, now)
             if thread.version != expected_thread_version:
                 raise RunOutcomeError("Thread outcome precondition changed")
-            _validate_candidate_scope(state, run, thread)
+            validate_outcome_candidate_scope(state, run, thread)
         await self._payloads.verify_reference(
             authority.tenant_id,
             authority.run_id,
@@ -184,66 +203,17 @@ class RunOutcomeService:
             candidate.output_object,
         )
 
-
-def _validate_candidate(state: StoredRunState, authority: AttemptAuthority) -> None:
-    envelope = state.envelope
-    if (
-        envelope.run_id != authority.run_id
-        or envelope.last_checkpoint_run_attempt_id != authority.run_attempt_id
-        or envelope.last_checkpoint_fence != authority.fence
-        or state.writer_fence != authority.fence
-        or state.info.content_type != RUN_STATE_CONTENT_TYPE
-        or envelope.checkpoint_seq < 1
-    ):
-        raise RunOutcomeError("state candidate does not match the current fenced Attempt")
-    candidate = envelope.outcome_candidate
-    if envelope.checkpoint_kind == "waiting" and isinstance(candidate, WaitingOutcomeCandidate):
-        return
-    if envelope.checkpoint_kind == "completed" and isinstance(candidate, CompletedOutcomeCandidate):
-        return
-    raise RunOutcomeError("state checkpoint kind and outcome candidate do not match")
-
-
-def _validate_candidate_scope(state: StoredRunState, run: RunRecord, thread: ThreadRecord) -> None:
-    envelope = state.envelope
-    if (
-        envelope.thread_id != thread.id
-        or envelope.thread_id != run.thread_id
-        or envelope.agent_id != run.agent_id
-        or envelope.agent_revision_id != run.agent_revision_id
-        or envelope.effective_agent_config.content_digest != run.effective_agent_config_digest
-        or envelope.runtime_lock_digest != run.runtime_lock_digest
-    ):
-        raise RunOutcomeError("state candidate scope or frozen execution selection does not match the Run")
-
-
-def _apply_waiting(run: RunRecord, candidate: WaitingOutcomeCandidate, now: datetime) -> None:
-    run.status = RunStatus.waiting.value
-    run.wait_reason = candidate.wait_reason.value
-    run.pending_json = candidate.pending.model_dump(mode="json")
-    run.waiting_at = now
-
-
-def _apply_completed(run: RunRecord, candidate: CompletedOutcomeCandidate, now: datetime) -> None:
-    run.status = RunStatus.completed.value
-    run.output_json = None
-    run.output_object_key = None
-    run.output_object_digest_sha256 = None
-    run.output_object_size_bytes = None
-    run.output_object_content_type = None
-    run.output_object_schema_version = None
-    if "output" in candidate.model_fields_set:
-        run.output_json = JSON.NULL if candidate.output is None else candidate.output
-    else:
-        assert candidate.output_object is not None
-        reference = candidate.output_object
-        run.output_object_key = reference.object_key
-        run.output_object_digest_sha256 = reference.digest_sha256
-        run.output_object_size_bytes = reference.size_bytes
-        run.output_object_content_type = reference.content_type
-        run.output_object_schema_version = reference.schema_version
-    run.output_text = candidate.output_text
-    run.completed_at = now
+    async def _best_effort_signal(self, *, tenant_id: str, thread_id: str) -> None:
+        if self._control_signals is None:
+            return
+        try:
+            await self._control_signals.publish(tenant_id=tenant_id, thread_id=thread_id)
+        except Exception:
+            logger.warning(
+                "thread_control_signal_failed",
+                extra={"event": "thread_control_signal_failed", "thread_id": thread_id},
+                exc_info=True,
+            )
 
 
 def _utc(value: datetime) -> datetime:
@@ -252,4 +222,8 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-__all__ = ["RunOutcomeError", "RunOutcomeReceipt", "RunOutcomeService"]
+__all__ = [
+    "RunOutcomeError",
+    "RunOutcomeReceipt",
+    "RunOutcomeService",
+]

@@ -19,6 +19,7 @@ from a13n_harness.capability_types import (
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability, WebSearch
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
@@ -110,21 +111,15 @@ async def test_capability_type_catalog_rejects_name_mismatch_and_native_collisio
     assert redundant_native.value.code == "capability_type_catalog_invalid"
 
 
-async def test_capability_ids_allow_dots_but_not_colons() -> None:
+async def test_native_capability_ids_allow_dots_but_not_colons() -> None:
     HarnessBuilder().build(
         AgentSpec(model="logical:test"),
         output_type=str,
         capabilities=(Capability(id="valid.id"),),
     )
 
-    with pytest.raises(DefinitionError) as error:
-        HarnessBuilder().build(
-            AgentSpec(model="logical:test"),
-            output_type=str,
-            capabilities=(Capability(id="invalid:id"),),
-        )
-
-    assert error.value.code == "capability_id_invalid"
+    with pytest.raises(UserError, match="cannot contain a colon"):
+        Capability(id="invalid:id")
 
 
 async def test_run_replacement_capability_ids_must_not_contain_colons() -> None:
@@ -135,10 +130,8 @@ async def test_run_replacement_capability_ids_must_not_contain_colons() -> None:
         capabilities=(_InvalidRunReplacementId(),),
     )
 
-    with pytest.raises(DefinitionError) as error:
+    with pytest.raises(UserError, match="cannot contain a colon"):
         await executable.run("test", bindings=RunBindings.embedded())
-
-    assert error.value.code == "capability_id_invalid"
 
 
 async def test_bare_capability_functions_are_rejected_from_definition_and_run_sources() -> None:

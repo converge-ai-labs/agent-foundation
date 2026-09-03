@@ -40,6 +40,7 @@ from ag_ui.core.events import (
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
+    CapabilityEvent,
     EnqueuedMessagesEvent,
     FinalResultEvent,
     FunctionToolResultEvent,
@@ -64,6 +65,11 @@ from pydantic_ai.usage import RunUsage
 from pydantic_core import PydanticSerializationError
 
 _OCCURRED_AT = datetime(2026, 1, 2, 3, 4, 5, 678000, tzinfo=UTC)
+
+
+@dataclass(kw_only=True)
+class ExternalCapabilityProgressEvent(CapabilityEvent, namespace="test.external"):
+    progress: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +120,35 @@ def _result_event(
 async def _history(*items: HarnessStreamEvent[Any]) -> AsyncIterator[HarnessStreamEvent[Any]]:
     for item in items:
         yield item
+
+
+def test_capability_event_is_recorded_as_generic_custom_event() -> None:
+    source = ExternalCapabilityProgressEvent(
+        capability_id="external-capability",
+        tool_call_id="call-1",
+        tool_name="external_tool",
+        progress=2,
+    )
+
+    events = HarnessAguiObserver().observe(_event(0, source))
+
+    assert len(events) == 1
+    assert isinstance(events[0], CustomEvent)
+    assert events[0].name == "a13n.pydantic_ai.capability"
+    assert events[0].value == {
+        "thread_id": "thread-1",
+        "run_id": "run-1",
+        "sequence": 0,
+        "occurred_at": _OCCURRED_AT.isoformat(),
+        "event": {
+            "kind": "test.external.external_capability_progress",
+            "capability_id": "external-capability",
+            "tool_call_id": "call-1",
+            "tool_name": "external_tool",
+            "event_kind": "capability",
+            "progress": 2,
+        },
+    }
 
 
 def test_extended_agent_stream_event_uses_generic_custom_event() -> None:

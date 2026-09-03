@@ -56,7 +56,7 @@ class IngressRunContext:
 
 The `MCPToolSnapshot` is the sole owner of the exact provider-native action set and callable bindings accepted for the Run; `IngressRunContext` does not carry a second allowlist or action-binding digest. A receive-only Ingress contributes no native action to the snapshot. A replacement RunAttempt reuses the same context and snapshot and fails closed when the Ingress, provider adapter, current credentials, authority, context version, or selected callable binding is no longer compatible.
 
-An Ingress event can Steer a running Run only when its Ingress, stable external target, Agent, and accepted capability surface are compatible with the Run's retained context. A compatible Steer does not replace the context or tool snapshot. An incompatible event remains at the durable Ingress admission boundary until an idle Agent Thread can accept a successor Run.
+An Ingress event can Steer a current accepted or running Run only when its Ingress, stable external target, Agent, and accepted capability surface are compatible with the Run's retained context. A compatible Steer does not replace the context or tool snapshot. When the Run is still accepted, its first Attempt reconciles the event before the first provider request under the ordinary steer contract. An incompatible event remains at the durable Ingress admission boundary until an idle Agent Thread can accept a successor Run.
 
 ## MCP Invocation Grant
 
