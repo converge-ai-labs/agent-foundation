@@ -72,15 +72,15 @@ The TUI cannot make an operation true by rendering it. A submitted prompt become
 
 The default interactive entry opens the terminal shell before loading expensive optional views. Startup resolves the initial screen as follows:
 
-1. An explicitly selected root Thread opens in Focus mode and sets the initial Workbench filter to that Thread's current Project.
-2. Otherwise the App resolves the current working directory against configured Projects' first roots.
-3. An explicit Workbench entry opens Workbench under the resolved Project filter, or as All Projects when resolution is unmatched or ambiguous.
-4. Without an explicit route, one unambiguous Project opens a new draft in Focus mode with that launch Project context and the same Project-filtered Workbench behind it.
-5. An unmatched or ambiguous directory opens All Projects with new-Thread creation disabled and one bounded configuration notice.
+1. The App resolves the current working directory against configured Projects' first roots and retains that result as the launch Project context.
+2. An explicitly selected root Thread opens in Focus mode without replacing the launch Project or its default Workbench filter.
+3. An explicit Workbench entry opens Workbench under the launch Project filter, or as All Projects when resolution is unmatched or ambiguous.
+4. Without an explicit route, one unambiguous launch Project opens a new draft in Focus mode with that Project context and the same Project-filtered Workbench behind it.
+5. Without an explicit route, an unmatched or ambiguous directory opens All Projects with new-Thread creation disabled and one bounded configuration notice.
 
 The launch directory is an input to [current-directory Project resolution](../04-projects-threads-and-environments.md#current-directory-resolution), not a new resource or dynamic root override. The TUI never creates a Project, reorders roots, asks the user to navigate a Project tree, or opens a Project picker. The configured first root remains the default working directory and receives mount ID `workspace`; later roots remain additional mounts managed through files or the WebUI. An unmatched or ambiguous notice identifies the resolved configuration location and offers the WebUI or direct-file path for repair without blocking inspection of existing Threads through All Projects.
 
-The selected Workbench Project filter is terminal-local presentation state. The user can switch explicitly between the launch Project and All Projects. Opening an existing Thread does not change its stored Project. Returning to Workbench defaults to that Thread's Project only when no explicit filter is already selected.
+The selected Workbench Project filter is terminal-local presentation state initialized from the launch Project or All Projects. When a launch Project exists, the user can switch explicitly between that Project and All Projects; otherwise only All Projects is available. Opening an existing Thread changes neither its stored Project nor the selected Workbench filter; returning from Focus retains the selected filter.
 
 A new draft remains terminal-local until the first submission. On submission, the controller creates the root Thread with the launch-resolved Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers, then submits the prompt. If Thread creation succeeds and prompt admission fails, the created Thread remains visible and the draft is restored; the TUI does not pretend the two operations were atomic.
 
