@@ -82,7 +82,6 @@ _COMPACTION_PROMPT = (
 _PREVIOUS_ASSISTANT_REFERENCE_MAX_CHARS = 32_000
 _PREVIOUS_ASSISTANT_REFERENCE_KEEP_HEAD = 24_000
 _PREVIOUS_ASSISTANT_REFERENCE_KEEP_TAIL = 6_000
-_DEFAULT_COMPACTION_THRESHOLD = 0.90
 
 
 class RuntimeContextConfiguration(BaseModel):
@@ -1069,9 +1068,13 @@ def _compaction_snapshot(
         return request_tokens, policy.trigger_tokens, request_tokens >= policy.trigger_tokens
 
     characteristics = ctx.deps.model_characteristics
-    threshold = characteristics.compact_threshold if characteristics is not None else _DEFAULT_COMPACTION_THRESHOLD
+    if characteristics is None:
+        from a13n_harness.spec import HarnessModelCharacteristics
+
+        characteristics = HarnessModelCharacteristics()
+    threshold = characteristics.compact_threshold
     context_window = ctx.model.context_window
-    if context_window is None and characteristics is not None:
+    if context_window is None:
         context_window = characteristics.context_window
     if context_window is None or context_window <= 0:
         return None
