@@ -10,12 +10,13 @@ from a13n_service.interactions.lifecycle import append_run_attempt_lifecycle, ap
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.records import run_attempt_record
 from a13n_service.lifecycle.models import LifecycleEventRecord
+from a13n_service.lifecycle.reconciliation import read_workspace_events
 from a13n_service.lifecycle.service import LifecycleEventError, LifecycleEventService
 from a13n_service.storage import transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.hooks.support import RUN_ID, hook_actor, seed_hook_actor_access, seed_run_and_secret
-from tests.interactions.conftest import AGENT_ID, ATTEMPT_ID, NOW, USER_ID, WORKSPACE_ID
+from tests.interactions.conftest import AGENT_ID, ATTEMPT_ID, NOW, TENANT_ID, USER_ID, WORKSPACE_ID
 
 
 async def _prepare_events(sessions: async_sessionmaker[AsyncSession]) -> LifecycleEventService:
@@ -107,6 +108,34 @@ async def test_direct_agent_viewer_can_reconcile_agent_owned_lifecycle(
         cursor=None,
     )
     assert [event.run_id for event in page.items] == [RUN_ID, RUN_ID]
+
+
+@pytest.mark.anyio
+async def test_workspace_boundaries_use_tenant_sequence_before_visibility_filter(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _prepare_events(lifecycle_interaction_sessions)
+    async with lifecycle_interaction_sessions() as database:
+        full_page = await read_workspace_events(
+            database,
+            tenant_id=TENANT_ID,
+            workspace_id=WORKSPACE_ID,
+            visible_agent_ids=None,
+            after_seq=0,
+            limit=10,
+        )
+        filtered_page = await read_workspace_events(
+            database,
+            tenant_id=TENANT_ID,
+            workspace_id=WORKSPACE_ID,
+            visible_agent_ids=frozenset({"agt_not_visible_123456"}),
+            after_seq=0,
+            limit=10,
+        )
+
+    assert filtered_page.items == ()
+    assert filtered_page.retained_floor == full_page.retained_floor
+    assert filtered_page.high_watermark == full_page.high_watermark
 
 
 @pytest.mark.anyio

@@ -25,8 +25,8 @@ async def read_workspace_events(
         SessionRecord.tenant_id == LifecycleEventRecord.tenant_id,
         SessionRecord.id == LifecycleEventRecord.session_id,
     )
-    boundary = select(func.min(LifecycleEventRecord.seq), func.max(LifecycleEventRecord.seq)).join(
-        SessionRecord, session_join
+    boundary = select(func.min(LifecycleEventRecord.seq), func.max(LifecycleEventRecord.seq)).where(
+        LifecycleEventRecord.tenant_id == tenant_id
     )
     events = select(LifecycleEventRecord).join(SessionRecord, session_join)
     filters = (
@@ -38,9 +38,8 @@ async def read_workspace_events(
             RunRecord.tenant_id == LifecycleEventRecord.tenant_id,
             RunRecord.id == LifecycleEventRecord.run_id,
         )
-        boundary = boundary.join(RunRecord, run_join).where(RunRecord.agent_id.in_(visible_agent_ids))
         events = events.join(RunRecord, run_join).where(RunRecord.agent_id.in_(visible_agent_ids))
-    floor, high = (await database.execute(boundary.where(*filters))).one()
+    floor, high = (await database.execute(boundary)).one()
     if floor is None or high is None:
         return LifecycleWorkspacePage((), None, 0, 0)
     if after_seq is not None and after_seq + 1 < floor:
