@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 
 from a13n_harness import AgentContext, AgentDefinition, AgentSpec, ExecutableAgent, HarnessBuilder, SubagentDefinition
@@ -14,8 +15,9 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
+from a13n_ui.environment_paths import EnvironmentPathLayout
 from a13n_ui.errors import CompositionError
-from a13n_ui.extensions import AgentUiExtensionCatalog
+from a13n_ui.extensions import NATIVE_PROVIDER_KEY, AgentUiExtensionCatalog
 from a13n_ui.mcp_adapters import AgentUiMCP
 from a13n_ui.model_runtime import AgentUiModelResolver, SubscriptionSource, model_recipe_id
 
@@ -64,8 +66,14 @@ class _ToolAllowlistToolset(WrapperToolset[AgentContext]):
 class AgentReconstructor:
     """Build a fresh native Agent graph without resolving credentials or entering Environments."""
 
-    def __init__(self, catalog: AgentUiExtensionCatalog | None = None) -> None:
+    def __init__(
+        self,
+        catalog: AgentUiExtensionCatalog | None = None,
+        *,
+        user_skills_root: Path | None = None,
+    ) -> None:
         self._catalog = catalog or AgentUiExtensionCatalog()
+        self._user_skills_root = user_skills_root
 
     def reconstruct(
         self,
@@ -82,6 +90,11 @@ class AgentReconstructor:
         )
         try:
             plugin_catalog = self._catalog.plugin_catalog(plugin_keys)
+            path_layout = EnvironmentPathLayout.resolve(
+                native=composition.environment_profile.provider_key == NATIVE_PROVIDER_KEY,
+                project_roots=composition.project_roots,
+                user_skills_root=self._user_skills_root,
+            )
             model_recipes: dict[str, ResolvedModelRecipe] = {}
             definition = self._definition(
                 composition.root,
@@ -89,7 +102,7 @@ class AgentReconstructor:
                 subagent_operator=subagent_operator,
                 root_capabilities=tuple(root_capabilities),
                 root=True,
-                project_mount_count=len(composition.project_roots),
+                path_layout=path_layout,
                 model_recipes=model_recipes,
             )
             executable = HarnessBuilder(configured_plugins_enabled=False).build(definition)
@@ -117,7 +130,7 @@ class AgentReconstructor:
         subagent_operator: SubagentOperator | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
         root: bool,
-        project_mount_count: int,
+        path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
     ) -> AgentDefinition[str]:
         recipe_id = model_recipe_id(node.model)
@@ -127,7 +140,7 @@ class AgentReconstructor:
 
         selected = self._catalog.capabilities(
             tuple((item.capability, item.configuration) for item in node.capabilities),
-            project_mount_count=project_mount_count,
+            path_layout=path_layout,
         )
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
         capabilities.extend(AgentUiMCP(item) for item in node.mcp_servers)
@@ -166,7 +179,7 @@ class AgentReconstructor:
                     subagent_operator=subagent_operator,
                     root_capabilities=(),
                     root=False,
-                    project_mount_count=project_mount_count,
+                    path_layout=path_layout,
                     model_recipes=model_recipes,
                 ),
             )

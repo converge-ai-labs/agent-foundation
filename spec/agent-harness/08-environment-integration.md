@@ -26,6 +26,7 @@ class EnvironmentMount:
     environment: Environment
     access: EnvironmentAccess = EnvironmentAccess.FULL
     working_directory: str | None = "/"
+    mount_path: str | None = None
 ```
 
 `EnvironmentMount` is a Run input/configuration value. It contains one already constructed adapter plus Run-local policy. It has no independent identity, lifecycle, durable serialization, or Provider discovery behavior.
@@ -38,7 +39,9 @@ class EnvironmentMount:
 - provider descriptors always narrow these ceilings;
 - state dump and local close remain trusted lifecycle operations and are not model-authored permissions.
 
-`working_directory` is `None` or a canonical absolute provider path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
+`working_directory` is `None` or a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
+
+`mount_path` is an optional Host-selected root in the aggregate and model-facing path space. It does not change the Provider's root or filesystem authority. When present, it is a canonical absolute POSIX, Windows drive, or UNC path written with `/` separators; Windows matching is case-insensitive. A root contains no NUL, empty interior segment, or `.`/`..` segment and has no trailing separator except an absolute filesystem root. The Harness keeps Provider operations in their provider-local `/` namespace and translates at the aggregate boundary.
 
 `ExecutableAgent.run()` and `stream()` accept:
 
@@ -62,33 +65,33 @@ The rules are:
 3. Singular input normalizes to mount name `workspace` and becomes the default.
 4. A one-entry mapping selects its only mount as default.
 5. A mapping with several entries has no default unless explicit. Mapping order never selects authority.
-6. An empty mapping, invalid mount name, duplicate Environment instance, invalid policy, or conflict with `RunBindings` fails before `enter()`.
+6. An empty mapping, invalid mount name, duplicate Environment instance, invalid policy, equal aggregate route owned by different mounts, or conflict with `RunBindings` fails before `enter()`.
 7. Omitting all Environment input creates an empty bound facade and exposes no Environment tools.
 8. `environment_run_extensions` is the ordered finite set of fresh extension instances for this Run; duplicate extension IDs fail before Environment entry.
 9. Inputs never accept an `EnvironmentProvider`, provider specification, Provider Resource, attachment, state envelope, or catalog key.
 
-The default mount is addressable at `/workspace`. Every mount is addressable at `/environment/{name}`. Without a default, `/workspace` is unavailable.
+A mount without `mount_path` retains the compatibility routes: every such mount is addressable at `/environment/{name}`, and the current default is also addressable at `/workspace`. Without a default, `/workspace` is unavailable. A mount with `mount_path` is addressable only at that explicit root; the Harness does not also expose `/workspace` or `/environment/{name}` for it. Relative paths still select the explicit alias or current default and begin at that mount's provider-local `working_directory`.
 
 A hosted worker normally constructs Environment instances from Host-authoritative configuration and state before invoking Harness. An embedded caller can construct them directly through a trusted Provider.
 
 ## Ownership Boundary
 
-| Concern                                            | Owner                                                            |
-| -------------------------------------------------- | ---------------------------------------------------------------- |
-| Provider selection and desired configuration       | Host                                                             |
-| Current state, Thread association, retention       | Host                                                             |
-| Environment construction and single-target I/O     | Environment Provider package                                     |
-| Entry metadata correlation                         | Harness supplies ephemeral values from Host bindings             |
-| One Run's mount names, IDs, access, and routing    | Harness                                                          |
-| Entered multi-mount facade                         | Harness-internal bound aggregate                                 |
-| Environment Run Extension protocol and ordering    | Harness                                                          |
-| Extension selection and serializable configuration | Host                                                             |
-| Provider operation execution and local cleanup     | Entered Environment                                              |
-| Model-facing file and shell Toolsets               | Harness Capabilities                                             |
-| Run-owned process tracking, readiness, and cleanup | Harness-private Run process controller                           |
-| Portable mount-name-to-state continuation          | `HarnessState.environment_states`                                |
-| State publication and backing-target destruction   | Host                                                             |
-| Async subagent admission, lifecycle, cleanup, wake | [Async Subagent Lifecycle](20-async-components-and-lifecycle.md) |
+| Concern                                                          | Owner                                                            |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Provider selection and desired configuration                     | Host                                                             |
+| Current state, Thread association, retention                     | Host                                                             |
+| Environment construction and single-target I/O                   | Environment Provider package                                     |
+| Entry metadata correlation                                       | Harness supplies ephemeral values from Host bindings             |
+| One Run's mount names, IDs, access, aggregate roots, and routing | Harness                                                          |
+| Entered multi-mount facade                                       | Harness-internal bound aggregate                                 |
+| Environment Run Extension protocol and ordering                  | Harness                                                          |
+| Extension selection and serializable configuration               | Host                                                             |
+| Provider operation execution and local cleanup                   | Entered Environment                                              |
+| Model-facing file and shell Toolsets                             | Harness Capabilities                                             |
+| Run-owned process tracking, readiness, and cleanup               | Harness-private Run process controller                           |
+| Portable mount-name-to-state continuation                        | `HarnessState.environment_states`                                |
+| State publication and backing-target destruction                 | Host                                                             |
+| Async subagent admission, lifecycle, cleanup, wake               | [Async Subagent Lifecycle](20-async-components-and-lifecycle.md) |
 
 Provider denial always narrows Harness access. Mount names, mount IDs, paths, process references, cursors, and saved state are selectors or observations, not bearer credentials.
 
@@ -96,7 +99,8 @@ Provider denial always narrows Harness access. Mount names, mount IDs, paths, pr
 
 | Value                    | Meaning                                                 | Visibility                                       |
 | ------------------------ | ------------------------------------------------------- | ------------------------------------------------ |
-| Mount name               | Stable Run-local routing name such as `workspace`       | Host, routing, model projection                  |
+| Mount name               | Stable Run-local alias such as `workspace`              | Host, routing, model projection                  |
+| Aggregate mount path     | Optional Host-selected model-facing root                | Routing, model projection, provider-result paths |
 | Mount ID                 | Opaque Harness-generated incarnation identity           | Harness internals and provider-neutral artifacts |
 | Provider key             | Provider implementation discriminator                   | Trusted Host and provider integration            |
 | Provider target identity | Provider-owned state data such as a Docker container ID | Trusted Host/provider state; never model context |
@@ -114,7 +118,7 @@ Core immutable values include:
 - `EnvironmentSnapshot(mounts, default_mount)`;
 - `EnvironmentChange(sequence, kind, name, previous_default, current_default)`.
 
-`EnvironmentMountInfo` contains the mount name, provider key, entered descriptor, access ceiling, and default working directory. It omits opaque mount ID and provider target identity from model context.
+`EnvironmentMountInfo` contains the mount name, provider key, entered descriptor, access ceiling, provider-local default working directory, and optional aggregate `mount_path`. It omits opaque mount ID and provider target identity from model context.
 
 ## Environment Run Extensions
 
@@ -208,10 +212,15 @@ Mutation after the terminal fence fails. A caller that needs an initial mount mu
 
 Logical routing is:
 
-- `/workspace/...` selects the current default mount;
-- `/environment/{name}/...` selects a named mount;
+- an absolute path under an explicit `mount_path` selects that mount;
+- overlapping explicit roots are valid, and the longest complete path-component prefix wins;
+- `/workspace/...` selects the current default mount only when that mount omits `mount_path`;
+- `/environment/{name}/...` selects a named mount only when it omits `mount_path`;
 - an explicit alias selects a named mount for shell/process/port operations;
-- relative command working directories resolve below the selected mount's configured provider directory.
+- an alias and absolute path supplied together must select the same mount;
+- relative file paths and command working directories resolve below the selected mount's configured provider-local directory.
+
+Equal or Windows-equivalent routes owned by different mounts are invalid. Initial construction rejects them before Provider entry. Dynamic mount, replacement, and default changes validate the prospective complete route set before candidate transfer or publication. An overlap at different path depths is not a conflict because component-prefix routing remains deterministic.
 
 A routed operation captures current mount ID and provider generation before authorization. Immediately before provider dispatch, Harness verifies that the incarnation is still current. A mismatch fails `environment_stale_mount` and never retargets to a replacement.
 
@@ -236,7 +245,7 @@ Current Environment mounts (trusted dynamic context):
 {"default_mount":"workspace","mounts":[...],"truncated":false}
 ```
 
-Each projected mount contains only name, logical root, effective operation families, readiness summary, availability, and read-only observation. It excludes mount IDs, target IDs, state payload, credentials, native handles, and lifecycle administration.
+Each projected mount contains only name, effective aggregate root, effective operation families, readiness summary, availability, and read-only observation. The root is the explicit `mount_path` when configured, otherwise the preferred compatibility alias. The projection excludes mount IDs, target IDs, provider-local paths, state payload, credentials, native handles, and lifecycle administration.
 
 `DynamicEnvironmentCapability` observes Run-local mount changes and enqueues at most one bounded refresh notice for a pending set. It does not duplicate the complete projection in ordinary messages.
 
@@ -273,7 +282,7 @@ Export rules:
 4. omit `None` values;
 5. fail the complete export on cancellation or an adapter contract violation rather than silently dropping a stateful mount.
 
-The mapping contains no default mount, desired mount definition, access policy, working directory, mount ID, provider generation, credential, handle, lease, pending mutation, change sequence, Host Thread association, or retention policy.
+The mapping contains no default mount, desired mount definition, access policy, working directory, aggregate mount path, mount ID, provider generation, credential, handle, lease, pending mutation, change sequence, Host Thread association, or retention policy.
 
 Harness does not use this mapping to construct or authorize adapters. A Host selects already constructed adapters before Run entry. For managed Environments, Host current state wins, including authoritative `None`, and suppresses stale portable fallback. A Host may adopt the mapping only through an explicit unmanaged/import flow where no Host authority exists.
 
@@ -286,6 +295,8 @@ The Provider package owns the async single-Environment file contract. Harness ro
 Every mutation returns a typed receipt. Reads and listings carry explicit offsets or continuation. Text reads report truncated lines. Search and glob expose bounded pages with deterministic ordering.
 
 Direct Local confines native paths beneath its configured root and keeps blocking filesystem work off the event loop. It makes no sandbox claim. EIP-backed Providers perform all Agent file operations through EIP.
+
+Provider file arguments remain provider-local after routing. Paths returned by stat, list, glob, query, and search are reprojected beneath the selected aggregate root, so a returned path can be reused in a later aggregate operation. Compound file scopes capture both mount incarnation and aggregate root; replacement or a changed route cannot retarget the operation.
 
 Tool results use bounded disclosures and stable model-safe errors. Internal mount identity, generation, state, and receipts are not model-editable arguments.
 

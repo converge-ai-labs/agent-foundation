@@ -35,7 +35,7 @@ class Project(BaseModel):
     position: int
 ```
 
-Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and receives mount ID `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are mount identifiers, not Workspace resources. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
+Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and receives mount alias `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are Run-local mount names, not opaque Harness mount IDs or Workspace resources. The selected Environment profile determines whether those mounts expose the Project paths directly or use virtual aggregate routes. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
 
 Changing Project roots affects later Runs of every Thread selecting the Project. A Run already admitted retains its captured roots. Removing a Project file removes it from the next accepted generation. Existing Threads retain the unresolved ID and reject later Runs until explicitly reassigned; no global fallback silently changes their local authority.
 
@@ -43,7 +43,7 @@ Changing Project roots affects later Runs of every Thread selecting the Project.
 
 The App can resolve a normalized current working directory to a Project for a local surface. Only each Project's first root participates in this launch lookup; later roots are additional Run mounts rather than independent Project entry points. A current directory equal to or beneath a first root matches that Project. The most specific containing first root wins, while an equally specific path shared by several Projects is ambiguous.
 
-Resolution returns a configured Project or an unmatched or ambiguous outcome. It never creates a Project, adds or reorders roots, or makes the launch directory a surface-owned authority. The selected Project retains its configured first root as the default working directory represented by mount ID `workspace`, even when the current directory is a descendant. A surface that does not expose Project management can use this result as its new-Thread context and default Project filter.
+Resolution returns a configured Project or an unmatched or ambiguous outcome. It never creates a Project, adds or reorders roots, or makes the launch directory a surface-owned authority. The selected Project retains its configured first root as the default working directory represented by mount alias `workspace`, even when the current directory is a descendant. A surface that does not expose Project management can use this result as its new-Thread context and default Project filter.
 
 ## Thread Identity
 
@@ -157,14 +157,22 @@ For each captured Project root, the App:
 3. asks the adapter to materialize root-specific validated Provider configuration;
 4. creates a fresh pre-entry-inert `Environment` adapter;
 5. constructs the deterministic Harness Project mount set;
-6. adds the dedicated user Skill mount when the Run root Agent selects `skills`; and
+6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Native Project mount already owns that root; and
 7. creates fresh selected Environment Run Extensions around that aggregate.
 
-The Provider configuration and adapter do not own the Project root list. The adapter receives one root at a time and can reject roots it cannot represent. The user Skill mount is a separate Host-owned Direct Local route and follows [Environment Skill Sources](02b-environment-skill-sources.md); it neither changes Project roots nor participates in Project Environment-state publication.
+The Provider configuration and adapter do not own the Project root list. The adapter receives one root at a time and can reject roots it cannot represent. The user Skill root follows [Environment Skill Sources](02b-environment-skill-sources.md). It ordinarily uses a separate Host-owned Direct Local route, but reuses an equal Native Project mount rather than creating a route conflict; neither form changes Project roots or adds separate Project Environment-state publication.
+
+### Aggregate Path Layout
+
+For the release-owned Native profile, Agent UI assigns every Project mount an explicit Harness `mount_path` equal to that captured root's canonical Host path. The first and later roots are therefore addressed as their real paths in model context, file tools, returned file results, explicit shell working directories, File Context, and Skill sources. Relative file paths and omitted or relative shell working directories still select the default `workspace` alias internally and resolve from the Provider's root. Native does not also publish `/workspace` or `/environment/workspace-N` routes.
+
+For Local EIP and every other non-Native profile, Agent UI omits `mount_path`. Harness compatibility routing then presents the first root at `/workspace` and later roots at `/environment/workspace-N`. This change does not expand Local EIP behavior or claim that a Host path exists in an isolated Provider namespace.
+
+The same layout decision applies to the dedicated Direct Local user Skill mount: Native exposes its canonical resolved `~/.agents/skills` path, while non-Native Project profiles route it as `/environment/user-skills`. When a Native Project mount already has that exact path, Agent UI omits the duplicate dedicated mount and routes the user Skill source through the Project mount. Otherwise internal mount aliases, opaque mount incarnations, permission ceilings, Environment-state keys, and source precedence are unchanged by presentation layout.
 
 ## Host-authoritative Environment State
 
-Native and Local EIP use Project roots directly and ordinarily retain no portable re-entry state. A stateful Provider can return `EnvironmentState` for one root.
+Native and Local EIP bind Project roots directly as Provider configuration and ordinarily retain no portable re-entry state. Only Native also presents those Host paths directly in the Harness aggregate namespace; Local EIP retains virtual routes. A stateful Provider can return `EnvironmentState` for one root.
 
 Agent UI uses one private binding identity:
 
@@ -239,7 +247,7 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 ## Invariants
 
 01. Project is the only local-root grouping and root-Thread organization concept; Agent UI defines no Workspace resource.
-02. Project roots are mutable, ordered, and captured per Run; `workspace` is only the first root's mount ID.
+02. Project roots are mutable, ordered, and captured per Run; `workspace` is only the first root's mount alias.
 03. Current-directory lookup uses only configured first roots and never creates or mutates a Project.
 04. Thread metadata and configuration are independent mutable compare-and-select heads.
 05. Thread configuration is exact, versioned, and sticky.
@@ -251,4 +259,4 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 11. Environment state is isolated by Thread, Environment profile behavior, adapter, and root path.
 12. Steering never changes an active Run's captured composition.
 13. Destructive Provider lifecycle remains outside ordinary Run cleanup.
-14. A selected Skills Capability can add only the dedicated user Skill mount and Environment-routed Skill sources; it does not broaden a Project Provider's Host paths.
+14. A selected Skills Capability adds only Environment-routed Skill sources and, unless an exact Native Project mount already covers it, the dedicated user Skill mount; it does not broaden a Project Provider's Host paths.

@@ -188,12 +188,14 @@ def _runtime_mount(
     provider: _Binding,
     *,
     working_directory: str | None = "/",
+    mount_path: str | None = None,
     permissions: frozenset[EnvironmentAction] = frozenset({EnvironmentAction.FILE_STAT}),
 ) -> EnvironmentRuntimeMount:
     return EnvironmentRuntimeMount(
         binding=provider,
         permission_ceiling=EnvironmentPermissionSet(operations=permissions),
         working_directory=working_directory,
+        mount_path=mount_path,
     )
 
 
@@ -548,6 +550,188 @@ async def test_invalid_mount_set_is_rejected_before_provider_entry() -> None:
             mounts={"one": mount, "two": mount},
         )
     assert exc_info.value.code == "environment_request_invalid"
+    assert candidate.entered == candidate.discarded == 0
+
+
+async def test_direct_mount_paths_route_by_longest_prefix_without_legacy_aliases() -> None:
+    project = _Binding("project")
+    nested = _Binding("nested")
+    runtime = create_environment_runtime(
+        mounts={
+            "workspace": _runtime_mount(project, mount_path="/Users/example/project"),
+            "workspace-2": _runtime_mount(nested, mount_path="/Users/example/project/vendor"),
+        },
+        default_mount="workspace",
+    )
+
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=_instance(),
+        host_refs={},
+    ) as environment:
+        root = environment.resolve_path("/Users/example/project/readme.md")
+        child = environment.resolve_path("/Users/example/project/vendor/package.toml")
+        relative = environment.resolve_path("src/main.py")
+
+        assert root.mount_id == project.mount_id
+        assert root.path == "/readme.md"
+        assert child.mount_id == nested.mount_id
+        assert child.path == "/package.toml"
+        assert relative.mount_id == project.mount_id
+        assert relative.path == "/src/main.py"
+        assert tuple(item.mount_path for item in environment.snapshot.mounts) == (
+            "/Users/example/project",
+            "/Users/example/project/vendor",
+        )
+        with pytest.raises(EnvironmentError) as legacy:
+            environment.resolve_path("/workspace/readme.md")
+        assert legacy.value.code == "environment_selection_invalid"
+        with pytest.raises(EnvironmentError) as mismatch:
+            environment.resolve_path("/Users/example/project/vendor/package.toml", alias="workspace")
+        assert mismatch.value.code == "environment_selection_invalid"
+
+
+async def test_default_change_rejects_a_new_legacy_route_conflict() -> None:
+    legacy = _Binding("legacy")
+    direct = _Binding("direct")
+    runtime = create_environment_runtime(
+        mounts={
+            "legacy": _runtime_mount(legacy),
+            "direct": _runtime_mount(direct, mount_path="/workspace"),
+        },
+    )
+
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=_instance(),
+        host_refs={},
+    ) as environment:
+        await runtime._activate()
+        before = environment.snapshot
+
+        with pytest.raises(EnvironmentError) as conflict:
+            await runtime.set_default("legacy")
+
+        assert conflict.value.code == "environment_request_invalid"
+        assert environment.snapshot == before
+        selected = environment.resolve_path("/workspace/value.txt")
+        assert selected.mount_id == direct.mount_id
+
+
+async def test_direct_mount_paths_support_drive_and_unc_roots() -> None:
+    drive = _Binding("drive")
+    unc = _Binding("unc")
+    runtime = create_environment_runtime(
+        mounts={
+            "drive": _runtime_mount(drive, mount_path="C:/Users/Example/Project"),
+            "unc": _runtime_mount(unc, mount_path="//server/share/project"),
+        },
+        default_mount="drive",
+    )
+
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=_instance(),
+        host_refs={},
+    ) as environment:
+        drive_path = environment.resolve_path("c:/users/example/project/src/main.py")
+        unc_path = environment.resolve_path("//SERVER/SHARE/project/readme.md")
+
+        assert drive_path.mount_id == drive.mount_id
+        assert drive_path.path == "/src/main.py"
+        assert unc_path.mount_id == unc.mount_id
+        assert unc_path.path == "/readme.md"
+
+
+async def test_direct_file_results_return_reusable_mount_paths() -> None:
+    class ListingFiles(_Files):
+        async def list(self, path: str, **kwargs: Any) -> FileEntriesResult:
+            del kwargs
+            return FileEntriesResult(
+                entries=(
+                    FileMetadata(
+                        path=f"{path.rstrip('/')}/child.txt",
+                        kind="file",
+                        size=1,
+                        writable=True,
+                    ),
+                ),
+                offset=0,
+                has_more=False,
+            )
+
+    provider = _Binding(
+        "listing",
+        operations=EnvironmentProviderOperations(files=ListingFiles()),
+        permissions=frozenset({EnvironmentAction.FILE_LIST, EnvironmentAction.FILE_STAT}),
+    )
+    runtime = create_environment_runtime(
+        mounts={
+            "workspace": _runtime_mount(
+                provider,
+                mount_path="/Users/example/project",
+                permissions=frozenset({EnvironmentAction.FILE_LIST, EnvironmentAction.FILE_STAT}),
+            )
+        },
+        default_mount="workspace",
+    )
+
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=_instance(),
+        host_refs={},
+    ) as environment:
+        result = await environment.files.list("/Users/example/project/src")
+        returned = result.entries[0].path
+
+        assert returned == "/Users/example/project/src/child.txt"
+        selected = environment.resolve_path(returned)
+        assert selected.mount_id == provider.mount_id
+        assert selected.path == "/src/child.txt"
+
+
+async def test_equivalent_direct_mount_paths_fail_before_provider_entry() -> None:
+    first = _Binding("first")
+    second = _Binding("second")
+
+    with pytest.raises(EnvironmentError) as invalid:
+        create_environment_runtime(
+            mounts={
+                "first": _runtime_mount(first, mount_path="C:/Users/Example/Project"),
+                "second": _runtime_mount(second, mount_path="c:/users/example/project"),
+            },
+            default_mount="first",
+        )
+
+    assert invalid.value.code == "environment_request_invalid"
+    assert first.entered == second.entered == 0
+
+
+async def test_dynamic_mount_path_conflict_does_not_consume_candidate() -> None:
+    initial = _Binding("initial")
+    candidate = _Binding("candidate")
+    runtime = create_environment_runtime(
+        mounts={"initial": _runtime_mount(initial, mount_path="/project")},
+        default_mount="initial",
+    )
+
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=_instance(),
+        host_refs={},
+    ) as environment:
+        await runtime._activate()
+        before = environment.snapshot
+        with pytest.raises(EnvironmentError) as conflict:
+            await runtime.mount("candidate", _runtime_mount(candidate, mount_path="/project"))
+        assert conflict.value.code == "environment_request_invalid"
+        assert environment.snapshot == before
+
     assert candidate.entered == candidate.discarded == 0
 
 

@@ -171,10 +171,7 @@ class _DynamicEnvironmentContext:
         *,
         alias: str | None = None,
     ) -> CanonicalResource:
-        logical_path = path
-        if alias is not None and not path.startswith("/"):
-            logical_path = f"/environment/{alias}/{path}" if path != "." else f"/environment/{alias}"
-        selection = context.environment.select_files(logical_path)
+        selection = context.environment.select_files(path, alias=alias)
         selected = selection.resolved_path
         self._record_fence(selected.mount_id, selection.observed_generation)
         return CanonicalResource(
@@ -184,8 +181,7 @@ class _DynamicEnvironmentContext:
         )
 
     def _binding_resource(self, context: AgentContext, alias: str | None) -> CanonicalResource:
-        logical_path = "." if alias is None else f"/environment/{alias}"
-        selection = context.environment.select_files(logical_path)
+        selection = context.environment.select_files(".", alias=alias)
         selected = selection.resolved_path
         self._record_fence(selected.mount_id, selection.observed_generation)
         return CanonicalResource(

@@ -18,6 +18,7 @@ from a13n_ui.composition import (
     ThreadCompositionSelection,
 )
 from a13n_ui.configuration import load_agent_ui_configuration
+from a13n_ui.environment_paths import EnvironmentPathLayout
 from a13n_ui.errors import CompositionError
 from a13n_ui.extensions import AgentUiExtensionCatalog
 from a13n_ui.settings import StorageSettings
@@ -306,7 +307,11 @@ async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: 
     source = await load_agent_ui_configuration(path)
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
 
-    reconstructed = AgentReconstructor(_catalog()).reconstruct(
+    user_skills = tmp_path / "user-skills"
+    reconstructed = AgentReconstructor(
+        _catalog(),
+        user_skills_root=user_skills,
+    ).reconstruct(
         composition,
         subagent_operator=_UnusedOperator(),
     )
@@ -317,11 +322,22 @@ async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: 
         if isinstance(capability, SkillsCapability)
     )
     assert skills.manager.roots == (
-        "/environment/user-skills",
-        "/environment/workspace-3/.agents/skills",
-        "/environment/workspace-2/.agents/skills",
-        "/workspace/.agents/skills",
+        user_skills.as_posix(),
+        f"{workspace_3.as_posix()}/.agents/skills",
+        f"{workspace_2.as_posix()}/.agents/skills",
+        f"{(tmp_path / 'workspace').as_posix()}/.agents/skills",
     )
+
+
+def test_environment_path_layout_keeps_non_native_mount_aliases() -> None:
+    layout = EnvironmentPathLayout.resolve(
+        native=False,
+        project_roots=("/project", "/shared"),
+        user_skills_root=Path("/home/example/.agents/skills"),
+    )
+
+    assert layout.project_mounts == ("/workspace", "/environment/workspace-2")
+    assert layout.user_skills == "/environment/user-skills"
 
 
 def test_skills_capability_builds_deterministic_multi_mount_sources() -> None:
@@ -337,7 +353,14 @@ def test_skills_capability_builds_deterministic_multi_mount_sources() -> None:
                 },
             ),
         ),
-        project_mount_count=3,
+        path_layout=EnvironmentPathLayout(
+            project_mounts=(
+                "/workspace",
+                "/environment/workspace-2",
+                "/environment/workspace-3",
+            ),
+            user_skills="/environment/user-skills",
+        ),
     )[0]
 
     assert isinstance(selected.capability, SkillsCapability)

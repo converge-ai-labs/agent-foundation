@@ -8,6 +8,8 @@ Human-editable files remain the desired-resource authority so Agent UI can be co
 
 Agent UI persists complete continuation boundaries, not accepted-work intent. Process loss can discard a root receipt, submitted message or deferred response, partial output, an active child segment, live events, and Run-owned shell processes. A later operation resumes only from a previously selected complete checkpoint.
 
+The Native Environment profile preserves the local machine's canonical Project-root paths in Harness aggregate routing and model context. File tools, shell working directories, and automatic Skill sources therefore use the same addresses as the Host filesystem. Non-Native profiles retain provider-neutral virtual routes because their path space is not the Host path space.
+
 ## Product Model
 
 ```mermaid
@@ -60,7 +62,7 @@ The core concepts are:
 | Mutable conversation defaults          | Agent UI Thread configuration               | Stores sticky selections and applies explicit partial changes                                                       |
 | Root and child continuation            | Harness `HarnessState` selected by Agent UI | Persists complete immutable checkpoints and current references                                                      |
 | Environment operations and state codec | Environment Provider package                | Supplies fresh adapters and explicit lifecycle operations                                                           |
-| Local root grouping                    | Agent UI Project                            | Supplies ordered roots captured at Run admission                                                                    |
+| Local root grouping and path layout    | Agent UI Project and selected profile       | Supplies ordered roots and Native-direct or non-Native virtual aggregate paths captured at Run admission            |
 | Current Environment state              | Agent UI                                    | Stores and publishes Host-authoritative state under a complete Thread/configuration/root key                        |
 | Async child admission and persistence  | `AgentUiSubagentOperator`                   | Creates child Threads and runs the complete Harness Host-operator boundary                                          |
 | AG-UI conversion                       | Agent Stream Protocol                       | Uses one observer per root or child Harness Run                                                                     |
@@ -154,3 +156,4 @@ Textual ships as part of the Python `a13n-ui` distribution. The private `apps/ha
 09. Root continuation, Environment state, and child checkpoint publication remain independent facts.
 10. Surface projections and streams are detached from storage and native runtime authority.
 11. CLI, TUI, WebUI, and model-visible Thread tools use the same App commands and queries while retaining their explicit Project and configuration-authoring boundaries.
+12. Native Runs expose canonical Host Project and user Skill roots directly; non-Native profiles retain virtual Environment routes.

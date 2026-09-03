@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 from a13n_environment_provider import EnvironmentState
 from a13n_environment_provider.operations import EnvironmentOperations
 
+from ._mount_path import parse_mount_path
 from .commands import (
     BoundProcessHandle,
     CommandRequest,
@@ -53,11 +54,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class FileScopeSelection:
-    """One exact logical file route captured before a compound operation."""
+    """One exact aggregate file route captured before a compound operation."""
 
     logical_path: str
     resolved_path: EnvironmentPath
     observed_generation: str
+    mount_path: str | None = None
 
 
 class FileScopeProvider(Protocol):
@@ -250,6 +252,7 @@ class EnvironmentRuntimeMount:
     binding: EnvironmentProviderBinding
     permission_ceiling: EnvironmentPermissionSet
     working_directory: str | None = "/"
+    mount_path: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.binding, EnvironmentProviderBinding):
@@ -266,6 +269,8 @@ class EnvironmentRuntimeMount:
             or any(segment in {".", ".."} for segment in directory.split("/"))
         ):
             raise ValueError("working_directory must be a canonical absolute path")
+        if self.mount_path is not None:
+            parse_mount_path(self.mount_path)
 
 
 class BoundEnvironment(ABC):
@@ -280,7 +285,7 @@ class BoundEnvironment(ABC):
     def files(self) -> FileOperator: ...
 
     @abstractmethod
-    def select_files(self, path: str) -> FileScopeSelection:
+    def select_files(self, path: str, *, alias: str | None = None) -> FileScopeSelection:
         """Capture one exact mount incarnation for a logical file path."""
 
     @abstractmethod

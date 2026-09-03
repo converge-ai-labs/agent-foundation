@@ -235,6 +235,7 @@ class EnvironmentMountInfo(BaseModel):
     descriptor: EnvironmentDescriptor
     permission_ceiling: EnvironmentPermissionSet
     default_working_directory: str | None
+    mount_path: str | None = None
 
     @field_validator("name")
     @classmethod

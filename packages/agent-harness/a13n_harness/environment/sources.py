@@ -11,6 +11,7 @@ from a13n_environment_provider import Environment
 
 from a13n_harness.identity import AgentInstanceContext
 
+from ._mount_path import parse_mount_path
 from .coordinator import create_empty_environment_runtime, create_environment_runtime
 from .models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
 from .providers import (
@@ -54,11 +55,12 @@ _READ_WRITE_ACTIONS = frozenset(action for action in EnvironmentAction if action
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
-    """One already constructed Environment plus Run-local access policy."""
+    """One already constructed Environment plus Run-local access and path policy."""
 
     environment: Environment
     access: EnvironmentAccess = EnvironmentAccess.FULL
     working_directory: str | None = "/"
+    mount_path: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.environment, Environment):
@@ -75,6 +77,8 @@ class EnvironmentMount:
             or any(segment in {".", ".."} for segment in directory.split("/"))
         ):
             raise ValueError("EnvironmentMount working_directory must be a canonical absolute path")
+        if self.mount_path is not None:
+            parse_mount_path(self.mount_path)
 
     @property
     def permissions(self) -> EnvironmentPermissionSet:
@@ -178,6 +182,7 @@ def normalize_environment_inputs(
                 binding=_EnvironmentAdapterBinding(mount.environment),
                 permission_ceiling=mount.permissions,
                 working_directory=mount.working_directory,
+                mount_path=mount.mount_path,
             )
             for name, mount in entries
         }

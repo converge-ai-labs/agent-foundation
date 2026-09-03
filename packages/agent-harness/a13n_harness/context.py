@@ -450,8 +450,10 @@ class _ToolResultSpillStore:
 
     def __init__(self, context: AgentContext) -> None:
         run_digest = hashlib.sha256(context.run_id.encode("utf-8")).hexdigest()[:12]
+        self._environment = context.environment
         self._files = context.environment.files
-        self._directory = f"/workspace/.a13n/tmp/tool-results/run-{run_digest}"
+        self._directory_suffix = f".a13n/tmp/tool-results/run-{run_digest}"
+        self._directory: str | None = None
         self._next_sequence = 1
         self._ready = False
         self._closed = False
@@ -465,8 +467,12 @@ class _ToolResultSpillStore:
                 return None
             try:
                 if not self._ready:
+                    self._directory = self._default_directory()
+                    if self._directory is None:
+                        return None
                     await self._files.mkdir(self._directory, parents=True, exist_ok=True)
                     self._ready = True
+                assert self._directory is not None
                 path = f"{self._directory}/tool-result-{self._next_sequence}{suffix}"
                 self._next_sequence += 1
                 await self._files.write_bytes_stream(path, _byte_chunks(data), mode="create")
@@ -474,12 +480,22 @@ class _ToolResultSpillStore:
                 return None
             return path
 
+    def _default_directory(self) -> str | None:
+        snapshot = self._environment.snapshot
+        if snapshot.default_mount is None:
+            return None
+        mount = next((item for item in snapshot.mounts if item.name == snapshot.default_mount), None)
+        if mount is None:
+            return None
+        root = mount.mount_path or "/workspace"
+        return f"{root.rstrip('/')}/{self._directory_suffix}"
+
     async def close(self) -> None:
         async with self._lock:
             if self._closed:
                 return
             self._closed = True
-            if not self._ready:
+            if not self._ready or self._directory is None:
                 return
             try:
                 await self._files.remove(self._directory, recursive=True)

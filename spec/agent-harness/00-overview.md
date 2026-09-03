@@ -78,7 +78,7 @@ The trusted Host reconstructs Python objects from its own configuration and depe
 | Plugin graph             | Deterministic ordering, fresh run binding, outer middleware, and Capability contribution                                                              | Trusted code; Pydantic owns inner hooks                               |
 | Plugin configuration     | Validate the narrow JSON envelope and create fresh configured instances through selected factories                                                    | Not an Agent or Environment configuration language                    |
 | `RunBindings`            | Carry fresh Agent instance, optional model resolver, Run Capabilities, metadata, and bounded Host references                                          | No Environment lifecycle object, process authority, or durable state  |
-| Environment mount inputs | Carry already constructed Environment adapters plus Run-local access and working-directory policy                                                     | No Provider discovery, state selection, or backing-target ownership   |
+| Environment mount inputs | Carry already constructed Environment adapters plus Run-local access, provider working-directory, and optional aggregate-path policy                  | No Provider discovery, state selection, or backing-target ownership   |
 | Environment core         | Enter adapters, publish immutable mount snapshots, coordinate routing/readiness/state, and apply Run-local mutations                                  | Not a Provider, Host persistence model, or durable command API        |
 | `AgentContext`           | Share run Identity, Environment facade, state, plugins, child collection, model resolver, and metadata                                                | One context per logical Harness run                                   |
 | `HarnessRunStream`       | Lazy single-consumer events, cancellation, state export, model attempts, results, and cleanup                                                         | Not a Host durable `ExecutionAttempt`, queue, replay stream, or lease |
@@ -145,16 +145,16 @@ These facts are independent. A result candidate retained by `RunCleanupError` is
 
 ## Extension Taxonomy
 
-| Extension                      | Selection                                                                                | Trust boundary                                                             |
-| ------------------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Harness plugin                 | Direct concrete object, or builder-local configured factory result appended during build | Trusted in-process Python                                                  |
-| Pydantic Capability            | `AgentSpec`, definition, plugin, or run contribution                                     | Pydantic lifecycle plus caller trust                                       |
-| Native Model/tool/Toolset      | Concrete `AgentDefinition` field                                                         | Trusted in-process object                                                  |
-| Run-scoped model resolver      | Fresh `RunModelResolver`                                                                 | Host/provider policy                                                       |
-| Environment Provider           | Inert trusted factory constructing fresh Environment adapters without I/O                | Provider configuration and state codec                                     |
-| Environment adapter            | Fresh process-local single-target operations and re-entry lifecycle                      | Provider enforcement and local cleanup                                     |
-| Environment mount              | Lightweight Run input combining an adapter with access and working-directory policy      | Harness routing and operation scope                                        |
-| Dynamic Environment Capability | Optional Agent-loop context, standard Toolsets, Run-owned processes, and hosted dispatch | No provider lifecycle, mount mutation authority, or portable process state |
+| Extension                      | Selection                                                                                                       | Trust boundary                                                             |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Harness plugin                 | Direct concrete object, or builder-local configured factory result appended during build                        | Trusted in-process Python                                                  |
+| Pydantic Capability            | `AgentSpec`, definition, plugin, or run contribution                                                            | Pydantic lifecycle plus caller trust                                       |
+| Native Model/tool/Toolset      | Concrete `AgentDefinition` field                                                                                | Trusted in-process object                                                  |
+| Run-scoped model resolver      | Fresh `RunModelResolver`                                                                                        | Host/provider policy                                                       |
+| Environment Provider           | Inert trusted factory constructing fresh Environment adapters without I/O                                       | Provider configuration and state codec                                     |
+| Environment adapter            | Fresh process-local single-target operations and re-entry lifecycle                                             | Provider enforcement and local cleanup                                     |
+| Environment mount              | Lightweight Run input combining an adapter with access, provider working directory, and optional aggregate root | Harness routing and operation scope                                        |
+| Dynamic Environment Capability | Optional Agent-loop context, standard Toolsets, Run-owned processes, and hosted dispatch                        | No provider lifecycle, mount mutation authority, or portable process state |
 
 A hosted system can persist the Harness-owned plugin document and maintain artifact locks without implementing plugin reconstruction itself. Artifact trust, durable revisions, and Environment configuration remain Host contracts. Installed Harness plugin entry-point metadata represents availability only, and importing Harness activates no plugin. Provider specifications, catalogs, `EnvironmentProvider`, `Environment`, `EnvironmentState`, single-Environment operations, and built-ins belong to the separate [Environment Provider package](../agent-environment-provider/README.md); Provider selection and adapter construction remain inert until explicitly invoked.
 
@@ -170,7 +170,7 @@ A hosted system can persist the Harness-owned plugin document and maintain artif
 08. Plugin state transformation is trusted composition, not provenance-policed data flow.
 09. Cancellation, usage limits, output retry exhaustion, tool failure, and deferred/HITL boundaries stop semantic recovery.
 10. Provider and external side-effect uncertainty is never rewritten as exactly-once success or rollback.
-11. Model-facing resource references are compact, scope-local, non-authoritative selectors; trusted internal, provider, and durable identities retain their owning representations.
+11. Model-facing resource references and aggregate Environment paths are non-authoritative selectors; provider-local paths, trusted identities, and durable identities retain their owning representations.
 12. Shell processes are Run-owned and non-portable; Run cleanup kills and releases them before Environment close.
 13. Terminal delivery occurs only after cleanup.
 14. Host durability, event projection, telemetry export, external delivery, usage accounting, billing, and payment remain separate facts.

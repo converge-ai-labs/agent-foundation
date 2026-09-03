@@ -18,6 +18,11 @@ from pydantic import BaseModel, JsonValue
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.identity import AgentInstanceContext
 
+from ._mount_path import (
+    mount_path_from_provider_path,
+    parse_mount_path,
+    provider_path_from_suffix,
+)
 from .changes import EnvironmentChangeJournal
 from .commands import (
     BoundProcessHandle,
@@ -108,6 +113,7 @@ class _MountRequest:
     name: str
     permission_ceiling: EnvironmentPermissionSet
     default_working_directory: str | None
+    mount_path: str | None
     candidate: EnvironmentProviderBinding
 
 
@@ -118,6 +124,13 @@ class _EnteredMount:
     provider: BoundEnvironmentProvider
     operations: EnvironmentProviderOperations
     environment_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedPath:
+    entered: _EnteredMount
+    provider_path: str
+    mount_path: str
 
 
 type _MountKey = tuple[str, str]
@@ -650,7 +663,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
             projected: dict[str, JsonValue] = {
                 "name": mount.name,
-                "root": "/workspace" if mount.name == snapshot.default_mount else f"/environment/{mount.name}",
+                "root": _preferred_mount_path(mount, snapshot.default_mount),
                 "operations": cast(JsonValue, operations),
                 "availability": availability,
                 "ready": cast(JsonValue, ready),
@@ -689,22 +702,21 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
         )
 
-    def select_files(self, path: str) -> FileScopeSelection:
-        selected = self.resolve_path(path)
-        entered = self._entered_by_id.get(selected.mount_id)
-        if entered is None:
-            raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
+    def select_files(self, path: str, *, alias: str | None = None) -> FileScopeSelection:
+        route = self._resolve_path(path, alias=alias)
         return FileScopeSelection(
             logical_path=path,
-            resolved_path=selected,
-            observed_generation=entered.public.descriptor.generation,
+            resolved_path=EnvironmentPath(mount_id=route.entered.mount_id, path=route.provider_path),
+            observed_generation=route.entered.public.descriptor.generation,
+            mount_path=route.mount_path,
         )
 
     @asynccontextmanager
     async def open_files(self, selection: FileScopeSelection) -> AsyncGenerator[FileOperator]:
-        if not isinstance(selection, FileScopeSelection):
+        if not isinstance(selection, FileScopeSelection) or not isinstance(selection.mount_path, str):
             raise EnvironmentError("File scope selection is invalid.", code="environment_request_invalid")
         selected = selection.resolved_path
+        mount_path = selection.mount_path
         entered = self._entered_by_id.get(selected.mount_id)
         if (
             entered is None
@@ -718,8 +730,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
             if entered.operations.files is None:
                 raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
             scoped = VirtualFileOperator(
-                lambda path: self._resolve_scoped_file_path(path, entered, selection),
-                lambda path, action: self._prepare_scoped_file(entered, selection, path, action),
+                lambda path: self._resolve_scoped_file_path(path, entered, mount_path),
+                lambda path, action: self._prepare_scoped_file(entered, mount_path, path, action),
             )
             yield scoped
 
@@ -829,13 +841,22 @@ class CompositeBoundEnvironment(BoundEnvironment):
         make_default: bool,
     ) -> EnvironmentChange:
         _validate_mount_name(name)
+        if not isinstance(mount, EnvironmentRuntimeMount):
+            raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
         async with self._mutation_lock:
             self._assert_mutable()
             if name in self._entered:
                 raise EnvironmentError("Environment mount already exists.", code="environment_conflict")
-            owned = await self._prepare_runtime_mount(name, mount)
             previous_default = self._snapshot.default_mount
             current_default = name if make_default else previous_default
+            _validate_route_paths(
+                (
+                    *((item.public.name, item.public.mount_path) for item in self._entered.values()),
+                    (name, mount.mount_path),
+                ),
+                current_default,
+            )
+            owned = await self._prepare_runtime_mount(name, mount)
             try:
                 async with self._operation_lock:
                     self._assert_mutable()
@@ -860,11 +881,24 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     async def _replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
         _validate_mount_name(name)
+        if not isinstance(mount, EnvironmentRuntimeMount):
+            raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
         async with self._mutation_lock:
             self._assert_mutable()
             current = self._entered.get(name)
             if current is None:
                 raise EnvironmentError("Environment mount does not exist.", code="environment_not_found")
+            _validate_route_paths(
+                (
+                    *(
+                        (item.public.name, item.public.mount_path)
+                        for item in self._entered.values()
+                        if item is not current
+                    ),
+                    (name, mount.mount_path),
+                ),
+                self._snapshot.default_mount,
+            )
             owned = await self._prepare_runtime_mount(name, mount)
             old_key = self._mount_key(current)
             try:
@@ -927,6 +961,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
             self._assert_mutable()
             if name is not None and name not in self._entered:
                 raise EnvironmentError("Environment mount does not exist.", code="environment_not_found")
+            _validate_route_paths(
+                tuple((item.public.name, item.public.mount_path) for item in self._entered.values()),
+                name,
+            )
             previous_default = self._snapshot.default_mount
             async with self._operation_lock:
                 self._assert_mutable()
@@ -957,6 +995,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             name=name,
             permission_ceiling=mount.permission_ceiling.model_copy(deep=True),
             default_working_directory=mount.working_directory,
+            mount_path=mount.mount_path,
             candidate=candidate,
         )
         mount_id = _new_mount_id()
@@ -1027,65 +1066,68 @@ class CompositeBoundEnvironment(BoundEnvironment):
             self._process_start_leases.pop(key, None)
 
     def resolve_path(self, path: str, *, alias: str | None = None) -> EnvironmentPath:
-        """Resolve one virtual or relative path without native-path fallback."""
+        """Resolve one aggregate or relative path to a provider-local path."""
+        route = self._resolve_path(path, alias=alias)
+        return EnvironmentPath(mount_id=route.entered.mount_id, path=route.provider_path)
+
+    def _resolve_path(self, path: str, *, alias: str | None = None) -> _ResolvedPath:
         self._assert_open()
-        if not path or "\x00" in path:
+        if not isinstance(path, str) or not path or "\x00" in path:
             raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid")
         segments = path.split("/")
         if any(segment == ".." or (segment == "." and path != ".") for segment in segments):
             raise EnvironmentError("Environment path traversal is invalid.", code="environment_request_invalid")
 
-        by_name = {entered.public.name: entered for entered in self._entered.values()}
-        selected: _EnteredMount | None = None
-        provider_path: str
-        if path.startswith("/workspace") and (path == "/workspace" or path.startswith("/workspace/")):
-            if alias is not None and alias != self._snapshot.default_mount:
+        if _is_absolute_path(path):
+            try:
+                parsed = parse_mount_path(path)
+            except ValueError as exc:
+                raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid") from exc
+            matches: list[tuple[int, _EnteredMount, str, tuple[str, ...]]] = []
+            for entered in self._entered.values():
+                for root in _mount_paths(entered.public, self._snapshot.default_mount):
+                    parsed_root = parse_mount_path(root)
+                    suffix = parsed.suffix_below(parsed_root)
+                    if suffix is not None:
+                        matches.append((parsed_root.depth, entered, root, suffix))
+            if not matches:
                 raise EnvironmentError(
-                    "The mount name and virtual path select different mounts.",
+                    "The absolute path is outside the available Environment mounts.",
                     code="environment_selection_invalid",
                 )
-            selected = self._entered.get(self._snapshot.default_mount or "")
-            provider_path = path.removeprefix("/workspace") or "/"
-        elif path.startswith("/environment/"):
-            remainder = path.removeprefix("/environment/")
-            selected_alias, separator, tail = remainder.partition("/")
-            selected = by_name.get(selected_alias)
-            if alias is not None and alias != selected_alias:
+            best_depth = max(item[0] for item in matches)
+            selected_matches = [item for item in matches if item[0] == best_depth]
+            selected_ids = {item[1].mount_id for item in selected_matches}
+            if len(selected_ids) != 1:
                 raise EnvironmentError(
-                    "The mount name and virtual path select different mounts.",
+                    "The absolute path matches multiple Environment mounts.",
                     code="environment_selection_invalid",
                 )
-            provider_path = f"/{tail}" if separator else "/"
-        elif path.startswith("/"):
-            raise EnvironmentError(
-                "Absolute paths must use /workspace or /environment/{alias}.",
-                code="environment_selection_invalid",
+            _depth, selected, mount_path, suffix = selected_matches[0]
+            if alias is not None and alias != selected.public.name:
+                raise EnvironmentError(
+                    "The mount name and absolute path select different mounts.",
+                    code="environment_selection_invalid",
+                )
+            return _ResolvedPath(
+                entered=selected,
+                provider_path=provider_path_from_suffix(suffix),
+                mount_path=mount_path,
             )
-        else:
-            if alias is not None:
-                selected = by_name.get(alias)
-            else:
-                selected = self._entered.get(self._snapshot.default_mount or "")
-            if selected is None:
-                raise EnvironmentError(
-                    "A relative path requires an available selected or default mount.",
-                    code="environment_selection_invalid",
-                )
-            base = selected.public.default_working_directory or "/"
-            if not base.startswith("/") or any(segment in {".", ".."} for segment in base.split("/")):
-                raise EnvironmentError(
-                    "The mount working directory is invalid.",
-                    code="environment_provider_failure",
-                )
-            provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
 
-        if selected is None:
+        selected = self._select_entered(alias)
+        base = selected.public.default_working_directory or "/"
+        if not base.startswith("/") or any(segment in {".", ".."} for segment in base.split("/")):
             raise EnvironmentError(
-                "The selected Environment mount is unavailable.",
-                code="environment_selection_invalid",
-                retry_hint="dependency_change",
+                "The mount working directory is invalid.",
+                code="environment_provider_failure",
             )
-        return EnvironmentPath(mount_id=selected.mount_id, path=provider_path)
+        provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
+        return _ResolvedPath(
+            entered=selected,
+            provider_path=provider_path,
+            mount_path=_preferred_mount_path(selected.public, self._snapshot.default_mount),
+        )
 
     def _select_entered(self, alias: str | None) -> _EnteredMount:
         self._assert_open()
@@ -1207,35 +1249,24 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self,
         path: str,
         entered: _EnteredMount,
-        selection: FileScopeSelection,
+        mount_path: str,
     ) -> EnvironmentPath:
         if not isinstance(path, str) or not path or "\x00" in path:
             raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid")
         segments = path.split("/")
         if any(segment == ".." or (segment == "." and path != ".") for segment in segments):
             raise EnvironmentError("Environment path traversal is invalid.", code="environment_request_invalid")
-        selected_as_default = not selection.logical_path.startswith("/environment/")
-        if path.startswith("/workspace") and (path == "/workspace" or path.startswith("/workspace/")):
-            if not selected_as_default:
+        if _is_absolute_path(path):
+            try:
+                suffix = parse_mount_path(path).suffix_below(parse_mount_path(mount_path))
+            except ValueError as exc:
+                raise EnvironmentError("Environment path is invalid.", code="environment_request_invalid") from exc
+            if suffix is None:
                 raise EnvironmentError(
                     "The scoped file path selects another mount.",
                     code="environment_selection_invalid",
                 )
-            provider_path = path.removeprefix("/workspace") or "/"
-        elif path.startswith("/environment/"):
-            remainder = path.removeprefix("/environment/")
-            alias, separator, tail = remainder.partition("/")
-            if alias != entered.public.name:
-                raise EnvironmentError(
-                    "The scoped file path selects another mount.",
-                    code="environment_selection_invalid",
-                )
-            provider_path = f"/{tail}" if separator else "/"
-        elif path.startswith("/"):
-            raise EnvironmentError(
-                "Absolute paths must use /workspace or /environment/{alias}.",
-                code="environment_selection_invalid",
-            )
+            provider_path = provider_path_from_suffix(suffix)
         else:
             base = entered.public.default_working_directory or "/"
             if not base.startswith("/") or any(segment in {".", ".."} for segment in base.split("/")):
@@ -1250,7 +1281,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
     async def _prepare_scoped_file(
         self,
         entered: _EnteredMount,
-        selection: FileScopeSelection,
+        mount_path: str,
         selected: EnvironmentPath,
         action: EnvironmentAction,
     ) -> AsyncGenerator[_PreparedFile]:
@@ -1281,7 +1312,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     validate_result=lambda value: _validate_provider_artifacts(entered, value),
                     virtualize_path=lambda provider_path: self._virtualize_scoped_file_path(
                         entered,
-                        selection,
+                        mount_path,
                         selected,
                         provider_path,
                     ),
@@ -1297,7 +1328,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
     @staticmethod
     def _virtualize_scoped_file_path(
         entered: _EnteredMount,
-        selection: FileScopeSelection,
+        mount_path: str,
         selected: EnvironmentPath,
         provider_path: str,
     ) -> str:
@@ -1306,13 +1337,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "Provider returned a path for another scoped mount incarnation.",
                 code="environment_provider_failure",
             )
-        suffix = provider_path if provider_path.startswith("/") else f"/{provider_path}"
-        root = (
-            "/workspace"
-            if not selection.logical_path.startswith("/environment/")
-            else f"/environment/{entered.public.name}"
-        )
-        return f"{root}{suffix}" if suffix != "/" else root
+        try:
+            return mount_path_from_provider_path(mount_path, provider_path)
+        except ValueError as exc:
+            raise EnvironmentError(
+                "Provider returned an invalid file path.",
+                code="environment_provider_failure",
+            ) from exc
 
     @asynccontextmanager
     async def _prepare_file(
@@ -1329,11 +1360,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         async with self._operation_lease(entered, action, "files"):
             if entered.operations.files is None:
                 raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
-            root = (
-                "/workspace"
-                if self._snapshot.default_mount == entered.public.name
-                else f"/environment/{entered.public.name}"
-            )
+            root = _preferred_mount_path(entered.public, self._snapshot.default_mount)
             yield _PreparedFile(
                 selected=selected,
                 observed_generation=entered.public.descriptor.generation,
@@ -1974,6 +2001,56 @@ def _validate_initial_mounts(
             "default_mount is not present in mounts.",
             code="environment_request_invalid",
         )
+    _validate_route_paths(tuple((item.name, item.mount_path) for item in mounts), default_mount)
+
+
+def _validate_route_paths(
+    mounts: Sequence[tuple[str, str | None]],
+    default_mount: str | None,
+) -> None:
+    owners: dict[tuple[str, ...], str] = {}
+    for name, mount_path in mounts:
+        for path in _mount_paths_for_values(name, mount_path, default_mount):
+            try:
+                key = parse_mount_path(path).comparison_key
+            except ValueError as exc:
+                raise EnvironmentError(
+                    "Environment mount path is invalid.",
+                    code="environment_request_invalid",
+                    details={"name": name},
+                ) from exc
+            previous = owners.setdefault(key, name)
+            if previous != name:
+                raise EnvironmentError(
+                    "Environment mount paths must be unique.",
+                    code="environment_request_invalid",
+                    details={"name": name, "conflict": previous},
+                )
+
+
+def _mount_paths(info: EnvironmentMountInfo, default_mount: str | None) -> tuple[str, ...]:
+    return _mount_paths_for_values(info.name, info.mount_path, default_mount)
+
+
+def _mount_paths_for_values(
+    name: str,
+    mount_path: str | None,
+    default_mount: str | None,
+) -> tuple[str, ...]:
+    if mount_path is not None:
+        return (mount_path,)
+    named = f"/environment/{name}"
+    return ("/workspace", named) if name == default_mount else (named,)
+
+
+def _preferred_mount_path(info: EnvironmentMountInfo, default_mount: str | None) -> str:
+    if info.mount_path is not None:
+        return info.mount_path
+    return "/workspace" if info.name == default_mount else f"/environment/{info.name}"
+
+
+def _is_absolute_path(path: str) -> bool:
+    return path.startswith("/") or (len(path) >= 3 and path[0].isalpha() and path[1:3] == ":/")
 
 
 def _validate_mount_name(name: str) -> None:
@@ -2042,6 +2119,7 @@ def _validate_entered(
         descriptor=descriptor,
         permission_ceiling=effective,
         default_working_directory=requested.default_working_directory,
+        mount_path=requested.mount_path,
     )
     return _EnteredMount(
         mount_id=mount_id,
@@ -2274,8 +2352,13 @@ def _normalize_environment_run_extensions(
 
 
 def _virtualize_path(root: str, provider_path: str) -> str:
-    suffix = provider_path if provider_path.startswith("/") else f"/{provider_path}"
-    return f"{root}{suffix}" if suffix != "/" else root
+    try:
+        return mount_path_from_provider_path(root, provider_path)
+    except ValueError as exc:
+        raise EnvironmentError(
+            "Provider returned an invalid file path.",
+            code="environment_provider_failure",
+        ) from exc
 
 
 def create_environment_runtime(
@@ -2291,6 +2374,7 @@ def create_environment_runtime(
                 name=name,
                 permission_ceiling=mount.permission_ceiling.model_copy(deep=True),
                 default_working_directory=mount.working_directory,
+                mount_path=mount.mount_path,
                 candidate=mount.binding,
             )
             for name, mount in dict(mounts).items()
