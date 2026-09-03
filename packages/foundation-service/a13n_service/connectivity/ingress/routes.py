@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
+from a13n_service.connectivity.management import fingerprint, record_command
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
@@ -20,10 +21,8 @@ from a13n_service.storage import transaction
 from ._management import (
     audit,
     authorize,
-    fingerprint,
     idempotency_key_digest,
     ingress_agent_ids,
-    record_command,
     replay_command,
     require_adapter,
     require_ingress,
