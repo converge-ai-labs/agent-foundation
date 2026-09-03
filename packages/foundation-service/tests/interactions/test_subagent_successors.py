@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW, TENANT_ID, effective_agent_config
 from .test_attempt_execution import _completed_state, _waiting_state
-from .test_subagent_acceptance import CHILD_AGENT_ID, CHILD_REVISION_ID
+from .test_subagent_acceptance import CHILD_AGENT_ID, CHILD_DEFINITION_ID, CHILD_REVISION_ID
 from .test_subagent_results import _accept_child, _fail_child
 
 pytestmark = pytest.mark.anyio
@@ -284,7 +284,7 @@ async def _accept_another_child(
         spawn_operation_id="delegate-call-2",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"second"}',
-        child_definition_id=f"agent-config-{child_config.content_digest[:24]}",
+        child_definition_id=CHILD_DEFINITION_ID,
         child_agent_id=CHILD_AGENT_ID,
         child_agent_revision_id=CHILD_REVISION_ID,
         child_effective_config=child_config,

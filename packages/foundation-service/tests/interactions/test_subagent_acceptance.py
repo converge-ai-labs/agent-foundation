@@ -59,6 +59,7 @@ pytestmark = pytest.mark.anyio
 
 CHILD_AGENT_ID = "agt_2222222222222222"
 CHILD_REVISION_ID = "agtr_2222222222222222"
+CHILD_DEFINITION_ID = f"agent-config-{'3' * 24}"
 
 
 async def test_child_acceptance_is_fenced_atomic_and_idempotent(
@@ -352,7 +353,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         spawn_operation_id="resume-call-1",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"continue"}',
-        child_definition_id=f"agent-config-{child_config.content_digest[:24]}",
+        child_definition_id=CHILD_DEFINITION_ID,
         child_agent_id=CHILD_AGENT_ID,
         child_agent_revision_id=CHILD_REVISION_ID,
         child_effective_config=child_config,
@@ -439,7 +440,7 @@ def _prepared_child(
         spawn_operation_id="delegate-call-1",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"research"}',
-        child_definition_id=f"agent-config-{child_config.content_digest[:24]}",
+        child_definition_id=CHILD_DEFINITION_ID,
         child_agent_id=CHILD_AGENT_ID,
         child_agent_revision_id=CHILD_REVISION_ID,
         child_effective_config=child_config,

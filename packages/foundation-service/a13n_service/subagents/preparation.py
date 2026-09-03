@@ -49,6 +49,7 @@ class PreparedChildRunAcceptance:
     run: Run
     state: RunStateEnvelope
     relationship: ChildRunRelationship
+    child_definition_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ class PreparedChildRunResume:
     run: Run
     state: RunStateEnvelope
     relationship: ChildRunRelationship
+    child_definition_id: str
     resumed_from_relationship_id: str
     resumed_from_child_run_id: str
     source_thread_version: int
@@ -93,9 +95,7 @@ def prepare_child_run(
     edge = require_frozen_subagent_edge(parent_run, parent_state, subagent_name)
     if (edge.child_agent_id, edge.child_agent_revision_id) != (child_agent_id, child_agent_revision_id):
         raise ValueError("prepared child Agent does not match the frozen subagent edge")
-    expected_definition_id = f"agent-config-{child_effective_config.content_digest[:24]}"
-    if child_definition_id != expected_definition_id:
-        raise ValueError("Harness child definition does not match the frozen child configuration")
+    _validate_child_definition_id(child_definition_id)
     validate_child_environment_policy(
         edge,
         parent=parent_state.effective_agent_config,
@@ -176,7 +176,13 @@ def prepare_child_run(
         delegated_input=delegated_input,
         created_at=created_at,
     )
-    return PreparedChildRunAcceptance(thread=thread, run=run, state=state, relationship=relationship)
+    return PreparedChildRunAcceptance(
+        thread=thread,
+        run=run,
+        state=state,
+        relationship=relationship,
+        child_definition_id=child_definition_id,
+    )
 
 
 def prepare_child_resume(
@@ -211,9 +217,7 @@ def prepare_child_resume(
     edge = require_frozen_subagent_edge(parent_run, parent_state, subagent_name)
     if (edge.child_agent_id, edge.child_agent_revision_id) != (child_agent_id, child_agent_revision_id):
         raise ValueError("prepared child Agent does not match the frozen subagent edge")
-    expected_definition_id = f"agent-config-{child_effective_config.content_digest[:24]}"
-    if child_definition_id != expected_definition_id:
-        raise ValueError("Harness child definition does not match the frozen child configuration")
+    _validate_child_definition_id(child_definition_id)
     validate_child_environment_policy(
         edge,
         parent=parent_state.effective_agent_config,
@@ -294,11 +298,17 @@ def prepare_child_resume(
         run=run,
         state=state,
         relationship=relationship,
+        child_definition_id=child_definition_id,
         resumed_from_relationship_id=source_relationship.id,
         resumed_from_child_run_id=source_run.id,
         source_thread_version=source_thread.version,
         source_state=source_state,
     )
+
+
+def _validate_child_definition_id(value: str) -> None:
+    if not value.startswith("agent-config-") or len(value) != 37:
+        raise ValueError("Harness child definition identity is not canonical")
 
 
 def _relationship(

@@ -92,6 +92,7 @@ class ChildRunAcceptanceService:
                 database,
                 parent=parent_resource,
                 child=prepared.run,
+                child_definition_id=prepared.child_definition_id,
                 workspace_id=session.workspace_id,
             )
         parent_state = await self._states.read(
@@ -128,6 +129,7 @@ class ChildRunAcceptanceService:
                     database,
                     parent=parent_resource,
                     child=prepared.run,
+                    child_definition_id=prepared.child_definition_id,
                     workspace_id=session.workspace_id,
                 )
                 _validate_new_child_parent(
@@ -175,6 +177,7 @@ class ChildRunAcceptanceService:
                 database,
                 parent=parent_resource,
                 child=prepared.run,
+                child_definition_id=prepared.child_definition_id,
                 workspace_id=session.workspace_id,
             )
         parent_state = await self._states.read(
@@ -223,6 +226,7 @@ class ChildRunAcceptanceService:
                     database,
                     parent=parent_resource,
                     child=prepared.run,
+                    child_definition_id=prepared.child_definition_id,
                     workspace_id=session.workspace_id,
                 )
                 _validate_parent_authority(
@@ -343,6 +347,7 @@ class ChildRunAcceptanceService:
                 database,
                 parent=parent_resource,
                 child=child_resource,
+                child_definition_id=prepared.child_definition_id,
                 workspace_id=session.workspace_id,
             )
             _validate_replay_intent(existing, child, prepared)
@@ -529,6 +534,7 @@ async def _reauthorize(
     *,
     parent: Run,
     child: Run,
+    child_definition_id: str,
     workspace_id: str,
 ) -> None:
     actor = AuthenticatedActor(
@@ -574,6 +580,7 @@ async def _reauthorize(
             child_agent is None
             or child_revision is None
             or child_revision.runtime_lock_digest != child.runtime_lock_digest
+            or child_definition_id != f"agent-config-{child_revision.content_digest[:24]}"
         ):
             raise ChildRunAcceptanceError(
                 "child_run_revision_unavailable",

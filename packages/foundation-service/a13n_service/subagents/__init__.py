@@ -5,6 +5,7 @@ from .acceptance import (
     ChildRunAcceptanceReceipt,
     ChildRunAcceptanceService,
 )
+from .admission import ChildRunAdmissionProfile, FoundationChildRunAdmissionPreparer
 from .domain import (
     MAX_INLINE_ASYNC_RESULT_BYTES,
     AsyncSubagentResultInboxPayload,
@@ -13,6 +14,12 @@ from .domain import (
     ChildRunRelationship,
     new_child_run_relationship_id,
 )
+from .execution_store import (
+    AttemptAuthoritySource,
+    FoundationSubagentOperatorError,
+    RetainedChildExecution,
+)
+from .operator import ChildRunAdmissionPreparer, FoundationSubagentOperator
 from .preparation import (
     PreparedChildRunAcceptance,
     PreparedChildRunResume,
@@ -47,15 +54,22 @@ __all__ = [
     "AsyncSubagentSuccessorError",
     "AsyncSubagentSuccessorReceipt",
     "AsyncSubagentSuccessorReconciler",
+    "AttemptAuthoritySource",
     "ChildCancellationPolicy",
     "ChildResultVisibility",
     "ChildRunAcceptanceError",
     "ChildRunAcceptanceReceipt",
     "ChildRunAcceptanceService",
+    "ChildRunAdmissionPreparer",
+    "ChildRunAdmissionProfile",
     "ChildRunRelationship",
+    "FoundationChildRunAdmissionPreparer",
+    "FoundationSubagentOperator",
+    "FoundationSubagentOperatorError",
     "PreparedAsyncResultSuccessor",
     "PreparedChildRunAcceptance",
     "PreparedChildRunResume",
+    "RetainedChildExecution",
     "new_child_run_relationship_id",
     "parse_async_subagent_result_entry",
     "prepare_async_result_successor",

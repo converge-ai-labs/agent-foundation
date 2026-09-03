@@ -1,0 +1,389 @@
+"""Attempt-scoped implementation of the Harness asynchronous subagent boundary."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
+from typing import Protocol
+
+from a13n_harness import SafeFailure
+from a13n_harness.capabilities import (
+    AsyncDelegateRequest,
+    AsyncExecutionView,
+    AsyncResumeRequest,
+    SubagentCancelRequest,
+    SubagentCancelResult,
+    SubagentDelegationPlan,
+    SubagentInfoRequest,
+    SubagentInfoResult,
+    SubagentOperator,
+    SubagentOperatorContext,
+    SubagentSteerRequest,
+    SubagentSteerResult,
+    SubagentWaitRequest,
+    SubagentWaitResult,
+)
+from anyio import current_time, sleep
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from a13n_service.iam import WorkspaceAction
+from a13n_service.interactions.attempts import AttemptContext
+from a13n_service.interactions.domain import RunStatus
+from a13n_service.interactions.inbox import ThreadInboxStore
+from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
+from a13n_service.interactions.input import AcceptedAgentInput, TextContent
+from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
+
+from .acceptance import ChildRunAcceptanceService
+from .execution_store import (
+    AttemptAuthoritySource,
+    FoundationSubagentOperatorError,
+    RetainedChildExecution,
+    SubagentExecutionStore,
+    compact_execution_view,
+    execution_input,
+    full_execution_view,
+    is_resumable,
+)
+from .preparation import PreparedChildRunAcceptance, PreparedChildRunResume
+
+_ACTIVE_STATUSES = {RunStatus.accepted, RunStatus.running}
+_STEERABLE_STATUSES = {*_ACTIVE_STATUSES, RunStatus.waiting}
+_TERMINAL_STATUSES = {RunStatus.completed, RunStatus.failed, RunStatus.cancelled}
+
+
+class ChildRunAdmissionPreparer(Protocol):
+    """Resolve exact child config and construct state-first admission candidates."""
+
+    async def prepare_delegate(
+        self,
+        authority: AttemptContext,
+        plan: SubagentDelegationPlan,
+        request: AsyncDelegateRequest,
+        delegated_input: str,
+    ) -> PreparedChildRunAcceptance: ...
+
+    async def prepare_resume(
+        self,
+        authority: AttemptContext,
+        source: RetainedChildExecution,
+        plan: SubagentDelegationPlan,
+        request: AsyncResumeRequest,
+        delegated_input: str,
+    ) -> PreparedChildRunResume: ...
+
+
+class FoundationSubagentOperator(SubagentOperator):
+    """Implement standard Harness async tools over durable Foundation authority."""
+
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        authority: AttemptAuthoritySource,
+        admission_preparer: ChildRunAdmissionPreparer,
+        acceptance: ChildRunAcceptanceService,
+        inbox: ThreadInboxStore,
+        outcomes: RunOutcomeService,
+        *,
+        parent_agent_instance_id: str,
+        host_refs: Mapping[str, str],
+        default_wait_timeout_seconds: float = 30.0,
+        max_wait_timeout_seconds: float = 300.0,
+        wait_poll_interval_seconds: float = 0.1,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        if not 0 < default_wait_timeout_seconds <= max_wait_timeout_seconds:
+            raise ValueError("default subagent wait timeout must fit the maximum")
+        if wait_poll_interval_seconds <= 0:
+            raise ValueError("subagent wait poll interval must be positive")
+        self._admission_preparer = admission_preparer
+        self._acceptance = acceptance
+        self._inbox = inbox
+        self._outcomes = outcomes
+        self._executions = SubagentExecutionStore(
+            sessions,
+            authority,
+            parent_agent_instance_id=parent_agent_instance_id,
+            host_refs=host_refs,
+            clock=clock,
+        )
+        self._default_wait_timeout_seconds = default_wait_timeout_seconds
+        self._max_wait_timeout_seconds = max_wait_timeout_seconds
+        self._wait_poll_interval_seconds = wait_poll_interval_seconds
+
+    async def delegate(
+        self,
+        plan: SubagentDelegationPlan,
+        request: AsyncDelegateRequest,
+    ) -> AsyncExecutionView:
+        authority = self._require_plan(plan, request.subagent_name)
+        delegated_input = _delegated_input(plan)
+        replay = await self._executions.read_operation(plan.parent, plan.operation_id)
+        if replay is not None:
+            _validate_replay(replay, plan=plan, delegated_input=delegated_input, resumed_from=None)
+            return compact_execution_view(replay)
+        prepared = await self._admission_preparer.prepare_delegate(authority, plan, request, delegated_input)
+        _validate_delegate_candidate(prepared, plan=plan, delegated_input=delegated_input)
+        receipt = await self._acceptance.accept(prepared, authority)
+        accepted = await self._executions.read_exact(
+            plan.parent,
+            receipt.relationship.id,
+            WorkspaceAction.run_read,
+        )
+        return compact_execution_view(accepted)
+
+    async def info(
+        self,
+        context: SubagentOperatorContext,
+        request: SubagentInfoRequest,
+    ) -> SubagentInfoResult:
+        page = await self._executions.read_page(
+            context,
+            execution_id=request.execution_id,
+            offset=request.execution_offset,
+            limit=request.execution_limit,
+            action=WorkspaceAction.run_read,
+        )
+        return SubagentInfoResult(
+            executions=tuple(full_execution_view(item) for item in page.items),
+            execution_offset=page.offset,
+            total=page.total,
+            next_offset=page.next_offset(request.execution_limit),
+        )
+
+    async def wait(
+        self,
+        context: SubagentOperatorContext,
+        request: SubagentWaitRequest,
+    ) -> SubagentWaitResult:
+        timeout = min(
+            request.timeout_seconds or self._default_wait_timeout_seconds,
+            self._max_wait_timeout_seconds,
+        )
+        deadline = current_time() + timeout
+        while True:
+            page = await self._executions.read_page(
+                context,
+                execution_id=request.execution_id,
+                offset=request.execution_offset,
+                limit=request.execution_limit,
+                action=WorkspaceAction.run_read,
+            )
+            if not page.items or all(item.run.status in _TERMINAL_STATUSES for item in page.items):
+                break
+            remaining = deadline - current_time()
+            if remaining <= 0:
+                break
+            await sleep(min(self._wait_poll_interval_seconds, remaining))
+        return SubagentWaitResult(
+            executions=tuple(full_execution_view(item) for item in page.items),
+            execution_offset=page.offset,
+            total=page.total,
+            next_offset=page.next_offset(request.execution_limit),
+        )
+
+    async def steer(
+        self,
+        context: SubagentOperatorContext,
+        request: SubagentSteerRequest,
+    ) -> SubagentSteerResult:
+        execution = await self._executions.read_exact(context, request.execution_id, WorkspaceAction.run_steer)
+        if execution.run.status not in _STEERABLE_STATUSES or execution.thread.current_run_id != execution.run.id:
+            return SubagentSteerResult(execution_id=request.execution_id, accepted=False)
+        try:
+            receipt = await self._inbox.append_steer(
+                tenant_id=execution.run.tenant_id,
+                run_id=execution.run.id,
+                input=AcceptedAgentInput(
+                    schema_version="1",
+                    content=(TextContent(text=request.message),),
+                ),
+            )
+        except ThreadInboxConflict as error:
+            current = await self._executions.read_exact(context, request.execution_id, WorkspaceAction.run_steer)
+            if current.run.status not in _STEERABLE_STATUSES or current.thread.current_run_id != current.run.id:
+                return SubagentSteerResult(execution_id=request.execution_id, accepted=False)
+            raise FoundationSubagentOperatorError(
+                "subagent_steer_conflict",
+                "Subagent steering lost a concurrent Thread mutation",
+            ) from error
+        return SubagentSteerResult(
+            execution_id=request.execution_id,
+            accepted=True,
+            enqueue_id=receipt.steer_id,
+        )
+
+    async def cancel(
+        self,
+        context: SubagentOperatorContext,
+        request: SubagentCancelRequest,
+    ) -> SubagentCancelResult:
+        execution = await self._executions.read_exact(context, request.execution_id, WorkspaceAction.run_interrupt)
+        if execution.run.status not in _ACTIVE_STATUSES or execution.thread.current_run_id != execution.run.id:
+            return SubagentCancelResult(
+                execution_id=request.execution_id,
+                accepted=False,
+                status=compact_execution_view(execution).status,
+            )
+        try:
+            await self._outcomes.cancel(
+                tenant_id=execution.run.tenant_id,
+                run_id=execution.run.id,
+                expected_run_version=execution.run.version,
+                expected_thread_version=execution.thread.version,
+                failure=SafeFailure(
+                    code="subagent_cancelled_by_parent",
+                    message="The parent Agent requested cancellation of this subagent.",
+                ),
+            )
+        except RunOutcomeError as error:
+            current = await self._executions.read_exact(context, request.execution_id, WorkspaceAction.run_interrupt)
+            if current.run.status in _TERMINAL_STATUSES:
+                return SubagentCancelResult(
+                    execution_id=request.execution_id,
+                    accepted=False,
+                    status=compact_execution_view(current).status,
+                )
+            raise FoundationSubagentOperatorError(
+                "subagent_cancel_conflict",
+                "Subagent cancellation lost a concurrent Run mutation",
+            ) from error
+        return SubagentCancelResult(
+            execution_id=request.execution_id,
+            accepted=True,
+            status="cancelled",
+        )
+
+    async def resume(
+        self,
+        plan: SubagentDelegationPlan,
+        request: AsyncResumeRequest,
+    ) -> AsyncExecutionView:
+        authority = self._require_plan(plan, plan.child.declaration.name)
+        delegated_input = _delegated_input(plan)
+        replay = await self._executions.read_operation(plan.parent, plan.operation_id)
+        if replay is not None:
+            _validate_replay(
+                replay,
+                plan=plan,
+                delegated_input=delegated_input,
+                resumed_from=request.execution_id,
+            )
+            return compact_execution_view(replay)
+        source = await self._executions.read_exact(
+            plan.parent,
+            request.execution_id,
+            WorkspaceAction.run_continue,
+        )
+        if not is_resumable(source):
+            raise FoundationSubagentOperatorError(
+                "subagent_not_resumable",
+                "The retained subagent execution is not a selected completed child head",
+            )
+        prepared = await self._admission_preparer.prepare_resume(
+            authority,
+            source,
+            plan,
+            request,
+            delegated_input,
+        )
+        _validate_resume_candidate(
+            prepared,
+            source=source,
+            plan=plan,
+            delegated_input=delegated_input,
+        )
+        receipt = await self._acceptance.accept_resume(prepared, authority)
+        accepted = await self._executions.read_exact(
+            plan.parent,
+            receipt.relationship.id,
+            WorkspaceAction.run_read,
+        )
+        return compact_execution_view(accepted)
+
+    def _require_plan(self, plan: SubagentDelegationPlan, subagent_name: str) -> AttemptContext:
+        authority = self._executions.require_context(plan.parent)
+        if plan.child.declaration.name != subagent_name:
+            raise FoundationSubagentOperatorError(
+                "subagent_plan_invalid",
+                "Harness child plan identity is inconsistent",
+            )
+        return authority
+
+
+def _validate_delegate_candidate(
+    prepared: PreparedChildRunAcceptance,
+    *,
+    plan: SubagentDelegationPlan,
+    delegated_input: str,
+) -> None:
+    if (
+        prepared.relationship.parent_run_id != plan.parent.parent_run_id
+        or prepared.relationship.spawn_operation_id != plan.operation_id
+        or prepared.relationship.subagent_name != plan.child.declaration.name
+        or prepared.run.parent_agent_instance_id != plan.parent.parent_agent_instance_id
+        or execution_input(prepared.run) != delegated_input
+        or prepared.child_definition_id != plan.child.definition.definition_id
+    ):
+        raise FoundationSubagentOperatorError(
+            "subagent_admission_candidate_invalid",
+            "Prepared child admission does not match the Harness plan",
+        )
+
+
+def _validate_resume_candidate(
+    prepared: PreparedChildRunResume,
+    *,
+    source: RetainedChildExecution,
+    plan: SubagentDelegationPlan,
+    delegated_input: str,
+) -> None:
+    if (
+        prepared.resumed_from_relationship_id != source.relationship.id
+        or prepared.resumed_from_child_run_id != source.run.id
+        or prepared.relationship.parent_run_id != plan.parent.parent_run_id
+        or prepared.relationship.spawn_operation_id != plan.operation_id
+        or prepared.relationship.subagent_name != plan.child.declaration.name
+        or prepared.run.parent_agent_instance_id != plan.parent.parent_agent_instance_id
+        or execution_input(prepared.run) != delegated_input
+        or prepared.child_definition_id != plan.child.definition.definition_id
+    ):
+        raise FoundationSubagentOperatorError(
+            "subagent_resume_candidate_invalid",
+            "Prepared child continuation does not match the Harness plan",
+        )
+
+
+def _validate_replay(
+    execution: RetainedChildExecution,
+    *,
+    plan: SubagentDelegationPlan,
+    delegated_input: str,
+    resumed_from: str | None,
+) -> None:
+    if (
+        execution.relationship.subagent_name != plan.child.declaration.name
+        or execution.resumed_from_relationship_id != resumed_from
+        or execution.input != delegated_input
+        or execution.child_definition_id != plan.child.definition.definition_id
+    ):
+        raise FoundationSubagentOperatorError(
+            "subagent_operation_conflict",
+            "Subagent operation identity was reused with different intent",
+        )
+
+
+def _delegated_input(plan: SubagentDelegationPlan) -> str:
+    value = plan.context.input
+    if not isinstance(value, str) or not value:
+        raise FoundationSubagentOperatorError(
+            "subagent_input_invalid",
+            "Foundation asynchronous delegation requires the Harness JSON context projection",
+        )
+    return value
+
+
+__all__ = [
+    "ChildRunAdmissionPreparer",
+    "FoundationSubagentOperator",
+]

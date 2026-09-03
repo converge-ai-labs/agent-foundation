@@ -87,6 +87,7 @@ from .domain import (
     new_run_attempt_id,
     new_run_id,
     new_session_id,
+    new_thread_id,
 )
 from .feedback import WaitingFeedbackMappingError, map_waiting_feedback
 from .handoff import CombinedQueueHandoffReceipt, CompletionQueueHandoffService
@@ -378,6 +379,7 @@ __all__ = [
     "new_run_attempt_id",
     "new_run_id",
     "new_session_id",
+    "new_thread_id",
     "new_thread_inbox_entry_id",
     "normalize_feedback",
     "normalize_waiting_continue",
