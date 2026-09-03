@@ -106,6 +106,12 @@ The ConnectorConnection and MCPConnection Run selections are the authorization a
 
 Preparation reads local validated catalogs and publishes the snapshot object without an open relational transaction. The short Run-acceptance transaction rechecks immutable source identity, current authorization and status, authoritative source selections, catalog compatibility, and the prepared snapshot identity before committing the Run. Mutable management CAS versions are not Run compatibility inputs. Tool incompatibility discovered during dispatch fails the current call and schedules catalog refresh for later Runs; it never rewrites the accepted snapshot.
 
+### Catalog safety bounds
+
+Every ConnectorConnection or MCPConnection source refresh accepts at most 128 pages, 2,048 tools, and 16 MiB of canonical catalog JSON. One tool name is at most 128 UTF-8 bytes, description at most 16 KiB, and combined input/output schemas at most 256 KiB with JSON and schema-reference depth at most 64. Tool execution accepts at most 1 MiB of canonical result JSON with nesting depth at most 64. Provider pages, schemas, annotations, descriptions, results, cache hints, and Route configuration can reduce work but cannot increase these deployment ceilings.
+
+Older immutable catalogs are retained for at least 30 days and indefinitely while any retained AgentRevision or Run references them. Cleanup proves the absence of retained references before deleting an object. A catalog digest contains the source type, adapter or protocol compatibility profile, exact source identity, provider-owned versions, ordered tool keys, schemas, and safe annotations. `latest`, an omitted version, a mutable alias, or a management CAS version is not retained compatibility evidence.
+
 The snapshot is immutable for the Run:
 
 - direct exposure always reconstructs the same model tool definitions;

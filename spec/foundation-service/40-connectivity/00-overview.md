@@ -32,9 +32,35 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 
 `Connector` is one configured external connector service such as OpenConnector Self-host, OpenConnector Cloud, or Composio. Its adapter, endpoint, access credential, provider coverage, and action schemas are Connector-specific.
 
-`ConnectorConnection` is Foundation's safe reference to one external account held by one Connector. It is not that account's credential.
+`ConnectorConnection` is Foundation's safe reference to one external account held by one Connector. It is not that account's credential. The longer name is intentional: `ConnectorConnection` and `MCPConnection` are distinct resources with different credential custody, transports, and execution paths. Public collection routes use `/connector-connections`, while fields that coexist with another connection kind use `connector_connection_id`.
 
 `MCPConnection` is one configured authorization identity for one user-supplied Remote MCP endpoint. The same endpoint used with two different identities creates two MCPConnections rather than a separate server resource and another connection layer.
+
+## Object Identity
+
+Connectivity allocates these Foundation object-ID prefixes under the shared [Platform Data Conventions](../../data-conventions.md#object-identity):
+
+| Object kind                     | Prefix   | Addressability            |
+| ------------------------------- | -------- | ------------------------- |
+| Ingress                         | `ing_`   | Public resource           |
+| Route                           | `rte_`   | Public resource           |
+| Connector                       | `cnr_`   | Public resource           |
+| ConnectorConnection             | `cconn_` | Public resource           |
+| MCPConnection                   | `mcpc_`  | Public resource           |
+| AgentThreadBinding              | `atb_`   | Internal durable object   |
+| Inbound event admission         | `iadm_`  | Internal durable object   |
+| Input batch                     | `ibat_`  | Internal durable object   |
+| Validated tool catalog          | `tcat_`  | Internal immutable object |
+| Connector setup attempt         | `csa_`   | Internal expiring object  |
+| MCP OAuth authorization session | `mos_`   | Internal expiring object  |
+
+An allocated prefix identifies the object kind only. It conveys no provider, tenant, owner, lifecycle, routing, or authority fact.
+
+## Outbound Endpoint Policy
+
+Every Connector and Remote MCP request uses one Connectivity-owned outbound endpoint policy. Production endpoints use HTTPS. Plain HTTP is accepted only for an exact operator-allowed development or private self-hosted origin. DNS is resolved and every resulting address is checked before each request; loopback, link-local, multicast, unspecified, cloud-metadata, and private addresses are denied unless the exact origin or network is operator-allowed for Connectivity. Model endpoint allowlists and their management permissions do not apply.
+
+Redirects are followed manually for at most three hops. Every destination is normalized, resolved, and checked independently; an HTTPS-to-HTTP downgrade is denied. A bearer value, static application header, Connector API key, cookie, or other credential is sent only to the exact origin for which it was resolved and is never forwarded after an origin-changing redirect. Standards-discovered MCP authorization endpoints and operator-configured Lark or GitHub Enterprise origins are subject to the same checks. Endpoint query strings, discovery headers, redirect locations, and remote bodies remain bounded and are omitted from ordinary diagnostics.
 
 ## End-to-End Flow
 

@@ -23,8 +23,10 @@ These paths can appear together in one Agent Run but retain separate identity, c
 | [04 Agent-Facing Tools](04-agent-facing-tools.md)                           | a13n MCP, native actions, direct and catalog exposure, Run tool snapshots, invocation grants, dispatch, and provider receipts       |
 | [05 Contract Limits](05-contract-limits.md)                                 | Explicit provider and product boundaries for which the common contract defines no portable behavior                                 |
 | [06 Remote MCP Connections](06-remote-mcp-connections.md)                   | User-configured Streamable HTTP MCP endpoints, ownership, authentication, OAuth client behavior, lifecycle, and runtime eligibility |
+| [07 Built-in Ingress Adapters](07-built-in-ingress-adapters.md)             | Exact Slack, Lark/Feishu, and GitHub App HTTP identities, wire validation, routing, acknowledgements, and native actions            |
+| [08 Built-in Connector Adapters](08-built-in-connector-adapters.md)         | Exact OpenConnector and Composio setup, callback, status, catalog, versioning, and execution profiles                               |
 
-Read `00` first. Read `01` for every inbound provider, `02` only for conversational messaging, `03` for general outbound SaaS accounts, `04` for every Agent-facing external tool, `05` for the limits of portable cross-provider behavior, and `06` for user-configured Remote MCP.
+Read `00` first. Read `01` for every inbound provider, `02` only for conversational messaging, `03` for general outbound SaaS accounts, `04` for every Agent-facing external tool, `05` for the limits of portable cross-provider behavior, `06` for user-configured Remote MCP, `07` for the built-in native providers, and `08` for the built-in Connector drivers.
 
 ## Authority Rules
 

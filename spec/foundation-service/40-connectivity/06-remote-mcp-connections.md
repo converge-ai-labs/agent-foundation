@@ -4,7 +4,7 @@
 
 `MCPConnection` is Foundation's single configuration resource for using a user-supplied Remote MCP endpoint with one authorization identity. It combines endpoint and authorization lifecycle because MCP tool availability can vary by presented authorization. The same endpoint used by two identities is represented by two MCPConnections; Foundation defines no separate `MCPServer` resource.
 
-Foundation Service acts as the MCP client and supports only the Streamable HTTP transport. Local `stdio` MCP configuration remains a direct Harness or Agent UI concern and never causes a hosted Worker to launch a user-supplied process.
+Foundation Service acts as the MCP client and supports only the Streamable HTTP transport at protocol revision `2025-11-25`. Local `stdio` MCP configuration remains a direct Harness or Agent UI concern and never causes a hosted Worker to launch a user-supplied process. A server that cannot negotiate that exact revision is incompatible; Foundation does not silently select another revision.
 
 Foundation implements the standard MCP OAuth client flow once. It does not implement provider-specific Slack, GitHub, Google, or other OAuth branches. Connector-managed SaaS OAuth remains owned by the [Connector service](03-connectors-and-connections.md#credential-custody-and-setup), not this contract.
 
@@ -42,7 +42,7 @@ class MCPConnection:
     updated_at: datetime
 ```
 
-`endpoint_url` is one credential-free absolute Streamable HTTP MCP endpoint validated under deployment outbound-network policy. It contains no user info, access token, API key, fragment, or model-controlled component. Redirects and resolved destinations are bounded and revalidated on every discovery, authorization, and runtime request.
+`endpoint_url` is one credential-free absolute Streamable HTTP MCP endpoint validated under the shared [Connectivity outbound-network policy](00-overview.md#outbound-endpoint-policy). It contains no user info, access token, API key, fragment, or model-controlled component. Redirects and resolved destinations are bounded and revalidated on every discovery, authorization, and runtime request.
 
 Endpoint, owner, Workspace, authentication mode, and the normalized static-header name set are immutable. Changing any of them creates another MCPConnection. Name and local disabled state are mutable under exact version preconditions. OAuth token refresh, bearer or static-header value replacement, catalog refresh, health observations, and safe status reconciliation do not reinterpret endpoint or owner identity.
 
@@ -72,6 +72,14 @@ Query-string credentials, cookies, shell environment, endpoint-embedded credenti
 
 `oauth` follows the current MCP HTTP authorization specification. The Remote MCP endpoint acts as the protected resource, its advertised authorization service authenticates the resource owner, and Foundation acts as the OAuth client.
 
+## Streamable HTTP Discovery
+
+Each setup, reconnect, credential replacement, or catalog refresh opens one bounded logical session. It posts `initialize` with protocol revision `2025-11-25` and only implemented client capabilities, validates the exact negotiated revision and server capabilities, echoes an optional `MCP-Session-Id` on later requests, sends `notifications/initialized`, and pages `tools/list` until completion or a safety bound. Every post-initialize request carries `MCP-Protocol-Version: 2025-11-25`. Session termination uses best-effort HTTP `DELETE` when the server supports it and does not change an already validated catalog result.
+
+Requests accept `application/json` and `text/event-stream`. Responses require a supported content type, JSON-RPC `2.0`, the exact request identity, and exactly one result or error. SSE parsing is bounded by event bytes, event count, total bytes, and duration and never becomes an indefinite catalog stream. Unknown response IDs, invalid framing, incompatible notifications, or a server-selected protocol revision fail closed. Cancellation closes the response and logical session and is never translated into an ordinary retry.
+
+The common [catalog safety bounds](04-agent-facing-tools.md#catalog-safety-bounds) govern pagination, schema shape, canonical bytes, result bytes, and retention. Remote cache hints can reduce work but cannot increase them.
+
 ## OAuth Client Flow
 
 ```mermaid
@@ -98,13 +106,15 @@ sequenceDiagram
     Control-->>User: MCPConnection ready
 ```
 
-Foundation publishes one deployment-correct Client ID Metadata Document and uses it when the discovered authorization server supports that mechanism. Otherwise, Foundation uses standards-defined Dynamic Client Registration. A server supporting neither mechanism is incompatible with OAuth setup and the MCPConnection does not become ready. Authorization endpoints and client registration values come only from standards-defined discovery and registration.
+Foundation publishes one deployment-correct Client ID Metadata Document at `${public_origin}/api/v1/oauth/mcp/client-metadata.json`; the URL itself is the OAuth `client_id`. The document contains that exact client ID, the fixed `${public_origin}/api/v1/oauth/mcp/callback` redirect URI, the configured bounded client name, `authorization_code`, `code`, and `none` token-endpoint authentication. `public_origin` is an operator setting validated as one absolute HTTPS origin and is never derived from `Host` or forwarding headers. The document is a public protocol artifact containing no tenant, MCPConnection, registration, or credential data.
+
+Foundation uses Client ID Metadata when the discovered authorization server advertises it. Otherwise, Foundation uses standards-defined Dynamic Client Registration only when discovery provides a registration endpoint. A server supporting neither mechanism is incompatible with OAuth setup and the MCPConnection does not become ready. Authorization endpoints and client registration values come only from standards-defined discovery and registration.
 
 The fixed callback uses short-lived, unpredictable, single-use state bound to the exact Organization, Workspace, MCPConnection, initiating User, endpoint resource, issuer expectation, redirect URI, and PKCE verifier. That setup state is durably available to any eligible control replica and is consumed atomically, so a callback cannot be replayed or completed for another MCPConnection or tenant.
 
-Foundation follows protected-resource and authorization-server discovery, resource indicators, issuer validation, PKCE, scope challenges, and token audience requirements from the selected supported MCP protocol revision. It never treats self-reported server display metadata as authorization identity.
+Foundation requires RFC 9728 Protected Resource Metadata, discovered from the Bearer challenge or the standard endpoint-path then root well-known locations, and verifies that its resource identifies the canonical MCP endpoint. It selects one advertised authorization server, discovers it through RFC 8414 or OpenID Connect metadata, and pins the exact issuer. It uses PKCE `S256` and sends the canonical MCP resource in both authorization and token requests. Scope comes from the authenticated challenge or protected-resource metadata rather than an arbitrary caller field. It never accepts manually supplied authorization, token, registration, or issuer endpoints and never treats self-reported display metadata as authorization identity.
 
-Access tokens, refresh tokens, and any Dynamic Client Registration credential form one MCPConnection-owned encrypted credential bundle. Bearer and static-header modes likewise retain one current encrypted credential bundle under the same owner. Refresh or replacement swaps the applicable current bundle without exposing it or changing the MCPConnection's endpoint identity. An OAuth refresh failure, invalid grant, insufficient-scope condition requiring interaction, or confirmed revocation moves the MCPConnection to `action_required` with `reauthorization_required`. An issuer, endpoint, protocol, or tool-discovery incompatibility that needs user repair uses `incompatible`. Agent execution never opens an interactive browser flow.
+Access tokens, refresh tokens, and any Dynamic Client Registration client ID, secret, registration access token, and registration management URI form one MCPConnection-owned encrypted credential bundle. Bearer and static-header modes likewise retain one current encrypted credential bundle under the same owner. Refresh or replacement swaps the applicable current bundle without exposing it or changing the MCPConnection's endpoint identity. Deletion or replacement of a DCR client attempts standards-defined deletion only at the exact stored registration URI with its stored registration access token and outbound-policy revalidation. Failure or an unknown result leaves bounded cleanup evidence for reconciliation and never restores MCPConnection eligibility. An OAuth refresh failure, invalid grant, insufficient-scope condition requiring interaction, or confirmed revocation moves the MCPConnection to `action_required` with `reauthorization_required`. An issuer, endpoint, protocol, or tool-discovery incompatibility that needs user repair uses `incompatible`. Agent execution never opens an interactive browser flow.
 
 ## Secret Boundary
 
