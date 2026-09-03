@@ -17,6 +17,7 @@ from a13n_service.storage import short_session, transaction
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
+from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .records import run_attempt_record
 
@@ -162,11 +163,13 @@ class AttemptScheduler:
                 .where(ThreadRecord.tenant_id == claim.tenant_id, ThreadRecord.id == scope)
                 .with_for_update()
             )
-            run = await database.scalar(
-                select(RunRecord)
-                .where(RunRecord.tenant_id == claim.tenant_id, RunRecord.id == run_id)
-                .with_for_update()
+            locked_runs = await lock_inbox_related_runs(
+                database,
+                tenant_id=claim.tenant_id,
+                thread_id=scope,
+                required_run_ids=(run_id,),
             )
+            run = next((item for item in locked_runs if item.id == run_id), None)
             if run is None or thread is None or thread.current_run_id != run.id:
                 return None
             if run.runtime_lock_digest != claim.runtime_lock_digest:
@@ -189,6 +192,7 @@ class AttemptScheduler:
 
             budget_failure = _claim_budget_failure(run, classification, now)
             if budget_failure is not None:
+                await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, budget_failure, now)
                 return SealedClaim(budget_failure)
 

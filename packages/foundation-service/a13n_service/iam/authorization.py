@@ -44,6 +44,25 @@ class WorkspaceAction(StrEnum):
     environment_test = "environment.test"
     environment_use = "environment.use"
     secrets_bind = "secrets.bind"
+    session_read = "session.read"
+    thread_read = "thread.read"
+    run_read = "run.read"
+    lifecycle_event_read = "lifecycle_event.read"
+    notification_subscribe = "notification.subscribe"
+    usage_read = "usage.read"
+    trace_read = "trace.read"
+    run_continue = "run.continue"
+    run_fork = "run.fork"
+    run_retry = "run.retry"
+    run_feedback = "run.feedback"
+    run_steer = "run.steer"
+    run_interrupt = "run.interrupt"
+    queued_submission_read = "queued_submission.read"
+    queued_submission_create = "queued_submission.create"
+    queued_submission_update = "queued_submission.update"
+    queued_submission_delete = "queued_submission.delete"
+    queued_submission_reorder = "queued_submission.reorder"
+    queued_submission_consume = "queued_submission.consume"
 
 
 _READ_ACTIONS = frozenset(
@@ -56,6 +75,14 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.skill_read,
         WorkspaceAction.environment_provider_read,
         WorkspaceAction.environment_read,
+        WorkspaceAction.session_read,
+        WorkspaceAction.thread_read,
+        WorkspaceAction.run_read,
+        WorkspaceAction.lifecycle_event_read,
+        WorkspaceAction.notification_subscribe,
+        WorkspaceAction.usage_read,
+        WorkspaceAction.trace_read,
+        WorkspaceAction.queued_submission_read,
     }
 )
 
@@ -65,6 +92,17 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
         WorkspaceAction.environment_use,
+        WorkspaceAction.run_continue,
+        WorkspaceAction.run_fork,
+        WorkspaceAction.run_retry,
+        WorkspaceAction.run_feedback,
+        WorkspaceAction.run_steer,
+        WorkspaceAction.run_interrupt,
+        WorkspaceAction.queued_submission_create,
+        WorkspaceAction.queued_submission_update,
+        WorkspaceAction.queued_submission_delete,
+        WorkspaceAction.queued_submission_reorder,
+        WorkspaceAction.queued_submission_consume,
     }
 )
 
@@ -75,13 +113,42 @@ _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
     "admin": frozenset(WorkspaceAction) - {WorkspaceAction.plugin_manage, WorkspaceAction.plugin_runtime_manage},
 }
 
+_DIRECT_AGENT_VIEWER_ACTIONS = frozenset(
+    {
+        WorkspaceAction.agent_read,
+        WorkspaceAction.session_read,
+        WorkspaceAction.thread_read,
+        WorkspaceAction.run_read,
+        WorkspaceAction.lifecycle_event_read,
+        WorkspaceAction.notification_subscribe,
+        WorkspaceAction.trace_read,
+    }
+)
+
+_DIRECT_AGENT_RUNNER_ACTIONS = _DIRECT_AGENT_VIEWER_ACTIONS | frozenset(
+    {
+        WorkspaceAction.agent_invoke,
+        WorkspaceAction.run_continue,
+        WorkspaceAction.run_fork,
+        WorkspaceAction.run_retry,
+        WorkspaceAction.run_feedback,
+        WorkspaceAction.run_steer,
+        WorkspaceAction.run_interrupt,
+        WorkspaceAction.queued_submission_read,
+        WorkspaceAction.queued_submission_create,
+        WorkspaceAction.queued_submission_update,
+        WorkspaceAction.queued_submission_delete,
+        WorkspaceAction.queued_submission_reorder,
+        WorkspaceAction.queued_submission_consume,
+    }
+)
+
 _DIRECT_AGENT_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
-    "viewer": frozenset({WorkspaceAction.agent_read}),
-    "runner": frozenset({WorkspaceAction.agent_read, WorkspaceAction.agent_invoke}),
+    "viewer": _DIRECT_AGENT_VIEWER_ACTIONS,
+    "runner": _DIRECT_AGENT_RUNNER_ACTIONS,
     "builder": frozenset(
         {
-            WorkspaceAction.agent_read,
-            WorkspaceAction.agent_invoke,
+            *_DIRECT_AGENT_RUNNER_ACTIONS,
             WorkspaceAction.agent_update,
             WorkspaceAction.agent_revision_create,
             WorkspaceAction.agent_current_revision_set,

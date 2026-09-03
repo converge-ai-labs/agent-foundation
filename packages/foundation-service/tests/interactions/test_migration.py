@@ -5,7 +5,15 @@ from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect, text
 
-INTERACTION_TABLES = {"sessions", "threads", "runs", "run_attempts"}
+INTERACTION_TABLES = {
+    "sessions",
+    "threads",
+    "runs",
+    "run_attempts",
+    "thread_inbox_counters",
+    "thread_inbox",
+    "thread_queued_submissions",
+}
 
 
 def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
@@ -24,9 +32,18 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             "sealed_state_digest_sha256",
         } <= run_columns
         run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
-        assert {"ix_runs_worker_scan", "uq_runs_active_thread", "uq_runs_idempotency"} <= run_indexes
+        assert {
+            "ix_runs_worker_scan",
+            "uq_runs_active_thread",
+            "uq_runs_idempotency",
+            "uq_runs_thread_authority",
+        } <= run_indexes
         run_unique = {constraint["name"] for constraint in inspector.get_unique_constraints("runs")}
-        assert {"uq_runs_tenant_id", "uq_runs_tenant_thread_id", "uq_runs_scope_identity"} <= run_unique
+        assert {
+            "uq_runs_tenant_id",
+            "uq_runs_tenant_thread_id",
+            "uq_runs_scope_identity",
+        } <= run_unique
         run_checks = {constraint["name"] for constraint in inspector.get_check_constraints("runs")}
         assert {
             "ck_runs_input_representation_valid",
@@ -56,6 +73,34 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         )
         run_foreign_keys = {constraint["name"] for constraint in inspector.get_foreign_keys("runs")}
         assert {"fk_runs_current_attempt_same_run", "fk_runs_sealed_attempt_same_run"} <= run_foreign_keys
+        thread_columns = {column["name"] for column in inspector.get_columns("threads")}
+        assert "queue_version" in thread_columns
+        inbox_indexes = {index["name"] for index in inspector.get_indexes("thread_inbox")}
+        assert {
+            "ix_thread_inbox_fifo",
+            "ix_thread_inbox_target",
+            "ix_thread_inbox_waiting_source",
+            "ix_thread_inbox_kind_scan",
+            "ix_thread_inbox_origin",
+        } <= inbox_indexes
+        inbox_checks = {constraint["name"] for constraint in inspector.get_check_constraints("thread_inbox")}
+        assert {
+            "ck_thread_inbox_payload_valid",
+            "ck_thread_inbox_kind_provenance_valid",
+            "ck_thread_inbox_status_evidence_valid",
+            "ck_thread_inbox_pending_binding_valid",
+            "ck_thread_inbox_target_waiting_source_distinct",
+        } <= inbox_checks
+        queue_indexes = {index["name"] for index in inspector.get_indexes("thread_queued_submissions")}
+        assert {
+            "uq_thread_queued_submissions_position",
+            "ix_thread_queued_submissions_live",
+            "ix_thread_queued_submissions_consumed",
+        } <= queue_indexes
+        queue_foreign_keys = {
+            constraint["name"] for constraint in inspector.get_foreign_keys("thread_queued_submissions")
+        }
+        assert "fk_queued_submissions_consumed_run_authority" in queue_foreign_keys
         with engine.connect() as connection:
             if connection.dialect.name == "postgresql":
                 trigger_names = set(

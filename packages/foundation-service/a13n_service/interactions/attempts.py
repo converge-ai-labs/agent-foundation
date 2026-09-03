@@ -16,6 +16,7 @@ from a13n_service.storage import short_session, transaction
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
+from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunStateStore, StoredRunState
 from .state import RunStateEnvelope
@@ -144,7 +145,12 @@ class AttemptExecutionService:
 
         now = _utc(self._clock())
         async with transaction(self._sessions) as database:
-            run, attempt, thread = await lock_attempt_authority(database, authority, now)
+            run, attempt, thread = await lock_attempt_authority(
+                database,
+                authority,
+                now,
+                lock_inbox_origins=True,
+            )
             failure = _active_budget_failure(run, attempt, now)
             if failure is None:
                 return AttemptPreparationAccepted(
@@ -154,6 +160,7 @@ class AttemptExecutionService:
                 )
             terminalize_attempt(attempt, RunAttemptStatus.failed, now, failure=failure)
             charge_attempt_usage(run, attempt)
+            await apply_run_outcome(database, run=run, outcome="failed", now=now)
             seal_failed_run(run, thread, failure, now)
             return AttemptPreparationRejected(
                 run_attempt_id=attempt.id,
@@ -218,7 +225,12 @@ class AttemptExecutionService:
             raise ValueError("retry_after must not be negative")
         now = _utc(self._clock())
         async with transaction(self._sessions) as database:
-            run, attempt, thread = await lock_attempt_authority(database, authority, now)
+            run, attempt, thread = await lock_attempt_authority(
+                database,
+                authority,
+                now,
+                lock_inbox_origins=True,
+            )
             terminalize_attempt(attempt, RunAttemptStatus.failed, now, failure=failure)
             charge_attempt_usage(run, attempt)
             run.current_run_attempt_id = None
@@ -228,6 +240,7 @@ class AttemptExecutionService:
                 run.updated_at = now
                 run.version += 1
             else:
+                await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, failure, now)
             return _receipt(run, attempt)
 
@@ -255,6 +268,8 @@ async def lock_attempt_authority(
     database: AsyncSession,
     authority: AttemptAuthority,
     now: datetime,
+    *,
+    lock_inbox_origins: bool = False,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
     thread_id = await database.scalar(
         select(RunRecord.thread_id).where(
@@ -269,11 +284,24 @@ async def lock_attempt_authority(
         .where(ThreadRecord.tenant_id == authority.tenant_id, ThreadRecord.id == thread_id)
         .with_for_update()
     )
-    run = await database.scalar(
-        select(RunRecord)
-        .where(RunRecord.tenant_id == authority.tenant_id, RunRecord.id == authority.run_id)
-        .with_for_update()
-    )
+    if lock_inbox_origins:
+        locked_runs = await lock_inbox_related_runs(
+            database,
+            tenant_id=authority.tenant_id,
+            thread_id=thread_id,
+            required_run_ids=(authority.run_id,),
+        )
+    else:
+        locked_runs = tuple(
+            (
+                await database.scalars(
+                    select(RunRecord)
+                    .where(RunRecord.tenant_id == authority.tenant_id, RunRecord.id == authority.run_id)
+                    .with_for_update()
+                )
+            ).all()
+        )
+    run = next((item for item in locked_runs if item.id == authority.run_id), None)
     attempt = await database.scalar(
         select(RunAttemptRecord)
         .where(

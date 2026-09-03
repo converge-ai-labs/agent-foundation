@@ -174,6 +174,15 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         assert record is not None
         assert record.to_resource() == run
 
+    async with transaction(interaction_sessions) as database:
+        record = await database.get(RunRecord, run.id)
+        assert record is not None
+        record.version += 1
+    replay = await service.accept_new_thread(session=session, thread=thread, run=run, state=state)
+
+    assert replay == receipt
+    assert (replay.run_version, replay.status) == (1, "accepted")
+
 
 async def test_acceptance_rejects_input_payload_owned_by_another_run(
     interaction_sessions: async_sessionmaker[AsyncSession],
