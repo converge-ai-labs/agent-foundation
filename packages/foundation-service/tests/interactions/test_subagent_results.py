@@ -10,6 +10,7 @@ from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions import (
     AttemptExecutionService,
     AttemptScheduler,
+    CompletedOutcomeCandidate,
     RunPayloadStore,
     RunStateStore,
 )
@@ -21,6 +22,7 @@ from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
+    MAX_INLINE_ASYNC_RESULT_BYTES,
     AsyncSubagentResultError,
     AsyncSubagentResultInboxPayload,
     AsyncSubagentResultMaterializer,
@@ -36,6 +38,7 @@ from .test_attempt_execution import _authority, _worker
 from .test_inbox import _state_with_receipts
 from .test_subagent_acceptance import (
     _accept_parent,
+    _complete_run,
     _grant_and_seed_child,
     _prepared_child,
 )
@@ -232,6 +235,51 @@ async def test_result_capacity_failure_leaves_no_partial_publication(
         assert counter is not None
         assert (counter.next_delivery_sequence, counter.pending_count) == (2, 1)
         assert [(row.id, row.kind) for row in rows] == [("inb_6666666666666666", "steer")]
+
+
+async def test_oversized_result_requires_item_reference_without_partial_publication(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    states, parent, _, child_run_id = await _accept_child(
+        interaction_sessions,
+        interaction_object_store,
+    )
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+        token_factory=lambda: "child-lease",
+        attempt_id_factory=lambda: "rat_bbbbbbbbbbbbbbbb",
+    )
+    claim = await scheduler.claim(child_run_id, _worker())
+    assert claim is not None
+    child_authority = _authority(claim)
+    async with short_session(interaction_sessions) as database:
+        child = await database.get(RunRecord, child_run_id)
+        assert child is not None
+        child_resource = child.to_resource()
+    await _complete_run(
+        interaction_sessions,
+        interaction_object_store,
+        states,
+        child_resource,
+        child_authority,
+        outcome=CompletedOutcomeCandidate(output="x" * MAX_INLINE_ASYNC_RESULT_BYTES),
+        time_offset_seconds=4,
+    )
+
+    with pytest.raises(AsyncSubagentResultError, match="authorized terminal result Item"):
+        await AsyncSubagentResultPublisher(interaction_sessions).publish(
+            tenant_id=TENANT_ID,
+            child_run_id=child_run_id,
+        )
+
+    async with short_session(interaction_sessions) as database:
+        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        rows = tuple((await database.scalars(select(ThreadInboxRecord))).all())
+        assert counter is not None
+        assert (counter.next_delivery_sequence, counter.pending_count, counter.pending_bytes) == (1, 0, 0)
+        assert rows == ()
 
 
 async def test_result_publication_reauthorizes_the_spawning_principal(

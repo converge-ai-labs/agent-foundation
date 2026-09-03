@@ -37,16 +37,16 @@ def build_async_subagent_result_payload(
     if child.status is RunStatus.completed:
         terminal_status = "completed"
         if child.output_object is not None:
-            digest = child.output_object.digest_sha256
-        else:
-            value = child.output
-            try:
-                encoded = rfc8785.dumps(value)
-            except rfc8785.CanonicalizationError as error:
-                raise AsyncSubagentResultError("sealed child output is not canonical JSON") from error
-            digest = hashlib.sha256(encoded).hexdigest()
-            if len(encoded) <= MAX_INLINE_ASYNC_RESULT_BYTES:
-                inline = value
+            raise AsyncSubagentResultError("object-backed child output requires an authorized terminal result Item")
+        value = child.output
+        try:
+            encoded = rfc8785.dumps(value)
+        except rfc8785.CanonicalizationError as error:
+            raise AsyncSubagentResultError("sealed child output is not canonical JSON") from error
+        if len(encoded) > MAX_INLINE_ASYNC_RESULT_BYTES:
+            raise AsyncSubagentResultError("oversized child output requires an authorized terminal result Item")
+        digest = hashlib.sha256(encoded).hexdigest()
+        inline = value
     else:
         terminal_status = "failed" if child.status is RunStatus.failed else "cancelled"
         if child.failure is None:
