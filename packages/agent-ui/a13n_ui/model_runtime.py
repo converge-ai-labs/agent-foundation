@@ -1,20 +1,38 @@
-"""Run-fresh native Model resolution for pinned Agent UI recipes."""
+"""Run-fresh native Model construction with request-fresh credentials."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from a13n_harness import AgentContext, infer_model
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.model_auth import (
+    CodexCredentials,
+    CodexCredentialSource,
+    GrokCredentials,
+    GrokCredentialSource,
+    build_codex_model,
+    build_grok_model,
+)
+from openai import AsyncOpenAI
 from pydantic_ai.models import Model, ModelResolutionContext
-from pydantic_ai.providers import Provider, infer_provider, infer_provider_class
+from pydantic_ai.providers import Provider, infer_provider_class
+from pydantic_ai.providers.openai import OpenAIProvider
 
-from a13n_ui.composition.models import ResolvedModelRecipe
+from a13n_ui.configuration import (
+    ApiKeyAuthentication,
+    CodexSubscriptionAuthentication,
+    GrokSubscriptionAuthentication,
+)
+
+if TYPE_CHECKING:
+    from a13n_ui.composition.models import ResolvedModelRecipe
 
 _PROVIDER_ALIASES = {
     "gemini": "google-cloud",
@@ -22,19 +40,45 @@ _PROVIDER_ALIASES = {
     "google-vertex": "google-cloud",
     "openai": "openai-responses",
 }
+_GROK_BASE_URL = "https://api.x.ai/v1"
+
+
+@dataclass(frozen=True, slots=True)
+class CodexSubscriptionSource:
+    """Host wiring for one Codex credential source and optional refresh override."""
+
+    source: CodexCredentialSource
+    refresh: Callable[[CodexCredentials], Awaitable[CodexCredentials]] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GrokSubscriptionSource:
+    """Host wiring for one Grok credential source and optional refresh override."""
+
+    source: GrokCredentialSource
+    refresh: Callable[[GrokCredentials], Awaitable[GrokCredentials]] | None = None
+
+
+type SubscriptionSource = CodexSubscriptionSource | GrokSubscriptionSource
 
 
 class AgentUiModelResolver:
-    """Resolve only logical IDs pinned by one reconstructed Agent snapshot."""
+    """Resolve logical recipes while leaving OAuth lifecycle ownership in Harness."""
 
-    def __init__(self, recipes: Mapping[str, ResolvedModelRecipe]) -> None:
-        copied = {key: value.model_copy(deep=True) for key, value in recipes.items()}
-        self._recipes = MappingProxyType(copied)
+    def __init__(
+        self,
+        recipes: Mapping[str, ResolvedModelRecipe],
+        *,
+        subscription_sources: Mapping[str, SubscriptionSource] | None = None,
+    ) -> None:
+        self._recipes = MappingProxyType({key: value.model_copy(deep=True) for key, value in recipes.items()})
+        self._subscription_sources = MappingProxyType(dict(subscription_sources or {}))
 
     def fresh(self) -> AgentUiModelResolver:
-        """Create one detached resolver for an independent Harness invocation."""
-
-        return AgentUiModelResolver(self._recipes)
+        return AgentUiModelResolver(
+            self._recipes,
+            subscription_sources=self._subscription_sources,
+        )
 
     async def __call__(
         self,
@@ -45,55 +89,112 @@ class AgentUiModelResolver:
         recipe = self._recipes.get(model_id)
         if recipe is None:
             raise ModelResolutionError(
-                "The requested Agent UI Model recipe is not pinned by this snapshot.",
+                "The requested Agent UI Model recipe is not present in this Run composition.",
                 code="model_recipe_missing",
                 details={"model_id": model_id},
             )
-        api_key: str | None = None
-        if recipe.api_key is not None:
-            api_key = os.environ.get(recipe.api_key.env)
-            if not api_key:
-                raise ModelResolutionError(
-                    "The required Agent UI Model credential source is unavailable.",
-                    code="model_credential_missing",
-                    details={"environment_variable": recipe.api_key.env},
-                )
-        provider_name = _PROVIDER_ALIASES.get(recipe.route.partition(":")[0], recipe.route.partition(":")[0])
+        authentication = recipe.authentication
+        if isinstance(authentication, ApiKeyAuthentication):
+            return self._api_key_model(recipe, authentication.env)
+        if isinstance(authentication, CodexSubscriptionAuthentication):
+            source = self._required_subscription_source(
+                "codex_subscription",
+                CodexSubscriptionSource,
+            )
+            return build_codex_model(
+                _model_name(recipe),
+                credential_source=source.source,
+                refresh=source.refresh,
+                originator="a13n-ui",
+            )
+        if isinstance(authentication, GrokSubscriptionAuthentication):
+            source = self._required_subscription_source(
+                "grok_subscription",
+                GrokSubscriptionSource,
+            )
+            return build_grok_model(
+                _model_name(recipe),
+                credential_source=source.source,
+                refresh=source.refresh,
+            )
+        raise ModelResolutionError(
+            "The Model authentication kind is unsupported.",
+            code="model_authentication_unsupported",
+        )
+
+    def _api_key_model(self, recipe: ResolvedModelRecipe, environment_name: str) -> Model:
+        api_key = os.environ.get(environment_name)
+        if not api_key:
+            raise ModelResolutionError(
+                "The required Agent UI Model credential source is unavailable.",
+                code="model_credential_missing",
+                details={"environment_variable": environment_name},
+            )
+        route_provider, separator, model_name = recipe.route.partition(":")
+        provider_name = _PROVIDER_ALIASES.get(route_provider, route_provider)
+        route = f"{provider_name}:{model_name}" if separator else recipe.route
 
         def provider_factory(requested_provider: str) -> Provider[Any]:
             if requested_provider != provider_name:
                 raise ModelResolutionError(
-                    "The native Model requested a Provider outside its pinned recipe.",
+                    "The native Model requested a Provider outside its resolved recipe.",
                     code="model_provider_mismatch",
                     details={"provider": requested_provider},
                 )
-            if api_key is None:
-                return infer_provider(requested_provider)
+            if route_provider == "grok":
+                return OpenAIProvider(openai_client=AsyncOpenAI(api_key=api_key, base_url=_GROK_BASE_URL))
             provider_type = infer_provider_class(requested_provider)
             constructor = cast(Callable[..., Provider[Any]], provider_type)
-            try:
-                return constructor(api_key=api_key)
-            except Exception as exc:
-                raise ModelResolutionError(
-                    "The selected Model Provider could not be constructed from its pinned credential source.",
-                    code="model_provider_invalid",
-                    details={"provider": requested_provider},
-                ) from exc
+            return constructor(api_key=api_key)
 
-        try:
-            return infer_model(recipe.route, provider_factory=provider_factory)
-        except ModelResolutionError:
-            raise
-        except Exception as exc:
+        return _infer(recipe, route=route, provider_factory=provider_factory)
+
+    def _required_subscription_source[SourceT: SubscriptionSource](
+        self,
+        authentication_kind: str,
+        source_type: type[SourceT],
+    ) -> SourceT:
+        source = self._subscription_sources.get(authentication_kind)
+        if source is None:
             raise ModelResolutionError(
-                "The pinned Agent UI Model recipe could not be reconstructed.",
-                code="model_reconstruction_failed",
-                details={"model_id": model_id},
-            ) from exc
+                "The selected subscription account integration is unavailable.",
+                code="model_account_integration_missing",
+                details={"authentication_kind": authentication_kind},
+            )
+        if not isinstance(source, source_type):
+            raise ModelResolutionError(
+                "The selected subscription account integration is incompatible.",
+                code="model_account_integration_invalid",
+                details={"authentication_kind": authentication_kind},
+            )
+        return source
+
+
+def _model_name(recipe: ResolvedModelRecipe) -> str:
+    _provider, separator, model_name = recipe.route.partition(":")
+    return model_name if separator else recipe.route
+
+
+def _infer(
+    recipe: ResolvedModelRecipe,
+    *,
+    route: str,
+    provider_factory: Callable[[str], Provider[Any]],
+) -> Model:
+    try:
+        return infer_model(route, provider_factory=provider_factory)
+    except ModelResolutionError:
+        raise
+    except Exception as exc:
+        raise ModelResolutionError(
+            "The resolved Agent UI Model recipe could not be reconstructed.",
+            code="model_reconstruction_failed",
+            details={"model_id": recipe.model_id},
+        ) from exc
 
 
 def model_recipe_id(recipe: ResolvedModelRecipe) -> str:
-    """Return a concise deterministic logical ID for one complete recipe."""
+    """Return a concise deterministic logical ID for one complete credential-free recipe."""
 
     encoded = json.dumps(
         recipe.model_dump(mode="json"),
@@ -105,4 +206,10 @@ def model_recipe_id(recipe: ResolvedModelRecipe) -> str:
     return f"agent-ui:model-{hashlib.sha256(encoded).hexdigest()[:24]}"
 
 
-__all__ = ["AgentUiModelResolver", "model_recipe_id"]
+__all__ = [
+    "AgentUiModelResolver",
+    "CodexSubscriptionSource",
+    "GrokSubscriptionSource",
+    "SubscriptionSource",
+    "model_recipe_id",
+]

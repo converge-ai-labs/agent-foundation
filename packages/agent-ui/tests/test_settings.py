@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from a13n_ui.errors import ConfigurationError
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.settings_loader import ensure_default_directories, load_agent_ui_settings
 from pydantic import ValidationError
@@ -42,11 +41,9 @@ async def test_loads_one_strict_full_settings_yaml(tmp_path: Path) -> None:
     settings_path = tmp_path / "settings.yaml"
     data_root = tmp_path / "data"
     settings_path.write_text(
-        f"""
-schema_version: "1"
+        """
+schema_version: "2"
 process:
-  storage:
-    data_root: {data_root.as_posix()}
   log_level: debug
 """.strip()
         + "\n"
@@ -56,6 +53,8 @@ process:
 
     assert source.explicit is True
     assert source.exists is True
+    assert source.configuration is not None
+    assert source.candidate_error is None
     assert source.settings.storage.data_root == data_root
     assert source.settings.log_level == "DEBUG"
 
@@ -74,7 +73,7 @@ async def test_default_settings_use_one_fixed_user_root(tmp_path: Path, monkeypa
     assert (tmp_path / ".a13n-ui/data").is_dir()
 
 
-async def test_settings_yaml_rejects_excessive_depth_with_bounded_error(tmp_path: Path) -> None:
+async def test_settings_yaml_reports_excessive_depth_as_candidate_error(tmp_path: Path) -> None:
     deep = tmp_path / "deep.yaml"
     lines = ["root:"]
     for depth in range(70):
@@ -82,21 +81,37 @@ async def test_settings_yaml_rejects_excessive_depth_with_bounded_error(tmp_path
     lines.append(f"{'  ' * 72}value")
     deep.write_text("\n".join(lines) + "\n")
 
-    with pytest.raises(ConfigurationError) as invalid:
-        await load_agent_ui_settings(deep)
-    assert invalid.value.code == "settings_source_limit"
+    source = await load_agent_ui_settings(deep)
+
+    assert source.explicit is True
+    assert source.exists is True
+    assert source.configuration is None
+    assert source.candidate_error is not None
+    assert source.candidate_error.code == "configuration_source_limit"
+    ensure_default_directories(source)
+    assert source.settings.storage.data_root.is_dir()
 
 
-async def test_settings_yaml_rejects_duplicate_keys_and_explicit_missing_files(tmp_path: Path) -> None:
+async def test_settings_yaml_reports_duplicate_keys_and_explicit_missing_file(
+    tmp_path: Path,
+) -> None:
     duplicate = tmp_path / "duplicate.yaml"
-    duplicate.write_text(
-        f"storage:\n  data_root: {tmp_path.as_posix()}\nstorage:\n  data_root: {tmp_path.as_posix()}\n"
-    )
+    duplicate.write_text('schema_version: "2"\nprocess:\n  log_level: INFO\nprocess:\n  log_level: DEBUG\n')
 
-    with pytest.raises(ConfigurationError) as invalid:
-        await load_agent_ui_settings(duplicate)
-    assert invalid.value.code == "settings_invalid"
+    source = await load_agent_ui_settings(duplicate)
 
-    with pytest.raises(ConfigurationError) as missing:
-        await load_agent_ui_settings(tmp_path / "missing.yaml")
-    assert missing.value.code == "settings_unavailable"
+    assert source.explicit is True
+    assert source.exists is True
+    assert source.configuration is None
+    assert source.candidate_error is not None
+    assert source.candidate_error.code == "settings_invalid"
+    assert source.settings.log_level == "INFO"
+
+    missing = await load_agent_ui_settings(tmp_path / "missing.yaml")
+    assert missing.explicit is True
+    assert missing.exists is False
+    assert missing.configuration is None
+    assert missing.candidate_error is not None
+    assert missing.candidate_error.code == "settings_unavailable"
+    ensure_default_directories(missing)
+    assert missing.settings.storage.data_root.is_dir()

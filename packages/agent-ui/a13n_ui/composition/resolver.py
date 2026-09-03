@@ -1,503 +1,582 @@
-"""Resolve one graph-valid Agent UI source candidate into trusted immutable snapshots."""
+"""Resolve accepted resources and one sticky Thread configuration into a Run composition."""
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
-from types import MappingProxyType
+from typing import Literal
 
-from a13n_environment_provider import EnvironmentProvider
-from a13n_harness import __version__ as harness_version
+from a13n_environment_provider import EnvironmentProviderRegistration
+from a13n_harness.environment import (
+    EnvironmentRunExtensionFactoryContext,
+    EnvironmentRunExtensionFactoryRegistration,
+)
 from a13n_harness.errors import PluginError
-from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
-from pydantic import BaseModel, JsonValue
+from a13n_harness.plugin_factories import (
+    HarnessPluginFactoryCatalog,
+    HarnessPluginFactoryRegistration,
+)
+from pydantic import JsonValue
 
-from a13n_ui.configuration.models import (
-    AgentConfig,
+from a13n_ui.configuration import (
+    AgentResource,
     AgentSubagentSelection,
+    ApiKeyAuthentication,
     CanonicalSubagent,
+    CodexSubscriptionAuthentication,
+    GrokSubscriptionAuthentication,
     LoadedAgentUiConfiguration,
-    MarkdownSubagentSelection,
-    ModelConfig,
+    ModelResource,
+    canonical_digest,
 )
 from a13n_ui.errors import CompositionError
+from a13n_ui.extensions import AgentUiExtensionCatalog, SelectedCapability
 from a13n_ui.model_adapters import PydanticAiModelAdapter
 
-from .catalogs import (
-    LOCAL_EIP_BINDER_KEY,
-    LOCAL_EIP_PROVIDER_KEY,
-    NATIVE_BINDER_KEY,
-    NATIVE_PROVIDER_KEY,
-    BinderCatalogEntry,
-    ProviderCatalogEntry,
-    TrustedProviderCatalog,
-    WorkspaceBinderCatalog,
-    builtin_workspace_binder_catalog,
-    mcp_adapter_lock,
-    plugin_dependency_lock,
-    pydantic_ai_adapter_lock,
-    selected_plugin_catalog,
-    selected_provider_catalog,
-)
 from .models import (
-    DependencyLock,
+    DependencyProvenance,
     ResolvedAgentNode,
-    ResolvedAgentSnapshot,
+    ResolvedCapabilityRecipe,
     ResolvedEnvironmentProfile,
     ResolvedMcpRecipe,
     ResolvedModelRecipe,
     ResolvedPluginRecipe,
+    ResolvedRunComposition,
+    ResolvedRunExtensionRecipe,
     ResolvedSubagent,
-    dependency_sort_key,
-    resolved_agent_node,
 )
 
-PACKAGE_PROMPT_REVISION = "1"
 PACKAGE_SYSTEM_PROMPT = "You are an AI assistant running in Agent UI."
-IMPLICIT_NATIVE_PROFILE = "__native__"
+PACKAGE_PROMPT_REVISION = "agent-ui/1"
+IMPLICIT_NATIVE_PROFILE = "environment-native"
+NATIVE_PROVIDER_KEY = "a13n.direct-local"
+NATIVE_ADAPTER_KEY = "a13n.native-project-root"
 _MAX_RESOLVED_NODES = 1024
+_MAX_RESOLVED_DEPTH = 128
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedConfiguration:
-    """Complete snapshot set produced from one stable source candidate."""
-
-    source: LoadedAgentUiConfiguration
-    agents: Mapping[str, ResolvedAgentSnapshot]
-    environments: Mapping[str, ResolvedEnvironmentProfile]
-    default_agent: str | None
-    default_environment: str
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "agents", MappingProxyType(dict(self.agents)))
-        object.__setattr__(self, "environments", MappingProxyType(dict(self.environments)))
+class ThreadCompositionSelection:
+    thread_id: str
+    version: int
+    project_id: str
+    agent_source_kind: Literal["agent", "markdown"]
+    agent_source_id: str
+    environment_profile_id: str
+    harness_plugin_ids: tuple[str, ...]
+    environment_run_extension_ids: tuple[str, ...]
+    mcp_server_ids: tuple[str, ...]
 
 
 class AgentCompositionResolver:
-    """Trusted all-or-nothing resolution boundary for Agent UI composition."""
+    """Validate installed selections and capture a complete immutable Run value."""
 
-    def __init__(
-        self,
-        *,
-        plugin_catalog: HarnessPluginFactoryCatalog | None = None,
-        binder_catalog: WorkspaceBinderCatalog | None = None,
-        provider_entries: tuple[ProviderCatalogEntry, ...] = (),
-    ) -> None:
-        self._injected_plugin_catalog = plugin_catalog
-        self._binders = binder_catalog or builtin_workspace_binder_catalog()
-        self._provider_entries = provider_entries
+    def __init__(self, catalog: AgentUiExtensionCatalog | None = None) -> None:
+        self.catalog = catalog or AgentUiExtensionCatalog()
         self._model_adapter = PydanticAiModelAdapter()
-        self._model_lock = pydantic_ai_adapter_lock()
-        self._mcp_lock = mcp_adapter_lock()
 
-    def resolve(self, source: LoadedAgentUiConfiguration) -> ResolvedConfiguration:
-        """Resolve every configured Agent and Environment profile without native construction or I/O."""
+    def validate_generation(self, source: LoadedAgentUiConfiguration) -> None:
+        """Validate every configured catalog key and package-owned configuration."""
 
-        document = source.document
-        models = {name: self._model_recipe(item) for name, item in sorted(document.models.items())}
-        plugin_recipes = self._plugin_recipes(source)
-        mcp_recipes = {
-            name: ResolvedMcpRecipe(
-                server_name=name,
-                transport=item.transport,
-                adapter_lock=self._mcp_lock,
-            )
-            for name, item in sorted(document.mcp_servers.items())
-            if item.enabled
-        }
-
-        _require_resolvable_graph(document.agents)
-        agents: dict[str, ResolvedAgentSnapshot] = {}
-        for name in sorted(document.agents):
-            budget = [_MAX_RESOLVED_NODES]
-            root = self._agent_node(
-                source=source,
-                name=name,
-                models=models,
-                plugins=plugin_recipes,
-                mcp_servers=mcp_recipes,
-                budget=budget,
-            )
-            dependencies = tuple(sorted(_node_dependencies(root), key=dependency_sort_key))
-            agents[name] = ResolvedAgentSnapshot(
-                harness_release=harness_version,
-                package_prompt_revision=PACKAGE_PROMPT_REVISION,
-                package_prompt_digest=_prompt_digest(),
-                dependencies=dependencies,
-                root=root,
-            )
-
-        environments = self._environment_profiles(source)
-        if IMPLICIT_NATIVE_PROFILE not in environments:
-            environments[IMPLICIT_NATIVE_PROFILE] = self._builtin_environment(
-                profile_name=IMPLICIT_NATIVE_PROFILE,
-                kind="native",
-                profile_configuration={},
-            )
-        default_environment = document.defaults.environment or IMPLICIT_NATIVE_PROFILE
-        return ResolvedConfiguration(
-            source=source,
-            agents=agents,
-            environments=environments,
-            default_agent=document.defaults.agent,
-            default_environment=default_environment,
-        )
-
-    def _model_recipe(self, item: ModelConfig) -> ResolvedModelRecipe:
-        normalized = self._model_adapter.validate(
-            route=item.model,
-            settings=item.settings,
-            model_cfg=item.model_cfg,
-        )
-        return ResolvedModelRecipe(
-            adapter_key=self._model_adapter.key,
-            route=normalized.route,
-            api_key=item.api_key,
-            settings=normalized.settings,
-            model_cfg=normalized.model_cfg,
-            adapter_lock=self._model_lock,
-        )
-
-    def _overridden_model(
-        self,
-        *,
-        source: LoadedAgentUiConfiguration,
-        child: CanonicalSubagent,
-        inherited: ResolvedModelRecipe,
-    ) -> ResolvedModelRecipe:
-        if child.model is None:
-            route = inherited.route
-            api_key = inherited.api_key
-            base_settings = inherited.settings
-            base_model_cfg = inherited.model_cfg
-        else:
-            selected = source.document.models[child.model]
-            route = selected.model
-            api_key = selected.api_key
-            base_settings = selected.settings
-            base_model_cfg = selected.model_cfg
-        settings = dict(base_settings)
-        if child.model_settings is not None:
-            settings.update(child.model_settings)
-        model_cfg = dict(base_model_cfg)
-        if child.model_cfg is not None:
-            model_cfg.update(child.model_cfg)
-        normalized = self._model_adapter.validate(route=route, settings=settings, model_cfg=model_cfg)
-        return ResolvedModelRecipe(
-            adapter_key=self._model_adapter.key,
-            route=normalized.route,
-            api_key=api_key,
-            settings=normalized.settings,
-            model_cfg=normalized.model_cfg,
-            adapter_lock=self._model_lock,
-        )
-
-    def _plugin_recipes(self, source: LoadedAgentUiConfiguration) -> dict[str, ResolvedPluginRecipe]:
-        enabled = {name: item for name, item in source.document.plugins.items() if item.enabled}
-        keys = tuple(sorted({item.plugin for item in enabled.values()}))
-        catalog = selected_plugin_catalog(keys, catalog=self._injected_plugin_catalog)
-        registrations = {item.plugin_key: item for item in catalog.registrations}
-        result: dict[str, ResolvedPluginRecipe] = {}
-        for name, item in sorted(enabled.items()):
-            registration = registrations.get(item.plugin)
-            if registration is None:
-                raise CompositionError(
-                    "A selected Harness Plugin registration is unavailable.",
-                    code="plugin_catalog_invalid",
-                    details={"plugin_key": item.plugin},
-                )
+        plugin_keys = tuple(item.plugin_key for item in source.harness_plugins.values())
+        plugin_catalog = self.catalog.plugin_catalog(plugin_keys)
+        for item in source.harness_plugins.values():
             try:
-                normalized = catalog.validate_configuration(item.plugin, item.configuration)
+                plugin_catalog.validate_configuration(item.plugin_key, item.configuration)
             except PluginError as exc:
                 raise CompositionError(
                     "Harness Plugin configuration is invalid.",
                     code="plugin_configuration_invalid",
-                    details={"plugin_name": name, "plugin_key": item.plugin},
+                    details={"plugin_id": item.id, "plugin_key": item.plugin_key},
                 ) from exc
-            result[name] = ResolvedPluginRecipe(
-                instance_name=name,
-                plugin_key=item.plugin,
-                configuration=dict(normalized),
-                factory_lock=plugin_dependency_lock(registration),
+
+        provider_keys = tuple(item.provider_key for item in source.environment_profiles.values())
+        if provider_keys:
+            providers = self.catalog.provider_catalog(provider_keys)
+            for item in source.environment_profiles.values():
+                provider = providers.require(item.provider_key)
+                adapter = self.catalog.environment_adapter(item.adapter_key, item.provider_key)
+                adapter.validate_profile(
+                    provider_schema_version=item.provider_schema_version,
+                    provider_configuration=item.provider_configuration,
+                    adapter_configuration=item.adapter_configuration,
+                    provider=provider,
+                )
+
+        extension_keys = tuple(item.extension_key for item in source.environment_run_extensions.values())
+        extension_catalog = self.catalog.run_extension_catalog(extension_keys)
+        for item in source.environment_run_extensions.values():
+            extension_catalog.create_extension(
+                EnvironmentRunExtensionFactoryContext(
+                    extension_key=item.extension_key,
+                    extension_id=item.id,
+                    configuration=item.configuration,
+                )
             )
-        return result
+
+        for model in source.models.values():
+            self._model_recipe(model)
+        for agent in source.agents.values():
+            self._capabilities(agent)
+
+    def resolve_run(
+        self,
+        source: LoadedAgentUiConfiguration,
+        selection: ThreadCompositionSelection,
+        *,
+        parent_node: ResolvedAgentNode | None = None,
+    ) -> ResolvedRunComposition:
+        """Resolve one exact Thread head against one accepted source generation."""
+
+        self._validate_selection(source, selection)
+        project = source.projects[selection.project_id]
+        plugin_catalog = self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values()))
+        budget = [_MAX_RESOLVED_NODES]
+        if selection.agent_source_kind == "agent":
+            root = self._agent_node(
+                source,
+                source.agents[selection.agent_source_id],
+                plugin_catalog=plugin_catalog,
+                root_plugins=selection.harness_plugin_ids,
+                root_mcp=selection.mcp_server_ids,
+                budget=budget,
+                depth=1,
+            )
+        else:
+            if parent_node is None:
+                raise CompositionError(
+                    "A Markdown child Run requires its admitting parent composition.",
+                    code="markdown_parent_missing",
+                )
+            root = self._markdown_node(
+                source,
+                source.subagents[selection.agent_source_id],
+                parent=parent_node,
+                plugin_ids=selection.harness_plugin_ids,
+                mcp_ids=selection.mcp_server_ids,
+                budget=budget,
+                depth=1,
+            )
+
+        environment = self._environment_profile(source, selection.environment_profile_id)
+        run_extensions, extension_dependencies = self._run_extensions(source, selection.environment_run_extension_ids)
+        dependencies = [
+            *self._agent_dependencies(source, root),
+            *self._environment_dependencies(source, environment),
+            *extension_dependencies,
+        ]
+        unique = {
+            (
+                item.kind,
+                item.key,
+                item.source,
+                item.class_module,
+                item.class_qualname,
+                item.import_target,
+                item.distribution_name,
+                item.distribution_version,
+            ): item
+            for item in dependencies
+        }
+        return ResolvedRunComposition(
+            package_prompt_revision=PACKAGE_PROMPT_REVISION,
+            generation_digest=source.source_digest,
+            thread_id=selection.thread_id,
+            thread_configuration_version=selection.version,
+            project_id=project.id,
+            project_roots=tuple(item.path for item in project.roots),
+            root=root,
+            environment_profile=environment,
+            environment_run_extensions=run_extensions,
+            dependencies=tuple(sorted(unique.values(), key=lambda item: (item.kind, item.key))),
+        )
+
+    def _validate_selection(
+        self,
+        source: LoadedAgentUiConfiguration,
+        selection: ThreadCompositionSelection,
+    ) -> None:
+        if selection.project_id not in source.projects:
+            raise CompositionError("The Thread Project is unavailable.", code="project_missing")
+        sources = source.agents if selection.agent_source_kind == "agent" else source.subagents
+        if selection.agent_source_id not in sources:
+            raise CompositionError("The Thread Agent source is unavailable.", code="agent_source_missing")
+        if selection.environment_profile_id != IMPLICIT_NATIVE_PROFILE and (
+            selection.environment_profile_id not in source.environment_profiles
+        ):
+            raise CompositionError("The Thread Environment profile is unavailable.", code="environment_profile_missing")
+        _require_ids(selection.harness_plugin_ids, source.harness_plugins, "Harness Plugin")
+        _require_ids(selection.environment_run_extension_ids, source.environment_run_extensions, "Run Extension")
+        _require_ids(selection.mcp_server_ids, source.mcp_servers, "MCP server")
 
     def _agent_node(
         self,
-        *,
         source: LoadedAgentUiConfiguration,
-        name: str,
-        models: Mapping[str, ResolvedModelRecipe],
-        plugins: Mapping[str, ResolvedPluginRecipe],
-        mcp_servers: Mapping[str, ResolvedMcpRecipe],
+        agent: AgentResource,
+        *,
+        plugin_catalog: HarnessPluginFactoryCatalog,
+        root_plugins: tuple[str, ...] | None,
+        root_mcp: tuple[str, ...] | None,
         budget: list[int],
+        depth: int,
     ) -> ResolvedAgentNode:
-        _consume_node_budget(budget)
-        definition = source.document.agents[name]
-        selected_plugins = tuple(plugins[item] for item in source.document.selected_plugins(definition))
-        selected_mcp = tuple(mcp_servers[item] for item in source.document.selected_mcp_servers(definition))
-        instructions = (PACKAGE_SYSTEM_PROMPT, definition.instructions)
+        _consume_budget(budget, depth)
+        plugin_ids = source.selected_plugins(agent) if root_plugins is None else root_plugins
+        mcp_ids = source.selected_mcp_servers(agent) if root_mcp is None else root_mcp
+        plugins = self._plugins(source, plugin_ids, plugin_catalog)
+        mcp = tuple(ResolvedMcpRecipe(server_id=item, transport=source.mcp_servers[item].transport) for item in mcp_ids)
+        model = self._model_recipe(source.models[agent.model])
+        capabilities = tuple(
+            ResolvedCapabilityRecipe(capability=item.capability, configuration=item.configuration)
+            for item in agent.capabilities
+        )
+        self._capabilities(agent)
         children: list[ResolvedSubagent] = []
-        for selection in definition.subagents:
-            if isinstance(selection, MarkdownSubagentSelection):
-                markdown = source.markdown(selection.markdown)
-                children.append(
-                    self._markdown_child(
-                        source=source,
-                        child=markdown,
-                        inherited_model=models[definition.model],
-                        inherited_instructions=instructions,
-                        inherited_plugins=selected_plugins,
-                        inherited_mcp=selected_mcp,
-                        budget=budget,
-                    )
-                )
-            elif isinstance(selection, AgentSubagentSelection):
+        provisional = ResolvedAgentNode(
+            source_kind="agent",
+            source_id=agent.id,
+            roster_name=agent.id,
+            instructions=(PACKAGE_SYSTEM_PROMPT, agent.instructions),
+            model=model,
+            capabilities=capabilities,
+            harness_plugins=plugins,
+            mcp_servers=mcp,
+            tools=agent.tools,
+            children=(),
+        )
+        for edge in agent.subagents:
+            if isinstance(edge, AgentSubagentSelection):
+                child_resource = source.agents[edge.agent]
                 child = self._agent_node(
-                    source=source,
-                    name=selection.agent,
-                    models=models,
-                    plugins=plugins,
-                    mcp_servers=mcp_servers,
+                    source,
+                    child_resource,
+                    plugin_catalog=plugin_catalog,
+                    root_plugins=None,
+                    root_mcp=None,
                     budget=budget,
+                    depth=depth + 1,
                 )
                 children.append(
                     ResolvedSubagent(
-                        name=selection.agent,
-                        description=f"Delegate suitable work to the reusable {selection.agent} Agent.",
+                        name=child_resource.id,
+                        description=f"Delegate suitable work to {child_resource.name}.",
+                        source_kind="agent",
+                        source_id=child_resource.id,
                         definition=child,
                     )
                 )
-            else:  # pragma: no cover - strict source models make this unreachable
-                raise TypeError("unsupported subagent selection")
-        return resolved_agent_node(
-            source_kind="agent",
-            source_name=name,
-            instructions=instructions,
-            model=models[definition.model],
-            plugins=selected_plugins,
-            mcp_servers=selected_mcp,
-            children=tuple(children),
-        )
+            else:
+                markdown = source.subagents[edge.markdown]
+                child = self._markdown_node(
+                    source,
+                    markdown,
+                    parent=provisional,
+                    plugin_ids=plugin_ids,
+                    mcp_ids=mcp_ids,
+                    budget=budget,
+                    depth=depth + 1,
+                )
+                children.append(
+                    ResolvedSubagent(
+                        name=markdown.name,
+                        description=markdown.description,
+                        instruction=markdown.instruction,
+                        source_kind="markdown",
+                        source_id=markdown.id,
+                        definition=child,
+                    )
+                )
+        return provisional.model_copy(update={"children": tuple(children)})
 
-    def _markdown_child(
+    def _markdown_node(
         self,
-        *,
         source: LoadedAgentUiConfiguration,
         child: CanonicalSubagent,
-        inherited_model: ResolvedModelRecipe,
-        inherited_instructions: tuple[str, ...],
-        inherited_plugins: tuple[ResolvedPluginRecipe, ...],
-        inherited_mcp: tuple[ResolvedMcpRecipe, ...],
+        *,
+        parent: ResolvedAgentNode,
+        plugin_ids: tuple[str, ...],
+        mcp_ids: tuple[str, ...],
         budget: list[int],
-    ) -> ResolvedSubagent:
-        _consume_node_budget(budget)
-        instructions = inherited_instructions
-        if child.body:
-            instructions = (*instructions, child.body)
-        definition = resolved_agent_node(
+        depth: int,
+    ) -> ResolvedAgentNode:
+        _consume_budget(budget, depth)
+        model = parent.model if child.model is None else self._model_recipe(source.models[child.model])
+        return ResolvedAgentNode(
             source_kind="markdown",
-            source_name=child.name,
-            instructions=instructions,
-            model=self._overridden_model(source=source, child=child, inherited=inherited_model),
-            plugins=inherited_plugins,
-            mcp_servers=inherited_mcp,
-            tools=child.tools,
-            optional_tools=child.optional_tools,
-        )
-        return ResolvedSubagent(
-            name=child.name,
-            description=child.description,
-            instruction=child.instruction,
-            definition=definition,
-        )
-
-    def _environment_profiles(self, source: LoadedAgentUiConfiguration) -> dict[str, ResolvedEnvironmentProfile]:
-        document = source.document
-        requested_keys = {NATIVE_PROVIDER_KEY, LOCAL_EIP_PROVIDER_KEY}
-        requested_keys.update(item.provider for item in document.environment_providers.values() if item.enabled)
-        providers = selected_provider_catalog(
-            provider_keys=sorted(requested_keys),
-            explicit_entries=self._provider_entries,
+            source_id=child.id,
+            roster_name=child.name,
+            instructions=(PACKAGE_SYSTEM_PROMPT, child.body),
+            model=model,
+            capabilities=parent.capabilities,
+            harness_plugins=self._plugins(
+                source,
+                plugin_ids,
+                self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values())),
+            ),
+            mcp_servers=tuple(
+                ResolvedMcpRecipe(server_id=item, transport=source.mcp_servers[item].transport) for item in mcp_ids
+            ),
+            tools=parent.tools if child.tools is None else child.tools,
+            children=(),
         )
 
-        configured: dict[str, tuple[ProviderCatalogEntry, BinderCatalogEntry, Mapping[str, JsonValue]]] = {}
-        for name, item in sorted(document.environment_providers.items()):
-            if not item.enabled:
-                continue
-            provider = providers.require(item.provider)
-            binder = self._binders.require(item.binder)
-            self._require_compatible_binder(provider.provider, binder)
-            self._validate_profile_configuration(
-                binder=binder,
-                provider_configuration=item.configuration,
-                profile_configuration={},
-            )
-            configured[name] = (provider, binder, item.configuration)
+    def _model_recipe(self, item: ModelResource) -> ResolvedModelRecipe:
+        _validate_auth_route(item)
+        normalized = self._model_adapter.validate(
+            route=item.route,
+            settings=item.settings,
+            model_cfg=item.model_configuration,
+        )
+        return ResolvedModelRecipe(
+            model_id=item.id,
+            route=normalized.route,
+            authentication=item.authentication,
+            settings=normalized.settings,
+            model_configuration=normalized.model_cfg,
+        )
 
-        result: dict[str, ResolvedEnvironmentProfile] = {}
-        for name, profile in sorted(document.environments.items()):
-            if profile.kind in {"native", "local_eip"}:
-                result[name] = self._builtin_environment(
-                    profile_name=name,
-                    kind=profile.kind,
-                    profile_configuration=profile.configuration,
-                    providers=providers,
-                )
-                continue
-            selected_name = profile.provider
-            if selected_name is None or selected_name not in configured:
-                raise CompositionError(
-                    "The Environment profile selects an unavailable Provider configuration.",
-                    code="environment_provider_missing",
-                    details={"profile_name": name},
-                )
-            provider, binder, provider_configuration = configured[selected_name]
-            normalized = self._validate_profile_configuration(
-                binder=binder,
-                provider_configuration=provider_configuration,
-                profile_configuration=profile.configuration,
-            )
-            result[name] = ResolvedEnvironmentProfile(
-                profile_name=name,
-                kind="provider",
-                provider_key=provider.provider.key,
-                provider_schema_version=binder.binder.provider_schema_version,
-                binder_key=binder.binder.key,
-                configuration=normalized,
-                provider_lock=provider.lock,
-                binder_lock=binder.lock,
-            )
-        return result
+    def _capabilities(self, agent: AgentResource) -> tuple[SelectedCapability, ...]:
+        return self.catalog.capabilities(tuple((item.capability, item.configuration) for item in agent.capabilities))
 
-    def _builtin_environment(
+    def _plugins(
         self,
-        *,
-        profile_name: str,
-        kind: str,
-        profile_configuration: Mapping[str, JsonValue],
-        providers: TrustedProviderCatalog | None = None,
-    ) -> ResolvedEnvironmentProfile:
-        if kind == "native":
-            provider_key = NATIVE_PROVIDER_KEY
-            binder_key = NATIVE_BINDER_KEY
-        elif kind == "local_eip":
-            provider_key = LOCAL_EIP_PROVIDER_KEY
-            binder_key = LOCAL_EIP_BINDER_KEY
-        else:  # pragma: no cover - caller is closed over the two built-ins
-            raise TypeError("unsupported built-in Environment kind")
-        catalog = providers or selected_provider_catalog(
-            provider_keys=(NATIVE_PROVIDER_KEY, LOCAL_EIP_PROVIDER_KEY),
-            explicit_entries=self._provider_entries,
-        )
-        provider = catalog.require(provider_key)
-        binder = self._binders.require(binder_key)
-        self._require_compatible_binder(provider.provider, binder)
-        normalized = self._validate_profile_configuration(
-            binder=binder,
-            provider_configuration={},
-            profile_configuration=profile_configuration,
-        )
-        return ResolvedEnvironmentProfile(
-            profile_name=profile_name,
-            kind=kind,
-            provider_key=provider_key,
-            provider_schema_version=binder.binder.provider_schema_version,
-            binder_key=binder_key,
-            configuration=normalized,
-            provider_lock=provider.lock,
-            binder_lock=binder.lock,
-        )
-
-    @staticmethod
-    def _require_compatible_binder(provider: EnvironmentProvider, binder: BinderCatalogEntry) -> None:
-        if binder.binder.provider_key != provider.key:
-            raise CompositionError(
-                "The selected workspace binder is incompatible with its Environment Provider.",
-                code="workspace_binder_incompatible",
-                details={"binder_key": binder.binder.key, "provider_key": provider.key},
-            )
-        if binder.binder.provider_schema_version not in provider.configuration_versions:
-            raise CompositionError(
-                "The workspace binder selects an unsupported Provider configuration version.",
-                code="workspace_binder_incompatible",
-                details={"binder_key": binder.binder.key, "provider_key": provider.key},
-            )
-
-    @staticmethod
-    def _validate_profile_configuration(
-        *,
-        binder: BinderCatalogEntry,
-        provider_configuration: Mapping[str, JsonValue],
-        profile_configuration: Mapping[str, JsonValue],
-    ) -> dict[str, JsonValue]:
-        try:
-            validated = binder.binder.validate_profile(
-                provider_configuration=provider_configuration,
-                profile_configuration=profile_configuration,
-            )
-            if not isinstance(validated, BaseModel):
-                raise TypeError("workspace binder validation must return a BaseModel")
-            dumped = validated.model_dump(mode="json")
-            if not isinstance(dumped, dict) or any(not isinstance(key, str) for key in dumped):
-                raise TypeError("workspace binder validation must return an object model")
-            return dumped
-        except CompositionError:
-            raise
-        except Exception as exc:
-            raise CompositionError(
-                "Environment profile configuration is invalid.",
-                code="environment_profile_configuration_invalid",
-                details={"binder_key": binder.binder.key},
-            ) from exc
-
-
-def _require_resolvable_graph(agents: Mapping[str, AgentConfig]) -> None:
-    """Bound every expanded named-Agent tree before recursive snapshot construction."""
-
-    for root in agents:
-        count = 0
-        stack: list[tuple[str, int]] = [(root, 1)]
-        while stack:
-            name, depth = stack.pop()
-            count += 1
-            if count > _MAX_RESOLVED_NODES or depth > 128:
+        source: LoadedAgentUiConfiguration,
+        plugin_ids: tuple[str, ...],
+        plugin_catalog: HarnessPluginFactoryCatalog,
+    ) -> tuple[ResolvedPluginRecipe, ...]:
+        result: list[ResolvedPluginRecipe] = []
+        for resource_id in plugin_ids:
+            resource = source.harness_plugins[resource_id]
+            try:
+                normalized = plugin_catalog.validate_configuration(resource.plugin_key, resource.configuration)
+            except PluginError as exc:
                 raise CompositionError(
-                    "The resolved Agent graph exceeds the supported size or depth bound.",
-                    code="agent_graph_too_large",
-                    details={"agent_name": root},
+                    "Harness Plugin configuration is invalid.", code="plugin_configuration_invalid"
+                ) from exc
+            result.append(
+                ResolvedPluginRecipe(
+                    plugin_id=resource.id,
+                    plugin_key=resource.plugin_key,
+                    configuration=dict(normalized),
                 )
-            stack.extend(
-                (selection.agent, depth + 1)
-                for selection in reversed(agents[name].subagents)
-                if isinstance(selection, AgentSubagentSelection)
             )
+        return tuple(result)
 
+    def _environment_profile(
+        self,
+        source: LoadedAgentUiConfiguration,
+        profile_id: str,
+    ) -> ResolvedEnvironmentProfile:
+        if profile_id == IMPLICIT_NATIVE_PROFILE:
+            behavior = {
+                "provider_key": NATIVE_PROVIDER_KEY,
+                "provider_schema_version": "1",
+                "provider_configuration": {},
+                "adapter_key": NATIVE_ADAPTER_KEY,
+                "adapter_configuration": {},
+            }
+            return ResolvedEnvironmentProfile(
+                profile_id=profile_id,
+                behavior_digest=canonical_digest(behavior),
+                provider_key=NATIVE_PROVIDER_KEY,
+                provider_schema_version="1",
+                provider_configuration={},
+                adapter_key=NATIVE_ADAPTER_KEY,
+                adapter_configuration={},
+            )
+        item = source.environment_profiles[profile_id]
+        provider = self.catalog.provider_catalog((item.provider_key,)).require(item.provider_key)
+        adapter = self.catalog.environment_adapter(item.adapter_key, item.provider_key)
+        provider_configuration, adapter_configuration = adapter.validate_profile(
+            provider_schema_version=item.provider_schema_version,
+            provider_configuration=item.provider_configuration,
+            adapter_configuration=item.adapter_configuration,
+            provider=provider,
+        )
+        behavior: dict[str, JsonValue] = {
+            "provider_key": item.provider_key,
+            "provider_schema_version": item.provider_schema_version,
+            "provider_configuration": provider_configuration,
+            "adapter_key": item.adapter_key,
+            "adapter_configuration": adapter_configuration,
+        }
+        return ResolvedEnvironmentProfile(
+            profile_id=item.id,
+            behavior_digest=canonical_digest(behavior),
+            provider_key=item.provider_key,
+            provider_schema_version=item.provider_schema_version,
+            provider_configuration=provider_configuration,
+            adapter_key=item.adapter_key,
+            adapter_configuration=adapter_configuration,
+        )
 
-def _consume_node_budget(budget: list[int]) -> None:
-    budget[0] -= 1
-    if budget[0] < 0:
-        raise CompositionError(
-            "The resolved Agent graph exceeds the supported node bound.",
-            code="agent_graph_too_large",
+    def _run_extensions(
+        self,
+        source: LoadedAgentUiConfiguration,
+        resource_ids: tuple[str, ...],
+    ) -> tuple[tuple[ResolvedRunExtensionRecipe, ...], tuple[DependencyProvenance, ...]]:
+        resources = tuple(source.environment_run_extensions[item] for item in resource_ids)
+        catalog = self.catalog.run_extension_catalog(tuple(item.extension_key for item in resources))
+        registrations = {item.extension_key: item for item in catalog.registrations}
+        recipes: list[ResolvedRunExtensionRecipe] = []
+        dependencies: list[DependencyProvenance] = []
+        for item in resources:
+            catalog.create_extension(
+                EnvironmentRunExtensionFactoryContext(
+                    extension_key=item.extension_key,
+                    extension_id=item.id,
+                    configuration=item.configuration,
+                )
+            )
+            registration = registrations[item.extension_key]
+            recipes.append(
+                ResolvedRunExtensionRecipe(
+                    extension_id=item.id,
+                    extension_key=item.extension_key,
+                    configuration=item.configuration,
+                )
+            )
+            dependencies.append(
+                _registration_provenance(
+                    "environment_run_extension",
+                    registration,
+                    source=self.catalog.run_extension_source(item.extension_key),
+                )
+            )
+        return tuple(recipes), tuple(dependencies)
+
+    def _agent_dependencies(
+        self,
+        source: LoadedAgentUiConfiguration,
+        root: ResolvedAgentNode,
+    ) -> tuple[DependencyProvenance, ...]:
+        nodes = [root]
+        plugin_keys: set[str] = set()
+        capability_keys: set[str] = set()
+        while nodes:
+            node = nodes.pop()
+            plugin_keys.update(item.plugin_key for item in node.harness_plugins)
+            capability_keys.update(item.capability for item in node.capabilities)
+            nodes.extend(item.definition for item in node.children)
+        dependencies: list[DependencyProvenance] = []
+        if plugin_keys:
+            catalog = self.catalog.plugin_catalog(tuple(sorted(plugin_keys)))
+            registrations = {item.plugin_key: item for item in catalog.registrations}
+            dependencies.extend(
+                _registration_provenance(
+                    "harness_plugin",
+                    registrations[key],
+                    source=self.catalog.plugin_source(key),
+                )
+                for key in sorted(plugin_keys)
+            )
+        for key in sorted(capability_keys):
+            selected = self.catalog.capabilities(((key, self._capability_configuration(root, key)),))[0]
+            reference = selected.implementation
+            dependencies.append(
+                DependencyProvenance(
+                    kind="capability",
+                    key=key,
+                    source=reference.source,
+                    class_module=reference.implementation_type.__module__,
+                    class_qualname=reference.implementation_type.__qualname__,
+                    import_target=reference.import_target,
+                    distribution_name=reference.distribution_name,
+                    distribution_version=reference.distribution_version,
+                )
+            )
+        return tuple(dependencies)
+
+    def _capability_configuration(self, root: ResolvedAgentNode, key: str) -> dict[str, JsonValue]:
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            for item in node.capabilities:
+                if item.capability == key:
+                    return item.configuration
+            stack.extend(item.definition for item in node.children)
+        raise KeyError(key)
+
+    def _environment_dependencies(
+        self,
+        source: LoadedAgentUiConfiguration,
+        profile: ResolvedEnvironmentProfile,
+    ) -> tuple[DependencyProvenance, ...]:
+        provider = self.catalog.provider_catalog((profile.provider_key,))
+        registration = next(item for item in provider.registrations if item.provider_key == profile.provider_key)
+        adapter = self.catalog.adapter_reference(profile.adapter_key)
+        return (
+            _registration_provenance(
+                "environment_provider",
+                registration,
+                source=self.catalog.provider_source(profile.provider_key),
+            ),
+            DependencyProvenance(
+                kind="environment_adapter",
+                key=profile.adapter_key,
+                source=adapter.source,
+                class_module=adapter.implementation_type.__module__,
+                class_qualname=adapter.implementation_type.__qualname__,
+                import_target=adapter.import_target,
+                distribution_name=adapter.distribution_name,
+                distribution_version=adapter.distribution_version,
+            ),
         )
 
 
-def _node_dependencies(root: ResolvedAgentNode) -> set[DependencyLock]:
-    result: set[DependencyLock] = set()
-    stack = [root]
-    while stack:
-        node = stack.pop()
-        result.add(node.model.adapter_lock)
-        result.update(item.factory_lock for item in node.plugins)
-        result.update(item.adapter_lock for item in node.mcp_servers)
-        stack.extend(child.definition for child in reversed(node.children))
-    return result
+def _registration_provenance(
+    kind: Literal["harness_plugin", "environment_provider", "environment_run_extension"],
+    registration: HarnessPluginFactoryRegistration
+    | EnvironmentProviderRegistration
+    | EnvironmentRunExtensionFactoryRegistration,
+    *,
+    source: Literal["installed", "host"],
+) -> DependencyProvenance:
+    if isinstance(registration, HarnessPluginFactoryRegistration):
+        key = registration.plugin_key
+    elif isinstance(registration, EnvironmentProviderRegistration):
+        key = registration.provider_key
+    else:
+        key = registration.extension_key
+    return DependencyProvenance(
+        kind=kind,
+        key=key,
+        source=source,
+        class_module=registration.class_module,
+        class_qualname=registration.class_qualname,
+        import_target=registration.import_target,
+        distribution_name=registration.distribution_name,
+        distribution_version=registration.distribution_version,
+    )
 
 
-def _prompt_digest() -> str:
-    return hashlib.sha256(PACKAGE_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+def _validate_auth_route(item: ModelResource) -> None:
+    prefix = item.route.split(":", 1)[0]
+    authentication = item.authentication
+    if isinstance(authentication, CodexSubscriptionAuthentication) and prefix != "openai-codex":
+        raise CompositionError(
+            "Codex subscription authentication requires an openai-codex route.", code="model_auth_invalid"
+        )
+    if isinstance(authentication, GrokSubscriptionAuthentication) and prefix not in {"grok", "grok-build"}:
+        raise CompositionError("Grok subscription authentication requires a Grok route.", code="model_auth_invalid")
+    if isinstance(authentication, ApiKeyAuthentication) and prefix in {"openai-codex", "grok-build"}:
+        raise CompositionError(
+            "The selected subscription route does not accept API-key authentication.", code="model_auth_invalid"
+        )
+
+
+def _consume_budget(budget: list[int], depth: int) -> None:
+    budget[0] -= 1
+    if budget[0] < 0 or depth > _MAX_RESOLVED_DEPTH:
+        raise CompositionError("Resolved Agent graph exceeds its bounds.", code="agent_graph_too_large")
+
+
+def _require_ids(values: tuple[str, ...], resources: Mapping[str, object], label: str) -> None:
+    if len(values) != len(set(values)):
+        raise CompositionError(f"{label} selections must be unique.", code="thread_configuration_invalid")
+    for value in values:
+        if value not in resources:
+            raise CompositionError(f"The selected {label} is unavailable.", code="thread_resource_missing")
 
 
 __all__ = [
@@ -505,5 +584,5 @@ __all__ = [
     "PACKAGE_PROMPT_REVISION",
     "PACKAGE_SYSTEM_PROMPT",
     "AgentCompositionResolver",
-    "ResolvedConfiguration",
+    "ThreadCompositionSelection",
 ]

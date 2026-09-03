@@ -65,19 +65,26 @@ def test_state_import_rejects_removed_process_namespace() -> None:
 
 
 def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:
-    state = HarnessState.new()
+    state = HarnessState.new(thread_id="thr_hostroot")
     copied = state.model_copy(deep=True)
     restored = HarnessState.model_validate_json(state.model_dump_json())
     forked = state.fork()
+    host_forked = state.fork(thread_id="thr_hostfork")
 
     assert state.schema_version == "1"
-    assert state.thread_id.startswith("thread-")
+    assert state.thread_id == "thr_hostroot"
     assert copied.thread_id == state.thread_id
     assert restored.thread_id == state.thread_id
+    assert forked.thread_id.startswith("thread-")
     assert forked.thread_id != state.thread_id
-    assert forked.message_history == state.message_history
-    assert forked.agent_context_state == state.agent_context_state
-    assert forked.environment_states == {}
+    assert host_forked.thread_id == "thr_hostfork"
+    for value in (forked, host_forked):
+        assert value.message_history == state.message_history
+        assert value.agent_context_state == state.agent_context_state
+        assert value.environment_states == {}
+
+    with pytest.raises(ValueError, match="must differ"):
+        state.fork(thread_id=state.thread_id)
 
 
 def test_independent_states_receive_distinct_thread_identities() -> None:
@@ -104,10 +111,13 @@ def test_import_requires_explicit_schema_version_and_thread_identity(payload: di
     [
         "",
         "thread-",
+        "1-thread",
+        "thread.with.dot",
+        "thread with space",
+        "thread-custom",
         "conversation-0123456789abcdef0123456789abcdef",
-        "thread-0123456789abcdef0123456789abcde",
-        "thread-0123456789abcdef0123456789abcdef0",
         "thread-0123456789ABCDEF0123456789ABCDEF",
+        "thread-" + "a" * 250,
     ],
 )
 def test_state_rejects_malformed_thread_identities(thread_id: str) -> None:

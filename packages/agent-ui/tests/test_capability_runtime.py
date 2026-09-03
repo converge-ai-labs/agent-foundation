@@ -15,7 +15,6 @@ from a13n_ui.capability_runtime import (
     LocalDocumentConverter,
     PublicWebPolicy,
     _PinnedNetworkBackend,
-    production_portable_capabilities,
     production_run_capabilities,
 )
 from openpyxl import Workbook
@@ -78,9 +77,6 @@ async def test_local_document_converter_converts_a_real_workbook() -> None:
 
 
 def test_production_capabilities_bind_only_required_fresh_collaborators() -> None:
-    catalog = production_portable_capabilities()
-    assert tuple(catalog) == ("search", "documents", "files", "shell")
-
     none = production_run_capabilities(frozenset())
     web = production_run_capabilities(frozenset({"a13n.web"}))
     documents = production_run_capabilities(frozenset({"a13n.documents"}))

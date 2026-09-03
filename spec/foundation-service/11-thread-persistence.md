@@ -55,7 +55,9 @@ class Thread:
     updated_at: datetime
 ```
 
-`id` equals the `thread_id` in the Thread's first complete `HarnessState` and in every later Run state for that Thread. It retains the Harness-owned `thread-` format and is not re-encoded as another Foundation identifier. The ID grants no authority.
+`id` equals the `thread_id` in the Thread's first complete `HarnessState` and in every later Run state for that Thread. Foundation allocates the Thread's Foundation object ID first and passes it to `HarnessState.new(thread_id=id)` for a new or empty-history Thread, or to `source_state.fork(thread_id=id)` for a fork. The Harness stores and projects that same value without re-encoding it. The ID grants no authority.
+
+A previously committed or imported Thread whose valid Harness state uses the legacy Harness-generated `thread-<32 lowercase hex>` form retains that exact value in both the Thread row and every later state; Foundation never rewrites an existing identity. New Foundation-owned Threads use the shared Foundation object-ID generator rather than the legacy generated form.
 
 `version` is the positive Thread domain-object version. It starts at `1` when the Thread and first Run commit and increases by one for every accepted Thread advancement and every transition that seals the current Run. Idempotent replay resolves before comparing an expected version. Claim, execution, and worker recovery inside the same current Run use the Run's own version and do not change the Thread version. A state-first combined completion and queued successor acceptance applies both logically ordered changes in one transaction and therefore increments `version` by two.
 
@@ -65,11 +67,11 @@ class Thread:
 
 Origin fields preserve structural provenance without granting authority or replacing Run state lineage:
 
-| Origin  | Required fields                                                        | Meaning                                                                         |
-| ------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `new`   | Both origin references absent; role is `root`                          | New Session root with no source history                                         |
-| `fork`  | `origin_thread_id` and completed `origin_run_id` present               | New history initialized through `HarnessState.fork()` from the exact source Run |
-| `child` | Parent `origin_thread_id` and `origin_run_id` present; role is `child` | Host-managed child history caused by the selected parent Run                    |
+| Origin  | Required fields                                                        | Meaning                                                                                  |
+| ------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `new`   | Both origin references absent; role is `root`                          | New Session root initialized with `HarnessState.new(thread_id=id)`                       |
+| `fork`  | `origin_thread_id` and completed `origin_run_id` present               | New history initialized with `source_state.fork(thread_id=id)` from the exact source Run |
+| `child` | Parent `origin_thread_id` and `origin_run_id` present; role is `child` | Host-managed child history caused by the selected parent Run                             |
 
 `origin_run_id` is the source Run for a fork and structural cause for a child. Only a fork uses that source as its first Run's state parent. A child that starts with empty history has a root Run with `parent_run_id=null`; its structural relationship remains in the Thread origin and child relationship records.
 

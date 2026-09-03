@@ -105,7 +105,7 @@ async def test_model_resolver_observes_state_owned_identity_across_continuation_
         AgentSpec(model="logical:primary"),
         output_type=str,
     )
-    previous = HarnessState.new()
+    previous = HarnessState.new(thread_id="thr_hostroot")
 
     first = await executable.run(
         "first",
@@ -117,10 +117,11 @@ async def test_model_resolver_observes_state_owned_identity_across_continuation_
         bindings=RunBindings.embedded(model_resolver=binding),
         previous_state=previous,
     )
+    forked_state = previous.fork(thread_id="thr_hostfork")
     forked = await executable.run(
         "forked",
         bindings=RunBindings.embedded(model_resolver=binding),
-        previous_state=previous.fork(),
+        previous_state=forked_state,
     )
 
     assert first.state is not None
@@ -151,13 +152,16 @@ async def test_agent_model_settings_reach_the_resolved_model_unchanged() -> None
         output_type=str,
     )
 
+    previous = HarnessState.new(thread_id="thr_hostroot")
     result = await executable.run(
         "hello",
         bindings=RunBindings.embedded(model_resolver=binding),
+        previous_state=previous,
     )
 
     assert result.output_or_raise() == "configured"
     assert result.state is not None
+    assert result.state.thread_id == "thr_hostroot"
     assert seen == [
         ModelSettings(
             temperature=0.25,

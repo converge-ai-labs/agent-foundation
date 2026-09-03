@@ -32,13 +32,13 @@ async def test_object_round_trip_is_canonical_and_reuses_exact_content(tmp_path:
     created_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
     first = await store.publish(
-        object_kind=ObjectKind.agent_snapshot,
+        object_kind=ObjectKind.configuration_generation,
         object_schema_version="1",
         payload={"unicode": "你好", "ordered": {"b": 2, "a": 1}},
         created_at=created_at,
     )
     second = await store.publish(
-        object_kind=ObjectKind.agent_snapshot,
+        object_kind=ObjectKind.configuration_generation,
         object_schema_version="1",
         payload={"ordered": {"a": 1, "b": 2}, "unicode": "你好"},
         created_at=created_at.replace(second=6),
@@ -68,7 +68,7 @@ async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Pa
 
     with pytest.raises(StoreIntegrityError) as non_finite:
         await store.publish(
-            object_kind=ObjectKind.agent_snapshot,
+            object_kind=ObjectKind.configuration_generation,
             object_schema_version="1",
             payload={"value": float("nan")},
         )
@@ -76,7 +76,7 @@ async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Pa
 
     with pytest.raises(StoreIntegrityError) as excessive:
         await store.publish(
-            object_kind=ObjectKind.agent_snapshot,
+            object_kind=ObjectKind.configuration_generation,
             object_schema_version="1",
             payload={"value": "x" * 2048},
         )
@@ -84,7 +84,7 @@ async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Pa
 
     with pytest.raises(StoreIntegrityError) as unknown_codec:
         await store.publish(
-            object_kind=ObjectKind.agent_snapshot,
+            object_kind=ObjectKind.configuration_generation,
             object_schema_version="1",
             payload={},
             payload_codec_version="2",
@@ -93,7 +93,7 @@ async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Pa
 
     with pytest.raises(ValidationError):
         ObjectRef(
-            object_kind=ObjectKind.agent_snapshot,
+            object_kind=ObjectKind.configuration_generation,
             object_schema_version="2",
             logical_digest="0" * 64,
         )
@@ -102,7 +102,7 @@ async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Pa
 async def test_object_read_rejects_corruption_truncation_and_trailing_data(tmp_path: Path) -> None:
     store, layout = _object_store(tmp_path)
     envelope = await store.publish(
-        object_kind=ObjectKind.session_continuation,
+        object_kind=ObjectKind.continuation,
         object_schema_version="1",
         payload={"step": 1},
     )

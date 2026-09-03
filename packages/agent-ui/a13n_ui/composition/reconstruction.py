@@ -1,128 +1,112 @@
-"""Trusted process-local reconstruction of pinned Agent snapshots."""
+"""Fresh native Harness construction from one resolved Agent UI Run composition."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from types import MappingProxyType
 from typing import Any, cast
 
-from a13n_harness import (
-    AgentDefinition,
-    AgentSpec,
-    ExecutableAgent,
-    HarnessBuilder,
-    SubagentDefinition,
-)
-from a13n_harness import (
-    __version__ as harness_version,
-)
+from a13n_harness import AgentContext, AgentDefinition, AgentSpec, ExecutableAgent, HarnessBuilder, SubagentDefinition
 from a13n_harness.capabilities import SubagentCapability, SubagentOperator
-from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
-from a13n_harness.errors import HarnessError
-from a13n_harness.plugin_factories import (
-    HarnessPluginFactoryCatalog,
-    HarnessPluginFactoryContext,
-)
-from pydantic_ai.capabilities import AbstractCapability
+from a13n_harness.errors import HarnessError, PluginError
+from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
+from pydantic_ai import RunContext
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_ui.errors import CompositionError
+from a13n_ui.extensions import AgentUiExtensionCatalog
 from a13n_ui.mcp_adapters import AgentUiMCP
-from a13n_ui.model_runtime import AgentUiModelResolver, model_recipe_id
+from a13n_ui.model_runtime import AgentUiModelResolver, SubscriptionSource, model_recipe_id
 
-from .catalogs import (
-    mcp_adapter_lock,
-    plugin_dependency_lock,
-    pydantic_ai_adapter_lock,
-    selected_plugin_catalog,
-)
-from .models import ResolvedAgentNode, ResolvedAgentSnapshot
-
-type PortableCapabilityFactory = Callable[[], AbstractCapability[Any]]
+from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
 
 
 @dataclass(frozen=True, slots=True)
 class ReconstructedAgent:
-    """One executable, its Model resolver, and required Host run attachments."""
+    """One fresh executable and the Run bindings needed to invoke it."""
 
     executable: ExecutableAgent[str]
     model_resolver: AgentUiModelResolver
-    run_capability_ids: frozenset[str] = frozenset()
+    definition_capability_ids: frozenset[str]
+
+
+class _ToolAllowlistCapability(AbstractCapability[AgentContext]):
+    id: str | None = "a13n.ui.tool-allowlist"
+
+    def __init__(self, names: frozenset[str]) -> None:
+        self.names = names
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(position="innermost")
+
+    def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
+        return _ToolAllowlistToolset(toolset, self.names)
+
+
+class _ToolAllowlistToolset(WrapperToolset[AgentContext]):
+    def __init__(self, wrapped: AbstractToolset[AgentContext], names: frozenset[str]) -> None:
+        super().__init__(wrapped)
+        self._names = names
+
+    async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        tools = await self.wrapped.get_tools(ctx)
+        missing = self._names - tools.keys()
+        if missing:
+            raise CompositionError(
+                "The selected tool allowlist contains an unavailable tool.",
+                code="tool_selection_missing",
+                details={"tool": sorted(missing)[0]},
+            )
+        return {name: tool for name, tool in tools.items() if name in self._names}
 
 
 class AgentReconstructor:
-    """Verify installed provenance and build the exact pinned Harness graph."""
+    """Build a fresh native Agent graph without resolving credentials or entering Environments."""
 
-    def __init__(
-        self,
-        *,
-        plugin_catalog: HarnessPluginFactoryCatalog | None = None,
-        portable_capabilities: Mapping[str, PortableCapabilityFactory] | None = None,
-    ) -> None:
-        self._injected_plugin_catalog = plugin_catalog
-        self._portable_capabilities = MappingProxyType(dict(portable_capabilities or {}))
+    def __init__(self, catalog: AgentUiExtensionCatalog | None = None) -> None:
+        self._catalog = catalog or AgentUiExtensionCatalog()
 
     def reconstruct(
         self,
-        snapshot: ResolvedAgentSnapshot,
+        composition: ResolvedRunComposition,
         *,
         subagent_operator: SubagentOperator | None,
         root_capabilities: Sequence[AbstractCapability[Any]] = (),
+        subscription_sources: Mapping[str, SubscriptionSource] | None = None,
     ) -> ReconstructedAgent:
-        """Reconstruct without resolving credentials, entering Environments, or starting work."""
-
-        plugin_catalog = self._verify_snapshot(snapshot)
-        recipes: dict[str, object] = {}
-        definition = self._definition(
-            snapshot.root,
-            plugin_catalog=plugin_catalog,
-            subagent_operator=subagent_operator,
-            root_capabilities=tuple(root_capabilities),
-            is_root=True,
-            model_recipes=recipes,
+        plugin_keys = tuple(
+            dict.fromkeys(
+                recipe.plugin_key for node in _walk_nodes(composition.root) for recipe in node.harness_plugins
+            )
         )
-        typed_recipes = {key: value for key, value in recipes.items() if isinstance(value, type(snapshot.root.model))}
-        if len(typed_recipes) != len(recipes):  # pragma: no cover - private construction is closed
-            raise TypeError("invalid Model recipe collection")
         try:
+            plugin_catalog = self._catalog.plugin_catalog(plugin_keys)
+            model_recipes: dict[str, ResolvedModelRecipe] = {}
+            definition = self._definition(
+                composition.root,
+                plugin_catalog=plugin_catalog,
+                subagent_operator=subagent_operator,
+                root_capabilities=tuple(root_capabilities),
+                root=True,
+                model_recipes=model_recipes,
+            )
             executable = HarnessBuilder(configured_plugins_enabled=False).build(definition)
-        except HarnessError as exc:
+        except CompositionError:
+            raise
+        except (HarnessError, PluginError, ValueError, TypeError) as exc:
             raise CompositionError(
-                "The pinned Agent snapshot could not be built by Harness.",
-                code="agent_reconstruction_failed",
+                "The resolved Run composition could not be constructed by Harness.",
+                code="run_composition_reconstruction_failed",
             ) from exc
         return ReconstructedAgent(
             executable=cast(ExecutableAgent[str], executable),
-            model_resolver=AgentUiModelResolver(typed_recipes),
-            run_capability_ids=frozenset(
-                capability.id for capability in definition.capabilities if capability.id is not None
+            model_resolver=AgentUiModelResolver(
+                model_recipes,
+                subscription_sources=subscription_sources,
             ),
+            definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
         )
-
-    def _verify_snapshot(self, snapshot: ResolvedAgentSnapshot) -> HarnessPluginFactoryCatalog:
-        if snapshot.harness_release != harness_version:
-            raise CompositionError(
-                "The pinned Agent snapshot requires a different Harness release.",
-                code="agent_snapshot_incompatible",
-            )
-        expected_model = pydantic_ai_adapter_lock()
-        expected_mcp = mcp_adapter_lock()
-        for lock in snapshot.dependencies:
-            if lock.dependency_kind == "model-adapter" and lock != expected_model:
-                raise _provenance_mismatch(lock.key)
-            if lock.dependency_kind == "mcp-adapter" and lock != expected_mcp:
-                raise _provenance_mismatch(lock.key)
-
-        plugin_keys = tuple(sorted({lock.key for lock in snapshot.dependencies if lock.dependency_kind == "plugin"}))
-        catalog = selected_plugin_catalog(plugin_keys, catalog=self._injected_plugin_catalog)
-        registrations = {item.plugin_key: item for item in catalog.registrations}
-        for lock in snapshot.dependencies:
-            if lock.dependency_kind != "plugin":
-                continue
-            registration = registrations.get(lock.key)
-            if registration is None or plugin_dependency_lock(registration) != lock:
-                raise _provenance_mismatch(lock.key)
-        return catalog
 
     def _definition(
         self,
@@ -131,130 +115,81 @@ class AgentReconstructor:
         plugin_catalog: HarnessPluginFactoryCatalog,
         subagent_operator: SubagentOperator | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
-        is_root: bool,
-        model_recipes: dict[str, object],
+        root: bool,
+        model_recipes: dict[str, ResolvedModelRecipe],
     ) -> AgentDefinition[str]:
-        model_id = model_recipe_id(node.model)
-        previous = model_recipes.setdefault(model_id, node.model)
+        recipe_id = model_recipe_id(node.model)
+        previous = model_recipes.setdefault(recipe_id, node.model)
         if previous != node.model:
-            raise CompositionError(
-                "Two pinned Model recipes map to the same logical ID.",
-                code="model_recipe_collision",
-            )
+            raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
 
-        capabilities: list[AbstractCapability[Any]] = [
-            *self._portable_node_capabilities(node),
-            *(AgentUiMCP(recipe) for recipe in node.mcp_servers),
-        ]
+        selected = self._catalog.capabilities(
+            tuple((item.capability, item.configuration) for item in node.capabilities)
+        )
+        capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
+        capabilities.extend(AgentUiMCP(item) for item in node.mcp_servers)
         if node.children:
             if not isinstance(subagent_operator, SubagentOperator):
                 raise CompositionError(
-                    "The pinned Agent roster requires the Agent UI async subagent operator.",
+                    "The resolved Agent roster requires the Agent UI subagent operator.",
                     code="subagent_operator_missing",
                 )
             capabilities.append(SubagentCapability(async_enabled=True, operator=subagent_operator))
-        if is_root:
+        if node.tools is not None:
+            capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools)))
+        if root:
             capabilities.extend(root_capabilities)
 
-        children = tuple(
-            SubagentDefinition(
-                name=edge.name,
-                description=_edge_description(edge.description, edge.instruction),
-                agent=self._definition(
-                    edge.definition,
-                    plugin_catalog=plugin_catalog,
-                    subagent_operator=subagent_operator,
-                    root_capabilities=(),
-                    is_root=False,
-                    model_recipes=model_recipes,
-                ),
-            )
-            for edge in node.children
-        )
         plugins = tuple(
             plugin_catalog.create_plugin(
                 HarnessPluginFactoryContext(
-                    plugin_key=recipe.plugin_key,
-                    plugin_id=recipe.instance_name,
-                    configuration=recipe.configuration,
+                    plugin_key=item.plugin_key,
+                    plugin_id=item.plugin_id,
+                    configuration=item.configuration,
                     extensions={},
                 )
             )
-            for recipe in node.plugins
+            for item in node.harness_plugins
         )
-        spec = AgentSpec(
-            model=model_id,
-            model_settings=dict(node.model.settings),
-            system_prompt=list(node.instructions),
+        children = tuple(
+            SubagentDefinition(
+                name=item.name,
+                description=(
+                    item.description if item.instruction is None else f"{item.description}\n\n{item.instruction}"
+                ),
+                agent=self._definition(
+                    item.definition,
+                    plugin_catalog=plugin_catalog,
+                    subagent_operator=subagent_operator,
+                    root_capabilities=(),
+                    root=False,
+                    model_recipes=model_recipes,
+                ),
+            )
+            for item in node.children
         )
         return AgentDefinition(
-            agent=spec,
+            agent=AgentSpec(
+                model=recipe_id,
+                model_settings=dict(node.model.settings),
+                system_prompt=list(node.instructions),
+            ),
             output_type=str,
-            definition_id=f"agent-ui:{node.definition_digest}",
+            definition_id=f"agent-ui:{node.source_kind}:{node.source_id}",
             capabilities=tuple(capabilities),
             plugins=plugins,
             subagents=children,
         )
 
-    def _portable_node_capabilities(self, node: ResolvedAgentNode) -> tuple[AbstractCapability[Any], ...]:
-        available = self._portable_capabilities
-        if node.tools is None:
-            selected = list(available)
-        else:
-            missing = [name for name in node.tools if name not in available]
-            if missing:
-                raise CompositionError(
-                    "A Markdown child selects a portable tool family unavailable in this Agent UI release.",
-                    code="portable_tool_unavailable",
-                    details={"tool": missing[0]},
-                )
-            selected = list(node.tools)
-        if node.optional_tools is not None:
-            selected.extend(name for name in node.optional_tools if name in available and name not in selected)
-        capabilities: list[AbstractCapability[Any]] = []
-        environment_files = False
-        environment_shell = False
-        for name in selected:
-            capability = available[name]()
-            if not isinstance(capability, AbstractCapability):
-                raise CompositionError(
-                    "An Agent UI portable tool factory returned an invalid Capability.",
-                    code="portable_tool_invalid",
-                    details={"tool": name},
-                )
-            if isinstance(capability, DynamicEnvironmentCapability):
-                environment_files = environment_files or capability.configuration.files_enabled
-                environment_shell = environment_shell or capability.configuration.shell_enabled
-            else:
-                capabilities.append(capability)
-        if environment_files or environment_shell:
-            capabilities.append(
-                DynamicEnvironmentCapability(
-                    DynamicEnvironmentConfiguration(
-                        files_enabled=environment_files,
-                        shell_enabled=environment_shell,
-                    )
-                )
-            )
-        return tuple(capabilities)
+
+def _walk_nodes(root: ResolvedAgentNode) -> tuple[ResolvedAgentNode, ...]:
+    values: list[ResolvedAgentNode] = []
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        values.append(node)
+        pending.extend(reversed(tuple(item.definition for item in node.children)))
+    return tuple(values)
 
 
-def _edge_description(description: str, instruction: str | None) -> str:
-    if instruction is None:
-        return description
-    return f"{description}\n\n{instruction}"
-
-
-def _provenance_mismatch(key: str) -> CompositionError:
-    return CompositionError(
-        "Installed trusted runtime provenance does not match the pinned Agent snapshot.",
-        code="agent_snapshot_provenance_mismatch",
-        details={"key": key},
-    )
-
-
-__all__ = [
-    "AgentReconstructor",
-    "PortableCapabilityFactory",
-    "ReconstructedAgent",
-]
+__all__ = ["AgentReconstructor", "ReconstructedAgent"]

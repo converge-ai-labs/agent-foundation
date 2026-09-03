@@ -274,6 +274,14 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
     assert isinstance(claim, ClaimedAttempt)
     execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
 
+    validated = await execution.validate(_authority(claim))
+    assert (validated.run_version, validated.attempt_version) == (
+        claim.run_version,
+        claim.attempt.version,
+    )
+    with pytest.raises(AttemptAuthorityError):
+        await execution.validate(_authority(claim, lease_token="wrong-token"))
+
     with pytest.raises(AttemptAuthorityError):
         await execution.heartbeat(
             _authority(claim, lease_token="wrong-token"),

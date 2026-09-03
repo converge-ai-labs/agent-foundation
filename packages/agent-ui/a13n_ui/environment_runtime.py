@@ -1,10 +1,11 @@
-"""Trusted workspace binding and Host-authoritative Environment run state."""
+"""Host-authoritative Project Environment preparation and state publication."""
 
 from __future__ import annotations
 
 import inspect
 import os
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
@@ -21,61 +22,49 @@ from a13n_environment_provider import (
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_agent_envd_executable,
 )
-from anyio import CancelScope, move_on_after, to_thread
-from pydantic import BaseModel, ConfigDict, Field
-
-from a13n_ui.composition.catalogs import (
-    LOCAL_EIP_PROVIDER_KEY,
-    NATIVE_PROVIDER_KEY,
-    BinderCatalogEntry,
-    EnvironmentWorkspaceBinder,
-    ProviderCatalogEntry,
-    ProviderRuntime,
-    WorkspaceBinderCatalog,
-    builtin_workspace_binder_catalog,
-    selected_provider_catalog,
+from a13n_harness.environment import (
+    EnvironmentAction,
+    EnvironmentPermissionSet,
+    EnvironmentRunExtension,
+    EnvironmentRunExtensionFactoryContext,
 )
-from a13n_ui.composition.models import DependencyLock, ResolvedEnvironmentProfile
+from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.environment.providers import (
+    BoundEnvironmentProvider,
+    EnvironmentProviderBinding,
+    EnvironmentRuntime,
+    EnvironmentRuntimeMount,
+)
+from a13n_harness.identity import AgentInstanceContext
+from anyio import CancelScope, move_on_after, to_thread
+
+from a13n_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
 from a13n_ui.errors import CompositionError, EnvironmentLifecycleError, StoreError
+from a13n_ui.extensions import (
+    LOCAL_ENVD_PROVIDER_KEY,
+    NATIVE_PROVIDER_KEY,
+    AgentUiExtensionCatalog,
+    EnvironmentProjectAdapter,
+)
 from a13n_ui.managed_runtime import ManagedEnvdRuntime
 from a13n_ui.settings import EnvdRuntimeSettings
-from a13n_ui.storage import (
-    EnvironmentBindingKey,
-    LocalStore,
-    ObjectRef,
-    Session,
-    StoredEnvironmentState,
-)
+from a13n_ui.storage import EnvironmentBindingKey, LocalStore, ObjectRef, StoredEnvironmentState
 from a13n_ui.storage.objects import ObjectKind
 
-
-class WorkspaceBinding(BaseModel):
-    """One normalized ordered folder list captured for a single admitted Run."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
-
-    folders: tuple[Path, ...] = Field(min_length=1, max_length=64)
-
-
-type ProviderRuntimeFactory = Callable[
-    [EnvironmentProvider],
-    object | Awaitable[object | None] | None,
-]
+type ProviderRuntimeFactory = Callable[[EnvironmentProvider], object | Awaitable[object | None] | None]
 
 
 @dataclass(frozen=True, slots=True)
 class ReconstructedEnvironmentProfile:
-    """Verified pinned profile with trusted process-local implementations."""
+    """A resolved profile paired with current trusted process-local implementations."""
 
     profile: ResolvedEnvironmentProfile
-    binder: EnvironmentWorkspaceBinder
+    adapter: EnvironmentProjectAdapter
     provider: EnvironmentProvider
 
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentStatePublication:
-    """One changed-state publication outcome independent from continuation selection."""
-
     key: EnvironmentBindingKey
     previous: ObjectRef | None
     replacement: ObjectRef | None
@@ -85,8 +74,6 @@ class EnvironmentStatePublication:
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentFinalization:
-    """Complete non-destructive cleanup and state-publication outcome."""
-
     cleanup_errors: tuple[Exception, ...]
     state_publications: tuple[EnvironmentStatePublication, ...]
 
@@ -100,21 +87,68 @@ class _PreparedMount:
     environment: Environment
 
 
+class _EnvironmentBinding(EnvironmentProviderBinding):
+    """Transfer one fresh Provider Environment into a Harness runtime."""
+
+    def __init__(self, environment: Environment) -> None:
+        self._environment = environment
+        self._used = False
+        self._discarded = False
+
+    @property
+    def provider_type(self) -> str:
+        return self._environment.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self._environment.environment_id
+
+    @asynccontextmanager
+    async def bind(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        instance: AgentInstanceContext,
+        mount_id: str,
+        host_refs: Mapping[str, str],
+    ) -> AsyncIterator[BoundEnvironmentProvider]:
+        if self._used or self._discarded:
+            raise EnvironmentLifecycleError(
+                "An Environment binding can be used exactly once.",
+                code="environment_binding_reused",
+            )
+        self._used = True
+        try:
+            await self._environment.enter(
+                thread_id=thread_id,
+                run_id=run_id,
+                agent_instance_id=instance.agent_instance_id,
+                mount_id=mount_id,
+                host_refs=host_refs,
+            )
+            yield self._environment
+        finally:
+            await self._environment.close()
+
+    async def discard(self) -> None:
+        self._discarded = True
+        await self._environment.close()
+
+
 class EnvironmentSnapshotReconstructor:
-    """Verify profile provenance and create fresh Provider runtime collaborators."""
+    """Resolve current trusted Provider/adapter implementations for a composition."""
 
     def __init__(
         self,
         *,
+        catalog: AgentUiExtensionCatalog | None = None,
         envd_settings: EnvdRuntimeSettings | None = None,
-        binder_catalog: WorkspaceBinderCatalog | None = None,
-        provider_entries: tuple[ProviderCatalogEntry, ...] = (),
         runtime_factories: Mapping[str, ProviderRuntimeFactory] | None = None,
         local_runtime_parent: Path | None = None,
     ) -> None:
+        self._catalog = catalog or AgentUiExtensionCatalog()
         self._envd_settings = envd_settings or EnvdRuntimeSettings()
-        self._binders = binder_catalog or builtin_workspace_binder_catalog()
-        self._provider_entries = provider_entries
         self._runtime_factories = MappingProxyType(dict(runtime_factories or {}))
         self._local_runtime_parent = local_runtime_parent
         self._managed_envd = (
@@ -128,83 +162,72 @@ class EnvironmentSnapshotReconstructor:
         )
 
     def reconstruct(self, profile: ResolvedEnvironmentProfile) -> ReconstructedEnvironmentProfile:
-        """Verify exact installed Provider and binder provenance without external I/O."""
-
-        providers = selected_provider_catalog(
-            provider_keys=(profile.provider_key,),
-            explicit_entries=self._provider_entries,
+        provider = self._catalog.provider_catalog((profile.provider_key,)).require(profile.provider_key)
+        adapter = self._catalog.environment_adapter(profile.adapter_key, profile.provider_key)
+        adapter.validate_profile(
+            provider_schema_version=profile.provider_schema_version,
+            provider_configuration=profile.provider_configuration,
+            adapter_configuration=profile.adapter_configuration,
+            provider=provider,
         )
-        provider = providers.require(profile.provider_key)
-        binder = self._binders.require(profile.binder_key)
-        _verify_profile_provenance(profile, provider=provider, binder=binder)
-        if binder.binder.provider_key != provider.provider.key:
-            raise CompositionError(
-                "The pinned workspace binder is incompatible with its Environment Provider.",
-                code="workspace_binder_incompatible",
-                details={"binder_key": profile.binder_key, "provider_key": profile.provider_key},
-            )
-        if profile.provider_schema_version not in provider.provider.configuration_versions:
-            raise CompositionError(
-                "The pinned Provider configuration version is unavailable.",
-                code="environment_snapshot_incompatible",
-                details={"provider_key": profile.provider_key},
-            )
-        return ReconstructedEnvironmentProfile(
-            profile=profile,
-            binder=binder.binder,
-            provider=provider.provider,
-        )
+        return ReconstructedEnvironmentProfile(profile=profile, adapter=adapter, provider=provider)
 
     async def bind(
         self,
         reconstructed: ReconstructedEnvironmentProfile,
         *,
-        folder: Path,
+        root: Path,
         state: EnvironmentState | None,
     ) -> Environment:
-        """Create one fresh inert adapter for one normalized folder."""
-
         collaborator = await self._runtime_collaborator(reconstructed.provider)
-        runtime = ProviderRuntime(provider=reconstructed.provider, collaborator=collaborator)
         try:
-            environment = await reconstructed.binder.bind(
+            environment = await reconstructed.adapter.bind(
                 profile=reconstructed.profile,
-                folder=folder,
+                root=root,
                 state=state,
-                runtime=runtime,
+                provider=reconstructed.provider,
+                runtime=collaborator,
             )
         except CompositionError:
             raise
         except Exception as exc:
             raise EnvironmentLifecycleError(
-                "The Environment workspace binder could not construct an adapter.",
+                "The Environment Project adapter could not construct an Environment.",
                 code="environment_binding_failed",
-                details={"binder_key": reconstructed.profile.binder_key},
+                details={"adapter_key": reconstructed.profile.adapter_key},
             ) from exc
-        if not isinstance(environment, Environment):
+        if not isinstance(environment, Environment) or environment.provider_key != reconstructed.profile.provider_key:
             raise EnvironmentLifecycleError(
-                "The Environment workspace binder returned an invalid adapter.",
+                "The Environment Project adapter returned an incompatible Environment.",
                 code="environment_binding_invalid",
-                details={"binder_key": reconstructed.profile.binder_key},
-            )
-        if environment.provider_key != reconstructed.profile.provider_key:
-            raise EnvironmentLifecycleError(
-                "The Environment workspace binder retargeted its pinned Provider.",
-                code="environment_binding_invalid",
-                details={"binder_key": reconstructed.profile.binder_key},
+                details={"adapter_key": reconstructed.profile.adapter_key},
             )
         return environment
+
+    async def create_extensions(self, composition: ResolvedRunComposition) -> tuple[EnvironmentRunExtension, ...]:
+        recipes = composition.environment_run_extensions
+        catalog = self._catalog.run_extension_catalog(tuple(item.extension_key for item in recipes))
+        return tuple(
+            catalog.create_extension(
+                EnvironmentRunExtensionFactoryContext(
+                    extension_key=item.extension_key,
+                    extension_id=item.extension_id,
+                    configuration=item.configuration,
+                )
+            )
+            for item in recipes
+        )
 
     async def _runtime_collaborator(self, provider: EnvironmentProvider) -> object | None:
         if provider.key == NATIVE_PROVIDER_KEY:
             return DirectLocalProviderRuntime()
-        if provider.key == LOCAL_EIP_PROVIDER_KEY:
+        if provider.key == LOCAL_ENVD_PROVIDER_KEY:
             executable = self._envd_settings.executable
             if executable is None:
                 if self._managed_envd is None:
                     raise EnvironmentLifecycleError(
-                        "Local EIP requires an Agent UI runtime cache or an explicit executable override.",
-                        code="local_eip_runtime_unavailable",
+                        "Local Envd requires the Agent UI runtime cache or an executable override.",
+                        code="local_envd_runtime_unavailable",
                     )
                 resolved = await self._managed_envd.resolve()
             else:
@@ -216,7 +239,7 @@ class EnvironmentSnapshotReconstructor:
         factory = self._runtime_factories.get(provider.key)
         if factory is None:
             raise EnvironmentLifecycleError(
-                "No trusted runtime factory is available for the pinned Environment Provider.",
+                "No trusted runtime factory is registered for the selected Environment Provider.",
                 code="provider_runtime_unsupported",
                 details={"provider_key": provider.key},
             )
@@ -225,23 +248,27 @@ class EnvironmentSnapshotReconstructor:
 
 
 class EnvironmentRunPlan:
-    """Prepared single-use Environment inputs plus later Host-state publication."""
+    """Single-use Harness Environment runtime plus later Host-state publication."""
 
     def __init__(
-        self, *, store: LocalStore, profile: ResolvedEnvironmentProfile, mounts: Sequence[_PreparedMount]
+        self,
+        *,
+        store: LocalStore,
+        profile: ResolvedEnvironmentProfile,
+        mounts: Sequence[_PreparedMount],
+        runtime: EnvironmentRuntime,
     ) -> None:
         self._store = store
         self.profile = profile
         self._mounts = tuple(mounts)
+        self.runtime = runtime
         self.environments: Mapping[str, Environment] = MappingProxyType(
-            {mount.alias: mount.environment for mount in self._mounts}
+            {item.alias: item.environment for item in mounts}
         )
-        self.default_environment = self._mounts[0].alias
+        self.default_environment = mounts[0].alias
         self._finalized = False
 
     async def finalize(self, *, timeout_seconds: float = 30.0) -> EnvironmentFinalization:
-        """Close adapters within one bound, then publish every known changed cached state."""
-
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         if self._finalized:
@@ -267,7 +294,19 @@ class EnvironmentRunPlan:
 
         publications: list[EnvironmentStatePublication] = []
         for mount in self._mounts:
-            final_state = mount.environment.dump_state()
+            try:
+                final_state = mount.environment.dump_state()
+            except Exception as exc:
+                publications.append(
+                    EnvironmentStatePublication(
+                        key=mount.key,
+                        previous=mount.expected_state_ref,
+                        replacement=None,
+                        status="failed",
+                        error=exc,
+                    )
+                )
+                continue
             if final_state == mount.supplied_state:
                 publications.append(
                     EnvironmentStatePublication(
@@ -287,12 +326,13 @@ class EnvironmentRunPlan:
                         state=final_state,
                         created_at=_utc_now(),
                     )
-                    envelope = await self._store.objects.publish_model(
-                        object_kind=ObjectKind.environment_state,
-                        value=stored,
-                    )
-                    replacement = envelope.ref
-                await self._store.environment_states.select_state(
+                    replacement = (
+                        await self._store.objects.publish_model(
+                            object_kind=ObjectKind.environment_state,
+                            value=stored,
+                        )
+                    ).ref
+                await self._store.environment_states.select(
                     key=mount.key,
                     expected=mount.expected_state_ref,
                     replacement=replacement,
@@ -323,64 +363,70 @@ class EnvironmentRunPlan:
 
 
 class EnvironmentRunService:
-    """Prepare deterministic Harness mounts from one Session pin and message binding."""
+    """Prepare Project roots from an admitted immutable Run composition."""
 
-    def __init__(
-        self,
-        store: LocalStore,
-        reconstructor: EnvironmentSnapshotReconstructor,
-    ) -> None:
+    def __init__(self, store: LocalStore, reconstructor: EnvironmentSnapshotReconstructor) -> None:
         self._store = store
         self._reconstructor = reconstructor
 
-    async def prepare(self, session: Session, binding: WorkspaceBinding) -> EnvironmentRunPlan:
-        """Load Host-authoritative state and construct fresh adapters before Run entry."""
-
-        profile = await self._store.objects.read_model(
-            session.environment_snapshot.object,
-            ResolvedEnvironmentProfile,
-        )
+    async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
+        profile = composition.environment_profile
         reconstructed = self._reconstructor.reconstruct(profile)
+        roots = await normalize_project_roots(composition.project_roots)
         mounts: list[_PreparedMount] = []
         try:
-            for index, folder in enumerate(binding.folders, start=1):
+            for index, root in enumerate(roots, start=1):
                 key = EnvironmentBindingKey(
-                    session_id=session.session_id,
-                    profile_digest=session.environment_snapshot.object.logical_digest,
-                    binder_key=profile.binder_key,
-                    normalized_folder=os.fspath(folder),
+                    thread_id=composition.thread_id,
+                    environment_profile_id=profile.profile_id,
+                    profile_digest=profile.behavior_digest,
+                    adapter_key=profile.adapter_key,
+                    normalized_root=os.fspath(root),
                 )
-                head = await self._store.environment_states.ensure(key)
-                state = await self._load_state(
-                    key=key,
-                    reference=head.state,
-                    profile=profile,
-                )
+                head = await self._store.environment_states.get(key)
+                expected = None if head is None else head.state
+                state = await self._load_state(key=key, reference=expected, profile=profile)
                 environment = await self._reconstructor.bind(
                     reconstructed,
-                    folder=folder,
+                    root=root,
                     state=state,
                 )
                 mounts.append(
                     _PreparedMount(
                         alias="workspace" if index == 1 else f"workspace-{index}",
                         key=key,
-                        expected_state_ref=head.state,
+                        expected_state_ref=expected,
                         supplied_state=state,
                         environment=environment,
                     )
                 )
+            extensions = await self._reconstructor.create_extensions(composition)
+            permission_ceiling = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
+            runtime = create_environment_runtime(
+                mounts={
+                    item.alias: EnvironmentRuntimeMount(
+                        binding=_EnvironmentBinding(item.environment),
+                        permission_ceiling=permission_ceiling,
+                        working_directory="/",
+                    )
+                    for item in mounts
+                },
+                default_mount=mounts[0].alias,
+                extensions=extensions,
+            )
         except BaseException as exc:
-            cleanup_error: BaseException | None = None
             with CancelScope(shield=True):
                 try:
                     await _discard_prepared(mounts)
                 except BaseException as cleanup_exc:
-                    cleanup_error = cleanup_exc
-            if cleanup_error is not None:
-                exc.add_note(f"Prepared Environment cleanup also failed: {cleanup_error!r}")
+                    exc.add_note(f"Prepared Environment cleanup also failed: {cleanup_exc!r}")
             raise
-        return EnvironmentRunPlan(store=self._store, profile=profile, mounts=mounts)
+        return EnvironmentRunPlan(
+            store=self._store,
+            profile=profile,
+            mounts=mounts,
+            runtime=runtime,
+        )
 
     async def _load_state(
         self,
@@ -401,70 +447,49 @@ class EnvironmentRunService:
             or value.state.provider_key != profile.provider_key
         ):
             raise EnvironmentLifecycleError(
-                "Stored Environment state is incompatible with its pinned binding.",
+                "Stored Environment state is incompatible with its binding.",
                 code="environment_state_incompatible",
-                details={"binder_key": profile.binder_key, "provider_key": profile.provider_key},
+                details={"adapter_key": profile.adapter_key, "provider_key": profile.provider_key},
             )
         return value.state
 
 
-async def normalize_workspace_binding(folders: Sequence[Path | str]) -> WorkspaceBinding:
-    """Resolve, validate, and de-duplicate one ordered message-time folder list."""
+async def normalize_project_roots(roots: Sequence[Path | str]) -> tuple[Path, ...]:
+    """Resolve and verify the ordered Project roots captured by a Run composition."""
 
-    if not folders:
+    if not roots or len(roots) > 64:
         raise EnvironmentLifecycleError(
-            "A Workspace binding requires at least one folder.",
-            code="workspace_binding_empty",
-        )
-    if len(folders) > 64:
-        raise EnvironmentLifecycleError(
-            "A Workspace binding exceeds the supported folder count.",
-            code="workspace_binding_too_large",
+            "A Project must contain between one and 64 roots.",
+            code="project_roots_invalid",
         )
     normalized: list[Path] = []
     seen: set[Path] = set()
-    for value in folders:
+    for value in roots:
         try:
-            path = await to_thread.run_sync(_normalize_folder, Path(value))
+            path = await to_thread.run_sync(_normalize_root, Path(value))
         except (OSError, ValueError) as exc:
             raise EnvironmentLifecycleError(
-                "A Workspace binding folder is missing, inaccessible, or not a directory.",
-                code="workspace_folder_invalid",
-                details={"folder": os.fspath(value)},
+                "A Project root is missing, inaccessible, or not a directory.",
+                code="project_root_invalid",
+                details={"root": os.fspath(value)},
             ) from exc
-        if path not in seen:
-            normalized.append(path)
-            seen.add(path)
-    return WorkspaceBinding(folders=tuple(normalized))
+        if path in seen:
+            raise EnvironmentLifecycleError(
+                "Project roots must be unique after normalization.",
+                code="project_roots_invalid",
+            )
+        seen.add(path)
+        normalized.append(path)
+    return tuple(normalized)
 
 
-def _verify_profile_provenance(
-    profile: ResolvedEnvironmentProfile,
-    *,
-    provider: ProviderCatalogEntry,
-    binder: BinderCatalogEntry,
-) -> None:
-    if provider.lock != profile.provider_lock:
-        raise _provenance_mismatch(profile.provider_lock)
-    if binder.lock != profile.binder_lock:
-        raise _provenance_mismatch(profile.binder_lock)
-
-
-def _provenance_mismatch(lock: DependencyLock) -> CompositionError:
-    return CompositionError(
-        "Installed trusted runtime provenance does not match the pinned Environment snapshot.",
-        code="environment_snapshot_provenance_mismatch",
-        details={"kind": lock.dependency_kind, "key": lock.key},
-    )
-
-
-def _normalize_folder(value: Path) -> Path:
+def _normalize_root(value: Path) -> Path:
     raw = value.expanduser()
     if "\x00" in os.fspath(raw):
-        raise ValueError("folder contains NUL")
+        raise ValueError("root contains NUL")
     resolved = raw.resolve(strict=True)
     if not resolved.is_dir() or not os.access(resolved, os.R_OK | os.X_OK):
-        raise OSError("folder is not an accessible directory")
+        raise OSError("root is not an accessible directory")
     return resolved
 
 
@@ -476,7 +501,7 @@ async def _discard_prepared(mounts: Sequence[_PreparedMount]) -> None:
         except Exception as exc:
             errors.append(exc)
     if errors:
-        raise BaseExceptionGroup("Prepared Environment adapter cleanup failed", errors)
+        raise BaseExceptionGroup("Prepared Environment cleanup failed", errors)
 
 
 def _utc_now() -> datetime:
@@ -491,6 +516,5 @@ __all__ = [
     "EnvironmentStatePublication",
     "ProviderRuntimeFactory",
     "ReconstructedEnvironmentProfile",
-    "WorkspaceBinding",
-    "normalize_workspace_binding",
+    "normalize_project_roots",
 ]

@@ -12,16 +12,17 @@ This contract covers only the primary text or multimodal generative model used b
 
 ## Boundaries
 
-| Concern                            | Owner                                                          | Contract                                                                                    |
-| ---------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Model configuration and lifecycle  | This document                                                  | Owns `Model`, provider discovery, testing, updating, enabling, and disabling                |
-| Agent model selection and behavior | [Agent Management](28-agent-management.md)                     | Stores one exact `model_revision_id`, concrete Harness characteristics, and native settings |
-| Run-time model selection           | This document and [Durable Run State](12-run-persistence.md)   | Reuses the Revision snapshot or resolves one typed override into effective configuration    |
-| Secret values and use eligibility  | [Secret Management](27-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                        |
-| Provider API and balancing         | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                            |
-| Trusted provider code              | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code        |
-| Harness model behavior             | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                          |
-| Usage identity and measures        | [Events, Usage, and Delivery](25-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                           |
+| Concern                            | Owner                                                          | Contract                                                                                        |
+| ---------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Model configuration and lifecycle  | This document                                                  | Owns `Model`, provider discovery, testing, updating, enabling, and disabling                    |
+| Agent model selection and behavior | [Agent Management](28-agent-management.md)                     | Stores one exact `model_revision_id`, concrete Harness characteristics, and native settings     |
+| Run-time model selection           | This document and [Durable Run State](12-run-persistence.md)   | Reuses the Revision snapshot or resolves one typed override into effective configuration        |
+| Secret values and use eligibility  | [Secret Management](27-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                            |
+| Provider API and balancing         | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                                |
+| Trusted provider code              | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code            |
+| Harness model behavior             | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                              |
+| OAuth Model credential persistence | Foundation                                                     | Implements an authorized durable Harness credential source when a trusted adapter selects OAuth |
+| Usage identity and measures        | [Events, Usage, and Delivery](25-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                               |
 
 `Model` is not a Provider account, connection pool, deployment, gateway, or credential container. Foundation exposes no independent Provider Connection resource for models. Connection fields live directly in the configuration and credential values remain in managed Secrets.
 
@@ -137,7 +138,7 @@ A configuration declares exactly one credential source allowed by its provider s
 
 There is no fallback order. A missing, inactive, unauthorized, or ineligible Secret fails closed. Model APIs never accept or return plaintext credentials. An authoring UI can offer existing Secrets or create a Secret inline through the Secret API, but it stores only the resulting reference in `Model`.
 
-AWS Bedrock, Google Vertex AI, and other authenticated providers use the same Workspace or invoking-User Secret boundary. Their adapter defines the expected credential content. Foundation does not add a deployment-identity or ambient workload-identity credential mode.
+AWS Bedrock, Google Vertex AI, and other authenticated providers use the same Workspace or invoking-User Secret boundary. Their adapter defines the expected credential content. Foundation does not add a deployment-identity or ambient workload-identity credential mode. A trusted provider adapter that supports a user OAuth Model implements the Harness [`load()`/`save()` credential-source contract](../agent-harness/16a-model-authentication.md) over Foundation-owned encrypted state. Foundation retains account identity, authorization, and cross-replica coordination; Harness retains expiry, refresh, process-local single-flight, exact-origin injection, and one 401 replay. The source object and credential bytes are reconstructed per worker operation and never enter `ModelExecutionSnapshot`.
 
 A Google Vertex AI service-account credential must declare the exact official `https://oauth2.googleapis.com/token` token endpoint. Foundation validates that value and pins the same endpoint when constructing credentials; Secret content cannot select another token destination or bypass the outbound network policy.
 

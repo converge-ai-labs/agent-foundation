@@ -26,7 +26,7 @@ No contract promises that changing Connector or MCPConnection preserves tool nam
 
 ## Management and User Interface
 
-The resource model distinguishes concrete Ingresses, Routes, Connectors, Connections, and MCPConnections. Reusable or official provider App definitions are deployment or product configuration rather than another Foundation resource. The contract does not prescribe whether the product displays these concepts on one page, several Console pages, or a separate Bot-facing interface.
+The resource model distinguishes concrete Ingresses, Routes, Connectors, ConnectorConnections, and MCPConnections. Reusable or official provider App definitions are deployment or product configuration rather than another Foundation resource. The contract does not prescribe whether the product displays these concepts on one page, several Console pages, or a separate Bot-facing interface.
 
 An official a13n App can hide shared provider-application administration from a customer while preserving the customer's concrete Ingress identity. The exact setup, observability, and user-facing navigation are product contracts, not Ingress resource semantics.
 

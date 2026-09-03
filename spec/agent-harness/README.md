@@ -4,7 +4,7 @@
 
 This directory defines `agent-harness`, the Pydantic AI-based process-local execution library used by embedded applications and hosted workers.
 
-The Harness owns code-first Agent construction, a neutral package-local official model catalog, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
+The Harness owns code-first Agent construction, a neutral package-local official model catalog, SDK-first process-local Model OAuth, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
 
 ## Document Catalog
 
@@ -27,6 +27,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [14-public-api-and-packaging.md](14-public-api-and-packaging.md)                         | Public Python API, package boundary, errors, and compatibility                                                                    |
 | [15-security-compatibility-and-tradeoffs.md](15-security-compatibility-and-tradeoffs.md) | Trust boundaries, authority, data safety, compatibility, and trade-offs                                                           |
 | [16-input-model-and-output.md](16-input-model-and-output.md)                             | Native input, thin model resolution, self-healing, semantic recovery, streaming, and output                                       |
+| [16a-model-authentication.md](16a-model-authentication.md)                               | SDK-first Model OAuth credentials, Host sources, refresh lifecycle, request isolation, and provider compatibility                 |
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                     |
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch           |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics      |
@@ -44,7 +45,7 @@ Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Founda
 
 ### Understand Models and Recovery
 
-Read `06`, `10`, and `16`. Provider transport retry, exact history repair, `ModelAttempt` recovery, and durable Host recovery have separate owners.
+Read `06`, `10`, and `16`. Read `16a` for OAuth-backed native Models and Host credential sources. Provider transport retry, exact history repair, `ModelAttempt` recovery, and durable Host recovery have separate owners.
 
 ### Integrate Tools or Environments
 

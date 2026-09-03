@@ -79,6 +79,14 @@ class AttemptExecutionService:
         self._sessions = sessions
         self._clock = clock
 
+    async def validate(self, authority: AttemptAuthority) -> AttemptMutationReceipt:
+        """Revalidate current lease and fence without mutating durable state."""
+
+        now = _utc(self._clock())
+        async with short_session(self._sessions) as database:
+            run, attempt, _ = await read_attempt_authority(database, authority, now)
+            return _receipt(run, attempt)
+
     async def heartbeat(
         self,
         authority: AttemptAuthority,

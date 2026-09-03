@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Agent UI supports both API-key Models and OAuth subscription-backed Models. Codex and Grok subscription authentication reuse the upstream products' account stores instead of creating another Agent UI token copy. A user who already authenticated with Codex or Grok Build should normally run the corresponding Model without another browser login. A login started by Agent UI writes through the same compatible product store so the upstream CLI can reuse its OAuth access and refresh credentials.
+Agent UI supports API-key Models and OAuth subscription-backed Models. The shared [Harness Model Authentication contract](../agent-harness/16a-model-authentication.md) owns provider credential values, source protocols, OAuth exchange and refresh behavior, request injection, single-flight, replay, and native Model construction. Agent UI is the local Host: it selects authentication in Model resources and adapts Codex and Grok Build product stores to those SDK-first source protocols.
 
-This document fixes the interoperability and ownership rules. Exact OAuth endpoints, client identifiers, scopes, token fields, browser or device-code mechanics, and upstream schema adapters remain implementation details confirmed against upstream Codex and Grok Build behavior when implemented.
+Codex and Grok subscription authentication reuse the upstream products' account stores instead of creating another Agent UI token copy. A user who already authenticated with Codex or Grok Build should normally run the corresponding Model without another browser login. A login started by Agent UI writes through the same compatible product store so the upstream CLI can reuse it.
 
 ## Model Authentication Selection
 
@@ -45,7 +45,21 @@ ModelAuthentication = (
 )
 ```
 
-The Agent UI release-owned Model integration selected by the route declares which authentication kinds it accepts. A route cannot silently reinterpret an incompatible credential or fall back from a selected subscription account to an ambient API key. Additional provider account kinds require an explicit compatible-store contract rather than a generic OAuth JSON shape.
+The Agent UI release-owned Model integration selected by the route declares which authentication kinds it accepts. A route cannot silently reinterpret an incompatible credential or fall back from a selected subscription account to an ambient API key.
+
+## Ownership
+
+| Concern                                                                                   | Owner                              |
+| ----------------------------------------------------------------------------------------- | ---------------------------------- |
+| Credential types and `load()` / `save()` protocols                                        | Harness `model_auth`               |
+| OAuth refresh, expiry, process-local single-flight, request headers, and one 401 replay   | Harness `model_auth`               |
+| Codex Responses subscription dialect and Grok native Model construction                   | Harness `model_auth`               |
+| Effective local product-store policy and path                                             | Agent UI provider adapter          |
+| Product file parsing, schema preservation, advisory locking, and optimistic digest checks | Agent UI provider adapter          |
+| Local account inspection, login confirmation, and logout surfaces                         | Agent UI                           |
+| Durable managed service storage and distributed coordination                              | Foundation Service or another Host |
+
+Agent UI does not wrap Harness authentication with another token callback or Model HTTP-auth layer. Its account stores directly implement the corresponding Harness credential-source protocol.
 
 ## Compatible Product Stores
 
@@ -54,110 +68,72 @@ The Agent UI release-owned Model integration selected by the route declares whic
 | `codex_subscription` | `$CODEX_HOME/auth.json`, with the upstream default under `~/.codex/`                            | Follow the reviewed Codex credential-store policy and `auth.json` form |
 | `grok_subscription`  | `$GROK_AUTH_PATH` when set; otherwise `$GROK_HOME/auth.json`, defaulting to `~/.grok/auth.json` | Follow the reviewed Grok Build scoped `auth.json` contract             |
 
-The compatible file profile is preferred because both Agent UI and the upstream CLI can inspect and update one product-owned location. The environment-specific home resolution and upstream default are part of compatibility. Agent UI does not copy these credentials into `~/.a13n-ui`, SQLite, immutable objects, configuration generations, or an Agent UI-owned keyring. It does not invent a combined Codex/Grok schema.
+The compatible file profile is preferred because both Agent UI and the upstream CLI can inspect and update one product-owned location. Agent UI does not copy these credentials into `~/.a13n-ui`, SQLite, immutable objects, configuration generations, or an Agent UI-owned keyring. It does not invent a combined Codex/Grok schema.
 
-The two products do not share one JSON schema. Codex stores one auth envelope containing its selected mode and token set. Grok Build stores entries keyed by its resolved authentication scope, with each OAuth entry carrying the access credential, optional refresh token, expiry, issuer, and client identity needed by its flow. Agent UI preserves each product's own shape and unrelated supported fields.
+The two products do not share one JSON schema. Codex stores one auth envelope containing its selected mode and token set. Grok Build stores entries keyed by resolved authentication scope. Each adapter preserves unrelated supported fields and scopes.
 
-A physical `auth.json` file is not unconditionally authoritative. A provider-specific adapter first resolves the upstream product's effective credential-store policy. Codex can select file, keyring, automatic, or ephemeral storage. Grok Build can override the file path and can receive process-supplied credentials that are not a writable shared login store. Agent UI either follows the active policy or reports it as unsupported and offers an explicit switch to the compatible file profile; it never merges stores, treats a lower-priority file as current, or creates a hidden divergent session.
+A physical `auth.json` file is not unconditionally authoritative. The adapter first resolves the upstream product's effective credential-store policy. Codex can select file, keyring, automatic, or ephemeral storage. Grok Build can override the file path and can receive process-supplied credentials that are not a writable shared login store. Agent UI follows the supported file policy or reports the selected mode as unsupported and requires the user or embedding Host to switch the upstream product policy explicitly; it never claims that an in-memory selection changed upstream configuration, merges stores, or creates a shadow credential source.
 
-Compatibility includes more than matching JSON field names. Each adapter follows the supported upstream path and store resolution, file permissions, schema preservation, token rotation, and mutation behavior. The active credential source and write target come from that product policy rather than from filename presence or the location of the preceding read.
+## Credential Source Behavior
 
-## Reuse and Login Precedence
+For every Harness `load()`, the adapter rereads the selected product store and returns one complete credential set. It does not retain a long-lived token snapshot. A missing, malformed, incompatible, or differently scoped store fails explicitly.
 
-For a subscription-authenticated Model, Agent UI resolves authentication in this order:
+For every Harness `save()`, the adapter:
 
-1. resolve the canonical product home and effective compatible credential-store policy;
-2. load the single active account selected by that policy;
-3. reuse a valid account, or refresh it through the same provider policy;
-4. offer an interactive login only when no reusable account exists or user action is required;
-5. after login, commit the result through that policy before reporting success.
+1. requires a matching account and provider scope;
+2. preserves unrelated supported document fields;
+3. retains provider fields not represented by the Harness credential value where compatibility requires them;
+4. writes with the product-compatible permissions and atomic replacement behavior;
+5. verifies the observed content digest under an Agent UI advisory lock immediately before atomic replacement; and
+6. fails without overwrite when a change is visible at that verification point.
 
-An expiring access token with a usable refresh path is not a reason to start another interactive login. Agent UI must prefer refresh and adoption of a newer credential written by a sibling Codex, Grok Build, or Agent UI process. Reloading a different account identity fails explicitly rather than silently switching the active Agent UI Run. Account switching and forced reauthentication are explicit user operations and disclose that they update the shared product account; the exact revoke-and-switch sequence remains an implementation decision.
+The Harness reloads before refresh and adopts a changed same-account credential. Agent UI's source adds an optimistic local no-clobber check during `save()` without adding a storage-specific revision API to Harness. The product CLIs do not share an established lock protocol with Agent UI, so this check cannot provide strict compare-and-swap against a non-cooperating writer in the interval between verification and replacement. Strict multi-process coordination requires a Host-controlled store rather than a shared compatibility file.
 
-Codex and Grok authentication are independent. Agent UI never tries one product's account store for the other product, never chooses an account by filename similarity, and never falls back across authentication kinds.
+## Reuse, Login, and Logout
 
-## Per-request Resolution and Automatic Refresh
+Agent UI resolves local account use in this order:
 
-Before every outbound Model request using `codex_subscription` or `grok_subscription`, the Model adapter asks the provider-specific account adapter for a currently usable OAuth access token. This is a per-request freshness check, not an unconditional refresh-token exchange: a still-valid access token outside the provider's refresh window is reused. When refresh is needed, the adapter first consults the active upstream store, adopts a newer same-account credential when available, and otherwise performs the product-compatible OAuth refresh. A successful rotation persists both the new access token and any replacement refresh token through the active store before the request proceeds.
+1. resolve the canonical product home and effective compatible store policy;
+2. let the Harness Model load and reuse or refresh the selected account for requests;
+3. offer interactive login only when no reusable account exists or explicit user action is required; and
+4. persist a successful login through the same product adapter before reporting success.
 
-After an authentication rejection, the adapter performs the product-supported reload and refresh recovery before surfacing failure. It does not start interactive login implicitly. Retry count, refresh window, and provider error mapping follow the implemented Codex or Grok compatibility adapter rather than a new Agent UI-wide OAuth protocol.
+An expiring token with a refresh grant does not start another interactive login. Authentication rejection never starts browser login. Account switching and forced reauthentication are explicit operations and disclose that they update a shared product account.
 
-This matches the common shape of the reviewed implementations: Codex resolves auth for each provider request and refreshes near access-token expiry; Grok Build runs a pre-request auth path that reuses a valid token, adopts a sibling update, or refreshes through its configured OAuth/OIDC flow.
+Host surfaces use the same typed operations to inspect compatible accounts, invoke a registered provider login, confirm account replacement, and log out. The Agent UI CLI wires the Harness `CodexOAuthFlow`; Grok login remains available only to an embedding surface that registers a product-compatible login collaborator and an explicit or already discoverable Grok scope. Status and logout remain available for discovered Grok product accounts. A surface must not expose a login action that has no registered provider flow.
 
-## Shared Mutation and Refresh
+## Run Capture and Information Boundary
 
-OAuth credentials can rotate, and another Codex, Grok Build, or Agent UI process can update the selected product store. Agent UI therefore treats the adapter-resolved store as current shared state rather than retaining a separate long-lived token copy or starting another login from stale process memory.
+An immutable Run composition records the Model route and authentication kind, never credential bytes. Every independent Run receives fresh Model collaborators built by `a13n_harness.model_auth`. The local store can rotate without changing the logical composition.
 
-A provider adapter must:
-
-1. resolve the active read source and write target through the upstream-compatible store policy;
-2. reread current state before refresh or account replacement;
-3. stop for an explicit account-switch operation if the current account identity changed;
-4. preserve unrelated supported records or scopes rather than rewriting JSON generically;
-5. adopt a newer compatible credential written by another process when possible;
-6. use the upstream product's supported mutation behavior and persist a rotated credential before reporting refresh success;
-7. fail without overwriting the current store when it encounters an incompatible or unreconcilable concurrent change.
-
-These are observable no-clobber and login-reuse rules, not a new cross-product locking protocol. Exact provider-specific coordination, atomic-write, keyring, and recovery mechanisms remain implementation decisions. The configuration-tree expected-digest protocol does not govern product account stores. Agent UI configuration files contain only the authentication kind and non-secret references.
-
-## Run Capture and Credential Lifetime
-
-An immutable Run composition records the Model route and selected authentication kind. The Agent UI release selects the corresponding Model and account-store integration; the composition does not invent another adapter-key contract. It never records access tokens, refresh tokens, authorization codes, account-store bytes, or a digest that would turn ordinary token rotation into a composition change.
-
-Every independent Run receives a fresh Model collaborator. Credential material is resolved for each outbound Model request. A live collaborator may reuse, refresh, or adopt a rotated credential through the selected compatible store without changing the Run's logical composition. A later request or Run sees the latest compatible account state.
-
-Authentication diagnostics expose only bounded provider, account-status, expiry-status, and required-action facts. Tokens, authorization codes, verifier values, raw identity claims, and complete account-store content never enter model context, SQLite, immutable objects, logs, telemetry, or UI error payloads.
-
-## Surface Behavior
-
-CLI and WebUI expose the same typed account operations:
-
-- inspect whether the selected compatible account is available and usable;
-- start or cancel a provider-supported login;
-- explicitly reauthenticate or switch account;
-- log out with a warning that the shared Codex or Grok Build session is affected.
-
-A browser is optional where the upstream provider supports a device-code or copyable-link flow. Agent UI does not require exhaustive credential-management commands merely to use an account already present on disk.
-
-## Compatibility Boundary
-
-Implementation adds fixture-based compatibility tests against upstream-produced stores without committing real credentials. Tests cover at least reading an upstream-produced store, writing an Agent UI login that the upstream product accepts, preserving unrelated records, adopting a sibling refresh, and rejecting an unknown incompatible schema without overwrite.
-
-The following remain implementation decisions until those adapters are built:
-
-- exact Codex and Grok Build schema revisions and token fields;
-- browser callback versus device-code availability;
-- OAuth endpoints, public client IDs, scopes, and provider headers;
-- provider-specific coordination, keyring, atomic-write, and recovery mechanisms;
-- explicit reauthentication and account-switch revoke ordering;
-- whether supported upstream libraries can be reused directly or require narrow compatibility adapters.
-
-These details can change with upstream behavior without changing the accepted rule that one product-compatible account store is the shared authority.
+Authentication diagnostics expose only bounded provider, account-status, expiry-status, and required-action facts. Tokens, authorization codes, PKCE verifier values, raw identity claims, and complete account-store content never enter model context, SQLite, immutable objects, logs, telemetry, or UI error payloads.
 
 ## Failure Semantics
 
-| Failure                                              | Outcome                                                                       |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Compatible account is absent                         | Run requests login or fails with an explicit authentication-required status   |
-| Store is malformed or from an unsupported schema     | Read or login fails without overwriting the store                             |
-| Selected upstream backend cannot be shared safely    | Authentication is reported unsupported; no shadow credential is created       |
-| Active policy selects a store other than `auth.json` | Adapter follows that policy or requires an explicit switch; it does not merge |
-| Concurrent process publishes a newer credential      | Adapter adopts it when valid instead of starting another login or refresh     |
-| Reloaded credential belongs to another account       | Current operation fails without silently switching the Run's account          |
-| Refresh cannot reconcile or persist a store change   | Current operation fails; interactive login is not started implicitly          |
-| Explicit login would replace a shared account        | User confirmation is required before the provider-compatible write            |
-| Credential expires during a Run                      | Adapter refreshes through the shared contract or fails that Model interaction |
+| Failure                                                        | Outcome                                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Compatible account is absent                                   | Run fails with explicit authentication-required semantics               |
+| Store is malformed or incompatible                             | Read or login fails without overwrite                                   |
+| Selected upstream backend cannot be shared safely              | Authentication is reported unsupported; no shadow credential is created |
+| Concurrent process publishes a newer credential before refresh | Harness adopts it when the account identity matches                     |
+| A source change is observed at the pre-replace digest check    | Agent UI fails the save without overwrite                               |
+| Reloaded credential belongs to another account                 | The current operation fails without silently switching the Run account  |
+| Refresh or persistence fails                                   | The Model request fails; interactive login is not started               |
+| Explicit login would replace a shared account                  | User confirmation is required before the compatible write               |
+
+## Compatibility
+
+Fixture-based tests use upstream-shaped stores without real credentials. They cover reading, writing, preserving unrelated records, adopting a sibling refresh, enforcing file permissions, and rejecting incompatible data or changes observed before replacement.
+
+Provider file schemas, path policy, and login presentation may evolve with upstream products. The SDK-first Harness source and lifecycle contract remains independent from those local storage changes.
 
 ## Invariants
 
-01. Codex and Grok subscription Models use OAuth and prefer an existing compatible product login.
-02. Agent UI-originated login writes the corresponding product-compatible account store.
-03. Every subscription-backed Model request resolves a usable access token and automatically refreshes only when needed.
-04. A rotated access or refresh token is persisted through the active compatible store before use is reported successful.
-05. Agent UI owns no duplicate OAuth token authority.
-06. Authentication kind is explicit and never falls back across providers.
-07. Effective provider store policy selects one active credential source; stores are never merged.
-08. Refresh and login reuse the upstream store behavior and never knowingly overwrite a newer compatible credential.
-09. Run compositions capture authentication provenance, never credential bytes.
-10. Unknown or incompatible account stores fail without overwrite.
-11. Exact OAuth wire details remain implementation concerns.
+1. Codex and Grok subscription Models use Harness `model_auth` and prefer an existing compatible product login.
+2. Agent UI account stores implement Harness credential sources; Agent UI owns no duplicate request-auth or refresh lifecycle.
+3. Agent UI-originated login writes the corresponding compatible product store.
+4. Effective provider policy selects one source; stores are never merged.
+5. Refresh saves use an optimistic digest check plus product-compatible atomic replacement and preserve unrelated fields.
+6. Authentication kind is explicit and never falls back across providers.
+7. Run compositions capture authentication provenance, never credential bytes.
+8. Unknown or incompatible account stores fail without overwrite.

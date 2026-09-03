@@ -3,271 +3,315 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import cast
 
-from pydantic import JsonValue
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_ui.errors import StoreConflictError, StoreIntegrityError
 
 from .contracts import (
+    AgentResourceSource,
     ChildExecutionHead,
     EnvironmentBindingHead,
     EnvironmentBindingKey,
+    ExecutionStatus,
+    MarkdownSubagentSource,
+    ResourceIndexEntry,
     SafeFailure,
-    Session,
-    SnapshotRef,
+    Thread,
+    ThreadConfiguration,
 )
 from .database import short_session, transaction
 from .models import (
     AcceptedConfigurationRecord,
     ChildExecutionRecord,
-    ChildThreadRecord,
-    CompositionSnapshotRecord,
-    ConfigurationSnapshotRecord,
+    ConfigurationSourceRecord,
     CurrentConfigurationRecord,
     EnvironmentBindingRecord,
-    SessionRecord,
+    ResourceIndexRecord,
+    ThreadConfigurationRecord,
+    ThreadRecord,
 )
 from .objects import ObjectKind, ObjectRef
 
 
 class ConfigurationRepository:
-    """Select complete accepted configuration and exact immutable snapshots."""
-
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
     async def accept(
         self,
         *,
-        source_digest: str,
-        yaml_digest: str,
-        document: JsonValue,
-        snapshots: Mapping[tuple[Literal["agent", "environment"], str], ObjectRef],
+        generation_digest: str,
+        generation: ObjectRef,
+        sources: Iterable[tuple[str, str, str, str | None]],
+        resources: Iterable[ResourceIndexEntry],
         expected_current_digest: str | None,
         accepted_at: datetime | None = None,
     ) -> None:
-        """Atomically select one already-published complete snapshot set."""
-
+        _require_kind(generation, ObjectKind.configuration_generation)
         now = _utc(accepted_at)
-        document_json = _json(document)
         async with transaction(self._sessions) as session:
             current = await session.get(CurrentConfigurationRecord, 1)
-            actual = None if current is None else current.source_digest
-            if actual != expected_current_digest and actual != source_digest:
+            actual = None if current is None else current.generation_digest
+            if actual not in {expected_current_digest, generation_digest}:
                 _conflict("configuration_selection_conflict", expected_current_digest, actual)
-
-            accepted = await session.get(AcceptedConfigurationRecord, source_digest)
-            if accepted is None:
+            record = await session.get(AcceptedConfigurationRecord, generation_digest)
+            if record is None:
                 session.add(
                     AcceptedConfigurationRecord(
-                        source_digest=source_digest,
-                        yaml_digest=yaml_digest,
-                        document_json=document_json,
+                        generation_digest=generation_digest,
+                        object_schema_version=generation.object_schema_version,
+                        object_digest=generation.logical_digest,
                         accepted_at=now,
                     )
                 )
-            elif accepted.yaml_digest != yaml_digest or accepted.document_json != document_json:
+                for relative_path, source_digest, resource_kind, resource_id in sources:
+                    session.add(
+                        ConfigurationSourceRecord(
+                            generation_digest=generation_digest,
+                            relative_path=relative_path,
+                            source_digest=source_digest,
+                            resource_kind=resource_kind,
+                            resource_id=resource_id,
+                        )
+                    )
+                for item in resources:
+                    session.add(
+                        ResourceIndexRecord(
+                            generation_digest=generation_digest,
+                            relative_path=item.relative_path,
+                            resource_kind=item.resource_kind,
+                            resource_id=item.resource_id,
+                            display_name=item.name,
+                            source_digest=item.source_digest,
+                            normalized_digest=item.normalized_digest,
+                        )
+                    )
+            elif (
+                record.object_schema_version != generation.object_schema_version
+                or record.object_digest != generation.logical_digest
+            ):
                 raise StoreIntegrityError(
-                    "Accepted configuration digest maps to different normalized content.",
+                    "Accepted generation digest maps to different immutable content.",
                     code="configuration_digest_collision",
                 )
-
-            for (snapshot_kind, name), reference in sorted(snapshots.items()):
-                _require_snapshot_kind(reference, snapshot_kind)
-                snapshot = await session.get(CompositionSnapshotRecord, reference.logical_digest)
-                if snapshot is None:
-                    session.add(
-                        CompositionSnapshotRecord(
-                            logical_digest=reference.logical_digest,
-                            snapshot_kind=snapshot_kind,
-                            object_schema_version=reference.object_schema_version,
-                            created_at=now,
-                        )
-                    )
-                elif (
-                    snapshot.snapshot_kind != snapshot_kind
-                    or snapshot.object_schema_version != reference.object_schema_version
-                ):
-                    raise StoreIntegrityError(
-                        "Snapshot digest maps to incompatible metadata.",
-                        code="snapshot_digest_collision",
-                    )
-                existing = await session.get(
-                    ConfigurationSnapshotRecord,
-                    {
-                        "source_digest": source_digest,
-                        "snapshot_kind": snapshot_kind,
-                        "name": name,
-                    },
-                )
-                if existing is None:
-                    session.add(
-                        ConfigurationSnapshotRecord(
-                            source_digest=source_digest,
-                            snapshot_kind=snapshot_kind,
-                            name=name,
-                            logical_digest=reference.logical_digest,
-                        )
-                    )
-                elif existing.logical_digest != reference.logical_digest:
-                    raise StoreIntegrityError(
-                        "Accepted configuration name maps to a different snapshot.",
-                        code="configuration_snapshot_collision",
-                    )
-
             if current is None:
-                session.add(CurrentConfigurationRecord(singleton_id=1, source_digest=source_digest))
-            elif current.source_digest != source_digest:
-                current.source_digest = source_digest
+                session.add(CurrentConfigurationRecord(singleton_id=1, generation_digest=generation_digest))
+            else:
+                current.generation_digest = generation_digest
 
     async def current_digest(self) -> str | None:
         async with short_session(self._sessions) as session:
             current = await session.get(CurrentConfigurationRecord, 1)
-            return None if current is None else current.source_digest
+            return None if current is None else current.generation_digest
 
-    async def snapshots(self, source_digest: str) -> dict[tuple[Literal["agent", "environment"], str], ObjectRef]:
+    async def current_reference(self) -> ObjectRef | None:
+        async with short_session(self._sessions) as session:
+            current = await session.get(CurrentConfigurationRecord, 1)
+            if current is None:
+                return None
+            record = await session.get(AcceptedConfigurationRecord, current.generation_digest)
+            if record is None:
+                raise StoreIntegrityError("Current configuration generation is missing.", code="configuration_missing")
+            return _configuration_reference(record)
+
+    async def reference(self, generation_digest: str) -> ObjectRef | None:
+        async with short_session(self._sessions) as session:
+            record = await session.get(AcceptedConfigurationRecord, generation_digest)
+            return None if record is None else _configuration_reference(record)
+
+    async def resources(self, generation_digest: str) -> tuple[ResourceIndexEntry, ...]:
         async with short_session(self._sessions) as session:
             rows = (
                 await session.execute(
-                    select(ConfigurationSnapshotRecord, CompositionSnapshotRecord)
-                    .join(
-                        CompositionSnapshotRecord,
-                        ConfigurationSnapshotRecord.logical_digest == CompositionSnapshotRecord.logical_digest,
-                    )
-                    .where(ConfigurationSnapshotRecord.source_digest == source_digest)
+                    select(ResourceIndexRecord)
+                    .where(ResourceIndexRecord.generation_digest == generation_digest)
+                    .order_by(ResourceIndexRecord.resource_kind, ResourceIndexRecord.resource_id)
                 )
-            ).all()
-        result: dict[tuple[Literal["agent", "environment"], str], ObjectRef] = {}
-        for selection, snapshot in rows:
-            kind = _snapshot_literal(snapshot.snapshot_kind)
-            result[(kind, selection.name)] = _snapshot_object_ref(snapshot)
-        return result
+            ).scalars()
+            return tuple(
+                ResourceIndexEntry(
+                    generation_digest=row.generation_digest,
+                    resource_kind=row.resource_kind,
+                    resource_id=row.resource_id,
+                    name=row.display_name,
+                    relative_path=row.relative_path,
+                    source_digest=row.source_digest,
+                    normalized_digest=row.normalized_digest,
+                )
+                for row in rows
+            )
 
 
-class SessionRepository:
-    """Create Sessions and compare-and-select their root continuation heads."""
-
+class ThreadRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
     async def create(
         self,
         *,
-        session_id: str,
-        root_thread_id: str,
-        agent_snapshot: SnapshotRef,
-        environment_snapshot: SnapshotRef,
-        continuation: ObjectRef,
+        thread_id: str,
+        configuration: ThreadConfiguration,
+        initial_state: ObjectRef,
+        parent_thread_id: str | None = None,
         title: str | None = None,
         created_at: datetime | None = None,
-    ) -> Session:
-        _require_snapshot_ref(agent_snapshot, "agent")
-        _require_snapshot_ref(environment_snapshot, "environment")
-        _require_object_kind(continuation, ObjectKind.session_continuation)
+    ) -> Thread:
+        _require_kind(initial_state, ObjectKind.thread_initial_state)
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
-            await _require_snapshot_row(session, agent_snapshot)
-            await _require_snapshot_row(session, environment_snapshot)
-            record = SessionRecord(
-                session_id=session_id,
-                root_thread_id=root_thread_id,
+            if parent_thread_id is not None and await session.get(ThreadRecord, parent_thread_id) is None:
+                raise StoreIntegrityError("Parent Thread does not exist.", code="thread_parent_missing")
+            record = ThreadRecord(
+                thread_id=thread_id,
+                parent_thread_id=parent_thread_id,
+                title=title,
+                archived=False,
                 created_at=now,
                 updated_at=now,
-                title=title,
-                agent_snapshot_digest=agent_snapshot.object.logical_digest,
-                environment_snapshot_digest=environment_snapshot.object.logical_digest,
-                continuation_schema_version=continuation.object_schema_version,
-                continuation_digest=continuation.logical_digest,
+                initial_state_schema_version=initial_state.object_schema_version,
+                initial_state_digest=initial_state.logical_digest,
+                continuation_schema_version=None,
+                continuation_digest=None,
             )
             session.add(record)
             await session.flush()
-            return _session_value(record, agent_snapshot=agent_snapshot, environment_snapshot=environment_snapshot)
+            session.add(_configuration_record(thread_id, configuration))
+            await session.flush()
+            return _thread_value(record, configuration)
 
-    async def get(self, session_id: str) -> Session | None:
+    async def get(self, thread_id: str) -> Thread | None:
         async with short_session(self._sessions) as session:
-            record = await session.get(SessionRecord, session_id)
+            record = await session.get(ThreadRecord, thread_id)
             if record is None:
                 return None
-            agent = await _snapshot_ref_for(session, record.agent_snapshot_digest)
-            environment = await _snapshot_ref_for(session, record.environment_snapshot_digest)
-            return _session_value(record, agent_snapshot=agent, environment_snapshot=environment)
+            configuration = await session.get(ThreadConfigurationRecord, thread_id)
+            if configuration is None:
+                raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
+            return _thread_value(record, _configuration_value(configuration))
 
     async def list(
         self,
         *,
         query: str | None = None,
+        include_children: bool = False,
+        include_archived: bool = False,
         offset: int = 0,
         limit: int = 20,
-    ) -> tuple[tuple[Session, ...], int]:
-        """List bounded detached Session metadata in stable recent-first order."""
-
+    ) -> tuple[tuple[Thread, ...], int]:
         if offset < 0 or not 1 <= limit <= 100:
-            raise ValueError("Session page is outside supported bounds")
+            raise ValueError("Thread page is outside supported bounds")
         async with short_session(self._sessions) as session:
-            statement = select(SessionRecord)
-            count_statement = select(func.count()).select_from(SessionRecord)
+            statement = select(ThreadRecord)
+            count_statement = select(func.count()).select_from(ThreadRecord)
+            predicates = []
+            if not include_children:
+                predicates.append(ThreadRecord.parent_thread_id.is_(None))
+            if not include_archived:
+                predicates.append(ThreadRecord.archived.is_(False))
             normalized = None if query is None else query.strip().casefold()
             if normalized:
                 pattern = f"%{_escape_like(normalized)}%"
-                predicate = or_(
-                    func.lower(SessionRecord.session_id).like(pattern, escape="\\"),
-                    func.lower(func.coalesce(SessionRecord.title, "")).like(pattern, escape="\\"),
-                )
-                statement = statement.where(predicate)
-                count_statement = count_statement.where(predicate)
-            records = (
-                await session.execute(
-                    statement.order_by(
-                        SessionRecord.updated_at.desc(),
-                        SessionRecord.session_id.desc(),
+                predicates.append(
+                    or_(
+                        func.lower(ThreadRecord.thread_id).like(pattern, escape="\\"),
+                        func.lower(func.coalesce(ThreadRecord.title, "")).like(pattern, escape="\\"),
                     )
+                )
+            if predicates:
+                statement = statement.where(*predicates)
+                count_statement = count_statement.where(*predicates)
+            rows = (
+                await session.execute(
+                    statement.order_by(ThreadRecord.updated_at.desc(), ThreadRecord.thread_id.desc())
                     .offset(offset)
                     .limit(limit)
                 )
             ).scalars()
-            values: list[Session] = []
-            for record in records:
-                agent = await _snapshot_ref_for(session, record.agent_snapshot_digest)
-                environment = await _snapshot_ref_for(session, record.environment_snapshot_digest)
-                values.append(_session_value(record, agent_snapshot=agent, environment_snapshot=environment))
+            values: list[Thread] = []
+            for row in rows:
+                configuration = await session.get(ThreadConfigurationRecord, row.thread_id)
+                if configuration is None:
+                    raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
+                values.append(_thread_value(row, _configuration_value(configuration)))
             total = int((await session.execute(count_statement)).scalar_one())
-        return tuple(values), total
+            return tuple(values), total
+
+    async def update_configuration(
+        self,
+        *,
+        thread_id: str,
+        expected_version: int,
+        replacement: ThreadConfiguration,
+        updated_at: datetime | None = None,
+    ) -> Thread:
+        if replacement.version != expected_version + 1:
+            raise ValueError("replacement configuration version must increment by one")
+        now = _utc(updated_at)
+        async with transaction(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            configuration = await session.get(ThreadConfigurationRecord, thread_id)
+            if record is None or configuration is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            if configuration.version != expected_version:
+                _conflict("thread_configuration_conflict", expected_version, configuration.version)
+            _assign_configuration(configuration, replacement)
+            record.updated_at = now
+            await session.flush()
+            return _thread_value(record, replacement)
+
+    async def set_archived(
+        self,
+        *,
+        thread_id: str,
+        archived: bool,
+        updated_at: datetime | None = None,
+    ) -> Thread:
+        now = _utc(updated_at)
+        async with transaction(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            configuration = await session.get(ThreadConfigurationRecord, thread_id)
+            if record is None or configuration is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            record.archived = archived
+            record.updated_at = now
+            await session.flush()
+            return _thread_value(record, _configuration_value(configuration))
 
     async def select_continuation(
         self,
         *,
-        session_id: str,
-        expected: ObjectRef,
+        thread_id: str,
+        expected: ObjectRef | None,
         replacement: ObjectRef,
         updated_at: datetime | None = None,
-    ) -> Session:
-        _require_object_kind(expected, ObjectKind.session_continuation)
-        _require_object_kind(replacement, ObjectKind.session_continuation)
+    ) -> Thread:
+        _require_kind(replacement, ObjectKind.continuation)
         now = _utc(updated_at)
         async with transaction(self._sessions) as session:
-            record = await session.get(SessionRecord, session_id)
-            if record is None:
-                raise StoreIntegrityError("Session does not exist.", code="session_missing")
+            record = await session.get(ThreadRecord, thread_id)
+            configuration = await session.get(ThreadConfigurationRecord, thread_id)
+            if record is None or configuration is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
             actual = _continuation_ref(record)
             if actual != expected:
-                _conflict("session_continuation_conflict", expected.logical_digest, actual.logical_digest)
+                _conflict(
+                    "thread_continuation_conflict",
+                    None if expected is None else expected.logical_digest,
+                    None if actual is None else actual.logical_digest,
+                )
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.updated_at = now
-            agent = await _snapshot_ref_for(session, record.agent_snapshot_digest)
-            environment = await _snapshot_ref_for(session, record.environment_snapshot_digest)
             await session.flush()
-            return _session_value(record, agent_snapshot=agent, environment_snapshot=environment)
+            return _thread_value(record, _configuration_value(configuration))
 
 
 class ChildExecutionRepository:
-    """Persist child Thread identity and contiguous execution-segment heads."""
-
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
@@ -275,60 +319,38 @@ class ChildExecutionRepository:
         self,
         *,
         execution_id: str,
-        session_id: str,
         parent_thread_id: str,
         child_thread_id: str,
         child_run_id: str,
-        subagent_name: str,
-        child_definition_id: str,
-        child_definition_digest: str,
-        input: str,
+        run_composition: ObjectRef,
         created_at: datetime | None = None,
     ) -> ChildExecutionHead:
+        _require_kind(run_composition, ObjectKind.run_composition)
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
-            root = await session.get(SessionRecord, session_id)
-            if root is None:
-                raise StoreIntegrityError("Session is unavailable for child admission.", code="session_missing")
-            if root.root_thread_id != parent_thread_id:
-                parent = await session.get(ChildThreadRecord, parent_thread_id)
-                if parent is None or parent.session_id != session_id:
-                    raise StoreIntegrityError(
-                        "Parent Thread is outside the child admission Session.",
-                        code="child_parent_scope_mismatch",
-                    )
-            thread = ChildThreadRecord(
-                child_thread_id=child_thread_id,
-                session_id=session_id,
-                parent_thread_id=parent_thread_id,
-                subagent_name=subagent_name,
-                child_definition_id=child_definition_id,
-                child_definition_digest=child_definition_digest,
-                created_at=now,
-            )
-            execution = ChildExecutionRecord(
+            child = await session.get(ThreadRecord, child_thread_id)
+            if child is None or child.parent_thread_id != parent_thread_id:
+                raise StoreIntegrityError("Child Thread relationship is invalid.", code="child_parent_scope_mismatch")
+            record = ChildExecutionRecord(
                 execution_id=execution_id,
-                session_id=session_id,
+                parent_thread_id=parent_thread_id,
                 child_thread_id=child_thread_id,
                 child_run_id=child_run_id,
                 segment_index=0,
-                input_text=input,
+                run_composition_schema_version=run_composition.object_schema_version,
+                run_composition_digest=run_composition.logical_digest,
                 status="running",
                 selected_checkpoint_schema_version=None,
                 selected_checkpoint_digest=None,
-                selected_checkpoint_terminal=False,
-                resumable=False,
                 resumed_from=None,
                 failure_json=None,
                 created_at=now,
                 updated_at=now,
                 completed_at=None,
             )
-            session.add(thread)
+            session.add(record)
             await session.flush()
-            session.add(execution)
-            await session.flush()
-            return _child_value(execution, thread)
+            return _child_value(record)
 
     async def resume(
         self,
@@ -336,148 +358,83 @@ class ChildExecutionRepository:
         previous_execution_id: str,
         execution_id: str,
         child_run_id: str,
-        child_definition_digest: str,
-        input: str,
-        session_id: str | None = None,
-        parent_thread_id: str | None = None,
+        run_composition: ObjectRef,
         created_at: datetime | None = None,
     ) -> ChildExecutionHead:
+        _require_kind(run_composition, ObjectKind.run_composition)
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
             previous = await session.get(ChildExecutionRecord, previous_execution_id)
             if previous is None:
                 raise StoreIntegrityError("Previous child execution does not exist.", code="child_execution_missing")
-            thread = await session.get(ChildThreadRecord, previous.child_thread_id)
-            if thread is None:
-                raise StoreIntegrityError("Child Thread index is missing.", code="child_thread_missing")
-            root = await session.get(SessionRecord, previous.session_id)
-            if root is None:
-                raise StoreIntegrityError("Session is unavailable for child resume.", code="session_missing")
-            if session_id is not None and previous.session_id != session_id:
+            if previous.status != "succeeded" or previous.selected_checkpoint_digest is None:
                 raise StoreIntegrityError(
-                    "Child execution is outside the parent Session.", code="child_execution_scope_mismatch"
+                    "Previous child execution is not resumable.", code="child_execution_not_resumable"
                 )
-            if parent_thread_id is not None and thread.parent_thread_id != parent_thread_id:
-                raise StoreIntegrityError(
-                    "Child execution is outside the parent Thread.", code="child_execution_scope_mismatch"
-                )
-            if (
-                previous.status != "succeeded"
-                or not previous.selected_checkpoint_terminal
-                or not previous.resumable
-                or previous.selected_checkpoint_digest is None
-            ):
-                raise StoreIntegrityError(
-                    "Child execution does not have a resumable selected checkpoint.",
-                    code="child_execution_not_resumable",
-                )
-            if thread.child_definition_digest != child_definition_digest:
-                raise StoreIntegrityError(
-                    "Child definition is incompatible with the retained Thread.",
-                    code="child_definition_incompatible",
-                )
-            previous.resumable = False
-            previous.updated_at = now
-            execution = ChildExecutionRecord(
+            record = ChildExecutionRecord(
                 execution_id=execution_id,
-                session_id=previous.session_id,
+                parent_thread_id=previous.parent_thread_id,
                 child_thread_id=previous.child_thread_id,
                 child_run_id=child_run_id,
                 segment_index=previous.segment_index + 1,
-                input_text=input,
+                run_composition_schema_version=run_composition.object_schema_version,
+                run_composition_digest=run_composition.logical_digest,
                 status="running",
                 selected_checkpoint_schema_version=None,
                 selected_checkpoint_digest=None,
-                selected_checkpoint_terminal=False,
-                resumable=False,
                 resumed_from=previous.execution_id,
                 failure_json=None,
                 created_at=now,
                 updated_at=now,
                 completed_at=None,
             )
-            session.add(execution)
+            session.add(record)
             await session.flush()
-            return _child_value(execution, thread)
+            return _child_value(record)
 
     async def get(self, execution_id: str) -> ChildExecutionHead | None:
         async with short_session(self._sessions) as session:
-            execution = await session.get(ChildExecutionRecord, execution_id)
-            if execution is None:
-                return None
-            thread = await session.get(ChildThreadRecord, execution.child_thread_id)
-            if thread is None:
-                raise StoreIntegrityError("Child Thread index is missing.", code="child_thread_missing")
-            return _child_value(execution, thread)
+            record = await session.get(ChildExecutionRecord, execution_id)
+            return None if record is None else _child_value(record)
 
-    async def get_scoped(
+    async def list_for_parent(
         self,
-        *,
-        execution_id: str,
-        session_id: str,
         parent_thread_id: str,
-    ) -> ChildExecutionHead | None:
-        head = await self.get(execution_id)
-        if head is None or head.session_id != session_id or head.parent_thread_id != parent_thread_id:
-            return None
-        return head
-
-    async def owns_thread(self, *, session_id: str, thread_id: str) -> bool:
-        async with short_session(self._sessions) as session:
-            root = await session.get(SessionRecord, session_id)
-            if root is None:
-                return False
-            if root.root_thread_id == thread_id:
-                return True
-            child = await session.get(ChildThreadRecord, thread_id)
-            return child is not None and child.session_id == session_id
-
-    async def list_scope(
-        self,
         *,
-        session_id: str,
-        parent_thread_id: str,
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[tuple[ChildExecutionHead, ...], int]:
         if offset < 0 or not 1 <= limit <= 100:
             raise ValueError("child execution page is outside supported bounds")
+        predicate = ChildExecutionRecord.parent_thread_id == parent_thread_id
         async with short_session(self._sessions) as session:
-            scoped = (
-                select(ChildExecutionRecord, ChildThreadRecord)
-                .join(ChildThreadRecord, ChildExecutionRecord.child_thread_id == ChildThreadRecord.child_thread_id)
-                .where(
-                    ChildExecutionRecord.session_id == session_id,
-                    ChildThreadRecord.parent_thread_id == parent_thread_id,
-                )
-            )
             rows = (
                 await session.execute(
-                    scoped.order_by(
-                        ChildExecutionRecord.created_at.desc(),
-                        ChildExecutionRecord.execution_id.desc(),
-                    )
+                    select(ChildExecutionRecord)
+                    .where(predicate)
+                    .order_by(ChildExecutionRecord.created_at, ChildExecutionRecord.execution_id)
                     .offset(offset)
                     .limit(limit)
                 )
-            ).all()
+            ).scalars()
             total = int(
                 (
-                    await session.execute(
-                        select(func.count())
-                        .select_from(ChildExecutionRecord)
-                        .join(
-                            ChildThreadRecord,
-                            ChildExecutionRecord.child_thread_id == ChildThreadRecord.child_thread_id,
-                        )
-                        .where(
-                            ChildExecutionRecord.session_id == session_id,
-                            ChildThreadRecord.parent_thread_id == parent_thread_id,
-                        )
-                    )
+                    await session.execute(select(func.count()).select_from(ChildExecutionRecord).where(predicate))
                 ).scalar_one()
             )
-        return tuple(_child_value(execution, thread) for execution, thread in rows), total
+            return tuple(_child_value(row) for row in rows), total
+
+    async def first_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
+        async with short_session(self._sessions) as session:
+            record = (
+                await session.execute(
+                    select(ChildExecutionRecord).where(
+                        ChildExecutionRecord.child_thread_id == child_thread_id,
+                        ChildExecutionRecord.segment_index == 0,
+                    )
+                )
+            ).scalar_one_or_none()
+            return None if record is None else _child_value(record)
 
     async def select_checkpoint(
         self,
@@ -486,146 +443,78 @@ class ChildExecutionRepository:
         expected: ObjectRef | None,
         checkpoint: ObjectRef,
         child_run_id: str,
-        terminal_status: Literal["succeeded", "failed", "cancelled"] | None = None,
-        failure: SafeFailure | None = None,
-        resumable: bool = False,
         updated_at: datetime | None = None,
     ) -> ChildExecutionHead:
-        _require_object_kind(checkpoint, ObjectKind.child_checkpoint)
-        if expected is not None:
-            _require_object_kind(expected, ObjectKind.child_checkpoint)
-        if terminal_status == "succeeded" and failure is not None:
-            raise ValueError("successful child execution cannot retain a failure")
-        if terminal_status == "failed" and failure is None:
-            raise ValueError("failed child execution requires a safe failure")
+        _require_kind(checkpoint, ObjectKind.child_checkpoint)
         now = _utc(updated_at)
         async with transaction(self._sessions) as session:
-            execution = await session.get(ChildExecutionRecord, execution_id)
-            if execution is None:
+            record = await session.get(ChildExecutionRecord, execution_id)
+            if record is None:
                 raise StoreIntegrityError("Child execution does not exist.", code="child_execution_missing")
-            thread = await session.get(ChildThreadRecord, execution.child_thread_id)
-            if thread is None:
-                raise StoreIntegrityError("Child Thread index is missing.", code="child_thread_missing")
-            if execution.status != "running":
-                raise StoreIntegrityError("Child execution is already terminal.", code="child_execution_terminal")
-            actual = _checkpoint_ref(execution)
+            if record.status != "running":
+                raise StoreConflictError("Child execution is already terminal.", code="child_execution_terminal")
+            actual = _child_checkpoint_ref(record)
             if actual != expected:
-                _conflict(
-                    "child_checkpoint_conflict",
-                    None if expected is None else expected.logical_digest,
-                    None if actual is None else actual.logical_digest,
-                )
-            execution.child_run_id = child_run_id
-            execution.selected_checkpoint_schema_version = checkpoint.object_schema_version
-            execution.selected_checkpoint_digest = checkpoint.logical_digest
-            execution.selected_checkpoint_terminal = terminal_status is not None
-            execution.resumable = terminal_status is not None and resumable
-            execution.updated_at = now
-            if terminal_status is not None:
-                execution.status = terminal_status
-                execution.failure_json = None if failure is None else _json(failure.model_dump(mode="json"))
-                execution.completed_at = now
+                _conflict("child_checkpoint_conflict", _digest(expected), _digest(actual))
+            record.child_run_id = child_run_id
+            record.selected_checkpoint_schema_version = checkpoint.object_schema_version
+            record.selected_checkpoint_digest = checkpoint.logical_digest
+            record.updated_at = now
             await session.flush()
-            return _child_value(execution, thread)
+            return _child_value(record)
 
-    async def finish_without_checkpoint(
+    async def finish(
         self,
         *,
         execution_id: str,
-        status: Literal["failed", "cancelled", "lost"],
+        status: ExecutionStatus,
+        expected_checkpoint: ObjectRef | None,
+        checkpoint: ObjectRef | None,
+        child_run_id: str | None = None,
         failure: SafeFailure | None = None,
-        updated_at: datetime | None = None,
+        completed_at: datetime | None = None,
     ) -> ChildExecutionHead:
-        if status == "failed" and failure is None:
-            raise ValueError("failed child execution requires a safe failure")
-        if status != "failed" and failure is not None:
-            raise ValueError("only failed child execution may retain a failure")
-        now = _utc(updated_at)
+        if status not in {"succeeded", "failed", "cancelled", "lost"}:
+            raise ValueError("child terminal status is invalid")
+        if status == "succeeded" and checkpoint is None:
+            raise ValueError("successful child execution requires a checkpoint")
+        if checkpoint is not None:
+            _require_kind(checkpoint, ObjectKind.child_checkpoint)
+        now = _utc(completed_at)
         async with transaction(self._sessions) as session:
-            execution = await session.get(ChildExecutionRecord, execution_id)
-            if execution is None:
+            record = await session.get(ChildExecutionRecord, execution_id)
+            if record is None:
                 raise StoreIntegrityError("Child execution does not exist.", code="child_execution_missing")
-            thread = await session.get(ChildThreadRecord, execution.child_thread_id)
-            if thread is None:
-                raise StoreIntegrityError("Child Thread index is missing.", code="child_thread_missing")
-            if execution.status != "running":
-                return _child_value(execution, thread)
-            execution.status = status
-            execution.selected_checkpoint_terminal = False
-            execution.resumable = False
-            execution.failure_json = None if failure is None else _json(failure.model_dump(mode="json"))
-            execution.updated_at = now
-            execution.completed_at = now
+            if record.status != "running":
+                raise StoreConflictError("Child execution is already terminal.", code="child_execution_terminal")
+            actual = _child_checkpoint_ref(record)
+            if actual != expected_checkpoint:
+                _conflict("child_checkpoint_conflict", _digest(expected_checkpoint), _digest(actual))
+            record.status = status
+            if child_run_id is not None:
+                record.child_run_id = child_run_id
+            if checkpoint is not None:
+                record.selected_checkpoint_schema_version = checkpoint.object_schema_version
+                record.selected_checkpoint_digest = checkpoint.logical_digest
+            record.failure_json = (
+                None if failure is None else json.dumps(failure.model_dump(mode="json"), separators=(",", ":"))
+            )
+            record.updated_at = now
+            record.completed_at = now
             await session.flush()
-            return _child_value(execution, thread)
-
-    async def fail_terminal_persistence(
-        self,
-        *,
-        execution_id: str,
-        failure: SafeFailure,
-        updated_at: datetime | None = None,
-    ) -> ChildExecutionHead:
-        """Fail closed while retaining any prior progress checkpoint for inspection only."""
-
-        now = _utc(updated_at)
-        async with transaction(self._sessions) as session:
-            execution = await session.get(ChildExecutionRecord, execution_id)
-            if execution is None:
-                raise StoreIntegrityError("Child execution does not exist.", code="child_execution_missing")
-            thread = await session.get(ChildThreadRecord, execution.child_thread_id)
-            if thread is None:
-                raise StoreIntegrityError("Child Thread index is missing.", code="child_thread_missing")
-            if execution.status != "running":
-                raise StoreIntegrityError("Child execution is already terminal.", code="child_execution_terminal")
-            execution.status = "failed"
-            execution.selected_checkpoint_terminal = False
-            execution.resumable = False
-            execution.failure_json = _json(failure.model_dump(mode="json"))
-            execution.updated_at = now
-            execution.completed_at = now
-            await session.flush()
-            return _child_value(execution, thread)
+            return _child_value(record)
 
 
 class EnvironmentStateRepository:
-    """Compare-and-select Host-authoritative Environment state under the complete key."""
-
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    async def ensure(self, key: EnvironmentBindingKey, *, created_at: datetime | None = None) -> EnvironmentBindingHead:
-        now = _utc(created_at)
-        async with transaction(self._sessions) as session:
-            record = await session.get(EnvironmentBindingRecord, _binding_identity(key))
-            if record is None:
-                root = await session.get(SessionRecord, key.session_id)
-                if root is None:
-                    raise StoreIntegrityError("Session does not exist.", code="session_missing")
-                if root.environment_snapshot_digest != key.profile_digest:
-                    raise StoreIntegrityError(
-                        "Environment binding profile does not match the Session pin.",
-                        code="environment_profile_mismatch",
-                    )
-                record = EnvironmentBindingRecord(
-                    session_id=key.session_id,
-                    profile_digest=key.profile_digest,
-                    binder_key=key.binder_key,
-                    normalized_folder=key.normalized_folder,
-                    state_schema_version=None,
-                    state_digest=None,
-                    updated_at=now,
-                )
-                session.add(record)
-                await session.flush()
-            return _binding_value(record)
-
     async def get(self, key: EnvironmentBindingKey) -> EnvironmentBindingHead | None:
         async with short_session(self._sessions) as session:
-            record = await session.get(EnvironmentBindingRecord, _binding_identity(key))
+            record = await session.get(EnvironmentBindingRecord, _binding_pk(key))
             return None if record is None else _binding_value(record)
 
-    async def select_state(
+    async def select(
         self,
         *,
         key: EnvironmentBindingKey,
@@ -633,152 +522,111 @@ class EnvironmentStateRepository:
         replacement: ObjectRef | None,
         updated_at: datetime | None = None,
     ) -> EnvironmentBindingHead:
-        if expected is not None:
-            _require_object_kind(expected, ObjectKind.environment_state)
         if replacement is not None:
-            _require_object_kind(replacement, ObjectKind.environment_state)
+            _require_kind(replacement, ObjectKind.environment_state)
         now = _utc(updated_at)
         async with transaction(self._sessions) as session:
-            record = await session.get(EnvironmentBindingRecord, _binding_identity(key))
-            if record is None:
-                raise StoreIntegrityError(
-                    "Environment binding authority has not been established.",
-                    code="environment_binding_missing",
-                )
-            actual = _environment_state_ref(record)
+            record = await session.get(EnvironmentBindingRecord, _binding_pk(key))
+            actual = None if record is None else _state_ref(record)
             if actual != expected:
-                _conflict(
-                    "environment_state_conflict",
-                    None if expected is None else expected.logical_digest,
-                    None if actual is None else actual.logical_digest,
+                _conflict("environment_state_conflict", _digest(expected), _digest(actual))
+            if record is None:
+                record = EnvironmentBindingRecord(
+                    **_binding_pk(key),
+                    state_schema_version=None if replacement is None else replacement.object_schema_version,
+                    state_digest=None if replacement is None else replacement.logical_digest,
+                    updated_at=now,
                 )
-            record.state_schema_version = None if replacement is None else replacement.object_schema_version
-            record.state_digest = None if replacement is None else replacement.logical_digest
-            record.updated_at = now
+                session.add(record)
+            else:
+                record.state_schema_version = None if replacement is None else replacement.object_schema_version
+                record.state_digest = None if replacement is None else replacement.logical_digest
+                record.updated_at = now
             await session.flush()
             return _binding_value(record)
 
 
-def _utc(value: datetime | None) -> datetime:
-    current = value or datetime.now(UTC)
-    if current.tzinfo is None or current.utcoffset() is None:
-        raise ValueError("stored timestamps must include a UTC offset")
-    return current.astimezone(UTC)
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
-
-
-def _parse_json(value: str | None) -> JsonValue | None:
-    if value is None:
-        return None
-    try:
-        parsed: JsonValue = json.loads(value)
-    except ValueError as exc:
-        raise StoreIntegrityError("Stored JSON is invalid.", code="stored_json_invalid") from exc
-    return parsed
-
-
-def _failure(value: str | None) -> SafeFailure | None:
-    if value is None:
-        return None
-    try:
-        return SafeFailure.model_validate_json(value)
-    except ValueError as exc:
-        raise StoreIntegrityError("Stored failure is invalid.", code="stored_failure_invalid") from exc
-
-
-def _require_object_kind(reference: ObjectRef, expected: ObjectKind) -> None:
-    if reference.object_kind is not expected:
-        raise ValueError(f"expected {expected.value} object reference")
-
-
-def _require_snapshot_kind(reference: ObjectRef, snapshot_kind: Literal["agent", "environment"]) -> None:
-    _require_object_kind(
-        reference,
-        ObjectKind.agent_snapshot if snapshot_kind == "agent" else ObjectKind.environment_snapshot,
+def _configuration_record(thread_id: str, value: ThreadConfiguration) -> ThreadConfigurationRecord:
+    return ThreadConfigurationRecord(
+        thread_id=thread_id,
+        version=value.version,
+        project_id=value.project_id,
+        agent_source_kind=value.agent_source.kind,
+        agent_source_id=value.agent_source.id,
+        environment_profile_id=value.environment_profile_id,
+        harness_plugin_ids_json=_json_list(value.harness_plugin_ids),
+        environment_run_extension_ids_json=_json_list(value.environment_run_extension_ids),
+        mcp_server_ids_json=_json_list(value.mcp_server_ids),
     )
 
 
-def _require_snapshot_ref(reference: SnapshotRef, expected: Literal["agent", "environment"]) -> None:
-    if reference.snapshot_kind != expected:
-        raise ValueError(f"expected {expected} snapshot")
-    _require_snapshot_kind(reference.object, expected)
+def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfiguration) -> None:
+    record.version = value.version
+    record.project_id = value.project_id
+    record.agent_source_kind = value.agent_source.kind
+    record.agent_source_id = value.agent_source.id
+    record.environment_profile_id = value.environment_profile_id
+    record.harness_plugin_ids_json = _json_list(value.harness_plugin_ids)
+    record.environment_run_extension_ids_json = _json_list(value.environment_run_extension_ids)
+    record.mcp_server_ids_json = _json_list(value.mcp_server_ids)
 
 
-async def _require_snapshot_row(session: AsyncSession, reference: SnapshotRef) -> None:
-    row = await session.get(CompositionSnapshotRecord, reference.object.logical_digest)
-    if row is None:
-        raise StoreIntegrityError("Selected snapshot is not indexed.", code="snapshot_missing")
-    if (
-        row.snapshot_kind != reference.snapshot_kind
-        or row.object_schema_version != reference.object.object_schema_version
-    ):
-        raise StoreIntegrityError("Selected snapshot metadata is incompatible.", code="snapshot_incompatible")
-
-
-def _snapshot_literal(value: str) -> Literal["agent", "environment"]:
-    if value == "agent":
-        return "agent"
-    if value == "environment":
-        return "environment"
-    raise StoreIntegrityError("Stored snapshot kind is invalid.", code="snapshot_kind_invalid")
-
-
-def _snapshot_object_ref(row: CompositionSnapshotRecord) -> ObjectRef:
-    kind = _snapshot_literal(row.snapshot_kind)
-    return ObjectRef(
-        object_kind=ObjectKind.agent_snapshot if kind == "agent" else ObjectKind.environment_snapshot,
-        object_schema_version=row.object_schema_version,
-        logical_digest=row.logical_digest,
+def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
+    source = (
+        AgentResourceSource(id=record.agent_source_id)
+        if record.agent_source_kind == "agent"
+        else MarkdownSubagentSource(id=record.agent_source_id)
+    )
+    return ThreadConfiguration(
+        version=record.version,
+        project_id=record.project_id,
+        agent_source=source,
+        environment_profile_id=record.environment_profile_id,
+        harness_plugin_ids=_parse_list(record.harness_plugin_ids_json),
+        environment_run_extension_ids=_parse_list(record.environment_run_extension_ids_json),
+        mcp_server_ids=_parse_list(record.mcp_server_ids_json),
     )
 
 
-async def _snapshot_ref_for(session: AsyncSession, digest: str) -> SnapshotRef:
-    row = await session.get(CompositionSnapshotRecord, digest)
-    if row is None:
-        raise StoreIntegrityError("Session snapshot index is missing.", code="snapshot_missing")
-    return SnapshotRef(snapshot_kind=_snapshot_literal(row.snapshot_kind), object=_snapshot_object_ref(row))
+def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> Thread:
+    return Thread(
+        thread_id=record.thread_id,
+        parent_thread_id=record.parent_thread_id,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        title=record.title,
+        archived=record.archived,
+        configuration=configuration,
+        initial_state=ObjectRef(
+            object_kind=ObjectKind.thread_initial_state,
+            object_schema_version=record.initial_state_schema_version,
+            logical_digest=record.initial_state_digest,
+        ),
+        continuation=_continuation_ref(record),
+    )
 
 
-def _continuation_ref(record: SessionRecord) -> ObjectRef:
+def _continuation_ref(record: ThreadRecord) -> ObjectRef | None:
+    if record.continuation_digest is None or record.continuation_schema_version is None:
+        return None
     return ObjectRef(
-        object_kind=ObjectKind.session_continuation,
+        object_kind=ObjectKind.continuation,
         object_schema_version=record.continuation_schema_version,
         logical_digest=record.continuation_digest,
     )
 
 
-def _session_value(
-    record: SessionRecord,
-    *,
-    agent_snapshot: SnapshotRef,
-    environment_snapshot: SnapshotRef,
-) -> Session:
-    return Session(
-        session_id=record.session_id,
-        root_thread_id=record.root_thread_id,
-        created_at=record.created_at,
-        updated_at=record.updated_at,
-        title=record.title,
-        agent_snapshot=agent_snapshot,
-        environment_snapshot=environment_snapshot,
-        continuation=_continuation_ref(record),
+def _configuration_reference(record: AcceptedConfigurationRecord) -> ObjectRef:
+    return ObjectRef(
+        object_kind=ObjectKind.configuration_generation,
+        object_schema_version=record.object_schema_version,
+        logical_digest=record.object_digest,
     )
 
 
-def _checkpoint_ref(record: ChildExecutionRecord) -> ObjectRef | None:
-    if record.selected_checkpoint_digest is None:
-        if record.selected_checkpoint_schema_version is not None:
-            raise StoreIntegrityError("Stored checkpoint reference is incomplete.", code="checkpoint_ref_invalid")
+def _child_checkpoint_ref(record: ChildExecutionRecord) -> ObjectRef | None:
+    if record.selected_checkpoint_digest is None or record.selected_checkpoint_schema_version is None:
         return None
-    if record.selected_checkpoint_schema_version is None:
-        raise StoreIntegrityError("Stored checkpoint reference is incomplete.", code="checkpoint_ref_invalid")
     return ObjectRef(
         object_kind=ObjectKind.child_checkpoint,
         object_schema_version=record.selected_checkpoint_schema_version,
@@ -786,52 +634,60 @@ def _checkpoint_ref(record: ChildExecutionRecord) -> ObjectRef | None:
     )
 
 
-def _child_value(record: ChildExecutionRecord, thread: ChildThreadRecord) -> ChildExecutionHead:
-    if record.session_id != thread.session_id:
-        raise StoreIntegrityError("Child execution Session does not match its Thread.", code="child_session_mismatch")
+def _child_value(record: ChildExecutionRecord) -> ChildExecutionHead:
     return ChildExecutionHead(
         execution_id=record.execution_id,
-        session_id=record.session_id,
-        parent_thread_id=thread.parent_thread_id,
+        parent_thread_id=record.parent_thread_id,
         child_thread_id=record.child_thread_id,
         child_run_id=record.child_run_id,
         segment_index=record.segment_index,
-        subagent_name=thread.subagent_name,
-        child_definition_id=thread.child_definition_id,
-        child_definition_digest=thread.child_definition_digest,
-        input=record.input_text,
-        status=record.status,  # type: ignore[arg-type]
-        selected_checkpoint=_checkpoint_ref(record),
-        selected_checkpoint_terminal=record.selected_checkpoint_terminal,
-        resumable=record.resumable,
+        run_composition=ObjectRef(
+            object_kind=ObjectKind.run_composition,
+            object_schema_version=record.run_composition_schema_version,
+            logical_digest=record.run_composition_digest,
+        ),
+        status=cast(ExecutionStatus, record.status),
+        selected_checkpoint=(
+            None
+            if record.selected_checkpoint_digest is None or record.selected_checkpoint_schema_version is None
+            else ObjectRef(
+                object_kind=ObjectKind.child_checkpoint,
+                object_schema_version=record.selected_checkpoint_schema_version,
+                logical_digest=record.selected_checkpoint_digest,
+            )
+        ),
         resumed_from=record.resumed_from,
-        failure=_failure(record.failure_json),
+        failure=(None if record.failure_json is None else SafeFailure.model_validate(json.loads(record.failure_json))),
         created_at=record.created_at,
         updated_at=record.updated_at,
         completed_at=record.completed_at,
     )
 
 
-def _binding_identity(key: EnvironmentBindingKey) -> dict[str, str]:
+def _binding_pk(key: EnvironmentBindingKey) -> dict[str, str]:
     return {
-        "session_id": key.session_id,
+        "thread_id": key.thread_id,
+        "environment_profile_id": key.environment_profile_id,
         "profile_digest": key.profile_digest,
-        "binder_key": key.binder_key,
-        "normalized_folder": key.normalized_folder,
+        "adapter_key": key.adapter_key,
+        "normalized_root": key.normalized_root,
     }
 
 
-def _environment_state_ref(record: EnvironmentBindingRecord) -> ObjectRef | None:
-    if record.state_digest is None:
-        if record.state_schema_version is not None:
-            raise StoreIntegrityError(
-                "Stored Environment state reference is incomplete.", code="environment_state_ref_invalid"
-            )
+def _binding_value(record: EnvironmentBindingRecord) -> EnvironmentBindingHead:
+    key = EnvironmentBindingKey(
+        thread_id=record.thread_id,
+        environment_profile_id=record.environment_profile_id,
+        profile_digest=record.profile_digest,
+        adapter_key=record.adapter_key,
+        normalized_root=record.normalized_root,
+    )
+    return EnvironmentBindingHead(key=key, state=_state_ref(record), updated_at=record.updated_at)
+
+
+def _state_ref(record: EnvironmentBindingRecord) -> ObjectRef | None:
+    if record.state_digest is None or record.state_schema_version is None:
         return None
-    if record.state_schema_version is None:
-        raise StoreIntegrityError(
-            "Stored Environment state reference is incomplete.", code="environment_state_ref_invalid"
-        )
     return ObjectRef(
         object_kind=ObjectKind.environment_state,
         object_schema_version=record.state_schema_version,
@@ -839,30 +695,49 @@ def _environment_state_ref(record: EnvironmentBindingRecord) -> ObjectRef | None
     )
 
 
-def _binding_value(record: EnvironmentBindingRecord) -> EnvironmentBindingHead:
-    return EnvironmentBindingHead(
-        key=EnvironmentBindingKey(
-            session_id=record.session_id,
-            profile_digest=record.profile_digest,
-            binder_key=record.binder_key,
-            normalized_folder=record.normalized_folder,
-        ),
-        state=_environment_state_ref(record),
-        updated_at=record.updated_at,
-    )
+def _require_kind(reference: ObjectRef, kind: ObjectKind) -> None:
+    if reference.object_kind is not kind:
+        raise ValueError(f"object reference must have kind {kind.value}")
+
+
+def _json_list(values: tuple[str, ...]) -> str:
+    return json.dumps(values, separators=(",", ":"))
+
+
+def _parse_list(value: str) -> tuple[str, ...]:
+    parsed = json.loads(value)
+    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
+        raise StoreIntegrityError("Stored resource list is invalid.", code="stored_configuration_invalid")
+    return tuple(parsed)
+
+
+def _utc(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.now(UTC)
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("persistence timestamps must include a UTC offset")
+    return value.astimezone(UTC)
+
+
+def _digest(value: ObjectRef | None) -> str | None:
+    return None if value is None else value.logical_digest
 
 
 def _conflict(code: str, expected: object, actual: object) -> None:
     raise StoreConflictError(
-        "Durable head changed after admission; the newer value was preserved.",
+        "A mutable Agent UI head changed concurrently.",
         code=code,
         details={"expected": expected, "actual": actual},
     )
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 __all__ = [
     "ChildExecutionRepository",
     "ConfigurationRepository",
     "EnvironmentStateRepository",
-    "SessionRepository",
+    "ThreadRepository",
 ]

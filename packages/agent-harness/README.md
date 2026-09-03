@@ -61,7 +61,7 @@ Every built Agent includes one outer `ToolExecutionBoundaryCapability` and one i
 
 Request/history filters live in `a13n_harness.filters`. Message integrity is mandatory; `ContentFilterCapability` and `ColdStartFilterCapability` are optional definition-selected filters for native multimodal request compatibility and cold-cache reduction of already-consumed tool-result strings. `SelfHealingModelCapability` is the recommended explicit selection for known one-shot provider-history repairs: it installs `SelfHealingModel` around the final effective request Model. It is not enabled implicitly. Interrupted-stream `ModelAttempt` recovery remains in the Harness rather than a request filter or the self-healing wrapper.
 
-Every `HarnessState` carries the stable `thread_id` of one independently advancing history. Resume preserves that ID, `HarnessState.fork()` creates a new one, and each process-local `HarnessRunStream`, event, and result pairs it with a fresh `run_id`. The stream's public union is `HarnessStreamEvent`.
+Every `HarnessState` carries the stable `thread_id` of one independently advancing history. A trusted Host can select the initial ID through `HarnessState.new(thread_id=...)`; resume preserves it, and `HarnessState.fork(thread_id=...)` creates a distinct Host-selected or generated branch. Each process-local `HarnessRunStream`, event, and result pairs that stable identity with a fresh `run_id`. The stream's public union is `HarnessStreamEvent`.
 
 ## Runnable examples and guides
 

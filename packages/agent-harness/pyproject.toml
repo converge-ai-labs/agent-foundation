@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "a13n-environment-provider",
+    "anyio>=4,<5",
     "genai-prices>=0.1.4,<1",
     "httpx2>=2.5,<3",
     "mem0ai>=2.0.19,<3",

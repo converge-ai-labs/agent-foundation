@@ -22,7 +22,7 @@ flowchart LR
         A2A[A2A discovery and runtime]
         Auth[Resource authorization]
         Authoring[Agent, Skill, Asset, model, and Environment authoring]
-        ConnectivityControl[Ingress, Route, Connector, Connection, and MCPConnection control]
+        ConnectivityControl[Ingress, Route, Connector, ConnectorConnection, and MCPConnection control]
         Interaction[Session, Thread, Run, and Item]
         Lifecycle[Run lifecycle]
         Feedback[Deferred feedback]

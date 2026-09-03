@@ -27,9 +27,13 @@ State restores data, not authority.
 A completed, suspended, or safely failed result may carry a state candidate:
 
 ```python
+from a13n_harness import HarnessState
+
+initial_state = HarnessState.new(thread_id="thr_productthread1")
 first = await executable.run(
     "Draft the plan",
     bindings=fresh_bindings(),
+    previous_state=initial_state,
 )
 
 if first.state is None:
@@ -59,16 +63,16 @@ Persist the complete validated envelope, not private encoded fields or raw model
 
 ## Fork a Thread
 
-Use `fork()` when copying continuation data into an independently advancing history:
+Use `fork()` when copying continuation data into an independently advancing history. Omit the ID for Harness generation or pass a distinct Host-selected ID:
 
 ```python
-branch_state = state.fork()
+branch_state = state.fork(thread_id="thr_productbranch1")
 
 assert branch_state.thread_id != state.thread_id
 assert branch_state.message_history == state.message_history
 ```
 
-Do not change a serialized `thread_id` manually. The Harness uses it to correlate one history and model-session affinity without treating it as authority.
+Do not edit serialized state manually. Use `HarnessState.new(thread_id=...)` for an explicit initial identity and `state.fork(thread_id=...)` to change identity while preserving portable continuation data. A fork clears portable Environment state by design. The Harness uses the ID to correlate one history and model-session affinity without treating it as authority.
 
 ## Export While Streaming
 

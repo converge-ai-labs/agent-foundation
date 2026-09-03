@@ -42,8 +42,8 @@ class StoreConflictError(StoreError):
     """A compare-and-select write observed a different current durable head."""
 
 
-class SessionError(AgentUiError):
-    """A Session or continuation operation is invalid."""
+class ThreadError(AgentUiError):
+    """A Thread or continuation operation is invalid."""
 
 
 class EnvironmentLifecycleError(AgentUiError):
@@ -76,9 +76,9 @@ __all__ = [
     "ObjectIntegrityError",
     "RunCoordinationError",
     "RuntimeResolutionError",
-    "SessionError",
     "SkillManagementError",
     "StoreConflictError",
     "StoreError",
     "StoreIntegrityError",
+    "ThreadError",
 ]

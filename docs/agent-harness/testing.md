@@ -61,6 +61,12 @@ assert second.run_id != first.run_id
 
 For application persistence, round-trip the complete `HarnessState` through the same serializer and store used by the application. Also test that failed or abandoned work does not replace the last committed checkpoint.
 
+## Protect provider prompt prefixes
+
+When a Capability changes model-visible messages, drive at least two model requests inside one Run. Capture the messages received by the Model, compare each complete sequence with the equal-length prefix of the next request through the public message codec, and confirm the final transformation remains in canonical result history. This detects request-local transformations that were not written back to active history. If the Capability intentionally replaces history, assert that exact transition instead of weakening or omitting the prefix check.
+
+When that Capability also contributes instructions, capture `AgentInfo.instructions` for every request and require them to remain identical. If the Capability contract intentionally changes instructions, assert the exact expected transition instead of weakening the stability check.
+
 ## Test streams as scoped resources
 
 Consume streams inside their async context and require a terminal result:

@@ -1,376 +1,405 @@
 from __future__ import annotations
 
 import json
-import os
-from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import a13n_ui.app as app_module
-import a13n_ui.storage.runtime as storage_runtime
 import pytest
-from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder, SubagentDefinition
-from a13n_harness.capabilities import SubagentCapability
-from a13n_ui.app import AgentUiApp, AppState, open_agent_ui_app
+from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder
+from a13n_harness.capabilities import SubagentCancelResult, SubagentSteerResult, WebCapability
+from a13n_ui.app import AgentUiIntegrations, AppState, open_agent_ui_app
 from a13n_ui.composition import ReconstructedAgent
 from a13n_ui.configuration import load_agent_ui_configuration
-from a13n_ui.errors import AppStateError, ObjectIntegrityError
+from a13n_ui.errors import AppStateError
+from a13n_ui.model_accounts import AccountStoreError, Availability, Provider
 from a13n_ui.model_runtime import AgentUiModelResolver
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
-from a13n_ui.subagent_operator import AgentUiSubagentOperator
-from anyio import TASK_STATUS_IGNORED, create_task_group, fail_after, sleep, sleep_forever
-from anyio import Event as AsyncEvent
-from anyio.abc import TaskStatus
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from a13n_ui.subagent_operator import ChildExecutionPage
+from anyio import Event, create_task_group, fail_after, sleep, sleep_forever
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 pytestmark = pytest.mark.anyio
 
 
-def _settings(root: Path) -> AgentUiSettings:
-    return AgentUiSettings(storage=StorageSettings(data_root=root))
-
-
-async def test_application_starts_publishes_reopens_and_closes(tmp_path: Path) -> None:
-    settings = _settings(tmp_path)
-
-    async with open_agent_ui_app(settings) as app:
-        retained_app = app
-        assert app.state is AppState.ready
-        assert (await app.status()).object_count == 0
-        reference = await app._store.publish_object(
-            object_kind=ObjectKind.agent_snapshot,
-            object_schema_version="1",
-            payload={"agent": "root"},
-        )
-        assert (await app._store.read_object(reference)).payload == {"agent": "root"}
-        assert (await app.status()).object_count == 1
-
-    assert retained_app.state is AppState.closed
-    with pytest.raises(AppStateError) as closed:
-        await retained_app.status()
-    assert closed.value.code == "app_not_ready"
-
-    async with open_agent_ui_app(settings) as reopened:
-        assert (await reopened._store.read_object(reference)).payload == {"agent": "root"}
-
-
-async def test_application_accepts_configuration_and_runs_roster_with_app_owned_operator(tmp_path: Path) -> None:
-    config_path = tmp_path / "a13n-ui.yaml"
-    config_path.write_text(
-        """
-schema_version: "1"
-defaults:
-  agent: assistant
-  environment: native
-models:
-  primary:
-    model: openai:gpt-5
-agents:
-  assistant:
-    model: primary
-    subagents:
-      - agent: reviewer
-  reviewer:
-    model: primary
-environments:
-  native:
-    kind: native
-""".lstrip()
+def _settings(root: Path, *, shutdown_timeout_seconds: float = 1.0) -> AgentUiSettings:
+    return AgentUiSettings(
+        storage=StorageSettings(data_root=root),
+        shutdown_timeout_seconds=shutdown_timeout_seconds,
     )
-    configuration = await load_agent_ui_configuration(config_path)
+
+
+def _write_configuration(tmp_path: Path, *, instructions: str = "Help the user.") -> Path:
     workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=True)
+    root = tmp_path / "a13n-ui.yaml"
+    root.write_text('schema_version: "2"\ndefaults:\n  project: project-main\n  agent: agent-assistant\n')
+    resources = {
+        "models/primary.yaml": """
+schema_version: "1"
+kind: model
+id: model-primary
+name: Primary
+route: openai:gpt-5
+authentication: {kind: api_key, env: OPENAI_API_KEY}
+""",
+        "agents/assistant.yaml": f"""
+schema_version: "1"
+kind: agent
+id: agent-assistant
+name: Assistant
+model: model-primary
+instructions: {instructions}
+""",
+        "projects/main.yaml": f"""
+schema_version: "1"
+kind: project
+id: project-main
+name: Main
+roots:
+  - path: {workspace.as_posix()}
+""",
+    }
+    for relative, content in resources.items():
+        target = tmp_path / relative
+        target.parent.mkdir(exist_ok=True)
+        target.write_text(content.lstrip())
+    return root
 
-    async with open_agent_ui_app(_settings(tmp_path / "state"), configuration=configuration) as app:
-        app._sessions._agents = _FunctionRosterReconstructor()
-        session = await app.create_session(agent_name="assistant", environment_name="native")
-        outcome = await app.run_session(
-            session_id=session.session_id,
-            prompt="start background review",
-            folders=(workspace,),
-        )
-        assert outcome.result.output_or_raise() == "accepted"
-        with fail_after(5):
-            while True:
-                heads, total = await app._store.child_executions.list_scope(
-                    session_id=session.session_id,
-                    parent_thread_id=session.root_thread_id,
-                )
-                if heads and heads[0].status != "running":
-                    break
-                await sleep(0.01)
 
-        assert total == 1
-        assert heads[0].status == "succeeded"
-        assert heads[0].subagent_name == "reviewer"
-        assert await app._store.configurations.current_digest() == configuration.source_digest
-
-
-async def test_production_app_exposes_fixed_release_tool_families(
+async def test_application_discovers_grok_account_without_startup_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_path = tmp_path / "a13n-ui.yaml"
-    config_path.write_text(
-        """
-schema_version: "1"
-defaults:
-  agent: assistant
-  environment: native
-models:
-  primary:
-    model: openai:gpt-5
-agents:
-  assistant:
-    model: primary
-environments:
-  native:
-    kind: native
-""".lstrip()
-    )
-    configuration = await load_agent_ui_configuration(config_path)
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    observed: set[str] = set()
-
-    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages
-        observed.update(tool.name for tool in info.function_tools)
-        yield "tool surface ready"
-
-    async def resolve_model(self, context, model_id):
-        del self, context, model_id
-        return FunctionModel(stream_function=model)
-
-    monkeypatch.setattr(AgentUiModelResolver, "__call__", resolve_model)
-
-    async with open_agent_ui_app(_settings(tmp_path / "state"), configuration=configuration) as app:
-        session = await app.create_session(agent_name="assistant", environment_name="native")
-        outcome = await app.run_session(
-            session_id=session.session_id,
-            prompt="inspect available tools",
-            folders=(workspace,),
+    issuer = "https://issuer.example"
+    client_id = "client-id"
+    scope = f"{issuer}::{client_id}"
+    auth_path = tmp_path / "grok-auth.json"
+    auth_path.write_text(
+        json.dumps(
+            {
+                scope: {
+                    "key": "access-secret",
+                    "auth_mode": "oidc",
+                    "create_time": datetime.now(UTC).isoformat(),
+                    "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+                    "user_id": "account-1",
+                    "refresh_token": "refresh-secret",
+                    "oidc_issuer": issuer,
+                    "oidc_client_id": client_id,
+                }
+            }
         )
-
-    assert outcome.result.output_or_raise() == "tool surface ready"
-    expected = {
-        "search",
-        "scrape",
-        "fetch",
-        "download",
-        "pdf_convert",
-        "office_to_markdown",
-        "view",
-        "list_sessions",
-        "get_session",
-        "run_session",
-        "steer_session",
-    }
-    if os.name != "nt":
-        expected.add("shell_exec")
-    assert expected <= observed
-
-
-async def test_root_control_targets_live_stream_and_session_is_readmitted_after_cancel(tmp_path: Path) -> None:
-    config_path = tmp_path / "a13n-ui.yaml"
-    config_path.write_text(
-        """
-schema_version: "1"
-defaults:
-  agent: assistant
-  environment: native
-models:
-  primary:
-    model: openai:gpt-5
-agents:
-  assistant:
-    model: primary
-environments:
-  native:
-    kind: native
-""".lstrip()
     )
-    configuration = await load_agent_ui_configuration(config_path)
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    started = AsyncEvent()
+    monkeypatch.setenv("GROK_AUTH_PATH", str(auth_path))
+
+    async with open_agent_ui_app(_settings(tmp_path / "state")) as app:
+        projection = await app.inspect_model_account(Provider.GROK)
+
+    assert projection.availability is Availability.AVAILABLE
+
+
+async def test_broken_unused_grok_store_does_not_block_application_startup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    auth_path = tmp_path / "grok-auth.json"
+    auth_path.write_text("not-json")
+    monkeypatch.setenv("GROK_AUTH_PATH", str(auth_path))
+
+    async with open_agent_ui_app(_settings(tmp_path / "state")) as app:
+        assert app.state is AppState.ready
+        with pytest.raises(AccountStoreError) as failed:
+            await app.inspect_model_account(Provider.GROK)
+
+    assert failed.value.code == "account_store_malformed"
+
+
+async def test_application_starts_persists_objects_and_closes(tmp_path: Path) -> None:
+    settings = _settings(tmp_path / "state")
+
+    async with open_agent_ui_app(settings) as app:
+        retained = app
+        assert app.state is AppState.ready
+        reference = await app._store.publish_object(
+            object_kind=ObjectKind.run_composition,
+            object_schema_version="1",
+            payload={"run": "root"},
+        )
+        assert (await app._store.read_object(reference)).payload == {"run": "root"}
+
+    assert retained.state is AppState.closed
+    with pytest.raises(AppStateError) as closed:
+        await retained.status()
+    assert closed.value.code == "app_not_ready"
+
+    async with open_agent_ui_app(settings) as reopened:
+        assert (await reopened._store.read_object(reference)).payload == {"run": "root"}
+
+
+async def test_invalid_first_candidate_starts_with_diagnostics_and_observer_accepts_repair(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "a13n-ui.yaml"
+    root.write_text("not: [valid\n")
+
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+        configuration_error=(await _candidate_error(root)),
+    ) as app:
+        status = await app.status()
+        assert status.accepted_generation_digest is None
+        assert status.candidate_error_code is not None
+
+        _write_configuration(tmp_path)
+        with fail_after(3):
+            while True:
+                status = await app.status()
+                if status.accepted_generation_digest is not None:
+                    break
+                await sleep(0.05)
+        assert status.candidate_error_code is None
+        assert (await app.current_configuration()).document.defaults.agent == "agent-assistant"
+
+
+async def test_startup_retains_last_accepted_generation_until_repaired_tree_is_stable(
+    tmp_path: Path,
+) -> None:
+    root = _write_configuration(tmp_path, instructions="First")
+    first = await load_agent_ui_configuration(root)
+    settings = _settings(tmp_path / "state")
+
+    async with open_agent_ui_app(
+        settings,
+        configuration_path=root,
+    ):
+        pass
+
+    (tmp_path / "agents/assistant.yaml").write_text("invalid: [\n")
+    error = await _candidate_error(root)
+    async with open_agent_ui_app(
+        settings,
+        configuration_path=root,
+        configuration_error=error,
+    ) as app:
+        status = await app.status()
+        assert status.accepted_generation_digest == first.source_digest
+        assert status.candidate_error_code is not None
+
+        _write_configuration(tmp_path, instructions="Second")
+        with fail_after(3):
+            while True:
+                current = await app.current_configuration()
+                status = await app.status()
+                if current is not None and current.source_digest != first.source_digest:
+                    break
+                await sleep(0.05)
+        assert current.agents["agent-assistant"].instructions == "Second"
+        assert status.candidate_error_code is None
+
+
+async def test_application_catalog_includes_host_integrations_and_returns_detached_values(
+    tmp_path: Path,
+) -> None:
+    integrations = AgentUiIntegrations(capabilities={"host.example": WebCapability})
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        integrations=integrations,
+    ) as app:
+        first = await app.list_catalog()
+        second = await app.refresh_catalog()
+
+    assert any(item.kind == "capability" and item.key == "host.example" and item.source == "host" for item in first)
+    assert first == second
+    assert first is not second
+
+
+async def test_application_exposes_detached_child_query_and_control(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+    page = ChildExecutionPage(executions=(), execution_offset=0, total=0)
+
+    async with open_agent_ui_app(_settings(tmp_path / "state")) as app:
+
+        async def query(**kwargs):
+            calls.append(("query", kwargs))
+            return page
+
+        async def wait(**kwargs):
+            calls.append(("wait", kwargs))
+            return page
+
+        async def steer(**kwargs):
+            calls.append(("steer", kwargs))
+            return SubagentSteerResult(execution_id="execution-1", accepted=False)
+
+        async def cancel(**kwargs):
+            calls.append(("cancel", kwargs))
+            return SubagentCancelResult(
+                execution_id="execution-1",
+                accepted=False,
+                status="running",
+            )
+
+        monkeypatch.setattr(app._subagent_operator, "query_child_executions", query)
+        monkeypatch.setattr(app._subagent_operator, "wait_child_executions", wait)
+        monkeypatch.setattr(app._subagent_operator, "steer_execution", steer)
+        monkeypatch.setattr(app._subagent_operator, "cancel_execution", cancel)
+
+        assert await app.query_child_executions(parent_thread_id="thread-parent") == page
+        assert (
+            await app.wait_child_executions(
+                parent_thread_id="thread-parent",
+                timeout_seconds=0.1,
+            )
+            == page
+        )
+        assert not (
+            await app.steer_child_execution(
+                parent_thread_id="thread-parent",
+                execution_id="execution-1",
+                message="focus",
+            )
+        ).accepted
+        assert not (
+            await app.cancel_child_execution(
+                parent_thread_id="thread-parent",
+                execution_id="execution-1",
+            )
+        ).accepted
+
+    assert [name for name, _arguments in calls] == ["query", "wait", "steer", "cancel"]
+    assert all(arguments["parent_thread_id"] == "thread-parent" for _, arguments in calls)
+
+
+async def test_application_creates_and_runs_root_thread(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        app._threads._agents = _CompletedReconstructor()
+        thread = await app.create_thread(title="Example")
+        assert thread.parent_thread_id is None
+        assert thread.configuration.project_id == "project-main"
+        assert thread.configuration.agent_source.id == "agent-assistant"
+
+        outcome = await app.run_thread(thread_id=thread.thread_id, prompt="hello")
+        assert outcome.result.output_or_raise() == "root complete"
+        assert outcome.continuation.status == "selected"
+        selected = await app.get_thread(thread.thread_id)
+        assert selected.continuation is not None
+        assert selected.continuation == outcome.continuation.reference
+
+
+async def test_root_control_targets_live_run_and_thread_is_readmitted_after_cancel(
+    tmp_path: Path,
+) -> None:
+    root = _write_configuration(tmp_path)
+    started = Event()
     outcomes = []
 
-    async with open_agent_ui_app(_settings(tmp_path / "state"), configuration=configuration) as app:
-        app._sessions._agents = _SlowRootReconstructor(started)
-        session = await app.create_session(agent_name="assistant", environment_name="native")
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        app._threads._agents = _SlowReconstructor(started)
+        thread = await app.create_thread()
 
         async def run_root() -> None:
-            outcomes.append(
-                await app.run_session(
-                    session_id=session.session_id,
-                    prompt="wait",
-                    folders=(workspace,),
-                )
-            )
+            outcomes.append(await app.run_thread(thread_id=thread.thread_id, prompt="wait"))
 
         async with create_task_group() as tasks:
             tasks.start_soon(run_root)
             await started.wait()
-            steering = await app.steer_session(session_id=session.session_id, message="focus")
+            steering = await app.steer_thread(thread_id=thread.thread_id, message="focus")
             assert steering.accepted
             assert steering.enqueue_id is not None
-            cancellation = await app.cancel_session(session_id=session.session_id)
+            cancellation = await app.cancel_thread(thread_id=thread.thread_id)
             assert cancellation.accepted
 
-        assert len(outcomes) == 1
         assert outcomes[0].result.status == "cancelled"
         assert outcomes[0].continuation.status == "not_available"
-        assert not (await app.cancel_session(session_id=session.session_id)).accepted
+        assert not (await app.cancel_thread(thread_id=thread.thread_id)).accepted
 
-        app._sessions._agents = _CompletedRootReconstructor()
-        retried = await app.run_session(
-            session_id=session.session_id,
-            prompt="retry",
-            folders=(workspace,),
-        )
+        app._threads._agents = _CompletedReconstructor()
+        retried = await app.run_thread(thread_id=thread.thread_id, prompt="retry")
         assert retried.result.output_or_raise() == "root complete"
 
 
-async def test_application_shutdown_drains_an_accepted_operation(
+async def test_shutdown_stops_new_admissions_and_cancels_stalled_operation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = _settings(tmp_path)
-    shutdown = AsyncEvent()
-    close_completed = AsyncEvent()
-    operation_started = AsyncEvent()
-    release_operation = AsyncEvent()
-    statuses: list[object] = []
+    app_ready = Event()
+    stop = Event()
+    operation_started = Event()
+    captured = []
+
+    async def app_lifetime() -> None:
+        async with open_agent_ui_app(_settings(tmp_path / "state", shutdown_timeout_seconds=0.01)) as app:
+            captured.append(app)
+            app_ready.set()
+            await stop.wait()
 
     async with create_task_group() as tasks:
-        app = await tasks.start(_run_until_shutdown, settings, shutdown, close_completed)
+        tasks.start_soon(app_lifetime)
+        await app_ready.wait()
+        app = captured[0]
 
-        async def slow_object_count() -> int:
-            operation_started.set()
-            await release_operation.wait()
-            return 0
-
-        async def read_status() -> None:
-            statuses.append(await app.status())
-
-        monkeypatch.setattr(app._store, "object_count", slow_object_count)
-        tasks.start_soon(read_status)
-        await operation_started.wait()
-        shutdown.set()
-        with fail_after(2):
-            while app.state is not AppState.stopping:
-                await sleep(0)
-        assert not close_completed.is_set()
-        release_operation.set()
-        await close_completed.wait()
-
-    assert len(statuses) == 1
-    assert app.state is AppState.closed
-
-
-async def test_application_shutdown_cancels_an_operation_after_its_deadline(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    settings = AgentUiSettings(storage=StorageSettings(data_root=tmp_path), shutdown_timeout_seconds=0.01)
-    shutdown = AsyncEvent()
-    close_completed = AsyncEvent()
-    operation_started = AsyncEvent()
-    errors: list[AppStateError] = []
-
-    async with create_task_group() as tasks:
-        app = await tasks.start(_run_until_shutdown, settings, shutdown, close_completed)
-
-        async def stalled_object_count() -> int:
+        async def stalled_count() -> int:
             operation_started.set()
             await sleep_forever()
 
-        async def read_status() -> None:
+        errors: list[AppStateError] = []
+
+        async def status() -> None:
             try:
                 await app.status()
             except AppStateError as exc:
                 errors.append(exc)
 
-        monkeypatch.setattr(app._store, "object_count", stalled_object_count)
-        tasks.start_soon(read_status)
+        monkeypatch.setattr(app._store, "object_count", stalled_count)
+        tasks.start_soon(status)
         await operation_started.wait()
-        shutdown.set()
-        await close_completed.wait()
+        stop.set()
 
     assert app.state is AppState.closed
-    assert len(errors) == 1
-    assert errors[0].code == "app_stopping"
+    assert [item.code for item in errors] == ["app_stopping"]
 
 
-async def test_application_closes_after_external_cancellation(tmp_path: Path) -> None:
-    settings = _settings(tmp_path)
+async def _candidate_error(path: Path):
+    from a13n_ui.errors import ConfigurationError
 
-    async with create_task_group() as tasks:
-        app = await tasks.start(_hold_application, settings)
-        tasks.cancel_scope.cancel()
-
-    assert app.state is AppState.closed
-
-
-async def test_application_marks_closed_when_store_close_fails(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    settings = _settings(tmp_path)
-    original_open_store = app_module.open_local_store
-
-    @asynccontextmanager
-    async def failing_close(storage: StorageSettings) -> AsyncGenerator[storage_runtime.LocalStore]:
-        async with original_open_store(storage) as store:
-            yield store
-        raise RuntimeError("store close failed")
-
-    monkeypatch.setattr(app_module, "open_local_store", failing_close)
-    retained: AgentUiApp | None = None
-    with pytest.raises(RuntimeError, match="store close failed"):
-        async with open_agent_ui_app(settings) as app:
-            retained = app
-
-    assert retained is not None
-    assert retained.state is AppState.closed
+    try:
+        await load_agent_ui_configuration(path)
+    except ConfigurationError as exc:
+        return exc
+    raise AssertionError("candidate unexpectedly valid")
 
 
-async def test_concurrent_apps_share_one_data_root(tmp_path: Path) -> None:
-    settings = _settings(tmp_path)
+class _CompletedReconstructor:
+    def reconstruct(self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None):
+        del composition, subagent_operator, subscription_sources
 
-    async with open_agent_ui_app(settings) as first:
-        async with open_agent_ui_app(settings) as second:
-            assert first.state is AppState.ready
-            assert second.state is AppState.ready
+        async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+            del messages, info
+            yield "root complete"
 
-
-async def test_missing_unselected_object_does_not_block_startup_but_fails_on_read(tmp_path: Path) -> None:
-    settings = _settings(tmp_path)
-
-    async with open_agent_ui_app(settings) as app:
-        reference = await app._store.publish_object(
-            object_kind=ObjectKind.environment_snapshot,
-            object_schema_version="1",
-            payload={"environment": "local"},
-        )
-
-    next((tmp_path / "objects").rglob("*.json.zst")).unlink()
-
-    async with open_agent_ui_app(settings) as reopened:
-        with pytest.raises(ObjectIntegrityError) as missing:
-            await reopened._store.read_object(reference)
-    assert missing.value.code == "object_unreadable"
+        return _reconstructed(model, root_capabilities)
 
 
-class _SlowRootReconstructor:
-    def __init__(self, started: AsyncEvent) -> None:
+class _SlowReconstructor:
+    def __init__(self, started: Event) -> None:
         self._started = started
 
-    def reconstruct(self, snapshot, *, subagent_operator, root_capabilities=()):
-        del snapshot, subagent_operator
+    def reconstruct(self, composition, *, subagent_operator, root_capabilities=(), subscription_sources=None):
+        del composition, subagent_operator, subscription_sources
 
         async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
             del messages, info
@@ -378,117 +407,20 @@ class _SlowRootReconstructor:
             await sleep_forever()
             yield "unreachable"
 
-        executable = HarnessBuilder().build(
-            AgentDefinition(
-                agent=AgentSpec(),
-                output_type=str,
-                definition_id=f"agent-ui:{'6' * 64}",
-                model=FunctionModel(stream_function=model),
-                capabilities=tuple(root_capabilities),
-            )
-        )
-        return ReconstructedAgent(executable=executable, model_resolver=AgentUiModelResolver({}))
+        return _reconstructed(model, root_capabilities)
 
 
-class _CompletedRootReconstructor:
-    def reconstruct(self, snapshot, *, subagent_operator, root_capabilities=()):
-        del snapshot, subagent_operator
-
-        async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-            del messages, info
-            yield "root complete"
-
-        executable = HarnessBuilder().build(
-            AgentDefinition(
-                agent=AgentSpec(),
-                output_type=str,
-                definition_id=f"agent-ui:{'7' * 64}",
-                model=FunctionModel(stream_function=model),
-                capabilities=tuple(root_capabilities),
-            )
-        )
-        return ReconstructedAgent(executable=executable, model_resolver=AgentUiModelResolver({}))
-
-
-class _FunctionRosterReconstructor:
-    def reconstruct(self, snapshot, *, subagent_operator, root_capabilities=()):
-        del snapshot
-        assert isinstance(subagent_operator, AgentUiSubagentOperator)
-        child = AgentDefinition(
-            agent=AgentSpec(),
-            output_type=str,
-            definition_id=f"agent-ui:{'4' * 64}",
-            model=FunctionModel(stream_function=_completed_child_model),
-        )
-        parent = AgentDefinition(
-            agent=AgentSpec(),
-            output_type=str,
-            definition_id=f"agent-ui:{'5' * 64}",
-            model=FunctionModel(stream_function=_delegating_parent_model),
-            capabilities=(
-                SubagentCapability(async_enabled=True, operator=subagent_operator),
-                *root_capabilities,
-            ),
-            subagents=(
-                SubagentDefinition(
-                    name="reviewer",
-                    description="Review one bounded task.",
-                    agent=child,
-                ),
-            ),
-        )
-        return ReconstructedAgent(
-            executable=HarnessBuilder().build(parent),
-            model_resolver=AgentUiModelResolver({}),
-        )
-
-
-async def _delegating_parent_model(
-    messages: list[ModelMessage],
-    info: AgentInfo,
-) -> AsyncIterator[str | DeltaToolCalls]:
-    del info
-    returned = any(
-        isinstance(part, ToolReturnPart)
-        for message in messages
-        if isinstance(message, ModelRequest)
-        for part in message.parts
+def _reconstructed(model, root_capabilities) -> ReconstructedAgent:
+    definition = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        definition_id="agent-ui:agent:agent-assistant",
+        model=FunctionModel(stream_function=model),
+        capabilities=tuple(root_capabilities),
     )
-    if not returned:
-        yield {
-            0: DeltaToolCall(
-                name="delegate",
-                json_args=json.dumps({"subagent_name": "reviewer", "prompt": "inspect"}),
-                tool_call_id="delegate-1",
-            )
-        }
-        return
-    yield "accepted"
-
-
-async def _completed_child_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-    del messages, info
-    yield "child complete"
-
-
-async def _run_until_shutdown(
-    settings: AgentUiSettings,
-    shutdown: AsyncEvent,
-    close_completed: AsyncEvent,
-    *,
-    task_status: TaskStatus[AgentUiApp] = TASK_STATUS_IGNORED,
-) -> None:
-    async with open_agent_ui_app(settings) as app:
-        task_status.started(app)
-        await shutdown.wait()
-    close_completed.set()
-
-
-async def _hold_application(
-    settings: AgentUiSettings,
-    *,
-    task_status: TaskStatus[AgentUiApp] = TASK_STATUS_IGNORED,
-) -> None:
-    async with open_agent_ui_app(settings) as app:
-        task_status.started(app)
-        await sleep_forever()
+    executable = HarnessBuilder().build(definition)
+    return ReconstructedAgent(
+        executable=executable,
+        model_resolver=AgentUiModelResolver({}),
+        definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
+    )
