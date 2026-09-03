@@ -25,6 +25,8 @@ def service_metadata() -> MetaData:
     # Deliberately avoid module scanning or plugin discovery.
     from a13n_service.agents import models as agent_models
     from a13n_service.assets import models as asset_models
+    from a13n_service.connectivity import models as connectivity_models
+    from a13n_service.connectivity.ingress import models as ingress_models
     from a13n_service.durable_operations import models as durable_operations_models
     from a13n_service.environments import models as environment_models
     from a13n_service.iam import models as iam_models
@@ -38,11 +40,13 @@ def service_metadata() -> MetaData:
     del (
         agent_models,
         asset_models,
+        connectivity_models,
         durable_operations_models,
         environment_models,
         iam_models,
         interaction_control_models,
         interaction_models,
+        ingress_models,
         model_models,
         plugin_models,
         secret_models,

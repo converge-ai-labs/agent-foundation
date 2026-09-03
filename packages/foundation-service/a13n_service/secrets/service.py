@@ -51,49 +51,70 @@ class InternalSecretService:
         self._clock = clock
 
     async def create(self, context: SecretUseContext, value: str) -> SecretValueRef:
+        async with transaction(self._sessions) as session:
+            return await self.create_in_transaction(session, context, value)
+
+    async def create_in_transaction(
+        self,
+        session: AsyncSession,
+        context: SecretUseContext,
+        value: str,
+    ) -> SecretValueRef:
+        """Add one Secret to an existing owner mutation transaction."""
+
         if context.credential_generation != 1:
             raise InternalSecretError("new Secret generation must be one")
         _validate_owner(context)
         secret_id = new_object_id("sec")
         protected = self._protect(secret_id, context, value)
         now = self._clock()
+        if await session.scalar(self._owner_key_query(context).with_only_columns(SecretRecord.id)) is not None:
+            raise InternalSecretError("a Secret already exists for this owner and key")
+        session.add(
+            SecretRecord(
+                id=secret_id,
+                organization_id=context.organization_id,
+                workspace_id=context.workspace_id,
+                owner_type=context.owner_type.value,
+                owner_id=context.owner_id,
+                key=context.key,
+                version=1,
+                ciphertext=protected.ciphertext,
+                nonce=protected.nonce,
+                encryption_key_id=protected.encryption_key_id,
+                created_at=now,
+                value_updated_at=now,
+                deleted_at=None,
+            )
+        )
         try:
-            async with transaction(self._sessions) as session:
-                if await session.scalar(self._owner_key_query(context).with_only_columns(SecretRecord.id)) is not None:
-                    raise InternalSecretError("a Secret already exists for this owner and key")
-                session.add(
-                    SecretRecord(
-                        id=secret_id,
-                        organization_id=context.organization_id,
-                        workspace_id=context.workspace_id,
-                        owner_type=context.owner_type.value,
-                        owner_id=context.owner_id,
-                        key=context.key,
-                        version=1,
-                        ciphertext=protected.ciphertext,
-                        nonce=protected.nonce,
-                        encryption_key_id=protected.encryption_key_id,
-                        created_at=now,
-                        value_updated_at=now,
-                        deleted_at=None,
-                    )
-                )
+            await session.flush()
         except IntegrityError as error:
             raise InternalSecretError("an active Secret already exists for this owner and key") from error
         return SecretValueRef(secret_id=secret_id, version=1)
 
     async def replace(self, context: SecretUseContext, value: str) -> SecretValueRef:
-        _validate_owner(context)
         async with transaction(self._sessions) as session:
-            record = await self._load(session, context, lock=True)
-            next_version = record.version + 1
-            next_context = context.model_copy(update={"credential_generation": next_version})
-            protected = self._protect(record.id, next_context, value)
-            record.version = next_version
-            record.ciphertext = protected.ciphertext
-            record.nonce = protected.nonce
-            record.encryption_key_id = protected.encryption_key_id
-            record.value_updated_at = self._clock()
+            return await self.replace_in_transaction(session, context, value)
+
+    async def replace_in_transaction(
+        self,
+        session: AsyncSession,
+        context: SecretUseContext,
+        value: str,
+    ) -> SecretValueRef:
+        """Replace one Secret in its owner's mutation transaction."""
+
+        _validate_owner(context)
+        record = await self._load(session, context, lock=True)
+        next_version = record.version + 1
+        next_context = context.model_copy(update={"credential_generation": next_version})
+        protected = self._protect(record.id, next_context, value)
+        record.version = next_version
+        record.ciphertext = protected.ciphertext
+        record.nonce = protected.nonce
+        record.encryption_key_id = protected.encryption_key_id
+        record.value_updated_at = self._clock()
         return SecretValueRef(secret_id=record.id, version=next_version)
 
     async def resolve(self, context: SecretUseContext) -> str:

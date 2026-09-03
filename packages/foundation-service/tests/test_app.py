@@ -132,12 +132,14 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     schemas = document["components"]["schemas"]
     assert {
         "Asset",
+        "Ingress",
         "Model",
         "Plugin",
         "PluginVersion",
         "Skill",
         "SkillPackageManifest",
         "SkillRevision",
+        "Route",
     } <= schemas.keys()
     assert {"Observation", "TraceCollection", "TraceDetail", "TraceSummary"} <= schemas.keys()
     assert {
@@ -158,6 +160,10 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/plugin-versions/{plugin_version_id}/activate" in document["paths"]
     assert "/api/v1/plugins/{plugin_id}/deactivate" in document["paths"]
     assert "/api/v1/operations/{operation_id}" in document["paths"]
+    assert "/api/v1/workspaces/{workspace_id}/ingresses" in document["paths"]
+    assert "/api/v1/ingresses/{ingress_id}/routes" in document["paths"]
+    assert document["components"]["schemas"]["CreateIngressRequest"]["properties"]["credentials"]["writeOnly"]
+    assert "credentials" not in document["components"]["schemas"]["Ingress"]["properties"]
 
 
 def test_web_application_serves_assets_and_browser_history(tmp_path: Path) -> None:
@@ -206,21 +212,21 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     class Adapter:
         provider_key = "fake"
         driver_key = "fake"
-        config_versions = frozenset({1})
+        config_versions = frozenset({"fake_v1"})
 
     ingress_registry = AdapterRegistry[IngressAdapter]()
     connector_registry = AdapterRegistry[ConnectorAdapter]()
     ingress_registry.register(
         AdapterDefinition(
             key="fake",
-            config_versions=frozenset({1}),
+            config_versions=frozenset({"fake_v1"}),
             factory=Adapter,
         )
     )
     connector_registry.register(
         AdapterDefinition(
             key="fake",
-            config_versions=frozenset({1}),
+            config_versions=frozenset({"fake_v1"}),
             factory=Adapter,
         )
     )
@@ -235,7 +241,7 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     ingress_registry.register(
         AdapterDefinition(
             key="later",
-            config_versions=frozenset({1}),
+            config_versions=frozenset({"fake_v1"}),
             factory=Adapter,
         )
     )

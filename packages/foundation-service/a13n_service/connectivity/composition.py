@@ -17,7 +17,7 @@ class AdapterDefinition[AdapterT]:
     """One trusted adapter factory and its accepted configuration versions."""
 
     key: str
-    config_versions: frozenset[int]
+    config_versions: frozenset[str]
     factory: Callable[[], AdapterT]
 
 
@@ -32,13 +32,15 @@ class AdapterRegistry[AdapterT]:
     def register(self, definition: AdapterDefinition[AdapterT]) -> None:
         if _ADAPTER_KEY.fullmatch(definition.key) is None:
             raise ValueError("adapter key must be lowercase ASCII with optional digits or underscores")
-        if not definition.config_versions or any(version < 1 for version in definition.config_versions):
-            raise ValueError("adapter must declare positive configuration versions")
+        if not definition.config_versions or any(
+            _ADAPTER_KEY.fullmatch(version) is None for version in definition.config_versions
+        ):
+            raise ValueError("adapter must declare stable configuration versions")
         if definition.key in self._definitions:
             raise ValueError(f"adapter key is already registered: {definition.key}")
         self._definitions[definition.key] = definition
 
-    def create(self, key: str, *, config_version: int) -> AdapterT:
+    def create(self, key: str, *, config_version: str) -> AdapterT:
         definition = self._definitions.get(key)
         if definition is None:
             raise ValueError(f"adapter is not registered: {key}")

@@ -28,6 +28,9 @@ from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.ingress.router import router as ingress_router
+from a13n_service.connectivity.ingress.routes import RouteService
+from a13n_service.connectivity.ingress.service import IngressService
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
@@ -384,6 +387,17 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     app.state.agent_resolver,
                     app.state.agent_invocation_resolver,
                 )
+                app.state.ingress_service = IngressService(
+                    storage.sessions,
+                    app.state.ingress_adapter_registry,
+                    app.state.internal_secret_service,
+                )
+                app.state.route_service = RouteService(
+                    storage.sessions,
+                    app.state.ingress_adapter_registry,
+                    batch_max_events=settings.connectivity_batch_max_events,
+                    batch_max_wait_seconds=settings.connectivity_batch_max_wait_seconds,
+                )
                 app.state.model_service = ModelService(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -532,6 +546,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.include_router(plugin_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
+        app.include_router(ingress_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:

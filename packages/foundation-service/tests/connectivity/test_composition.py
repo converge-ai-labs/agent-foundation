@@ -6,20 +6,20 @@ def test_registry_rejects_unknown_duplicate_and_unversioned_adapters() -> None:
     registry = AdapterRegistry[object]()
     definition = AdapterDefinition(
         key="slack",
-        config_versions=frozenset({1}),
+        config_versions=frozenset({"slack_http_v1"}),
         factory=object,
     )
     registry.register(definition)
 
     assert registry.keys() == ("slack",)
-    assert registry.create("slack", config_version=1) is not None
+    assert registry.create("slack", config_version="slack_http_v1") is not None
     with pytest.raises(ValueError, match="already registered"):
         registry.register(definition)
     with pytest.raises(ValueError, match="not registered"):
-        registry.create("github", config_version=1)
+        registry.create("github", config_version="github_app_http_v1")
     with pytest.raises(ValueError, match="version"):
-        registry.create("slack", config_version=2)
-    with pytest.raises(ValueError, match="positive"):
+        registry.create("slack", config_version="slack_http_v2")
+    with pytest.raises(ValueError, match="stable configuration versions"):
         registry.register(
             AdapterDefinition(
                 key="github",
