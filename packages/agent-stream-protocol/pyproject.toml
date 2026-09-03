@@ -10,7 +10,7 @@ dependencies = [
     "ag-ui-protocol>=0.1.18,<0.2",
     "a13n-harness",
     "pydantic>=2.12,<3",
-    "pydantic-ai-slim>=2.38,<2.39",
+    "pydantic-ai-slim>=2.38,<3",
 ]
 
 [dependency-groups]

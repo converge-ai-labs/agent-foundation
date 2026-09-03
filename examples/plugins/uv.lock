@@ -82,7 +82,7 @@ requires-dist = [
     { name = "mem0ai", specifier = ">=2.0.19,<3" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"], specifier = ">=2.38,<2.39" },
+    { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"], specifier = ">=2.38,<3" },
     { name = "pydantic-monty", specifier = ">=0.0.19,<0.1" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "tenacity", specifier = ">=9,<10" },
@@ -118,7 +118,7 @@ requires-dist = [
     { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
     { name = "a13n-harness", editable = "../../packages/agent-harness" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pydantic-ai-slim", specifier = ">=2.38,<2.39" },
+    { name = "pydantic-ai-slim", specifier = ">=2.38,<3" },
 ]
 
 [package.metadata.requires-dev]
