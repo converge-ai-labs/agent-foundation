@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from a13n_harness import HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.filters import (
     ColdStartFilterCapability,
     ColdStartFilterConfiguration,
     MessageIntegrityFilterCapability,
 )
+from pydantic_ai import AgentSpec
 from pydantic_ai.messages import (
+    ModelMessage,
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
@@ -18,7 +22,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 pytestmark = pytest.mark.anyio
 
@@ -57,6 +61,48 @@ async def test_message_integrity_filter_keeps_only_one_result_for_the_current_ca
     assert tool_results == [current]
     assert filtered.messages is not messages
     assert messages[-1].parts[:3] == [orphan, current, duplicate]
+
+
+async def test_message_integrity_filter_persists_the_processed_history() -> None:
+    current = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content="current")
+    duplicate = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content="duplicate")
+    orphan = ToolReturnPart(tool_name="lookup", tool_call_id="call-1", content="orphan")
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart("start")]),
+            ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="call-2")]),
+            ModelRequest(parts=[orphan, current, duplicate, UserPromptPart("continue")]),
+        )
+    )
+
+    seen: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        seen.append(messages)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+    )
+    result = await executable.run("next", bindings=RunBindings.embedded(), previous_state=previous)
+
+    assert result.state is not None
+
+    def tool_results(messages: list[ModelMessage] | tuple[ModelMessage, ...]) -> list[ToolReturnPart]:
+        return [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+
+    assert tool_results(seen[0]) == [current]
+    assert tool_results(result.all_messages()) == [current]
+    assert tool_results(result.state.message_history) == [current]
 
 
 async def test_message_integrity_filter_preserves_model_level_retry_and_final_request() -> None:

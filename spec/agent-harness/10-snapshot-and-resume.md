@@ -42,12 +42,16 @@ class HarnessState(BaseModel):
     environment_states: Mapping[str, EnvironmentState] = {}
 
     @classmethod
-    def new(...) -> HarnessState: ...
+    def new(*, thread_id: str | None = None, ...) -> HarnessState: ...
+
+    def fork(*, thread_id: str | None = None) -> HarnessState: ...
 ```
 
 `HarnessState` and its nested values are frozen detached envelopes. Pydantic message history is round-tripped through `ModelMessagesTypeAdapter`; Capability and Environment payload data are round-tripped through Pydantic `JsonValue`. Public accessors decode fresh copies, so mutable aliases do not cross the state boundary.
 
-`thread_id` is a Harness-generated opaque correlation value consisting of the `thread-` prefix and 32 lowercase hexadecimal characters. `HarnessState.new()` creates a new Thread and generates its ID; direct envelope validation requires the field. Serialization, ordinary copies, exports, and resume preserve it exactly. The field is not accepted through `RunBindings`, metadata, or a run argument. `HarnessState.fork()` copies messages and Capability state into a new envelope with a newly generated ID but resets `environment_states` to an empty mapping. A fork is a new Thread and does not inherit backing-target selection by default. This is the required core path for intentionally creating an independently advancing history from an existing checkpoint. Trusted plugins and Host state transformations remain able to construct complete State under the existing trust boundary; the ID is not cryptographic integrity or authority.
+`thread_id` is an opaque provider-neutral correlation value for one independently advancing history. A generated value consists of the `thread-` prefix and 32 lowercase hexadecimal characters. A trusted Host may instead select a stable Foundation object ID in `<kind-prefix>_<lowercase-alphanumeric-suffix>` form, up to 256 characters. `HarnessState.new(thread_id=...)` selects that identity explicitly; omitting it generates one. Serialization, ordinary copies, exports, and resume preserve the value exactly; `RunBindings`, metadata, and run arguments do not duplicate or override State-owned identity.
+
+`HarnessState.fork(thread_id=...)` copies messages and Capability state into a new envelope under the distinct Host-selected identity and resets `environment_states` to an empty mapping. Omitting the argument derives a fresh generated ID. Passing the source identity is invalid. A fork is a new Thread and does not inherit backing-target selection by default. This is the required core path for intentionally creating an independently advancing history or changing identity from an existing checkpoint; a fresh binding cannot silently retarget prior State. The ID is not cryptographic integrity or authority.
 
 `schema_version` versions only the Harness envelope and is `1` for this contract. Import requires the exact supported envelope version and a valid required `thread_id`; validation never invents a replacement identity for malformed input. Each Capability entry has an independent non-blank version owned by that Capability's codec; each `environment_states` value has an independent provider-owned codec version. [Environment Integration](08-environment-integration.md#portable-environment-state) owns the direct mapping and its authority boundary.
 

@@ -324,13 +324,13 @@ sequenceDiagram
         Model-->>Compact: plain-text summary
         Compact->>State: read retained semantic inputs and user steering
         Compact->>Compact: rebuild deterministic replay boundary
-        Compact-->>PAI: compacted history
+        Compact-->>PAI: compacted canonical history
     else no usage or below threshold
         Compact-->>PAI: original history
     end
 ```
 
-After the threshold is reached, Compaction removes Harness-owned overlays through ownership metadata from one detached history view. The nested request and successful replacement builder consume that same cleaned view; matching caller-authored text remains untouched. The original request context is not modified, so a failed compaction remains fail-open. The nested compact run is implemented by the same Pydantic Capability and a shallow copy of the current Agent. It keeps the effective Model, system prompts, instructions, and tool definitions cache-compatible, requests `str` output, disables provider tool selection for the nested request, and permits only one additional model request within all outer usage ceilings. The mandatory execution boundary also rejects any function-tool dispatch if a provider violates that request. It does not call or depend on the `summarize` tool or Handoff Capability. A run-local recursion guard prevents nested compaction.
+After the threshold is reached, Compaction removes Harness-owned overlays through ownership metadata from one detached history view. The nested request and successful replacement builder consume that same cleaned view; matching caller-authored text remains untouched. On success, the Capability returns the replacement through `before_model_request`, and native Pydantic writeback makes it the canonical message history exported in `HarnessState`; returning only a request-wrapper snapshot would not replace durable continuation history. The original request context is not modified, so a failed compaction remains fail-open. The nested compact run is implemented by the same Pydantic Capability and a shallow copy of the current Agent. It keeps the effective Model, system prompts, instructions, and tool definitions cache-compatible, requests `str` output, disables provider tool selection for the nested request, and permits only one additional model request within all outer usage ceilings. The mandatory execution boundary also rejects any function-tool dispatch if a provider violates that request. It does not call or depend on the `summarize` tool or Handoff Capability. A run-local recursion guard prevents nested compaction.
 
 A successful replacement has this fixed order:
 

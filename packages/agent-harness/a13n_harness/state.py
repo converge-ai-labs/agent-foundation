@@ -105,8 +105,8 @@ class HarnessState(BaseModel):
 
     schema_version: Literal["1"]
     thread_id: str = Field(
-        pattern=r"^thread-[a-f0-9]{32}$",
-        max_length=39,
+        pattern=r"^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]*_[a-z0-9]+)$",
+        max_length=256,
     )
     message_history_json: bytes | Sequence[ModelMessage] = Field(
         default=_EMPTY_MESSAGES_JSON,
@@ -126,6 +126,7 @@ class HarnessState(BaseModel):
     def new(
         cls,
         *,
+        thread_id: str | None = None,
         message_history: Sequence[ModelMessage] = (),
         agent_context_state: AgentContextStateSnapshot | None = None,
         environment_states: Mapping[str, EnvironmentState] | None = None,
@@ -133,7 +134,7 @@ class HarnessState(BaseModel):
         """Create the initial continuation envelope for a new Thread."""
         return cls(
             schema_version="1",
-            thread_id=_new_thread_id(),
+            thread_id=thread_id if thread_id is not None else _new_thread_id(),
             message_history=message_history,
             agent_context_state=(
                 agent_context_state if agent_context_state is not None else AgentContextStateSnapshot()
@@ -170,9 +171,13 @@ class HarnessState(BaseModel):
         """Return detached portable state for each stateful Environment mount."""
         return _ENVIRONMENT_STATES_ADAPTER.validate_json(cast(bytes, self.environment_states_json))
 
-    def fork(self) -> HarnessState:
-        """Copy portable continuation data into a distinct Thread."""
+    def fork(self, *, thread_id: str | None = None) -> HarnessState:
+        """Copy portable continuation data into a distinct generated or Host-selected Thread."""
+        selected_thread_id = thread_id if thread_id is not None else _new_thread_id()
+        if selected_thread_id == self.thread_id:
+            raise ValueError("fork thread_id must differ from the source Thread")
         return HarnessState.new(
+            thread_id=selected_thread_id,
             message_history=self.message_history,
             agent_context_state=self.agent_context_state,
             environment_states={},

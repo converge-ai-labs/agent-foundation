@@ -105,7 +105,7 @@ OAuth headers are attached only to the exact HTTPS origin owned by the selected 
 
 A caller-supplied HTTP client must be dedicated to the Model integration and have no existing authentication; the builder installs its request authentication and does not close that client. When the builder creates the client, the native Model lifecycle closes it and can recreate it on a later entry.
 
-Codex uses the native Responses streaming dialect, disables provider storage, removes settings the subscription endpoint does not support, and does not claim local token counting. It derives Codex `session-id`, `thread-id`, and `x-client-request-id` defaults from the effective Harness Thread affinity already supplied as `x-session-id`; explicit case-insensitive header values win. The standard `openai_prompt_cache_key` remains owned by the Harness request-affinity Capability. Root and child Threads therefore receive different provider thread affinity while each Thread retains stable affinity across its own continuation.
+Codex uses the native Responses streaming dialect, disables provider storage, removes settings the subscription endpoint does not support, and does not claim local token counting. It derives Codex `session-id`, `thread-id`, and `x-client-request-id` defaults from the effective Harness Thread affinity already supplied as `x-session-id`; the value may be Host-selected for a new Thread but remains State-stable across continuation, and explicit case-insensitive header values win. The standard `openai_prompt_cache_key` remains owned by the Harness request-affinity Capability. Root and child Threads therefore receive different provider thread affinity while each Thread retains stable affinity across its own continuation.
 
 ### Codex Routing and Turn State
 

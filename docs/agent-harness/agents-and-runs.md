@@ -302,7 +302,7 @@ ModelSettings(
 )
 ```
 
-The value remains stable across continuation from the same `HarnessState` and differs for independent roots, children, siblings, and forks. An explicit `openai_prompt_cache_key` wins, and an explicit `ModelSettings.extra_headers` entry overrides `x-session-id` case-insensitively. The Harness does not use the transient `run_id` or mutate caller settings.
+The value remains stable across continuation from the same `HarnessState` and differs for independent roots, children, siblings, and forks. A trusted Host can select the initial value through `HarnessState.new(thread_id=...)`, while `HarnessState.fork(thread_id=...)` creates a distinct Host-selected branch. An explicit `openai_prompt_cache_key` wins, and an explicit `ModelSettings.extra_headers` entry overrides `x-session-id` case-insensitively. The Harness does not use the transient `run_id` or mutate caller settings.
 
 Pydantic provider adapters consume only settings they recognize. Non-OpenAI adapters ignore `openai_prompt_cache_key`; OpenAI and OpenAI-compatible adapters may transmit it as `prompt_cache_key`. If an upstream endpoint rejects either automatic field, disable that patch before constructing `HarnessBuilder`:
 

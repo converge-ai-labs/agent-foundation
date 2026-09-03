@@ -190,6 +190,12 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     assert text[1] == "hello"
     assert text[-2:] == ["plugin context", "host epilogue"]
     assert any(isinstance(value, str) and value.startswith('<agent-context source="a13n-harness">') for value in text)
+    assert result.state is not None
+    persisted_request = result.state.message_history[0]
+    assert isinstance(persisted_request, ModelRequest)
+    persisted_text = [part.content for part in persisted_request.parts if isinstance(part, UserPromptPart)]
+    assert persisted_text == text
+    assert persisted_request.metadata == request.metadata
 
 
 async def test_host_can_short_circuit_default_projection_without_bypassing_commit() -> None:

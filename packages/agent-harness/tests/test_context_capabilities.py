@@ -426,6 +426,14 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
     assert "projected separately on ordinary requests" in compacted_user_text
     assert "Continue" in compacted_user_text
     assert "summarize" not in {tool.name for tool in calls[0][1].function_tools}
+    assert result.state is not None
+    persisted_compaction = result.state.message_history[:-1]
+    persisted_user_text = _user_text(list(persisted_compaction))
+    assert "Original long task" not in persisted_user_text
+    assert "<context-restored>" in persisted_user_text
+    assert "Continue" in persisted_user_text
+    assert isinstance(persisted_compaction[1], ModelResponse)
+    assert persisted_compaction[1].metadata == {"keep": "compact"}
     assert len(result.new_messages()) == 2
     assert result.new_messages() == result.all_messages()[-2:]
 
