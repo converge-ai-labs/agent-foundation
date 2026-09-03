@@ -6,6 +6,8 @@ from typing import Protocol
 
 from fastapi import Request
 
+from a13n_service.process.runtime import get_service_runtime
+
 from .authorization import AuthenticatedActor
 
 
@@ -18,7 +20,8 @@ class RequestAuthenticator(Protocol):
 
 
 async def authenticate_request(request: Request) -> AuthenticatedActor:
-    authenticator: RequestAuthenticator | None = getattr(request.app.state, "request_authenticator", None)
+    runtime = get_service_runtime(request)
+    authenticator = runtime.request_authenticator if runtime is not None else None
     if authenticator is None:
         raise AuthenticationError("authentication is not configured")
     try:

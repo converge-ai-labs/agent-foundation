@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.process.runtime import get_connectivity_control_runtime
 
 from .connections import ConnectorConnectionService
 from .domain import (
@@ -39,29 +40,25 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, ma
 
 
 def _connectors(request: Request) -> ConnectorService:
-    service: ConnectorService | None = getattr(request.app.state, "connector_service", None)
-    if service is None:
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
         raise ConnectorError(
             "connector_management_unavailable",
             "Connector Management is unavailable.",
             status_code=503,
         )
-    return service
+    return runtime.connectors
 
 
 def _connections(request: Request) -> ConnectorConnectionService:
-    service: ConnectorConnectionService | None = getattr(
-        request.app.state,
-        "connector_connection_service",
-        None,
-    )
-    if service is None:
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
         raise ConnectorError(
             "connector_management_unavailable",
             "Connector Management is unavailable.",
             status_code=503,
         )
-    return service
+    return runtime.connector_connections
 
 
 def _etag(response: Response, resource: Connector | ConnectorConnection) -> None:
@@ -370,7 +367,7 @@ async def connector_setup_callback(
     session_uri: Annotated[str, Query(min_length=1, max_length=4096)],
 ) -> RedirectResponse:
     return_path = await _connections(request).complete_callback(actor=actor, session_uri=session_uri)
-    public_origin: str | None = getattr(request.app.state, "connectivity_public_origin", None)
-    if public_origin is None:
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
         raise ConnectorError("callback_unavailable", "Connector callback is unavailable.", status_code=503)
-    return RedirectResponse(f"{public_origin.rstrip('/')}{return_path}", status_code=303)
+    return RedirectResponse(f"{runtime.public_origin.rstrip('/')}{return_path}", status_code=303)

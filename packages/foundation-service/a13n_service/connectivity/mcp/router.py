@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.process.runtime import get_connectivity_control_runtime, get_service_runtime
 
 from .domain import (
     CreateMCPConnectionRequest,
@@ -29,25 +30,25 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, ma
 
 
 def _connections(request: Request) -> MCPConnectionService:
-    service: MCPConnectionService | None = getattr(request.app.state, "mcp_connection_service", None)
-    if service is None:
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
         raise MCPConnectionError(
             "mcp_connection_management_unavailable",
             "MCPConnection Management is unavailable.",
             status_code=503,
         )
-    return service
+    return runtime.mcp_connections
 
 
 def _oauth(request: Request) -> MCPOAuthService:
-    service: MCPOAuthService | None = getattr(request.app.state, "mcp_oauth_service", None)
-    if service is None:
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
         raise MCPConnectionError(
             "mcp_oauth_unavailable",
             "MCP OAuth is unavailable.",
             status_code=503,
         )
-    return service
+    return runtime.mcp_oauth
 
 
 def _etag(response: Response, resource: MCPConnection) -> None:
@@ -57,9 +58,12 @@ def _etag(response: Response, resource: MCPConnection) -> None:
 @router.get("/api/v1/oauth/mcp/client-metadata.json", response_model=MCPClientMetadata)
 async def mcp_client_metadata(request: Request) -> MCPClientMetadata:
     oauth = _oauth(request)
+    runtime = get_service_runtime(request)
+    if runtime is None:
+        raise MCPConnectionError("mcp_oauth_unavailable", "MCP OAuth is unavailable.", status_code=503)
     return MCPClientMetadata(
         client_id=oauth.client_metadata_url,
-        client_name=request.app.state.settings.connectivity_oauth_client_name,
+        client_name=runtime.settings.connectivity_oauth_client_name,
         redirect_uris=(oauth.redirect_uri,),
     )
 

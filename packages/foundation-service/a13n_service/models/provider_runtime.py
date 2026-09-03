@@ -30,7 +30,7 @@ class _StoredProvider:
 
 
 class EndpointValidator(Protocol):
-    def validate(self, value: str, *, resolve_dns: bool) -> Awaitable[str]: ...
+    def validate(self, endpoint: str, *, resolve_dns: bool) -> Awaitable[str]: ...
 
 
 class LiveProviderResolver:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -41,8 +42,10 @@ def application(service: object) -> FastAPI:
     app = FastAPI()
     install_api_conventions(app)
     app.include_router(router)
-    app.state.request_authenticator = authenticate
-    app.state.trace_query_service = service
+    app.state.runtime = SimpleNamespace(
+        request_authenticator=authenticate,
+        control=SimpleNamespace(trace_queries=service),
+    )
     return app
 
 

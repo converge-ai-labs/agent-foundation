@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -17,12 +18,14 @@ async def api_client(agent_service: AgentService) -> AsyncIterator[httpx2.AsyncC
     app = FastAPI()
     install_api_conventions(app)
     app.include_router(router)
-    app.state.agent_service = agent_service
 
     async def authenticate(_request: Request):
         return actor()
 
-    app.state.request_authenticator = authenticate
+    app.state.runtime = SimpleNamespace(
+        request_authenticator=authenticate,
+        control=SimpleNamespace(agents=agent_service),
+    )
     transport = httpx2.ASGITransport(app=app)
     async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client

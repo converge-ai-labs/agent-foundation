@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.process.runtime import get_control_runtime
 
 from .domain import (
     CreateModelProviderRequest,
@@ -32,17 +33,17 @@ IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
 
 def _model_service(request: Request) -> ModelService:
-    service: ModelService | None = getattr(request.app.state, "model_service", None)
-    if service is None:
+    control = get_control_runtime(request)
+    if control is None:
         raise ModelError("model_management_unavailable", "Model Management is unavailable.", status_code=503)
-    return service
+    return control.models
 
 
 def _provider_service(request: Request) -> ModelProviderService:
-    service: ModelProviderService | None = getattr(request.app.state, "model_provider_service", None)
-    if service is None:
+    control = get_control_runtime(request)
+    if control is None:
         raise ModelError("model_management_unavailable", "Model Management is unavailable.", status_code=503)
-    return service
+    return control.model_providers
 
 
 def _set_etag(response: Response, resource: Model | ModelProvider) -> None:

@@ -1,16 +1,15 @@
 import asyncio
 import hashlib
 from base64 import b64encode
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import httpx2
 import pytest
-from a13n_service.app import ServiceComponents, _run_critical_component, create_app
+from a13n_service.app import ServiceComponents, create_app
 from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
-from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
-from a13n_service.connectivity.retention import CatalogRetentionReconciler
 from a13n_service.database import DatabaseMigrator
 from a13n_service.plugins import BuiltinPluginArtifact, BuiltinPluginRegistration
 from a13n_service.plugins.commands import (
@@ -24,6 +23,7 @@ from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import PluginRuntimeLock
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
 from a13n_service.plugins.runtime_resolver import FoundationPluginRuntimeCandidateResolver
+from a13n_service.process.background import run_critical_component
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
 from a13n_service.skills import SkillRuntimePreparer
@@ -127,7 +127,7 @@ async def test_critical_component_normal_return_is_a_process_failure() -> None:
         return None
 
     with pytest.raises(RuntimeError, match="returned unexpectedly: test component"):
-        await _run_critical_component("test component", returns)
+        await run_critical_component("test component", returns)
 
 
 def test_control_plane_openapi_uses_api_namespace() -> None:
@@ -241,7 +241,8 @@ def test_non_connectivity_roles_do_not_expose_provider_data_plane() -> None:
         assert request(app, "/connectivity/v1/ingresses/ing_test/events", method="POST").status_code == 404
 
 
-def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
+@pytest.mark.anyio
+async def test_connectivity_registries_are_copied_only_for_owning_roles(tmp_path: Path) -> None:
     class Adapter:
         provider_key = "fake"
         driver_key = "fake"
@@ -268,9 +269,12 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
         connector_adapter_registry=connector_registry,
     )
 
-    control = create_app(ServiceSettings(_env_file=None, role=ServiceRole.control), components=components)
-    connectivity = create_app(ServiceSettings(_env_file=None, role=ServiceRole.connectivity), components=components)
-    worker = create_app(ServiceSettings(_env_file=None, role=ServiceRole.worker), components=components)
+    control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control), components=components)
+    connectivity = create_app(
+        local_settings(tmp_path / "connectivity", role=ServiceRole.connectivity),
+        components=components,
+    )
+    worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker), components=components)
     ingress_registry.register(
         AdapterDefinition(
             key="later",
@@ -278,11 +282,22 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
             factory=Adapter,
         )
     )
+    connector_registry.register(
+        AdapterDefinition(
+            key="later",
+            config_versions=frozenset({"fake_v1"}),
+            factory=Adapter,
+        )
+    )
 
-    assert control.state.ingress_adapter_registry.keys() == ("fake",)
-    assert connectivity.state.connector_adapter_registry.keys() == ("fake",)
-    assert not hasattr(worker.state, "ingress_adapter_registry")
-    assert not hasattr(worker.state, "connectivity_endpoint_policy")
+    async with control.router.lifespan_context(control):
+        assert control.state.runtime.connectivity.ingress_adapters.keys() == ("fake",)
+        assert control.state.runtime.connectivity.control.connector_adapters.keys() == ("fake",)
+    async with connectivity.router.lifespan_context(connectivity):
+        assert connectivity.state.runtime.connectivity.ingress_adapters.keys() == ("fake",)
+        assert connectivity.state.runtime.connectivity.control is None
+    async with worker.router.lifespan_context(worker):
+        assert worker.state.runtime.connectivity is None
 
 
 def test_configured_web_build_requires_an_index(tmp_path: Path) -> None:
@@ -295,16 +310,16 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
     app = create_app(local_settings(tmp_path))
 
     async with app.router.lifespan_context(app):
-        storage = app.state.storage
-        assert app.state.db_engine is storage.engine
-        assert app.state.db_session_factory is storage.sessions
-        assert isinstance(app.state.skill_runtime_preparer, SkillRuntimePreparer)
-        assert app.state.agent_plugin_selection_resolver is not None
-        assert app.state.plugin_service is not None
-        assert isinstance(app.state.plugin_runtime_materializer, PluginRuntimeMaterializer)
-        assert isinstance(app.state.plugin_on_demand_runtime, OnDemandPluginRuntime)
-        assert not hasattr(app.state, "plugin_runner_supervisor")
-        assert app.state.trace_query_service is not None
+        runtime = app.state.runtime
+        assert runtime.control is not None
+        assert runtime.worker is not None
+        assert isinstance(runtime.worker.skill_runtime, SkillRuntimePreparer)
+        assert runtime.control.agent_plugin_selection is not None
+        assert runtime.control.plugins is not None
+        assert isinstance(runtime.worker.plugin_materializer, PluginRuntimeMaterializer)
+        assert isinstance(runtime.worker.on_demand_plugins, OnDemandPluginRuntime)
+        assert runtime.worker.plugin_runner is None
+        assert runtime.control.trace_queries is not None
 
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -326,23 +341,38 @@ async def test_role_lifespan_installs_only_owned_connectivity_components(
         serves_control = role in {ServiceRole.all, ServiceRole.control}
         serves_connectivity = role in {ServiceRole.all, ServiceRole.connectivity}
         serves_worker = role in {ServiceRole.all, ServiceRole.worker}
-        assert hasattr(app.state, "connector_connection_service") is serves_control
-        assert hasattr(app.state, "mcp_connection_service") is serves_control
-        assert hasattr(app.state, "connector_reconciler") is serves_control
-        assert hasattr(app.state, "mcp_reconciler") is serves_control
-        assert hasattr(app.state, "ingress_event_service") is serves_connectivity
-        assert hasattr(app.state, "ingress_admission_reconciler") is serves_connectivity
-        if serves_control or serves_connectivity:
-            assert app.state.connector_adapter_registry.keys() == ("composio", "openconnector")
-        else:
-            assert not hasattr(app.state, "connector_adapter_registry")
-        assert hasattr(app.state, "native_model_factory") is serves_worker
-        assert hasattr(app.state, "catalog_retention_reconciler") is serves_control
-        assert hasattr(app.state, "ingress_retention_reconciler") is serves_connectivity
+        runtime = app.state.runtime
+        connectivity = runtime.connectivity
+        assert (connectivity is not None) is (serves_control or serves_connectivity)
+        connectivity_control = connectivity.control if connectivity is not None else None
+        connectivity_data = connectivity.data if connectivity is not None else None
+        assert (connectivity_control is not None) is serves_control
+        assert (connectivity_data is not None) is serves_connectivity
+        assert (runtime.worker is not None) is serves_worker
         if serves_control:
-            assert isinstance(app.state.catalog_retention_reconciler, CatalogRetentionReconciler)
+            assert connectivity_control is not None
+            assert connectivity_control.connector_adapters.keys() == ("composio", "openconnector")
         if serves_connectivity:
-            assert isinstance(app.state.ingress_retention_reconciler, IngressRetentionReconciler)
+            assert connectivity_data is not None
+
+
+@pytest.mark.anyio
+async def test_connectivity_role_does_not_build_control_adapters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("data-plane role built control-plane adapters")
+
+    monkeypatch.setattr(
+        "a13n_service.process.connectivity.built_in_connector_adapter_registry",
+        fail_if_called,
+    )
+    app = create_app(local_settings(tmp_path, role=ServiceRole.connectivity))
+
+    async with app.router.lifespan_context(app):
+        assert app.state.runtime.connectivity.control is None
 
 
 @pytest.mark.anyio
@@ -350,7 +380,7 @@ async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(tmp_
     app = create_app(local_settings(tmp_path, role=ServiceRole.connectivity))
 
     async with app.router.lifespan_context(app):
-        app.state.draining = True
+        app.state.runtime.status.draining = True
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             readiness = await client.get("/readyz")
@@ -363,8 +393,8 @@ async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(tmp_
         assert delivery.json() == {"detail": "service draining"}
         assert health.status_code == 200
 
-    assert app.state.startup_complete is False
-    assert app.state.draining is True
+    assert app.state.runtime.status.startup_complete is False
+    assert app.state.runtime.status.draining is True
 
 
 @pytest.mark.anyio
@@ -395,7 +425,7 @@ async def test_control_lifespan_registers_distribution_builtin_plugins(tmp_path:
     )
 
     async with app.router.lifespan_context(app):
-        async with short_session(app.state.storage.sessions) as session:
+        async with short_session(app.state.runtime.shared.storage.sessions) as session:
             plugin = await session.get(PluginRecord, registration.plugin_id)
             version = await session.get(PluginVersionRecord, registration.plugin_version_id)
 
@@ -409,7 +439,12 @@ async def test_on_demand_import_failure_removes_worker_readiness(tmp_path: Path)
     app = create_app(local_settings(tmp_path, role=ServiceRole.worker))
 
     async with app.router.lifespan_context(app):
-        app.state.plugin_on_demand_runtime = SimpleNamespace(ready=False)
+        runtime = app.state.runtime
+        assert runtime.worker is not None
+        app.state.runtime = replace(
+            runtime,
+            worker=replace(runtime.worker, on_demand_plugins=SimpleNamespace(ready=False)),
+        )
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             response = await client.get("/readyz")
@@ -468,8 +503,11 @@ async def test_lifespan_wires_durable_plugin_runtime_coordinator(tmp_path: Path)
     )
 
     async with app.router.lifespan_context(app):
-        assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
-        assert app.state.plugin_service is not None
+        runtime = app.state.runtime
+        assert runtime.control is not None
+        dispatcher = getattr(runtime.control.plugins, "_runtime_command_dispatcher", None)
+        assert isinstance(dispatcher, PluginRuntimeCommandCoordinator)
+        assert runtime.control.plugins is not None
 
 
 @pytest.mark.anyio
@@ -489,8 +527,11 @@ async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(tmp_pat
     )
 
     async with app.router.lifespan_context(app):
-        assert isinstance(app.state.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
-        assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
+        control = app.state.runtime.control
+        assert control is not None
+        assert isinstance(control.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
+        dispatcher = getattr(control.plugins, "_runtime_command_dispatcher", None)
+        assert isinstance(dispatcher, PluginRuntimeCommandCoordinator)
 
 
 @pytest.mark.anyio
@@ -505,9 +546,13 @@ async def test_all_in_one_runner_mode_uses_local_supervisor_as_staging_authority
     )
 
     async with app.router.lifespan_context(app):
-        assert isinstance(app.state.plugin_runner_supervisor, PluginRunnerSupervisor)
-        assert isinstance(app.state.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
-        assert isinstance(app.state.plugin_runtime_command_coordinator, PluginRuntimeCommandCoordinator)
+        runtime = app.state.runtime
+        assert runtime.control is not None
+        assert runtime.worker is not None
+        assert isinstance(runtime.worker.plugin_runner, PluginRunnerSupervisor)
+        assert isinstance(runtime.control.plugin_runtime_candidate_resolver, FoundationPluginRuntimeCandidateResolver)
+        dispatcher = getattr(runtime.control.plugins, "_runtime_command_dispatcher", None)
+        assert isinstance(dispatcher, PluginRuntimeCommandCoordinator)
 
 
 @pytest.mark.anyio
@@ -515,23 +560,25 @@ async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(tm
     app = create_app(local_settings(tmp_path, role=ServiceRole.worker, plugin_runtime_mode="runner"))
 
     async with app.router.lifespan_context(app):
-        assert isinstance(app.state.plugin_runtime_materializer, PluginRuntimeMaterializer)
-        assert isinstance(app.state.plugin_runner_supervisor, PluginRunnerSupervisor)
-        assert not hasattr(app.state, "plugin_on_demand_runtime")
-        assert not hasattr(app.state, "plugin_runtime_command_coordinator")
-        assert not hasattr(app.state, "plugin_runtime_candidate_resolver")
+        runtime = app.state.runtime
+        assert runtime.control is None
+        assert runtime.worker is not None
+        assert isinstance(runtime.worker.plugin_materializer, PluginRuntimeMaterializer)
+        assert isinstance(runtime.worker.plugin_runner, PluginRunnerSupervisor)
+        assert runtime.worker.on_demand_plugins is None
 
 
 @pytest.mark.anyio
 async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_path: Path) -> None:
     control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control))
     async with control.router.lifespan_context(control):
-        assert not hasattr(control.state, "skill_runtime_preparer")
+        assert control.state.runtime.control is not None
+        assert control.state.runtime.worker is None
 
     worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker))
     async with worker.router.lifespan_context(worker):
-        assert isinstance(worker.state.skill_runtime_preparer, SkillRuntimePreparer)
-        assert not hasattr(worker.state, "trace_query_service")
+        assert worker.state.runtime.control is None
+        assert isinstance(worker.state.runtime.worker.skill_runtime, SkillRuntimePreparer)
 
 
 @pytest.mark.anyio
@@ -546,9 +593,9 @@ async def test_trace_query_client_is_created_only_for_control_plane_roles(tmp_pa
     worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker, **query_values))
 
     async with control.router.lifespan_context(control):
-        assert control.state.trace_query_service is not None
+        assert control.state.runtime.control.trace_queries is not None
     async with worker.router.lifespan_context(worker):
-        assert not hasattr(worker.state, "trace_query_service")
+        assert worker.state.runtime.control is None
 
 
 @pytest.mark.anyio
@@ -585,10 +632,10 @@ async def test_distribution_registered_trace_query_provider_is_selected_only_by_
 
     async with control.router.lifespan_context(control):
         assert len(created) == 1
-        assert control.state.trace_query_service is not None
+        assert control.state.runtime.control.trace_queries is not None
     async with worker.router.lifespan_context(worker):
         assert len(created) == 1
-        assert not hasattr(worker.state, "trace_query_service")
+        assert worker.state.runtime.control is None
 
 
 def test_distribution_cannot_replace_the_builtin_langfuse_provider(tmp_path: Path) -> None:

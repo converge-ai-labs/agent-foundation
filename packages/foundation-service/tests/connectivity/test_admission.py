@@ -173,8 +173,12 @@ async def test_data_plane_streams_into_provider_adapter_with_bounded_failures(
     ingress_id = await _create_ingress(ingress_service)
     app = FastAPI()
     install_api_conventions(app)
-    app.state.settings = SimpleNamespace(connectivity_provider_request_max_bytes=1024)
-    app.state.ingress_event_service = ingress_event_service
+    app.state.runtime = SimpleNamespace(
+        settings=SimpleNamespace(connectivity_provider_request_max_bytes=1024),
+        connectivity=SimpleNamespace(
+            data=SimpleNamespace(ingress_events=ingress_event_service),
+        ),
+    )
     app.include_router(ingress_data_router)
     transport = httpx2.ASGITransport(app=app)
     async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:

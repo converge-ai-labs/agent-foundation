@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.process.runtime import get_control_runtime
 
 from .domain import (
     CreateEnvironmentRequest,
@@ -33,14 +34,14 @@ IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
 
 def _service(request: Request) -> EnvironmentManagementService:
-    service: EnvironmentManagementService | None = getattr(request.app.state, "environment_service", None)
-    if service is None:
+    control = get_control_runtime(request)
+    if control is None:
         raise EnvironmentManagementError(
             "environment_management_unavailable",
             "Environment Management is unavailable.",
             status_code=503,
         )
-    return service
+    return control.environments
 
 
 @router.get("/environment-providers", response_model=EnvironmentProviderCatalogEntryCollection)

@@ -90,7 +90,7 @@ Run `make langfuse-test` to start the repository's local Langfuse v4 stack and v
 
 ## Runtime
 
-`ServiceSettings` owns the `FOUNDATION_*` environment contract and maps it to the frozen `StorageSettings` model. The storage package accepts typed configuration and does not read process environment variables itself. `foundation-service serve` constructs all selected providers once in FastAPI lifespan, publishes the resulting `StorageResources` on `app.state.storage`, and closes the resources during shutdown.
+`ServiceSettings` owns the `FOUNDATION_*` environment contract and maps it to the frozen `StorageSettings` model. The storage package accepts typed configuration and does not read process environment variables itself. `foundation-service serve` constructs all selected providers once in FastAPI lifespan, publishes one typed `ServiceRuntime` on `app.state.runtime`, and closes its shared, Control-plane, Worker, and Connectivity resources during supervised shutdown. Storage is available through `runtime.shared.storage`; role-specific capabilities are present only when that process owns them.
 
 The default service profile keeps the existing PostgreSQL and Redis endpoints and uses separate local roots for objects and files. Set `FOUNDATION_OBJECT_BACKEND=s3` and `FOUNDATION_OBJECT_BUCKET` for a multi-process deployment; the local object adapter supports only one writing process. `FOUNDATION_FILESYSTEM_ROOT` may be an ordinary local directory or an NFS mount prepared by deployment.
 

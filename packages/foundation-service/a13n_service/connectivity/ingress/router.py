@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.process.runtime import get_connectivity_control_runtime
 
 from .domain import (
     CreateIngressRequest,
@@ -31,17 +32,17 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, ma
 
 
 def _service(request: Request) -> IngressService:
-    service: IngressService | None = getattr(request.app.state, "ingress_service", None)
-    if service is None:
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
         raise IngressError("ingress_management_unavailable", "Ingress Management is unavailable.", status_code=503)
-    return service
+    return runtime.ingresses
 
 
 def _routes(request: Request) -> RouteService:
-    service: RouteService | None = getattr(request.app.state, "route_service", None)
-    if service is None:
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
         raise IngressError("route_management_unavailable", "Route Management is unavailable.", status_code=503)
-    return service
+    return runtime.routes
 
 
 def _set_etag(response: Response, resource: Ingress | Route) -> None:
