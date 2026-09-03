@@ -44,6 +44,7 @@ from a13n_service.connectivity.ingress.data_router import router as ingress_data
 from a13n_service.connectivity.ingress.providers import built_in_ingress_adapter_registry
 from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
+from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
 from a13n_service.connectivity.ingress.router import router as ingress_router
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
@@ -55,6 +56,7 @@ from a13n_service.connectivity.mcp.protocol import MCPProtocolClient
 from a13n_service.connectivity.mcp.reconciler import MCPReconciler
 from a13n_service.connectivity.mcp.router import router as mcp_router
 from a13n_service.connectivity.mcp.service import MCPConnectionService
+from a13n_service.connectivity.retention import CatalogRetentionReconciler
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
@@ -261,6 +263,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             connector_reconciler: ConnectorReconciler | None = None
             mcp_reconciler: MCPReconciler | None = None
             ingress_admission_reconciler: IngressAdmissionReconciler | None = None
+            catalog_retention_reconciler: CatalogRetentionReconciler | None = None
+            ingress_retention_reconciler: IngressRetentionReconciler | None = None
             plugin_runtime_command_coordinator: PluginRuntimeCommandCoordinator | None = None
             plugin_runner_supervisor: PluginRunnerSupervisor | None = None
             if settings.role in _WORKER_ROLES:
@@ -610,6 +614,26 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     max_backoff_seconds=settings.connectivity_admission_max_backoff_seconds,
                 )
                 app.state.ingress_admission_reconciler = ingress_admission_reconciler
+            if settings.role in _CONTROL_PLANE_ROLES:
+                catalog_retention_reconciler = CatalogRetentionReconciler(
+                    storage.sessions,
+                    storage.objects,
+                    instance_id=settings.service_instance_id or new_object_id("svc"),
+                    poll_interval_seconds=settings.connectivity_retention_poll_interval_seconds,
+                    lease_seconds=settings.connectivity_retention_lease_seconds,
+                    object_grace_seconds=settings.connectivity_object_cleanup_grace_seconds,
+                    batch_size=settings.connectivity_retention_batch_size,
+                )
+                app.state.catalog_retention_reconciler = catalog_retention_reconciler
+            if settings.role in _CONNECTIVITY_ROLES:
+                ingress_retention_reconciler = IngressRetentionReconciler(
+                    storage.sessions,
+                    storage.objects,
+                    poll_interval_seconds=settings.connectivity_retention_poll_interval_seconds,
+                    object_grace_seconds=settings.connectivity_object_cleanup_grace_seconds,
+                    batch_size=settings.connectivity_retention_batch_size,
+                )
+                app.state.ingress_retention_reconciler = ingress_retention_reconciler
             if settings.role in _WORKER_ROLES:
                 app.state.native_model_factory = native_model_factory
                 app.state.skill_runtime_preparer = SkillRuntimePreparer(storage.sessions, package_store)
@@ -620,6 +644,10 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     background_tasks.start_soon(plugin_runtime_command_coordinator.run)
                 if ingress_admission_reconciler is not None:
                     background_tasks.start_soon(ingress_admission_reconciler.run)
+                if catalog_retention_reconciler is not None:
+                    background_tasks.start_soon(catalog_retention_reconciler.run)
+                if ingress_retention_reconciler is not None:
+                    background_tasks.start_soon(ingress_retention_reconciler.run)
                 if connector_reconciler is not None:
                     background_tasks.start_soon(connector_reconciler.run)
                 if mcp_reconciler is not None:

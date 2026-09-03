@@ -165,7 +165,7 @@ class MCPCatalogService:
         now = self._clock()
         async with transaction(self._sessions) as session:
             record = await require_connection(session, source.connection_id, lock=True)
-            if not _matches(record, source):
+            if not _matches(record, source, now=now):
                 return False
             existing = await session.scalar(
                 select(MCPToolCatalogRecord.id).where(
@@ -212,7 +212,7 @@ class MCPCatalogService:
             code = "mcp_unavailable"
         async with transaction(self._sessions) as session:
             record = await require_connection(session, source.connection_id, lock=True)
-            if not _matches(record, source):
+            if not _matches(record, source, now=self._clock()):
                 return
             record.catalog_last_error_code = code[:128]
             record.catalog_available_at = self._clock() + timedelta(seconds=60)
@@ -237,10 +237,12 @@ def secret_context_from_source(source: CatalogSource, *, operation: SecretOperat
     )
 
 
-def _matches(record: MCPConnectionRecord, source: CatalogSource) -> bool:
+def _matches(record: MCPConnectionRecord, source: CatalogSource, *, now: datetime) -> bool:
     return (
         record.deleted_at is None
         and record.status != "disabled"
+        and record.catalog_claim_expires_at is not None
+        and _utc(record.catalog_claim_expires_at) > now
         and record.endpoint_url == source.endpoint_url
         and record.auth_mode == source.auth_mode
         and record.credential_generation == source.credential_generation

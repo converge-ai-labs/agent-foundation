@@ -9,6 +9,8 @@ import pytest
 from a13n_service.app import ServiceComponents, create_app
 from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
+from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
+from a13n_service.connectivity.retention import CatalogRetentionReconciler
 from a13n_service.database import DatabaseMigrator
 from a13n_service.plugins import BuiltinPluginArtifact, BuiltinPluginRegistration
 from a13n_service.plugins.commands import (
@@ -165,6 +167,18 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/workspaces/{workspace_id}/mcp-connections" in document["paths"]
     assert "/api/v1/mcp-connections/{connection_id}/authorize" in document["paths"]
     assert "/api/v1/oauth/mcp/client-metadata.json" in document["paths"]
+    connectivity_paths = {
+        path: operations
+        for path, operations in document["paths"].items()
+        if any(segment in path for segment in ("/ingresses", "/connectors", "/connector-connections", "/mcp"))
+    }
+    assert connectivity_paths
+    assert all(
+        operation.get("tags") == ["connectivity-management"]
+        for operations in connectivity_paths.values()
+        for operation in operations.values()
+        if isinstance(operation, dict)
+    )
     assert document["components"]["schemas"]["CreateIngressRequest"]["properties"]["credentials"]["writeOnly"]
     assert "credentials" not in document["components"]["schemas"]["Ingress"]["properties"]
 
@@ -289,6 +303,33 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready", "role": "all"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role", tuple(ServiceRole))
+async def test_role_lifespan_installs_only_owned_connectivity_components(
+    tmp_path: Path,
+    role: ServiceRole,
+) -> None:
+    app = create_app(local_settings(tmp_path / role.value, role=role))
+
+    async with app.router.lifespan_context(app):
+        serves_control = role in {ServiceRole.all, ServiceRole.control}
+        serves_connectivity = role in {ServiceRole.all, ServiceRole.connectivity}
+        serves_worker = role in {ServiceRole.all, ServiceRole.worker}
+        assert hasattr(app.state, "connector_connection_service") is serves_control
+        assert hasattr(app.state, "mcp_connection_service") is serves_control
+        assert hasattr(app.state, "connector_reconciler") is serves_control
+        assert hasattr(app.state, "mcp_reconciler") is serves_control
+        assert hasattr(app.state, "ingress_event_service") is serves_connectivity
+        assert hasattr(app.state, "ingress_admission_reconciler") is serves_connectivity
+        assert hasattr(app.state, "native_model_factory") is serves_worker
+        assert hasattr(app.state, "catalog_retention_reconciler") is serves_control
+        assert hasattr(app.state, "ingress_retention_reconciler") is serves_connectivity
+        if serves_control:
+            assert isinstance(app.state.catalog_retention_reconciler, CatalogRetentionReconciler)
+        if serves_connectivity:
+            assert isinstance(app.state.ingress_retention_reconciler, IngressRetentionReconciler)
 
 
 @pytest.mark.anyio

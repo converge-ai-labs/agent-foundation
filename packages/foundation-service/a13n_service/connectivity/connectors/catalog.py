@@ -175,7 +175,7 @@ class ConnectorCatalogService:
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, source.connection_id, lock=True)
             connector = await require_connector(session, connection.connector_id)
-            if not _source_matches(connection, connector, source):
+            if not _source_matches(connection, connector, source, now=now):
                 return False
             existing = await session.scalar(
                 select(ConnectorToolCatalogRecord.id).where(
@@ -319,10 +319,14 @@ def _source_matches(
     connection: ConnectorConnectionRecord,
     connector: ConnectorRecord,
     source: CatalogSource,
+    *,
+    now: datetime,
 ) -> bool:
     return (
         connection.status == "ready"
         and connection.deleted_at is None
+        and connection.catalog_claim_expires_at is not None
+        and _utc(connection.catalog_claim_expires_at) > now
         and connection.external_ref == source.external_ref
         and connection.provider_key == source.provider_key
         and connection.setup_generation == source.setup_generation

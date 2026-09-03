@@ -38,7 +38,7 @@ from a13n_service.iam.models import (
 )
 from a13n_service.secrets import InternalSecretService, SecretProtector
 from a13n_service.storage import transaction
-from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from cryptography.hazmat.primitives import serialization
@@ -244,6 +244,29 @@ async def connectivity_sessions(tmp_path: Path) -> AsyncIterator[async_sessionma
     async with engine.begin() as connection:
         await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
+    await _seed_connectivity_database(sessions)
+    try:
+        yield sessions
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+async def postgres_connectivity_sessions(pg_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(PostgreSQLConfig(url=pg_url))
+    async with engine.begin() as connection:
+        await connection.run_sync(service_metadata().create_all)
+    sessions = create_session_factory(engine)
+    await _seed_connectivity_database(sessions)
+    try:
+        yield sessions
+    finally:
+        async with engine.begin() as connection:
+            await connection.run_sync(service_metadata().drop_all)
+        await engine.dispose()
+
+
+async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
@@ -353,10 +376,6 @@ async def connectivity_sessions(tmp_path: Path) -> AsyncIterator[async_sessionma
                 ),
             )
         )
-    try:
-        yield sessions
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture

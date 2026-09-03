@@ -491,6 +491,63 @@ async def test_ready_connection_catalog_is_validated_and_published_immutably(
 
 
 @pytest.mark.anyio
+async def test_catalog_discovery_cannot_publish_after_its_lease_expires(
+    connector_services,
+    connector_adapter: FakeConnectorAdapter,
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+    connectivity_secrets,
+    connectivity_objects,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connectors, connections = connector_services
+    connector = await create_connector(connectors)
+    connection = await create_connection(
+        connections,
+        connector_id=connector.id,
+        idempotency_key="connection-for-expired-catalog",
+    )
+    launch = await connections.start_setup(
+        actor=actor(),
+        connection_id=connection.id,
+        idempotency_key="setup-for-expired-catalog",
+        expected_version=connection.version,
+        setup={"scopes": ["read"]},
+        return_path="/connections",
+    )
+    await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+    clock = [NOW]
+    original_list_tools = connector_adapter.list_tools
+
+    async def expire_lease(**kwargs) -> ConnectorToolPage:
+        clock[0] = NOW + timedelta(seconds=2)
+        return await original_list_tools(**kwargs)
+
+    monkeypatch.setattr(connector_adapter, "list_tools", expire_lease)
+    catalog = ConnectorCatalogService(
+        connectivity_sessions,
+        adapters=AdapterRegistry(
+            (
+                AdapterDefinition(
+                    key=connector_adapter.driver_key,
+                    config_versions=connector_adapter.config_versions,
+                    factory=lambda: connector_adapter,
+                ),
+            )
+        ),
+        secrets=connectivity_secrets,
+        objects=ConnectorCatalogObjectStore(connectivity_objects),
+        lease_seconds=1,
+        clock=lambda: clock[0],
+    )
+
+    with pytest.raises(ConnectorError) as raised:
+        await catalog.refresh(connection.id)
+    assert raised.value.code == "catalog_lost_race"
+    async with connectivity_sessions() as session:
+        assert await session.scalar(select(ConnectorToolCatalogRecord)) is None
+
+
+@pytest.mark.anyio
 async def test_reconciler_completes_attached_setup_by_exact_external_reference(
     connector_services,
     connector_adapter: FakeConnectorAdapter,

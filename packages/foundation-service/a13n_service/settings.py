@@ -175,7 +175,6 @@ class ServiceSettings(BaseSettings):
     connectivity_catalog_max_pages: int = Field(default=CATALOG_MAX_PAGES, ge=1, le=CATALOG_MAX_PAGES)
     connectivity_catalog_max_tools: int = Field(default=CATALOG_MAX_TOOLS, ge=1, le=CATALOG_MAX_TOOLS)
     connectivity_catalog_max_bytes: int = Field(default=CATALOG_MAX_BYTES, ge=1, le=CATALOG_MAX_BYTES)
-    connectivity_catalog_retention_days: int = Field(default=30, ge=30, le=3_650)
     connectivity_tool_result_max_bytes: int = Field(
         default=TOOL_RESULT_MAX_BYTES,
         ge=1,
@@ -198,7 +197,15 @@ class ServiceSettings(BaseSettings):
     )
     connectivity_connector_reconcile_poll_interval_seconds: float = Field(default=2, gt=0, le=300)
     connectivity_connector_reconcile_lease_seconds: int = Field(default=60, ge=10, le=600)
-    connectivity_catalog_retention_seconds: int = Field(default=30 * 24 * 3600, ge=3600)
+    connectivity_catalog_retention_seconds: int = Field(
+        default=30 * 24 * 3600,
+        ge=30 * 24 * 3600,
+        le=10 * 365 * 24 * 3600,
+    )
+    connectivity_retention_poll_interval_seconds: float = Field(default=60, gt=0, le=3600)
+    connectivity_retention_lease_seconds: float = Field(default=60, ge=10, le=600)
+    connectivity_object_cleanup_grace_seconds: float = Field(default=3600, ge=60, le=24 * 3600)
+    connectivity_retention_batch_size: int = Field(default=25, ge=1, le=1000)
 
     redis_backend: RedisBackend = RedisBackend.redis
     redis_url: SecretStr | None = Field(default=SecretStr("redis://127.0.0.1:6379/0"), repr=False)
@@ -250,6 +257,8 @@ class ServiceSettings(BaseSettings):
             raise ValueError("batch bytes cannot exceed the Ingress pending bytes")
         if self.connectivity_admission_lease_seconds <= self.connectivity_admission_poll_interval_seconds:
             raise ValueError("admission lease must exceed its poll interval")
+        if self.connectivity_object_cleanup_grace_seconds < self.connectivity_retention_lease_seconds:
+            raise ValueError("object cleanup grace cannot be shorter than the retention lease")
         if self.connectivity_total_timeout_seconds < max(
             self.connectivity_connect_timeout_seconds,
             self.connectivity_read_timeout_seconds,

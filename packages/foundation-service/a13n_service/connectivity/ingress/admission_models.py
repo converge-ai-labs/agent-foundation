@@ -94,6 +94,7 @@ class IngressAdmissionRecord(Base):
         ),
         Index("uq_ingress_admissions_id_tenant", "id", "organization_id", "workspace_id", unique=True),
         Index("ix_ingress_admissions_pending", "status", "available_at", "id"),
+        Index("ix_ingress_admissions_retention", "status", "dedup_expires_at", "id"),
         Index("ix_ingress_admissions_capacity", "workspace_id", "ingress_id", "status", "event_size_bytes"),
     )
 
@@ -160,6 +161,7 @@ class IngressBatchRecord(Base):
         CheckConstraint("attempt_count >= 0", name="attempt_count_non_negative"),
         Index("uq_ingress_batches_id_tenant", "id", "organization_id", "workspace_id", unique=True),
         Index("ix_ingress_batches_claim", "status", "available_at", "claim_expires_at", "id"),
+        Index("ix_ingress_batches_retention", "status", "terminal_at", "id"),
         Index("ix_ingress_batches_compatible", "ingress_id", "compatibility_digest", "status", "created_at", "id"),
     )
 
