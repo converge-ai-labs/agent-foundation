@@ -545,7 +545,10 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
     )
     if resolved_settings.role in _CONNECTIVITY_RESOURCE_ROLES:
         app.state.ingress_adapter_registry = (
-            resolved_components.ingress_adapter_registry or built_in_ingress_adapter_registry()
+            resolved_components.ingress_adapter_registry
+            or built_in_ingress_adapter_registry(
+                allowed_provider_origins=resolved_settings.connectivity_provider_origins,
+            )
         ).copy()
         app.state.connector_adapter_registry = (
             resolved_components.connector_adapter_registry or AdapterRegistry[ConnectorAdapter]()

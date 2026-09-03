@@ -188,6 +188,7 @@ class ServiceSettings(BaseSettings):
     connectivity_private_endpoint_domains: tuple[str, ...] = ()
     connectivity_private_endpoint_cidrs: tuple[str, ...] = ()
     connectivity_http_origins: tuple[str, ...] = ()
+    connectivity_provider_origins: tuple[str, ...] = ()
     connectivity_provider_token_expiry_skew_seconds: int = Field(default=60, ge=0, le=600)
 
     redis_backend: RedisBackend = RedisBackend.redis

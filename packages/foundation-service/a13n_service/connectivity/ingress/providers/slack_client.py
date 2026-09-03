@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapte
 
 from a13n_service.connectivity.adapters import JsonObject
 
+from .native_http import NativeActionError, bounded_response_body, retry_after_seconds
+
 _RESPONSE_MAX_BYTES = 1024 * 1024
 _JSON_OBJECT = TypeAdapter(JsonObject)
 BoundedText = Annotated[str, StringConstraints(min_length=1, max_length=40_000)]
@@ -27,9 +29,16 @@ class SlackActionBinding(_StrictModel):
     reply_mode: Literal["auto", "thread", "main"]
 
 
-class SlackReplyArguments(_StrictModel):
+class SlackForcedReplyArguments(_StrictModel):
+    text: BoundedText = Field(repr=False)
+
+
+class SlackAutoReplyArguments(_StrictModel):
     text: BoundedText = Field(repr=False)
     placement: Literal["thread", "main"] | None = None
+
+
+type SlackReplyArguments = SlackForcedReplyArguments | SlackAutoReplyArguments
 
 
 class SlackReplyReceipt(_StrictModel):
@@ -89,11 +98,7 @@ class SlackMessagePage(_StrictModel):
     has_more: bool
 
 
-class SlackNativeActionError(Exception):
-    def __init__(self, code: str, *, retry_after_seconds: int | None = None) -> None:
-        super().__init__(code)
-        self.code = code
-        self.retry_after_seconds = retry_after_seconds
+SlackNativeActionError = NativeActionError
 
 
 class SlackNativeClient:
@@ -207,8 +212,8 @@ class SlackNativeClient:
                 json=payload,
                 follow_redirects=False,
             ) as response:
-                retry_after = _retry_after(response.headers.get("retry-after"))
-                body = await _bounded_body(response, self._response_max_bytes)
+                retry_after = retry_after_seconds(response.headers.get("retry-after"))
+                body = await bounded_response_body(response, max_bytes=self._response_max_bytes)
                 if response.status_code == 429:
                     raise SlackNativeActionError("rate_limited", retry_after_seconds=retry_after)
                 if response.status_code >= 500:
@@ -232,13 +237,15 @@ class SlackNativeClient:
 
 
 def _reply_placement(binding: SlackActionBinding, arguments: SlackReplyArguments) -> Literal["thread", "main"]:
-    if binding.reply_mode != "auto":
-        if arguments.placement is not None:
+    if binding.reply_mode == "auto":
+        if not isinstance(arguments, SlackAutoReplyArguments):
             raise SlackNativeActionError("invalid_arguments")
-        return binding.reply_mode
-    if arguments.placement is not None:
-        return arguments.placement
-    return "main" if binding.conversation_kind == "im" else "thread"
+        if arguments.placement is not None:
+            return arguments.placement
+        return "main" if binding.conversation_kind == "im" else "thread"
+    if not isinstance(arguments, SlackForcedReplyArguments):
+        raise SlackNativeActionError("invalid_arguments")
+    return binding.reply_mode
 
 
 def _message(value: object) -> SlackMessage:
@@ -268,32 +275,3 @@ def _next_cursor(value: JsonObject) -> str | None:
     metadata = value.get("response_metadata")
     cursor = metadata.get("next_cursor") if isinstance(metadata, dict) else None
     return cursor if isinstance(cursor, str) and cursor else None
-
-
-async def _bounded_body(response: httpx2.Response, max_bytes: int) -> bytes:
-    content_length = response.headers.get("content-length")
-    if content_length is not None:
-        try:
-            parsed_length = int(content_length)
-            if parsed_length < 0:
-                raise SlackNativeActionError("invalid_provider_response")
-            if parsed_length > max_bytes:
-                raise SlackNativeActionError("response_too_large")
-        except ValueError as error:
-            raise SlackNativeActionError("invalid_provider_response") from error
-    body = bytearray()
-    async for chunk in response.aiter_bytes():
-        body.extend(chunk)
-        if len(body) > max_bytes:
-            raise SlackNativeActionError("response_too_large")
-    return bytes(body)
-
-
-def _retry_after(value: str | None) -> int | None:
-    if value is None:
-        return None
-    try:
-        parsed = int(value)
-    except ValueError:
-        return None
-    return parsed if 0 <= parsed <= 3600 else None

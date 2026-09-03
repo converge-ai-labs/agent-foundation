@@ -6,11 +6,12 @@ import httpx2
 import pytest
 from a13n_service.connectivity.ingress.providers.slack_client import (
     SlackActionBinding,
+    SlackAutoReplyArguments,
+    SlackForcedReplyArguments,
     SlackListMembersArguments,
     SlackNativeActionError,
     SlackNativeClient,
     SlackReadMessagesArguments,
-    SlackReplyArguments,
     SlackReplyOutcomeUnknown,
     SlackReplySucceeded,
 )
@@ -49,7 +50,7 @@ async def test_slack_reply_uses_only_hidden_binding_destination() -> None:
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
         outcome = await SlackNativeClient(http_client).reply(
             _binding(),
-            SlackReplyArguments(text="hello", placement="thread"),
+            SlackAutoReplyArguments(text="hello", placement="thread"),
             bot_token=_BOT_TOKEN,
             request_id="req_1",
         )
@@ -70,7 +71,8 @@ async def test_slack_reply_uses_only_hidden_binding_destination() -> None:
 async def test_slack_model_arguments_cannot_select_destination_or_override_forced_placement() -> None:
     schema = json.dumps(
         {
-            "reply": SlackReplyArguments.model_json_schema(),
+            "forced_reply": SlackForcedReplyArguments.model_json_schema(),
+            "auto_reply": SlackAutoReplyArguments.model_json_schema(),
             "members": SlackListMembersArguments.model_json_schema(),
             "messages": SlackReadMessagesArguments.model_json_schema(),
         },
@@ -79,13 +81,14 @@ async def test_slack_model_arguments_cannot_select_destination_or_override_force
 
     for forbidden in ("channel_id", "team_id", "thread_ts", "token", "ingress_id"):
         assert forbidden not in schema
+    assert "placement" not in json.dumps(SlackForcedReplyArguments.model_json_schema())
     async with httpx2.AsyncClient(
         transport=httpx2.MockTransport(lambda _request: pytest.fail("request must not be sent"))
     ) as http_client:
         with pytest.raises(SlackNativeActionError, match="invalid_arguments"):
             await SlackNativeClient(http_client).reply(
                 _binding(reply_mode="thread"),
-                SlackReplyArguments(text="hello", placement="main"),
+                SlackAutoReplyArguments(text="hello", placement="main"),
                 bot_token=_BOT_TOKEN,
                 request_id="req_invalid",
             )
@@ -97,7 +100,7 @@ async def test_slack_reply_reports_unknown_after_ambiguous_response(response: ht
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _request: response)) as http_client:
         outcome = await SlackNativeClient(http_client).reply(
             _binding(),
-            SlackReplyArguments(text="hello"),
+            SlackAutoReplyArguments(text="hello"),
             bot_token=_BOT_TOKEN,
             request_id="req_unknown",
         )
@@ -112,7 +115,7 @@ async def test_slack_reply_does_not_hide_deterministic_rate_limit() -> None:
         with pytest.raises(SlackNativeActionError) as raised:
             await SlackNativeClient(http_client).reply(
                 _binding(),
-                SlackReplyArguments(text="hello"),
+                SlackAutoReplyArguments(text="hello"),
                 bot_token=_BOT_TOKEN,
                 request_id="req_rate",
             )
@@ -178,4 +181,4 @@ async def test_slack_response_and_secret_representations_are_bounded() -> None:
 
     assert "C123" not in repr(_binding())
     assert "123.456" not in repr(_binding())
-    assert "hello" not in repr(SlackReplyArguments(text="hello"))
+    assert "hello" not in repr(SlackForcedReplyArguments(text="hello"))

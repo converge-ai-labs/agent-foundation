@@ -241,6 +241,8 @@ def _authenticate(request: ProviderRequest, *, secret: str, received_at: datetim
     signature = request.headers.get("x-slack-signature")
     if timestamp_text is None or signature is None:
         raise _request_error(401, "invalid_signature")
+    if not timestamp_text.isascii() or not timestamp_text.isdigit():
+        raise _request_error(401, "invalid_signature")
     try:
         timestamp = int(timestamp_text)
     except ValueError as error:
@@ -369,7 +371,7 @@ def _provider_context(event: InboundEvent, config: SlackIngressConfig) -> JsonOb
 def _parse_object(body: bytes) -> JsonObject:
     try:
         return _JSON_OBJECT.validate_python(json.loads(body))
-    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as error:
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, RecursionError) as error:
         raise _request_error(400, "invalid_payload") from error
 
 
