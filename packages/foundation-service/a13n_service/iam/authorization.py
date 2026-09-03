@@ -34,6 +34,7 @@ class WorkspaceAction(StrEnum):
     secrets_manage = "secrets.manage"
     skill_read = "skill.read"
     skill_create = "skill.create"
+    skill_revision_publish = "skill.revision.publish"
     skill_update = "skill.update"
     skill_delete = "skill.delete"
     skill_bind = "skill.bind"

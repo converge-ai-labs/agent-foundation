@@ -16,6 +16,7 @@ from .domain import (
     CreateSkillRequest,
     CreateSkillRevisionRequest,
     Skill,
+    SkillAgentReferenceCollection,
     SkillCollection,
     SkillPublicationReceipt,
     SkillRevision,
@@ -181,6 +182,22 @@ async def list_skill_revisions(
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> SkillRevisionCollection:
     return await _catalog(request).list_revisions(
+        actor=actor,
+        skill_id=skill_id,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+@router.get("/skills/{skill_id}/references", response_model=SkillAgentReferenceCollection)
+async def list_skill_references(
+    request: Request,
+    actor: Actor,
+    skill_id: str,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    cursor: Annotated[str | None, Query(max_length=2048)] = None,
+) -> SkillAgentReferenceCollection:
+    return await _catalog(request).references(
         actor=actor,
         skill_id=skill_id,
         limit=limit,

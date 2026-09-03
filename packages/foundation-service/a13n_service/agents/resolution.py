@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -14,8 +13,6 @@ from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agen
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
 from a13n_service.plugins.runtime import PluginRuntimeLockError
-from a13n_service.skills.domain import SkillPackageManifest
-from a13n_service.skills.models import SkillRecord, SkillRevisionRecord
 from a13n_service.storage import short_session
 
 from .domain import (
@@ -25,7 +22,7 @@ from .domain import (
     PluginRuntimeMode,
     ResolvedAgentModel,
     ResolvedRevisionContent,
-    ResolvedSkillSelection,
+    ResolvedSkillBinding,
     ResolvedSubagentEdge,
     SubagentSelection,
 )
@@ -33,18 +30,16 @@ from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedE
 from .errors import AgentError, agent_revision_create_failed
 from .models import AgentRecord, AgentRevisionRecord
 from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
+from .skill_resolution import (
+    PreparedSkillBinding,
+    SkillSelectionInvalid,
+    freeze_skill_bindings,
+    prepare_skill_bindings,
+)
 from .validation import AgentConfigValidationError, AgentProtocolPolicy, validate_agent_config
 
 MAX_SUBAGENT_DEPTH = 16
 MAX_SUBAGENT_NODES = 256
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedSkill:
-    revision_id: str
-    skill_id: str
-    skill_name: str
-    content_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +61,7 @@ class PreparedRevisionResolution:
     model: PreparedModelExecution
     environment: PreparedEnvironmentSelection | None
     plugins: PreparedPluginSelections
-    skills: tuple[PreparedSkill, ...]
+    skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
 
 
@@ -241,8 +236,8 @@ class AgentResolver:
         if config.mcp_tools:
             raise agent_revision_create_failed("mcp_tool_resolution_unavailable", path="mcp_tools")
         for index, skill in enumerate(config.skills):
-            if skill.skill_revision_id in {item.skill_revision_id for item in config.skills[:index]}:
-                raise agent_revision_create_failed("skill_revision_duplicate", path=f"skills.{index}")
+            if skill.skill_key in {item.skill_key for item in config.skills[:index]}:
+                raise agent_revision_create_failed("skill_duplicate", path=f"skills.{index}")
         try:
             validate_agent_config(config, protocol_policy=self._protocol_policy)
         except AgentConfigValidationError as error:
@@ -257,7 +252,7 @@ class AgentResolver:
         workspace_id: str,
         agent_id: str,
         config: AgentConfig,
-    ) -> tuple[PreparedSkill, ...]:
+    ) -> tuple[PreparedSkillBinding, ...]:
         if not config.skills:
             return ()
         await authorize_agent_skill_binding(
@@ -266,46 +261,15 @@ class AgentResolver:
             workspace_id=workspace_id,
             agent_id=agent_id,
         )
-        requested_ids = tuple(item.skill_revision_id for item in config.skills)
-        rows = tuple(
-            (
-                await session.execute(
-                    select(SkillRevisionRecord, SkillRecord)
-                    .join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id)
-                    .where(
-                        SkillRevisionRecord.organization_id == organization_id,
-                        SkillRevisionRecord.workspace_id == workspace_id,
-                        SkillRevisionRecord.id.in_(requested_ids),
-                        SkillRecord.deleted_at.is_(None),
-                    )
-                )
-            ).all()
-        )
-        by_id = {revision.id: (revision, skill) for revision, skill in rows}
-        if set(by_id) != set(requested_ids):
-            raise agent_revision_create_failed("skill_revision_not_found", path="skills")
-        result: list[PreparedSkill] = []
-        names: set[str] = set()
-        for revision_id in requested_ids:
-            revision, _skill = by_id[revision_id]
-            try:
-                manifest = SkillPackageManifest.model_validate(revision.manifest)
-            except ValidationError as error:
-                raise agent_revision_create_failed("skill_revision_invalid", path="skills") from error
-            if manifest.content_digest != revision.content_digest:
-                raise agent_revision_create_failed("skill_revision_invalid", path="skills")
-            if manifest.skill_name in names:
-                raise agent_revision_create_failed("skill_name_duplicate", path="skills")
-            names.add(manifest.skill_name)
-            result.append(
-                PreparedSkill(
-                    revision_id=revision.id,
-                    skill_id=revision.skill_id,
-                    skill_name=manifest.skill_name,
-                    content_digest=revision.content_digest,
-                )
+        try:
+            return await prepare_skill_bindings(
+                session,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                selections=config.skills,
             )
-        return tuple(result)
+        except SkillSelectionInvalid as error:
+            raise agent_revision_create_failed("skill_selection_invalid", path="skills") from error
 
     async def _prepare_subagents(
         self,
@@ -400,7 +364,7 @@ class AgentResolver:
         self,
         session: AsyncSession,
         prepared: PreparedRevisionResolution,
-    ) -> tuple[ResolvedSkillSelection, ...]:
+    ) -> tuple[ResolvedSkillBinding, ...]:
         if not prepared.skills:
             return ()
         await authorize_agent_skill_binding(
@@ -409,49 +373,15 @@ class AgentResolver:
             workspace_id=prepared.workspace_id,
             agent_id=prepared.agent_id,
         )
-        ids = tuple(item.revision_id for item in prepared.skills)
-        rows = tuple(
-            (
-                await session.scalars(
-                    select(SkillRevisionRecord)
-                    .join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id)
-                    .where(
-                        SkillRevisionRecord.organization_id == prepared.organization_id,
-                        SkillRevisionRecord.workspace_id == prepared.workspace_id,
-                        SkillRevisionRecord.id.in_(ids),
-                        SkillRecord.organization_id == prepared.organization_id,
-                        SkillRecord.workspace_id == prepared.workspace_id,
-                        SkillRecord.deleted_at.is_(None),
-                    )
-                    .with_for_update()
-                )
-            ).all()
-        )
-        current = {item.id: item for item in rows}
-        result: list[ResolvedSkillSelection] = []
-        for expected in prepared.skills:
-            row = current.get(expected.revision_id)
-            try:
-                manifest = SkillPackageManifest.model_validate(row.manifest) if row is not None else None
-            except ValidationError as error:
-                raise agent_revision_create_failed("skill_revision_changed", path="skills") from error
-            if (
-                row is None
-                or manifest is None
-                or row.skill_id != expected.skill_id
-                or row.content_digest != expected.content_digest
-                or manifest.content_digest != expected.content_digest
-                or manifest.skill_name != expected.skill_name
-            ):
-                raise agent_revision_create_failed("skill_revision_changed", path="skills")
-            result.append(
-                ResolvedSkillSelection(
-                    skill_revision_id=expected.revision_id,
-                    skill_name=expected.skill_name,
-                    content_digest=expected.content_digest,
-                )
+        try:
+            return await freeze_skill_bindings(
+                session,
+                organization_id=prepared.organization_id,
+                workspace_id=prepared.workspace_id,
+                prepared=prepared.skills,
             )
-        return tuple(result)
+        except SkillSelectionInvalid as error:
+            raise agent_revision_create_failed("skill_selection_invalid", path="skills") from error
 
     async def _freeze_subagents(
         self,

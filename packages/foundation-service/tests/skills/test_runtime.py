@@ -9,7 +9,6 @@ import pytest
 from a13n_environment_provider.direct_local.files import LocalFileOperator
 from a13n_environment_provider.direct_local.provider import _DirectLocalFilePolicy
 from a13n_harness.errors import DefinitionError
-from a13n_service.agents.domain import ResolvedSkillSelection
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.skills.domain import SkillRevisionLock
 from a13n_service.skills.materialization import (
@@ -123,6 +122,7 @@ def _add_skill(
             id=skill_id,
             organization_id=ORG_ID,
             workspace_id=WORKSPACE_ID,
+            key=package.manifest.skill_name,
             name=name,
             version=1,
             current_revision_id=revision_id,
@@ -155,16 +155,20 @@ def _add_skill(
 def _locks(
     fixture: RuntimeFixture,
     revision_ids: tuple[str, ...] = (DEPLOY_REVISION_ID, REVIEW_REVISION_ID),
-) -> tuple[ResolvedSkillSelection, ...]:
+) -> tuple[SkillRevisionLock, ...]:
     values = {
-        DEPLOY_REVISION_ID: ResolvedSkillSelection(
+        DEPLOY_REVISION_ID: SkillRevisionLock(
+            skill_id=DEPLOY_SKILL_ID,
             skill_revision_id=DEPLOY_REVISION_ID,
-            skill_name=fixture.deploy.manifest.skill_name,
+            skill_key=fixture.deploy.manifest.skill_name,
+            version=1,
             content_digest=fixture.deploy.manifest.content_digest,
         ),
-        REVIEW_REVISION_ID: ResolvedSkillSelection(
+        REVIEW_REVISION_ID: SkillRevisionLock(
+            skill_id=REVIEW_SKILL_ID,
             skill_revision_id=REVIEW_REVISION_ID,
-            skill_name=fixture.review.manifest.skill_name,
+            skill_key=fixture.review.manifest.skill_name,
+            version=1,
             content_digest=fixture.review.manifest.content_digest,
         ),
     }

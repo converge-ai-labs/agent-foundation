@@ -209,6 +209,13 @@ def test_foundation_rejects_invalid_skill_frontmatter_metadata(frontmatter: str)
     assert error_code(lambda: normalize_skill_files((("SKILL.md", document),))) == "skill_package_invalid"
 
 
+@pytest.mark.parametrize("name", ["Deploy", "deploy_helper", "-deploy", "deploy-", "deploy--helper", "a" * 65])
+def test_skill_name_must_be_a_stable_key(name: str) -> None:
+    document = f"---\nname: {name}\ndescription: Deploy safely.\n---\n".encode()
+
+    assert error_code(lambda: normalize_skill_files((("SKILL.md", document),))) == "skill_package_invalid"
+
+
 def test_skill_description_limit_counts_utf8_bytes() -> None:
     boundary = "é" * (MAX_SKILL_DESCRIPTION_BYTES // len("é".encode()))
     accepted = normalize_skill_files(

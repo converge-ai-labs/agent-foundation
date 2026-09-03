@@ -2,11 +2,11 @@
 
 ## Design Position
 
-Foundation exposes `Agent` as the stable Workspace-owned identity for authoring, authorization, lifecycle, and invocation. Each `AgentRevision` is one immutable executable configuration. The Agent head contains metadata, lifecycle state, a canonical `version`, and `current_revision_id`; it contains no mutable draft configuration.
+Foundation exposes `Agent` as the stable Workspace-owned identity for authoring, authorization, lifecycle, and invocation. Each `AgentRevision` is one immutable authoring configuration with frozen stable-resource bindings. A Run resolves that policy into one exact immutable `EffectiveAgentConfig`. The Agent head contains metadata, lifecycle state, a canonical `version`, and `current_revision_id`; it contains no mutable draft configuration.
 
 Creating an Agent atomically creates Revision v1. Creating a genuinely different Revision appends immutable content and advances the Agent and current Revision to the same next `version`. Metadata and lifecycle mutations use strong ETags and do not change that version. Foundation exposes no `AgentPreset` compatibility resource or independently mutable default-Revision pointer.
 
-A Run selects one exact `AgentRevision` at durable acceptance. Its current `RunAttemptExecutor` reconstructs process-local Harness `AgentDefinition`, `SubagentDefinition`, `ExecutableAgent`, and Plugin objects from the Revision's frozen effective configuration. Those Python values are never management resources or durable payloads.
+A Run selects one exact `AgentRevision` at durable acceptance. Its current `RunAttemptExecutor` reconstructs process-local Harness `AgentDefinition`, `SubagentDefinition`, `ExecutableAgent`, and Plugin objects from that Revision and the Run's exact frozen `EffectiveAgentConfig`. Those Python values are never management resources or durable payloads.
 
 [Managed Harness Plugins and Runtime](36-managed-harness-plugins-and-runtime.md) owns Plugin and PluginVersion identity, selection, lifecycle, commands, artifacts, and Runtime behavior. Agent Management embeds only typed Plugin selections and exact resolved locks into Agent configuration and Revisions.
 
@@ -16,7 +16,7 @@ flowchart LR
     Revision -->|Advance atomically| Current[Agent current Revision]
     Plugins[Managed Plugin selections] --> Revision
     Current --> Acceptance[Implicit Run selection]
-    Revision --> Acceptance
+    Revision -->|Frozen bindings and policy| Acceptance
     Override[Typed AgentRunOverride] --> Acceptance
     Acceptance --> Run[Persisted Run with exact Revision and effective config]
     Run -->|Pins lock digest| Worker[Worker or Runner execution process]
@@ -91,10 +91,6 @@ class EffectiveAgentModel:
     execution: ModelExecutionSnapshot
     settings: ModelSettings
     characteristics: HarnessModelCharacteristics
-
-
-class SkillSelection:
-    skill_revision_id: SkillRevisionId
 
 
 class ConnectorConnectionToolSelection:
@@ -188,7 +184,7 @@ class AgentConfig:
     protocol: ProtocolConfig
 ```
 
-The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. Skills select exact Skill Revisions, the model selects one stable Model key and one explicit calling API, and the primary Environment selects at most one exact EnvironmentRevision. Agent Revision creation resolves and retains the Model's internal identity but does not freeze its mutable Model configuration; every Run resolves the latest Model under [Model Management](30-model-management.md#agent-selection-and-run-snapshot). Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
+The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key and one explicit calling API, and the primary Environment selects at most one exact EnvironmentRevision. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
 
 `OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
@@ -307,7 +303,7 @@ class EffectiveAgentConfig:
     input_adapter: InputAdapterConfig
     plugins: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
-    skills: tuple[ResolvedSkillSelection, ...]
+    skills: tuple[SkillRevisionLock, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     environment: EnvironmentExecutionConfig | None
@@ -321,7 +317,7 @@ class EffectiveAgentConfig:
     content_digest: str
 ```
 
-Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. Retry, resume, deferred-action completion, and Worker replacement reconstruct from that snapshot and never re-read the Agent head or reapply merge rules. Input, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
+Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. Its Skill entries are the exact five-field [`SkillRevisionLock`](31-skill-management.md#agent-selection-and-run-locking) values selected at that acceptance boundary. Retry, waiting Continue, deferred-action completion, and other successor operations preserve the source snapshot when their owning contract requires it; Worker replacement of the same accepted Run always reuses it. No execution attempt re-reads an Agent or Skill head or reapplies merge rules. Input, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
 
 ## Immutable AgentRevision
 
@@ -348,7 +344,7 @@ class AgentRevision:
     resolved_model: ResolvedAgentModel
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
-    resolved_skills: tuple[ResolvedSkillSelection, ...]
+    resolved_skills: tuple[ResolvedSkillBinding, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
@@ -359,9 +355,9 @@ class AgentRevision:
     created_at: datetime
 ```
 
-Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, exact managed-resource reference, Runtime lock, and subagent Revision. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
+Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, stable managed-resource binding and selection policy, Runtime lock, and subagent Revision. For an unpinned Skill, it covers `skill_id`, `skill_key`, and the absence of a version, not whichever current SkillRevision a later Run resolves. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
 
-`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The resolved Model field retains only stable Model identity, explicit calling API, settings, and characteristics; Run acceptance resolves its latest Model execution snapshot. The other resolved fields freeze Skill content, ConnectorConnection and MCPConnection selections, optional primary Environment lock, and complete child Revision graph. Secret values, current authorization, current Model and Provider configuration/lifecycle, live Connector availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
+`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The resolved Model field retains only stable Model identity, explicit calling API, settings, and characteristics; Run acceptance resolves its latest Model execution snapshot. Resolved Skill bindings freeze stable `skill_id` identity and pinned-or-current policy; only a pinned binding identifies versioned content before Run acceptance. The other resolved fields freeze ConnectorConnection and MCPConnection selections, optional primary Environment lock, and the complete child Revision graph. Secret values, current authorization, current Model and Provider configuration/lifecycle, an unpinned Skill's current Revision, live Connector availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
 
 ## Creation, Revision, and Restore
 
@@ -371,7 +367,7 @@ Create Revision accepts `expected_version` and one complete replacement `config`
 
 1. authorize the operation and every referenced resource;
 2. verify the expected Agent version;
-3. resolve exact Model, Plugin, Skill, Environment, ConnectorConnection, and subagent dependencies;
+3. resolve exact Model identity, Plugin versions, stable Skill bindings, Environment, ConnectorConnection, and subagent dependencies;
 4. verify schemas, the finite acyclic subagent graph, Plugin evidence, and reconstruction compatibility;
 5. canonicalize the frozen content and compute its digests;
 6. return the current Agent and Revision unchanged for a semantic no-op; or
@@ -383,7 +379,7 @@ Restore Revision revalidates retained dependencies and copies the selected histo
 
 Duplicate revalidates the exact current Revision and atomically creates an independent custom Agent with its own v1 Revision. The new head records source Agent and Revision IDs. It never follows or merges later source changes.
 
-Built-in Agents use the same Revision validation and exact dependency freezing. Distribution registration creates v1 or advances to another Revision only when resolved content changes. Built-ins are invocable and readable but cannot be renamed, duplicated in place, archived, or otherwise mutated by ordinary users; Duplicate creates a custom Agent.
+Built-in Agents use the same Revision validation and dependency-binding rules. Distribution registration creates v1 or advances to another Revision only when resolved content changes. Built-ins are invocable and readable but cannot be renamed, duplicated in place, archived, or otherwise mutated by ordinary users; Duplicate creates a custom Agent.
 
 ## Metadata and Lifecycle
 
@@ -392,9 +388,9 @@ Built-in Agents use the same Revision validation and exact dependency freezing. 
 - Disable sets `enabled=false` and blocks new invocation without cancelling accepted Runs.
 - Enable revalidates the current Revision and sets `enabled=true`.
 - Archive requires the Agent to be disabled and sets `archived_at`.
-- Unarchive clears `archived_at` without enabling the Agent.
+- Unarchive revalidates the current Revision's managed-resource bindings and clears `archived_at` without enabling the Agent. It fails if any referenced stable Skill identity has been deleted while the Agent was archived.
 
-GET returns a strong ETag. Metadata and lifecycle mutations require exact strong `If-Match`; weak validators and `*` are rejected. These mutations never advance `version` or rewrite Revisions. Historical Revisions remain readable and can be invoked while the stable Agent is enabled and unarchived and their exact artifacts remain executable.
+GET returns a strong ETag. Metadata and lifecycle mutations require exact strong `If-Match`; weak validators and `*` are rejected. These mutations never advance `version` or rewrite Revisions. Historical Revisions remain readable and can be invoked while the stable Agent is enabled and unarchived and their managed-resource bindings remain eligible.
 
 ## Subagent Composition
 
@@ -413,14 +409,14 @@ Durable acceptance:
 1. authorizes invocation of the stable Agent and every selected managed resource;
 2. requires the Agent to be enabled and unarchived;
 3. validates that the exact Revision belongs to the Agent, remains retained and executable, and satisfies current authorization and compatibility requirements;
-4. applies the typed config override and capability overlay and resolves every final selection;
+4. applies the typed config override and capability overlay and resolves every final selection, including every Skill binding to an exact Revision lock;
 5. freezes the complete non-secret `EffectiveAgentConfig`, encrypted sensitive payload, and exact Runtime lock;
 6. when an Environment is selected, creates one immutable `RunEnvironmentBinding` to its exact existing target; and
 7. persists `agent_id`, exact `agent_revision_id`, selector kind, effective-config digest, and `runtime_lock_digest` on the accepted execution state.
 
-Historical AgentRevisions remain invocable under the stable Agent's current lifecycle gate. Ingress and Schedule definitions store the stable Agent identity and resolve the current Revision for each occurrence. Retry, waiting feedback, recovery, and accepted child work use the exact Revision and effective configuration pinned by their Run.
+Historical AgentRevisions remain invocable under the stable Agent's current lifecycle gate. Their pinned Skill selections remain exact; their unpinned selections resolve current Revisions within the `skill_id` bindings frozen in that historical AgentRevision. Ingress and Schedule definitions store the stable Agent identity and resolve the current AgentRevision for each occurrence. Retry, waiting feedback, and other successor operations preserve source Skill locks where required but still pass current Skill lifecycle gates before a new Run is accepted. Recovery and Worker replacement of an already accepted Run use its exact Revision and effective configuration.
 
-For each outbound model request, the Worker or Runner rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes current resource eligibility, constructs fresh Models, Plugins, `RunBindings`, and an attach-only Environment adapter, and enters the Harness only after the current attempt fence authorizes effects. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, model profile/limits, Plugin code, dependencies, other managed-resource Revisions, child graph, tool surface, output contract, Environment connection, provider target, or retry budgets.
+For each outbound model request, the Worker or Runner rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes mutable authorities required by their owning contracts, constructs fresh Models, Plugins, `RunBindings`, and an attach-only Environment adapter, and enters the Harness only after the current attempt fence authorizes effects. An accepted Run's exact Skill package locks remain internally readable even if the Skill is later deleted. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, model profile/limits, Plugin code, dependencies, other managed-resource Revisions, child graph, tool surface, output contract, Environment connection, provider target, or retry budgets.
 
 ## Managed Harness Plugin Reference
 
@@ -479,7 +475,7 @@ Atomically creating and advancing immutable Revisions removes a mutable draft/de
 04. Every accepted Run pins one exact AgentRevision and one immutable `EffectiveAgentConfig`; retry, waiting, recovery, and Worker replacement never remerge current Agent state.
 05. Revision and effective-config content contain only serializable Foundation data and exact references, never Python objects, callable handlers, credential values, arbitrary import targets, or Plugin artifacts.
 06. Current credentials, authorization, Secret eligibility, attachment-capability availability, `RunBindings`, and Environment adapters are resolved or constructed freshly for every execution attempt without changing the frozen connection or Run binding.
-07. Historical Revision invocation is exact and never falls back or follows a mutable dependency head.
+07. Historical AgentRevision invocation never falls back to another AgentRevision; only explicitly unpinned Skill bindings and other owner-defined mutable selections resolve at new Run acceptance.
 08. Restore copies retained content into a new later Revision and never moves the Agent head backward.
 09. ProtocolConfig is Agent-owned Revision content rather than another resource, digest, or per-Agent protocol switch.
 10. Plugin identity and lifecycle remain owned exclusively by the managed Plugin contract; Agent Management stores only typed selections and resolved locks.

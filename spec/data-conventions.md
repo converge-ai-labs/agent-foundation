@@ -80,7 +80,7 @@ Package releases, protocol major/minor identities, Git or artifact revisions, an
 
 Public APIs and SDKs use concise domain language such as `id`, `model`, `agent`, and `provider`. They do not expose internal suffixes merely to restate meaning already established by the resource, operation, or type.
 
-The primary user-visible name of a managed resource is `name`. `display_name` is used only for a presentation label that coexists with a distinct stable technical key or external identity at the same boundary. Qualified names such as `distribution_name`, `model_name`, and `provider_key` retain their owning semantics.
+The primary user-visible name of a managed resource is `name`, and a distinct stable technical selector is `key`. `display_name` is reserved for fields whose owning external or compatibility contract establishes that exact term. Qualified names such as `distribution_name`, `model_name`, and `provider_key` retain their owning semantics.
 
 Internal domain, persistence, event, and adapter models use more explicit names when several identities or selection domains would otherwise be ambiguous, for example an Agent ID and AgentRevision ID beside a provider model identity. Typed values such as an AgentRevision reference or model selector carry semantics that a bare string and naming convention cannot.
 
@@ -111,9 +111,7 @@ Data that affects authority, execution behavior, compatibility, or recovery is r
 03. External identities and compact scoped references preserve their owning formats and are never relabeled as Foundation-owned object IDs.
 04. A revisioned Foundation resource uses one stable ID, one current Revision ID, and positive integer versions beginning at `1`; the head and current Revision expose the same version.
 05. A mutation of a versioned model uses `expected_version`; metadata-only and intentionally non-versioned mutations use an owning strong `ETag` and introduce no parallel generic counter.
-06. Durable work selects exact object versions, immutable revision identities,
-    or an owner-defined execution snapshot rather than resolving `latest`
-    during execution or recovery.
+06. Durable work selects exact object versions, immutable revision identities, or an owner-defined execution snapshot rather than resolving `latest` during execution or recovery.
 07. Public interfaces favor concise domain language, while internal models make ambiguous meanings explicit through names and types.
 08. Identifier possession never replaces authentication, authorization, scope, or lifecycle validation.
 09. Durable data is interpreted only through its recorded compatibility facts; unknown required versions fail unless explicitly migrated.
@@ -122,4 +120,4 @@ Data that affects authority, execution behavior, compatibility, or recovery is r
 12. State becomes a checkpoint only after its owner validates completeness and durably selects it at a continuation boundary.
 13. Generations distinguish replaceable incarnations, and fences reject obsolete or terminal participants; neither is a content version by default.
 14. Type names state their concepts without repeating repository, distribution, or module ownership already established by their namespace.
-15. Managed resources expose their primary user-visible name as `name`; `display_name` exists only beside a distinct technical key or external identity.
+15. Managed resources expose their primary user-visible name as `name`; a distinct stable technical selector is `key`, and `display_name` exists only when an owning external or compatibility contract establishes that term.

@@ -61,7 +61,8 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column("name", sa.String(length=1024), nullable=False),
+        sa.Column("key", sa.String(length=64), nullable=False),
+        sa.Column("name", sa.String(length=256), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("current_revision_id", sa.String(length=72), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
@@ -77,6 +78,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "updated_by_type IN ('user', 'service_account')", name=op.f("ck_skills_updated_by_type_valid")
         ),
+        sa.CheckConstraint("length(key) BETWEEN 1 AND 64", name=op.f("ck_skills_key_bounded")),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 256", name=op.f("ck_skills_name_bounded")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_skills_version_positive")),
         sa.ForeignKeyConstraint(
@@ -89,6 +91,14 @@ def upgrade() -> None:
         sa.UniqueConstraint("id", "workspace_id", "organization_id", name="uq_skills_identity_scope"),
     )
     op.create_index("ix_skills_listing", "skills", ["workspace_id", "name", "id"], unique=False)
+    op.create_index(
+        "uq_skills_workspace_key_active",
+        "skills",
+        ["workspace_id", "key"],
+        unique=True,
+        postgresql_where=sa.text("deleted_at IS NULL"),
+        sqlite_where=sa.text("deleted_at IS NULL"),
+    )
     op.create_table(
         "skill_revisions",
         sa.Column("id", sa.String(length=72), nullable=False),
@@ -179,6 +189,7 @@ def downgrade() -> None:
     op.drop_index("ix_skill_revisions_listing", table_name="skill_revisions")
     op.drop_index("ix_skill_revisions_digest", table_name="skill_revisions")
     op.drop_table("skill_revisions")
+    op.drop_index("uq_skills_workspace_key_active", table_name="skills")
     op.drop_index("ix_skills_listing", table_name="skills")
     op.drop_table("skills")
     op.drop_index("ix_skill_idempotency_expiry", table_name="skill_idempotency")

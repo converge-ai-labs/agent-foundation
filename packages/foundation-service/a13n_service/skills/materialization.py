@@ -88,7 +88,7 @@ class MaterializedSkillSource:
                 item = discovered[0]
                 manifest = selected.manifest
                 if (
-                    item.name != selected.lock.skill_name
+                    item.name != selected.lock.skill_key
                     or item.description != manifest.description
                     or item.path != root
                 ):

@@ -169,12 +169,15 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     skill = publication["skill"]
     revision = publication["revision"]
     assert publication["outcome"] == "published"
+    assert skill["key"] == "deploy-helper"
 
     listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills")
     assert listed.json() == {"items": [skill], "next_cursor": None}
     assert (await api_client.get(f"/api/v1/skills/{skill['id']}")).json() == skill
     revisions = await api_client.get(f"/api/v1/skills/{skill['id']}/revisions")
     assert revisions.json() == {"items": [revision], "next_cursor": None}
+    references = await api_client.get(f"/api/v1/skills/{skill['id']}/references")
+    assert references.json() == {"items": [], "next_cursor": None}
     assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}")).json() == revision
 
     content = await api_client.get(f"/api/v1/skill-revisions/{revision['id']}/content")
@@ -204,7 +207,9 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     assert patched.json()["version"] == 1
     deleted = await api_client.delete(f"/api/v1/skills/{skill['id']}", headers={"If-Match": patched.headers["etag"]})
     assert deleted.status_code == 204
-    assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}/content")).status_code == 200
+    assert (await api_client.get(f"/api/v1/skills/{skill['id']}")).status_code == 404
+    assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}")).status_code == 404
+    assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}/content")).status_code == 404
 
 
 @pytest.mark.anyio

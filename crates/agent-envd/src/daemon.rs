@@ -414,6 +414,10 @@ impl Daemon {
         tasks_drained && transfers_reconciled
     }
 
+    #[expect(
+        clippy::result_large_err,
+        reason = "the generated protocol error is the daemon's public error contract"
+    )]
     async fn await_owned_operation<T>(
         &self,
         operation_id: &str,
@@ -566,6 +570,10 @@ impl Daemon {
         }
     }
 
+    #[expect(
+        clippy::result_large_err,
+        reason = "the generated protocol error is the daemon's public error contract"
+    )]
     async fn preflight(&self, method: &str) -> Result<(), EIPError> {
         let mut state = self.session.state();
         match state.lifecycle {

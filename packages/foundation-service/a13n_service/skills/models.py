@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,16 +42,26 @@ class SkillRecord(Base):
         ),
         UniqueConstraint("id", "workspace_id", "organization_id", name="uq_skills_identity_scope"),
         CheckConstraint("version >= 1", name="version_positive"),
+        CheckConstraint("length(key) BETWEEN 1 AND 64", name="key_bounded"),
         CheckConstraint("length(name) BETWEEN 1 AND 256", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
         Index("ix_skills_listing", "workspace_id", "name", "id"),
+        Index(
+            "uq_skills_workspace_key_active",
+            "workspace_id",
+            "key",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+            sqlite_where=text("deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72))
     workspace_id: Mapped[str] = mapped_column(String(72))
-    name: Mapped[str] = mapped_column(String(1024))
+    key: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(256))
     version: Mapped[int] = mapped_column(BigInteger)
     current_revision_id: Mapped[str] = mapped_column(String(72))
     created_by_type: Mapped[str] = mapped_column(String(32))
@@ -66,6 +77,7 @@ class SkillRecord(Base):
             id=self.id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
+            key=self.key,
             name=self.name,
             version=self.version,
             current_revision_id=self.current_revision_id,

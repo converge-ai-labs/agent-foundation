@@ -59,7 +59,7 @@ from .errors import (
     agent_revision_not_found,
     agent_version_conflict,
 )
-from .invocation_resolution import AgentInvocationResolver, PreparedAgentRevisionGraph
+from .invocation_resolution import AgentInvocationResolver, PreparedAgentRevisionGraph, RootAgentStatePolicy
 from .models import AgentRecord, AgentRevisionRecord
 from .resolution import AgentResolver, PreparedRevisionResolution, resolution_error
 
@@ -635,7 +635,7 @@ class AgentService:
             actor=actor,
             agent_id=agent_id,
             agent_revision_id=revision_id,
-            allow_disabled_root=True,
+            root_state_policy=RootAgentStatePolicy.disabled_allowed,
         )
         now = self._clock()
         try:
@@ -730,7 +730,7 @@ class AgentService:
             actor=actor,
             agent_id=agent_id,
             agent_revision_id=current.current_revision_id,
-            allow_disabled_root=True,
+            root_state_policy=RootAgentStatePolicy.disabled_allowed,
         )
         now = self._clock()
         try:
@@ -910,19 +910,29 @@ class AgentService:
         )
         if replay is not None:
             return replay
-        prepared_enable: PreparedAgentRevisionGraph | None = None
-        if action == "enable":
+        prepared_lifecycle: PreparedAgentRevisionGraph | None = None
+        if action in {"enable", "unarchive"}:
             current = await self.get(actor=actor, agent_id=agent_id)
-            if current.archived_at is not None or current.enabled:
+            if action == "enable" and (current.archived_at is not None or current.enabled):
                 raise AgentError(
                     "agent_state_conflict",
                     "The Agent cannot be enabled from its current state.",
                     status_code=409,
                 )
-            prepared_enable = await self._invocation_resolver.prepare_retained_revision_graph(
+            if action == "unarchive" and (current.archived_at is None or current.source is not AgentSource.custom):
+                raise AgentError(
+                    "agent_state_conflict",
+                    "The Agent cannot be unarchived from its current state.",
+                    status_code=409,
+                )
+            prepared_lifecycle = await self._invocation_resolver.prepare_retained_revision_graph(
                 actor=actor,
                 agent_id=agent_id,
-                allow_disabled_root=True,
+                root_state_policy=(
+                    RootAgentStatePolicy.archived_allowed
+                    if action == "unarchive"
+                    else RootAgentStatePolicy.disabled_allowed
+                ),
             )
         now = self._clock()
         try:
@@ -936,10 +946,10 @@ class AgentService:
                 record = await _locked_agent(session, workspace.organization_id, workspace.workspace_id, agent_id)
                 _require_etag(record, if_match)
                 _apply_lifecycle_transition(session, record, action=action, now=now)
-                if prepared_enable is not None:
+                if prepared_lifecycle is not None:
                     await self._invocation_resolver.freeze_retained_revision_graph(
                         session,
-                        prepared=prepared_enable,
+                        prepared=prepared_lifecycle,
                     )
                 if action == "disable":
                     await _require_not_in_use(session, record)

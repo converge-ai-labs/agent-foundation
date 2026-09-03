@@ -187,6 +187,16 @@ def is_idempotency_race(error: IntegrityError) -> bool:
     return "unique constraint failed" in message and "skill_idempotency.operation" in message
 
 
+def is_skill_key_race(error: IntegrityError) -> bool:
+    """Return whether a create lost the active Workspace key race."""
+
+    diagnostic = getattr(getattr(error, "orig", None), "diag", None)
+    if diagnostic is not None:
+        return getattr(diagnostic, "constraint_name", None) == "uq_skills_workspace_key_active"
+    message = str(error.orig).casefold()
+    return "unique constraint failed" in message and "skills.workspace_id, skills.key" in message
+
+
 async def record_failed_skill_attempt(
     sessions: async_sessionmaker[AsyncSession],
     *,
@@ -195,6 +205,7 @@ async def record_failed_skill_attempt(
     skill_id: str | None,
     action: str,
     now: datetime,
+    details: dict[str, object] | None = None,
 ) -> None:
     async with transaction(sessions) as session:
         organization_id = await session.scalar(
@@ -209,6 +220,7 @@ async def record_failed_skill_attempt(
                 action=action,
                 now=now,
                 outcome="failure",
+                details=details,
             )
         )
 

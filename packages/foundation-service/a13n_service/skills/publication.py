@@ -20,7 +20,7 @@ from .domain import (
     new_skill_id,
     new_skill_revision_id,
 )
-from .errors import SkillError, skill_version_conflict
+from .errors import SkillError, skill_key_conflict, skill_key_mismatch, skill_version_conflict
 from .models import (
     SkillRecord,
     SkillRevisionRecord,
@@ -40,6 +40,7 @@ from .support import (
     authorize_skill_workspace,
     idempotency_identity,
     is_idempotency_race,
+    is_skill_key_race,
     load_replay,
     new_replay_evidence,
     record_failed_skill_attempt,
@@ -178,7 +179,8 @@ class SkillPublicationService:
                 )
                 skill = _new_skill_record(
                     context,
-                    name=request.name,
+                    key=prepared.package.manifest.skill_name,
+                    name=request.name or prepared.package.manifest.skill_name,
                     revision_id=revision_id,
                 )
                 revision = _new_revision_record(
@@ -218,9 +220,11 @@ class SkillPublicationService:
                 await session.flush()
                 return ReplayResult(result=result, status_code=201)
         except IntegrityError as error:
-            if not is_idempotency_race(error):
-                raise
-            return await self._require_replay(command)
+            if is_idempotency_race(error):
+                return await self._require_replay(command)
+            if is_skill_key_race(error):
+                raise skill_key_conflict() from error
+            raise
 
     async def publish_revision(
         self,
@@ -261,7 +265,7 @@ class SkillPublicationService:
         command = _ReplayCommand(
             actor=actor,
             workspace_id=workspace_id,
-            action=WorkspaceAction.skill_update,
+            action=WorkspaceAction.skill_revision_publish,
             operation=_REVISION_OPERATION,
             resource_scope_id=skill_id,
             identity=idempotency_identity(idempotency_key, request),
@@ -273,7 +277,7 @@ class SkillPublicationService:
             actor=actor,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            action=WorkspaceAction.skill_update,
+            action=WorkspaceAction.skill_revision_publish,
             source=request.source,
         )
         try:
@@ -328,6 +332,8 @@ class SkillPublicationService:
                 return replay
             if locked.version != request.expected_version:
                 raise skill_version_conflict(locked.version)
+            if prepared.package.manifest.skill_name != locked.key:
+                raise skill_key_mismatch()
             current = await require_revision(
                 session,
                 organization_id=workspace.organization_id,
@@ -499,11 +505,12 @@ async def _select_revision(
     return selected, "published", 201
 
 
-def _new_skill_record(context: _PublicationContext, *, name: str, revision_id: str) -> SkillRecord:
+def _new_skill_record(context: _PublicationContext, *, key: str, name: str, revision_id: str) -> SkillRecord:
     return SkillRecord(
         id=context.skill_id,
         organization_id=context.organization_id,
         workspace_id=context.workspace_id,
+        key=key,
         name=name,
         version=1,
         current_revision_id=revision_id,

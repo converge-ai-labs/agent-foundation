@@ -14,13 +14,16 @@ from a13n_service.storage import transaction
 
 from .cursors import (
     SkillCursorError,
+    decode_reference_cursor,
     decode_revision_cursor,
     decode_skill_cursor,
+    encode_reference_cursor,
     encode_revision_cursor,
     encode_skill_cursor,
 )
 from .domain import (
     Skill,
+    SkillAgentReferenceCollection,
     SkillCollection,
     SkillPackageManifest,
     SkillRevision,
@@ -31,10 +34,12 @@ from .errors import (
     SkillError,
     invalid_skill_cursor,
     package_store_error,
+    skill_in_use,
 )
 from .models import SkillRecord, SkillRevisionRecord
 from .objects import SkillPackageStore, SkillPackageStoreError
 from .persistence import lock_active_skill, require_revision, require_skill
+from .references import current_agent_references
 from .support import authorize_skill_workspace, record_failed_skill_attempt, skill_audit_record
 
 
@@ -91,6 +96,7 @@ class SkillCatalogService:
             query = select(SkillRecord).where(
                 SkillRecord.organization_id == workspace.organization_id,
                 SkillRecord.workspace_id == workspace_id,
+                SkillRecord.deleted_at.is_(None),
             )
             if position is not None:
                 name, skill_id = position
@@ -192,6 +198,53 @@ class SkillCatalogService:
     ) -> SkillRevision:
         record, _organization_id = await self._authorized_revision(actor=actor, revision_id=revision_id)
         return record.to_resource()
+
+    async def references(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        skill_id: str,
+        limit: int,
+        cursor: str | None,
+    ) -> SkillAgentReferenceCollection:
+        _validate_limit(limit)
+        workspace_id = actor.boundary_workspace_id
+        scope = _cursor_scope(actor=actor, workspace_id=workspace_id, skill_id=skill_id)
+        try:
+            position = decode_reference_cursor(cursor, scope=scope) if cursor is not None else None
+        except SkillCursorError as error:
+            raise invalid_skill_cursor() from error
+        async with transaction(self._sessions) as session:
+            workspace = await authorize_skill_workspace(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                action=WorkspaceAction.skill_read,
+                concealed_code="skill_not_found",
+            )
+            await require_skill(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace_id,
+                skill_id=skill_id,
+            )
+            references = await current_agent_references(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace_id,
+                skill_id=skill_id,
+            )
+            if position is not None:
+                references = tuple(item for item in references if (item.agent_name, item.agent_id) > position)
+            page = references[:limit]
+            next_cursor = None
+            if len(references) > limit and page:
+                next_cursor = encode_reference_cursor(
+                    agent_name=page[-1].agent_name,
+                    agent_id=page[-1].agent_id,
+                    scope=scope,
+                )
+            return SkillAgentReferenceCollection(items=page, next_cursor=next_cursor)
 
     async def content(
         self,
@@ -333,6 +386,14 @@ class SkillCatalogService:
                 skill_id=skill_id,
             )
             _require_etag(locked, if_match)
+            references = await current_agent_references(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace_id,
+                skill_id=skill_id,
+            )
+            if references:
+                raise skill_in_use(len(references))
             locked.deleted_at = now
             locked.updated_by_type = actor.principal.principal_type.value
             locked.updated_by_id = actor.principal.principal_id
@@ -388,6 +449,11 @@ class SkillCatalogService:
                 skill_id=skill_id,
                 action=action,
                 now=self._clock(),
+                details=(
+                    {"blocking_agent_count": error.details["blocking_agent_count"]}
+                    if isinstance(error, SkillError) and error.code == "skill_in_use"
+                    else None
+                ),
             )
         except Exception as audit_error:
             error.add_note(f"security audit persistence failed with {type(audit_error).__name__}")

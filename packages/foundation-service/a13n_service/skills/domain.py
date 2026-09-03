@@ -6,13 +6,18 @@ import unicodedata
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
 
 Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
+SKILL_KEY_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+SkillKey = Annotated[
+    str,
+    StringConstraints(pattern=SKILL_KEY_PATTERN, min_length=1, max_length=64),
+]
 
 
 def new_skill_id() -> str:
@@ -39,7 +44,7 @@ class SkillPackageManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["1"] = "1"
-    skill_name: str = Field(min_length=1, max_length=256)
+    skill_name: SkillKey
     description: str = Field(min_length=1, max_length=16 * 1024)
     harness_skill_contract: Literal["1"] = "1"
     files: tuple[SkillPackageFile, ...] = Field(min_length=1, max_length=4096)
@@ -117,7 +122,7 @@ SkillName = Annotated[str, AfterValidator(_normalize_name)]
 class CreateSkillRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: SkillName
+    name: SkillName | None = None
     source: SkillRevisionSource
 
 
@@ -140,6 +145,7 @@ class Skill(BaseModel):
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
+    key: SkillKey
     name: str
     version: int = Field(ge=1)
     current_revision_id: ObjectId
@@ -197,25 +203,28 @@ class SkillRevisionCollection(BaseModel):
     next_cursor: str | None
 
 
+class SkillAgentReference(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    agent_id: ObjectId
+    agent_revision_id: ObjectId
+    agent_name: str = Field(min_length=1, max_length=128)
+
+
+class SkillAgentReferenceCollection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    items: tuple[SkillAgentReference, ...]
+    next_cursor: str | None
+
+
 class SkillRevisionLock(BaseModel):
-    """Exact managed Skill identity copied into an immutable AgentRevision."""
+    """Exact managed Skill revision frozen for one accepted Run."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    skill_id: ObjectId
     skill_revision_id: ObjectId
-    skill_name: str = Field(min_length=1, max_length=256)
+    skill_key: SkillKey
+    version: int = Field(ge=1)
     content_digest: Sha256Digest
-
-    @field_validator("skill_name")
-    @classmethod
-    def _valid_skill_name(cls, value: str) -> str:
-        _validate_skill_names((value,))
-        return value
-
-
-def _validate_skill_names(values: tuple[str, ...]) -> None:
-    if len(values) != len(set(values)):
-        raise ValueError("Skill names must be unique")
-    for value in values:
-        if not value.strip() or len(value) > 256 or "\x00" in value:
-            raise ValueError("Skill names must be non-blank bounded strings without NUL")

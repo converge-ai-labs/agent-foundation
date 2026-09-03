@@ -206,59 +206,17 @@ flowchart LR
     Candidate --> Durable
 ```
 
-Foundation AgentRevisions are Host-owned serializable documents, not Harness
-`AgentDefinition` wire values. Run acceptance pins the Agent-owned on-demand
-lock or the active runner-profile lock. The selected `WorkerExecutionLoop` verifies that exact lock before claim; one executor task for the winning Attempt verifies the Revision's exact managed-resource references, reconstructs native Pydantic/Harness objects,
-resolves current authorized Connections, Secrets, permissions, and
-operator-approved Environment attachment capabilities, and constructs a fresh
-attach-only Environment adapter from the Run's exact existing-target connection.
-Harness attaches and closes that adapter non-destructively. Foundation records the
-immutable Run-to-Environment binding but owns no provider-side target lifecycle or
-current Environment state.
+Foundation AgentRevisions are Host-owned serializable documents, not Harness `AgentDefinition` wire values. Run acceptance pins the Agent-owned on-demand lock or the active runner-profile lock. The selected `WorkerExecutionLoop` verifies that exact lock before claim; one executor task for the winning Attempt verifies the Revision's exact managed-resource references, reconstructs native Pydantic/Harness objects, resolves current authorized Connections, Secrets, permissions, and operator-approved Environment attachment capabilities, and constructs a fresh attach-only Environment adapter from the Run's exact existing-target connection. Harness attaches and closes that adapter non-destructively. Foundation records the immutable Run-to-Environment binding but owns no provider-side target lifecycle or current Environment state.
 
-Workspace Skills are stable authoring resources with immutable ZIP- or
-GitHub-imported revisions in shared object storage. Each AgentRevision locks exact
-Skill revisions, names, and content digests. The worker supplies an explicit
-`SkillManager`, exact Host materializer, and fresh selection. After Harness
-enters the fresh Environment and before model exposure, `SkillsCapability`
-materializes only those verified bytes and publishes the Host completion
-manifest last. Upload receipts and GitHub refs never become runtime sources.
+Workspace Skills have permanent opaque identity, one immutable active key derived from `SKILL.md` `name`, mutable user-visible names, and immutable ZIP- or GitHub-imported Revisions in shared object storage. An AgentRevision binds each selection to a stable Skill identity and either pins an integer version or elects current-at-new-Run-acceptance. Every accepted Run records exact Revision locks. The worker supplies an explicit `SkillManager`, exact Host materializer, and fresh selection. After Harness enters the fresh Environment and before model exposure, `SkillsCapability` materializes only those verified bytes and publishes the Host completion manifest last. Upload receipts and GitHub refs never become runtime sources.
 
 Workspace Assets are independent immutable binary publications. Every distinct upload or Agent `publish_asset` invocation creates a new `asset_id`; exact idempotent replay returns the existing publication. Accepted Agent input stores that exact ID, while Run output and Items can retain bounded Asset references in their existing values. Foundation defines no Asset revision, content overwrite, Run-to-Asset link table, or Asset-specific `state.json` namespace.
 
-Every Foundation Agent invocation selects or creates a Session and Thread and
-accepts one durable Run. One `RunAttempt` starts at most one logical Harness
-Run; internal Harness `ModelAttempt` values are not durable worker generations.
-Every Worker periodically scans durable Run state. For an expired lease, one
-short transaction marks the old Attempt `failed` and creates at most one new
-fenced `RunAttempt`; Foundation defines no separate Scheduler, recovery
-controller, or Attempt `lost` state. The new owner validates the latest complete
-continuation, Run-owned budget, frozen dependencies, and current authority
-outside the claim transaction. It creates fresh providers, bindings, and a
-fresh Harness Run only after a fenced preparation decision. It does not inspect
-or reconcile the prior Sandbox, and it cannot reconstruct tool work that never
-entered the selected continuation. Every Run owns one deterministic state key;
-Foundation replaces that key at complete checkpoints and exposes no separate
-base, result, or checkpoint-history object. Tools that require cross-crash
-duplicate suppression or outcome reconciliation own an idempotency key or a
-tool-specific durable task protocol.
+Every Foundation Agent invocation selects or creates a Session and Thread and accepts one durable Run. One `RunAttempt` starts at most one logical Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Every Worker periodically scans durable Run state. For an expired lease, one short transaction marks the old Attempt `failed` and creates at most one new fenced `RunAttempt`; Foundation defines no separate Scheduler, recovery controller, or Attempt `lost` state. The new owner validates the latest complete continuation, Run-owned budget, frozen dependencies, and current authority outside the claim transaction. It creates fresh providers, bindings, and a fresh Harness Run only after a fenced preparation decision. It does not inspect or reconcile the prior Sandbox, and it cannot reconstruct tool work that never entered the selected continuation. Every Run owns one deterministic state key; Foundation replaces that key at complete checkpoints and exposes no separate base, result, or checkpoint-history object. Tools that require cross-crash duplicate suppression or outcome reconciliation own an idempotency key or a tool-specific durable task protocol.
 
 Client-side tools use native Pydantic deferred values. Foundation's [Agent control input and continuation contract](foundation-service/18-agent-control-input-and-continuation.md) seals the waiting Run with its complete pending set, atomically normalizes authenticated upstream feedback into a full reject, no-response, or supplied-result batch, and accepts a new Run whose `parent_run_id` names that waiting Run. An explicitly declared waiting Continue instead stores default resolutions and new `AgentInput` in one successor whose first model request receives both. The same contract can explicitly continue from any retained readable completed historical Run while preserving its Thread. [Queued submissions](foundation-service/20-agent-control-queued-submissions.md) give ordinary input queue-if-busy semantics: eligible idle Threads accept a Run immediately, while accepted, running, or waiting Threads and a completed Thread with earlier queued intent retain editable input outside the Run DAG. A failed or cancelled current Run instead accepts an eligible immediate successor or rejects the new submission without adding to the queue. Explicit waiting Continue leaves that queue untouched. A completed Run can prepublish its queued successor's state and atomically seal, consume the queue entry, and accept that successor only after its eligible inbox delivery drains. Permanent invalidity terminally fails only the queued intent without creating a Run; recoverable blockers leave it editable, and transient failures or races preserve it for bounded retry and terminal relational recovery. The new Foundation Run starts a later Harness Run with fresh bindings. [Active Agent control](foundation-service/19-agent-control-active-execution.md) persists steering and asynchronous results in one PostgreSQL acceptance-order FIFO, accepts steer against the current accepted or running Run or current/head waiting Run, couples incorporation to complete Run state, rolls pending delivery through waiting, and uses an expiring Thread Redis Stream only as a wakeup optimization. Waiting-derived delivery remains invisible until a Foundation-owned awaited Capability hook runs after the successor's first model request and any resulting tool batch. A failed or cancelled Run suppresses its own pending child results and supersedes other pending delivery bound to it. [Async subagents](foundation-service/34-async-subagents.md) use independent Threads and Runs rather than Pydantic deferred spawn calls. Spawn never waits for child completion: when the spawning Run remains eligible, a terminal child result enters the current active parent-Thread Run as a live Agent message, remains sourced to a waiting head, or automatically accepts an eligible successor Run when the Thread is otherwise inactive; queued submissions retain their independent precedence. If the spawning Run failed or was cancelled first, the result remains queryable but can neither enter nor create another Run, including through Retry.
 
-Foundation's [Thread persistence](foundation-service/11-thread-persistence.md)
-owns one independent versioned relational Thread resource, its Session
-membership, current Run, and selected continuation head. [Run
-persistence](foundation-service/12-run-persistence.md) owns
-durable Agent-work identity, scheduling, the recovery budget, the interactive
-recovery boundary, and complete Run-state object schema. [Run Attempt scheduling
-and recovery](foundation-service/13-run-attempt-scheduling-and-recovery.md) owns
-the `run_attempts` table, Worker scans, claims, leases, fences, and replacement
-generation recovery. [Lifecycle and stream
-persistence](foundation-service/24-lifecycle-and-stream-persistence.md) owns
-one lifecycle-event table and Redis Agent-message transport with object-backed
-retained replay. Active Agent control separately owns the `thread_inbox` table,
-its Thread-level sequence/budget counter, and expiring Thread control signal Stream; pending calls, Items, stream entries,
-and generic provider receipts do not receive separate relational tables.
+Foundation's [Thread persistence](foundation-service/11-thread-persistence.md) owns one independent versioned relational Thread resource, its Session membership, current Run, and selected continuation head. [Run persistence](foundation-service/12-run-persistence.md) owns durable Agent-work identity, scheduling, the recovery budget, the interactive recovery boundary, and complete Run-state object schema. [Run Attempt scheduling and recovery](foundation-service/13-run-attempt-scheduling-and-recovery.md) owns the `run_attempts` table, Worker scans, claims, leases, fences, and replacement generation recovery. [Lifecycle and stream persistence](foundation-service/24-lifecycle-and-stream-persistence.md) owns one lifecycle-event table and Redis Agent-message transport with object-backed retained replay. Active Agent control separately owns the `thread_inbox` table, its Thread-level sequence/budget counter, and expiring Thread control signal Stream; pending calls, Items, stream entries, and generic provider receipts do not receive separate relational tables.
 
 The hosted service boundary is defined in [Foundation Service](foundation-service/README.md).
 
@@ -284,14 +242,14 @@ The platform distinguishes:
 - caller/actor identity;
 - stable Agent workload Identity and Agent instance;
 - Host-owned `Session`, `Thread`, `Run`, and `Item` identities;
-- Host-owned immutable definition revision and dependency locks;
+- Host-owned immutable definition revision, dependency bindings, and selection policy;
 - Foundation-owned immutable Asset publication identity;
 - process-local Harness Run and `ModelAttempt`;
 - Foundation durable Run and `RunAttempt`;
 - Environment identity and generation;
 - credential binding and invocation grant.
 
-A Host definition revision contains only serializable Host data and exact locks. It contains no plugin/Capability class, native Model, Toolset, output Python type, callable, client, plaintext credential, or process-local object. A worker reconstructs those values without mutating the selected revision.
+A Host definition revision contains only serializable Host data, exact locks, and explicitly owner-defined stable bindings whose mutable selections are resolved at Run acceptance. It contains no plugin/Capability class, native Model, Toolset, output Python type, callable, client, plaintext credential, or process-local object. A worker reconstructs those values without mutating the selected revision or re-resolving the accepted Run's locks.
 
 ## Service API Boundaries
 

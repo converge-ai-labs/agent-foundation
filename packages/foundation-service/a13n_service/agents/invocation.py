@@ -54,7 +54,7 @@ class MergedAgentRunConfig(StrictModel):
     def validate_unique_selections(self) -> MergedAgentRunConfig:
         for path, values in (
             ("plugins", tuple(item.instance_name for item in self.plugins)),
-            ("skills", tuple(item.skill_revision_id for item in self.skills)),
+            ("skills", tuple(item.skill_key for item in self.skills)),
             ("client_tools", tuple(item.name for item in self.client_tools)),
         ):
             if len(values) != len(set(values)):

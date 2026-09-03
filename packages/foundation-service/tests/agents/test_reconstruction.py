@@ -149,7 +149,7 @@ def _effective(
         resolved_model=_effective_model(config),
         resolved_plugin_versions=plugins,
         runtime_lock_digest="a" * 64,
-        resolved_skills=(),
+        skills=(),
         connector_tools=connector_tools,
         mcp_tools=mcp_tools,
         resolved_environment=None,

@@ -36,16 +36,7 @@ The accepted operation determines the new Run identity, state source, input prot
 
 Start, continue, continue from, feedback, and fork have `retry_of_run_id=null`. Retry never uses the failed or cancelled source as `parent_run_id`: that field continues to name only the exact sealed state source. A retry of a failed root therefore has no parent; a retry of a failed continue, continue from, feedback, or fork copies the source Run's exact `parent_run_id` and `lineage_kind`.
 
-Start authorizes `agent.invoke`. Ordinary Continue and Continue From
-authorize `run.continue` plus `agent.invoke`; Fork authorizes `run.fork`
-plus invocation authority; Retry authorizes `run.retry`; Feedback authorizes
-`run.feedback`; and waiting Continue authorizes both `run.continue` and
-`run.feedback`. Retry, Feedback, and waiting Continue additionally reauthorize
-the inherited Run authority Principal's current `agent.invoke` and
-referenced-resource eligibility as specified below. The IAM
-[stable action registry](33-identity-and-access-management.md#stable-action-registry)
-owns built-in role grants, while this contract owns these operation-specific
-combinations and lineage predicates.
+Start authorizes `agent.invoke`. Ordinary Continue and Continue From authorize `run.continue` plus `agent.invoke`; Fork authorizes `run.fork` plus invocation authority; Retry authorizes `run.retry`; Feedback authorizes `run.feedback`; and waiting Continue authorizes both `run.continue` and `run.feedback`. Retry, Feedback, and waiting Continue additionally reauthorize the inherited Run authority Principal's current `agent.invoke` and referenced-resource eligibility as specified below. The IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry) owns built-in role grants, while this contract owns these operation-specific combinations and lineage predicates.
 
 Run acceptance authenticates and authorizes the command actor, determines the exact User or Service Account `authority_principal` shown above, validates that Principal's current eligibility together with the selected Session and Thread, resolves or preserves the exact AgentRevision and profile-compatible Runtime lock required by the operation, resolves the typed override into one complete `EffectiveAgentConfig`, applies scoped idempotency, publishes the complete initial Run state, and atomically creates or advances the Thread together with the accepted Run and its lifecycle publication intent. The command actor and authority Principal can differ for Feedback, waiting Continue, Retry, queued consumption, and internal acceptance. Such an operation authorizes both roles explicitly; it never treats command authority as impersonation. The Run becomes schedulable only after the complete initial state object is durably available.
 
@@ -116,7 +107,7 @@ class WaitingResolutionDefaults:
 
 `config_override` follows the finite merge contract in [Agent Management](28-agent-management.md#agentrunoverride-and-effective-configuration). Skill, managed ConnectorConnection or MCPConnection tool, Environment, Plugin, Model, subagent, client-tool, output, and correction changes appear only inside that typed object. Acceptance stores the complete resolved `EffectiveAgentConfig`; it and the protected sensitive-value digest participate in the canonical request digest.
 
-Only start, ordinary existing-Thread Run submission, continue from, fork, and equivalent Host-owned initial Run submission can supply ordinary invocation options. A queued existing-Thread submission preserves those options as unaccepted intent and resolves and reauthorizes them only when consumption accepts a Run. Feedback, waiting Continue, and retry accept no Agent selection or config override; they preserve the exact `EffectiveAgentConfig` required by their source Run. Waiting Continue carries only its new `AgentInput` and optional inline Hook input in addition to the default-resolution declaration.
+Only start, ordinary existing-Thread Run submission, continue from, fork, and equivalent Host-owned initial Run submission can supply ordinary invocation options. A queued existing-Thread submission preserves those options as unaccepted intent and resolves and reauthorizes them only when consumption accepts a Run. Feedback, waiting Continue, and retry accept no Agent selection or config override; they preserve the exact `EffectiveAgentConfig` required by their source Run. Preservation does not bypass new-Run lifecycle checks: if a retained Skill identity has been deleted, the successor is not accepted even though the already accepted source Run remains recoverable. Waiting Continue carries only its new `AgentInput` and optional inline Hook input in addition to the default-resolution declaration.
 
 ### Start and Continue
 

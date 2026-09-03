@@ -316,7 +316,9 @@ mod tests {
         assert_eq!(value.len() % 2, 0);
         value
             .as_bytes()
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| {
                 let high = char::from(pair[0]).to_digit(16).expect("hex digit");
                 let low = char::from(pair[1]).to_digit(16).expect("hex digit");

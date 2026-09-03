@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
@@ -231,6 +232,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
     assert created.status_code == 201
     assert created.result.outcome == "published"
     assert created.result.skill.version == 1
+    assert created.result.skill.key == "deploy-helper"
     assert created.result.revision.version == 1
     sessions = create_session_factory(engine)
     async with short_session(sessions) as session:
@@ -311,6 +313,185 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
 
 
 @pytest.mark.anyio
+async def test_active_key_conflicts_and_deleted_key_starts_a_new_identity(
+    skill_services: SkillTestServices,
+) -> None:
+    first_source = await staged_source(skill_services.uploads, key="key-first-upload", content=archive())
+    first = await skill_services.publication.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateSkillRequest(source=first_source),
+        idempotency_key="key-first-create",
+    )
+    assert first.result.skill.name == "deploy-helper"
+    assert first.result.skill.key == "deploy-helper"
+
+    duplicate_source = await staged_source(
+        skill_services.uploads,
+        key="key-duplicate-upload",
+        content=archive(body="# Different content"),
+    )
+    with pytest.raises(SkillError) as duplicate:
+        await skill_services.publication.create(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            request=CreateSkillRequest(name="Another display name", source=duplicate_source),
+            idempotency_key="key-duplicate-create",
+        )
+    assert duplicate.value.code == "skill_key_conflict"
+
+    await skill_services.catalog.delete(
+        actor=actor(),
+        skill_id=first.result.skill.id,
+        if_match=resource_etag(first.result.skill.id, first.result.skill.updated_at),
+    )
+    recreated = await skill_services.publication.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateSkillRequest(source=duplicate_source),
+        idempotency_key="key-recreated-create",
+    )
+    assert recreated.result.skill.key == first.result.skill.key
+    assert recreated.result.skill.id != first.result.skill.id
+    assert recreated.result.revision.version == 1
+
+
+@pytest.mark.anyio
+async def test_revision_name_must_match_the_stable_skill_key(
+    skill_services: SkillTestServices,
+) -> None:
+    source = await staged_source(skill_services.uploads, key="mismatch-create-upload", content=archive())
+    created = await skill_services.publication.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateSkillRequest(source=source),
+        idempotency_key="mismatch-create",
+    )
+    mismatch_source = await staged_source(
+        skill_services.uploads,
+        key="mismatch-revision-upload",
+        content=archive(name="another-key"),
+    )
+    with pytest.raises(SkillError) as mismatch:
+        await skill_services.publication.publish_revision(
+            actor=actor(),
+            skill_id=created.result.skill.id,
+            request=CreateSkillRevisionRequest(expected_version=1, source=mismatch_source),
+            idempotency_key="mismatch-revision",
+        )
+    assert mismatch.value.code == "skill_key_mismatch"
+
+
+@pytest.mark.anyio
+async def test_references_include_disabled_unarchived_current_agents_and_block_delete(
+    skill_services: SkillTestServices,
+) -> None:
+    source = await staged_source(skill_services.uploads, key="references-upload", content=archive())
+    created = await skill_services.publication.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateSkillRequest(source=source),
+        idempotency_key="references-create",
+    )
+    agent_id = "ap_1234567890abcdef"
+    revision_id = "apr_1234567890abcdef"
+    sessions = create_session_factory(skill_services.engine)
+    async with transaction(sessions) as session:
+        session.add(
+            AgentRecord(
+                id=agent_id,
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
+                source="custom",
+                name="Disabled Agent",
+                normalized_name="disabled agent",
+                description=None,
+                version=1,
+                current_revision_id=revision_id,
+                enabled=False,
+                archived_at=None,
+                duplicated_from_agent_id=None,
+                duplicated_from_revision_id=None,
+                created_by_type="user",
+                created_by_id=BUILDER_ID,
+                updated_by_type="user",
+                updated_by_id=BUILDER_ID,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await session.flush()
+        session.add(
+            AgentRevisionRecord(
+                id=revision_id,
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
+                agent_id=agent_id,
+                version=1,
+                plugin_runtime_mode="on_demand",
+                config={},
+                config_digest="1" * 64,
+                resolved_model={},
+                resolved_plugin_versions=[],
+                runtime_lock_digest="2" * 64,
+                resolved_skills=[
+                    {
+                        "skill_id": created.result.skill.id,
+                        "skill_key": created.result.skill.key,
+                        "version": None,
+                    }
+                ],
+                connector_tools=[],
+                mcp_tools=[],
+                resolved_environment=None,
+                resolved_subagents=[],
+                content_digest="3" * 64,
+                source_revision_id=None,
+                created_by_type="user",
+                created_by_id=BUILDER_ID,
+                created_at=NOW,
+            )
+        )
+
+    references = await skill_services.catalog.references(
+        actor=actor(),
+        skill_id=created.result.skill.id,
+        limit=50,
+        cursor=None,
+    )
+    assert [(item.agent_name, item.agent_id) for item in references.items] == [("Disabled Agent", agent_id)]
+    with pytest.raises(SkillError) as blocked:
+        await skill_services.catalog.delete(
+            actor=actor(),
+            skill_id=created.result.skill.id,
+            if_match=resource_etag(created.result.skill.id, created.result.skill.updated_at),
+        )
+    assert blocked.value.code == "skill_in_use"
+    assert blocked.value.details == {"blocking_agent_count": 1}
+    async with short_session(sessions) as session:
+        failure = await session.scalar(
+            select(SecurityAuditRecord)
+            .where(
+                SecurityAuditRecord.action == "skill.delete",
+                SecurityAuditRecord.outcome == "failure",
+            )
+            .order_by(SecurityAuditRecord.occurred_at.desc())
+        )
+        assert failure is not None
+        assert failure.details == {"blocking_agent_count": 1}
+
+    async with transaction(sessions) as session:
+        agent = await session.get(AgentRecord, agent_id)
+        assert agent is not None
+        agent.archived_at = NOW
+    await skill_services.catalog.delete(
+        actor=actor(),
+        skill_id=created.result.skill.id,
+        if_match=resource_etag(created.result.skill.id, created.result.skill.updated_at),
+    )
+
+
+@pytest.mark.anyio
 async def test_read_content_tombstone_and_viewer_authorization(
     skill_services: SkillTestServices,
 ) -> None:
@@ -346,11 +527,16 @@ async def test_read_content_tombstone_and_viewer_authorization(
         skill_id=skill.id,
         if_match=resource_etag(skill.id, skill.updated_at),
     )
-    tombstone = await catalog.get(actor=actor(), skill_id=skill.id)
-    assert tombstone.deleted_at == NOW
-    assert tombstone.version == 1
-    assert (await catalog.get_revision(actor=actor(), revision_id=revision.id)).id == revision.id
-    assert (await catalog.content(actor=actor(), revision_id=revision.id))[1] == digest
+    for read in (
+        catalog.get(actor=actor(), skill_id=skill.id),
+        catalog.get_revision(actor=actor(), revision_id=revision.id),
+        catalog.content(actor=actor(), revision_id=revision.id),
+    ):
+        with pytest.raises(SkillError) as missing:
+            await read
+        assert missing.value.code == "skill_not_found"
+    listed = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=50, cursor=None)
+    assert listed.items == ()
     with pytest.raises(SkillError) as cannot_publish:
         await publication.publish_revision(
             actor=actor(),

@@ -59,6 +59,27 @@ def decode_revision_cursor(value: str, *, scope: dict[str, object]) -> tuple[int
     return version, revision_id
 
 
+def encode_reference_cursor(*, agent_name: str, agent_id: str, scope: dict[str, object]) -> str:
+    return _encode(
+        {
+            "v": "1",
+            "kind": "skill-references",
+            "name": agent_name,
+            "id": agent_id,
+            "scope": _scope_digest(scope),
+        }
+    )
+
+
+def decode_reference_cursor(value: str, *, scope: dict[str, object]) -> tuple[str, str]:
+    payload = _decode(value, kind="skill-references", scope=scope)
+    agent_name = payload.get("name")
+    agent_id = payload.get("id")
+    if not isinstance(agent_name, str) or not isinstance(agent_id, str) or not agent_id.startswith("ap_"):
+        raise SkillCursorError("invalid cursor")
+    return agent_name, agent_id
+
+
 def _encode(payload: dict[str, object]) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
     return base64.urlsafe_b64encode(encoded).rstrip(b"=").decode()

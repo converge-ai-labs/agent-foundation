@@ -93,6 +93,7 @@ async def require_skill(
             SkillRecord.id == skill_id,
             SkillRecord.organization_id == organization_id,
             SkillRecord.workspace_id == workspace_id,
+            SkillRecord.deleted_at.is_(None),
         )
     )
     if record is None:
@@ -108,10 +109,15 @@ async def require_revision(
     revision_id: str,
 ) -> SkillRevisionRecord:
     record = await session.scalar(
-        select(SkillRevisionRecord).where(
+        select(SkillRevisionRecord)
+        .join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id)
+        .where(
             SkillRevisionRecord.id == revision_id,
             SkillRevisionRecord.organization_id == organization_id,
             SkillRevisionRecord.workspace_id == workspace_id,
+            SkillRecord.organization_id == organization_id,
+            SkillRecord.workspace_id == workspace_id,
+            SkillRecord.deleted_at.is_(None),
         )
     )
     if record is None:

@@ -34,14 +34,14 @@ from .domain import (
     PluginRuntimeMode,
     ResolvedAgentModel,
     ResolvedPluginVersion,
-    ResolvedSkillSelection,
+    ResolvedSkillBinding,
     ResolvedSubagentEdge,
 )
 
 _CONFIG_ADAPTER = TypeAdapter(AgentConfig)
 _MODEL_ADAPTER = TypeAdapter(ResolvedAgentModel)
 _PLUGINS_ADAPTER = TypeAdapter(tuple[ResolvedPluginVersion, ...])
-_SKILLS_ADAPTER = TypeAdapter(tuple[ResolvedSkillSelection, ...])
+_SKILLS_ADAPTER = TypeAdapter(tuple[ResolvedSkillBinding, ...])
 _CONNECTOR_TOOLS_ADAPTER = TypeAdapter(tuple[ConnectorConnectionToolSelection, ...])
 _MCP_TOOLS_ADAPTER = TypeAdapter(tuple[MCPConnectionToolSelection, ...])
 _ENVIRONMENT_ADAPTER = TypeAdapter(EnvironmentExecutionConfig | None)

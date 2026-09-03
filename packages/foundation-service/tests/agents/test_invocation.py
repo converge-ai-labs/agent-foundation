@@ -72,8 +72,8 @@ def test_duplicate_list_override_is_rejected() -> None:
     override = AgentRunOverride.model_validate(
         {
             "skills": [
-                {"skill_revision_id": "skrev_1234567890abcdef"},
-                {"skill_revision_id": "skrev_1234567890abcdef"},
+                {"skill_key": "deploy"},
+                {"skill_key": "deploy", "version": 2},
             ]
         }
     )

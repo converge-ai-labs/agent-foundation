@@ -41,6 +41,31 @@ def skill_version_conflict(current_version: int) -> SkillError:
     )
 
 
+def skill_key_conflict() -> SkillError:
+    return SkillError(
+        "skill_key_conflict",
+        "An active Skill already uses this key.",
+        status_code=409,
+    )
+
+
+def skill_key_mismatch() -> SkillError:
+    return SkillError(
+        "skill_key_mismatch",
+        "The Skill package name does not match the Skill key.",
+        status_code=409,
+    )
+
+
+def skill_in_use(blocking_agent_count: int) -> SkillError:
+    return SkillError(
+        "skill_in_use",
+        "The Skill is referenced by a current unarchived Agent.",
+        status_code=409,
+        details={"blocking_agent_count": blocking_agent_count},
+    )
+
+
 def invalid_skill_cursor() -> SkillError:
     return SkillError("invalid_cursor", "The collection cursor is invalid.", status_code=400)
 

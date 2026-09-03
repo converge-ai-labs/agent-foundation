@@ -38,6 +38,8 @@ from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
 
+from a13n_service.skills.domain import SkillRevisionLock
+
 from .domain import (
     AgentRevision,
     AssetPublicationConfig,
@@ -52,7 +54,7 @@ from .domain import (
     ResolvedAgentModel,
     ResolvedPluginVersion,
     ResolvedRevisionContent,
-    ResolvedSkillSelection,
+    ResolvedSkillBinding,
     ResolvedSubagentEdge,
     RetryConfig,
     SecretRequirement,
@@ -83,7 +85,8 @@ class AgentDefinitionReconstructionContext:
     content_digest: str
     is_root: bool
     input_adapter: InputAdapterConfig
-    resolved_skills: tuple[ResolvedSkillSelection, ...]
+    skill_bindings: tuple[ResolvedSkillBinding, ...]
+    skill_locks: tuple[SkillRevisionLock, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
@@ -108,7 +111,8 @@ class _NodeSnapshot:
     content_digest: str
     resolved_model: ResolvedAgentModel | EffectiveAgentModel
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
-    resolved_skills: tuple[ResolvedSkillSelection, ...]
+    skill_bindings: tuple[ResolvedSkillBinding, ...]
+    skill_locks: tuple[SkillRevisionLock, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
@@ -301,7 +305,8 @@ class AgentReconstructor:
             content_digest=node.content_digest,
             is_root=is_root,
             input_adapter=node.input_adapter,
-            resolved_skills=node.resolved_skills,
+            skill_bindings=node.skill_bindings,
+            skill_locks=node.skill_locks,
             connector_tools=node.connector_tools,
             mcp_tools=node.mcp_tools,
             resolved_environment=node.resolved_environment,
@@ -381,7 +386,8 @@ def _snapshot_from_effective(
         content_digest=effective.content_digest,
         resolved_model=effective.resolved_model,
         resolved_plugin_versions=effective.resolved_plugin_versions,
-        resolved_skills=effective.resolved_skills,
+        skill_bindings=(),
+        skill_locks=effective.skills,
         connector_tools=effective.connector_tools,
         mcp_tools=effective.mcp_tools,
         resolved_environment=effective.resolved_environment,
@@ -405,7 +411,8 @@ def _snapshot_from_revision(revision: AgentRevision) -> _NodeSnapshot:
         content_digest=revision.content_digest,
         resolved_model=revision.resolved_model,
         resolved_plugin_versions=revision.resolved_plugin_versions,
-        resolved_skills=revision.resolved_skills,
+        skill_bindings=revision.resolved_skills,
+        skill_locks=(),
         connector_tools=revision.connector_tools,
         mcp_tools=revision.mcp_tools,
         resolved_environment=revision.resolved_environment,

@@ -21,7 +21,15 @@ def test_skill_schema_migrates_up_and_down_on_sqlite(tmp_path: Path) -> None:
     migrator.current(check_heads=True, verbose=False)
     engine = create_engine(sync_database_url(config))
     try:
-        assert SKILL_TABLES <= set(inspect(engine).get_table_names())
+        inspector = inspect(engine)
+        assert SKILL_TABLES <= set(inspector.get_table_names())
+        skill_columns = {column["name"] for column in inspector.get_columns("skills")}
+        assert "key" in skill_columns
+        assert "display_name" not in skill_columns
+        assert any(
+            index["name"] == "uq_skills_workspace_key_active" and index["unique"]
+            for index in inspector.get_indexes("skills")
+        )
     finally:
         engine.dispose()
 

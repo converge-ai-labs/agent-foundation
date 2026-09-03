@@ -27,6 +27,7 @@ def test_name_normalizes_nfc_without_trimming_caller_input() -> None:
     )
 
     assert request.name == "Café"
+    assert CreateSkillRequest(source={"kind": "zip_upload", "upload_id": "sku_1234567890abcdef"}).name is None
     for invalid in (" leading", "trailing ", "control\x00", "\ud800"):
         with pytest.raises(ValidationError):
             UpdateSkillRequest(expected_version=1, name=invalid)
@@ -70,17 +71,22 @@ def test_skill_and_revision_cursors_are_query_bound() -> None:
         decode_revision_cursor("not-base64", scope=revision_scope)
 
 
-def test_skill_revision_lock_validates_exact_identity_and_name() -> None:
+def test_skill_revision_lock_validates_exact_identity_key_and_version() -> None:
     lock = SkillRevisionLock(
+        skill_id="sk_1234567890abcdef",
         skill_revision_id="skr_1234567890abcdef",
-        skill_name="deploy",
+        skill_key="deploy",
+        version=3,
         content_digest="1" * 64,
     )
-    assert lock.skill_name == "deploy"
+    assert lock.skill_key == "deploy"
+    assert lock.version == 3
 
     with pytest.raises(ValidationError):
         SkillRevisionLock(
+            skill_id="sk_1234567890abcdef",
             skill_revision_id="skr_1234567890abcdef",
-            skill_name=" ",
+            skill_key="Deploy",
+            version=3,
             content_digest="1" * 64,
         )

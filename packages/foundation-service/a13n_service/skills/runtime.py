@@ -38,10 +38,16 @@ class ResolvedSkillLock(Protocol):
     """Structural view of one exact lock from an EffectiveAgentConfig."""
 
     @property
+    def skill_id(self) -> str: ...
+
+    @property
     def skill_revision_id(self) -> str: ...
 
     @property
-    def skill_name(self) -> str: ...
+    def skill_key(self) -> str: ...
+
+    @property
+    def version(self) -> int: ...
 
     @property
     def content_digest(self) -> str: ...
@@ -115,7 +121,9 @@ class SkillRuntimePreparer:
                 raise _invalid() from error
             if (
                 record.content_digest != lock.content_digest
-                or manifest.skill_name != lock.skill_name
+                or record.skill_id != lock.skill_id
+                or record.version != lock.version
+                or manifest.skill_name != lock.skill_key
                 or manifest.content_digest != lock.content_digest
             ):
                 raise _invalid()
@@ -158,7 +166,7 @@ class SkillRuntimePreparer:
         return PreparedSkillRuntime(
             manager=manager,
             selection_capability=SkillSelectionRunCapability(
-                names=frozenset(item.skill_name for item in selected_locks)
+                names=frozenset(item.skill_key for item in selected_locks)
             ),
             catalog_digest=catalog_digest,
             materialization_root=root,
@@ -220,14 +228,21 @@ def _validate_locks(locks: tuple[ResolvedSkillLock, ...]) -> tuple[SkillRevision
     if len(locks) > MAX_EFFECTIVE_SKILLS:
         raise _invalid()
     revision_ids = tuple(item.skill_revision_id for item in locks)
-    names = tuple(item.skill_name for item in locks)
-    if len(revision_ids) != len(set(revision_ids)) or len(names) != len(set(names)):
+    skill_ids = tuple(item.skill_id for item in locks)
+    keys = tuple(item.skill_key for item in locks)
+    if (
+        len(revision_ids) != len(set(revision_ids))
+        or len(skill_ids) != len(set(skill_ids))
+        or len(keys) != len(set(keys))
+    ):
         raise _invalid()
     try:
         return tuple(
             SkillRevisionLock(
+                skill_id=item.skill_id,
                 skill_revision_id=item.skill_revision_id,
-                skill_name=item.skill_name,
+                skill_key=item.skill_key,
+                version=item.version,
                 content_digest=item.content_digest,
             )
             for item in locks

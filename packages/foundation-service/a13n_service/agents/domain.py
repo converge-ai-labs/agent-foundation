@@ -29,6 +29,7 @@ from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
 from a13n_service.models.domain import ModelApi, ModelExecutionSnapshot, ModelKey
 from a13n_service.secrets.domain import SecretCredentialSource, SecretKey
+from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
 ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
 Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -132,7 +133,8 @@ PluginSelection = Annotated[OnDemandPluginSelection | RunnerPluginSelection, Fie
 
 
 class SkillSelection(StrictModel):
-    skill_revision_id: ObjectId
+    skill_key: SkillKey
+    version: int | None = Field(default=None, ge=1)
 
 
 class ConnectorConnectionToolSelection(StrictModel):
@@ -283,12 +285,12 @@ class AgentConfig(StrictModel):
     @model_validator(mode="after")
     def validate_unique_selections(self) -> AgentConfig:
         plugin_names = tuple(item.instance_name for item in self.plugins)
-        skill_ids = tuple(item.skill_revision_id for item in self.skills)
+        skill_keys = tuple(item.skill_key for item in self.skills)
         client_tool_names = tuple(item.name for item in self.client_tools)
         secret_keys = tuple(item.key for item in self.secret_requirements)
         for label, values in (
             ("plugin instance names", plugin_names),
-            ("Skill revisions", skill_ids),
+            ("Skill keys", skill_keys),
             ("client tool names", client_tool_names),
             ("Secret requirement keys", secret_keys),
         ):
@@ -396,10 +398,10 @@ class ResolvedPluginVersion(StrictModel):
     config: JsonObject = Field(default_factory=dict)
 
 
-class ResolvedSkillSelection(StrictModel):
-    skill_revision_id: ObjectId
-    skill_name: str = Field(min_length=1, max_length=256)
-    content_digest: Sha256Digest
+class ResolvedSkillBinding(StrictModel):
+    skill_id: ObjectId
+    skill_key: SkillKey
+    version: int | None = Field(default=None, ge=1)
 
 
 class EnvironmentExecutionConfig(StrictModel):
@@ -427,7 +429,6 @@ class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
     resolved_model: ResolvedModelT
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...] = ()
     runtime_lock_digest: Sha256Digest
-    resolved_skills: tuple[ResolvedSkillSelection, ...] = ()
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
     resolved_environment: EnvironmentExecutionConfig | None = None
@@ -435,12 +436,13 @@ class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
 
 
 class ResolvedRevisionContent(_ResolvedContent[ResolvedAgentModel]):
-    pass
+    resolved_skills: tuple[ResolvedSkillBinding, ...] = ()
 
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
     schema_version: Literal["1"] = "1"
     instructions: str
+    skills: tuple[SkillRevisionLock, ...] = ()
     input_adapter: InputAdapterConfig
     client_tools: tuple[ClientToolDefinition, ...] = ()
     output_spec: OutputSpec | None = None
@@ -482,7 +484,7 @@ class AgentRevision(StrictModel):
     resolved_model: ResolvedAgentModel
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: Sha256Digest
-    resolved_skills: tuple[ResolvedSkillSelection, ...]
+    resolved_skills: tuple[ResolvedSkillBinding, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
     resolved_environment: EnvironmentExecutionConfig | None

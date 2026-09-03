@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,8 +20,7 @@ from a13n_service.iam import (
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
 from a13n_service.models.service import ModelError
 from a13n_service.plugins.runtime import PluginRuntimeLockError
-from a13n_service.skills.domain import SkillPackageManifest
-from a13n_service.skills.models import SkillRecord, SkillRevisionRecord
+from a13n_service.skills.domain import SkillRevisionLock
 from a13n_service.storage import short_session
 
 from .domain import (
@@ -33,7 +31,7 @@ from .domain import (
     EnvironmentExecutionConfig,
     PluginRuntimeMode,
     ResolvedPluginVersion,
-    ResolvedSkillSelection,
+    ResolvedSkillBinding,
     ResolvedSubagentEdge,
     SkillSelection,
     SubagentSelection,
@@ -54,6 +52,13 @@ from .invocation import AgentRunSensitiveValues, MergedAgentRun, merge_agent_run
 from .models import AgentRecord, AgentRevisionRecord
 from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
+from .skill_resolution import (
+    PreparedSkillLock,
+    SkillSelectionInvalid,
+    freeze_skill_locks,
+    prepare_skill_locks_from_bindings,
+    prepare_skill_locks_from_selections,
+)
 from .validation import AgentConfigValidationError, AgentProtocolPolicy, validate_agent_config
 
 
@@ -62,12 +67,10 @@ class AgentSelectorKind(StrEnum):
     exact = "exact"
 
 
-@dataclass(frozen=True, slots=True)
-class PreparedInvocationSkill:
-    revision_id: str
-    skill_id: str
-    skill_name: str
-    content_digest: str
+class RootAgentStatePolicy(StrEnum):
+    invocable = "invocable"
+    disabled_allowed = "disabled_allowed"
+    archived_allowed = "archived_allowed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +97,7 @@ class PreparedAgentInvocation:
     merged: MergedAgentRun
     model: PreparedInvocationModel
     plugins: PreparedPluginSelections | None
-    skills: tuple[PreparedInvocationSkill, ...]
+    skills: tuple[PreparedSkillLock, ...]
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     environment: PreparedEnvironmentSelection | None
     resolved_environment: EnvironmentExecutionConfig | None
@@ -114,7 +117,7 @@ class FrozenAgentInvocation:
 @dataclass(frozen=True, slots=True)
 class PreparedAgentRevisionGraph:
     invocations: tuple[PreparedAgentInvocation, ...]
-    allow_disabled_root: bool
+    root_state_policy: RootAgentStatePolicy
 
 
 class AgentInvocationResolver:
@@ -148,7 +151,7 @@ class AgentInvocationResolver:
         agent_revision_id: str | None = None,
         expected_current_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
-        _allow_disabled_root: bool = False,
+        _root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
     ) -> PreparedAgentInvocation:
         workspace_id = actor.boundary_workspace_id
         try:
@@ -167,7 +170,7 @@ class AgentInvocationResolver:
                     agent_id=agent_id,
                     for_update=False,
                 )
-                _require_invocable_agent(agent, allow_disabled=_allow_disabled_root)
+                _require_invocable_agent(agent, policy=_root_state_policy)
                 if (
                     expected_current_revision_id is not None
                     and agent.current_revision_id != expected_current_revision_id
@@ -308,7 +311,7 @@ class AgentInvocationResolver:
         actor: AuthenticatedActor,
         agent_id: str,
         agent_revision_id: str | None = None,
-        allow_disabled_root: bool = False,
+        root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
     ) -> PreparedAgentRevisionGraph:
         """Preflight one retained root Revision and its complete exact child graph."""
 
@@ -316,7 +319,7 @@ class AgentInvocationResolver:
             actor=actor,
             agent_id=agent_id,
             agent_revision_id=agent_revision_id,
-            _allow_disabled_root=allow_disabled_root,
+            _root_state_policy=root_state_policy,
         )
         invocations = [root]
         visited = {root.agent_revision_id}
@@ -337,7 +340,7 @@ class AgentInvocationResolver:
             pending.extend(child.subagents)
         return PreparedAgentRevisionGraph(
             invocations=tuple(invocations),
-            allow_disabled_root=allow_disabled_root,
+            root_state_policy=root_state_policy,
         )
 
     async def freeze_retained_revision_graph(
@@ -352,7 +355,7 @@ class AgentInvocationResolver:
             await self.freeze_in_transaction(
                 session,
                 prepared=invocation,
-                _allow_disabled_root=index == 0 and prepared.allow_disabled_root,
+                _root_state_policy=(prepared.root_state_policy if index == 0 else RootAgentStatePolicy.invocable),
             )
 
     async def freeze_in_transaction(
@@ -360,7 +363,7 @@ class AgentInvocationResolver:
         session: AsyncSession,
         *,
         prepared: PreparedAgentInvocation,
-        _allow_disabled_root: bool = False,
+        _root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
     ) -> FrozenAgentInvocation:
         try:
             await authorize_agent(
@@ -377,7 +380,10 @@ class AgentInvocationResolver:
                 agent_id=prepared.agent_id,
                 for_update=True,
             )
-            _require_invocable_agent(agent, allow_disabled=_allow_disabled_root)
+            _require_invocable_agent(
+                agent,
+                policy=_root_state_policy,
+            )
             if (
                 prepared.expected_current_revision_id is not None
                 and agent.current_revision_id != prepared.expected_current_revision_id
@@ -469,7 +475,7 @@ class AgentInvocationResolver:
             ),
             "resolved_plugin_versions": plugins,
             "runtime_lock_digest": runtime_lock.digest,
-            "resolved_skills": skills,
+            "skills": skills,
             "connector_tools": tuple(prepared.merged.config.connector_tools.values()),
             "mcp_tools": tuple(prepared.merged.config.mcp_tools.values()),
             "resolved_environment": environment,
@@ -612,8 +618,8 @@ async def _prepare_skills(
     organization_id: str,
     workspace_id: str,
     selections: tuple[SkillSelection, ...],
-    retained: tuple[ResolvedSkillSelection, ...] | None,
-) -> tuple[PreparedInvocationSkill, ...]:
+    retained: tuple[ResolvedSkillBinding, ...] | None,
+) -> tuple[PreparedSkillLock, ...]:
     if not selections:
         return ()
     await authorize_workspace(
@@ -622,80 +628,32 @@ async def _prepare_skills(
         workspace_id=workspace_id,
         action=WorkspaceAction.skill_read,
     )
-    ids = tuple(item.skill_revision_id for item in selections)
-    if retained is not None:
-        if tuple(item.skill_revision_id for item in retained) != ids:
-            raise agent_revision_not_executable("skill_revision_invalid")
-        revisions = tuple(
-            (
-                await session.scalars(
-                    select(SkillRevisionRecord).where(
-                        SkillRevisionRecord.organization_id == organization_id,
-                        SkillRevisionRecord.workspace_id == workspace_id,
-                        SkillRevisionRecord.id.in_(ids),
-                    )
-                )
-            ).all()
-        )
-        by_id = {revision.id: revision for revision in revisions}
-    else:
-        revisions = tuple(
-            (
-                await session.scalars(
-                    select(SkillRevisionRecord)
-                    .join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id)
-                    .where(
-                        SkillRevisionRecord.organization_id == organization_id,
-                        SkillRevisionRecord.workspace_id == workspace_id,
-                        SkillRevisionRecord.id.in_(ids),
-                        SkillRecord.organization_id == organization_id,
-                        SkillRecord.workspace_id == workspace_id,
-                        SkillRecord.deleted_at.is_(None),
-                    )
-                )
-            ).all()
-        )
-        by_id = {revision.id: revision for revision in revisions}
-    if set(by_id) != set(ids):
-        raise agent_revision_not_executable("skill_revision_unavailable")
-    result: list[PreparedInvocationSkill] = []
-    names: set[str] = set()
-    retained_by_id = {item.skill_revision_id: item for item in retained or ()}
-    for revision_id in ids:
-        skill_revision = by_id[revision_id]
-        try:
-            manifest = SkillPackageManifest.model_validate(skill_revision.manifest)
-        except ValidationError as error:
-            raise agent_revision_not_executable("skill_revision_invalid") from error
-        retained_lock = retained_by_id.get(revision_id)
-        if (
-            manifest.skill_name in names
-            or manifest.content_digest != skill_revision.content_digest
-            or (
-                retained_lock is not None
-                and (
-                    retained_lock.skill_name != manifest.skill_name
-                    or retained_lock.content_digest != manifest.content_digest
-                )
+    try:
+        if retained is not None:
+            if tuple((item.skill_key, item.version) for item in retained) != tuple(
+                (item.skill_key, item.version) for item in selections
+            ):
+                raise SkillSelectionInvalid
+            return await prepare_skill_locks_from_bindings(
+                session,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                bindings=retained,
             )
-        ):
-            raise agent_revision_not_executable("skill_revision_invalid")
-        names.add(manifest.skill_name)
-        result.append(
-            PreparedInvocationSkill(
-                revision_id=revision_id,
-                skill_id=skill_revision.skill_id,
-                skill_name=manifest.skill_name,
-                content_digest=skill_revision.content_digest,
-            )
+        return await prepare_skill_locks_from_selections(
+            session,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            selections=selections,
         )
-    return tuple(result)
+    except SkillSelectionInvalid as error:
+        raise agent_revision_not_executable("skill_selection_invalid") from error
 
 
 async def _freeze_skills(
     session: AsyncSession,
     prepared: PreparedAgentInvocation,
-) -> tuple[ResolvedSkillSelection, ...]:
+) -> tuple[SkillRevisionLock, ...]:
     if not prepared.skills:
         return ()
     await authorize_workspace(
@@ -704,44 +662,15 @@ async def _freeze_skills(
         workspace_id=prepared.workspace_id,
         action=WorkspaceAction.skill_read,
     )
-    ids = tuple(item.revision_id for item in prepared.skills)
-    statement = select(SkillRevisionRecord).where(
-        SkillRevisionRecord.organization_id == prepared.organization_id,
-        SkillRevisionRecord.workspace_id == prepared.workspace_id,
-        SkillRevisionRecord.id.in_(ids),
-    )
-    if prepared.merged.config.skills != prepared.revision.config.skills:
-        statement = statement.join(SkillRecord, SkillRecord.id == SkillRevisionRecord.skill_id).where(
-            SkillRecord.organization_id == prepared.organization_id,
-            SkillRecord.workspace_id == prepared.workspace_id,
-            SkillRecord.deleted_at.is_(None),
+    try:
+        return await freeze_skill_locks(
+            session,
+            organization_id=prepared.organization_id,
+            workspace_id=prepared.workspace_id,
+            prepared=prepared.skills,
         )
-    rows = tuple((await session.scalars(statement.with_for_update())).all())
-    current = {item.id: item for item in rows}
-    result: list[ResolvedSkillSelection] = []
-    for expected in prepared.skills:
-        row = current.get(expected.revision_id)
-        try:
-            manifest = SkillPackageManifest.model_validate(row.manifest) if row is not None else None
-        except ValidationError as error:
-            raise agent_revision_not_executable("skill_revision_changed") from error
-        if (
-            row is None
-            or manifest is None
-            or row.skill_id != expected.skill_id
-            or row.content_digest != expected.content_digest
-            or manifest.content_digest != expected.content_digest
-            or manifest.skill_name != expected.skill_name
-        ):
-            raise agent_revision_not_executable("skill_revision_changed")
-        result.append(
-            ResolvedSkillSelection(
-                skill_revision_id=expected.revision_id,
-                skill_name=expected.skill_name,
-                content_digest=expected.content_digest,
-            )
-        )
-    return tuple(result)
+    except SkillSelectionInvalid as error:
+        raise agent_revision_not_executable("skill_selection_invalid") from error
 
 
 async def _freeze_subagents(
@@ -826,10 +755,14 @@ async def _load_revision(
     return record
 
 
-def _require_invocable_agent(agent: AgentRecord, *, allow_disabled: bool = False) -> None:
-    if not agent.enabled and not allow_disabled:
+def _require_invocable_agent(
+    agent: AgentRecord,
+    *,
+    policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
+) -> None:
+    if not agent.enabled and policy is RootAgentStatePolicy.invocable:
         raise agent_disabled()
-    if agent.archived_at is not None:
+    if agent.archived_at is not None and policy is not RootAgentStatePolicy.archived_allowed:
         raise agent_archived()
 
 

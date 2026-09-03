@@ -16,7 +16,7 @@ from typing import Literal
 
 import yaml
 
-from .domain import SkillPackageFile, SkillPackageManifest
+from .domain import SKILL_KEY_PATTERN, SkillPackageFile, SkillPackageManifest
 
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 8192
@@ -398,6 +398,8 @@ def _validate_skill_document(content: bytes) -> tuple[str, str]:
     except UnicodeDecodeError as error:
         raise _invalid("SKILL.md must be valid UTF-8") from error
     skill_name, description = _parse_skill_frontmatter(document)
+    if re.fullmatch(SKILL_KEY_PATTERN, skill_name) is None:
+        raise _invalid("SKILL.md frontmatter name must be a lowercase hyphen-separated Skill key")
     if _utf8_size(description) > MAX_SKILL_DESCRIPTION_BYTES:
         raise _limit("Skill description exceeds its UTF-8 size limit")
     return skill_name, description
@@ -417,7 +419,7 @@ def _parse_skill_frontmatter(content: str) -> tuple[str, str]:
     if not isinstance(value, Mapping):
         raise _invalid("SKILL.md frontmatter must be a mapping")
     return (
-        _require_frontmatter_text(value.get("name"), field="name", maximum_length=256),
+        _require_frontmatter_text(value.get("name"), field="name", maximum_length=64),
         _require_frontmatter_text(
             value.get("description"),
             field="description",
