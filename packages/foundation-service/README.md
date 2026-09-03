@@ -28,6 +28,22 @@ Model Providers and Models are mutable resources protected by strong `ETag` and 
 
 Run acceptance resolves the latest Model and freezes its upstream identity and explicit calling API. Profile and limits remain editable catalog metadata rather than execution overrides. `SnapshotRunModelResolver` retains the request-selection fields while `LiveProviderResolver` reloads and decrypts current Provider state for every outbound request, including later calls and replacement attempts within the same Run.
 
+## External Connectivity
+
+The shared executable exposes Connectivity according to its process role:
+
+- `control` and `all` expose authenticated Ingress, Route, Connector, ConnectorConnection, and MCPConnection management below `/api/v1` and run their fenced setup, catalog, OAuth, and cleanup reconcilers.
+- `connectivity` and `all` expose provider-authenticated event delivery at `POST /connectivity/v1/ingresses/{ingress_id}/events`, run durable admission processing, and retain no browser or product API surface.
+- `worker` loads no Ingress or Connector adapters. It has no Connectivity management or provider-event routes.
+
+Control and Connectivity replicas share relational and object-storage facts; they do not call a private cross-pod Foundation API. The `all` role installs the union once. During shutdown readiness fails before new requests receive `503`, and background reconcilers stop under the application lifespan.
+
+Set `FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN` to the exact externally reachable control-plane origin used by Connector and MCP OAuth callbacks. HTTP origins and private endpoint destinations are denied unless explicitly allowed by `FOUNDATION_CONNECTIVITY_HTTP_ORIGINS`, `FOUNDATION_CONNECTIVITY_PRIVATE_ENDPOINT_DOMAINS`, or `FOUNDATION_CONNECTIVITY_PRIVATE_ENDPOINT_CIDRS`. Provider source-origin allowlists use `FOUNDATION_CONNECTIVITY_PROVIDER_ORIGINS`; provider signatures or tokens remain mandatory.
+
+Catalog JSON is bounded to 16 MiB, 128 pages, and 2,048 tools. `FOUNDATION_CONNECTIVITY_CATALOG_RETENTION_SECONDS` cannot be less than 30 days. The retention reconciler deletes an older catalog only after proving that it is neither current nor referenced by a retained Agent Revision or Run. Orphan object deletion waits for `FOUNDATION_CONNECTIVITY_OBJECT_CLEANUP_GRACE_SECONDS` and uses conditional object versions. Protected raw provider evidence is disabled by default; when enabled, its independent retention is capped at 24 hours. Terminal event identities remain only through their bounded deduplication horizon.
+
+Until the canonical Foundation input bridge is supplied by the application composition, eligible provider events are still durably acknowledged and remain `pending`; the Connectivity process stays ready in this deliberately degraded mode. This package does not create another Agent execution path or dispatch Connector/MCP tools directly from model input.
+
 ## Asset Management
 
 Control-plane and all-in-one roles expose immutable Workspace Assets below `/api/v1`. Uploads accept exactly one `application/octet-stream` body plus `filename`, optional `media_type`, and `Idempotency-Key`; metadata and content reads never expose object keys or public object URLs. Every distinct publication gets a new `ast` ID, while replay of the same canonical request and key returns the original Asset for 24 hours. Delete immediately tombstones the Asset and commits an `asset_content_cleanup` Outbox intent; the control-plane reconciler removes the derived object asynchronously without restoring logical access on failure.

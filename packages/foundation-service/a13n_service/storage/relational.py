@@ -8,7 +8,6 @@ from typing import Protocol, cast
 from anyio import fail_after, move_on_after
 from sqlalchemy import URL, event, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -92,7 +91,7 @@ async def transaction(
             try:
                 with move_on_after(cleanup_timeout_seconds, shield=True):
                     await database_transaction.rollback()
-            except SQLAlchemyError as rollback_error:
+            except Exception as rollback_error:
                 error.add_note(f"rollback cleanup failed with {type(rollback_error).__name__}")
             raise
         else:

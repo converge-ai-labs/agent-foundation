@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
@@ -11,6 +11,7 @@ import httpx2
 from a13n_environment_provider import build_environment_provider_catalog
 from anyio import create_task_group, fail_after
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from a13n_service.agents.domain import PluginRuntimeMode
@@ -150,6 +151,11 @@ class ServiceComponents:
     connector_adapter_registry: AdapterRegistry[ConnectorAdapter] | None = None
     foundation_input_acceptor: FoundationInputAcceptor | None = None
     builtin_plugin_artifacts: tuple[BuiltinPluginArtifact, ...] = ()
+
+
+async def _run_critical_component(name: str, run: Callable[[], Awaitable[None]]) -> None:
+    await run()
+    raise RuntimeError(f"critical component returned unexpectedly: {name}")
 
 
 @asynccontextmanager
@@ -639,19 +645,47 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 app.state.skill_runtime_preparer = SkillRuntimePreparer(storage.sessions, package_store)
             async with create_task_group() as background_tasks:
                 if asset_cleanup_reconciler is not None:
-                    background_tasks.start_soon(asset_cleanup_reconciler.run)
+                    background_tasks.start_soon(
+                        _run_critical_component,
+                        "asset cleanup reconciler",
+                        asset_cleanup_reconciler.run,
+                    )
                 if plugin_runtime_command_coordinator is not None:
-                    background_tasks.start_soon(plugin_runtime_command_coordinator.run)
+                    background_tasks.start_soon(
+                        _run_critical_component,
+                        "plugin runtime command coordinator",
+                        plugin_runtime_command_coordinator.run,
+                    )
                 if ingress_admission_reconciler is not None:
-                    background_tasks.start_soon(ingress_admission_reconciler.run)
+                    background_tasks.start_soon(
+                        _run_critical_component,
+                        "Ingress admission reconciler",
+                        ingress_admission_reconciler.run,
+                    )
                 if catalog_retention_reconciler is not None:
-                    background_tasks.start_soon(catalog_retention_reconciler.run)
+                    background_tasks.start_soon(
+                        _run_critical_component,
+                        "catalog retention reconciler",
+                        catalog_retention_reconciler.run,
+                    )
                 if ingress_retention_reconciler is not None:
-                    background_tasks.start_soon(ingress_retention_reconciler.run)
+                    background_tasks.start_soon(
+                        _run_critical_component,
+                        "Ingress retention reconciler",
+                        ingress_retention_reconciler.run,
+                    )
                 if connector_reconciler is not None:
-                    background_tasks.start_soon(connector_reconciler.run)
+                    background_tasks.start_soon(
+                        _run_critical_component,
+                        "Connector reconciler",
+                        connector_reconciler.run,
+                    )
                 if mcp_reconciler is not None:
-                    background_tasks.start_soon(mcp_reconciler.run)
+                    background_tasks.start_soon(
+                        _run_critical_component,
+                        "MCP reconciler",
+                        mcp_reconciler.run,
+                    )
                 logger.info(
                     "service_started",
                     extra={
@@ -661,9 +695,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         "build_version": settings.build_version,
                     },
                 )
+                app.state.startup_complete = True
+                app.state.draining = False
                 try:
                     yield
                 finally:
+                    app.state.draining = True
                     background_tasks.cancel_scope.cancel()
                     logger.info(
                         "service_stopped",
@@ -674,6 +711,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         },
                     )
     finally:
+        app.state.startup_complete = False
         await observability.aclose()
 
 
@@ -700,6 +738,8 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
     )
     install_api_conventions(app)
     app.state.settings = resolved_settings
+    app.state.startup_complete = False
+    app.state.draining = False
     app.state.components = resolved_components
     app.state.trace_query_provider_registry = trace_query_provider_registry.copy()
     app.state.request_authenticator = app.state.components.request_authenticator
@@ -721,12 +761,26 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.state.uses_builtin_connector_adapters = resolved_components.connector_adapter_registry is None
         app.state.connectivity_endpoint_policy = resolved_settings.connectivity_endpoint_policy()
 
+    @app.middleware("http")
+    async def reject_during_drain(request: Request, call_next):
+        if request.app.state.draining and request.url.path not in {"/healthz", "/readyz"}:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"detail": "service draining"},
+            )
+        return await call_next(request)
+
     @app.get("/healthz", include_in_schema=False)
     async def health() -> dict[str, str]:
         return {"status": "ok", "role": resolved_settings.role.value}
 
     @app.get("/readyz", include_in_schema=False)
     async def readiness(request: Request) -> dict[str, str]:
+        if not request.app.state.startup_complete or request.app.state.draining:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="service not ready",
+            )
         storage: StorageResources = request.app.state.storage
         on_demand_runtime: OnDemandPluginRuntime | None = getattr(
             request.app.state,

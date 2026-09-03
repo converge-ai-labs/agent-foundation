@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import httpx2
 import pytest
-from a13n_service.app import ServiceComponents, create_app
+from a13n_service.app import ServiceComponents, _run_critical_component, create_app
 from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
@@ -119,6 +119,15 @@ def test_health_reports_process_role() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "role": "worker"}
+
+
+@pytest.mark.anyio
+async def test_critical_component_normal_return_is_a_process_failure() -> None:
+    async def returns() -> None:
+        return None
+
+    with pytest.raises(RuntimeError, match="returned unexpectedly: test component"):
+        await _run_critical_component("test component", returns)
 
 
 def test_control_plane_openapi_uses_api_namespace() -> None:
@@ -330,6 +339,28 @@ async def test_role_lifespan_installs_only_owned_connectivity_components(
             assert isinstance(app.state.catalog_retention_reconciler, CatalogRetentionReconciler)
         if serves_connectivity:
             assert isinstance(app.state.ingress_retention_reconciler, IngressRetentionReconciler)
+
+
+@pytest.mark.anyio
+async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(tmp_path: Path) -> None:
+    app = create_app(local_settings(tmp_path, role=ServiceRole.connectivity))
+
+    async with app.router.lifespan_context(app):
+        app.state.draining = True
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            readiness = await client.get("/readyz")
+            delivery = await client.post("/connectivity/v1/ingresses/ing_test/events")
+            health = await client.get("/healthz")
+
+        assert readiness.status_code == 503
+        assert readiness.json() == {"detail": "service not ready"}
+        assert delivery.status_code == 503
+        assert delivery.json() == {"detail": "service draining"}
+        assert health.status_code == 200
+
+    assert app.state.startup_complete is False
+    assert app.state.draining is True
 
 
 @pytest.mark.anyio
