@@ -41,6 +41,8 @@ from a13n_service.storage import transaction
 from a13n_service.storage.config import SQLiteConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 NOW = datetime(2026, 9, 3, 8, 0, tzinfo=UTC)
@@ -49,6 +51,16 @@ WORKSPACE_ID = "ws_abcdef1234567890"
 USER_ID = "usr_abcdef1234567890"
 SERVICE_ACCOUNT_ID = "sa_abcdef1234567890"
 AGENT_ID = "agt_abcdef1234567890"
+
+
+@pytest.fixture(scope="session")
+def github_private_key_pem() -> str:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
 
 
 class FakeIngressAdapter:

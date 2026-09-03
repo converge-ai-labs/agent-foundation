@@ -31,7 +31,8 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequiresBindingRouting,
 )
 
-from .messaging import MessagingPolicy, default_message_mapping
+from .mapping import default_event_mapping
+from .messaging import MessagingPolicy
 
 _CONFIG_VERSION = "slack_http_v1"
 _REQUEST_MAX_BYTES = 1024 * 1024
@@ -193,7 +194,7 @@ class SlackIngressAdapter:
         _require_version(config_version)
         SlackIngressConfig.model_validate(ingress_config)
         return DefaultRoute(
-            input_mapping=default_message_mapping(),
+            input_mapping=default_event_mapping(),
             input_batching=InputBatchingPolicy(min_interval_ms=1, max_batch_events=10),
             provider_policy=_model_json(MessagingPolicy(interaction_mode="mention", reply_mode="thread")),
         )

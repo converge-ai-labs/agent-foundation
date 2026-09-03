@@ -104,7 +104,7 @@ def _registry() -> AdapterRegistry[IngressAdapter]:
 def test_builtin_registry_exposes_slack_http_v1() -> None:
     registry = built_in_ingress_adapter_registry()
 
-    assert registry.keys() == ("lark", "slack")
+    assert registry.keys() == ("github", "lark", "slack")
     assert isinstance(registry.create("slack", config_version="slack_http_v1"), SlackIngressAdapter)
 
 

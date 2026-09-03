@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import Protocol
 
 import httpx2
 from pydantic import TypeAdapter, ValidationError
@@ -16,10 +15,6 @@ _JSON_OBJECT = TypeAdapter(JsonObject)
 
 
 LarkApiError = NativeActionError
-
-
-class EndpointValidator(Protocol):
-    async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str: ...
 
 
 async def read_lark_response(response: httpx2.Response, *, max_bytes: int) -> JsonObject:

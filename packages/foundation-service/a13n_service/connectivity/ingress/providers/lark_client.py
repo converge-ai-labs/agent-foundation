@@ -30,8 +30,9 @@ from .lark_actions import (
     LarkReplySucceeded,
     LarkTextContent,
 )
-from .lark_api import EndpointValidator, LarkApiError, read_lark_response
+from .lark_api import LarkApiError, read_lark_response
 from .lark_token import LarkTenantTokenProvider
+from .native_http import EndpointValidator
 
 _RESPONSE_MAX_BYTES = 1024 * 1024
 _JSON_OBJECT = TypeAdapter(JsonObject)

@@ -10,6 +10,40 @@ def normalize_provider_origins(values: Iterable[str]) -> frozenset[str]:
     return frozenset(normalize_provider_origin(value) for value in values)
 
 
+def require_provider_base_url(
+    value: str,
+    *,
+    official_base_urls: frozenset[str],
+    allowed_custom_origins: frozenset[str],
+) -> str:
+    normalized = _normalize_https_url(value, allow_path=True)
+    if normalized in official_base_urls:
+        return normalized
+    origin = provider_url_origin(value)
+    if origin not in allowed_custom_origins:
+        raise ValueError("provider API origin is not operator-allowed")
+    return normalized
+
+
+def provider_url_origin(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("provider URL is invalid") from error
+    if parsed.scheme != "https" or parsed.hostname is None or parsed.username or parsed.password:
+        raise ValueError("provider URL is invalid")
+    try:
+        hostname = parsed.hostname.rstrip(".").encode("idna").decode("ascii").lower()
+    except UnicodeError as error:
+        raise ValueError("provider URL is invalid") from error
+    if not hostname:
+        raise ValueError("provider URL is invalid")
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    authority = host if port in {None, 443} else f"{host}:{port}"
+    return urlunsplit(("https", authority, "", "", ""))
+
+
 def require_provider_origin(
     value: str,
     *,
@@ -23,6 +57,10 @@ def require_provider_origin(
 
 
 def normalize_provider_origin(value: str) -> str:
+    return _normalize_https_url(value, allow_path=False)
+
+
+def _normalize_https_url(value: str, *, allow_path: bool) -> str:
     if not value or len(value) > 2048:
         raise ValueError("provider API origin is invalid")
     try:
@@ -35,7 +73,7 @@ def normalize_provider_origin(value: str) -> str:
         or parsed.hostname is None
         or parsed.username is not None
         or parsed.password is not None
-        or parsed.path not in {"", "/"}
+        or (not allow_path and parsed.path not in {"", "/"})
         or parsed.query
         or parsed.fragment
     ):
@@ -48,4 +86,5 @@ def normalize_provider_origin(value: str) -> str:
         raise ValueError("provider API origin is invalid")
     host = f"[{hostname}]" if ":" in hostname else hostname
     authority = host if port in {None, 443} else f"{host}:{port}"
-    return urlunsplit(("https", authority, "", "", ""))
+    path = parsed.path.rstrip("/") if allow_path else ""
+    return urlunsplit(("https", authority, path, "", ""))

@@ -3,6 +3,7 @@
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 
+from .github import GitHubIngressAdapter
 from .lark import LarkIngressAdapter
 from .origins import normalize_provider_origins
 from .slack import SlackIngressAdapter
@@ -24,6 +25,13 @@ def built_in_ingress_adapter_registry(
                 key=LarkIngressAdapter.provider_key,
                 config_versions=LarkIngressAdapter.config_versions,
                 factory=lambda: LarkIngressAdapter(
+                    allowed_provider_origins=normalized_origins,
+                ),
+            ),
+            AdapterDefinition[IngressAdapter](
+                key=GitHubIngressAdapter.provider_key,
+                config_versions=GitHubIngressAdapter.config_versions,
+                factory=lambda: GitHubIngressAdapter(
                     allowed_provider_origins=normalized_origins,
                 ),
             ),

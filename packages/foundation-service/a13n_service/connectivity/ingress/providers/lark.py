@@ -23,7 +23,8 @@ from a13n_service.connectivity.ingress.provider import (
 )
 
 from .lark_wire import LarkIdentity, authenticate_and_normalize, lark_acknowledgement
-from .messaging import MessagingPolicy, default_message_mapping
+from .mapping import default_event_mapping
+from .messaging import MessagingPolicy
 from .origins import normalize_provider_origins, require_provider_origin
 
 _CONFIG_VERSION = "lark_http_v1"
@@ -186,7 +187,7 @@ class LarkIngressAdapter:
         _require_version(config_version)
         LarkIngressConfig.model_validate(ingress_config)
         return DefaultRoute(
-            input_mapping=default_message_mapping(),
+            input_mapping=default_event_mapping(),
             input_batching=InputBatchingPolicy(min_interval_ms=1, max_batch_events=10),
             provider_policy=_model_json(MessagingPolicy(interaction_mode="mention", reply_mode="thread")),
         )

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Protocol
+
 import httpx2
+
+
+class EndpointValidator(Protocol):
+    async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str: ...
 
 
 class NativeActionError(Exception):
