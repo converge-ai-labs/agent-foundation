@@ -17,6 +17,7 @@ from a13n_service.interactions import (
     AttemptExecutionService,
     AttemptPreparationAccepted,
     AttemptScheduler,
+    CompletedOutcomeCandidate,
     Run,
     RunAcceptanceService,
     RunOutcomeService,
@@ -395,6 +396,8 @@ async def _complete_run(
     states: RunStateStore,
     run: Run,
     authority,
+    *,
+    outcome: CompletedOutcomeCandidate | None = None,
 ) -> Run:
     execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=3))
     preparation = await execution.commit_preparation_success(authority)
@@ -410,7 +413,12 @@ async def _complete_run(
         expected_attempt_version=entered.attempt_version,
     )
     current = await states.read(TENANT_ID, run.id)
-    candidate = _completed_state(current.envelope, authority.run_attempt_id, authority.fence)
+    candidate = _completed_state(
+        current.envelope,
+        authority.run_attempt_id,
+        authority.fence,
+        outcome=outcome,
+    )
     stored = await execution.publish_checkpoint(authority, states, current, candidate)
     await RunOutcomeService(
         sessions,

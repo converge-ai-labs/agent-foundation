@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from a13n_harness.execution import DelegationContextPolicy
 
 SUBAGENT_CAPABILITY_ID = "a13n.subagents"
+MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS = 32 * 1024
 _INLINE_SUBAGENT_STATE_VERSION = "1"
 _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-9a-f]{4})$")
 _MAX_PROMPT_LENGTH = 1024 * 1024
@@ -86,7 +87,7 @@ class SubagentActivitySnapshot(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
     sequence: int = Field(ge=0)
-    output_preview: str = Field(default="", max_length=32 * 1024)
+    output_preview: str = Field(default="", max_length=MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS)
     output_truncated: bool = False
     active_tool_calls: tuple[SubagentToolCallSnapshot, ...] = Field(default=(), max_length=20)
     recent_tool_calls: tuple[SubagentToolCallSnapshot, ...] = Field(default=(), max_length=20)
@@ -495,6 +496,7 @@ def _validate_inline_thread_identities(
 
 
 __all__ = [
+    "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",
     "SUBAGENT_CAPABILITY_ID",
     "AsyncDelegateRequest",
     "AsyncExecutionView",

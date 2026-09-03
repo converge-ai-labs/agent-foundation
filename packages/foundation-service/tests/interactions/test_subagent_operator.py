@@ -11,6 +11,7 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import (
+    MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS,
     AsyncDelegateRequest,
     AsyncResumeRequest,
     ResolvedDelegationContext,
@@ -26,6 +27,7 @@ from a13n_harness.execution import DelegationContextPolicy
 from a13n_service.interactions import (
     AttemptContext,
     AttemptScheduler,
+    CompletedOutcomeCandidate,
     Run,
     RunOutcomeService,
     RunPayloadStore,
@@ -155,6 +157,47 @@ async def test_operator_resumes_only_the_selected_completed_child_head(
     assert run_ids.calls == 2
     prior = await operator.info(context, SubagentInfoRequest(execution_id=delegated.execution_id))
     assert prior.executions[0].resumable is False
+
+
+async def test_operator_projects_bounded_closed_child_output_activity(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    operator, context, delegate_plan, states, _ = await _operator(
+        interaction_sessions,
+        interaction_object_store,
+    )
+    delegated = await operator.delegate(
+        delegate_plan,
+        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+    )
+    assert delegated.child_run_id is not None
+    child_claim = await AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+        token_factory=lambda: "child-lease",
+        attempt_id_factory=lambda: "rat_6767676767676767",
+    ).claim(delegated.child_run_id, _worker())
+    assert child_claim is not None
+    output = "x" * (MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS + 1)
+    await _complete_run(
+        interaction_sessions,
+        interaction_object_store,
+        states,
+        await _run(interaction_sessions, delegated.child_run_id),
+        _authority(child_claim),
+        outcome=CompletedOutcomeCandidate(output=output, output_text=output),
+    )
+
+    info = await operator.info(context, SubagentInfoRequest(execution_id=delegated.execution_id))
+    waited = await operator.wait(context, SubagentWaitRequest(execution_id=delegated.execution_id))
+
+    activity = info.executions[0].activity
+    assert activity is not None
+    assert activity.sequence == 1
+    assert activity.output_preview == output[:MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS]
+    assert activity.output_truncated is True
+    assert waited.executions[0] == info.executions[0]
 
 
 async def _operator(

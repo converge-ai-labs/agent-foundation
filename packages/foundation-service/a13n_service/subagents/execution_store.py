@@ -7,8 +7,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
-from a13n_harness.capabilities import AsyncExecutionView, SubagentExecutionView, SubagentOperatorContext
-from a13n_harness.capabilities.subagents import SubagentStatus
+from a13n_harness.capabilities import (
+    MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS,
+    AsyncExecutionView,
+    SubagentActivitySnapshot,
+    SubagentExecutionView,
+    SubagentOperatorContext,
+    SubagentStatus,
+)
 from pydantic import JsonValue, ValidationError
 from sqlalchemy import and_, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -377,6 +383,7 @@ def full_execution_view(execution: RetainedChildExecution) -> SubagentExecutionV
     return SubagentExecutionView(
         **compact_execution_view(execution).model_dump(mode="python"),
         input=execution.input,
+        activity=_activity(execution.run),
     )
 
 
@@ -392,6 +399,23 @@ def _status(status: RunStatus) -> SubagentStatus:
 
 def _failure(run: Run) -> JsonValue | None:
     return None if run.failure is None else run.failure.model_dump(mode="json", by_alias=True)
+
+
+def _activity(run: Run) -> SubagentActivitySnapshot | None:
+    if run.status is not RunStatus.completed or run.output_text is None:
+        return None
+    sealed_state = run.sealed_state
+    if sealed_state is None:
+        raise FoundationSubagentOperatorError(
+            "subagent_execution_corrupt",
+            "Completed subagent Run is missing its sealed checkpoint",
+        )
+    output_preview = run.output_text[:MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS]
+    return SubagentActivitySnapshot(
+        sequence=sealed_state.checkpoint_seq,
+        output_preview=output_preview,
+        output_truncated=len(run.output_text) > len(output_preview),
+    )
 
 
 def _utc(value: datetime) -> datetime:
