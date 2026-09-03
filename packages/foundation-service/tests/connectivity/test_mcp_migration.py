@@ -36,6 +36,7 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         assert TABLES.isdisjoint(inspect(engine).get_table_names())
     finally:
         engine.dispose()
+    migrator.downgrade("base")
 
 
 def test_mcp_schema_migrates_on_sqlite(tmp_path: Path) -> None:
