@@ -26,9 +26,16 @@ from a13n_service.interactions.objects import (
     StaleStateWriter,
     StoredRunState,
 )
+from a13n_service.presentation import RetainedItem, RunReplayStore
 from a13n_service.storage import short_session, transaction
 
-from .result_payload import validate_async_subagent_result_authority
+from .result_payload import (
+    AsyncSubagentResultAuthority,
+    AsyncSubagentResultItemUnavailable,
+    load_async_subagent_terminal_item,
+    read_async_subagent_result_authority,
+    validate_async_subagent_result_authority,
+)
 from .successor_inbox import (
     bind_locked_unbound_async_entries,
     consume_async_result_for_successor,
@@ -51,7 +58,7 @@ logger = logging.getLogger("a13n_service.subagents.successors")
 class _PreparedSelection:
     entry: ThreadInboxEntry
     selected_parent: Run
-    origin: Run
+    result_authority: AsyncSubagentResultAuthority
 
 
 class AsyncSubagentSuccessorReconciler:
@@ -61,6 +68,7 @@ class AsyncSubagentSuccessorReconciler:
         self,
         sessions: async_sessionmaker[AsyncSession],
         states: RunStateStore,
+        replays: RunReplayStore,
         *,
         signals: ThreadControlSignalPublisher | None = None,
         run_id_factory: Callable[[str, str, str], str] | None = None,
@@ -68,6 +76,7 @@ class AsyncSubagentSuccessorReconciler:
     ) -> None:
         self._sessions = sessions
         self._states = states
+        self._replays = replays
         self._signals = signals
         self._run_id_factory = run_id_factory or _successor_run_id
         self._clock = clock
@@ -83,6 +92,13 @@ class AsyncSubagentSuccessorReconciler:
         if isinstance(selected, AsyncSubagentSuccessorReceipt):
             await self._signal_if_bound(tenant_id=tenant_id, receipt=selected)
             return selected
+        terminal_item = await load_async_subagent_terminal_item(
+            self._replays,
+            tenant_id=tenant_id,
+            child=selected.result_authority.child,
+            expected_item_id=selected.result_authority.payload.terminal_result_item_id,
+        )
+        validate_async_subagent_result_authority(selected.result_authority, terminal_item)
         parent_state = await self._states.read(
             tenant_id,
             selected.selected_parent.id,
@@ -92,7 +108,7 @@ class AsyncSubagentSuccessorReconciler:
         prepared = prepare_async_result_successor(
             selected_parent=selected.selected_parent,
             selected_parent_state=parent_state.envelope,
-            origin_run=selected.origin,
+            origin_run=selected.result_authority.parent,
             inbox_entry=selected.entry,
             successor_run_id=self._run_id_factory(
                 tenant_id,
@@ -108,6 +124,7 @@ class AsyncSubagentSuccessorReconciler:
             prepared=prepared,
             parent_state=parent_state,
             initial_state=initial_state,
+            terminal_item=terminal_item,
             now=now,
         )
         await self._signal_if_bound(tenant_id=tenant_id, receipt=receipt)
@@ -141,9 +158,18 @@ class AsyncSubagentSuccessorReconciler:
                 .tuples()
                 .all()
             )
+        reconciled = 0
         for tenant_id, thread_id, _ in candidates:
-            await self.reconcile_thread(tenant_id=tenant_id, thread_id=thread_id)
-        return len(candidates)
+            try:
+                await self.reconcile_thread(tenant_id=tenant_id, thread_id=thread_id)
+            except AsyncSubagentResultItemUnavailable:
+                logger.info(
+                    "async_subagent_successor_item_deferred",
+                    extra={"event": "async_subagent_successor_item_deferred", "thread_id": thread_id},
+                )
+                continue
+            reconciled += 1
+        return reconciled
 
     async def _select_or_route(
         self,
@@ -161,10 +187,17 @@ class AsyncSubagentSuccessorReconciler:
             )
             if isinstance(selected, AsyncSubagentSuccessorReceipt):
                 return selected
+            entry = selected.entry.to_resource()
+            authority = await read_async_subagent_result_authority(database, entry)
+            await _authorize_successor(
+                database,
+                selected,
+                child_run_id=authority.child.id,
+            )
             return _PreparedSelection(
-                entry=selected.entry.to_resource(),
+                entry=entry,
                 selected_parent=selected.selected_parent.to_resource(),
-                origin=selected.origin.to_resource(),
+                result_authority=authority,
             )
 
     async def _publish_initial(self, prepared: PreparedAsyncResultSuccessor) -> StoredRunState:
@@ -190,6 +223,7 @@ class AsyncSubagentSuccessorReconciler:
         prepared: PreparedAsyncResultSuccessor,
         parent_state: StoredRunState,
         initial_state: StoredRunState,
+        terminal_item: RetainedItem | None,
         now: datetime,
     ) -> AsyncSubagentSuccessorReceipt:
         try:
@@ -208,6 +242,7 @@ class AsyncSubagentSuccessorReconciler:
                     prepared,
                     parent_state,
                     initial_state,
+                    terminal_item,
                 )
                 session = await _authorize_successor(
                     database,
@@ -278,8 +313,10 @@ async def _validate_final_selection(
     prepared: PreparedAsyncResultSuccessor,
     parent_state: StoredRunState,
     initial_state: StoredRunState,
+    terminal_item: RetainedItem | None,
 ) -> str:
-    payload = await validate_async_subagent_result_authority(database, selected.entry.to_resource())
+    authority = await read_async_subagent_result_authority(database, selected.entry.to_resource())
+    payload = validate_async_subagent_result_authority(authority, terminal_item)
     _verify_selected_parent_state(selected.selected_parent.to_resource(), parent_state)
     expected = prepare_async_result_successor(
         selected_parent=selected.selected_parent.to_resource(),

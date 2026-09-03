@@ -81,7 +81,7 @@ class AsyncSubagentResultInboxPayload(StrictModel):
     terminal_status: Literal["completed", "failed", "cancelled"]
     terminal_result_item_id: ObjectId | None = None
     result_payload: JsonValue | None = None
-    result_digest: Sha256Digest | None = None
+    result_digest: Sha256Digest
 
     @field_validator("result_payload")
     @classmethod
@@ -94,9 +94,28 @@ class AsyncSubagentResultInboxPayload(StrictModel):
             raise ValueError("asynchronous child result payload exceeds the inline limit")
         return value
 
+    @model_validator(mode="after")
+    def result_representation_matches_terminal_status(self) -> AsyncSubagentResultInboxPayload:
+        inline = "result_payload" in self.model_fields_set
+        referenced = self.terminal_result_item_id is not None
+        if self.terminal_status == "completed":
+            if inline == referenced:
+                raise ValueError("completed asynchronous result requires exactly one result representation")
+        elif not inline or self.result_payload is None or referenced:
+            raise ValueError("unsuccessful asynchronous result requires one inline failure representation")
+        return self
+
+    def as_json(self) -> dict[str, JsonValue]:
+        value = self.model_dump(mode="json", by_alias=True)
+        if "result_payload" not in self.model_fields_set:
+            value.pop("result_payload", None)
+        if self.terminal_result_item_id is None:
+            value.pop("terminal_result_item_id", None)
+        return value
+
     def canonical_bytes(self) -> bytes:
         try:
-            return rfc8785.dumps(self.model_dump(mode="json", by_alias=True, exclude_none=True))
+            return rfc8785.dumps(self.as_json())
         except rfc8785.CanonicalizationError as error:  # pragma: no cover - validated fields make this defensive
             raise ValueError("asynchronous child result payload is not canonicalizable") from error
 

@@ -47,7 +47,7 @@ def prepare_async_result_successor(
         inbox_entry=inbox_entry,
     )
     payload = parse_async_subagent_result_entry(inbox_entry)
-    accepted_input = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
+    accepted_input = payload.as_json()
     config = selected_parent_state.effective_agent_config
     state = initialize_completed_continuation_state(
         RunStateSeed(

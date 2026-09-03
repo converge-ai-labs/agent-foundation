@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -17,7 +18,7 @@ from a13n_service.interactions.control_domain import (
     new_thread_inbox_entry_id,
 )
 from a13n_service.interactions.control_models import ThreadInboxRecord
-from a13n_service.interactions.domain import RunStatus
+from a13n_service.interactions.domain import Run, RunStatus
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
 from a13n_service.interactions.inbox_allocation import allocate_async_result
 from a13n_service.interactions.inbox_persistence import (
@@ -25,12 +26,27 @@ from a13n_service.interactions.inbox_persistence import (
     ThreadInboxConflict,
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
+from a13n_service.presentation import RunReplayStore
 from a13n_service.storage import short_session, transaction
 
+from .domain import ChildRunRelationship
 from .models import ChildRunRelationshipRecord
-from .result_payload import AsyncSubagentResultError, build_async_subagent_result_payload
+from .result_payload import (
+    AsyncSubagentResultError,
+    AsyncSubagentResultItemUnavailable,
+    build_async_subagent_result_payload,
+    load_async_subagent_terminal_item,
+    parse_async_subagent_result_entry,
+)
 
 logger = logging.getLogger("a13n_service.subagents.results")
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicationAuthority:
+    relationship: ChildRunRelationship
+    parent_thread_id: str
+    child: Run
 
 
 class AsyncSubagentResultPublisher:
@@ -39,6 +55,7 @@ class AsyncSubagentResultPublisher:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
+        replays: RunReplayStore,
         *,
         signals: ThreadControlSignalPublisher | None = None,
         max_pending_count: int = 256,
@@ -49,6 +66,7 @@ class AsyncSubagentResultPublisher:
         if max_pending_count < 1 or max_pending_bytes < 1:
             raise ValueError("Thread inbox admission limits must be positive")
         self._sessions = sessions
+        self._replays = replays
         self._signals = signals
         self._max_pending_count = max_pending_count
         self._max_pending_bytes = max_pending_bytes
@@ -61,9 +79,15 @@ class AsyncSubagentResultPublisher:
         tenant_id: str,
         child_run_id: str,
     ) -> ThreadInboxEntry:
-        relationship, parent_thread_id = await self._locate_relationship(
+        authority = await self._read_publication_authority(
             tenant_id=tenant_id,
             child_run_id=child_run_id,
+        )
+        terminal_item = await load_async_subagent_terminal_item(
+            self._replays,
+            tenant_id=tenant_id,
+            child=authority.child,
+            expected_item_id=None,
         )
         now = _utc(self._clock())
         created = False
@@ -71,19 +95,19 @@ class AsyncSubagentResultPublisher:
             async with transaction(self._sessions) as database:
                 thread = await database.scalar(
                     select(ThreadRecord)
-                    .where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == parent_thread_id)
+                    .where(ThreadRecord.tenant_id == tenant_id, ThreadRecord.id == authority.parent_thread_id)
                     .with_for_update()
                 )
                 parent = await database.scalar(
                     select(RunRecord)
-                    .where(RunRecord.tenant_id == tenant_id, RunRecord.id == relationship.parent_run_id)
+                    .where(RunRecord.tenant_id == tenant_id, RunRecord.id == authority.relationship.parent_run_id)
                     .with_for_update()
                 )
                 locked_relationship = await database.scalar(
                     select(ChildRunRelationshipRecord)
                     .where(
                         ChildRunRelationshipRecord.tenant_id == tenant_id,
-                        ChildRunRelationshipRecord.id == relationship.id,
+                        ChildRunRelationshipRecord.id == authority.relationship.id,
                     )
                     .with_for_update()
                 )
@@ -103,11 +127,27 @@ class AsyncSubagentResultPublisher:
                     or locked_relationship.child_run_id != child.id
                 ):
                     raise AsyncSubagentResultError("child result relationship authority is incomplete")
-                await _authorize_publication(database, parent=parent, child=child, relationship_id=relationship.id)
-                existing = await _load_inbox_entry(database, tenant_id=tenant_id, relationship_id=relationship.id)
+                await _authorize_publication(
+                    database,
+                    parent=parent,
+                    child=child,
+                    relationship_id=authority.relationship.id,
+                )
+                payload = build_async_subagent_result_payload(
+                    locked_relationship.to_resource(),
+                    child.to_resource(),
+                    terminal_item=terminal_item,
+                )
+                existing = await _load_inbox_entry(
+                    database,
+                    tenant_id=tenant_id,
+                    relationship_id=authority.relationship.id,
+                )
                 if existing is not None:
-                    return existing.to_resource()
-                payload = build_async_subagent_result_payload(locked_relationship, child.to_resource())
+                    resource = existing.to_resource()
+                    if parse_async_subagent_result_entry(resource) != payload:
+                        raise AsyncSubagentResultError("persisted child result does not match sealed authority")
+                    return resource
                 suppressed = parent.status in {RunStatus.failed.value, RunStatus.cancelled.value}
                 if suppressed:
                     target_run_id, source_waiting_run_id = None, None
@@ -121,11 +161,11 @@ class AsyncSubagentResultPublisher:
                     tenant_id=tenant_id,
                     thread_id=thread.id,
                     origin_run_id=parent.id,
-                    relationship_id=relationship.id,
+                    relationship_id=authority.relationship.id,
                     target_run_id=target_run_id,
                     source_waiting_run_id=source_waiting_run_id,
                     entry_id=self._entry_id_factory(),
-                    payload=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+                    payload=payload.as_json(),
                     payload_size_bytes=len(payload.canonical_bytes()),
                     suppressed=suppressed,
                     max_pending_count=self._max_pending_count,
@@ -134,9 +174,19 @@ class AsyncSubagentResultPublisher:
                 )
                 created = True
         except IntegrityError as error:
-            replay = await self._read_existing(tenant_id=tenant_id, relationship_id=relationship.id)
+            replay = await self._read_existing(
+                tenant_id=tenant_id,
+                relationship_id=authority.relationship.id,
+            )
             if replay is None:
                 raise ThreadInboxConflict("child result publication lost a concurrent mutation") from error
+            expected = build_async_subagent_result_payload(
+                authority.relationship,
+                authority.child,
+                terminal_item=terminal_item,
+            )
+            if parse_async_subagent_result_entry(replay) != expected:
+                raise AsyncSubagentResultError("concurrent child result does not match sealed authority") from error
             entry = replay
         if created and entry.status is ThreadInboxStatus.pending:
             await self._best_effort_signal(tenant_id=tenant_id, thread_id=entry.thread_id)
@@ -186,15 +236,21 @@ class AsyncSubagentResultPublisher:
                     extra={"event": "async_subagent_result_capacity_deferred", "child_run_id": child_run_id},
                 )
                 continue
+            except AsyncSubagentResultItemUnavailable:
+                logger.info(
+                    "async_subagent_result_item_deferred",
+                    extra={"event": "async_subagent_result_item_deferred", "child_run_id": child_run_id},
+                )
+                continue
             published += 1
         return published
 
-    async def _locate_relationship(
+    async def _read_publication_authority(
         self,
         *,
         tenant_id: str,
         child_run_id: str,
-    ) -> tuple[ChildRunRelationshipRecord, str]:
+    ) -> _PublicationAuthority:
         async with short_session(self._sessions) as database:
             relationship = await database.scalar(
                 select(ChildRunRelationshipRecord).where(
@@ -204,15 +260,36 @@ class AsyncSubagentResultPublisher:
             )
             if relationship is None:
                 raise AsyncSubagentResultError("child Run relationship was not found")
-            parent_thread_id = await database.scalar(
-                select(RunRecord.thread_id).where(
+            parent = await database.scalar(
+                select(RunRecord).where(
                     RunRecord.tenant_id == tenant_id,
                     RunRecord.id == relationship.parent_run_id,
                 )
             )
-            if parent_thread_id is None:
-                raise AsyncSubagentResultError("parent Run was not found")
-            return relationship, parent_thread_id
+            child = await database.scalar(
+                select(RunRecord).where(
+                    RunRecord.tenant_id == tenant_id,
+                    RunRecord.id == child_run_id,
+                )
+            )
+            if (
+                parent is None
+                or child is None
+                or relationship.child_run_id != child.id
+                or relationship.child_thread_id != child.thread_id
+            ):
+                raise AsyncSubagentResultError("child result relationship authority is incomplete")
+            await _authorize_publication(
+                database,
+                parent=parent,
+                child=child,
+                relationship_id=relationship.id,
+            )
+            return _PublicationAuthority(
+                relationship=relationship.to_resource(),
+                parent_thread_id=parent.thread_id,
+                child=child.to_resource(),
+            )
 
     async def _read_existing(self, *, tenant_id: str, relationship_id: str) -> ThreadInboxEntry | None:
         async with short_session(self._sessions) as database:

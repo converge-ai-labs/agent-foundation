@@ -5,12 +5,13 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 import pytest
-from a13n_harness import SafeFailure
+from a13n_harness import HarnessRunResult, HarnessRunResultEvent, HarnessState, SafeFailure
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions import (
     AttemptExecutionService,
     AttemptScheduler,
     CompletedOutcomeCandidate,
+    RunPayloadEnvelope,
     RunPayloadStore,
     RunStateStore,
 )
@@ -20,6 +21,12 @@ from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, Threa
 from a13n_service.interactions.inbox_persistence import ThreadInboxCapacityExceeded
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunRecord
+from a13n_service.presentation import (
+    RunOutputItemContent,
+    RunReplayPublisher,
+    RunReplayStore,
+    RunStreamProjector,
+)
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     MAX_INLINE_ASYNC_RESULT_BYTES,
@@ -30,6 +37,8 @@ from a13n_service.subagents import (
     ChildRunAcceptanceService,
 )
 from pydantic import TypeAdapter
+from pydantic_ai.usage import RunUsage
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -78,6 +87,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
     signals = RecordingSignals()
     publisher = AsyncSubagentResultPublisher(
         interaction_sessions,
+        RunReplayStore(interaction_object_store),
         signals=signals,
         entry_id_factory=lambda: "inb_2222222222222222",
         clock=lambda: NOW + timedelta(seconds=4),
@@ -103,7 +113,10 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
         }
     }
 
-    result_materializer = AsyncSubagentResultMaterializer(interaction_sessions)
+    result_materializer = AsyncSubagentResultMaterializer(
+        interaction_sessions,
+        RunReplayStore(interaction_object_store),
+    )
     forged_payload = payload.model_copy(update={"result_payload": {"forged": True}})
     forged_entry = entry.model_copy(
         update={"payload": forged_payload.model_dump(mode="json", by_alias=True, exclude_none=True)}
@@ -170,6 +183,7 @@ async def test_parent_failure_suppresses_unconsumed_child_result_on_both_race_or
     signals = RecordingSignals()
     publisher = AsyncSubagentResultPublisher(
         interaction_sessions,
+        RunReplayStore(interaction_object_store),
         signals=signals,
         entry_id_factory=lambda: "inb_3333333333333333",
         clock=lambda: NOW + timedelta(seconds=4),
@@ -220,6 +234,7 @@ async def test_result_capacity_failure_leaves_no_partial_publication(
     await _fail_child(interaction_sessions, child_run_id)
     publisher = AsyncSubagentResultPublisher(
         interaction_sessions,
+        RunReplayStore(interaction_object_store),
         max_pending_count=1,
         entry_id_factory=lambda: "inb_7777777777777777",
         clock=lambda: NOW + timedelta(seconds=4),
@@ -237,23 +252,21 @@ async def test_result_capacity_failure_leaves_no_partial_publication(
         assert [(row.id, row.kind) for row in rows] == [("inb_6666666666666666", "steer")]
 
 
-async def test_oversized_result_requires_item_reference_without_partial_publication(
+async def test_inline_json_null_result_survives_inbox_and_materialization(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
-    states, parent, _, child_run_id = await _accept_child(
+    states, _, _, child_run_id = await _accept_child(
         interaction_sessions,
         interaction_object_store,
     )
-    scheduler = AttemptScheduler(
+    claim = await AttemptScheduler(
         interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=3),
-        token_factory=lambda: "child-lease",
-        attempt_id_factory=lambda: "rat_bbbbbbbbbbbbbbbb",
-    )
-    claim = await scheduler.claim(child_run_id, _worker())
+        token_factory=lambda: "null-child-lease",
+        attempt_id_factory=lambda: "rat_cccccccccccccccc",
+    ).claim(child_run_id, _worker())
     assert claim is not None
-    child_authority = _authority(claim)
     async with short_session(interaction_sessions) as database:
         child = await database.get(RunRecord, child_run_id)
         assert child is not None
@@ -263,16 +276,48 @@ async def test_oversized_result_requires_item_reference_without_partial_publicat
         interaction_object_store,
         states,
         child_resource,
-        child_authority,
-        outcome=CompletedOutcomeCandidate(output="x" * MAX_INLINE_ASYNC_RESULT_BYTES),
+        _authority(claim),
+        outcome=CompletedOutcomeCandidate(output=None),
         time_offset_seconds=4,
     )
+    replays = RunReplayStore(interaction_object_store)
+
+    entry = await AsyncSubagentResultPublisher(interaction_sessions, replays).publish(
+        tenant_id=TENANT_ID,
+        child_run_id=child_run_id,
+    )
+    payload = _RESULT_ADAPTER.validate_python(entry.payload)
+
+    assert isinstance(entry.payload, dict) and "result_payload" in entry.payload
+    assert "result_payload" in payload.model_fields_set and payload.result_payload is None
+    projected = await AsyncSubagentResultMaterializer(interaction_sessions, replays)(entry)
+    assert "<async-subagent-result-data>\nnull\n</async-subagent-result-data>" in projected
+
+
+async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+    redis_client: Redis,
+) -> None:
+    states, parent, _, child_run_id = await _accept_child(
+        interaction_sessions,
+        interaction_object_store,
+    )
+    replays, payloads, output = await _complete_object_backed_child(
+        interaction_sessions,
+        interaction_object_store,
+        redis_client,
+        states,
+        child_run_id,
+    )
+    publisher = AsyncSubagentResultPublisher(interaction_sessions, replays)
 
     with pytest.raises(AsyncSubagentResultError, match="authorized terminal result Item"):
-        await AsyncSubagentResultPublisher(interaction_sessions).publish(
+        await publisher.publish(
             tenant_id=TENANT_ID,
             child_run_id=child_run_id,
         )
+    assert await publisher.reconcile_once() == 0
 
     async with short_session(interaction_sessions) as database:
         counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
@@ -280,6 +325,37 @@ async def test_oversized_result_requires_item_reference_without_partial_publicat
         assert counter is not None
         assert (counter.next_delivery_sequence, counter.pending_count, counter.pending_bytes) == (1, 0, 0)
         assert rows == ()
+
+    snapshot = await RunReplayPublisher(
+        interaction_sessions,
+        redis_client,
+        replays,
+        payloads,
+        stream_ttl_seconds=60,
+    ).publish(tenant_id=TENANT_ID, run_id=child_run_id)
+    entry = await publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
+    result = _RESULT_ADAPTER.validate_python(entry.payload)
+    output_item = snapshot.items[-1]
+    output_content = RunOutputItemContent.model_validate(output_item.content)
+
+    assert result.terminal_result_item_id == output_item.id
+    assert result.result_digest == output_content.result_digest
+    assert "result_payload" not in result.model_fields_set
+    materializer = AsyncSubagentResultMaterializer(interaction_sessions, replays)
+    projected = await materializer(entry)
+    assert output_item.id in projected
+    assert output not in projected
+
+    forged_entry = entry.model_copy(
+        update={
+            "payload": {
+                **result.as_json(),
+                "terminal_result_item_id": "item_ffffffffffffffff",
+            }
+        }
+    )
+    with pytest.raises(AsyncSubagentResultError, match="retained terminal event"):
+        await materializer(forged_entry)
 
 
 async def test_result_publication_reauthorizes_the_spawning_principal(
@@ -299,7 +375,10 @@ async def test_result_publication_reauthorizes_the_spawning_principal(
         await database.delete(binding)
 
     with pytest.raises(AsyncSubagentResultError, match="publication is no longer authorized"):
-        await AsyncSubagentResultPublisher(interaction_sessions).publish(
+        await AsyncSubagentResultPublisher(
+            interaction_sessions,
+            RunReplayStore(interaction_object_store),
+        ).publish(
             tenant_id=TENANT_ID,
             child_run_id=child_run_id,
         )
@@ -330,6 +409,7 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
+        RunReplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_9999999999999999",
         clock=lambda: NOW + timedelta(seconds=4),
     ).publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
@@ -369,6 +449,7 @@ async def test_concurrent_result_publication_converges_on_postgresql(
     signals = RecordingSignals()
     publisher = AsyncSubagentResultPublisher(
         sessions,
+        RunReplayStore(interaction_object_store),
         signals=signals,
         entry_id_factory=lambda: next(ids),
         clock=lambda: NOW + timedelta(seconds=4),
@@ -441,3 +522,67 @@ async def _fail_child(sessions: async_sessionmaker[AsyncSession], child_run_id: 
         child.sealed_at = NOW + timedelta(seconds=3)
         child.updated_at = NOW + timedelta(seconds=3)
         child.version += 1
+
+
+async def _complete_object_backed_child(
+    sessions: async_sessionmaker[AsyncSession],
+    objects: ObjectStore,
+    redis: Redis,
+    states: RunStateStore,
+    child_run_id: str,
+) -> tuple[RunReplayStore, RunPayloadStore, str]:
+    claim = await AttemptScheduler(
+        sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+        token_factory=lambda: "child-lease",
+        attempt_id_factory=lambda: "rat_bbbbbbbbbbbbbbbb",
+    ).claim(child_run_id, _worker())
+    assert claim is not None
+    async with short_session(sessions) as database:
+        child = await database.get(RunRecord, child_run_id)
+        assert child is not None
+        child_resource = child.to_resource()
+    output = "x" * (MAX_INLINE_ASYNC_RESULT_BYTES + 1)
+    payloads = RunPayloadStore(objects)
+    output_object = await payloads.create(
+        TENANT_ID,
+        RunPayloadEnvelope(
+            run_id=child_run_id,
+            payload_kind="output",
+            payload_schema_version="1",
+            payload=output,
+        ),
+    )
+    await RunStreamProjector(
+        redis,
+        tenant_id=TENANT_ID,
+        run_id=child_run_id,
+        thread_id=child_resource.thread_id,
+        run_attempt_id=claim.attempt.id,
+        max_event_bytes=1024,
+    ).project(
+        HarnessRunResultEvent(
+            thread_id=child_resource.thread_id,
+            run_id="completed-child",
+            sequence=0,
+            occurred_at=NOW + timedelta(seconds=4),
+            result=HarnessRunResult(
+                thread_id=child_resource.thread_id,
+                run_id="completed-child",
+                status="completed",
+                output=output,
+                state=HarnessState.new(thread_id=child_resource.thread_id),
+                usage=RunUsage(),
+            ),
+        )
+    )
+    await _complete_run(
+        sessions,
+        objects,
+        states,
+        child_resource,
+        _authority(claim),
+        outcome=CompletedOutcomeCandidate(output_object=output_object),
+        time_offset_seconds=4,
+    )
+    return RunReplayStore(objects), payloads, output
