@@ -33,7 +33,7 @@ from a13n_service.environments.domain import (
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
 from a13n_service.models.domain import ModelApi, ModelExecutionSnapshot, ModelKey
-from a13n_service.secrets.domain import SecretCredentialSource, SecretKey
+from a13n_service.secrets.domain import SecretKey
 
 ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
 Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]

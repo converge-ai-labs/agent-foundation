@@ -8,7 +8,6 @@ from pathlib import Path
 import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
-from a13n_service.database.metadata import service_metadata
 from a13n_service.environments.domain import EnvironmentRevision
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
