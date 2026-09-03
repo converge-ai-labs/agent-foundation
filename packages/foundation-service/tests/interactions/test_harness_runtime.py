@@ -24,6 +24,7 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
     HarnessObservationContext,
+    HarnessRunResultEvent,
     RunPreparationContext,
 )
 from a13n_harness.errors import RunError
@@ -74,6 +75,10 @@ class _RuntimeCoordinator:
     planned_handoff: bool = False
     environment: Environment | None = None
     driver: HarnessDriver | None = field(default=None, init=False)
+
+    @property
+    def terminal_observation_allowed(self) -> bool:
+        return not self.planned_handoff
 
     async def enter_harness(
         self,
@@ -143,9 +148,12 @@ class _ModelContext:
 
 @dataclass
 class _EventProjector:
-    events: list[HarnessEvent] = field(default_factory=list)
+    events: list[HarnessEvent | HarnessRunResultEvent[object]] = field(default_factory=list)
+    fail: bool = False
 
-    async def project(self, event: HarnessEvent) -> None:
+    async def project(self, event: HarnessEvent | HarnessRunResultEvent[object]) -> None:
+        if self.fail:
+            raise RuntimeError("presentation unavailable")
         self.events.append(event)
 
 
@@ -272,6 +280,7 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
     assert model_calls
     assert model_context.requests
     assert projector.events
+    assert isinstance(projector.events[-1], HarnessRunResultEvent)
     assert usage.requests == 1
     assert not environment.is_entered
     assert trace.index("input-factory") < trace.index("coordinator:attach")
@@ -485,7 +494,8 @@ async def test_planned_handoff_yields_only_after_environment_close(
         planned_handoff=True,
         environment=environment,
     )
-    result = await _driver(coordinator).run(
+    projector = _EventProjector()
+    result = await _driver(coordinator, projector).run(
         FoundationHarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(),
@@ -500,5 +510,34 @@ async def test_planned_handoff_yields_only_after_environment_close(
     )
 
     assert result.status == "cancelled"
+    assert not any(isinstance(event, HarnessRunResultEvent) for event in projector.events)
     assert not environment.is_entered
     assert trace[-1] == "coordinator:before-model"
+
+
+async def test_live_projection_failure_does_not_change_harness_outcome(
+    interaction_object_store,
+) -> None:
+    async def complete(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "completed"
+
+    trace: list[str] = []
+    instance = _instance()
+    state = await _stored_state(interaction_object_store, initial_state())
+    coordinator = _RuntimeCoordinator(state, instance, trace)
+
+    result = await _driver(coordinator, _EventProjector(fail=True)).run(
+        FoundationHarnessInvocation(
+            definition=AgentDefinition(
+                agent=AgentSpec(),
+                output_type=str,
+                model=FunctionModel(stream_function=complete),
+            ),
+            input=ImmediateHarnessInput("accepted input"),
+            collaborators=FoundationHarnessCollaborators(instance=instance),
+        ),
+        preparation=_preparation(),
+    )
+
+    assert result.output_or_raise() == "completed"

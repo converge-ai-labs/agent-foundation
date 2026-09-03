@@ -160,7 +160,9 @@ def _item_state(entry: RunStreamEntry) -> Literal["completed", "interrupted", "f
         return "interrupted"
     if entry.event.event_type == "item.failed":
         return "failed"
-    if entry.event.event_type.endswith("_end") or entry.event.event_type in {
+    if entry.event.event_type in {
+        "agui.text_message_end",
+        "agui.reasoning_message_end",
         "agui.tool_call_result",
         "item.completed",
     }:

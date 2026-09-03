@@ -139,6 +139,12 @@ class RunAttemptControl:
         self._driver: HarnessControlDriver | None = None
         self._cancel_executor: Callable[[], None] | None = None
 
+    @property
+    def terminal_observation_allowed(self) -> bool:
+        """Suppress the synthetic cancellation used only to quiesce a planned handoff."""
+
+        return self._gate.phase is not _CoordinatorPhase.handoff_ready
+
     def bind_executor(
         self,
         driver: HarnessControlDriver,

@@ -12,6 +12,7 @@ from a13n_harness import (
     AgentSpec,
     HarnessBuilder,
     HarnessEvent,
+    HarnessRunResultEvent,
     HarnessState,
     SafeFailure,
 )
@@ -180,9 +181,9 @@ class _Wakeups:
 
 @dataclass
 class _Projector:
-    events: list[HarnessEvent] = field(default_factory=list)
+    events: list[HarnessEvent | HarnessRunResultEvent[object]] = field(default_factory=list)
 
-    async def project(self, event: HarnessEvent) -> None:
+    async def project(self, event: HarnessEvent | HarnessRunResultEvent[object]) -> None:
         self.events.append(event)
 
 

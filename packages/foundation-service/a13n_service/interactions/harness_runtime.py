@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
@@ -50,6 +51,7 @@ from .harness_control import (
 from .state import RunStateEnvelope
 
 _DEFERRED_REQUESTS_ADAPTER = TypeAdapter(DeferredToolRequests)
+logger = logging.getLogger("a13n_service.interactions.harness_runtime")
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,9 +177,9 @@ class FoundationHarnessInvocation[OutputT]:
 
 
 class HarnessEventProjector(Protocol):
-    """Await one non-terminal canonical Harness observation with backpressure."""
+    """Project one canonical public Harness stream item into live presentation."""
 
-    async def project(self, event: HarnessEvent) -> None: ...
+    async def project(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None: ...
 
 
 class HarnessDriver:
@@ -332,19 +334,34 @@ class HarnessDriver:
                         code="foundation_control_identity_mismatch",
                     )
                 terminal = item.result
+                if self._control.terminal_observation_allowed:
+                    await self._project_live(item)
                 continue
             if terminal is not None:
                 raise RunError(
                     "Harness stream emitted an observation after its terminal result.",
                     code="foundation_stream_event_after_terminal",
                 )
-            await self._projector.project(item)
+            await self._project_live(item)
         if terminal is None:
             raise RunError(
                 "Harness stream ended without a terminal result.",
                 code="foundation_stream_terminal_missing",
             )
         return terminal
+
+    async def _project_live(self, item: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
+        try:
+            await self._projector.project(item)
+        except Exception:
+            logger.exception(
+                "Harness live observation projection failed",
+                extra={
+                    "event": "harness_live_projection_failed",
+                    "harness_run_id": item.run_id,
+                    "harness_sequence": item.sequence,
+                },
+            )
 
     def _attach[OutputT](
         self,
