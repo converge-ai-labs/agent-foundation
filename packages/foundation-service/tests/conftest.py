@@ -6,10 +6,13 @@ from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import copyfile
+from time import monotonic, sleep
 from uuid import uuid4
 
 import anyio
 import pytest
+from a13n_service.database.metadata import service_metadata
 from a13n_service.storage.config import RedisMemoryConfig, RedisServerConfig
 from a13n_service.storage.object_store import LocalObjectStore, ObjectStore, S3ObjectStore
 from a13n_service.storage.redis import open_redis
@@ -18,8 +21,8 @@ from aiobotocore.httpxsession import HttpxSession
 from aiobotocore.session import get_session
 from botocore.exceptions import BotoCoreError, ClientError
 from redis.asyncio import Redis
+from sqlalchemy import create_engine
 from testcontainers.core.container import DockerContainer
-from testcontainers.core.wait_strategies import HttpWaitStrategy
 
 MINIO_IMAGE = "quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
 
@@ -27,6 +30,22 @@ MINIO_IMAGE = "quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f332
 @pytest.fixture(scope="session")
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(scope="session")
+def service_sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    path = tmp_path_factory.mktemp("service-database") / "template.sqlite3"
+    engine = create_engine(f"sqlite:///{path}")
+    service_metadata().create_all(engine)
+    engine.dispose()
+    return path
+
+
+@pytest.fixture
+def service_sqlite_database(tmp_path: Path, service_sqlite_template: Path) -> Path:
+    path = tmp_path / "service.sqlite3"
+    copyfile(service_sqlite_template, path)
+    return path
 
 
 @pytest.fixture(scope="session")
@@ -65,14 +84,24 @@ def s3_service() -> Iterator[S3Service]:
         .with_env("MINIO_ROOT_PASSWORD", secret_key)
         .with_command("server /data")
         .with_exposed_ports(9000)
-        .waiting_for(HttpWaitStrategy(9000, "/minio/health/ready").with_startup_timeout(60).with_poll_interval(0.25))
     )
     with container:
         host = container.get_container_host_ip()
         if host == "localhost":
             host = "127.0.0.1"
-        endpoint = f"http://{host}:{container.get_exposed_port(9000)}"
+        endpoint = f"http://{host}:{_mapped_port(container, 9000)}"
         yield S3Service(endpoint, access_key, secret_key)
+
+
+def _mapped_port(container: DockerContainer, port: int) -> int:
+    deadline = monotonic() + 10
+    while True:
+        try:
+            return container.get_exposed_port(port)
+        except ConnectionError:
+            if monotonic() >= deadline:
+                raise
+            sleep(0.05)
 
 
 @pytest.fixture(params=["memory", "redis"])

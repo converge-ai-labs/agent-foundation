@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 from a13n_service.agents.domain import PluginRuntimeMode
-from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.plugins.domain import Plugin, PluginTaskReceipt, PluginVersion
@@ -150,10 +149,10 @@ def build_wheel(
 
 
 @pytest.fixture
-async def plugin_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "plugins.sqlite3"))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+async def plugin_sessions(
+    service_sqlite_database: Path,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))

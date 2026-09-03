@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from importlib.metadata import packages_distributions
 from typing import Final
 
 from packaging.requirements import Requirement
@@ -28,6 +27,7 @@ from a13n_service.plugins.runtime import (
     installed_distribution_versions,
     installed_harness_version,
 )
+from a13n_service.plugins.runtime import installed_top_level_packages as installed_service_packages
 
 from .domain import (
     OnDemandPluginSelection,
@@ -119,9 +119,7 @@ class AgentPluginSelectionResolver:
             for name, distribution_version in distribution_versions.items()
         }
         installed_packages = (
-            installed_top_level_packages
-            if installed_top_level_packages is not None
-            else frozenset(packages_distributions())
+            installed_top_level_packages if installed_top_level_packages is not None else installed_service_packages()
         )
         self._installed_top_level_packages = frozenset(installed_packages).union(sys.stdlib_module_names)
         self._compatible_tags = compatible_tags if compatible_tags is not None else frozenset(sys_tags())

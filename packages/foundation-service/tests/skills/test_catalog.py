@@ -9,7 +9,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from a13n_service.database.metadata import service_metadata
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
@@ -95,10 +94,9 @@ def actor(user_id: str = BUILDER_ID) -> AuthenticatedActor:
 @pytest.fixture
 async def skill_services(
     tmp_path: Path,
+    service_sqlite_database: Path,
 ) -> AsyncIterator[SkillTestServices]:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "skills.sqlite3"))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))

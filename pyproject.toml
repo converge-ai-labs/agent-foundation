@@ -24,6 +24,7 @@ dev = [
     "protobuf>=6.32,<7",
     "pyright>=1.1,<2",
     "pytest>=9,<10",
+    "pytest-xdist>=3.8,<4",
     "ruff>=0.16,<0.17",
     "testcontainers[postgres,redis]>=4.8,<5",
     "types-aiobotocore-s3>=2.1,<3",

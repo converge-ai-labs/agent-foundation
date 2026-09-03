@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.models.endpoint_policy import EndpointPolicy
@@ -43,10 +42,8 @@ def protector() -> SecretProtector:
 
 
 @pytest.fixture
-async def model_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "models.sqlite3"))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+async def model_sessions(service_sqlite_database: Path) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))

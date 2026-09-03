@@ -10,7 +10,6 @@ from a13n_environment_provider.direct_local.files import LocalFileOperator
 from a13n_environment_provider.direct_local.provider import _DirectLocalFilePolicy
 from a13n_harness.errors import DefinitionError
 from a13n_service.agents.domain import ResolvedSkillSelection
-from a13n_service.database.metadata import service_metadata
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.skills.domain import SkillRevisionLock
 from a13n_service.skills.materialization import (
@@ -64,10 +63,11 @@ class ExpiringFence:
 
 
 @pytest.fixture
-async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "runtime.sqlite3"))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+async def runtime_fixture(
+    tmp_path: Path,
+    service_sqlite_database: Path,
+) -> AsyncIterator[RuntimeFixture]:
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     deploy = _package("deploy", "Deploy safely.", (("scripts/deploy.sh", b"#!/bin/sh\n"),))
     review = _package("review", "Review carefully.", (("checklist.md", b"# Checklist\n"),))

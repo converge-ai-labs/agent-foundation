@@ -6,7 +6,6 @@ from pathlib import Path
 import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
-from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.settings import ServiceSettings
@@ -34,11 +33,11 @@ async def successful_model_test(**_: object) -> None:
     return None
 
 
-def settings(tmp_path: Path) -> ServiceSettings:
+def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
     return ServiceSettings(
         _env_file=None,
         database_backend="sqlite",
-        database_sqlite_path=tmp_path / "api.sqlite3",
+        database_sqlite_path=database_path,
         redis_backend="memory",
         object_backend="local",
         object_local_root=tmp_path / "objects",
@@ -51,8 +50,6 @@ def settings(tmp_path: Path) -> ServiceSettings:
 
 async def seed_database(config: ServiceSettings) -> None:
     engine = create_sql_engine(config.database_config())
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
@@ -116,8 +113,11 @@ async def seed_database(config: ServiceSettings) -> None:
 
 
 @pytest.fixture
-async def api_client(tmp_path: Path) -> AsyncIterator[httpx2.AsyncClient]:
-    config = settings(tmp_path)
+async def api_client(
+    tmp_path: Path,
+    service_sqlite_database: Path,
+) -> AsyncIterator[httpx2.AsyncClient]:
+    config = settings(tmp_path, service_sqlite_database)
     await seed_database(config)
     app = create_app(
         config,
@@ -219,8 +219,11 @@ async def test_unknown_fields_use_shared_safe_error(api_client: httpx2.AsyncClie
 
 
 @pytest.mark.anyio
-async def test_missing_authenticator_returns_401(tmp_path: Path) -> None:
-    config = settings(tmp_path)
+async def test_missing_authenticator_returns_401(
+    tmp_path: Path,
+    service_sqlite_database: Path,
+) -> None:
+    config = settings(tmp_path, service_sqlite_database)
     await seed_database(config)
     app = create_app(config)
     async with app.router.lifespan_context(app):

@@ -4,6 +4,19 @@ FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
 SANDBOX_IMAGE ?= agent-foundation-sandbox:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
 LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
+CHECK_JOBS ?= 4
+CHECK_TARGETS := \
+	lint \
+	typecheck \
+	examples-check \
+	foundation-web-check \
+	harness-ui-check \
+	rust-check \
+	sdk-python-check \
+	sdk-go-check \
+	sdk-rust-check \
+	sdk-typescript-check \
+	foundation-cli-check
 
 .PHONY: install
 install: ## Install locked dependencies and Git hooks
@@ -26,11 +39,11 @@ install: ## Install locked dependencies and Git hooks
 
 .PHONY: sync
 sync: ## Synchronize the locked Python workspace
-	@uv sync --locked --all-packages
+	@uv sync --quiet --locked --all-packages
 
 .PHONY: examples-sync
 examples-sync: ## Synchronize every independent example project
-	@for directory in $(EXAMPLE_DIRS); do uv sync --project "$$directory" --locked || exit $$?; done
+	@for directory in $(EXAMPLE_DIRS); do uv sync --quiet --project "$$directory" --locked || exit $$?; done
 
 .PHONY: examples-lock-check
 examples-lock-check: ## Verify every independent example lock file
@@ -148,14 +161,15 @@ agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a dis
 
 .PHONY: format
 format: sync foundation-web-sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
-	@for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
-		git ls-files --cached --others --exclude-standard -z | \
-			xargs -0 uv run --locked pre-commit run "$$hook" --files || true; \
-	done
-	@for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
-		git ls-files --cached --others --exclude-standard -z | \
-			xargs -0 uv run --locked pre-commit run "$$hook" --files || exit $$?; \
-	done
+	@run_formatters() { \
+		formatter_status=0; \
+		for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
+			git ls-files --cached --others --exclude-standard -z | \
+				xargs -0 uv run --locked pre-commit run "$$hook" --files || formatter_status=$$?; \
+		done; \
+		return "$$formatter_status"; \
+	}; \
+	run_formatters || run_formatters
 	@files="$$(find sdk/go -type f -name '*.go')"; gofmt -w $$files
 	@cargo fmt --all
 	@(cd sdk/rust && cargo fmt)
@@ -204,7 +218,7 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 
 .PHONY: test
 test: sync ## Run Python workspace tests
-	@uv run --locked python -m pytest
+	@uv run --locked python -m pytest -n 2 --dist loadgroup
 
 .PHONY: eip-generate
 eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspection artifacts
@@ -317,7 +331,7 @@ sdk-python-isolation-check: ## Verify the Python SDK is excluded from the root w
 
 .PHONY: sdk-python-sync
 sdk-python-sync: ## Synchronize the standalone Python SDK
-	@uv sync --project sdk/python --locked
+	@uv sync --quiet --project sdk/python --locked
 
 .PHONY: sdk-python-format-check
 sdk-python-format-check: sdk-python-sync ## Check Python SDK lint and formatting
@@ -424,9 +438,11 @@ foundation-cli-check: foundation-cli-isolation-check foundation-cli-format-check
 .PHONY: foundation-cli-check-all
 foundation-cli-check-all: foundation-cli-check foundation-cli-test foundation-cli-build ## Run the complete Foundation CLI gate
 
-.PHONY: harness-ui-sync
-harness-ui-sync: ## Install locked Harness UI dependencies
+apps/harness-ui/node_modules/.package-lock.json: apps/harness-ui/package.json apps/harness-ui/package-lock.json
 	@npm --prefix apps/harness-ui ci
+
+.PHONY: harness-ui-sync
+harness-ui-sync: apps/harness-ui/node_modules/.package-lock.json ## Install locked Harness UI dependencies
 
 .PHONY: harness-ui-format
 harness-ui-format: harness-ui-sync ## Format Harness UI sources
@@ -448,9 +464,11 @@ harness-ui-check-all: harness-ui-sync ## Run the complete Harness UI gate
 agent-ui-assets: sync harness-ui-build ## Prepare generated Harness UI files for Python packaging
 	@uv run --locked python scripts/prepare-agent-ui-assets.py
 
-.PHONY: foundation-web-sync
-foundation-web-sync: ## Install locked Foundation Web dependencies
+apps/foundation-web/node_modules/.package-lock.json: apps/foundation-web/package.json apps/foundation-web/package-lock.json
 	@npm --prefix apps/foundation-web ci
+
+.PHONY: foundation-web-sync
+foundation-web-sync: apps/foundation-web/node_modules/.package-lock.json ## Install locked Foundation Web dependencies
 
 .PHONY: foundation-web-format
 foundation-web-format: foundation-web-sync ## Format Foundation Web sources
@@ -468,9 +486,11 @@ foundation-web-check: foundation-web-sync ## Run Foundation Web formatting and t
 foundation-web-check-all: foundation-web-sync ## Run the complete Foundation Web gate
 	@npm --prefix apps/foundation-web run check:all
 
-.PHONY: sdk-typescript-sync
-sdk-typescript-sync: ## Install locked TypeScript SDK dependencies
+sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/typescript/package-lock.json
 	@npm --prefix sdk/typescript ci
+
+.PHONY: sdk-typescript-sync
+sdk-typescript-sync: sdk/typescript/node_modules/.package-lock.json ## Install locked TypeScript SDK dependencies
 
 .PHONY: sdk-typescript-build
 sdk-typescript-build: sdk-typescript-sync ## Build the TypeScript SDK
@@ -562,31 +582,11 @@ python-check: lint typecheck ## Run Python workspace lint and type checks
 python-check-all: python-check test python-build docs-build ## Run the complete Python and documentation gate
 
 .PHONY: check
-check: ## Apply formatting, then check lint and types
+check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)
 	@printf '\n==> Format repository sources with pre-commit hooks\n'
 	@$(MAKE) --no-print-directory format
-	@printf '\n==> [1/11] Lint repository and verify Python/Markdown formatting\n'
-	@$(MAKE) --no-print-directory lint
-	@printf '\n==> [2/11] Type-check Python workspace with Pyright\n'
-	@$(MAKE) --no-print-directory typecheck
-	@printf '\n==> [3/11] Check examples with Ruff and Pyright\n'
-	@$(MAKE) --no-print-directory examples-check
-	@printf '\n==> [4/11] Check Foundation Web with Prettier and TypeScript\n'
-	@$(MAKE) --no-print-directory foundation-web-check
-	@printf '\n==> [5/11] Check Harness UI with Prettier and TypeScript\n'
-	@$(MAKE) --no-print-directory harness-ui-check
-	@printf '\n==> [6/11] Check Rust workspace with rustfmt and Clippy\n'
-	@$(MAKE) --no-print-directory rust-check
-	@printf '\n==> [7/11] Check Python SDK with Ruff and Pyright\n'
-	@$(MAKE) --no-print-directory sdk-python-check
-	@printf '\n==> [8/11] Check Go SDK with gofmt and vet\n'
-	@$(MAKE) --no-print-directory sdk-go-check
-	@printf '\n==> [9/11] Check Rust SDK with rustfmt and Clippy\n'
-	@$(MAKE) --no-print-directory sdk-rust-check
-	@printf '\n==> [10/11] Check TypeScript SDK with Prettier and TypeScript\n'
-	@$(MAKE) --no-print-directory sdk-typescript-check
-	@printf '\n==> [11/11] Check Foundation CLI with rustfmt and Clippy\n'
-	@$(MAKE) --no-print-directory foundation-cli-check
+	@printf '\n==> Run $(words $(CHECK_TARGETS)) independent checks with $(CHECK_JOBS) workers\n'
+	@$(MAKE) --no-print-directory -j$(CHECK_JOBS) $(CHECK_TARGETS)
 	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all

@@ -12,7 +12,6 @@ import pytest
 from a13n_service.app import ServiceComponents, create_app
 from a13n_service.assets.models import AssetRecord
 from a13n_service.assets.objects import asset_content_key, asset_object_metadata
-from a13n_service.database.metadata import service_metadata
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord, OutboxRecord
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.domain import PrincipalRef
@@ -55,11 +54,11 @@ async def authenticate(request: Request) -> AuthenticatedActor:
     )
 
 
-def settings(tmp_path: Path) -> ServiceSettings:
+def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
     return ServiceSettings(
         _env_file=None,
         database_backend="sqlite",
-        database_sqlite_path=tmp_path / "asset-api.sqlite3",
+        database_sqlite_path=database_path,
         redis_backend="memory",
         object_backend="local",
         object_local_root=tmp_path / "objects",
@@ -74,8 +73,6 @@ def settings(tmp_path: Path) -> ServiceSettings:
 
 async def seed_database(config: ServiceSettings) -> None:
     engine = create_sql_engine(config.database_config())
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
@@ -144,8 +141,11 @@ async def seed_database(config: ServiceSettings) -> None:
 
 
 @pytest.fixture
-async def api(tmp_path: Path) -> AsyncIterator[Api]:
-    config = settings(tmp_path)
+async def api(
+    tmp_path: Path,
+    service_sqlite_database: Path,
+) -> AsyncIterator[Api]:
+    config = settings(tmp_path, service_sqlite_database)
     await seed_database(config)
     app = create_app(config, components=ServiceComponents(request_authenticator=authenticate))
     async with app.router.lifespan_context(app):

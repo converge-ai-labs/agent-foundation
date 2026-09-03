@@ -80,7 +80,7 @@ Use the Makefile as the stable development interface:
 | `make build`                | Build all workspace packages, applications, and standalone SDKs   |
 | `make images`               | Build the foundation-service and sandbox images                   |
 | `make image-check`          | Build and smoke-check both container images                       |
-| `make check`                | Apply formatting, then check lint and types                       |
+| `make check`                | Apply formatting, then run fast checks with four parallel workers |
 | `make check-all`            | Run the complete component gates, including tests and builds      |
 
 Use `make format` when you want to apply formatting changes alone. `make check` applies the same formatters before running the fast validation gate. Installed pre-commit hooks also format supported changed files automatically; if a hook rewrites a file during commit, review and stage that result before committing again. Run the full local gate before opening or updating a broad pull request:
