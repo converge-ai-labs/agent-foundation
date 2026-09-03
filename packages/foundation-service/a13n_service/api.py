@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from a13n_service.agents import AgentError
 from a13n_service.assets.errors import AssetError
+from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.ingress import IngressError
 from a13n_service.environments import EnvironmentManagementError
 from a13n_service.iam import AuthenticationError
@@ -43,6 +44,10 @@ def install_api_conventions(app: FastAPI) -> None:
 
     @app.exception_handler(IngressError)
     async def ingress_error_handler(request: Request, error: IngressError) -> JSONResponse:
+        return _error_response(request, error.status_code, error.code, error.message)
+
+    @app.exception_handler(ConnectorError)
+    async def connector_error_handler(request: Request, error: ConnectorError) -> JSONResponse:
         return _error_response(request, error.status_code, error.code, error.message)
 
     @app.exception_handler(ModelError)

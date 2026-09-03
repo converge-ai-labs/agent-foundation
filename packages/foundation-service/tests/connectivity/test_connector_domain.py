@@ -8,10 +8,10 @@ from pydantic import ValidationError
 
 def _connection(**changes: object) -> ConnectorConnection:
     values: dict[str, object] = {
-        "id": "ccn_abcdef1234567890",
+        "id": "cconn_abcdef1234567890",
         "organization_id": "org_abcdef1234567890",
         "workspace_id": "ws_abcdef1234567890",
-        "connector_id": "conn_abcdef1234567890",
+        "connector_id": "cnr_abcdef1234567890",
         "owner_principal_ref": None,
         "name": "GitHub",
         "provider_key": "github",

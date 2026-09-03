@@ -1,0 +1,203 @@
+"""ConnectorConnection authorization and state invariants."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Literal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from a13n_service.connectivity.connectors.adapters import (
+    AdapterConnectionStatus,
+    ConnectionInspection,
+    ConnectorAdapterError,
+)
+from a13n_service.connectivity.management import (
+    ConnectivityManagementValueError,
+    idempotency_key_digest,
+    replay_command,
+)
+from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
+from a13n_service.iam.authorization import (
+    AuthorizationError,
+    WorkspaceAction,
+    authorize_workspace,
+)
+from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord, UserRecord
+
+from .domain import ConnectorConnection
+from .errors import ConnectorError
+from .management import authorize, latest_catalog_digest, map_management_value_error, require_connection
+from .models import ConnectorConnectionRecord, ConnectorRecord, ConnectorSetupAttemptRecord
+
+
+async def authorize_owner_change(
+    session: AsyncSession,
+    actor: AuthenticatedActor,
+    connector: ConnectorRecord,
+    owner: PrincipalRef | None,
+) -> None:
+    if (
+        owner is not None
+        and owner.principal_type is PrincipalType.user
+        and owner.principal_id == actor.principal.principal_id
+    ):
+        await authorize(session, actor, connector.workspace_id, WorkspaceAction.connector_connection_read)
+        user = await session.get(UserRecord, owner.principal_id)
+        if user is None or user.status != "active":
+            raise ConnectorError("invalid_owner", "ConnectorConnection owner is invalid.", status_code=400)
+        return
+    await authorize(session, actor, connector.workspace_id, WorkspaceAction.connector_connection_manage)
+    if owner is None:
+        return
+    if owner.principal_type is PrincipalType.user:
+        user = await session.get(UserRecord, owner.principal_id)
+        workspace_binding = await session.scalar(
+            select(RoleBindingRecord.id).where(
+                RoleBindingRecord.principal_type == PrincipalType.user.value,
+                RoleBindingRecord.principal_id == owner.principal_id,
+                RoleBindingRecord.resource_type == "workspace",
+                RoleBindingRecord.resource_id == connector.workspace_id,
+            )
+        )
+        if user is None or user.status != "active" or workspace_binding is None:
+            raise ConnectorError("invalid_owner", "ConnectorConnection owner is invalid.", status_code=400)
+        return
+    account = await session.scalar(
+        select(ServiceAccountRecord).where(
+            ServiceAccountRecord.id == owner.principal_id,
+            ServiceAccountRecord.organization_id == connector.organization_id,
+            ServiceAccountRecord.workspace_id == connector.workspace_id,
+            ServiceAccountRecord.status == "active",
+            ServiceAccountRecord.deleted_at.is_(None),
+        )
+    )
+    if account is None:
+        raise ConnectorError("invalid_owner", "ConnectorConnection owner is invalid.", status_code=400)
+
+
+async def authorize_connection(
+    session: AsyncSession,
+    actor: AuthenticatedActor,
+    connection: ConnectorConnectionRecord,
+    *,
+    mode: Literal["read", "owner_manage", "administrative"],
+) -> None:
+    if (
+        connection.owner_type == actor.principal.principal_type.value
+        and connection.owner_id == actor.principal.principal_id
+        and actor.principal.principal_type is PrincipalType.user
+    ):
+        await authorize(session, actor, connection.workspace_id, WorkspaceAction.connector_connection_read)
+        return
+    if connection.owner_type == PrincipalType.user.value and mode == "owner_manage":
+        raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
+    action = WorkspaceAction.connector_connection_read
+    if mode != "read" or connection.owner_type is not None:
+        action = WorkspaceAction.connector_connection_manage
+    await authorize(session, actor, connection.workspace_id, action)
+
+
+async def has_admin_access(session: AsyncSession, actor: AuthenticatedActor, workspace_id: str) -> bool:
+    try:
+        await authorize_workspace(
+            session,
+            actor=actor,
+            workspace_id=workspace_id,
+            action=WorkspaceAction.connector_connection_manage,
+        )
+    except AuthorizationError:
+        return False
+    return True
+
+
+async def connection_resource(session: AsyncSession, connection_id: str) -> ConnectorConnection:
+    record = await require_connection(session, connection_id)
+    return record.to_resource(await latest_catalog_digest(session, connection_id))
+
+
+def owner_ref(connection: ConnectorConnectionRecord) -> PrincipalRef | None:
+    if connection.owner_type is None or connection.owner_id is None:
+        return None
+    return PrincipalRef(principal_type=PrincipalType(connection.owner_type), principal_id=connection.owner_id)
+
+
+def verify_inspection(
+    attempt: ConnectorSetupAttemptRecord,
+    connection: ConnectorConnectionRecord,
+    inspection: ConnectionInspection,
+) -> None:
+    if (
+        inspection.external_ref != attempt.external_ref
+        or inspection.external_ref != connection.external_ref
+        or inspection.provider_key != attempt.provider_key
+        or inspection.provider_key != connection.provider_key
+        or inspection.external_user_correlation != attempt.external_user_correlation
+    ):
+        raise ConnectorError(
+            "connection_substitution",
+            "Connector returned another external account.",
+            status_code=409,
+        )
+
+
+def apply_inspection(
+    connection: ConnectorConnectionRecord,
+    inspection: ConnectionInspection,
+    *,
+    now: datetime,
+) -> None:
+    connection.status = inspection.status.value
+    connection.status_reason = inspection.status_reason.value if inspection.status_reason is not None else None
+    connection.safe_metadata_json = inspection.safe_metadata
+    connection.version += 1
+    connection.updated_at = now
+    if inspection.status is AdapterConnectionStatus.ready:
+        connection.catalog_generation += 1
+        connection.catalog_available_at = now
+
+
+def require_version(current: int, expected: int) -> None:
+    if current != expected:
+        raise ConnectorError("version_conflict", "Resource version has changed.", status_code=409)
+
+
+def idempotency_digest(value: str) -> str:
+    try:
+        return idempotency_key_digest(value)
+    except ConnectivityManagementValueError as error:
+        raise map_management_value_error(error) from error
+
+
+async def replay_connection_command(
+    session: AsyncSession,
+    *,
+    actor: AuthenticatedActor,
+    connection: ConnectorConnectionRecord,
+    operation: str,
+    key_digest: str,
+    request_fingerprint: str,
+):
+    try:
+        return await replay_command(
+            session,
+            actor=actor,
+            workspace_id=connection.workspace_id,
+            operation=operation,
+            scope_id=connection.id,
+            idempotency_key_digest=key_digest,
+            fingerprint=request_fingerprint,
+        )
+    except ConnectivityManagementValueError as error:
+        raise map_management_value_error(error) from error
+
+
+def external_error(error: ConnectorAdapterError) -> ConnectorError:
+    if error.retryable or error.outcome_unknown:
+        return ConnectorError("connector_unavailable", "Connector is unavailable.", status_code=503)
+    return ConnectorError("connector_rejected", "Connector rejected the operation.", status_code=409)
+
+
+def utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

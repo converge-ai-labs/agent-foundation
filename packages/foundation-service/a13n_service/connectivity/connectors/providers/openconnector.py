@@ -108,6 +108,21 @@ class OpenConnectorAdapter:
             raise ValueError("OpenConnector provider is not enabled")
         return model_json(OpenConnectorSetup.model_validate(value))
 
+    async def test_connector(
+        self,
+        *,
+        endpoint: str,
+        connector_config: JsonObject,
+        credentials: JsonObject,
+    ) -> None:
+        del connector_config
+        await self._http.request(
+            "GET",
+            endpoint=endpoint,
+            path="/api/v1/connectors/connections?limit=1",
+            api_key=required_api_key(credentials),
+        )
+
     async def start_setup(
         self,
         *,
@@ -129,6 +144,7 @@ class OpenConnectorAdapter:
                 "userId": context.external_user_correlation,
             },
             write=True,
+            extra_headers={"idempotency-key": context.attempt_id},
         )
         response = required_object(value)
         return SetupStarted(
@@ -137,7 +153,17 @@ class OpenConnectorAdapter:
             supports_verified_callback=False,
         )
 
-    async def complete_setup(self, **_kwargs) -> ConnectionInspection:
+    async def complete_setup(
+        self,
+        *,
+        endpoint: str,
+        connector_config: JsonObject,
+        credentials: JsonObject,
+        session_uri: str,
+        context: SetupContext,
+        expected_external_ref: str,
+    ) -> ConnectionInspection:
+        del endpoint, connector_config, credentials, session_uri, context, expected_external_ref
         raise ConnectorAdapterError("callback_not_supported")
 
     async def inspect_connection(

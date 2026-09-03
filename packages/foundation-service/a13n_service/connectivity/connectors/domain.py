@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
@@ -128,11 +128,10 @@ class ConnectorCommandRequest(StrictModel):
 
 
 class CreateConnectorConnectionRequest(StrictModel):
+    connector_id: str = Field(min_length=1, max_length=72)
     name: BoundedName
     provider_key: ProviderKey
     owner_principal_ref: PrincipalRef | None = None
-    setup: JsonObject
-    return_path: str = Field(pattern=r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2047}$")
 
 
 class UpdateConnectorConnectionRequest(StrictModel):
@@ -150,6 +149,31 @@ class ConnectorConnectionCommandRequest(StrictModel):
     expected_version: int = Field(ge=1)
 
 
+class StartConnectorConnectionSetupRequest(ConnectorConnectionCommandRequest):
+    setup: JsonObject
+    return_path: str = Field(pattern=r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2047}$")
+
+
+class ReconnectConnectorConnectionRequest(StartConnectorConnectionSetupRequest):
+    pass
+
+
 class ConnectorSetupLaunch(StrictModel):
+    attempt_id: str
+    status: Literal["pending", "completed", "failed", "expired"]
+    expires_at: datetime
     connection: ConnectorConnection
     redirect_url: str | None = Field(default=None, max_length=4096, repr=False)
+
+
+class ConnectorOperationReceipt(StrictModel):
+    operation_id: str
+    status: Literal["pending", "unknown", "succeeded", "failed"]
+    connection: ConnectorConnection
+
+
+class ConnectorTestResult(StrictModel):
+    connector_id: str
+    status: Literal["succeeded"] = "succeeded"
+    connector_version: int = Field(ge=1)
+    tested_at: datetime

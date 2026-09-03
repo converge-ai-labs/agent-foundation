@@ -28,6 +28,13 @@ from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.connectors.catalog import ConnectorCatalogService
+from a13n_service.connectivity.connectors.catalog_objects import ConnectorCatalogObjectStore
+from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
+from a13n_service.connectivity.connectors.providers import built_in_connector_adapter_registry
+from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
+from a13n_service.connectivity.connectors.router import router as connector_router
+from a13n_service.connectivity.connectors.service import ConnectorService
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.admission_domain import (
     FoundationInputAcceptor,
@@ -192,6 +199,18 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 app.state.connectivity_public_origin = settings.validated_connectivity_public_origin()
             if settings.role in _CONNECTIVITY_RESOURCE_ROLES:
                 app.state.internal_secret_service = InternalSecretService(storage.sessions, secret_protector)
+                connector_http_client = await stack.enter_async_context(
+                    httpx2.AsyncClient(
+                        follow_redirects=False,
+                        timeout=settings.connectivity_total_timeout_seconds,
+                    )
+                )
+                if app.state.uses_builtin_connector_adapters:
+                    app.state.connector_adapter_registry = built_in_connector_adapter_registry(
+                        connector_http_client,
+                        app.state.connectivity_endpoint_policy,
+                        response_max_bytes=settings.connectivity_response_max_bytes,
+                    )
             model_http_client = await stack.enter_async_context(
                 httpx2.AsyncClient(
                     follow_redirects=False,
@@ -223,6 +242,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
             plugin_objects = PluginObjectStore(storage.objects)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
+            connector_reconciler: ConnectorReconciler | None = None
             ingress_admission_reconciler: IngressAdmissionReconciler | None = None
             plugin_runtime_command_coordinator: PluginRuntimeCommandCoordinator | None = None
             plugin_runner_supervisor: PluginRunnerSupervisor | None = None
@@ -410,6 +430,44 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     batch_max_events=settings.connectivity_batch_max_events,
                     batch_max_wait_seconds=settings.connectivity_batch_max_wait_seconds,
                 )
+                app.state.connector_service = ConnectorService(
+                    storage.sessions,
+                    app.state.connector_adapter_registry,
+                    app.state.internal_secret_service,
+                )
+                correlation_secret = settings.connectivity_setup_correlation_secret
+                app.state.connector_connection_service = ConnectorConnectionService(
+                    storage.sessions,
+                    app.state.connector_adapter_registry,
+                    app.state.internal_secret_service,
+                    correlation_secret=(
+                        correlation_secret.get_secret_value().encode() if correlation_secret is not None else None
+                    ),
+                    public_origin=app.state.connectivity_public_origin,
+                    setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
+                )
+                connector_instance_id = settings.service_instance_id or new_object_id("svc")
+                catalog_service = ConnectorCatalogService(
+                    storage.sessions,
+                    app.state.connector_adapter_registry,
+                    app.state.internal_secret_service,
+                    ConnectorCatalogObjectStore(storage.objects),
+                    instance_id=connector_instance_id,
+                    lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
+                    retention_seconds=settings.connectivity_catalog_retention_seconds,
+                )
+                app.state.connector_catalog_service = catalog_service
+                connector_reconciler = ConnectorReconciler(
+                    storage.sessions,
+                    app.state.connector_adapter_registry,
+                    app.state.connector_connection_service.setup_coordinator,
+                    app.state.connector_connection_service,
+                    catalog_service,
+                    instance_id=connector_instance_id,
+                    poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
+                    lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
+                )
+                app.state.connector_reconciler = connector_reconciler
                 app.state.model_service = ModelService(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -487,6 +545,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     background_tasks.start_soon(plugin_runtime_command_coordinator.run)
                 if ingress_admission_reconciler is not None:
                     background_tasks.start_soon(ingress_admission_reconciler.run)
+                if connector_reconciler is not None:
+                    background_tasks.start_soon(connector_reconciler.run)
                 logger.info(
                     "service_started",
                     extra={
@@ -553,6 +613,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.state.connector_adapter_registry = (
             resolved_components.connector_adapter_registry or AdapterRegistry[ConnectorAdapter]()
         ).copy()
+        app.state.uses_builtin_connector_adapters = resolved_components.connector_adapter_registry is None
         app.state.connectivity_endpoint_policy = resolved_settings.connectivity_endpoint_policy()
 
     @app.get("/healthz", include_in_schema=False)
@@ -605,6 +666,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.include_router(skill_router)
         app.include_router(trace_query_router)
         app.include_router(ingress_router)
+        app.include_router(connector_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:

@@ -112,6 +112,14 @@ class ConnectorAdapter(Protocol):
         config_version: str,
     ) -> JsonObject: ...
 
+    async def test_connector(
+        self,
+        *,
+        endpoint: str,
+        connector_config: JsonObject,
+        credentials: JsonObject,
+    ) -> None: ...
+
     async def start_setup(
         self,
         *,

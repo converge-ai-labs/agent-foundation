@@ -49,6 +49,8 @@ async def test_openconnector_setup_inspection_catalog_execution_and_revoke_are_e
                     "redirectUrl": "https://api.openconnector.dev/connect/private",
                 },
             )
+        if path.endswith("/connectors/connections"):
+            return httpx2.Response(200, json={"items": []})
         if path.endswith("/connections/conn_external") and request.method == "GET":
             return httpx2.Response(
                 200,
@@ -103,6 +105,7 @@ async def test_openconnector_setup_inspection_catalog_execution_and_revoke_are_e
             connector_config=config,
             config_version="openconnector_native_v1",
         )
+        await adapter.test_connector(endpoint=endpoint, connector_config=config, credentials=credentials)
         started = await adapter.start_setup(
             endpoint=endpoint,
             connector_config=config,
@@ -153,7 +156,8 @@ async def test_openconnector_setup_inspection_catalog_execution_and_revoke_are_e
     }
     assert catalog.items[0].input_schema == {"type": "object"}
     assert outcome.kind == "succeeded"
-    assert json.loads(requests[0].content) == {"authConfigId": "ac_github", "userId": "usrh_opaque"}
+    assert json.loads(requests[1].content) == {"authConfigId": "ac_github", "userId": "usrh_opaque"}
+    assert requests[1].headers["idempotency-key"] == "csa_abcdef1234567890"
     assert json.loads(requests[-2].content) == {
         "arguments": {"title": "safe"},
         "connectedAccountId": "conn_external",
@@ -217,6 +221,8 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
                     "redirect_url": "https://backend.composio.dev/link/private",
                 },
             )
+        if path.endswith("/connected_accounts"):
+            return httpx2.Response(200, json={"items": []})
         if path.endswith("/connected_accounts/complete_auth"):
             return httpx2.Response(200, json=_composio_account())
         if path.endswith("/api/v3.1/tools"):
@@ -254,6 +260,11 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
             provider_key="github",
             connector_config=config,
             config_version="composio_v3_1",
+        )
+        await adapter.test_connector(
+            endpoint="https://backend.composio.dev",
+            connector_config=config,
+            credentials={"api_key": "secret"},
         )
         started = await adapter.start_setup(
             endpoint="https://backend.composio.dev",

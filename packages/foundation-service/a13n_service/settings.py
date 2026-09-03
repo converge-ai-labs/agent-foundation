@@ -190,6 +190,15 @@ class ServiceSettings(BaseSettings):
     connectivity_http_origins: tuple[str, ...] = ()
     connectivity_provider_origins: tuple[str, ...] = ()
     connectivity_provider_token_expiry_skew_seconds: int = Field(default=60, ge=0, le=600)
+    connectivity_setup_correlation_secret: SecretStr | None = Field(
+        default=None,
+        min_length=32,
+        max_length=4096,
+        repr=False,
+    )
+    connectivity_connector_reconcile_poll_interval_seconds: float = Field(default=2, gt=0, le=300)
+    connectivity_connector_reconcile_lease_seconds: int = Field(default=60, ge=10, le=600)
+    connectivity_catalog_retention_seconds: int = Field(default=30 * 24 * 3600, ge=3600)
 
     redis_backend: RedisBackend = RedisBackend.redis
     redis_url: SecretStr | None = Field(default=SecretStr("redis://127.0.0.1:6379/0"), repr=False)

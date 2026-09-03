@@ -104,6 +104,21 @@ class ComposioAdapter:
             raise ValueError("Composio toolkit is not enabled")
         return model_json(ComposioSetup.model_validate(value))
 
+    async def test_connector(
+        self,
+        *,
+        endpoint: str,
+        connector_config: JsonObject,
+        credentials: JsonObject,
+    ) -> None:
+        del connector_config
+        await self._http.request(
+            "GET",
+            endpoint=endpoint,
+            path="/api/v3.1/connected_accounts?limit=1",
+            api_key=required_api_key(credentials),
+        )
+
     async def start_setup(
         self,
         *,
@@ -129,6 +144,7 @@ class ComposioAdapter:
                     "user_id": context.external_user_correlation,
                 },
                 write=True,
+                extra_headers={"idempotency-key": context.attempt_id},
             )
         )
         return SetupStarted(
@@ -160,6 +176,7 @@ class ComposioAdapter:
                     "user_id": context.external_user_correlation,
                 },
                 write=True,
+                extra_headers={"idempotency-key": context.attempt_id},
             )
         )
         return _inspection(
