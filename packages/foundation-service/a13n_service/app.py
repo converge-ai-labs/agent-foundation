@@ -47,6 +47,14 @@ from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconci
 from a13n_service.connectivity.ingress.router import router as ingress_router
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
+from a13n_service.connectivity.mcp.catalog_objects import MCPCatalogObjectStore
+from a13n_service.connectivity.mcp.catalog_service import MCPCatalogService
+from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
+from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
+from a13n_service.connectivity.mcp.protocol import MCPProtocolClient
+from a13n_service.connectivity.mcp.reconciler import MCPReconciler
+from a13n_service.connectivity.mcp.router import router as mcp_router
+from a13n_service.connectivity.mcp.service import MCPConnectionService
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
@@ -195,6 +203,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     authorizer=app.state.components.trace_access_authorizer,
                 )
             secret_protector = settings.secret_protector()
+            mcp_http_client: httpx2.AsyncClient | None = None
             if settings.role in _CONTROL_PLANE_ROLES:
                 app.state.connectivity_public_origin = settings.validated_connectivity_public_origin()
             if settings.role in _CONNECTIVITY_RESOURCE_ROLES:
@@ -211,6 +220,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         app.state.connectivity_endpoint_policy,
                         response_max_bytes=settings.connectivity_response_max_bytes,
                     )
+                mcp_http_client = await stack.enter_async_context(
+                    httpx2.AsyncClient(
+                        follow_redirects=False,
+                        timeout=settings.connectivity_total_timeout_seconds,
+                    )
+                )
             model_http_client = await stack.enter_async_context(
                 httpx2.AsyncClient(
                     follow_redirects=False,
@@ -243,6 +258,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             plugin_objects = PluginObjectStore(storage.objects)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
             connector_reconciler: ConnectorReconciler | None = None
+            mcp_reconciler: MCPReconciler | None = None
             ingress_admission_reconciler: IngressAdmissionReconciler | None = None
             plugin_runtime_command_coordinator: PluginRuntimeCommandCoordinator | None = None
             plugin_runner_supervisor: PluginRunnerSupervisor | None = None
@@ -279,6 +295,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 else:
                     app.state.plugin_on_demand_runtime = OnDemandPluginRuntime(plugin_runtime_materializer)
             if settings.role in _CONTROL_PLANE_ROLES:
+                if mcp_http_client is None:
+                    raise RuntimeError("control role requires the Connectivity HTTP client")
                 environment_provider_catalog = app.state.components.environment_provider_catalog
                 if environment_provider_catalog is None:
                     selected_environment_providers = build_environment_provider_catalog(
@@ -468,6 +486,56 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
                 )
                 app.state.connector_reconciler = connector_reconciler
+                mcp_instance_id = settings.service_instance_id or new_object_id("svc")
+                mcp_catalog_service = MCPCatalogService(
+                    storage.sessions,
+                    MCPProtocolClient(
+                        mcp_http_client,
+                        app.state.connectivity_endpoint_policy,
+                        response_max_bytes=settings.connectivity_catalog_max_bytes,
+                        max_redirects=settings.connectivity_max_redirects,
+                    ),
+                    app.state.internal_secret_service,
+                    MCPCatalogObjectStore(storage.objects),
+                    instance_id=mcp_instance_id,
+                    lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
+                    retention_seconds=settings.connectivity_catalog_retention_seconds,
+                )
+                app.state.mcp_catalog_service = mcp_catalog_service
+                mcp_oauth_client = MCPOAuthClient(
+                    mcp_http_client,
+                    app.state.connectivity_endpoint_policy,
+                    response_max_bytes=settings.connectivity_response_max_bytes,
+                    max_redirects=settings.connectivity_max_redirects,
+                )
+                app.state.mcp_oauth_client = mcp_oauth_client
+                app.state.mcp_connection_service = MCPConnectionService(
+                    storage.sessions,
+                    app.state.connectivity_endpoint_policy,
+                    app.state.internal_secret_service,
+                    mcp_catalog_service,
+                    registration_cleaner=mcp_oauth_client,
+                )
+                app.state.mcp_oauth_service = MCPOAuthService(
+                    storage.sessions,
+                    mcp_oauth_client,
+                    app.state.internal_secret_service,
+                    mcp_catalog_service,
+                    public_origin=app.state.connectivity_public_origin,
+                    client_name=settings.connectivity_oauth_client_name,
+                    instance_id=mcp_instance_id,
+                    setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
+                    claim_lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
+                )
+                mcp_reconciler = MCPReconciler(
+                    storage.sessions,
+                    app.state.mcp_connection_service,
+                    app.state.mcp_oauth_service,
+                    mcp_catalog_service,
+                    poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
+                    refresh_skew_seconds=settings.connectivity_provider_token_expiry_skew_seconds,
+                )
+                app.state.mcp_reconciler = mcp_reconciler
                 app.state.model_service = ModelService(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -547,6 +615,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     background_tasks.start_soon(ingress_admission_reconciler.run)
                 if connector_reconciler is not None:
                     background_tasks.start_soon(connector_reconciler.run)
+                if mcp_reconciler is not None:
+                    background_tasks.start_soon(mcp_reconciler.run)
                 logger.info(
                     "service_started",
                     extra={
@@ -667,6 +737,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.include_router(trace_query_router)
         app.include_router(ingress_router)
         app.include_router(connector_router)
+        app.include_router(mcp_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:

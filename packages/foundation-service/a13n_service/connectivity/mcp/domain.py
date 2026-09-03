@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
@@ -104,6 +104,8 @@ class ReplaceMCPCredentialsRequest(MCPConnectionCommandRequest):
 
 
 class MCPAuthorizationLaunch(StrictModel):
+    id: str = Field(pattern=r"^mos_[0-9A-Za-z]+$")
+    status: Literal["pending"] = "pending"
     authorization_url: str = Field(max_length=8192, repr=False)
     expires_at: datetime
 

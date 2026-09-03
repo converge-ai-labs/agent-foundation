@@ -67,13 +67,16 @@ def static_header_bundle(
     }
     if tuple(sorted(normalized)) != expected_names:
         raise MCPCredentialError("static header values must match the configured names")
-    return canonical_json({"kind": "static_headers", "headers": normalized})
+    bundle = canonical_json({"kind": "static_headers", "headers": normalized})
+    if len(bundle.encode()) > 65_536:
+        raise MCPCredentialError("credential bundle is too large")
+    return bundle
 
 
 def decode_request_headers(value: str) -> dict[str, str]:
     try:
         decoded: Any = json.loads(value)
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as error:
         raise MCPCredentialError("credential bundle is invalid") from error
     if not isinstance(decoded, dict):
         raise MCPCredentialError("credential bundle is invalid")

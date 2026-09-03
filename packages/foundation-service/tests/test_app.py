@@ -162,6 +162,9 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/operations/{operation_id}" in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/ingresses" in document["paths"]
     assert "/api/v1/ingresses/{ingress_id}/routes" in document["paths"]
+    assert "/api/v1/workspaces/{workspace_id}/mcp-connections" in document["paths"]
+    assert "/api/v1/mcp-connections/{connection_id}/authorize" in document["paths"]
+    assert "/api/v1/oauth/mcp/client-metadata.json" in document["paths"]
     assert document["components"]["schemas"]["CreateIngressRequest"]["properties"]["credentials"]["writeOnly"]
     assert "credentials" not in document["components"]["schemas"]["Ingress"]["properties"]
 

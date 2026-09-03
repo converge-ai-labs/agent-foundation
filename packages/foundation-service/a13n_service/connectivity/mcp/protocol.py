@@ -11,7 +11,11 @@ import httpx2
 from pydantic import TypeAdapter, ValidationError
 
 from a13n_service.connectivity.bounds import CATALOG_MAX_BYTES, CATALOG_MAX_PAGES, CATALOG_MAX_TOOLS, MAX_REDIRECTS
-from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body
+from a13n_service.connectivity.http import (
+    BoundedHttpResponse,
+    ConnectivityHttpError,
+    cookie_free_bounded_request,
+)
 from a13n_service.connectivity.ingress.domain import JsonObject
 from a13n_service.connectivity.outbound_policy import EndpointPolicy, EndpointPolicyError
 
@@ -64,11 +68,10 @@ class MCPProtocolClient:
 
     async def discover(self, endpoint: str, *, credential_headers: dict[str, str] | None = None) -> MCPDiscovery:
         canonical = await self._validate_endpoint(endpoint)
-        session_id: str | None = None
-        request_id = 1
-        initialize, response = await self._rpc(
+        headers = credential_headers or {}
+        initialize, response, initialize_bytes = await self._rpc(
             canonical,
-            request_id=request_id,
+            request_id=1,
             method="initialize",
             params={
                 "protocolVersion": MCP_PROTOCOL_REVISION,
@@ -76,10 +79,31 @@ class MCPProtocolClient:
                 "clientInfo": {"name": "agent-foundation", "version": "1"},
             },
             session_id=None,
-            credential_headers=credential_headers or {},
+            credential_headers=headers,
             post_initialize=False,
         )
         session_id = _session_id(response)
+        try:
+            return await self._discover_initialized(
+                canonical,
+                initialize=initialize,
+                session_id=session_id,
+                credential_headers=headers,
+                bytes_used=initialize_bytes,
+            )
+        finally:
+            if session_id is not None:
+                await self._terminate(canonical, session_id=session_id, credential_headers=headers)
+
+    async def _discover_initialized(
+        self,
+        endpoint: str,
+        *,
+        initialize: dict[str, Any],
+        session_id: str | None,
+        credential_headers: dict[str, str],
+        bytes_used: int,
+    ) -> MCPDiscovery:
         revision = initialize.get("protocolVersion")
         server_info = initialize.get("serverInfo")
         capabilities = initialize.get("capabilities")
@@ -101,45 +125,47 @@ class MCPProtocolClient:
             raise MCPProtocolError("invalid_server_capabilities") from error
 
         await self._notification(
-            canonical,
+            endpoint,
             method="notifications/initialized",
             session_id=session_id,
-            credential_headers=credential_headers or {},
+            credential_headers=credential_headers,
         )
         tools: list[MCPTool] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
-        try:
-            for _page in range(CATALOG_MAX_PAGES):
-                request_id += 1
-                params: dict[str, Any] = {} if cursor is None else {"cursor": cursor}
-                result, _ = await self._rpc(
-                    canonical,
-                    request_id=request_id,
-                    method="tools/list",
-                    params=params,
-                    session_id=session_id,
-                    credential_headers=credential_headers or {},
-                    post_initialize=True,
-                )
-                raw_tools = result.get("tools")
-                if not isinstance(raw_tools, list):
-                    raise MCPProtocolError("invalid_tool_catalog")
-                tools.extend(_tool(item) for item in raw_tools)
-                if len(tools) > CATALOG_MAX_TOOLS:
-                    raise MCPProtocolError("catalog_too_large")
-                next_cursor = result.get("nextCursor")
-                if next_cursor is None:
-                    break
-                if not isinstance(next_cursor, str) or not next_cursor or next_cursor in seen_cursors:
-                    raise MCPProtocolError("invalid_catalog_cursor")
-                seen_cursors.add(next_cursor)
-                cursor = next_cursor
-            else:
+        total_bytes = bytes_used
+        for page in range(CATALOG_MAX_PAGES):
+            request_id = page + 2
+            params: dict[str, Any] = {} if cursor is None else {"cursor": cursor}
+            remaining_bytes = self._response_max_bytes - total_bytes
+            if remaining_bytes <= 0:
                 raise MCPProtocolError("catalog_too_large")
-        finally:
-            if session_id is not None:
-                await self._terminate(canonical, session_id=session_id, credential_headers=credential_headers or {})
+            result, _, response_bytes = await self._rpc(
+                endpoint,
+                request_id=request_id,
+                method="tools/list",
+                params=params,
+                session_id=session_id,
+                credential_headers=credential_headers,
+                post_initialize=True,
+                max_bytes=remaining_bytes,
+            )
+            total_bytes += response_bytes
+            raw_tools = result.get("tools")
+            if not isinstance(raw_tools, list):
+                raise MCPProtocolError("invalid_tool_catalog")
+            tools.extend(_tool(item) for item in raw_tools)
+            if len(tools) > CATALOG_MAX_TOOLS:
+                raise MCPProtocolError("catalog_too_large")
+            next_cursor = result.get("nextCursor")
+            if next_cursor is None:
+                break
+            if not isinstance(next_cursor, str) or not next_cursor or next_cursor in seen_cursors:
+                raise MCPProtocolError("invalid_catalog_cursor")
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+        else:
+            raise MCPProtocolError("catalog_too_large")
         return MCPDiscovery(
             protocol_revision=MCP_PROTOCOL_REVISION,
             server_name=server_name,
@@ -158,22 +184,25 @@ class MCPProtocolClient:
         session_id: str | None,
         credential_headers: dict[str, str],
         post_initialize: bool,
-    ) -> tuple[dict[str, Any], httpx2.Response]:
+        max_bytes: int | None = None,
+    ) -> tuple[dict[str, Any], BoundedHttpResponse, int]:
         response = await self._send(
             endpoint,
             method="POST",
             headers=_headers(session_id, credential_headers, post_initialize=post_initialize),
             json_body={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
+            max_bytes=max_bytes if max_bytes is not None else self._response_max_bytes,
         )
-        payloads = await _response_payloads(response, max_bytes=self._response_max_bytes)
+        payloads, response_bytes = _response_payloads(response)
         matching: dict[str, Any] | None = None
         for payload in payloads:
             response_id = payload.get("id")
             if response_id is None and "method" in payload:
-                if payload["method"] in _ALLOWED_NOTIFICATIONS:
+                notification_method = payload["method"]
+                if isinstance(notification_method, str) and notification_method in _ALLOWED_NOTIFICATIONS:
                     continue
                 raise MCPProtocolError("incompatible_notification")
-            if response_id != request_id or matching is not None:
+            if type(response_id) is not int or response_id != request_id or matching is not None:
                 raise MCPProtocolError("invalid_response_id")
             matching = payload
         if matching is None:
@@ -187,7 +216,7 @@ class MCPProtocolClient:
         result = matching["result"]
         if not isinstance(result, dict):
             raise MCPProtocolError("invalid_jsonrpc_result")
-        return result, response
+        return result, response, response_bytes
 
     async def _notification(
         self,
@@ -226,15 +255,28 @@ class MCPProtocolClient:
         headers: dict[str, str],
         json_body: dict[str, Any] | None,
         accepted_statuses: frozenset[int] = frozenset({200, 202, 204}),
-    ) -> httpx2.Response:
+        max_bytes: int | None = None,
+    ) -> BoundedHttpResponse:
         current = endpoint
         origin_headers = dict(headers)
         for redirect_count in range(self._max_redirects + 1):
             current = await self._validate_endpoint(current)
             request_headers = dict(origin_headers)
-            response = await self._http.request(method, current, headers=request_headers, json=json_body)
+            try:
+                response = await cookie_free_bounded_request(
+                    self._http,
+                    method,
+                    current,
+                    headers=request_headers,
+                    max_bytes=max_bytes,
+                    json_body=json_body,
+                )
+            except ConnectivityHttpError as error:
+                raise MCPProtocolError(error.code) from error
             if response.status_code not in {301, 302, 303, 307, 308}:
                 if response.status_code not in accepted_statuses:
+                    if response.status_code in {401, 403}:
+                        raise MCPProtocolError("authorization_required")
                     raise MCPProtocolError("remote_request_failed")
                 return response
             if redirect_count == self._max_redirects:
@@ -261,16 +303,13 @@ class MCPProtocolClient:
             raise MCPProtocolError("unsafe_endpoint") from error
 
 
-async def _response_payloads(response: httpx2.Response, *, max_bytes: int) -> tuple[dict[str, Any], ...]:
+def _response_payloads(response: BoundedHttpResponse) -> tuple[tuple[dict[str, Any], ...], int]:
     content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    try:
-        body = await bounded_response_body(response, max_bytes=max_bytes)
-    except ConnectivityHttpError as error:
-        raise MCPProtocolError(error.code) from error
+    body = response.body
     if content_type == "application/json":
-        return (_jsonrpc_object(body),)
+        return (_jsonrpc_object(body),), len(body)
     if content_type == "text/event-stream":
-        return _sse_payloads(body)
+        return _sse_payloads(body), len(body)
     raise MCPProtocolError("unsupported_content_type")
 
 
@@ -297,7 +336,7 @@ def _sse_payloads(body: bytes) -> tuple[dict[str, Any], ...]:
 def _jsonrpc_object(body: bytes) -> dict[str, Any]:
     try:
         value: Any = json.loads(body)
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as error:
         raise MCPProtocolError("invalid_json_response") from error
     if not isinstance(value, dict) or value.get("jsonrpc") != "2.0":
         raise MCPProtocolError("invalid_jsonrpc_response")
@@ -320,7 +359,7 @@ def _tool(value: Any) -> MCPTool:
         raise MCPProtocolError("invalid_tool_catalog") from error
 
 
-def _session_id(response: httpx2.Response) -> str | None:
+def _session_id(response: BoundedHttpResponse) -> str | None:
     value = response.headers.get("mcp-session-id")
     if value is None:
         return None

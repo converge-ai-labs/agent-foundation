@@ -41,6 +41,10 @@ class MCPConnectionRecord(Base):
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("credential_generation >= 0", name="credential_generation_non_negative"),
         CheckConstraint("catalog_generation >= 0", name="catalog_generation_non_negative"),
+        CheckConstraint(
+            "current_catalog_digest IS NULL OR length(current_catalog_digest) = 64",
+            name="current_catalog_digest_valid",
+        ),
         CheckConstraint("catalog_claim_generation >= 0", name="catalog_claim_generation_non_negative"),
         CheckConstraint("cleanup_attempt_count >= 0", name="cleanup_attempt_count_non_negative"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
@@ -70,6 +74,7 @@ class MCPConnectionRecord(Base):
     credential_secret_id: Mapped[str | None] = mapped_column(String(72), ForeignKey("secrets.id", ondelete="RESTRICT"))
     credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     catalog_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    current_catalog_digest: Mapped[str | None] = mapped_column(String(64))
     catalog_claim_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     catalog_claim_owner: Mapped[str | None] = mapped_column(String(128))
     catalog_claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -85,7 +90,7 @@ class MCPConnectionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    def to_resource(self, catalog_digest: str | None = None) -> MCPConnection:
+    def to_resource(self) -> MCPConnection:
         return MCPConnection(
             id=self.id,
             organization_id=self.organization_id,
@@ -100,7 +105,7 @@ class MCPConnectionRecord(Base):
             version=self.version,
             credential_configured=self.credential_secret_id is not None,
             credential_generation=self.credential_generation,
-            catalog_digest=catalog_digest,
+            catalog_digest=self.current_catalog_digest,
             created_by=PrincipalRef(
                 principal_type=PrincipalType(self.created_by_type),
                 principal_id=self.created_by_id,
@@ -138,7 +143,7 @@ class MCPOAuthSessionRecord(Base):
     authorization_endpoint: Mapped[str] = mapped_column(String(2048), nullable=False)
     token_endpoint: Mapped[str] = mapped_column(String(2048), nullable=False)
     registration_endpoint: Mapped[str | None] = mapped_column(String(2048))
-    client_id: Mapped[str] = mapped_column(String(2048), nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String(2048))
     scope: Mapped[str | None] = mapped_column(String(2048))
     setup_secret_id: Mapped[str] = mapped_column(
         String(72), ForeignKey("secrets.id", ondelete="RESTRICT"), nullable=False

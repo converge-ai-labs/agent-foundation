@@ -35,7 +35,7 @@ async def test_discovers_paginated_json_catalog_with_session_protocol_headers() 
             return httpx2.Response(204)
         body = json.loads(request.content)
         if body["method"] == "initialize":
-            return response(
+            initialized = response(
                 {
                     "jsonrpc": "2.0",
                     "id": 1,
@@ -47,7 +47,10 @@ async def test_discovers_paginated_json_catalog_with_session_protocol_headers() 
                 },
                 session_id="session-1",
             )
+            initialized.headers["set-cookie"] = "remote-cookie=forbidden"
+            return initialized
         if body["method"] == "notifications/initialized":
+            assert "cookie" not in request.headers
             return httpx2.Response(202)
         cursor = body["params"].get("cursor")
         tools = (
@@ -93,6 +96,45 @@ async def test_accepts_bounded_sse_and_rejects_unknown_response_id() -> None:
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _request: next(responses))) as client:
         with pytest.raises(MCPProtocolError, match="invalid_response_id"):
             await MCPProtocolClient(client, EndpointPolicy()).discover("https://8.8.8.8/mcp")
+
+
+@pytest.mark.anyio
+async def test_catalog_pages_share_one_total_response_budget() -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "protocolVersion": MCP_PROTOCOL_REVISION,
+                        "serverInfo": {"name": "example", "version": "1"},
+                        "capabilities": {},
+                    },
+                }
+            )
+        if body["method"] == "notifications/initialized":
+            return httpx2.Response(202)
+        return response(
+            {
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "result": {
+                    "tools": [
+                        {
+                            "name": "large",
+                            "description": "x" * 300,
+                            "inputSchema": {"type": "object"},
+                        }
+                    ]
+                },
+            }
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        with pytest.raises(MCPProtocolError, match="response_too_large"):
+            await MCPProtocolClient(client, EndpointPolicy(), response_max_bytes=400).discover("https://8.8.8.8/mcp")
 
 
 @pytest.mark.anyio

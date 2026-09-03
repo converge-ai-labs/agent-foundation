@@ -23,6 +23,7 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
             "owner_user_id",
             "credential_generation",
             "catalog_generation",
+            "current_catalog_digest",
             "deleted_at",
         } <= connection_columns
         session_columns = {column["name"] for column in inspector.get_columns("mcp_oauth_sessions")}
