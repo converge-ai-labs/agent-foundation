@@ -12,7 +12,7 @@ The Ingress represents one concrete App installation or Bot identity in one prov
 
 Open-source deployments can use a developer-created App. The setup UI can collect App definition and installation data in one flow without merging their identity or lifecycle in the durable model.
 
-Native event receipt and the Bot's basic provider actions belong to this Ingress. Users do not create a second Connection merely so the same Bot can receive or send ordinary messages. A Connection is separate and optional when the Agent needs broader SaaS actions or another account.
+Native event receipt and the Bot's basic provider actions belong to this Ingress. Users do not create a second ConnectorConnection merely so the same Bot can receive or send ordinary messages. A ConnectorConnection is separate and optional when the Agent needs broader SaaS actions or another account.
 
 ## Interaction Policy
 
@@ -96,13 +96,13 @@ resolve one fixed Agent
     -> accept one exact effective Run capability selection
 ```
 
-The matched base Route can configure different Skills, MCPConnections, Connections, and native Ingress actions for the same Agent in different Conversations through its per-Agent common [Run Capability Overlay](../28-agent-management.md#run-capability-overlay). `inherit_agent`, `include`, and `exclude` are the complete composition controls. An authorized `include` can add a supported managed capability absent from the Agent defaults; message content cannot add one. The accepted Run fixes the resulting effective selection so a replacement RunAttempt cannot observe a different tool surface silently.
+The matched base Route can configure different Skills, MCPConnections, ConnectorConnections, and native Ingress actions for the same Agent in different Conversations through its per-Agent common [Run Capability Overlay](../28-agent-management.md#run-capability-overlay). `inherit_agent`, `include`, and `exclude` are the complete composition controls. An authorized `include` can add a supported managed capability absent from the Agent defaults; message content cannot add one. The accepted Run fixes the resulting effective selection so a replacement RunAttempt cannot observe a different tool surface silently.
 
 Changing capabilities does not change the bound Agent or Agent Thread.
 
 ## Outbound Boundary
 
-Inbound message handling never sends automatically. The Agent responds only by calling the authorized provider-native actions supplied by the [a13n MCP](04-agent-facing-tools.md). Those actions are bound to the accepted Run and current external target and expose no model-settable Channel, Chat, Conversation, Discussion, Thread, Ingress, Connection, or Run identifier. Connector and user Remote MCP tools remain separate from inbound receipt and can fail independently.
+Inbound message handling never sends automatically. The Agent responds only by calling the authorized provider-native actions supplied by the [a13n MCP](04-agent-facing-tools.md). Those actions are bound to the accepted Run and current external target and expose no model-settable Channel, Chat, Conversation, Discussion, Thread, Ingress, ConnectorConnection, or Run identifier. Connector and user Remote MCP tools remain separate from inbound receipt and can fail independently.
 
 For `reply_mode="thread"` or `reply_mode="main"`, the native action enforces placement and omits a placement argument. For `reply_mode="auto"`, the provider reply action can expose a bounded provider-appropriate placement choice without permitting another destination. Reply placement never changes, moves, or replaces the inbound AgentThreadBinding. A main-flow message is an outbound notification rather than an implicit migration of the current Discussion; a later provider Discussion follows ordinary inbound binding rules.
 

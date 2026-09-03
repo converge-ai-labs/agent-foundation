@@ -34,7 +34,7 @@ flowchart LR
 | Agent execution, state, and process-local subagent graph                          | Agent Harness                                                                                                                                                                                                                                                       | Receives reconstructed definitions and fresh run bindings                   |
 | Run identity, acceptance, persistence, lineage, and recovery                      | [Agent Interaction and Execution Model](10-agent-interaction-and-execution-model.md), [Agent Control](18-agent-control-input-and-continuation.md), [Durable Run State](12-run-persistence.md), and [RunAttempt Recovery](13-run-attempt-scheduling-and-recovery.md) | Persist and reuse the exact selected Revision and effective config          |
 | Agent input wire, canonicalization, and adapter mapping                           | [Agent Input](17-agent-input.md)                                                                                                                                                                                                                                    | AgentConfig stores adapter configuration and each Revision freezes it       |
-| Managed capability and Connection schemas                                         | Their owning Skill and [Connectivity](40-connectivity/README.md) contracts                                                                                                                                                                                          | Agent configuration and Run overlays reference them without redefining them |
+| Managed capability and ConnectorConnection schemas                                | Their owning Skill and [Connectivity](40-connectivity/README.md) contracts                                                                                                                                                                                          | Agent configuration and Run overlays reference them without redefining them |
 | Product authorization and executable-code administration                          | [Foundation IAM](33-identity-and-access-management.md)                                                                                                                                                                                                              | Separates Agent authoring from deployment code authority                    |
 | Secret values and run-time eligibility                                            | [Secret Management](27-secret-management.md)                                                                                                                                                                                                                        | Revisions store requirements and references, never plaintext values         |
 | Public HTTP paths and common mutation behavior                                    | [Management API](16-management-api.md) and [Platform API Conventions](../api-conventions.md)                                                                                                                                                                        | Expose the resources and commands defined here                              |
@@ -82,8 +82,8 @@ class SkillSelection:
     skill_revision_id: SkillRevisionId
 
 
-class ConnectionToolSelection:
-    connection_id: ConnectionId
+class ConnectorConnectionToolSelection:
+    connector_connection_id: ConnectorConnectionId
     tools: tuple[str, ...] | None
     exposure: MCPExposureMode = "direct"
 
@@ -161,7 +161,7 @@ class AgentConfig:
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
     skills: tuple[SkillSelection, ...]
-    connection_tools: dict[str, ConnectionToolSelection]
+    connector_tools: dict[str, ConnectorConnectionToolSelection]
     mcp_tools: dict[str, MCPConnectionToolSelection]
     environment: EnvironmentSelection | None
     subagents: dict[str, SubagentSelection]
@@ -173,7 +173,7 @@ class AgentConfig:
     protocol: ProtocolConfig
 ```
 
-The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. Skills select exact Skill Revisions, the model selects one exact ModelRevision, and the primary Environment selects at most one exact EnvironmentRevision. Connection-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
+The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. Skills select exact Skill Revisions, the model selects one exact ModelRevision, and the primary Environment selects at most one exact EnvironmentRevision. Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
 
 `OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
@@ -194,7 +194,7 @@ class RunCapabilityOverlay:
     exclude: tuple[CapabilityKey, ...] = ()
 ```
 
-`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, Connection tool, or native Ingress action contract. A Connection or MCPConnection selection includes its `direct` or `catalog` exposure and exact tool allowlist; an Ingress native action is always direct. Every selection has one stable `CapabilityKey`, exact configuration or managed-resource references, and all required compatibility evidence. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or unversioned remote schema.
+`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, ConnectorConnection tool, or native Ingress action contract. A ConnectorConnection or MCPConnection selection includes its `direct` or `catalog` exposure and exact tool allowlist; an Ingress native action is always direct. Every selection has one stable `CapabilityKey`, exact configuration or managed-resource references, and all required compatibility evidence. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or unversioned remote schema.
 
 ```text
 candidate = (Agent defaults when inherit_agent else empty) + include - exclude
@@ -235,8 +235,8 @@ class ModelOverride:
     characteristics: HarnessModelCharacteristics | None
 
 
-class ConnectionToolOverride:
-    connection_id: ConnectionId | None
+class ConnectorConnectionToolOverride:
+    connector_connection_id: ConnectorConnectionId | None
     tools: tuple[str, ...] | None
     exposure: MCPExposureMode | None
 
@@ -266,7 +266,7 @@ class AgentRunOverride:
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
     skills: tuple[SkillSelection, ...] | None
-    connection_tools: dict[str, ConnectionToolOverride | None] | None
+    connector_tools: dict[str, ConnectorConnectionToolOverride | None] | None
     mcp_tools: dict[str, MCPConnectionToolOverride | None] | None
     environment: EnvironmentOverride | None
     subagents: dict[str, SubagentOverride | None] | None
@@ -277,7 +277,7 @@ class AgentRunOverride:
 
 The wire schema preserves absent fields separately from explicit nulls. Top-level absence inherits the selected Revision. Scalar and string fields replace; list fields replace as a whole and an empty list clears them. `output_spec` and `environment` can be explicitly cleared. `retries` patches only explicitly present children.
 
-`connection_tools`, `mcp_tools`, and `subagents` are name-keyed patches. An absent map inherits, explicit null clears all entries, and an empty object changes nothing. A mapped null deletes one entry. Tool changes can replace only a managed Connection, exposure, or exact allowlist; they cannot supply endpoints, credentials, Connector services, or arbitrary headers. Subagent entries select managed Agents only.
+`connector_tools`, `mcp_tools`, and `subagents` are name-keyed patches. An absent map inherits, explicit null clears all entries, and an empty object changes nothing. A mapped null deletes one entry. Tool changes can replace only a managed ConnectorConnection, exposure, or exact allowlist; they cannot supply endpoints, credentials, Connector services, or arbitrary headers. Subagent entries select managed Agents only.
 
 Plugin override replacement and resolution follow the [managed Plugin selection contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Typed sensitive leaves are extracted into a Run-owned encrypted payload and excluded from ordinary config projections.
 
@@ -292,7 +292,7 @@ class EffectiveAgentConfig:
     plugins: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
     skills: tuple[ResolvedSkillSelection, ...]
-    connection_tools: tuple[ConnectionToolSelection, ...]
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     environment: EnvironmentExecutionConfig | None
     subagents: tuple[ResolvedSubagentEdge, ...]
@@ -333,7 +333,7 @@ class AgentRevision:
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
     resolved_skills: tuple[ResolvedSkillSelection, ...]
-    connection_tools: tuple[ConnectionToolSelection, ...]
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
@@ -345,7 +345,7 @@ class AgentRevision:
 
 Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, exact managed-resource reference, Runtime lock, and subagent Revision. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
 
-`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The other resolved fields freeze the non-secret Model execution snapshot, Skill content, Connection and MCPConnection selections, optional primary Environment lock, and complete child Revision graph. Secret values, current authorization, live Connector availability, and remote MCP catalogs remain fresh eligibility facts rather than immutable content.
+`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The other resolved fields freeze the non-secret Model execution snapshot, Skill content, ConnectorConnection and MCPConnection selections, optional primary Environment lock, and complete child Revision graph. Secret values, current authorization, live Connector availability, and remote MCP catalogs remain fresh eligibility facts rather than immutable content.
 
 ## Creation, Revision, and Restore
 
@@ -355,7 +355,7 @@ Create Revision accepts `expected_version` and one complete replacement `config`
 
 1. authorize the operation and every referenced resource;
 2. verify the expected Agent version;
-3. resolve exact Model, Plugin, Skill, Environment, Connection, and subagent dependencies;
+3. resolve exact Model, Plugin, Skill, Environment, ConnectorConnection, and subagent dependencies;
 4. verify schemas, the finite acyclic subagent graph, Plugin evidence, and reconstruction compatibility;
 5. canonicalize the frozen content and compute its digests;
 6. return the current Agent and Revision unchanged for a semantic no-op; or

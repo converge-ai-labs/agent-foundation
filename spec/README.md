@@ -209,7 +209,7 @@ Foundation AgentRevisions are Host-owned serializable documents, not Harness
 `AgentDefinition` wire values. Run acceptance pins the Agent-owned on-demand
 lock or the active runner-profile lock. The selected Worker execution loop verifies that exact lock and the Revision's exact
 managed-resource references, reconstructs native Pydantic/Harness objects,
-resolves current authorized Connections, Secrets, permissions, and
+resolves current authorized ConnectorConnections, Secrets, permissions, and
 operator-approved Environment Providers, and constructs fresh Environment
 adapters from the Run's exact desired configuration plus current Foundation
 state. Harness enters and closes those adapters non-destructively. Foundation
