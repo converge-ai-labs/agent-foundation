@@ -1,85 +1,59 @@
-"""Trusted, distribution-owned model provider registry."""
+"""Trusted, distribution-owned model Provider type registry."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 
-from .domain import (
-    CapabilitySource,
-    InvokingUserSecretCredential,
-    ModelCapabilities,
-    ModelCredential,
-    WorkspaceSecretCredential,
-)
-
-
-class ApiProtocol(StrEnum):
-    chat_completions = "chat_completions"
-    responses = "responses"
+from .domain import BoundedName, ModelApiConfig, UpstreamModel
 
 
 class AuthMode(StrEnum):
+    none = "none"
     bearer = "bearer"
     api_key_header = "api_key_header"
 
 
-class _ConnectionConfig(BaseModel):
+class CredentialFormat(StrEnum):
+    api_key = "api_key"
+    aws_credentials_json = "aws_credentials_json"
+    google_service_account_json = "google_service_account_json"
+
+
+class _ProviderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class _EmptyConfig(_ConnectionConfig):
+class _EmptyConfig(_ProviderConfig):
     pass
 
 
-class _VertexConfig(_ConnectionConfig):
+class _VertexConfig(_ProviderConfig):
     project_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
     location: Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")]
 
 
-class _AzureOpenAIConfig(_ConnectionConfig):
+class _AzureOpenAIConfig(_ProviderConfig):
     resource_endpoint: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
-    api_protocol: ApiProtocol = ApiProtocol.responses
+    api_version: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)] | None = None
 
     @model_validator(mode="after")
-    def normalize_official_endpoint(self) -> _AzureOpenAIConfig:
-        try:
-            parsed = urlsplit(self.resource_endpoint)
-        except ValueError as error:
-            raise ValueError("resource_endpoint is not a valid Azure endpoint") from error
-        hostname = (parsed.hostname or "").lower().rstrip(".")
-        if (
-            parsed.scheme != "https"
-            or parsed.port not in {None, 443}
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("resource_endpoint must use the official Azure HTTPS endpoint")
-        if hostname.endswith(".openai.azure.com"):
-            path = parsed.path.rstrip("/")
-            if path not in {"", "/openai/v1"}:
-                raise ValueError("Azure OpenAI resource_endpoint must select the v1 API")
-            path = "/openai/v1"
-        elif hostname.endswith(".models.ai.azure.com"):
-            path = parsed.path.rstrip("/")
-            if path:
-                raise ValueError("Azure AI model resource_endpoint must not contain a path")
-        else:
-            raise ValueError("resource_endpoint must use an official Azure model domain")
-        normalized = urlunsplit(("https", parsed.netloc, path, parsed.query, parsed.fragment))
-        object.__setattr__(self, "resource_endpoint", normalized)
+    def normalize_endpoint(self) -> _AzureOpenAIConfig:
+        object.__setattr__(self, "resource_endpoint", _official_azure_endpoint(self.resource_endpoint))
         return self
 
 
-class _BedrockConfig(_ConnectionConfig):
+class _BedrockConfig(_ProviderConfig):
     region: Annotated[str, StringConstraints(pattern=r"^[a-z]{2}(?:-gov)?-[a-z]+-\d$")]
+
+
+class _OllamaConfig(_ProviderConfig):
+    base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
 
 
 class AlibabaDomainType(StrEnum):
@@ -95,15 +69,11 @@ class AlibabaRegion(StrEnum):
     virginia = "us-east-1"
 
 
-class _AlibabaConfig(_ConnectionConfig):
+class _AlibabaConfig(_ProviderConfig):
     region: AlibabaRegion
     domain_type: AlibabaDomainType
     alibaba_workspace_id: (
-        Annotated[
-            str,
-            StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,127}$"),
-        ]
-        | None
+        Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,127}$")] | None
     ) = None
 
     @model_validator(mode="after")
@@ -117,463 +87,280 @@ class _AlibabaConfig(_ConnectionConfig):
         return self
 
 
-class _OpenAICompatibleConfig(_ConnectionConfig):
+class _OpenAICompatibleConfig(_ProviderConfig):
     base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
-    api_protocol: ApiProtocol = ApiProtocol.chat_completions
     auth_mode: AuthMode = AuthMode.bearer
-    api_key_header_name: (
-        Annotated[
-            str,
-            StringConstraints(pattern=r"^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$"),
-        ]
-        | None
-    ) = None
+    api_key_header_name: Annotated[str, StringConstraints(pattern=r"^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$")] | None = None
 
     @model_validator(mode="after")
     def validate_header_mode(self) -> _OpenAICompatibleConfig:
         if self.auth_mode is AuthMode.api_key_header and self.api_key_header_name is None:
             raise ValueError("api_key_header_name is required for api_key_header auth")
-        if self.auth_mode is AuthMode.bearer and self.api_key_header_name is not None:
+        if self.auth_mode is not AuthMode.api_key_header and self.api_key_header_name is not None:
             raise ValueError("api_key_header_name is accepted only for api_key_header auth")
-        if self.api_key_header_name is not None and self.api_key_header_name.lower() in {
-            "connection",
-            "content-length",
-            "cookie",
-            "host",
-            "proxy-authorization",
-            "set-cookie",
-            "te",
-            "trailer",
-            "transfer-encoding",
-            "upgrade",
-        }:
+        if self.api_key_header_name is not None and self.api_key_header_name.lower() in _RESERVED_HEADERS:
             raise ValueError("api_key_header_name is reserved by HTTP")
         return self
 
 
-class ProviderModelCatalogEntry(BaseModel):
+class DiscoveredModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    model_name: str
-    display_name: str
-    capabilities: ModelCapabilities
+    upstream_model: UpstreamModel
+    display_name: BoundedName | None = None
+    suggested_model_apis: tuple[ModelApiConfig, ...]
 
 
-class ProviderModelCapabilityEntry(BaseModel):
+class DiscoveredModelCollection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    key: str
-    display_name: str
+    items: tuple[DiscoveredModel, ...]
 
 
-class ProviderDefinition(BaseModel):
-    """Safe provider metadata exposed by the control plane."""
-
+class ModelProviderTypeDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     key: str
     display_name: str
+    config_schema: dict[str, object]
     credential_schema: dict[str, object]
-    connection_schema: dict[str, object]
-    model_catalog: tuple[ProviderModelCatalogEntry, ...] = ()
-    capability_catalog: tuple[ProviderModelCapabilityEntry, ...] = ()
+    supported_model_apis: tuple[str, ...]
+    supports_model_discovery: bool
 
 
-class ProviderDefinitionCollection(BaseModel):
+class ModelProviderTypeDefinitionCollection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    items: tuple[ProviderDefinition, ...]
+    items: tuple[ModelProviderTypeDefinition, ...]
     next_cursor: None = None
 
 
-class ValidatedProviderSelection(BaseModel):
+class ValidatedProviderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    provider_config: dict[str, object]
-    base_url: str | None
-    capabilities: ModelCapabilities
-    capability_source: CapabilitySource
-    adapter_key: str
-    adapter_version: str
+    config: dict[str, object]
+    endpoint: str | None
 
 
-class _ProviderAdapter:
+class _ProviderType:
     def __init__(
         self,
         *,
         key: str,
         display_name: str,
-        connection_model: type[_ConnectionConfig],
-        credential_sources: tuple[str, ...],
-        official_base_url: str | None = None,
-        model_catalog: tuple[ProviderModelCatalogEntry, ...] = (),
+        config_model: type[_ProviderConfig],
+        supported_model_apis: tuple[str, ...],
+        credential_format: CredentialFormat | None = CredentialFormat.api_key,
+        credential_required: bool = True,
+        official_endpoint: str | None = None,
+        supports_model_discovery: bool = False,
     ) -> None:
         self.key = key
         self.display_name = display_name
-        self.connection_model = connection_model
-        self.credential_sources = credential_sources
-        self.official_base_url = official_base_url
-        self.model_catalog = model_catalog
-        self.adapter_key = f"a13n.model.{key}"
-        self.adapter_version = "1"
+        self.config_model = config_model
+        self.supported_model_apis = supported_model_apis
+        self.credential_format = credential_format
+        self.credential_required = credential_required
+        self.official_endpoint = official_endpoint
+        self.supports_model_discovery = supports_model_discovery
 
-    def public_definition(self) -> ProviderDefinition:
-        credential_types = tuple(
-            credential_type
-            for source, credential_type in (
-                ("workspace_secret", WorkspaceSecretCredential),
-                ("invoking_user_secret", InvokingUserSecretCredential),
-            )
-            if source in self.credential_sources
-        )
-        credential_schema = TypeAdapter(credential_types[0] | credential_types[1]).json_schema()
-        return ProviderDefinition(
+    def definition(self) -> ModelProviderTypeDefinition:
+        credential_schema: dict[str, object] = {"type": "null"}
+        if self.credential_format is not None:
+            credential_schema = {
+                "type": "string",
+                "format": "password",
+                "writeOnly": True,
+                "x-a13n-credential-format": self.credential_format.value,
+            }
+        return ModelProviderTypeDefinition(
             key=self.key,
             display_name=self.display_name,
+            config_schema=self.config_model.model_json_schema(),
             credential_schema=credential_schema,
-            connection_schema=self.connection_model.model_json_schema(),
-            model_catalog=self.model_catalog,
-            capability_catalog=_CAPABILITY_CATALOG,
+            supported_model_apis=self.supported_model_apis,
+            supports_model_discovery=self.supports_model_discovery,
         )
 
-    def validate(
-        self,
-        *,
-        model_name: str,
-        provider_config: Mapping[str, object],
-        credential: ModelCredential,
-        capabilities: ModelCapabilities | None,
-    ) -> ValidatedProviderSelection:
-        if credential.source not in self.credential_sources:
-            raise ValueError(f"credential source {credential.source!r} is not supported by provider {self.key!r}")
-        normalized_config = self.connection_model.model_validate(dict(provider_config)).model_dump(
-            mode="json", exclude_none=True
-        )
-        base_url = self.official_base_url
+    def validate_config(self, config: Mapping[str, object], *, credential_configured: bool) -> ValidatedProviderConfig:
+        if self.credential_required and not credential_configured:
+            raise ValueError("the provider credential is required")
+        if self.credential_format is None and credential_configured:
+            raise ValueError("the provider does not accept a credential")
+        normalized = self.config_model.model_validate(dict(config)).model_dump(mode="json", exclude_none=True)
         if self.key == "openai_compatible":
-            base_url = str(normalized_config["base_url"])
+            unauthenticated = normalized["auth_mode"] == AuthMode.none.value
+            if unauthenticated and credential_configured:
+                raise ValueError("the unauthenticated mode does not accept a credential")
+            if not unauthenticated and not credential_configured:
+                raise ValueError("the configured authentication mode requires a credential")
+        endpoint = self.official_endpoint
+        if self.key in {"openai_compatible", "ollama"}:
+            endpoint = str(normalized["base_url"])
         elif self.key == "azure_openai":
-            base_url = str(normalized_config["resource_endpoint"])
-
-        catalog_entry = next((item for item in self.model_catalog if item.model_name == model_name), None)
-        resolved_capabilities = capabilities or (
-            catalog_entry.capabilities if catalog_entry is not None else ModelCapabilities()
-        )
-        return ValidatedProviderSelection(
-            provider_config=normalized_config,
-            base_url=base_url,
-            capabilities=resolved_capabilities,
-            capability_source=(
-                CapabilitySource.manual_override if capabilities is not None else CapabilitySource.catalog
-            ),
-            adapter_key=self.adapter_key,
-            adapter_version=self.adapter_version,
-        )
+            endpoint = str(normalized["resource_endpoint"])
+        elif self.key == "alibaba_model_studio":
+            endpoint = alibaba_base_url(normalized)
+        return ValidatedProviderConfig(config=normalized, endpoint=endpoint)
 
 
 class ProviderRegistry:
-    """Immutable allowlist of trusted provider adapters."""
+    """Immutable allowlist of trusted Provider types and native Model API bindings."""
 
-    def __init__(self, adapters: Iterable[_ProviderAdapter]) -> None:
-        indexed: dict[str, _ProviderAdapter] = {}
-        for adapter in adapters:
-            if adapter.key in indexed:
-                raise ValueError(f"duplicate provider key {adapter.key!r}")
-            indexed[adapter.key] = adapter
-        self._adapters = MappingProxyType(indexed)
+    def __init__(self, provider_types: Iterable[_ProviderType]) -> None:
+        indexed: dict[str, _ProviderType] = {}
+        for provider_type in provider_types:
+            if provider_type.key in indexed:
+                raise ValueError(f"duplicate provider type {provider_type.key!r}")
+            indexed[provider_type.key] = provider_type
+        self._provider_types = MappingProxyType(indexed)
 
-    def definitions(self) -> tuple[ProviderDefinition, ...]:
-        return tuple(adapter.public_definition() for adapter in self._adapters.values())
+    def definitions(self) -> tuple[ModelProviderTypeDefinition, ...]:
+        return tuple(item.definition() for item in self._provider_types.values())
 
-    def definition(self, provider_type: str) -> ProviderDefinition:
-        return self._adapter(provider_type).public_definition()
+    def definition(self, provider_type: str) -> ModelProviderTypeDefinition:
+        return self._require(provider_type).definition()
 
-    def execution_identity(self, provider_type: str) -> tuple[str, str]:
-        adapter = self._adapter(provider_type)
-        return adapter.adapter_key, adapter.adapter_version
+    def validate_provider(
+        self, provider_type: str, config: Mapping[str, object], *, credential_configured: bool
+    ) -> ValidatedProviderConfig:
+        return self._require(provider_type).validate_config(config, credential_configured=credential_configured)
 
-    def validate(
-        self,
-        *,
-        provider_type: str,
-        model_name: str,
-        provider_config: Mapping[str, object],
-        credential: ModelCredential,
-        capabilities: ModelCapabilities | None,
-    ) -> ValidatedProviderSelection:
-        return self._adapter(provider_type).validate(
-            model_name=model_name,
-            provider_config=provider_config,
-            credential=credential,
-            capabilities=capabilities,
-        )
+    def validate_model_apis(self, provider_type: str, model_apis: Sequence[ModelApiConfig]) -> None:
+        allowed = set(self._require(provider_type).supported_model_apis)
+        unsupported = sorted(item.api for item in model_apis if item.api not in allowed)
+        if unsupported:
+            raise ValueError(f"unsupported model APIs: {', '.join(unsupported)}")
 
-    def _adapter(self, provider_type: str) -> _ProviderAdapter:
+    def validate_model_api(self, provider_type: str, model_api: str) -> None:
+        allowed = self._require(provider_type).supported_model_apis
+        if model_api not in allowed:
+            raise ValueError(f"unsupported model API: {model_api}")
+
+    def credential_format(self, provider_type: str) -> CredentialFormat | None:
+        return self._require(provider_type).credential_format
+
+    def _require(self, provider_type: str) -> _ProviderType:
         try:
-            return self._adapters[provider_type]
+            return self._provider_types[provider_type]
         except KeyError as error:
-            raise ValueError(f"unknown provider {provider_type!r}") from error
-
-
-_CAPABILITY_CATALOG = (
-    ProviderModelCapabilityEntry(key="text", display_name="Text input"),
-    ProviderModelCapabilityEntry(key="image", display_name="Image input"),
-    ProviderModelCapabilityEntry(key="audio", display_name="Audio input"),
-    ProviderModelCapabilityEntry(key="video", display_name="Video input"),
-    ProviderModelCapabilityEntry(key="tool_calling", display_name="Tool calling"),
-    ProviderModelCapabilityEntry(key="structured_output", display_name="Structured output"),
-    ProviderModelCapabilityEntry(key="reasoning", display_name="Reasoning"),
-)
-
-_SECRET_CREDENTIALS = ("workspace_secret", "invoking_user_secret")
-
-
-def _catalog(
-    model_name: str,
-    display_name: str,
-    *,
-    context_window_tokens: int | None = None,
-    max_output_tokens: int | None = None,
-    modalities: tuple[str, ...] = ("text",),
-    tool_calling: bool | None = True,
-    structured_output: bool | None = True,
-    reasoning: bool | None = None,
-) -> ProviderModelCatalogEntry:
-    return ProviderModelCatalogEntry(
-        model_name=model_name,
-        display_name=display_name,
-        capabilities=ModelCapabilities(
-            input_modalities=modalities,
-            context_window_tokens=context_window_tokens,
-            max_output_tokens=max_output_tokens,
-            tool_calling=tool_calling,
-            structured_output=structured_output,
-            reasoning=reasoning,
-        ),
-    )
+            raise ValueError(f"unknown provider type {provider_type!r}") from error
 
 
 def built_in_provider_registry() -> ProviderRegistry:
-    """Return the fixed provider composition shipped by the OSS distribution."""
-
+    openai_apis = ("openai.responses", "openai.chat_completions")
     return ProviderRegistry(
         (
-            _ProviderAdapter(
+            _ProviderType(
                 key="openai",
                 display_name="OpenAI",
-                connection_model=_EmptyConfig,
-                credential_sources=_SECRET_CREDENTIALS,
-                official_base_url="https://api.openai.com/v1",
-                model_catalog=(
-                    _catalog(
-                        "gpt-5.6-sol",
-                        "GPT-5.6 Sol",
-                        context_window_tokens=1_050_000,
-                        max_output_tokens=128_000,
-                        modalities=("text", "image"),
-                        reasoning=True,
-                    ),
-                    _catalog(
-                        "gpt-5.6-terra",
-                        "GPT-5.6 Terra",
-                        context_window_tokens=1_050_000,
-                        max_output_tokens=128_000,
-                        modalities=("text", "image"),
-                        reasoning=True,
-                    ),
-                    _catalog(
-                        "gpt-5.6-luna",
-                        "GPT-5.6 Luna",
-                        context_window_tokens=1_050_000,
-                        max_output_tokens=128_000,
-                        modalities=("text", "image"),
-                        reasoning=True,
-                    ),
-                ),
+                config_model=_EmptyConfig,
+                supported_model_apis=openai_apis,
+                official_endpoint="https://api.openai.com/v1",
+                supports_model_discovery=True,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="anthropic",
                 display_name="Anthropic",
-                connection_model=_EmptyConfig,
-                credential_sources=_SECRET_CREDENTIALS,
-                official_base_url="https://api.anthropic.com",
-                model_catalog=(
-                    _catalog(
-                        "claude-fable-5-1",
-                        "Claude Fable 5.1",
-                        context_window_tokens=1_000_000,
-                        max_output_tokens=128_000,
-                        modalities=("text", "image"),
-                        reasoning=True,
-                    ),
-                    _catalog(
-                        "claude-fable-5",
-                        "Claude Fable 5",
-                        context_window_tokens=1_000_000,
-                        max_output_tokens=128_000,
-                        modalities=("text", "image"),
-                        reasoning=True,
-                    ),
-                    _catalog(
-                        "claude-opus-5",
-                        "Claude Opus 5",
-                        context_window_tokens=1_000_000,
-                        max_output_tokens=128_000,
-                        modalities=("text", "image"),
-                        reasoning=True,
-                    ),
-                    _catalog(
-                        "claude-sonnet-5",
-                        "Claude Sonnet 5",
-                        context_window_tokens=1_000_000,
-                        max_output_tokens=128_000,
-                        modalities=("text", "image"),
-                        reasoning=True,
-                    ),
-                    _catalog(
-                        "claude-haiku-4-5-20251001",
-                        "Claude Haiku 4.5",
-                        context_window_tokens=200_000,
-                        max_output_tokens=64_000,
-                        modalities=("text", "image"),
-                        reasoning=True,
-                    ),
-                ),
+                config_model=_EmptyConfig,
+                supported_model_apis=("anthropic.messages",),
+                official_endpoint="https://api.anthropic.com",
+                supports_model_discovery=True,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="google_gemini",
                 display_name="Google Gemini",
-                connection_model=_EmptyConfig,
-                credential_sources=_SECRET_CREDENTIALS,
-                official_base_url="https://generativelanguage.googleapis.com",
-                model_catalog=tuple(
-                    _catalog(
-                        model_name,
-                        display_name,
-                        modalities=("text", "image", "audio", "video"),
-                        reasoning=True,
-                    )
-                    for model_name, display_name in (
-                        ("gemini-3.6-flash", "Gemini 3.6 Flash"),
-                        ("gemini-3.5-flash", "Gemini 3.5 Flash"),
-                        ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
-                        ("gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
-                    )
-                ),
+                config_model=_EmptyConfig,
+                supported_model_apis=("google.generate_content",),
+                official_endpoint="https://generativelanguage.googleapis.com",
+                supports_model_discovery=True,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="google_vertex",
                 display_name="Google Vertex AI",
-                connection_model=_VertexConfig,
-                credential_sources=_SECRET_CREDENTIALS,
+                config_model=_VertexConfig,
+                supported_model_apis=("google.generate_content",),
+                credential_format=CredentialFormat.google_service_account_json,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="azure_openai",
                 display_name="Azure OpenAI",
-                connection_model=_AzureOpenAIConfig,
-                credential_sources=_SECRET_CREDENTIALS,
+                config_model=_AzureOpenAIConfig,
+                supported_model_apis=openai_apis,
+                supports_model_discovery=True,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="aws_bedrock",
                 display_name="AWS Bedrock",
-                connection_model=_BedrockConfig,
-                credential_sources=_SECRET_CREDENTIALS,
+                config_model=_BedrockConfig,
+                supported_model_apis=(
+                    "bedrock.converse",
+                    "bedrock_mantle.responses",
+                    "bedrock_mantle.chat_completions",
+                ),
+                credential_format=CredentialFormat.aws_credentials_json,
             ),
-            _ProviderAdapter(
+            _ProviderType(
+                key="openrouter",
+                display_name="OpenRouter",
+                config_model=_EmptyConfig,
+                supported_model_apis=("openrouter.chat_completions",),
+                official_endpoint="https://openrouter.ai/api/v1",
+                supports_model_discovery=True,
+            ),
+            _ProviderType(
+                key="ollama",
+                display_name="Ollama",
+                config_model=_OllamaConfig,
+                supported_model_apis=("ollama.chat_completions",),
+                credential_format=None,
+                credential_required=False,
+                supports_model_discovery=True,
+            ),
+            _ProviderType(
                 key="alibaba_model_studio",
                 display_name="Alibaba Model Studio / Qwen",
-                connection_model=_AlibabaConfig,
-                credential_sources=_SECRET_CREDENTIALS,
-                model_catalog=tuple(
-                    _catalog(
-                        model_name,
-                        display_name,
-                        context_window_tokens=1_000_000,
-                        reasoning=True,
-                    )
-                    for model_name, display_name in (
-                        ("qwen3.8-max", "Qwen 3.8 Max"),
-                        ("qwen3.7-plus", "Qwen 3.7 Plus"),
-                        ("qwen3.7-flash", "Qwen 3.7 Flash"),
-                    )
-                ),
+                config_model=_AlibabaConfig,
+                supported_model_apis=("openai.chat_completions",),
+                supports_model_discovery=True,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="deepseek",
                 display_name="DeepSeek",
-                connection_model=_EmptyConfig,
-                credential_sources=_SECRET_CREDENTIALS,
-                official_base_url="https://api.deepseek.com",
-                model_catalog=(
-                    _catalog(
-                        "deepseek-v4-pro",
-                        "DeepSeek V4 Pro",
-                        context_window_tokens=1_000_000,
-                        max_output_tokens=384_000,
-                        reasoning=True,
-                    ),
-                    _catalog(
-                        "deepseek-v4-flash",
-                        "DeepSeek V4 Flash",
-                        context_window_tokens=1_000_000,
-                        max_output_tokens=384_000,
-                        reasoning=True,
-                    ),
-                ),
+                config_model=_EmptyConfig,
+                supported_model_apis=("openai.chat_completions",),
+                official_endpoint="https://api.deepseek.com",
+                supports_model_discovery=True,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="moonshot",
                 display_name="Moonshot / Kimi",
-                connection_model=_EmptyConfig,
-                credential_sources=_SECRET_CREDENTIALS,
-                official_base_url="https://api.moonshot.cn/v1",
-                model_catalog=(
-                    _catalog(
-                        "kimi-k2.5",
-                        "Kimi K2.5",
-                        modalities=("text", "image"),
-                        tool_calling=None,
-                        structured_output=None,
-                        reasoning=None,
-                    ),
-                ),
+                config_model=_EmptyConfig,
+                supported_model_apis=("openai.chat_completions",),
+                official_endpoint="https://api.moonshot.cn/v1",
+                supports_model_discovery=True,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="zhipu",
                 display_name="Zhipu / GLM",
-                connection_model=_EmptyConfig,
-                credential_sources=_SECRET_CREDENTIALS,
-                official_base_url="https://open.bigmodel.cn/api/paas/v4",
-                model_catalog=(
-                    _catalog(
-                        "glm-5.2",
-                        "GLM-5.2",
-                        context_window_tokens=1_000_000,
-                        max_output_tokens=128_000,
-                        reasoning=True,
-                    ),
-                    _catalog(
-                        "glm-5",
-                        "GLM-5",
-                        context_window_tokens=200_000,
-                        max_output_tokens=128_000,
-                        reasoning=True,
-                    ),
-                ),
+                config_model=_EmptyConfig,
+                supported_model_apis=("openai.chat_completions",),
+                official_endpoint="https://open.bigmodel.cn/api/paas/v4",
+                supports_model_discovery=True,
             ),
-            _ProviderAdapter(
+            _ProviderType(
                 key="openai_compatible",
                 display_name="OpenAI-Compatible",
-                connection_model=_OpenAICompatibleConfig,
-                credential_sources=_SECRET_CREDENTIALS,
+                config_model=_OpenAICompatibleConfig,
+                supported_model_apis=openai_apis,
+                credential_required=False,
+                supports_model_discovery=True,
             ),
         )
     )
 
 
 def alibaba_base_url(config: Mapping[str, object]) -> str:
-    """Derive the trusted OpenAI-compatible Model Studio endpoint."""
-
     region = AlibabaRegion(str(config["region"]))
     workspace_id = config.get("alibaba_workspace_id")
     if workspace_id is not None:
@@ -585,3 +372,43 @@ def alibaba_base_url(config: Mapping[str, object]) -> str:
     if region is AlibabaRegion.virginia:
         return "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
     raise ValueError("the selected Alibaba region requires alibaba_workspace_id")
+
+
+def _official_azure_endpoint(value: str) -> str:
+    parsed = urlsplit(value)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.scheme != "https"
+        or parsed.port not in {None, 443}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("resource_endpoint must use the official Azure HTTPS endpoint")
+    if hostname.endswith(".openai.azure.com"):
+        path = parsed.path.rstrip("/")
+        if path not in {"", "/openai/v1"}:
+            raise ValueError("Azure OpenAI resource_endpoint must select the v1 API")
+        path = "/openai/v1"
+    elif hostname.endswith(".models.ai.azure.com"):
+        path = parsed.path.rstrip("/")
+        if path:
+            raise ValueError("Azure AI model resource_endpoint must not contain a path")
+    else:
+        raise ValueError("resource_endpoint must use an official Azure model domain")
+    return urlunsplit(("https", parsed.netloc, path, "", ""))
+
+
+_RESERVED_HEADERS = {
+    "connection",
+    "content-length",
+    "cookie",
+    "host",
+    "proxy-authorization",
+    "set-cookie",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}

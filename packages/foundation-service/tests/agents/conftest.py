@@ -21,9 +21,8 @@ from a13n_service.environments.catalog import FoundationEnvironmentProviderCatal
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
-from a13n_service.models.domain import ModelCapabilities, WorkspaceSecretCredential
-from a13n_service.models.endpoint_policy import EndpointPolicy
-from a13n_service.models.models import ModelRecord, ModelRevisionRecord
+from a13n_service.models.domain import ModelApiConfig, ModelProfile
+from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.secrets.models import SecretRecord
@@ -38,7 +37,8 @@ WORKSPACE_ID = "ws_1234567890abcdef"
 USER_ID = "usr_1234567890abcdef"
 DIRECT_USER_ID = "usr_direct1234567890"
 MODEL_ID = "mdl_1234567890abcdef"
-MODEL_REVISION_ID = "mdlr_1234567890abcdef"
+MODEL_KEY = "primary"
+PROVIDER_ID = "mprov_1234567890abcdef"
 SECRET_ID = "sec_1234567890abcdef"
 
 
@@ -65,7 +65,8 @@ def agent_config(
     return AgentConfig.model_validate(
         {
             "model": {
-                "model_revision_id": MODEL_REVISION_ID,
+                "model_key": MODEL_KEY,
+                "model_api": "openai.responses",
                 "settings": {"temperature": 0.2},
                 "characteristics": {"context_window": 128000},
             },
@@ -180,7 +181,7 @@ async def agent_sessions(
                     workspace_id=WORKSPACE_ID,
                     owner_type="workspace",
                     owner_id=WORKSPACE_ID,
-                    key="openai_api_key",
+                    key="environment_key",
                     version=1,
                     ciphertext=b"encrypted",
                     nonce=b"123456789012",
@@ -189,15 +190,18 @@ async def agent_sessions(
                     value_updated_at=NOW,
                     deleted_at=None,
                 ),
-                ModelRecord(
-                    id=MODEL_ID,
+                ModelProviderRecord(
+                    id=PROVIDER_ID,
                     organization_id=ORG_ID,
                     workspace_id=WORKSPACE_ID,
-                    version=1,
-                    name="Primary",
-                    normalized_name="primary",
-                    description=None,
-                    current_revision_id=MODEL_REVISION_ID,
+                    type="openai",
+                    name="OpenAI",
+                    normalized_name="openai",
+                    config={},
+                    credential_version=1,
+                    ciphertext=b"encrypted",
+                    nonce=b"123456789012",
+                    encryption_key_id="test-key",
                     enabled=True,
                     created_by_type="user",
                     created_by_id=USER_ID,
@@ -206,27 +210,29 @@ async def agent_sessions(
                     created_at=NOW,
                     updated_at=NOW,
                 ),
-                ModelRevisionRecord(
-                    id=MODEL_REVISION_ID,
-                    model_id=MODEL_ID,
+                ModelRecord(
+                    id=MODEL_ID,
                     organization_id=ORG_ID,
                     workspace_id=WORKSPACE_ID,
-                    version=1,
-                    provider_type="openai",
-                    model_name="gpt-5.6-terra",
-                    base_url=None,
-                    credential=WorkspaceSecretCredential(secret_id=SECRET_ID).model_dump(mode="json"),
-                    provider_config={},
-                    capabilities=ModelCapabilities(
-                        input_modalities=("text",),
-                        tool_calling=True,
-                        structured_output=True,
-                    ).model_dump(mode="json"),
-                    capability_source="catalog",
-                    content_digest="0" * 64,
+                    key=MODEL_KEY,
+                    normalized_key=MODEL_KEY,
+                    provider_id=PROVIDER_ID,
+                    name="Primary",
+                    description=None,
+                    upstream_model="gpt-5.6-terra",
+                    model_apis=[
+                        ModelApiConfig(
+                            api="openai.responses",
+                            profile=ModelProfile(input_modalities=("text",), supports_tools=True),
+                        ).model_dump(mode="json")
+                    ],
+                    enabled=True,
                     created_by_type="user",
                     created_by_id=USER_ID,
+                    updated_by_type="user",
+                    updated_by_id=USER_ID,
                     created_at=NOW,
+                    updated_at=NOW,
                 ),
             )
         )
@@ -243,7 +249,6 @@ async def agent_service(
     model_selector = AcceptedModelSelector(
         agent_sessions,
         built_in_provider_registry(),
-        EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
     )
     environment_resolver = AgentEnvironmentSelectionResolver(
         agent_sessions,
@@ -276,7 +281,6 @@ async def agent_invocation_resolver(
     model_selector = AcceptedModelSelector(
         agent_sessions,
         built_in_provider_registry(),
-        EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
     )
     environment_resolver = AgentEnvironmentSelectionResolver(
         agent_sessions,

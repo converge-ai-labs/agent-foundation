@@ -2,121 +2,176 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
+import unicodedata
 from datetime import datetime
-from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
-from a13n_service.secrets.domain import InvokingUserSecretCredential, WorkspaceSecretCredential
 
 BoundedName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 BoundedDescription = Annotated[str, StringConstraints(max_length=2048)]
-BoundedModelName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
+UpstreamModel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
 ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
-Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 ProviderType = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+ModelApi = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$", max_length=96)]
+
+
+def normalize_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFC", value).strip().casefold()
+    if not 1 <= len(normalized) <= 128:
+        raise ValueError("key must contain between 1 and 128 characters")
+    if not normalized[0].isalnum() or not normalized[-1].isalnum():
+        raise ValueError("key must begin and end with a letter or number")
+    if any(not (character.isalnum() or character in "._-/") for character in normalized):
+        raise ValueError("key may contain only letters, numbers, '.', '_', '-', and '/'")
+    return normalized
+
+
+ModelKey = Annotated[str, AfterValidator(normalize_key)]
+
+
+def new_model_provider_id() -> str:
+    return new_object_id("mprov")
 
 
 def new_model_id() -> str:
-    """Allocate one unpredictable, kind-prefixed Model identifier."""
-
     return new_object_id("mdl")
 
 
-def new_model_revision_id() -> str:
-    """Allocate one unpredictable, kind-prefixed ModelRevision identifier."""
+class ModelProfile(BaseModel):
+    """Safe authoring metadata aligned with Pydantic AI's ModelProfile."""
 
-    return new_object_id("mdlr")
-
-
-class NoCredential(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    source: Literal["none"] = "none"
-
-
-ModelCredential = Annotated[
-    WorkspaceSecretCredential | InvokingUserSecretCredential | NoCredential,
-    Field(discriminator="source"),
-]
-
-
-class ModelCapabilities(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    input_modalities: tuple[str, ...] = Field(default=(), max_length=16)
-    context_window_tokens: int | None = Field(default=None, gt=0)
-    max_output_tokens: int | None = Field(default=None, gt=0)
-    tool_calling: bool | None = None
-    structured_output: bool | None = None
-    reasoning: bool | None = None
+    input_modalities: tuple[Literal["text", "image", "audio", "video"], ...] = ()
+    supports_tools: bool | None = None
+    supports_json_schema_output: bool | None = None
+    supports_json_object_output: bool | None = None
+    supports_image_output: bool | None = None
+    supports_audio_input: bool | None = None
+    supports_thinking: bool | None = None
+    thinking_always_enabled: bool | None = None
 
     @model_validator(mode="after")
-    def validate_modalities(self) -> ModelCapabilities:
-        normalized = tuple(dict.fromkeys(item.strip().lower() for item in self.input_modalities if item.strip()))
-        if any(len(item) > 32 or not item.replace("_", "").isalnum() for item in normalized):
-            raise ValueError("input_modalities contains an invalid value")
-        object.__setattr__(self, "input_modalities", normalized)
+    def normalize_modalities(self) -> ModelProfile:
+        object.__setattr__(self, "input_modalities", tuple(dict.fromkeys(self.input_modalities)))
         return self
 
 
-class CapabilitySource(StrEnum):
-    catalog = "catalog"
-    manual_override = "manual_override"
-
-
-class ModelRevisionInput(BaseModel):
-    """Provider configuration accepted before provider-specific normalization."""
-
+class ModelLimits(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    provider_type: ProviderType
-    model_name: BoundedModelName
-    credential: ModelCredential
-    provider_config: dict[str, object] = Field(default_factory=dict)
-    capabilities: ModelCapabilities | None = None
+    context_window_tokens: int | None = Field(default=None, gt=0)
+    max_output_tokens: int | None = Field(default=None, gt=0)
+
+
+class ModelApiConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    api: ModelApi
+    profile: ModelProfile = Field(default_factory=ModelProfile)
+    limits: ModelLimits = Field(default_factory=ModelLimits)
+
+
+def _require_unique_apis(value: tuple[ModelApiConfig, ...]) -> None:
+    if not value:
+        raise ValueError("at least one model API must be supplied")
+    apis = [item.api for item in value]
+    if len(apis) != len(set(apis)):
+        raise ValueError("model APIs must be unique")
+
+
+class CreateModelProviderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: ProviderType
+    name: BoundedName
+    config: dict[str, object] = Field(default_factory=dict)
+    credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
+    enabled: bool = True
+
+
+class UpdateModelProviderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: BoundedName | None = None
+    config: dict[str, object] | None = None
+    credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
+    enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_change(self) -> UpdateModelProviderRequest:
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be supplied")
+        for field in self.model_fields_set - {"credential"}:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
+
+
+class ModelProvider(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: ObjectId
+    organization_id: ObjectId
+    workspace_id: ObjectId
+    type: str
+    name: str
+    config: dict[str, object]
+    credential_configured: bool
+    enabled: bool
+    created_by: PrincipalRef
+    updated_by: PrincipalRef
+    created_at: datetime
+    updated_at: datetime
+
+
+class ModelProviderCollection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    items: tuple[ModelProvider, ...]
+    next_cursor: str | None
 
 
 class CreateModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    key: ModelKey
+    provider_id: ObjectId
     name: BoundedName
     description: BoundedDescription | None = None
+    upstream_model: UpstreamModel
+    model_apis: tuple[ModelApiConfig, ...]
     enabled: bool = True
-    config: ModelRevisionInput
+
+    @model_validator(mode="after")
+    def validate_apis(self) -> CreateModelRequest:
+        _require_unique_apis(self.model_apis)
+        return self
 
 
 class UpdateModelRequest(BaseModel):
-    """Mutable Model metadata; concurrency is carried by HTTP If-Match."""
-
     model_config = ConfigDict(extra="forbid")
 
     name: BoundedName | None = None
     description: BoundedDescription | None = None
+    upstream_model: UpstreamModel | None = None
+    model_apis: tuple[ModelApiConfig, ...] | None = None
     enabled: bool | None = None
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateModelRequest:
         if not self.model_fields_set:
-            raise ValueError("at least one metadata field must be supplied")
-        invalid = sorted(
-            field for field in self.model_fields_set if field != "description" and getattr(self, field) is None
-        )
-        if invalid:
-            raise ValueError(f"fields cannot be null: {', '.join(invalid)}")
+            raise ValueError("at least one field must be supplied")
+        for field in self.model_fields_set - {"description"}:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        if self.model_apis is not None:
+            _require_unique_apis(self.model_apis)
         return self
-
-
-class CreateModelRevisionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    expected_version: int = Field(ge=1)
-    config: ModelRevisionInput
 
 
 class Model(BaseModel):
@@ -125,42 +180,17 @@ class Model(BaseModel):
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
+    key: str
+    provider_id: ObjectId
     name: str
     description: str | None
-    version: int = Field(ge=1)
-    current_revision_id: ObjectId
+    upstream_model: str
+    model_apis: tuple[ModelApiConfig, ...]
     enabled: bool
     created_by: PrincipalRef
     updated_by: PrincipalRef
     created_at: datetime
     updated_at: datetime
-
-
-class ModelRevision(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    id: ObjectId
-    organization_id: ObjectId
-    workspace_id: ObjectId
-    model_id: ObjectId
-    version: int = Field(ge=1)
-    provider_type: str
-    model_name: str
-    base_url: str | None
-    credential: ModelCredential
-    provider_config: dict[str, object]
-    capabilities: ModelCapabilities
-    capability_source: CapabilitySource
-    content_digest: Sha256Digest
-    created_by: PrincipalRef
-    created_at: datetime
-
-
-class ModelRevisionCreateResult(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    model: Model
-    revision: ModelRevision
 
 
 class ModelCollection(BaseModel):
@@ -170,10 +200,11 @@ class ModelCollection(BaseModel):
     next_cursor: str | None
 
 
-class ModelRevisionCollection(BaseModel):
+class ModelSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    items: tuple[ModelRevision, ...]
+    model_key: ModelKey
+    model_api: ModelApi
 
 
 class ModelConnectionTestResult(BaseModel):
@@ -186,76 +217,52 @@ class ModelConnectionTestResult(BaseModel):
     may_consume_quota_or_incur_cost: Literal[True] = True
 
 
+class TestModelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_api: ModelApi
+
+
 class ModelExecutionObservation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     model_id: ObjectId
-    model_revision_id: ObjectId
-    provider_type: str
-    model_name: str
+    model_key: str
+    upstream_model: str
+    model_api: str
 
 
 class ModelExecutionSnapshot(BaseModel):
+    """Model fields frozen at Run acceptance; Provider configuration stays live."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["1"] = "1"
     model_id: ObjectId
-    model_revision_id: ObjectId
-    provider_type: str
-    model_name: str
-    base_url: str | None
-    credential: ModelCredential
-    provider_config: dict[str, object]
-    adapter_key: str
-    adapter_version: str
+    model_key: str
+    upstream_model: str
+    model_api: str
+    profile: ModelProfile
+    limits: ModelLimits
 
     @classmethod
-    def freeze(
-        cls,
-        revision: ModelRevision,
-        *,
-        adapter_key: str,
-        adapter_version: str,
-    ) -> ModelExecutionSnapshot:
+    def freeze(cls, model: Model, model_api: str) -> ModelExecutionSnapshot:
+        selected = next((item for item in model.model_apis if item.api == model_api), None)
+        if selected is None:
+            raise ValueError("the selected model API is not configured")
         return cls(
-            model_id=revision.model_id,
-            model_revision_id=revision.id,
-            provider_type=revision.provider_type,
-            model_name=revision.model_name,
-            base_url=revision.base_url,
-            credential=revision.credential,
-            provider_config=revision.provider_config,
-            adapter_key=adapter_key,
-            adapter_version=adapter_version,
+            model_id=model.id,
+            model_key=model.key,
+            upstream_model=model.upstream_model,
+            model_api=selected.api,
+            profile=selected.profile,
+            limits=selected.limits,
         )
 
     def observation(self) -> ModelExecutionObservation:
         return ModelExecutionObservation(
             model_id=self.model_id,
-            model_revision_id=self.model_revision_id,
-            provider_type=self.provider_type,
-            model_name=self.model_name,
+            model_key=self.model_key,
+            upstream_model=self.upstream_model,
+            model_api=self.model_api,
         )
-
-
-def model_revision_digest(
-    *,
-    provider_type: str,
-    model_name: str,
-    base_url: str | None,
-    credential: ModelCredential,
-    provider_config: dict[str, object],
-    capabilities: ModelCapabilities,
-    capability_source: CapabilitySource,
-) -> str:
-    payload = {
-        "provider_type": provider_type,
-        "model_name": model_name,
-        "base_url": base_url,
-        "credential": TypeAdapter(ModelCredential).dump_python(credential, mode="json"),
-        "provider_config": provider_config,
-        "capabilities": capabilities.model_dump(mode="json"),
-        "capability_source": capability_source.value,
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    return hashlib.sha256(encoded).hexdigest()

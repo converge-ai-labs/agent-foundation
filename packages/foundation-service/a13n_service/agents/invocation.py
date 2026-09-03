@@ -91,11 +91,17 @@ def merge_agent_run_override(
         if override.model is None:
             raise invalid_run_override("model", "null_not_allowed")
         model_fields = override.model.model_fields_set
-        model_revision_id = _required_patch_value(
-            override.model.model_revision_id,
-            present="model_revision_id" in model_fields,
-            inherited=base.model.model_revision_id,
-            path="model.model_revision_id",
+        model_key = _required_patch_value(
+            override.model.model_key,
+            present="model_key" in model_fields,
+            inherited=base.model.model_key,
+            path="model.model_key",
+        )
+        model_api = _required_patch_value(
+            override.model.model_api,
+            present="model_api" in model_fields,
+            inherited=base.model.model_api,
+            path="model.model_api",
         )
         settings = _required_patch_value(
             override.model.settings,
@@ -110,7 +116,8 @@ def merge_agent_run_override(
             path="model.characteristics",
         )
         model = AgentModel(
-            model_revision_id=model_revision_id,
+            model_key=model_key,
+            model_api=model_api,
             settings=settings,
             characteristics=characteristics,
         )

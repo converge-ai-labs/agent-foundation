@@ -12,12 +12,12 @@ from a13n_service.agents.errors import AgentError
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.service import AgentService
 from a13n_service.etags import resource_etag
-from a13n_service.models.models import ModelRevisionRecord
+from a13n_service.models.models import ModelRecord
 from a13n_service.storage import transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import MODEL_REVISION_ID, WORKSPACE_ID, actor, agent_config
+from .conftest import MODEL_ID, WORKSPACE_ID, actor, agent_config
 
 BUILTIN_AGENT_ID = "ap_builtinagent0001"
 SYSTEM_ACTOR_ID = "sa_1234567890abcdef"
@@ -152,7 +152,7 @@ async def test_builtin_registration_race_replay_requires_exact_committed_result(
 
 
 @pytest.mark.anyio
-async def test_builtin_registration_revisions_changed_resolved_dependencies(
+async def test_builtin_registration_does_not_revision_for_mutable_model_content(
     agent_service: AgentService,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -162,9 +162,9 @@ async def test_builtin_registration_revisions_changed_resolved_dependencies(
         registration=registration(),
     )
     async with transaction(agent_sessions) as session:
-        model = await session.get(ModelRevisionRecord, MODEL_REVISION_ID)
+        model = await session.get(ModelRecord, MODEL_ID)
         assert model is not None
-        model.model_name = "gpt-5.1"
+        model.upstream_model = "gpt-5.1"
 
     upgraded = await agent_service.register_builtin(
         actor=actor(),
@@ -172,10 +172,10 @@ async def test_builtin_registration_revisions_changed_resolved_dependencies(
         registration=registration(),
     )
 
-    assert upgraded.revision.version == 2
+    assert upgraded.revision.version == 1
     assert upgraded.revision.config == first.revision.config
-    assert upgraded.revision.resolved_model.execution.model_name == "gpt-5.1"
-    assert upgraded.revision.content_digest != first.revision.content_digest
+    assert upgraded.revision.resolved_model.model_id == MODEL_ID
+    assert upgraded.revision.content_digest == first.revision.content_digest
     assert upgraded.agent.current_revision_id == upgraded.revision.id
 
 
@@ -231,7 +231,7 @@ async def test_failed_builtin_registration_creates_no_partial_agent(
     invalid = registration().model_copy(
         update={
             "config": agent_config().model_copy(
-                update={"model": agent_config().model.model_copy(update={"model_revision_id": "mdlr_missingmodel0001"})}
+                update={"model": agent_config().model.model_copy(update={"model_key": "missing-model"})}
             )
         }
     )

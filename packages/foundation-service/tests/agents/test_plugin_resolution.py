@@ -18,7 +18,6 @@ from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver, 
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.agents.service import AgentService
 from a13n_service.etags import resource_etag
-from a13n_service.models.endpoint_policy import EndpointPolicy
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.plugins.models import (
@@ -154,7 +153,6 @@ def _runner_services(
     model_selector = AcceptedModelSelector(
         sessions,
         built_in_provider_registry(),
-        EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
     )
     plugin_resolver = AgentPluginSelectionResolver(
         sessions,

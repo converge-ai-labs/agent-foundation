@@ -147,15 +147,18 @@ def upgrade() -> None:
         sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_table(
-        "models",
+        "model_providers",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("type", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("normalized_name", sa.String(length=128), nullable=False),
-        sa.Column("description", sa.String(length=2048), nullable=True),
-        sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("current_revision_id", sa.String(length=72), nullable=False),
+        sa.Column("config", sa.JSON(), nullable=False),
+        sa.Column("credential_version", sa.BigInteger(), nullable=False),
+        sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
+        sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
+        sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
@@ -164,13 +167,85 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "created_by_type IN ('user', 'service_account')", name=op.f("ck_models_created_by_type_valid")
+            "created_by_type IN ('user', 'service_account')",
+            name=op.f("ck_model_providers_created_by_type_valid"),
         ),
+        sa.CheckConstraint("credential_version >= 0", name=op.f("ck_model_providers_credential_version_nonnegative")),
+        sa.CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name=op.f("ck_model_providers_credential_material_consistent"),
+        ),
+        sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_model_providers_name_bounded")),
+        sa.CheckConstraint(
+            "updated_by_type IN ('user', 'service_account')",
+            name=op.f("ck_model_providers_updated_by_type_valid"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "organization_id"],
+            ["workspaces.id", "workspaces.organization_id"],
+            name=op.f("fk_model_providers_workspace_id_workspaces"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_model_providers")),
+    )
+    op.create_index(
+        "ix_model_providers_workspace_updated",
+        "model_providers",
+        ["workspace_id", "updated_at", "id"],
+        unique=False,
+    )
+    op.create_index(
+        "uq_model_providers_identity_scope",
+        "model_providers",
+        ["id", "workspace_id", "organization_id"],
+        unique=True,
+    )
+    op.create_index(
+        "uq_model_providers_workspace_name",
+        "model_providers",
+        ["workspace_id", "normalized_name"],
+        unique=True,
+    )
+    op.create_table(
+        "models",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("key", sa.String(length=128), nullable=False),
+        sa.Column("normalized_key", sa.String(length=128), nullable=False),
+        sa.Column("provider_id", sa.String(length=72), nullable=False),
+        sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column("description", sa.String(length=2048), nullable=True),
+        sa.Column("upstream_model", sa.String(length=256), nullable=False),
+        sa.Column("model_apis", sa.JSON(), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("created_by_type", sa.String(length=32), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=False),
+        sa.Column("updated_by_type", sa.String(length=32), nullable=False),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "created_by_type IN ('user', 'service_account')",
+            name=op.f("ck_models_created_by_type_valid"),
+        ),
+        sa.CheckConstraint("length(key) BETWEEN 1 AND 128", name=op.f("ck_models_key_bounded")),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_models_name_bounded")),
         sa.CheckConstraint(
-            "updated_by_type IN ('user', 'service_account')", name=op.f("ck_models_updated_by_type_valid")
+            "length(upstream_model) BETWEEN 1 AND 256",
+            name=op.f("ck_models_upstream_model_bounded"),
         ),
-        sa.CheckConstraint("version >= 1", name=op.f("ck_models_version_positive")),
+        sa.CheckConstraint(
+            "updated_by_type IN ('user', 'service_account')",
+            name=op.f("ck_models_updated_by_type_valid"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["provider_id", "workspace_id", "organization_id"],
+            ["model_providers.id", "model_providers.workspace_id", "model_providers.organization_id"],
+            name=op.f("fk_models_provider_id_model_providers"),
+            ondelete="RESTRICT",
+        ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
@@ -179,53 +254,10 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_models")),
     )
+    op.create_index("ix_models_provider", "models", ["provider_id", "id"], unique=False)
     op.create_index("ix_models_workspace_updated", "models", ["workspace_id", "updated_at", "id"], unique=False)
     op.create_index("uq_models_identity_scope", "models", ["id", "workspace_id", "organization_id"], unique=True)
-    op.create_index("uq_models_workspace_normalized_name", "models", ["workspace_id", "normalized_name"], unique=True)
-    op.create_table(
-        "model_revisions",
-        sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column("model_id", sa.String(length=72), nullable=False),
-        sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("provider_type", sa.String(length=64), nullable=False),
-        sa.Column("model_name", sa.String(length=256), nullable=False),
-        sa.Column("base_url", sa.String(length=2048), nullable=True),
-        sa.Column("credential", sa.JSON(), nullable=False),
-        sa.Column("provider_config", sa.JSON(), nullable=False),
-        sa.Column("capabilities", sa.JSON(), nullable=False),
-        sa.Column("capability_source", sa.String(length=32), nullable=False),
-        sa.Column("content_digest", sa.String(length=64), nullable=False),
-        sa.Column("created_by_type", sa.String(length=32), nullable=False),
-        sa.Column("created_by_id", sa.String(length=72), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint(
-            "capability_source IN ('catalog', 'manual_override')",
-            name=op.f("ck_model_revisions_capability_source_valid"),
-        ),
-        sa.CheckConstraint(
-            "created_by_type IN ('user', 'service_account')",
-            name=op.f("ck_model_revisions_created_by_type_valid"),
-        ),
-        sa.CheckConstraint("length(model_name) BETWEEN 1 AND 256", name=op.f("ck_model_revisions_model_name_bounded")),
-        sa.CheckConstraint("version >= 1", name=op.f("ck_model_revisions_version_positive")),
-        sa.ForeignKeyConstraint(
-            ["model_id", "workspace_id", "organization_id"],
-            ["models.id", "models.workspace_id", "models.organization_id"],
-            name=op.f("fk_model_revisions_model_id_models"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_model_revisions")),
-    )
-    op.create_index("ix_model_revisions_listing", "model_revisions", ["model_id", "version", "id"], unique=False)
-    op.create_index(
-        "ix_model_revisions_workspace_provider",
-        "model_revisions",
-        ["workspace_id", "provider_type", "id"],
-        unique=False,
-    )
-    op.create_index("uq_model_revisions_model_version", "model_revisions", ["model_id", "version"], unique=True)
+    op.create_index("uq_models_workspace_key", "models", ["workspace_id", "normalized_key"], unique=True)
     op.create_table(
         "role_bindings",
         sa.Column("id", sa.String(length=72), nullable=False),
@@ -327,14 +359,15 @@ def downgrade() -> None:
     op.drop_index("uq_role_bindings_principal_resource", table_name="role_bindings")
     op.drop_index("ix_role_bindings_authorization", table_name="role_bindings")
     op.drop_table("role_bindings")
-    op.drop_index("uq_model_revisions_model_version", table_name="model_revisions")
-    op.drop_index("ix_model_revisions_workspace_provider", table_name="model_revisions")
-    op.drop_index("ix_model_revisions_listing", table_name="model_revisions")
-    op.drop_table("model_revisions")
-    op.drop_index("uq_models_workspace_normalized_name", table_name="models")
+    op.drop_index("uq_models_workspace_key", table_name="models")
     op.drop_index("uq_models_identity_scope", table_name="models")
     op.drop_index("ix_models_workspace_updated", table_name="models")
+    op.drop_index("ix_models_provider", table_name="models")
     op.drop_table("models")
+    op.drop_index("uq_model_providers_workspace_name", table_name="model_providers")
+    op.drop_index("uq_model_providers_identity_scope", table_name="model_providers")
+    op.drop_index("ix_model_providers_workspace_updated", table_name="model_providers")
+    op.drop_table("model_providers")
     op.drop_index(
         "uq_secrets_active_owner_key",
         table_name="secrets",

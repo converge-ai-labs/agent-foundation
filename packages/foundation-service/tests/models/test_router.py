@@ -7,20 +7,17 @@ import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
 from a13n_service.database.metadata import service_metadata
-from a13n_service.iam import AuthenticatedActor
+from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
-from a13n_service.models.domain import PrincipalRef
-from a13n_service.secrets.models import SecretRecord
 from a13n_service.settings import ServiceSettings
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from fastapi import Request
 
-NOW = datetime(2026, 8, 30, 10, 0, tzinfo=UTC)
+NOW = datetime(2026, 9, 3, 10, 0, tzinfo=UTC)
 ORG_ID = "org_1234567890abcdef"
 WORKSPACE_ID = "ws_1234567890abcdef"
 USER_ID = "usr_1234567890abcdef"
-SECRET_ID = "sec_1234567890abcdef"
 
 
 async def authenticate(request: Request) -> AuthenticatedActor:
@@ -33,7 +30,7 @@ async def authenticate(request: Request) -> AuthenticatedActor:
     )
 
 
-async def successful_test(**_: object) -> None:
+async def successful_model_test(**_: object) -> None:
     return None
 
 
@@ -113,21 +110,6 @@ async def seed_database(config: ServiceSettings) -> None:
                     created_at=NOW,
                     updated_at=NOW,
                 ),
-                SecretRecord(
-                    id=SECRET_ID,
-                    organization_id=ORG_ID,
-                    workspace_id=WORKSPACE_ID,
-                    owner_type="workspace",
-                    owner_id=WORKSPACE_ID,
-                    key="openai_api_key",
-                    version=1,
-                    ciphertext=b"encrypted",
-                    nonce=b"123456789012",
-                    encryption_key_id="test-key",
-                    created_at=NOW,
-                    value_updated_at=NOW,
-                    deleted_at=None,
-                ),
             )
         )
     await engine.dispose()
@@ -141,7 +123,7 @@ async def api_client(tmp_path: Path) -> AsyncIterator[httpx2.AsyncClient]:
         config,
         components=ServiceComponents(
             request_authenticator=authenticate,
-            model_connection_tester=successful_test,
+            model_connection_tester=successful_model_test,
         ),
     )
     async with app.router.lifespan_context(app):
@@ -150,97 +132,89 @@ async def api_client(tmp_path: Path) -> AsyncIterator[httpx2.AsyncClient]:
             yield client
 
 
-def candidate(name: str = "Primary") -> dict[str, object]:
-    return {
-        "name": name,
-        "config": model_config(),
-    }
-
-
-def model_config(model_name: str = "gpt-5.6-terra") -> dict[str, object]:
-    return {
-        "provider_type": "openai",
-        "model_name": model_name,
-        "credential": {"source": "workspace_secret", "secret_id": SECRET_ID},
-        "provider_config": {},
-    }
+async def create_provider(api_client: httpx2.AsyncClient, name: str = "OpenAI Primary") -> dict[str, object]:
+    response = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
+        json={"type": "openai", "name": name, "credential": "sk-secret"},
+    )
+    assert response.status_code == 201
+    assert "sk-secret" not in response.text
+    return response.json()
 
 
 @pytest.mark.anyio
-async def test_provider_discovery_is_authenticated_and_finite(api_client: httpx2.AsyncClient) -> None:
-    response = await api_client.get("/api/v1/model-providers")
+async def test_provider_type_and_multiple_provider_http_lifecycle(api_client: httpx2.AsyncClient) -> None:
+    definitions = await api_client.get("/api/v1/model-provider-types")
+    first = await create_provider(api_client, "OpenAI Production")
+    second = await create_provider(api_client, "OpenAI Personal")
 
-    assert response.status_code == 200
-    assert response.json()["next_cursor"] is None
-    assert {item["key"] for item in response.json()["items"]} >= {"openai", "deepseek", "moonshot", "zhipu"}
+    assert definitions.status_code == 200
+    assert {item["key"] for item in definitions.json()["items"]} >= {"openai", "openrouter", "ollama"}
+    assert first["type"] == second["type"] == "openai"
+    assert first["id"] != second["id"]
+    assert first["credential_configured"] and "credential" not in first
+
+    listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers?provider_type=openai")
+    assert listed.status_code == 200
+    assert {item["id"] for item in listed.json()["items"]} == {first["id"], second["id"]}
 
 
 @pytest.mark.anyio
-async def test_model_resource_http_lifecycle(api_client: httpx2.AsyncClient) -> None:
+async def test_model_http_lifecycle_has_no_revision_or_default_api(api_client: httpx2.AsyncClient) -> None:
+    provider = await create_provider(api_client)
     created = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/models",
-        json=candidate(),
+        json={
+            "key": "support/main",
+            "provider_id": provider["id"],
+            "name": "Support",
+            "upstream_model": "gpt-current",
+            "model_apis": [
+                {"api": "openai.responses", "profile": {"supports_tools": True}},
+                {"api": "openai.chat_completions"},
+            ],
+        },
     )
     assert created.status_code == 201
-    result = created.json()
-    model = result["model"]
-    revision = result["revision"]
-    assert model["version"] == 1
-    assert revision["version"] == 1
-    assert model["current_revision_id"] == revision["id"]
+    model = created.json()
+    assert model["key"] == "support/main"
+    assert model["provider_id"] == provider["id"]
+    assert "version" not in model and "current_revision_id" not in model
+    assert "default_model_api" not in model
     model_url = f"/api/v1/workspaces/{WORKSPACE_ID}/models/{model['id']}"
 
     fetched = await api_client.get(model_url)
     assert fetched.status_code == 200
     assert fetched.json() == model
 
-    no_precondition = await api_client.patch(model_url, json={"enabled": False})
-    assert no_precondition.status_code == 400
     stale = await api_client.patch(model_url, json={"enabled": False}, headers={"If-Match": '"stale"'})
     assert stale.status_code == 412
-    assert stale.json()["error"]["code"] == "precondition_failed"
-
     patched = await api_client.patch(
         model_url,
-        json={"enabled": False},
+        json={"upstream_model": "gpt-new"},
         headers={"If-Match": fetched.headers["etag"]},
     )
     assert patched.status_code == 200
-    assert not patched.json()["enabled"]
-    assert patched.json()["version"] == 1
+    assert patched.json()["upstream_model"] == "gpt-new"
+    assert patched.json()["key"] == model["key"]
+    assert patched.json()["provider_id"] == provider["id"]
 
-    revised = await api_client.post(
-        f"{model_url}/revisions",
-        json={"expected_version": 1, "config": model_config("gpt-5.6-sol")},
-    )
-    assert revised.status_code == 201
-    assert revised.json()["model"]["version"] == 2
-
-    listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/models?enabled=false")
-    assert [item["id"] for item in listed.json()["items"]] == [model["id"]]
-
-    tested = await api_client.post(f"/api/v1/workspaces/{WORKSPACE_ID}/models/test", json=model_config())
+    tested = await api_client.post(f"{model_url}/test", json={"model_api": "openai.responses"})
     assert tested.status_code == 200
     assert tested.json()["success"]
-
-    assert (await api_client.post(f"{model_url}/copy", json={"name": "Copy", "enabled": False})).status_code == 404
-    assert (await api_client.get(f"{model_url}/references")).status_code == 404
-    assert (await api_client.delete(model_url)).status_code == 404
+    assert (await api_client.get(f"{model_url}/revisions")).status_code == 404
 
 
 @pytest.mark.anyio
-async def test_unknown_input_fields_use_shared_safe_error(api_client: httpx2.AsyncClient) -> None:
-    body = candidate()
-    body["api_key"] = "must-not-be-accepted"
-
+async def test_unknown_fields_use_shared_safe_error(api_client: httpx2.AsyncClient) -> None:
     response = await api_client.post(
-        f"/api/v1/workspaces/{WORKSPACE_ID}/models",
-        json=body,
+        f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
+        json={"type": "openai", "name": "OpenAI", "credential": "must-not-leak", "api_key": "must-not-leak"},
     )
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_request"
-    assert "must-not-be-accepted" not in response.text
+    assert "must-not-leak" not in response.text
     assert response.headers["x-request-id"] == response.json()["error"]["request_id"]
 
 
@@ -252,7 +226,7 @@ async def test_missing_authenticator_returns_401(tmp_path: Path) -> None:
     async with app.router.lifespan_context(app):
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            response = await client.get("/api/v1/model-providers")
+            response = await client.get("/api/v1/model-provider-types")
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "authentication_required"

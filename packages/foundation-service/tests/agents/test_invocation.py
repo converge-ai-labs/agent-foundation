@@ -13,10 +13,11 @@ from a13n_service.agents.invocation_resolution import (
     AgentSelectorKind,
 )
 from a13n_service.agents.service import AgentService
+from a13n_service.models.models import ModelRecord
 from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import WORKSPACE_ID, actor, agent_config
+from .conftest import MODEL_ID, WORKSPACE_ID, actor, agent_config
 
 
 def test_absent_override_inherits_complete_agent_config() -> None:
@@ -44,7 +45,8 @@ def test_scalar_and_list_overrides_replace_and_clear() -> None:
 
     merged = merge_agent_run_override(base, override)
 
-    assert merged.config.model.model_revision_id == base.model.model_revision_id
+    assert merged.config.model.model_key == base.model.model_key
+    assert merged.config.model.model_api == base.model.model_api
     assert merged.config.model.settings == {}
     assert merged.config.model.characteristics.context_window == 32000
     assert merged.config.instructions == ""
@@ -220,7 +222,34 @@ async def test_current_invocation_freezes_complete_effective_config(
     assert frozen.effective_config.instructions == "One Run only."
     assert frozen.effective_config.retries is not None
     assert frozen.effective_config.retries.tools == 0
-    assert frozen.effective_config.resolved_model == created.revision.resolved_model
+    assert frozen.effective_config.resolved_model.execution.model_id == created.revision.resolved_model.model_id
+    assert frozen.effective_config.resolved_model.execution.model_key == created.revision.resolved_model.model_key
+    assert frozen.effective_config.resolved_model.settings == created.revision.resolved_model.settings
+
+
+@pytest.mark.anyio
+async def test_run_acceptance_uses_latest_model_without_revising_agent(
+    agent_service: AgentService,
+    agent_invocation_resolver: AgentInvocationResolver,
+    agent_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await agent_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-live-model-selection",
+        request=CreateAgentRequest(name="Live Model", config=agent_config()),
+    )
+    async with transaction(agent_sessions) as session:
+        model = await session.get(ModelRecord, MODEL_ID)
+        assert model is not None
+        model.upstream_model = "gpt-new"
+
+    prepared = await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
+    async with transaction(agent_sessions) as session:
+        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+
+    assert frozen.agent_revision_id == created.revision.id
+    assert frozen.effective_config.resolved_model.execution.upstream_model == "gpt-new"
 
 
 @pytest.mark.anyio

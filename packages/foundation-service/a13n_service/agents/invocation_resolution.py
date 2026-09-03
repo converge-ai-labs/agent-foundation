@@ -18,11 +18,7 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_workspace,
 )
-from a13n_service.models.runtime import (
-    AcceptedModelSelector,
-    PreparedModelExecution,
-    PreparedModelSnapshotExecution,
-)
+from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
 from a13n_service.models.service import ModelError
 from a13n_service.plugins.runtime import PluginRuntimeLockError
 from a13n_service.skills.domain import SkillPackageManifest
@@ -33,9 +29,9 @@ from .domain import (
     AgentRevision,
     AgentRunOverride,
     EffectiveAgentConfig,
+    EffectiveAgentModel,
     EnvironmentExecutionConfig,
     PluginRuntimeMode,
-    ResolvedAgentModel,
     ResolvedPluginVersion,
     ResolvedSkillSelection,
     ResolvedSubagentEdge,
@@ -81,7 +77,7 @@ class PreparedInvocationSubagent:
     child_runtime_lock_digest: str
 
 
-PreparedInvocationModel = PreparedModelExecution | PreparedModelSnapshotExecution
+PreparedInvocationModel = PreparedModelExecution
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,20 +263,21 @@ class AgentInvocationResolver:
                     resolved_environment=resolved_environment,
                 )
             try:
-                if merged.config.model.model_revision_id == revision.config.model.model_revision_id:
-                    model: PreparedInvocationModel = await self._model_selector.prepare_snapshot(
-                        organization_id=authorized.organization_id,
-                        workspace_id=workspace_id,
-                        snapshot=revision.resolved_model.execution,
-                        invoking_principal=actor.principal,
-                    )
-                else:
-                    model = await self._model_selector.prepare(
-                        organization_id=authorized.organization_id,
-                        workspace_id=workspace_id,
-                        model_revision_id=merged.config.model.model_revision_id,
-                        invoking_principal=actor.principal,
-                    )
+                model = await self._model_selector.prepare(
+                    organization_id=authorized.organization_id,
+                    workspace_id=workspace_id,
+                    model_id=(
+                        revision.resolved_model.model_id
+                        if merged.config.model.model_key == revision.config.model.model_key
+                        else None
+                    ),
+                    model_key=(
+                        merged.config.model.model_key
+                        if merged.config.model.model_key != revision.config.model.model_key
+                        else None
+                    ),
+                    model_api=merged.config.model.model_api,
+                )
             except ModelError as error:
                 raise agent_revision_not_executable(_model_reason(error)) from error
         except AuthorizationError as error:
@@ -411,13 +408,7 @@ class AgentInvocationResolver:
                 action=WorkspaceAction.models_read,
             )
             try:
-                if isinstance(prepared.model, PreparedModelSnapshotExecution):
-                    execution = await self._model_selector.freeze_snapshot_in_transaction(
-                        session,
-                        prepared=prepared.model,
-                    )
-                else:
-                    execution = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
+                execution = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
             except ModelError as error:
                 raise agent_revision_not_executable(_model_reason(error)) from error
             skills = await _freeze_skills(session, prepared)
@@ -471,7 +462,7 @@ class AgentInvocationResolver:
             raise agent_revision_not_executable(error.reason) from error
         config_payload = {
             "schema_version": "1",
-            "resolved_model": ResolvedAgentModel(
+            "resolved_model": EffectiveAgentModel(
                 execution=execution,
                 settings=prepared.merged.config.model.settings,
                 characteristics=prepared.merged.config.model.characteristics,

@@ -9,7 +9,7 @@ from a13n_harness import HarnessState
 from a13n_service.agents.domain import (
     AgentConfig,
     EffectiveAgentConfig,
-    ResolvedAgentModel,
+    EffectiveAgentModel,
     canonical_digest,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
@@ -27,7 +27,7 @@ RUN_ID = "run_1234567890abcdef"
 AGENT_ID = "agt_1234567890abcdef"
 AGENT_REVISION_ID = "agtr_1234567890abcdef"
 MODEL_ID = "mdl_1234567890abcdef"
-MODEL_REVISION_ID = "mdlr_1234567890abcdef"
+MODEL_KEY = "primary"
 ATTEMPT_ID = "rat_1234567890abcdef"
 TENANT_ID = "org_1234567890abcdef"
 WORKSPACE_ID = "ws_1234567890abcdef"
@@ -40,7 +40,8 @@ def effective_agent_config() -> EffectiveAgentConfig:
     base = AgentConfig.model_validate(
         {
             "model": {
-                "model_revision_id": MODEL_REVISION_ID,
+                "model_key": MODEL_KEY,
+                "model_api": "openai.responses",
                 "settings": {"temperature": 0.2},
                 "characteristics": {"context_window": 128000},
             },
@@ -56,17 +57,14 @@ def effective_agent_config() -> EffectiveAgentConfig:
     )
     execution = ModelExecutionSnapshot(
         model_id=MODEL_ID,
-        model_revision_id=MODEL_REVISION_ID,
-        provider_type="openai",
-        model_name="gpt-5.6-terra",
-        base_url=None,
-        credential={"source": "none"},
-        provider_config={},
-        adapter_key="openai",
-        adapter_version="1",
+        model_key=MODEL_KEY,
+        upstream_model="gpt-5.6-terra",
+        model_api="openai.responses",
+        profile={},
+        limits={},
     )
     candidate = EffectiveAgentConfig(
-        resolved_model=ResolvedAgentModel(
+        resolved_model=EffectiveAgentModel(
             execution=execution,
             settings=base.model.settings,
             characteristics=base.model.characteristics,

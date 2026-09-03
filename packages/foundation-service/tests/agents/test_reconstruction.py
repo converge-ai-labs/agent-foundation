@@ -19,6 +19,7 @@ from a13n_service.agents.domain import (
     AgentRevision,
     ConnectorConnectionToolSelection,
     EffectiveAgentConfig,
+    EffectiveAgentModel,
     MCPConnectionToolSelection,
     PluginRuntimeMode,
     ResolvedAgentModel,
@@ -38,7 +39,7 @@ from pydantic import JsonValue, RootModel, TypeAdapter
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.usage import UsageLimits
 
-from .conftest import MODEL_ID, MODEL_REVISION_ID, agent_config
+from .conftest import MODEL_ID, MODEL_KEY, agent_config
 
 NOW = datetime(2026, 9, 2, tzinfo=UTC)
 ROOT_AGENT_ID = "ap_1234567890abcdef"
@@ -95,16 +96,23 @@ def _catalog(*, distribution_name: str = "test-plugin") -> tuple[HarnessPluginFa
 
 def _resolved_model(config: AgentConfig) -> ResolvedAgentModel:
     return ResolvedAgentModel(
+        model_id=MODEL_ID,
+        model_key=MODEL_KEY,
+        model_api="openai.responses",
+        settings=config.model.settings,
+        characteristics=config.model.characteristics,
+    )
+
+
+def _effective_model(config: AgentConfig) -> EffectiveAgentModel:
+    return EffectiveAgentModel(
         execution=ModelExecutionSnapshot(
             model_id=MODEL_ID,
-            model_revision_id=MODEL_REVISION_ID,
-            provider_type="openai",
-            model_name="gpt-5.6-terra",
-            base_url=None,
-            credential={"source": "none"},
-            provider_config={},
-            adapter_key="openai",
-            adapter_version="1",
+            model_key=MODEL_KEY,
+            upstream_model="gpt-5.6-terra",
+            model_api="openai.responses",
+            profile={},
+            limits={},
         ),
         settings=config.model.settings,
         characteristics=config.model.characteristics,
@@ -140,7 +148,7 @@ def _effective(
     subagents: tuple[ResolvedSubagentEdge, ...] = (),
 ) -> EffectiveAgentConfig:
     candidate = EffectiveAgentConfig(
-        resolved_model=_resolved_model(config),
+        resolved_model=_effective_model(config),
         resolved_plugin_versions=plugins,
         runtime_lock_digest="a" * 64,
         resolved_skills=(),

@@ -45,7 +45,8 @@ def test_model_settings_are_limited_to_native_pydantic_ai_fields() -> None:
     with pytest.raises(ValidationError, match="unsupported ModelSettings"):
         AgentModel.model_validate(
             {
-                "model_revision_id": config.model.model_revision_id,
+                "model_key": config.model.model_key,
+                "model_api": config.model.model_api,
                 "settings": {"made_up": True},
                 "characteristics": {},
             }

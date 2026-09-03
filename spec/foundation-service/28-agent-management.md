@@ -73,7 +73,22 @@ class Agent:
 
 ```python
 class AgentModel:
-    model_revision_id: ModelRevisionId
+    model_key: str
+    model_api: str
+    settings: ModelSettings
+    characteristics: HarnessModelCharacteristics
+
+
+class ResolvedAgentModel:
+    model_id: ModelId
+    model_key: str
+    model_api: str
+    settings: ModelSettings
+    characteristics: HarnessModelCharacteristics
+
+
+class EffectiveAgentModel:
+    execution: ModelExecutionSnapshot
     settings: ModelSettings
     characteristics: HarnessModelCharacteristics
 
@@ -173,7 +188,7 @@ class AgentConfig:
     protocol: ProtocolConfig
 ```
 
-The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. Skills select exact Skill Revisions, the model selects one exact ModelRevision, and the primary Environment selects at most one exact EnvironmentRevision. Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
+The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. Skills select exact Skill Revisions, the model selects one stable Model key and one explicit calling API, and the primary Environment selects at most one exact EnvironmentRevision. Agent Revision creation resolves and retains the Model's internal identity but does not freeze its mutable Model configuration; every Run resolves the latest Model under [Model Management](30-model-management.md#agent-selection-and-run-snapshot). Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
 
 `OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
@@ -230,7 +245,8 @@ type EnvironmentOverride = EnvironmentSelection | InlineEnvironmentSelection
 
 
 class ModelOverride:
-    model_revision_id: ModelRevisionId | None
+    model_key: str | None
+    model_api: str | None
     settings: ModelSettings | None
     characteristics: HarnessModelCharacteristics | None
 
@@ -286,7 +302,7 @@ The resolved non-secret result has this conceptual shape:
 ```python
 class EffectiveAgentConfig:
     schema_version: str
-    model: ResolvedAgentModel
+    model: EffectiveAgentModel
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[ResolvedPluginVersion, ...]
@@ -345,7 +361,7 @@ class AgentRevision:
 
 Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, exact managed-resource reference, Runtime lock, and subagent Revision. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
 
-`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The other resolved fields freeze the non-secret Model execution snapshot, Skill content, ConnectorConnection and MCPConnection selections, optional primary Environment lock, and complete child Revision graph. Secret values, current authorization, live Connector availability, and remote MCP catalogs remain fresh eligibility facts rather than immutable content.
+`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The resolved Model field retains only stable Model identity, explicit calling API, settings, and characteristics; Run acceptance resolves its latest Model execution snapshot. The other resolved fields freeze Skill content, ConnectorConnection and MCPConnection selections, optional primary Environment lock, and complete child Revision graph. Secret values, current authorization, current Model and Provider configuration/lifecycle, live Connector availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
 
 ## Creation, Revision, and Restore
 
@@ -403,7 +419,7 @@ Durable acceptance:
 
 Historical AgentRevisions remain invocable under the stable Agent's current lifecycle gate. Ingress and Schedule definitions store the stable Agent identity and resolve the current Revision for each occurrence. Retry, waiting feedback, recovery, and accepted child work use the exact Revision and effective configuration pinned by their Run.
 
-For each execution attempt, the Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes credentials and current resource eligibility, constructs fresh Models, Plugins, `RunBindings`, and Environment adapters, and enters the Harness only after the current attempt fence authorizes effects. Deployment code may change between attempts, but one accepted Run never silently changes Plugin code, dependencies, managed-resource Revisions, child graph, tool surface, output contract, Environment configuration, or retry budgets.
+For each outbound model request, the Worker or Runner rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt it also verifies the exact Runtime lock, reauthorizes current resource eligibility, constructs fresh Plugins, `RunBindings`, and Environment adapters, and enters the Harness only after the current attempt fence authorizes effects. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, model profile/limits, Plugin code, dependencies, other managed-resource Revisions, child graph, tool surface, output contract, Environment configuration, or retry budgets.
 
 ## Managed Harness Plugin Reference
 

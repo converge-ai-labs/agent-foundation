@@ -43,6 +43,7 @@ from .domain import (
     AssetPublicationConfig,
     ConnectorConnectionToolSelection,
     EffectiveAgentConfig,
+    EffectiveAgentModel,
     EnvironmentExecutionConfig,
     InputAdapterConfig,
     MCPConnectionToolSelection,
@@ -105,7 +106,7 @@ class _NodeSnapshot:
     agent_id: str
     agent_revision_id: str
     content_digest: str
-    resolved_model: ResolvedAgentModel
+    resolved_model: ResolvedAgentModel | EffectiveAgentModel
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     resolved_skills: tuple[ResolvedSkillSelection, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
@@ -261,7 +262,11 @@ class AgentReconstructor:
             )
             return AgentDefinition(
                 agent=AgentSpec(
-                    model=node.resolved_model.execution.model_id,
+                    model=(
+                        node.resolved_model.execution.model_id
+                        if isinstance(node.resolved_model, EffectiveAgentModel)
+                        else node.resolved_model.model_id
+                    ),
                     name=node.protocol.public_name,
                     description=node.protocol.public_description,
                     model_settings=dict(node.resolved_model.settings),

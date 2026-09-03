@@ -106,8 +106,8 @@ class AgentResolver:
         model = await self._model_selector.prepare(
             organization_id=organization_id,
             workspace_id=workspace_id,
-            model_revision_id=config.model.model_revision_id,
-            invoking_principal=actor.principal,
+            model_key=config.model.model_key,
+            model_api=config.model.model_api,
         )
         async with short_session(self._sessions) as session:
             await authorize_agent(
@@ -214,7 +214,9 @@ class AgentResolver:
             raise agent_revision_create_failed(error.reason, path=error.path) from error
         return ResolvedRevisionContent(
             resolved_model=ResolvedAgentModel(
-                execution=model,
+                model_id=model.model_id,
+                model_key=model.model_key,
+                model_api=model.model_api,
                 settings=prepared.config.model.settings,
                 characteristics=prepared.config.model.characteristics,
             ),

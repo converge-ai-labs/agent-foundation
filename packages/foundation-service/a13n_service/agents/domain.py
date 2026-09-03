@@ -27,7 +27,7 @@ from pydantic_ai.usage import UsageLimits
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
-from a13n_service.models.domain import ModelExecutionSnapshot
+from a13n_service.models.domain import ModelApi, ModelExecutionSnapshot, ModelKey
 from a13n_service.secrets.domain import SecretCredentialSource, SecretKey
 
 ObjectId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$")]
@@ -106,7 +106,8 @@ class StrictModel(BaseModel):
 
 
 class AgentModel(StrictModel):
-    model_revision_id: ObjectId
+    model_key: ModelKey
+    model_api: ModelApi
     settings: JsonObject = Field(default_factory=dict)
     characteristics: HarnessModelCharacteristics = Field(default_factory=HarnessModelCharacteristics)
 
@@ -311,7 +312,8 @@ EnvironmentOverride = EnvironmentSelection | InlineEnvironmentSelection
 
 
 class ModelOverride(StrictModel):
-    model_revision_id: ObjectId | None = None
+    model_key: ModelKey | None = None
+    model_api: ModelApi | None = None
     settings: JsonObject | None = None
     characteristics: HarnessModelCharacteristics | None = None
 
@@ -365,6 +367,16 @@ class AgentRunOverride(StrictModel):
 
 
 class ResolvedAgentModel(StrictModel):
+    model_id: ObjectId
+    model_key: ModelKey
+    model_api: ModelApi
+    settings: JsonObject
+    characteristics: HarnessModelCharacteristics
+
+    _settings_are_native = field_validator("settings")(_validate_model_settings)
+
+
+class EffectiveAgentModel(StrictModel):
     execution: ModelExecutionSnapshot
     settings: JsonObject
     characteristics: HarnessModelCharacteristics
@@ -411,8 +423,8 @@ class ResolvedSubagentEdge(StrictModel):
     environment: ChildEnvironmentPolicy
 
 
-class ResolvedRevisionContent(StrictModel):
-    resolved_model: ResolvedAgentModel
+class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
+    resolved_model: ResolvedModelT
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...] = ()
     runtime_lock_digest: Sha256Digest
     resolved_skills: tuple[ResolvedSkillSelection, ...] = ()
@@ -422,7 +434,11 @@ class ResolvedRevisionContent(StrictModel):
     resolved_subagents: tuple[ResolvedSubagentEdge, ...] = ()
 
 
-class EffectiveAgentConfig(ResolvedRevisionContent):
+class ResolvedRevisionContent(_ResolvedContent[ResolvedAgentModel]):
+    pass
+
+
+class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
     schema_version: Literal["1"] = "1"
     instructions: str
     input_adapter: InputAdapterConfig

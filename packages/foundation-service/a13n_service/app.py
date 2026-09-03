@@ -32,18 +32,14 @@ from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.models.connection_test import NativeModelConnectionTester
 from a13n_service.models.endpoint_policy import EndpointPolicy
+from a13n_service.models.model_factory import NativeModelFactory
+from a13n_service.models.provider_operations import NativeProviderOperations
+from a13n_service.models.provider_runtime import LiveProviderResolver
+from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.router import router as model_router
-from a13n_service.models.runtime import (
-    AcceptedModelSelector,
-    NativeModelFactory,
-    RuntimeSecretValueResolver,
-)
-from a13n_service.models.secrets import DatabaseSecretValueResolver
-from a13n_service.models.service import (
-    CandidateConnectionTester,
-    ModelService,
-)
+from a13n_service.models.runtime import AcceptedModelSelector
+from a13n_service.models.service import ModelConnectionTester, ModelService
 from a13n_service.observability import build_observability_runtime
 from a13n_service.plugins.builtins import BuiltinPluginArtifact
 from a13n_service.plugins.commands import (
@@ -106,8 +102,7 @@ class ServiceComponents:
     plugin_runtime_command_dispatcher: PluginRuntimeCommandDispatcher | None = None
     plugin_runtime_candidate_resolver: PluginRuntimeCandidateResolver | None = None
     plugin_runtime_staging_authority: PluginRuntimeStagingAuthority | None = None
-    model_connection_tester: CandidateConnectionTester | None = None
-    model_secret_resolver: RuntimeSecretValueResolver | None = None
+    model_connection_tester: ModelConnectionTester | None = None
     environment_provider_catalog: EnvironmentProviderCatalog | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
@@ -177,17 +172,25 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
             )
             github_http_client = await stack.enter_async_context(httpx2.AsyncClient(follow_redirects=False))
-            secret_resolver = app.state.components.model_secret_resolver
-            if secret_resolver is None:
-                secret_resolver = DatabaseSecretValueResolver(storage.sessions, secret_protector)
+            native_model_factory = NativeModelFactory(model_http_client)
+            live_provider_resolver = LiveProviderResolver(
+                storage.sessions,
+                app.state.model_provider_registry,
+                app.state.model_endpoint_policy,
+                secret_protector,
+            )
             connection_tester = app.state.components.model_connection_tester
-            if connection_tester is None and secret_resolver is not None:
+            if connection_tester is None:
                 connection_tester = NativeModelConnectionTester(
-                    secret_resolver=secret_resolver,
-                    endpoint_policy=app.state.model_endpoint_policy,
-                    http_client=model_http_client,
+                    provider_resolver=live_provider_resolver,
+                    model_factory=native_model_factory,
                 )
-            app.state.model_secret_resolver = secret_resolver
+            app.state.live_model_provider_resolver = live_provider_resolver
+            model_provider_operations = NativeProviderOperations(
+                provider_resolver=live_provider_resolver,
+                registry=app.state.model_provider_registry,
+                http_client=model_http_client,
+            )
             package_store = SkillPackageStore(storage.objects)
             asset_staging = await AssetStaging.create(storage.files_root, limiter=storage.file_limiter)
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
@@ -337,7 +340,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 app.state.accepted_model_selector = AcceptedModelSelector(
                     storage.sessions,
                     app.state.model_provider_registry,
-                    app.state.model_endpoint_policy,
                 )
                 app.state.agent_environment_selection_resolver = AgentEnvironmentSelectionResolver(
                     storage.sessions,
@@ -368,10 +370,17 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 app.state.model_service = ModelService(
                     storage.sessions,
                     app.state.model_provider_registry,
-                    app.state.model_endpoint_policy,
-                    resolve_dns_on_save=settings.model_resolve_dns_on_save,
                     connection_tester=connection_tester,
                     connection_test_timeout_seconds=settings.model_connection_test_timeout_seconds,
+                )
+                app.state.model_provider_service = ModelProviderService(
+                    storage.sessions,
+                    app.state.model_provider_registry,
+                    app.state.model_endpoint_policy,
+                    secret_protector,
+                    resolve_dns_on_save=settings.model_resolve_dns_on_save,
+                    operations=model_provider_operations,
+                    command_timeout_seconds=settings.model_connection_test_timeout_seconds,
                 )
                 app.state.asset_service = AssetService(
                     storage.sessions,
@@ -388,7 +397,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
                 app.state.asset_cleanup_reconciler = asset_cleanup_reconciler
             if settings.role in _WORKER_ROLES:
-                app.state.native_model_factory = NativeModelFactory(model_http_client)
+                app.state.native_model_factory = native_model_factory
                 app.state.skill_runtime_preparer = SkillRuntimePreparer(storage.sessions, package_store)
             async with create_task_group() as background_tasks:
                 if asset_cleanup_reconciler is not None:

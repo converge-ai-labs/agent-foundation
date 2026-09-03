@@ -2,290 +2,297 @@
 
 ## Design Position
 
-Foundation manages the configuration required for an Agent to call one primary generative model. `Model` is the stable Workspace identity and `ModelRevision` is one immutable provider configuration. An Agent selects an exact `model_revision_id`.
+Foundation exposes two Workspace resources for primary generative-model execution:
 
-Creating a Model atomically creates v1. A complete provider-configuration change appends a Revision and advances both the Model head and Revision to the same `version`; a semantic no-op does not advance either. Metadata and enabled-state changes use strong ETags and do not change `version`. Existing AgentRevisions and accepted Runs retain their exact ModelRevision.
+- a `ModelProvider` is one configured account or endpoint; and
+- a `Model` is one stable Workspace model alias owned by exactly one Provider.
 
-One ordinary Run inherits the selected Revision's frozen model snapshot and concrete settings. A typed model override may select another current enabled `Model` or replace bounded model settings and characteristics; acceptance resolves the result once into `EffectiveAgentConfig`. The snapshot is execution data, not a model-configuration revision or management resource. Every replacement attempt for that Run uses the same resolved value.
+Provider types and calling APIs are deployment registry values, not resources. A Workspace can create any number of Providers of the same type, such as two OpenAI accounts or two Ollama servers. Credentials, endpoint settings, region, project, and authentication mode belong to the Provider. Upstream model identity and supported calling APIs belong to the Model.
+
+Neither resource has a version or immutable revision. Both are mutable under strong ETag preconditions. An Agent stores `model_key` plus one explicit `model_api`; each Run resolves the latest enabled Model when accepted and retains a Model execution snapshot. Provider configuration is deliberately not frozen: every outbound model request resolves the Model's current Provider configuration and credential.
 
 This contract covers only the primary text or multimodal generative model used by an Agent. Embedding, reranking, moderation, speech, image generation, video generation, and other specialized model resources are outside this domain.
 
-## Boundaries
+## Boundaries and vocabulary
 
-| Concern                            | Owner                                                          | Contract                                                                                        |
-| ---------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Model configuration and lifecycle  | This document                                                  | Owns `Model`, provider discovery, testing, updating, enabling, and disabling                    |
-| Agent model selection and behavior | [Agent Management](28-agent-management.md)                     | Stores one exact `model_revision_id`, concrete Harness characteristics, and native settings     |
-| Run-time model selection           | This document and [Durable Run State](12-run-persistence.md)   | Reuses the Revision snapshot or resolves one typed override into effective configuration        |
-| Secret values and use eligibility  | [Secret Management](27-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                            |
-| Provider API and balancing         | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                                |
-| Trusted provider code              | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code            |
-| Harness model behavior             | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                              |
-| OAuth Model credential persistence | Foundation                                                     | Implements an authorized durable Harness credential source when a trusted adapter selects OAuth |
-| Usage identity and measures        | [Events, Usage, and Delivery](25-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                               |
+| Concept            | Meaning                                                                                  | Durable resource |
+| ------------------ | ---------------------------------------------------------------------------------------- | ---------------- |
+| Provider type      | Trusted implementation family such as `openai`, `openrouter`, `ollama`, or `aws_bedrock` | No               |
+| Model Provider     | One Workspace-owned configured account or endpoint                                       | Yes              |
+| Calling API        | Request/response contract such as `openai.responses` or `anthropic.messages`             | Registry key     |
+| Model              | Stable Workspace alias for one upstream model under one Provider                         | Yes              |
+| Model API config   | Per-Model, per-calling-API profile and limits                                            | Model value      |
+| Provider adapter   | Trusted management and construction code selected by Provider type                       | No               |
+| Pydantic AI Model  | Process-local native model implementation used for a request                             | No               |
+| Execution snapshot | Model fields retained by an accepted Run                                                 | Embedded value   |
 
-`Model` is not a Provider account, connection pool, deployment, gateway, or credential container. Foundation exposes no independent Provider Connection resource for models. Connection fields live directly in the configuration and credential values remain in managed Secrets.
+An endpoint owner and a wire format are independent facts. An OpenRouter Provider can expose an OpenAI-compatible calling API without becoming an OpenAI Provider. An Ollama Provider can expose the same general format while retaining Ollama-specific discovery and authentication behavior. An OpenAI Provider can allow both Responses and Chat Completions, and one Model can declare either or both.
 
-## Provider Registry
+`ModelProvider` is shortened to Provider within this document when there is no ambiguity. It is not a load-balancing pool, failover policy, model, or generic secret container. `Model` is not an upstream catalog entry: it is a configured Workspace alias.
 
-The control plane exposes a read-only registry of trusted installed model providers. Each entry is a safe `ProviderDefinition`:
+## Trusted Provider-type and calling-API registry
+
+The distribution assembles a finite registry from trusted code. Public requests cannot register code, import a package, invent a calling API, or supply request transformations. Package installation alone grants no trust.
+
+Each safe `ModelProviderTypeDefinition` exposes:
 
 ```python
-class ProviderDefinition:
+class ModelProviderTypeDefinition:
     key: str
     display_name: str
+    config_schema: JsonObject
     credential_schema: JsonObject
-    connection_schema: JsonObject
-    model_catalog: tuple[ProviderModelCatalogEntry, ...]
-    capability_catalog: tuple[ProviderModelCapabilityEntry, ...]
+    supported_model_apis: tuple[str, ...]
+    supports_model_discovery: bool
 ```
 
-The schemas define the accepted credential modes, typed connection fields, required fields, defaults, display hints, and bounds. They contain no Secret values or operator-private configuration. Unknown provider keys, unknown input fields, and configuration that does not satisfy the selected provider schema are rejected.
+Schemas define accepted fields, bounds, defaults, and write-only credential input. They contain no credential values or operator-private configuration. Provider `type` selects one definition and is immutable after create.
 
-The provider registry is assembled from trusted adapters selected by the running distribution. Installing a package does not make it trusted. Public requests cannot register a provider, provide an import path, or execute remote adapter code.
+The initial registry follows the native Model implementations supported and tested against the locked Pydantic AI release:
 
-The distribution includes these provider definitions:
+| Provider type          | Allowed calling API keys                                                          | Native Pydantic AI Model binding                                |
+| ---------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `openai`               | `openai.responses`, `openai.chat_completions`                                     | `OpenAIResponsesModel`, `OpenAIChatModel`                       |
+| `anthropic`            | `anthropic.messages`                                                              | `AnthropicModel`                                                |
+| `google_gemini`        | `google.generate_content`                                                         | `GoogleModel` with `GoogleProvider`                             |
+| `google_vertex`        | `google.generate_content`                                                         | `GoogleModel` with `GoogleCloudProvider`                        |
+| `azure_openai`         | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with `AzureProvider`                              |
+| `aws_bedrock`          | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` | Bedrock Converse and Mantle Models                              |
+| `openrouter`           | `openrouter.chat_completions`                                                     | `OpenRouterModel`                                               |
+| `ollama`               | `ollama.chat_completions`                                                         | `OllamaModel`                                                   |
+| `alibaba_model_studio` | `openai.chat_completions`                                                         | `OpenAIChatModel` with `AlibabaProvider`                        |
+| `deepseek`             | `openai.chat_completions`                                                         | `OpenAIChatModel` with `DeepSeekProvider`                       |
+| `moonshot`             | `openai.chat_completions`                                                         | `OpenAIChatModel` with `MoonshotAIProvider`                     |
+| `zhipu`                | `openai.chat_completions`                                                         | `OpenAIChatModel` with `ZaiProvider`                            |
+| `openai_compatible`    | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with a bounded generic OpenAI-compatible provider |
 
-| Provider key           | Product label               | Connection fields beyond common model and credential fields             |
-| ---------------------- | --------------------------- | ----------------------------------------------------------------------- |
-| `openai`               | OpenAI                      | None; uses the official Responses API endpoint                          |
-| `anthropic`            | Anthropic                   | None; uses the official Messages API endpoint                           |
-| `google_gemini`        | Google Gemini               | None; uses the official endpoint                                        |
-| `google_vertex`        | Google Vertex AI            | `project_id`, `location`                                                |
-| `azure_openai`         | Azure OpenAI                | `resource_endpoint`, `api_protocol`                                     |
-| `aws_bedrock`          | AWS Bedrock                 | `region`                                                                |
-| `alibaba_model_studio` | Alibaba Model Studio / Qwen | `region`, `domain_type`, optional `alibaba_workspace_id`                |
-| `deepseek`             | DeepSeek                    | None; uses the official endpoint                                        |
-| `moonshot`             | Moonshot / Kimi             | None; uses the official endpoint                                        |
-| `zhipu`                | Zhipu / GLM                 | None; uses the official endpoint                                        |
-| `openai_compatible`    | OpenAI-Compatible           | `base_url`, `api_protocol`, `auth_mode`, optional `api_key_header_name` |
+The table is an executable compatibility registry, not a claim about everything an upstream service documents. For example, this version does not advertise OpenRouter Responses or Anthropic Messages through OpenRouter because the locked Pydantic AI integration does not expose those combinations as supported Model bindings. A new combination requires a trusted registry addition and execution tests.
 
-An official direct provider uses an adapter-owned fixed or derived endpoint and does not accept an arbitrary base URL. A proxy, gateway, or self-hosted service uses `openai_compatible` unless its authentication or protocol requires a separate trusted adapter.
+Provider configuration contains endpoint and authentication mechanics but never a calling-API choice. A Model selects one or more API keys from its Provider type's allowlist. There is no default API and runtime never silently changes or falls back to another API.
 
-For `openai_compatible`, `api_protocol` is `chat_completions` or `responses` and defaults to `chat_completions`. `auth_mode` is `bearer` or `api_key_header`. `api_key_header_name` is accepted only for `api_key_header`; the header value always comes from the selected Secret. Arbitrary extra headers, multi-header credentials, request signing, and caller-defined request transformations are not supported by this generic adapter.
+Official direct Provider types use fixed or typed derived endpoints. The generic `openai_compatible` type accepts a bounded `base_url` and an explicit `none`, `bearer`, or named API-key-header authentication mode. Provider-specific values such as Azure resource endpoint/API version, Vertex project and location, Bedrock region, or Ollama base URL remain Provider configuration.
 
-Provider model and capability catalogs ship with the adapter or Foundation release. Foundation performs no background Internet discovery or catalog synchronization. The model catalog is an autocomplete aid rather than a whitelist: a caller can enter a model name absent from the catalog, subject to the same bounded syntax and provider validation.
+## Model Provider
 
-## Model
-
-`Model` has one opaque `ModelId` with the allocated `mdl` kind prefix. Its name is non-empty, bounded, and unique within one Workspace. The resource has this conceptual safe representation:
+A Provider has one opaque `ModelProviderId` with the `mprov` kind prefix:
 
 ```python
-type ModelCredential = (
-    SecretCredentialSource | NoCredential
-)
-
-
-class NoCredential:
-    source: Literal["none"]
-
-
-class ModelCapabilities:
-    input_modalities: tuple[str, ...]
-    context_window_tokens: int | None
-    max_output_tokens: int | None
-    tool_calling: bool | None
-    structured_output: bool | None
-    reasoning: bool | None
-
-
-class Model:
-    id: ModelId
+class ModelProvider:
+    id: ModelProviderId
     workspace_id: WorkspaceId
+    type: str
     name: str
-    description: str | None
-    version: int
-    current_revision_id: ModelRevisionId
+    config: JsonObject
+    credential_configured: bool
     enabled: bool
     created_by: PrincipalRef
     updated_by: PrincipalRef
     created_at: datetime
     updated_at: datetime
-
-
-class ModelRevision:
-    id: ModelRevisionId
-    model_id: ModelId
-    workspace_id: WorkspaceId
-    version: int
-    provider_type: str
-    model_name: str
-    base_url: str | None
-    credential: ModelCredential
-    provider_config: JsonObject
-    capabilities: ModelCapabilities
-    capability_source: Literal["catalog", "manual_override"]
-    content_digest: str
-    created_by: PrincipalRef
-    created_at: datetime
 ```
 
-`SecretCredentialSource` and its variants come from the shared [Secret credential-reference contract](27-secret-management.md#credential-references). `NoCredential` remains Model-specific because only a provider schema can declare that a model needs no credential.
+`name` is a human-readable, case-insensitively unique name within the Workspace. Provider type is not unique: `OpenAI Production` and `OpenAI Personal` can both have `type="openai"`.
 
-`base_url` is the normalized effective endpoint exposed when it is safe to do so. It is null when the provider derives its endpoint from typed fields such as region or project. `provider_config` contains only the fields declared by the selected provider definition and never contains a credential.
+Provider create and update accept a provider-schema-specific write-only `credential` field. Reads return only `credential_configured`; they never return plaintext, ciphertext, credential shape, masked suffixes, or a reusable Secret identifier. Omitting `credential` on update retains the current value. Supplying null removes it only when the Provider type permits an unauthenticated connection. Supplying another value atomically replaces it.
 
-Concrete `HarnessModelCharacteristics`, native `ModelSettings`, temperature, maximum output requested for one invocation, reasoning effort, tool choice, structured-output policy, timeouts, and other Agent behavior are not `Model` fields. The immutable `AgentRevision` owns those values because two Agents can use the same model configuration differently.
+Foundation protects Provider credentials with the shared managed-secret encryption primitive and deployment key, but a Provider credential is not a public `Secret` resource. Model Provider and Environment Provider implementations can reuse that internal cryptographic storage boundary without exposing generic Secret selection in either resource API.
 
-Capabilities describe catalog knowledge or an explicit Workspace override. They are informational for authoring and display. They do not gate Agent save, Run acceptance, tool calling, structured output, or execution. Unknown facts are represented as unknown rather than false. Provider behavior and runtime errors remain authoritative. They do not populate, default, or validate an AgentRevision's concrete `HarnessModelCharacteristics`.
+Provider `config`, credential, name, and enabled state are mutable. Provider `type` is immutable. Every update is atomic, audited, and requires the current strong ETag. Provider configuration has no revision number, compatibility snapshot, or historical read API.
 
-## Credential Requirements
+## Model
 
-A configuration declares exactly one credential source allowed by its provider schema:
+A Model has one opaque internal `ModelId` and one memorable external `key`:
 
-- `workspace_secret` names an exact active Workspace-owned Secret in the same Workspace;
-- `invoking_user_secret` names a Secret key resolved for the active invoking User; a Service Account cannot satisfy this requirement; or
-- `none` supplies no credential and is accepted only when the provider schema explicitly permits unauthenticated use.
+```python
+class ModelProfile:
+    input_modalities: tuple[Literal["text", "image", "audio", "video"], ...]
+    supports_tools: bool | None
+    supports_json_schema_output: bool | None
+    supports_json_object_output: bool | None
+    supports_image_output: bool | None
+    supports_audio_input: bool | None
+    supports_thinking: bool | None
+    thinking_always_enabled: bool | None
 
-There is no fallback order. A missing, inactive, unauthorized, or ineligible Secret fails closed. Model APIs never accept or return plaintext credentials. An authoring UI can offer existing Secrets or create a Secret inline through the Secret API, but it stores only the resulting reference in `Model`.
 
-AWS Bedrock, Google Vertex AI, and other authenticated providers use the same Workspace or invoking-User Secret boundary. Their adapter defines the expected credential content. Foundation does not add a deployment-identity or ambient workload-identity credential mode. A trusted provider adapter that supports a user OAuth Model implements the Harness [`load()`/`save()` credential-source contract](../agent-harness/16a-model-authentication.md) over Foundation-owned encrypted state. Foundation retains account identity, authorization, and cross-replica coordination; Harness retains expiry, refresh, process-local single-flight, exact-origin injection, and one 401 replay. The source object and credential bytes are reconstructed per worker operation and never enter `ModelExecutionSnapshot`.
+class ModelLimits:
+    context_window_tokens: int | None
+    max_output_tokens: int | None
 
-A Google Vertex AI service-account credential must declare the exact official `https://oauth2.googleapis.com/token` token endpoint. Foundation validates that value and pins the same endpoint when constructing credentials; Secret content cannot select another token destination or bypass the outbound network policy.
 
-The `ModelExecutionSnapshot` retains only the non-secret credential requirement. Every RunAttempt resolves and decrypts the current eligible Secret value into fresh process-local bindings after closing its database transaction. Rotation therefore applies to the next resolution, including a replacement RunAttempt, without changing the accepted model endpoint or model name.
+class ModelApiConfig:
+    api: str
+    profile: ModelProfile
+    limits: ModelLimits
 
-## Endpoint Safety
 
-Every configurable endpoint is validated as an outbound network destination:
+class Model:
+    id: ModelId
+    workspace_id: WorkspaceId
+    key: str
+    provider_id: ModelProviderId
+    name: str
+    description: str | None
+    upstream_model: str
+    model_apis: tuple[ModelApiConfig, ...]
+    enabled: bool
+    created_by: PrincipalRef
+    updated_by: PrincipalRef
+    created_at: datetime
+    updated_at: datetime
+```
 
-- only `http` and `https` are accepted;
-- user information, fragments, and credential-bearing or otherwise sensitive query parameters are rejected;
-- loopback, link-local, cloud-metadata, and non-allowlisted private destinations are denied by default;
-- only deployment operators can allow private domains or CIDR ranges; a Workspace mutation cannot expand this policy;
-- DNS answers are revalidated when connecting, and every redirect target is validated under the same policy; and
-- official adapter endpoints use the deployment's trusted allowlist.
+`key` is normalized and case-insensitively unique within the Workspace. It is the identifier accepted by public Agent configuration, API, and SDK surfaces. The opaque `id` is retained for internal relationships and observations. `key` and `provider_id` are immutable; changing account or endpoint means creating another Model. This preserves the invariant that a Model always belongs to the same Provider.
 
-Validation is applied on create, update, test, and execution. A hostname that passed at save time does not bypass DNS or redirect validation later.
+`upstream_model` is a bounded opaque string passed to the selected native Pydantic AI Model. It is not restricted to a bundled or discovered catalog. This lets a Workspace use a newly released OpenAI, Anthropic, Gemini, or other upstream model before Foundation's catalog metadata is updated.
 
-## Revision creation, Run Selection, and Reconstruction
+`model_apis` is a non-empty set with unique API keys. Each key must be allowed by the selected Provider type. Profile and limits are stored per API because one upstream model can expose different effective behavior through different calling APIs. These values are user-configurable authoring and observability metadata. Unknown facts remain null rather than false.
 
-Agent Revision creation reads the selected enabled `Model`, authorizes it, and freezes this conceptual value. Run acceptance normally reuses it; a typed model override performs the same resolution for the effective Run configuration:
+The safe profile deliberately mirrors only serializable Pydantic AI `ModelProfile` facts useful to users. Schema transformers, Python types, system-prompt templates, request transforms, and other execution mechanics remain trusted adapter/runtime code. Profile metadata does not automatically gate Agent save or execution; the upstream response remains authoritative.
+
+Model name, description, upstream model, API configs, and enabled state are mutable under a strong ETag. A Model has no version, revision, revision route, historical configuration API, or copy route.
+
+## Discovery and manual Model creation
+
+Discovery is a Provider-scoped management adapter operation:
+
+```python
+class DiscoveredModel:
+    upstream_model: str
+    display_name: str | None
+    suggested_model_apis: tuple[ModelApiConfig, ...]
+```
+
+The adapter can implement `list_models` and optional model inspection using the Provider's current endpoint and credential. Results are transient, advisory, and may be briefly cached. They are not durable resources, do not create Models, do not update existing Models, and never become an allowlist.
+
+Callers choose discovered entries to create ordinary Models. They can also create a Model manually under any Provider by supplying an arbitrary bounded `upstream_model`, an explicit non-empty API set, and profile/limit metadata. Catalog or discovery suggestions are only prefill. Provider type validation still rejects unsupported calling APIs.
+
+Automatic profile or limit inspection follows the same rule: it produces suggestions, never authoritative runtime truth and never an implicit mutation.
+
+## Agent selection and Run snapshot
+
+Agent configuration selects a Model with both identifiers required:
+
+```python
+class AgentModel:
+    model_key: str
+    model_api: str
+    settings: JsonObject
+    characteristics: HarnessModelCharacteristics
+```
+
+Agent Revision creation resolves `model_key` to the internal `model_id`, validates that `model_api` is configured, and retains the resolved identity. It does not freeze the Model configuration. Invoking any Agent Revision resolves the latest enabled Model at Run acceptance. A caller or SDK can auto-select an API before saving only when the Model exposes exactly one API; the stored Agent value is still explicit.
+
+Run acceptance freezes:
 
 ```python
 class ModelExecutionSnapshot:
     schema_version: Literal["1"]
     model_id: ModelId
-    provider_type: str
-    model_name: str
-    base_url: str | None
-    credential: ModelCredential
-    provider_config: JsonObject
-    adapter_key: str
-    adapter_version: str
+    model_key: str
+    upstream_model: str
+    model_api: str
+    profile: ModelProfile
+    limits: ModelLimits
 
 
 class ModelExecutionObservation:
     model_id: ModelId
-    provider_type: str
-    model_name: str
+    model_key: str
+    upstream_model: str
+    model_api: str
 ```
 
-The snapshot contains no Secret value and is not independently addressable. The `AgentRevision.resolved_model` and accepted `EffectiveAgentConfig.model` pair it with exact `ModelSettings` and `HarnessModelCharacteristics`. Every claim copies the safe observation to its new execution attempt and reconstructs the native provider and Model from the same snapshot. A replacement attempt never reads the current `Model` as a fallback.
+The Provider ID is not duplicated in this snapshot because `Model.provider_id` is immutable. Runtime resolves the Provider through the retained `model_id`. The snapshot contains no endpoint, Provider config, credential, or secret. Replacement attempts and explicit Retry reuse the same Model snapshot, so a mid-Run Model edit does not change upstream model, selected API, profile, or limits.
 
-The complete non-secret snapshot remains part of the retained effective configuration required for retry, resume, historical exact-Revision invocation, and audit. `ModelExecutionObservation` is the smaller safe projection exposed on Run and attempt reads. Waiting feedback and explicit Retry reuse the source Run's effective model; an ordinary new continuation inherits the newly selected Revision or applies its own typed override.
+Provider values have different semantics. Immediately before every outbound model request, runtime:
 
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant Control
-    participant Store
-    participant Worker
-    participant Provider
+1. reads the Model's immutable Provider relationship and current Model/Provider enabled state in a short database session;
+2. copies the current Provider configuration and encrypted credential material;
+3. closes the database session;
+4. authenticates/decrypts and validates the endpoint; and
+5. constructs the native Pydantic AI Model for the exact snapshotted calling API.
 
-    Caller->>Control: accept Run for stable Agent
-    Control->>Store: resolve selected AgentRevision and typed override
-    Control->>Store: commit Run plus EffectiveAgentConfig
-    Worker->>Store: claim RunAttempt and read frozen snapshot
-    Worker->>Store: resolve current eligible Secret value
-    Worker->>Provider: call exact accepted endpoint and model
-    Worker->>Store: seal Run and retain effective config plus safe observation
-```
+Provider edits therefore affect the next outbound request, including a later request within the same Run or a replacement attempt. This applies to credential rotation, authentication mode, endpoint, region, project, and API version. An HTTP request already dispatched is not altered or cancelled.
 
-`adapter_key` and `adapter_version` identify the trusted adapter compatibility contract required to reconstruct the snapshot. The adapter version changes only for an incompatible adapter change; it is not a package or transitive-dependency lock. If that compatibility identity is unavailable, the Run fails before model dispatch. Foundation never substitutes another ModelRevision, provider, or endpoint.
+Disabling either the Model or its Provider is a live kill switch: the next outbound request fails closed before dispatch, including a retry in the same Run. Re-enabling permits subsequent requests. Runtime never falls back to another Provider, Model, or calling API.
+
+## Native construction and endpoint safety
+
+Pydantic AI owns provider invocation, message conversion, streaming, tool calls, and structured-output protocol behavior. Foundation's trusted Provider adapter owns only:
+
+- Provider config and credential validation;
+- optional connection test and model discovery;
+- endpoint derivation and policy validation; and
+- construction of the registry-selected native Pydantic AI Model.
+
+There is no Foundation `Interface`, `InterfaceAdapter`, or user-selectable adapter resource.
+
+Every configurable or derived endpoint is validated immediately before dispatch:
+
+- only `http` and `https` are accepted;
+- user information, fragments, and credential-bearing or sensitive query parameters are rejected;
+- loopback, link-local, cloud-metadata, and non-allowlisted private destinations are denied by default;
+- only deployment operators can allow private domains or CIDR ranges;
+- DNS answers and redirects are revalidated; and
+- official Provider endpoints remain adapter-owned.
+
+Provider credentials and config are copied under authorization and database consistency, but no transaction or session remains open across decryption, DNS, provider discovery, testing, or model I/O.
 
 ## Management API
 
-Provider discovery is deployment-scoped and read-only:
+Provider-type discovery is deployment-scoped and read-only:
 
 ```http
-GET /api/v1/model-providers
+GET /api/v1/model-provider-types
 ```
 
-Workspace model resources use:
+Workspace Provider resources and commands use:
 
 ```http
-GET    /api/v1/workspaces/{workspace_id}/models
-POST   /api/v1/workspaces/{workspace_id}/models
-GET    /api/v1/workspaces/{workspace_id}/models/{model_id}
-PATCH  /api/v1/workspaces/{workspace_id}/models/{model_id}
-POST   /api/v1/workspaces/{workspace_id}/models/{model_id}/revisions
-GET    /api/v1/workspaces/{workspace_id}/models/{model_id}/revisions
-GET    /api/v1/workspaces/{workspace_id}/model-revisions/{revision_id}
-POST   /api/v1/workspaces/{workspace_id}/models/test
+GET   /api/v1/workspaces/{workspace_id}/model-providers
+POST  /api/v1/workspaces/{workspace_id}/model-providers
+GET   /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}
+PATCH /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}
+POST  /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/test
+POST  /api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/discover-models
 ```
 
-The model collection uses cursor pagination, deterministic `updated_at desc, id desc` order, bounded name search, and explicit `provider_type` and `enabled` filters.
+Workspace Model resources and commands use:
 
-Create is a synchronous mutation that atomically inserts the Model head and immutable revision `1`; it retains no separate idempotency or replay record. Repeating it is a new request, and the Workspace name uniqueness constraint returns `409 model_name_conflict` when the requested name already exists.
+```http
+GET   /api/v1/workspaces/{workspace_id}/models
+POST  /api/v1/workspaces/{workspace_id}/models
+GET   /api/v1/workspaces/{workspace_id}/models/{model_id}
+PATCH /api/v1/workspaces/{workspace_id}/models/{model_id}
+POST  /api/v1/workspaces/{workspace_id}/models/{model_id}/test
+```
 
-Revision publication accepts a complete replacement configuration and `expected_version`. A different normalized configuration appends one `ModelRevision`, advances `Model.version`, and selects that revision atomically. Content equal to the current revision returns the current revision without advancing either value. A stale precondition returns `409 model_version_conflict` and changes nothing.
+Provider and Model collections use cursor pagination with deterministic `updated_at desc, id desc` ordering. Provider filters include name, type, and enabled state. Model filters include name/key, `provider_id`, and enabled state.
 
-`PATCH` changes only `name`, `description`, or `enabled`. It requires the current strong Model `ETag` in `If-Match`; a stale tag returns `412` and changes nothing. Metadata and lifecycle changes never append a revision or advance `Model.version`.
+Create is synchronous and retains no separate idempotency record. Duplicate normalized Provider names return `409 model_provider_name_conflict`; duplicate normalized Model keys return `409 model_key_conflict`. All PATCH routes require `If-Match`; stale state returns `412 precondition_failed` and changes nothing.
 
-Create, revision publication, and candidate test perform complete provider-schema, endpoint-policy, credential-reference, and static compatibility validation. Saving does not require a remote provider call. A new Revision affects only future Agent Revision creation and model overrides accepted after its atomic commit.
+Provider testing validates its current connection and authentication without requiring a Model request when a safe provider-native operation exists. Model testing accepts one explicit configured `model_api` and tests the exact `(Model, model_api)` combination. Both run outside database transactions, retain no provider response or test resource, may consume quota, and record only a bounded audit event. Discovery has the same secret and transaction boundaries.
 
-## Candidate Connection Test
+## Lifecycle, authorization, and audit
 
-The test command accepts a complete unsaved candidate with the same fields and validation as create. It supports both new and edited forms and accepts only Secret references, never inline credential values. It performs one bounded synchronous adapter-defined connectivity and authentication check outside any database transaction.
+Foundation exposes disable/re-enable instead of hard delete for both resources. Provider disable blocks every dependent Model at the next outbound request. A Provider with dependent Models cannot be removed by storage maintenance. Model keys and Provider relationships cannot be reused through a public delete path.
 
-The result contains success or failure, elapsed milliseconds, and a stable safe error code and message. It contains no raw provider response, request headers, credential material, prompt, or model output. The response states that the check can consume provider quota or incur cost. Timeout returns a bounded failure rather than leaving a durable job.
+Workspace Viewer can read safe Provider-type, Provider, Model, and discovery metadata. Workspace Builder and Admin can create and update Providers and Models, replace credentials, test connections, discover models, and enable or disable resources. Agent-scoped grants do not confer Workspace Model-management authority.
 
-Testing creates no `ModelTest` resource, verification status, health status, history, or save precondition. Only the security audit event is durable. A test of an invoking-User Secret can use only the active User's own Secret; a Service Account cannot perform that test.
+Create, update, credential replacement/removal, test, discovery, enable, and disable actions produce security audit records. Audit details contain identifiers and safe outcome codes only; they never contain plaintext credentials, encrypted credential material, authorization headers, raw provider errors, prompts, or model output.
 
-## Lifecycle
+Usage and execution observations retain Model identity and selected calling API. Provider identity and type are obtained through the Model's immutable relationship when needed for attribution. The Usage domain owns immutable measure records; Model Management owns current configuration.
 
-An enabled model is available for Agent authoring and new Run acceptance. Disabling it removes it from new selection and causes a new Run using any referencing AgentRevision to fail with `model_disabled`. A Run already accepted with a snapshot continues, including its replacement RunAttempts. Re-enabling the model restores new-Run execution for all existing references.
+## Failure rules
 
-Model Management exposes no hard delete. A configuration that should no longer be selected is disabled and retained so existing `AgentRevision` references remain resolvable. Foundation exposes no server-side copy, model import, export, tag, or bulk-mutation surface. Creating a similar configuration uses the ordinary create contract with safe fields obtained from an authorized read.
+- Unknown Provider type or calling API fails validation.
+- A Model API not allowed by its Provider type fails validation.
+- Missing required Provider credential fails closed.
+- Disabled Model or Provider fails before the next outbound request.
+- Missing Model key, missing Provider, or a Model/Provider Workspace mismatch is concealed as not found where required by authorization policy.
+- Unsupported native binding, invalid current Provider config, credential decryption failure, or endpoint-policy failure prevents dispatch.
+- Discovery failure never invalidates or mutates saved Models.
+- Provider changes never cause automatic calling-API fallback.
 
-## Authorization and Audit
-
-Workspace Viewer can read safe provider, Model, and ModelRevision metadata. Workspace Builder and Admin can create Models, publish revisions, update metadata, test candidates, enable, and disable Models. Agent-scoped grants do not confer Workspace Model-management or Workspace Secret-management permission. Running an authorized Agent permits runtime use of its selected ModelRevision but does not permit reading a Secret value or changing the configuration.
-
-Provider and Model reads authorize `models.read`; create, update, test,
-enable, and disable authorize `models.manage`. These stable actions and
-built-in grants are owned by the IAM
-[registry](33-identity-and-access-management.md#stable-action-registry). Runtime
-model use is accepted Agent execution under the Run's current authority and
-grants, not another public Model action.
-
-Create, revision publication, metadata update, enable, disable, and test attempts emit security audit events with Workspace, Model when present, actor, request, outcome, and time. A successful metadata update includes only a bounded sorted list of changed field names; publication records the selected immutable revision identity. Audit data contains no old or new field values, Secret reference or value, endpoint, raw provider error, prompt, or output.
-
-## Failure Semantics
-
-| Failure                                                      | Outcome                                                                             |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| Unknown provider or invalid provider fields                  | Reject create, revision publication, test, or Run acceptance before provider I/O    |
-| Endpoint violates outbound policy                            | Reject the operation; no network request is sent                                    |
-| Secret reference is missing or unauthorized                  | Fail closed without disclosing whether a concealed Secret exists                    |
-| User credential is selected for a Service Account invocation | Run or test fails before provider dispatch                                          |
-| Model is disabled                                            | New Run acceptance fails with `model_disabled`; accepted Runs continue              |
-| Revision `expected_version` is stale                         | Publication returns `model_version_conflict` and changes nothing                    |
-| Model metadata `If-Match` is stale                           | Metadata mutation returns `412` and changes nothing                                 |
-| Provider test fails or times out                             | Return a safe synchronous result; saved configuration is unchanged                  |
-| Accepted adapter identity is unavailable                     | Run fails before model dispatch; no current-config fallback occurs                  |
-| Provider rejects a call                                      | Current RunAttempt records a bounded safe failure under the owning runtime contract |
-
-## Invariants
-
-01. `Model` is the stable Workspace resource and `ModelRevision` is one immutable provider configuration.
-02. `Model.version` always equals its selected `ModelRevision.version` and advances only when a different immutable revision is appended.
-03. Every `AgentRevision` freezes exactly one `model_revision_id`, non-secret execution snapshot, settings, and characteristics.
-04. Every new Run inherits that resolved revision or freezes one typed model override inside `EffectiveAgentConfig`; replacement RunAttempts reuse it.
-05. A new ModelRevision affects only future Agent Revision creation and model overrides accepted after publication commits.
-06. Every credential requirement has exactly one source, and no durable Model, ModelRevision, or Run record contains a credential value.
-07. Provider and capability catalogs are advisory trusted metadata, and manual model names remain valid input.
-08. Capability metadata never becomes an execution gate.
-09. Official providers do not accept arbitrary endpoints; custom endpoints use a trusted adapter and the outbound network policy.
-10. Foundation does not balance, fail over, or silently substitute providers or ModelRevisions.
-11. Disabling blocks new Run acceptance without invalidating existing `AgentRevision` references or accepted Run snapshots.
+These rules intentionally avoid a general connection graph, credential resource hierarchy, adapter marketplace, or arbitrary protocol-composition language. New supported combinations extend the finite trusted registry and its tests.
