@@ -148,13 +148,22 @@ class InternalSecretService:
             raise InternalSecretError("the internal Secret is unavailable") from error
 
     async def tombstone(self, context: SecretUseContext) -> SecretValueRef:
-        _validate_owner(context)
         async with transaction(self._sessions) as session:
-            record = await self._load(session, context, lock=True)
-            record.ciphertext = None
-            record.nonce = None
-            record.encryption_key_id = None
-            record.deleted_at = self._clock()
+            return await self.tombstone_in_transaction(session, context)
+
+    async def tombstone_in_transaction(
+        self,
+        session: AsyncSession,
+        context: SecretUseContext,
+    ) -> SecretValueRef:
+        """Tombstone one Secret in its owner's mutation transaction."""
+
+        _validate_owner(context)
+        record = await self._load(session, context, lock=True)
+        record.ciphertext = None
+        record.nonce = None
+        record.encryption_key_id = None
+        record.deleted_at = self._clock()
         return SecretValueRef(secret_id=record.id, version=record.version)
 
     async def _load(self, session: AsyncSession, context: SecretUseContext, *, lock: bool) -> SecretRecord:
