@@ -12,7 +12,7 @@ from a13n_service.iam import (
 )
 
 from .domain import InlineHookSubscriptionInput
-from .persistence import HookSubscriptionInvariantError, require_active_workspace_secret
+from .invariants import HookSubscriptionInvariantError, require_active_workspace_secret
 from .validation import EndpointValidator, HookEndpointValidationError, validate_hook_endpoint
 
 _INLINE_HOOK_ACTIONS = frozenset(

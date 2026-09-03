@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
 
 from sqlalchemy import and_, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -14,29 +13,15 @@ from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.models import SessionRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
-from a13n_service.secrets.models import SecretRecord
 
 from .domain import CreateHookSubscriptionRequest, InlineHookSubscriptionInput
+from .invariants import (
+    MAX_ACTIVE_HOOK_SUBSCRIPTIONS,
+    HookSubscriptionInvariantCode,
+    HookSubscriptionInvariantError,
+    require_active_workspace_secret,
+)
 from .models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
-
-MAX_ACTIVE_HOOK_SUBSCRIPTIONS = 128
-
-
-class HookSubscriptionInvariantCode(StrEnum):
-    inline_conflict = "inline_conflict"
-    subscription_limit = "subscription_limit"
-    destination_limit = "destination_limit"
-    secret_unavailable = "secret_unavailable"
-    workspace_unavailable = "workspace_unavailable"
-    event_workspace_unavailable = "event_workspace_unavailable"
-
-
-class HookSubscriptionInvariantError(RuntimeError):
-    """A persisted Hook subscription invariant would make source commits unsafe."""
-
-    def __init__(self, code: HookSubscriptionInvariantCode, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 async def create_inline_hook_subscription(
@@ -173,31 +158,6 @@ async def require_hook_capacity(
         raise HookSubscriptionInvariantError(
             HookSubscriptionInvariantCode.subscription_limit,
             "active Hook subscription limit exceeded",
-        )
-
-
-async def require_active_workspace_secret(
-    database: AsyncSession,
-    *,
-    organization_id: str,
-    workspace_id: str,
-    secret_id: str,
-) -> None:
-    available = await database.scalar(
-        select(SecretRecord.id).where(
-            SecretRecord.id == secret_id,
-            SecretRecord.organization_id == organization_id,
-            SecretRecord.workspace_id == workspace_id,
-            SecretRecord.owner_type == "workspace",
-            SecretRecord.owner_id == workspace_id,
-            SecretRecord.deleted_at.is_(None),
-            SecretRecord.ciphertext.is_not(None),
-        )
-    )
-    if available is None:
-        raise HookSubscriptionInvariantError(
-            HookSubscriptionInvariantCode.secret_unavailable,
-            "the selected Hook signing Secret is unavailable",
         )
 
 
