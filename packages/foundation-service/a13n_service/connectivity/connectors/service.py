@@ -317,6 +317,7 @@ class ConnectorService:
                 )
                 .values(
                     catalog_generation=ConnectorConnectionRecord.catalog_generation + 1,
+                    current_catalog_digest=None,
                     catalog_available_at=record.updated_at,
                 )
             )

@@ -50,7 +50,6 @@ from .errors import ConnectorError
 from .management import (
     audit,
     authorize,
-    latest_catalog_digest,
     map_management_value_error,
     require_adapter,
     require_connection,
@@ -152,6 +151,7 @@ class ConnectorConnectionService:
                     setup_generation=1,
                     revoke_generation=0,
                     catalog_generation=0,
+                    current_catalog_digest=None,
                     catalog_attempt_count=0,
                     catalog_claim_generation=0,
                     catalog_claim_owner=None,
@@ -421,7 +421,7 @@ class ConnectorConnectionService:
             if replay is not None:
                 return await connection_resource(session, record.id)
             require_version(record.version, expected_version)
-            if enabled and (record.external_ref is None or await latest_catalog_digest(session, record.id) is None):
+            if enabled and (record.external_ref is None or record.current_catalog_digest is None):
                 raise ConnectorError(
                     "connection_not_ready",
                     "ConnectorConnection has no compatible setup and catalog.",

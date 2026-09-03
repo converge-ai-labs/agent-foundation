@@ -106,6 +106,8 @@ class ConnectorCatalogService:
                 connection_id=source.connection_id,
                 compatibility_profile=compatibility_profile,
                 provider_version=provider_version,
+                connector_credential_generation=source.credential_generation,
+                connection_setup_generation=source.setup_generation,
                 tools=tools,
             )
         )
@@ -137,11 +139,7 @@ class ConnectorCatalogService:
             connector = await require_connector(session, connection.connector_id)
             if connection.status != "ready" or connection.external_ref is None or connector.status != "active":
                 raise ConnectorError("connection_not_ready", "ConnectorConnection is not ready.", status_code=409)
-            if (
-                connection.catalog_claim_expires_at is not None
-                and _utc(connection.catalog_claim_expires_at) > now
-                and connection.catalog_claim_owner != self._instance_id
-            ):
+            if connection.catalog_claim_expires_at is not None and _utc(connection.catalog_claim_expires_at) > now:
                 raise ConnectorError(
                     "catalog_claimed", "Connector catalog refresh is already running.", status_code=409
                 )
@@ -205,6 +203,7 @@ class ConnectorCatalogService:
                     )
                 )
             connection.catalog_last_error_code = None
+            connection.current_catalog_digest = digest
             connection.catalog_attempt_count = 0
             connection.catalog_available_at = now + timedelta(seconds=self._retention_seconds)
             connection.catalog_claim_owner = None
@@ -295,14 +294,19 @@ def _catalog_bytes(
     connection_id: str,
     compatibility_profile: str,
     provider_version: str,
+    connector_credential_generation: int,
+    connection_setup_generation: int,
     tools: tuple[ConnectorTool, ...],
 ) -> bytes:
     validate_catalog_tools(list(tools))
     value = {
         "schema_version": "1",
+        "source_kind": "connector_connection",
         "connector_connection_id": connection_id,
         "compatibility_profile": compatibility_profile,
         "provider_version": provider_version,
+        "connector_credential_generation": connector_credential_generation,
+        "connection_setup_generation": connection_setup_generation,
         "tools": [tool.model_dump(mode="json") for tool in tools],
     }
     body = canonical_json(_JSON_OBJECT.validate_python(value)).encode()

@@ -469,6 +469,26 @@ async def test_ready_connection_catalog_is_validated_and_published_immutably(
     assert record.tool_count == 1
     assert record.connector_connection_id == connection.id
 
+    await connectors.replace_credentials(
+        actor=actor(),
+        connector_id=connector.id,
+        idempotency_key="rotate-catalog-credential",
+        request=ReplaceConnectorCredentialsRequest(
+            expected_version=connector.version,
+            credentials={"api_key": "secret"},
+        ),
+    )
+    invalidated = await connections.get(actor=actor(), connection_id=connection.id)
+    assert invalidated.catalog_digest is None
+
+    rotated_digest = await catalog.refresh(connection.id)
+    assert rotated_digest != digest
+    async with connectivity_sessions() as session:
+        records = (
+            await session.scalars(select(ConnectorToolCatalogRecord).order_by(ConnectorToolCatalogRecord.published_at))
+        ).all()
+    assert [item.connector_credential_generation for item in records] == [1, 2]
+
 
 @pytest.mark.anyio
 async def test_reconciler_completes_attached_setup_by_exact_external_reference(

@@ -51,6 +51,7 @@ def _catalog_bytes(*, connection_id: str, credential_generation: int, discovery:
         _validate_tool(tool, seen)
     value = {
         "schema_version": "1",
+        "source_kind": "mcp_connection",
         "mcp_connection_id": connection_id,
         "protocol_revision": discovery.protocol_revision,
         "credential_generation": credential_generation,

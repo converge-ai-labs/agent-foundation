@@ -28,7 +28,7 @@ from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord, Use
 
 from .domain import ConnectorConnection
 from .errors import ConnectorError
-from .management import authorize, latest_catalog_digest, map_management_value_error, require_connection
+from .management import authorize, map_management_value_error, require_connection
 from .models import ConnectorConnectionRecord, ConnectorRecord, ConnectorSetupAttemptRecord
 
 
@@ -114,7 +114,7 @@ async def has_admin_access(session: AsyncSession, actor: AuthenticatedActor, wor
 
 async def connection_resource(session: AsyncSession, connection_id: str) -> ConnectorConnection:
     record = await require_connection(session, connection_id)
-    return record.to_resource(await latest_catalog_digest(session, connection_id))
+    return record.to_resource()
 
 
 def owner_ref(connection: ConnectorConnectionRecord) -> PrincipalRef | None:
@@ -155,6 +155,7 @@ def apply_inspection(
     connection.updated_at = now
     if inspection.status is AdapterConnectionStatus.ready:
         connection.catalog_generation += 1
+        connection.current_catalog_digest = None
         connection.catalog_available_at = now
 
 

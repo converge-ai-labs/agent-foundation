@@ -114,6 +114,10 @@ class ConnectorConnectionRecord(Base):
         CheckConstraint("setup_generation >= 1", name="setup_generation_positive"),
         CheckConstraint("revoke_generation >= 0", name="revoke_generation_non_negative"),
         CheckConstraint("catalog_generation >= 0", name="catalog_generation_non_negative"),
+        CheckConstraint(
+            "current_catalog_digest IS NULL OR length(current_catalog_digest) = 64",
+            name="current_catalog_digest_valid",
+        ),
         CheckConstraint("catalog_attempt_count >= 0", name="catalog_attempt_count_non_negative"),
         CheckConstraint("catalog_claim_generation >= 0", name="catalog_claim_generation_non_negative"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
@@ -154,6 +158,7 @@ class ConnectorConnectionRecord(Base):
     setup_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     revoke_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     catalog_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    current_catalog_digest: Mapped[str | None] = mapped_column(String(64))
     catalog_attempt_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
     catalog_claim_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     catalog_claim_owner: Mapped[str | None] = mapped_column(String(128))
@@ -166,7 +171,7 @@ class ConnectorConnectionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    def to_resource(self, catalog_digest: str | None = None) -> ConnectorConnection:
+    def to_resource(self) -> ConnectorConnection:
         owner = None if self.owner_type is None or self.owner_id is None else _principal(self.owner_type, self.owner_id)
         return ConnectorConnection(
             id=self.id,
@@ -182,7 +187,7 @@ class ConnectorConnectionRecord(Base):
                 ConnectorConnectionStatusReason(self.status_reason) if self.status_reason is not None else None
             ),
             version=self.version,
-            catalog_digest=catalog_digest,
+            catalog_digest=self.current_catalog_digest,
             created_by=_principal(self.created_by_type, self.created_by_id),
             created_at=_utc(self.created_at),
             updated_at=_utc(self.updated_at),

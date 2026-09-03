@@ -75,7 +75,9 @@ async def test_discovers_paginated_json_catalog_with_session_protocol_headers() 
     assert all(request.headers["mcp-session-id"] == "session-1" for request in requests[1:])
     assert requests[-1].method == "DELETE"
     body = await catalog_bytes(connection_id="mcpc_one", credential_generation=3, discovery=discovery)
-    assert json.loads(body)["credential_generation"] == 3
+    decoded = json.loads(body)
+    assert decoded["source_kind"] == "mcp_connection"
+    assert decoded["credential_generation"] == 3
 
 
 @pytest.mark.anyio

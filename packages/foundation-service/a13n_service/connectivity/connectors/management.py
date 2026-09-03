@@ -24,7 +24,7 @@ from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretOperation, SecretOwnerType, SecretUseContext
 
 from .errors import ConnectorError
-from .models import ConnectorConnectionRecord, ConnectorRecord, ConnectorToolCatalogRecord
+from .models import ConnectorConnectionRecord, ConnectorRecord
 
 _JSON_OBJECT = TypeAdapter(JsonObject)
 
@@ -84,15 +84,6 @@ async def require_connection(
     if record is None:
         raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
     return record
-
-
-async def latest_catalog_digest(session: AsyncSession, connection_id: str) -> str | None:
-    return await session.scalar(
-        select(ConnectorToolCatalogRecord.digest_sha256)
-        .where(ConnectorToolCatalogRecord.connector_connection_id == connection_id)
-        .order_by(ConnectorToolCatalogRecord.published_at.desc(), ConnectorToolCatalogRecord.id.desc())
-        .limit(1)
-    )
 
 
 def secret_context(

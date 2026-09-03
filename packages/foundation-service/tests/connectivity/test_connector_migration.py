@@ -28,6 +28,7 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
             "setup_generation",
             "revoke_generation",
             "catalog_generation",
+            "current_catalog_digest",
             "deleted_at",
         } <= connection_columns
         attempt_columns = {column["name"] for column in inspector.get_columns("connector_setup_attempts")}
