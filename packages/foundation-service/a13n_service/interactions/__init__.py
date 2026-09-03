@@ -65,6 +65,11 @@ from .objects import (
     validate_run_payload_reference,
 )
 from .outcomes import RunOutcomeError, RunOutcomeReceipt, RunOutcomeService
+from .run_control import (
+    AdaptedThreadInboxEntry,
+    FoundationRunControlCoordinator,
+    ThreadInboxReconciler,
+)
 from .scheduling import (
     AttemptScheduler,
     AttemptSchedulingError,
@@ -85,6 +90,7 @@ from .state import (
 
 __all__ = [
     "FOUNDATION_RUN_CONTROL_CAPABILITY_ID",
+    "AdaptedThreadInboxEntry",
     "AttemptAuthority",
     "AttemptAuthorityError",
     "AttemptExecutionService",
@@ -102,6 +108,7 @@ __all__ = [
     "DeferredContinuationState",
     "EncryptedRunConfigPayloadRef",
     "FoundationRunControlCapability",
+    "FoundationRunControlCoordinator",
     "HostContinuationState",
     "MCPToolSnapshotRef",
     "PendingCallKind",
@@ -139,6 +146,7 @@ __all__ = [
     "StaleStateWriter",
     "StoredRunState",
     "Thread",
+    "ThreadInboxReconciler",
     "ThreadOriginKind",
     "ThreadRole",
     "WaitingOutcomeCandidate",
