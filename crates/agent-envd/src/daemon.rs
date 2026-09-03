@@ -414,7 +414,7 @@ impl Daemon {
         tasks_drained && transfers_reconciled
     }
 
-    #[expect(
+    #[allow(
         clippy::result_large_err,
         reason = "the generated protocol error is the daemon's public error contract"
     )]
@@ -570,7 +570,7 @@ impl Daemon {
         }
     }
 
-    #[expect(
+    #[allow(
         clippy::result_large_err,
         reason = "the generated protocol error is the daemon's public error contract"
     )]
