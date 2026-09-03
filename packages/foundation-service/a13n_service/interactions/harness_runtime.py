@@ -41,6 +41,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from .attempts import AttemptPreparationAccepted
+from .environment_observation import EnvironmentHookObservation, observe_environment_entry
 from .harness_control import (
     HarnessContextBinding,
     HarnessHookBoundary,
@@ -181,6 +182,8 @@ class HarnessEventProjector(Protocol):
 
     def project(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None: ...
 
+    def project_environment(self, observation: EnvironmentHookObservation) -> None: ...
+
     async def close(self) -> None: ...
 
 
@@ -228,7 +231,7 @@ class HarnessDriver:
             executable,
             input_source=input_source,
             bindings=bindings,
-            environment=invocation.environment,
+            environment=_observe_environment(invocation.environment, self._projector),
             previous_state=state,
             deferred_resume=deferred_resume,
             usage=invocation.usage,
@@ -558,6 +561,20 @@ def _create_stream[OutputT](
         usage=usage,
         usage_limits=usage_limits,
     )
+
+
+def _observe_environment(
+    environment: FoundationHarnessEnvironment,
+    projector: HarnessEventProjector,
+) -> FoundationHarnessEnvironment:
+    if isinstance(environment, SingleHarnessEnvironment):
+        return SingleHarnessEnvironment(observe_environment_entry(environment.entry, projector))
+    if isinstance(environment, MountedHarnessEnvironments):
+        return MountedHarnessEnvironments(
+            entries={name: observe_environment_entry(entry, projector) for name, entry in environment.entries.items()},
+            default_environment=environment.default_environment,
+        )
+    return environment
 
 
 def _require_environment_entry(entry: object) -> None:

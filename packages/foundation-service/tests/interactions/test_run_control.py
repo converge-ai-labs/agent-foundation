@@ -30,6 +30,7 @@ from a13n_service.interactions import (
     AttemptPreparationAccepted,
     ConsumedThreadInboxEntry,
     DeferredContinuationState,
+    EnvironmentHookObservation,
     FoundationHarnessCollaborators,
     FoundationHarnessInvocation,
     FoundationHarnessOutcomeAdapter,
@@ -149,6 +150,9 @@ class _RecordingEventProjector:
 
     def project(self, event: HarnessEvent | HarnessRunResultEvent[object]) -> None:
         self.events.append(event)
+
+    def project_environment(self, observation: EnvironmentHookObservation) -> None:
+        del observation
 
     async def close(self) -> None:
         pass

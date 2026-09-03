@@ -86,6 +86,7 @@ from .domain import (
     new_run_id,
     new_session_id,
 )
+from .environment_observation import EnvironmentHookObservation, EnvironmentHookProjector
 from .feedback import WaitingFeedbackMappingError, map_waiting_feedback
 from .handoff import CombinedQueueHandoffReceipt, CompletionQueueHandoffService
 from .harness_control import (
@@ -248,6 +249,8 @@ __all__ = [
     "DatabaseThreadInboxReconciler",
     "DeferredContinuationState",
     "EncryptedRunConfigPayloadRef",
+    "EnvironmentHookObservation",
+    "EnvironmentHookProjector",
     "EnvironmentInputWriter",
     "FoundationHarnessCollaborators",
     "FoundationHarnessEnvironment",

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from a13n_harness import HarnessEvent, HarnessRunResult, HarnessRunResultEvent, HarnessState, SafeFailure
+from a13n_service.interactions import EnvironmentHookObservation
 from a13n_service.run_stream import (
     RedisRunStream,
     RetainedReplayUnavailable,
@@ -271,6 +272,39 @@ async def test_empty_clean_attempt_still_records_projection_completion(redis_cli
 
     source = await stream.complete_source(TENANT_ID, RUN_ID)
     assert len(source.entries) == 1
+
+
+async def test_projects_environment_observation_with_attempt_correlation(redis_client: Redis) -> None:
+    stream = RedisRunStream(redis_client)
+    projector = RunStreamHarnessProjector(
+        stream,
+        tenant_id=TENANT_ID,
+        run_id=RUN_ID,
+        thread_id=THREAD_ID,
+        run_attempt_id=ATTEMPT_ID,
+        harness_run_id=HARNESS_RUN_ID,
+    )
+    projector.project_environment(
+        EnvironmentHookObservation(
+            event_type="environment.entry.ready",
+            thread_id=THREAD_ID,
+            harness_run_id=HARNESS_RUN_ID,
+            mount_id="workspace",
+            occurred_at=NOW,
+            payload={
+                "mount_id": "workspace",
+                "provider_key": "test.provider",
+                "operation_families": ["files"],
+            },
+        )
+    )
+    await projector.close()
+
+    page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+    assert tuple(entry.event.event_type for entry in page.items) == ("environment.entry.ready",)
+    assert page.items[0].event.run_attempt_id == ATTEMPT_ID
+    assert page.items[0].event.harness_run_id == HARNESS_RUN_ID
+    assert page.items[0].event.payload["provider_key"] == "test.provider"
 
 
 async def test_rejects_harness_correlation_change(redis_client: Redis) -> None:
