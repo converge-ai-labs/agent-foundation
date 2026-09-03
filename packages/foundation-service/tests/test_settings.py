@@ -38,6 +38,11 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.plugin_runner_shutdown_timeout_seconds == 30
     assert settings.plugin_runner_max_processes == 8
     assert settings.observability_query_provider == "none"
+    assert settings.connectivity_catalog_max_pages == 128
+    assert settings.connectivity_catalog_max_tools == 2_048
+    assert settings.connectivity_catalog_max_bytes == 16 * 1024 * 1024
+    assert settings.connectivity_tool_result_max_bytes == 1024 * 1024
+    assert settings.connectivity_max_redirects == 3
     assert "foundation:foundation" not in repr(settings)
 
 
@@ -210,3 +215,32 @@ def test_managed_secret_master_key_is_exact_and_redacted() -> None:
     )
     with pytest.raises(ValueError, match="256 bits"):
         invalid.secret_protector()
+
+
+def test_connectivity_bounds_and_public_origin_fail_closed() -> None:
+    with pytest.raises(ValueError, match="Ingress pending count"):
+        ServiceSettings(
+            _env_file=None,
+            connectivity_workspace_pending_max_count=10,
+            connectivity_ingress_pending_max_count=11,
+        )
+    with pytest.raises(ValueError, match="lease"):
+        ServiceSettings(
+            _env_file=None,
+            connectivity_admission_poll_interval_seconds=10,
+            connectivity_admission_lease_seconds=10,
+        )
+    with pytest.raises(ValueError, match="PUBLIC_ORIGIN is required"):
+        ServiceSettings(_env_file=None).validated_connectivity_public_origin()
+    with pytest.raises(ValueError, match="must be an exact origin"):
+        ServiceSettings(
+            _env_file=None,
+            connectivity_public_origin="https://foundation.example.com/path",
+        ).validated_connectivity_public_origin()
+
+    settings = ServiceSettings(
+        _env_file=None,
+        connectivity_public_origin="http://foundation.internal:8080",
+        connectivity_http_origins=("http://foundation.internal:8080",),
+    )
+    assert settings.validated_connectivity_public_origin() == "http://foundation.internal:8080"

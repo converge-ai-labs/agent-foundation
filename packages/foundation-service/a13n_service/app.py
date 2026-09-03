@@ -26,6 +26,8 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.router import router as asset_router
 from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
+from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
+from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
@@ -67,6 +69,7 @@ from a13n_service.plugins.runtime_resolver import (
 )
 from a13n_service.plugins.service import PluginService
 from a13n_service.plugins.staging import PluginStaging
+from a13n_service.secrets import InternalSecretService
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
 from a13n_service.skills.catalog import SkillCatalogService
 from a13n_service.skills.credentials import DatabaseGitHubCredentialResolver
@@ -92,6 +95,8 @@ logger = logging.getLogger("a13n_service.app")
 _API_METHODS = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
 _CONTROL_PLANE_ROLES = {ServiceRole.all, ServiceRole.control}
 _WORKER_ROLES = {ServiceRole.all, ServiceRole.worker}
+_CONNECTIVITY_ROLES = {ServiceRole.all, ServiceRole.connectivity}
+_CONNECTIVITY_RESOURCE_ROLES = _CONTROL_PLANE_ROLES | _CONNECTIVITY_ROLES
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +115,8 @@ class ServiceComponents:
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None
     trace_query_provider_registry: TraceQueryProviderRegistry | None = None
+    ingress_adapter_registry: AdapterRegistry[IngressAdapter] | None = None
+    connector_adapter_registry: AdapterRegistry[ConnectorAdapter] | None = None
     builtin_plugin_artifacts: tuple[BuiltinPluginArtifact, ...] = ()
 
 
@@ -167,6 +174,10 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     authorizer=app.state.components.trace_access_authorizer,
                 )
             secret_protector = settings.secret_protector()
+            if settings.role in _CONTROL_PLANE_ROLES:
+                app.state.connectivity_public_origin = settings.validated_connectivity_public_origin()
+            if settings.role in _CONNECTIVITY_RESOURCE_ROLES:
+                app.state.internal_secret_service = InternalSecretService(storage.sessions, secret_protector)
             model_http_client = await stack.enter_async_context(
                 httpx2.AsyncClient(
                     follow_redirects=False,
@@ -466,6 +477,14 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         private_domains=resolved_settings.model_private_endpoint_domains,
         private_cidrs=resolved_settings.model_private_endpoint_cidrs,
     )
+    if resolved_settings.role in _CONNECTIVITY_RESOURCE_ROLES:
+        app.state.ingress_adapter_registry = (
+            resolved_components.ingress_adapter_registry or AdapterRegistry[IngressAdapter]()
+        ).copy()
+        app.state.connector_adapter_registry = (
+            resolved_components.connector_adapter_registry or AdapterRegistry[ConnectorAdapter]()
+        ).copy()
+        app.state.connectivity_endpoint_policy = resolved_settings.connectivity_endpoint_policy()
 
     @app.get("/healthz", include_in_schema=False)
     async def health() -> dict[str, str]:

@@ -6,12 +6,23 @@ from collections.abc import Collection
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Self
+from urllib.parse import urlsplit
 
 from a13n_logging import LogFormat
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from a13n_service.agents.domain import PluginRuntimeMode
+from a13n_service.connectivity.bounds import (
+    CATALOG_MAX_BYTES,
+    CATALOG_MAX_PAGES,
+    CATALOG_MAX_TOOLS,
+    MAX_REDIRECTS,
+    PROVIDER_REQUEST_MAX_BYTES,
+    TOOL_RESULT_MAX_BYTES,
+)
+from a13n_service.connectivity.outbound_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.database import MigrationConfig
 from a13n_service.observability import TraceContent
 from a13n_service.secrets import SecretProtectionError, SecretProtector
@@ -139,6 +150,46 @@ class ServiceSettings(BaseSettings):
     secret_master_key_base64: SecretStr | None = Field(default=None, repr=False)
     secret_encryption_key_id: str | None = Field(default=None, min_length=1, max_length=128, repr=False)
 
+    connectivity_provider_request_max_bytes: int = Field(
+        default=PROVIDER_REQUEST_MAX_BYTES,
+        ge=1,
+        le=PROVIDER_REQUEST_MAX_BYTES,
+    )
+    connectivity_protected_raw_retention_seconds: int = Field(default=0, ge=0, le=24 * 60 * 60)
+    connectivity_workspace_pending_max_count: int = Field(default=10_000, ge=1, le=1_000_000)
+    connectivity_workspace_pending_max_bytes: int = Field(default=1024 * 1024 * 1024, ge=1, le=2**63 - 1)
+    connectivity_ingress_pending_max_count: int = Field(default=1_000, ge=1, le=100_000)
+    connectivity_ingress_pending_max_bytes: int = Field(default=128 * 1024 * 1024, ge=1, le=2**63 - 1)
+    connectivity_batch_max_events: int = Field(default=100, ge=1, le=1_000)
+    connectivity_batch_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1, le=64 * 1024 * 1024)
+    connectivity_batch_max_wait_seconds: float = Field(default=300, gt=0, le=3600)
+    connectivity_admission_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
+    connectivity_admission_lease_seconds: float = Field(default=30, gt=0, le=3600)
+    connectivity_admission_max_attempts: int = Field(default=20, ge=1, le=1_000)
+    connectivity_admission_max_backoff_seconds: float = Field(default=300, gt=0, le=3600)
+    connectivity_dedup_horizon_seconds: int = Field(default=7 * 24 * 60 * 60, ge=60, le=30 * 24 * 60 * 60)
+    connectivity_connect_timeout_seconds: float = Field(default=5, gt=0, le=60)
+    connectivity_read_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    connectivity_total_timeout_seconds: float = Field(default=60, gt=0, le=600)
+    connectivity_response_max_bytes: int = Field(default=1024 * 1024, ge=1, le=8 * 1024 * 1024)
+    connectivity_catalog_max_pages: int = Field(default=CATALOG_MAX_PAGES, ge=1, le=CATALOG_MAX_PAGES)
+    connectivity_catalog_max_tools: int = Field(default=CATALOG_MAX_TOOLS, ge=1, le=CATALOG_MAX_TOOLS)
+    connectivity_catalog_max_bytes: int = Field(default=CATALOG_MAX_BYTES, ge=1, le=CATALOG_MAX_BYTES)
+    connectivity_catalog_retention_days: int = Field(default=30, ge=30, le=3_650)
+    connectivity_tool_result_max_bytes: int = Field(
+        default=TOOL_RESULT_MAX_BYTES,
+        ge=1,
+        le=TOOL_RESULT_MAX_BYTES,
+    )
+    connectivity_max_redirects: int = Field(default=MAX_REDIRECTS, ge=0, le=MAX_REDIRECTS)
+    connectivity_oauth_setup_ttl_seconds: int = Field(default=600, ge=60, le=900)
+    connectivity_public_origin: str | None = Field(default=None, min_length=1, max_length=2048)
+    connectivity_oauth_client_name: str = Field(default="Agent Foundation", min_length=1, max_length=128)
+    connectivity_private_endpoint_domains: tuple[str, ...] = ()
+    connectivity_private_endpoint_cidrs: tuple[str, ...] = ()
+    connectivity_http_origins: tuple[str, ...] = ()
+    connectivity_provider_token_expiry_skew_seconds: int = Field(default=60, ge=0, le=600)
+
     redis_backend: RedisBackend = RedisBackend.redis
     redis_url: SecretStr | None = Field(default=SecretStr("redis://127.0.0.1:6379/0"), repr=False)
     redis_max_connections: int = Field(default=20, ge=1, le=1000)
@@ -176,6 +227,25 @@ class ServiceSettings(BaseSettings):
 
     log_level: str = "INFO"
     log_format: LogFormat = LogFormat.pretty
+
+    @model_validator(mode="after")
+    def validate_connectivity_bounds(self) -> Self:
+        if self.connectivity_ingress_pending_max_count > self.connectivity_workspace_pending_max_count:
+            raise ValueError("Ingress pending count cannot exceed the Workspace pending count")
+        if self.connectivity_ingress_pending_max_bytes > self.connectivity_workspace_pending_max_bytes:
+            raise ValueError("Ingress pending bytes cannot exceed the Workspace pending bytes")
+        if self.connectivity_batch_max_events > self.connectivity_ingress_pending_max_count:
+            raise ValueError("batch event count cannot exceed the Ingress pending count")
+        if self.connectivity_batch_max_bytes > self.connectivity_ingress_pending_max_bytes:
+            raise ValueError("batch bytes cannot exceed the Ingress pending bytes")
+        if self.connectivity_admission_lease_seconds <= self.connectivity_admission_poll_interval_seconds:
+            raise ValueError("admission lease must exceed its poll interval")
+        if self.connectivity_total_timeout_seconds < max(
+            self.connectivity_connect_timeout_seconds,
+            self.connectivity_read_timeout_seconds,
+        ):
+            raise ValueError("Connectivity total timeout cannot be shorter than a phase timeout")
+        return self
 
     def database_config(self) -> PostgreSQLConfig | SQLiteConfig:
         if self.database_backend is DatabaseBackend.sqlite:
@@ -243,6 +313,30 @@ class ServiceSettings(BaseSettings):
             statement_timeout_seconds=self.migration_statement_timeout_seconds,
             idle_transaction_timeout_seconds=self.migration_idle_transaction_timeout_seconds,
         )
+
+    def connectivity_endpoint_policy(self) -> EndpointPolicy:
+        """Build the strict endpoint policy shared by Connector and Remote MCP clients."""
+
+        return EndpointPolicy.from_operator_allowlist(
+            private_domains=self.connectivity_private_endpoint_domains,
+            private_cidrs=self.connectivity_private_endpoint_cidrs,
+            require_https=True,
+            http_origins=self.connectivity_http_origins,
+        )
+
+    def validated_connectivity_public_origin(self) -> str:
+        """Return the configured exact public origin without trusting forwarded headers."""
+
+        if self.connectivity_public_origin is None:
+            raise ValueError("FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN is required for control-capable roles")
+        try:
+            normalized, _, _ = self.connectivity_endpoint_policy().validate_syntax(self.connectivity_public_origin)
+        except EndpointPolicyError as error:
+            raise ValueError("FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN is invalid") from error
+        parsed = urlsplit(normalized)
+        if parsed.path or parsed.query:
+            raise ValueError("FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN must be an exact origin")
+        return normalized
 
     def secret_protector(self) -> SecretProtector:
         if self.secret_master_key_base64 is None or self.secret_encryption_key_id is None:

@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
+from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
+from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.database import DatabaseMigrator
 from a13n_service.plugins import BuiltinPluginArtifact, BuiltinPluginRegistration
 from a13n_service.plugins.commands import (
@@ -101,6 +103,8 @@ def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
         "filesystem_root": tmp_path / "files",
         "secret_master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
         "secret_encryption_key_id": "foundation-service-test-key",
+        "connectivity_public_origin": "http://testserver",
+        "connectivity_http_origins": ("http://testserver",),
     }
     values.update(updates)
     settings = ServiceSettings(**values)
@@ -196,6 +200,50 @@ def test_connectivity_role_exposes_no_control_plane_routes() -> None:
     assert request(app, "/healthz").json() == {"status": "ok", "role": "connectivity"}
     assert request(app, "/api/openapi.json").status_code == 404
     assert request(app, "/").status_code == 404
+
+
+def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
+    class Adapter:
+        provider_key = "fake"
+        driver_key = "fake"
+        config_versions = frozenset({1})
+
+    ingress_registry = AdapterRegistry[IngressAdapter]()
+    connector_registry = AdapterRegistry[ConnectorAdapter]()
+    ingress_registry.register(
+        AdapterDefinition(
+            key="fake",
+            config_versions=frozenset({1}),
+            factory=Adapter,
+        )
+    )
+    connector_registry.register(
+        AdapterDefinition(
+            key="fake",
+            config_versions=frozenset({1}),
+            factory=Adapter,
+        )
+    )
+    components = ServiceComponents(
+        ingress_adapter_registry=ingress_registry,
+        connector_adapter_registry=connector_registry,
+    )
+
+    control = create_app(ServiceSettings(_env_file=None, role=ServiceRole.control), components=components)
+    connectivity = create_app(ServiceSettings(_env_file=None, role=ServiceRole.connectivity), components=components)
+    worker = create_app(ServiceSettings(_env_file=None, role=ServiceRole.worker), components=components)
+    ingress_registry.register(
+        AdapterDefinition(
+            key="later",
+            config_versions=frozenset({1}),
+            factory=Adapter,
+        )
+    )
+
+    assert control.state.ingress_adapter_registry.keys() == ("fake",)
+    assert connectivity.state.connector_adapter_registry.keys() == ("fake",)
+    assert not hasattr(worker.state, "ingress_adapter_registry")
+    assert not hasattr(worker.state, "connectivity_endpoint_policy")
 
 
 def test_configured_web_build_requires_an_index(tmp_path: Path) -> None:
@@ -473,5 +521,20 @@ async def test_lifespan_fails_closed_without_secret_master_key(tmp_path: Path) -
     )
 
     with pytest.raises(SecretProtectionError, match="FOUNDATION_SECRET_MASTER_KEY_BASE64"):
+        async with app.router.lifespan_context(app):
+            pytest.fail("lifespan unexpectedly started")
+
+
+@pytest.mark.anyio
+async def test_control_lifespan_requires_connectivity_public_origin(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(
+            tmp_path,
+            role=ServiceRole.control,
+            connectivity_public_origin=None,
+        )
+    )
+
+    with pytest.raises(ValueError, match="FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN"):
         async with app.router.lifespan_context(app):
             pytest.fail("lifespan unexpectedly started")
