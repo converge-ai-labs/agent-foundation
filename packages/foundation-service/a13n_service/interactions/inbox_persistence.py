@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Collection, Sequence
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 import rfc8785
 from sqlalchemy import JSON, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .control_domain import ThreadInboxEntry, ThreadInboxKind, ThreadInboxStatus
+from .control_domain import ThreadInboxKind, ThreadInboxStatus
 from .control_models import ThreadInboxCounterRecord, ThreadInboxRecord
-from .control_records import thread_inbox_record
 from .models import RunRecord
 from .objects import StoredRunState
 from .state import ConsumedThreadInboxEntry
@@ -67,106 +66,6 @@ async def lock_inbox_related_runs(
     return locked
 
 
-async def allocate_steer(
-    database: AsyncSession,
-    *,
-    tenant_id: str,
-    thread_id: str,
-    accepted_against_run_id: str,
-    target_run_id: str | None,
-    source_waiting_run_id: str | None,
-    entry_id: str,
-    payload: dict[str, Any],
-    payload_size_bytes: int,
-    max_pending_count: int,
-    max_pending_bytes: int,
-    now: datetime,
-) -> ThreadInboxEntry:
-    """Allocate one FIFO position and persist an accepted steer."""
-
-    if payload_size_bytes < 1:
-        raise ValueError("inbox payload size must be positive")
-    if max_pending_count < 1 or max_pending_bytes < 1:
-        raise ValueError("inbox admission limits must be positive")
-    counter = await _lock_counter(database, tenant_id, thread_id)
-    if counter.pending_count >= max_pending_count:
-        raise ThreadInboxCapacityExceeded("Thread inbox pending-entry capacity is exhausted")
-    if counter.pending_bytes + payload_size_bytes > max_pending_bytes:
-        raise ThreadInboxCapacityExceeded("Thread inbox pending-byte capacity is exhausted")
-    entry = ThreadInboxEntry(
-        id=entry_id,
-        tenant_id=tenant_id,
-        thread_id=thread_id,
-        kind=ThreadInboxKind.steer,
-        delivery_sequence=counter.next_delivery_sequence,
-        accepted_against_run_id=accepted_against_run_id,
-        target_run_id=target_run_id,
-        source_waiting_run_id=source_waiting_run_id,
-        payload_schema_version="1",
-        payload=payload,
-        status=ThreadInboxStatus.pending,
-        created_at=now,
-    )
-    database.add(thread_inbox_record(entry))
-    counter.next_delivery_sequence += 1
-    counter.pending_count += 1
-    counter.pending_bytes += payload_size_bytes
-    return entry
-
-
-async def allocate_async_result(
-    database: AsyncSession,
-    *,
-    tenant_id: str,
-    thread_id: str,
-    origin_run_id: str,
-    relationship_id: str,
-    target_run_id: str | None,
-    source_waiting_run_id: str | None,
-    entry_id: str,
-    payload: dict[str, Any],
-    payload_size_bytes: int,
-    suppressed: bool,
-    max_pending_count: int,
-    max_pending_bytes: int,
-    now: datetime,
-) -> ThreadInboxEntry:
-    """Allocate one idempotent child-result FIFO position under locked authority."""
-
-    if payload_size_bytes < 1:
-        raise ValueError("inbox payload size must be positive")
-    if max_pending_count < 1 or max_pending_bytes < 1:
-        raise ValueError("inbox admission limits must be positive")
-    counter = await _lock_counter(database, tenant_id, thread_id)
-    if not suppressed:
-        if counter.pending_count >= max_pending_count:
-            raise ThreadInboxCapacityExceeded("Thread inbox pending-entry capacity is exhausted")
-        if counter.pending_bytes + payload_size_bytes > max_pending_bytes:
-            raise ThreadInboxCapacityExceeded("Thread inbox pending-byte capacity is exhausted")
-    entry = ThreadInboxEntry(
-        id=entry_id,
-        tenant_id=tenant_id,
-        thread_id=thread_id,
-        kind=ThreadInboxKind.async_subagent_result,
-        delivery_sequence=counter.next_delivery_sequence,
-        target_run_id=None if suppressed else target_run_id,
-        source_waiting_run_id=None if suppressed else source_waiting_run_id,
-        origin_run_id=origin_run_id,
-        async_subagent_relationship_id=relationship_id,
-        payload_schema_version="1",
-        payload=payload,
-        status=ThreadInboxStatus.suppressed if suppressed else ThreadInboxStatus.pending,
-        created_at=now,
-        finalized_at=now if suppressed else None,
-    )
-    database.add(thread_inbox_record(entry))
-    counter.next_delivery_sequence += 1
-    if not suppressed:
-        counter.pending_count += 1
-        counter.pending_bytes += payload_size_bytes
-    return entry
-
-
 async def bind_waiting_entries(
     database: AsyncSession,
     *,
@@ -184,7 +83,7 @@ async def bind_waiting_entries(
         thread_id=thread_id,
         source_waiting_run_id=source_waiting_run_id,
     )
-    await _suppress_failed_origins(database, tenant_id=tenant_id, rows=rows, now=now)
+    await suppress_failed_inbox_origins(database, tenant_id=tenant_id, rows=rows, now=now)
     for row in rows:
         if row.status == ThreadInboxStatus.pending.value:
             row.target_run_id = target_run_id
@@ -219,7 +118,7 @@ async def bind_unbound_async_entries(
         if value is not None
     )
     await _lock_runs(database, tenant_id=tenant_id, run_ids=origin_ids)
-    await _lock_counter(database, tenant_id, thread_id)
+    await lock_inbox_counter(database, tenant_id, thread_id)
     rows = tuple(
         (
             await database.scalars(
@@ -237,7 +136,7 @@ async def bind_unbound_async_entries(
             )
         ).all()
     )
-    await _suppress_failed_origins(database, tenant_id=tenant_id, rows=rows, now=now)
+    await suppress_failed_inbox_origins(database, tenant_id=tenant_id, rows=rows, now=now)
     for row in rows:
         if row.status == ThreadInboxStatus.pending.value:
             row.target_run_id = target_run_id
@@ -259,7 +158,7 @@ async def abandon_waiting_entries(
         thread_id=thread_id,
         source_waiting_run_id=source_waiting_run_id,
     )
-    await _suppress_failed_origins(database, tenant_id=tenant_id, rows=rows, now=now)
+    await suppress_failed_inbox_origins(database, tenant_id=tenant_id, rows=rows, now=now)
     await _finalize_rows(database, rows, fallback=ThreadInboxStatus.superseded, now=now)
 
 
@@ -298,7 +197,7 @@ async def reconcile_checkpoint(
         if value is not None
     )
     await _lock_runs(database, tenant_id=run.tenant_id, run_ids=origin_ids)
-    counter = await _lock_counter(database, run.tenant_id, run.thread_id)
+    counter = await lock_inbox_counter(database, run.tenant_id, run.thread_id)
     rows = tuple(
         (
             await database.scalars(
@@ -327,7 +226,7 @@ async def reconcile_checkpoint(
     eligible = tuple(
         row for row in rows if row.target_run_id == run.id and row.status == ThreadInboxStatus.pending.value
     )
-    await _suppress_failed_origins(database, tenant_id=run.tenant_id, rows=eligible, now=now)
+    await suppress_failed_inbox_origins(database, tenant_id=run.tenant_id, rows=eligible, now=now)
     pending_receipt_ids = tuple(
         receipt.inbox_entry_id
         for receipt in receipts
@@ -349,7 +248,7 @@ async def reconcile_checkpoint(
         row.consumed_state_digest_sha256 = state.digest_sha256
         row.consumed_checkpoint_seq = envelope.checkpoint_seq
         row.finalized_at = now
-    _release_pending(counter, consumed_rows)
+    release_pending_inbox_capacity(counter, consumed_rows)
 
 
 async def apply_run_outcome(
@@ -371,7 +270,7 @@ async def apply_run_outcome(
         target_run_id=run.id,
         origin_run_id=run.id if outcome in {"failed", "cancelled"} else None,
     )
-    await _suppress_failed_origins(
+    await suppress_failed_inbox_origins(
         database,
         tenant_id=run.tenant_id,
         rows=rows,
@@ -428,7 +327,7 @@ async def _lock_pending_scope(
         if value is not None
     )
     await _lock_runs(database, tenant_id=tenant_id, run_ids=origin_ids)
-    await _lock_counter(database, tenant_id, thread_id)
+    await lock_inbox_counter(database, tenant_id, thread_id)
     return tuple(
         (
             await database.scalars(
@@ -446,7 +345,11 @@ async def _lock_pending_scope(
     )
 
 
-async def _lock_counter(database: AsyncSession, tenant_id: str, thread_id: str) -> ThreadInboxCounterRecord:
+async def lock_inbox_counter(
+    database: AsyncSession,
+    tenant_id: str,
+    thread_id: str,
+) -> ThreadInboxCounterRecord:
     counter = await database.scalar(
         select(ThreadInboxCounterRecord)
         .where(
@@ -482,13 +385,14 @@ async def _lock_runs(
         raise ThreadInboxConflict("Thread inbox origin Run was not found")
 
 
-async def _suppress_failed_origins(
+async def suppress_failed_inbox_origins(
     database: AsyncSession,
     *,
     tenant_id: str,
     rows: Sequence[ThreadInboxRecord],
     now: datetime,
     terminal_origin_run_id: str | None = None,
+    locked_counter: ThreadInboxCounterRecord | None = None,
 ) -> None:
     origin_ids = {
         row.origin_run_id
@@ -515,10 +419,14 @@ async def _suppress_failed_origins(
     )
     if not suppressed:
         return
-    counter = await _lock_counter(database, rows[0].tenant_id, rows[0].thread_id)
+    counter = locked_counter or await lock_inbox_counter(
+        database,
+        rows[0].tenant_id,
+        rows[0].thread_id,
+    )
     for row in suppressed:
         _set_terminal(row, ThreadInboxStatus.suppressed, now)
-    _release_pending(counter, suppressed)
+    release_pending_inbox_capacity(counter, suppressed)
 
 
 async def _finalize_rows(
@@ -531,10 +439,10 @@ async def _finalize_rows(
     pending = tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
     if not pending:
         return
-    counter = await _lock_counter(database, pending[0].tenant_id, pending[0].thread_id)
+    counter = await lock_inbox_counter(database, pending[0].tenant_id, pending[0].thread_id)
     for row in pending:
         _set_terminal(row, fallback, now)
-    _release_pending(counter, pending)
+    release_pending_inbox_capacity(counter, pending)
 
 
 def _set_terminal(row: ThreadInboxRecord, status: ThreadInboxStatus, now: datetime) -> None:
@@ -546,7 +454,10 @@ def _set_terminal(row: ThreadInboxRecord, status: ThreadInboxStatus, now: dateti
     row.finalized_at = now
 
 
-def _release_pending(counter: ThreadInboxCounterRecord, rows: Collection[ThreadInboxRecord]) -> None:
+def release_pending_inbox_capacity(
+    counter: ThreadInboxCounterRecord,
+    rows: Collection[ThreadInboxRecord],
+) -> None:
     counter.pending_count -= len(rows)
     counter.pending_bytes -= sum(_payload_size(row) for row in rows)
     if counter.pending_count < 0 or counter.pending_bytes < 0:
@@ -578,11 +489,12 @@ __all__ = [
     "ThreadInboxCapacityExceeded",
     "ThreadInboxConflict",
     "abandon_waiting_entries",
-    "allocate_async_result",
-    "allocate_steer",
     "apply_run_outcome",
     "bind_unbound_async_entries",
     "bind_waiting_entries",
+    "lock_inbox_counter",
     "lock_inbox_related_runs",
     "reconcile_checkpoint",
+    "release_pending_inbox_capacity",
+    "suppress_failed_inbox_origins",
 ]

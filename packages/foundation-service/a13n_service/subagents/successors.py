@@ -1,0 +1,374 @@
+"""Inactive parent-Thread routing and automatic async-result successors."""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.interactions.acceptance import validate_prepared_run
+from a13n_service.interactions.control_domain import RunAcceptanceReceipt, ThreadInboxEntry
+from a13n_service.interactions.control_models import ThreadInboxRecord
+from a13n_service.interactions.domain import Run
+from a13n_service.interactions.environment_bindings import add_run_with_environment_binding
+from a13n_service.interactions.inbox import ThreadControlSignalPublisher
+from a13n_service.interactions.models import SessionRecord
+from a13n_service.interactions.objects import (
+    RUN_STATE_CONTENT_TYPE,
+    RunStateStore,
+    StaleStateWriter,
+    StoredRunState,
+)
+from a13n_service.storage import short_session, transaction
+
+from .result_payload import validate_async_subagent_result_authority
+from .successor_inbox import (
+    bind_locked_unbound_async_entries,
+    consume_async_result_for_successor,
+)
+from .successor_preparation import (
+    PreparedAsyncResultSuccessor,
+    prepare_async_result_successor,
+)
+from .successor_routing import (
+    AsyncSubagentSuccessorError,
+    AsyncSubagentSuccessorReceipt,
+    LockedAsyncResultSelection,
+    lock_and_route_async_result,
+)
+
+logger = logging.getLogger("a13n_service.subagents.successors")
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedSelection:
+    entry: ThreadInboxEntry
+    selected_parent: Run
+    origin: Run
+
+
+class AsyncSubagentSuccessorReconciler:
+    """Route unbound results or accept one state-first continuation atomically."""
+
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        states: RunStateStore,
+        *,
+        signals: ThreadControlSignalPublisher | None = None,
+        run_id_factory: Callable[[str, str, str], str] | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        self._sessions = sessions
+        self._states = states
+        self._signals = signals
+        self._run_id_factory = run_id_factory or _successor_run_id
+        self._clock = clock
+
+    async def reconcile_thread(
+        self,
+        *,
+        tenant_id: str,
+        thread_id: str,
+    ) -> AsyncSubagentSuccessorReceipt:
+        now = _utc(self._clock())
+        selected = await self._select_or_route(tenant_id=tenant_id, thread_id=thread_id, now=now)
+        if isinstance(selected, AsyncSubagentSuccessorReceipt):
+            await self._signal_if_bound(tenant_id=tenant_id, receipt=selected)
+            return selected
+        parent_state = await self._states.read(
+            tenant_id,
+            selected.selected_parent.id,
+            expected_thread_id=thread_id,
+        )
+        _verify_selected_parent_state(selected.selected_parent, parent_state)
+        prepared = prepare_async_result_successor(
+            selected_parent=selected.selected_parent,
+            selected_parent_state=parent_state.envelope,
+            origin_run=selected.origin,
+            inbox_entry=selected.entry,
+            successor_run_id=self._run_id_factory(
+                tenant_id,
+                selected.entry.id,
+                selected.selected_parent.id,
+            ),
+            created_at=now,
+        )
+        initial_state = await self._publish_initial(prepared)
+        receipt = await self._accept(
+            tenant_id=tenant_id,
+            thread_id=thread_id,
+            prepared=prepared,
+            parent_state=parent_state,
+            initial_state=initial_state,
+            now=now,
+        )
+        await self._signal_if_bound(tenant_id=tenant_id, receipt=receipt)
+        return receipt
+
+    async def reconcile_once(self, *, limit: int = 64) -> int:
+        """Reconcile a bounded set of Threads with unbound result authority."""
+
+        if limit < 1 or limit > 1024:
+            raise ValueError("async result successor reconciliation limit is invalid")
+        async with short_session(self._sessions) as database:
+            candidates = tuple(
+                (
+                    await database.execute(
+                        select(
+                            ThreadInboxRecord.tenant_id,
+                            ThreadInboxRecord.thread_id,
+                            func.min(ThreadInboxRecord.delivery_sequence).label("first_sequence"),
+                        )
+                        .where(
+                            ThreadInboxRecord.kind == "async_subagent_result",
+                            ThreadInboxRecord.status == "pending",
+                            ThreadInboxRecord.target_run_id.is_(None),
+                            ThreadInboxRecord.source_waiting_run_id.is_(None),
+                        )
+                        .group_by(ThreadInboxRecord.tenant_id, ThreadInboxRecord.thread_id)
+                        .order_by("first_sequence", ThreadInboxRecord.thread_id)
+                        .limit(limit)
+                    )
+                )
+                .tuples()
+                .all()
+            )
+        for tenant_id, thread_id, _ in candidates:
+            await self.reconcile_thread(tenant_id=tenant_id, thread_id=thread_id)
+        return len(candidates)
+
+    async def _select_or_route(
+        self,
+        *,
+        tenant_id: str,
+        thread_id: str,
+        now: datetime,
+    ) -> AsyncSubagentSuccessorReceipt | _PreparedSelection:
+        async with transaction(self._sessions) as database:
+            selected = await lock_and_route_async_result(
+                database,
+                tenant_id=tenant_id,
+                thread_id=thread_id,
+                now=now,
+            )
+            if isinstance(selected, AsyncSubagentSuccessorReceipt):
+                return selected
+            return _PreparedSelection(
+                entry=selected.entry.to_resource(),
+                selected_parent=selected.selected_parent.to_resource(),
+                origin=selected.origin.to_resource(),
+            )
+
+    async def _publish_initial(self, prepared: PreparedAsyncResultSuccessor) -> StoredRunState:
+        try:
+            return await self._states.create(prepared.run.tenant_id, prepared.state)
+        except StaleStateWriter:
+            existing = await self._states.read(
+                prepared.run.tenant_id,
+                prepared.run.id,
+                expected_thread_id=prepared.run.thread_id,
+            )
+            if existing.envelope != prepared.state:
+                raise AsyncSubagentSuccessorError(
+                    "automatic successor state key contains a different candidate"
+                ) from None
+            return existing
+
+    async def _accept(
+        self,
+        *,
+        tenant_id: str,
+        thread_id: str,
+        prepared: PreparedAsyncResultSuccessor,
+        parent_state: StoredRunState,
+        initial_state: StoredRunState,
+        now: datetime,
+    ) -> AsyncSubagentSuccessorReceipt:
+        try:
+            async with transaction(self._sessions) as database:
+                selected = await lock_and_route_async_result(
+                    database,
+                    tenant_id=tenant_id,
+                    thread_id=thread_id,
+                    now=now,
+                )
+                if isinstance(selected, AsyncSubagentSuccessorReceipt):
+                    return selected
+                await _validate_final_selection(
+                    database,
+                    selected,
+                    prepared,
+                    parent_state,
+                    initial_state,
+                )
+                session = await _authorize_successor(database, selected)
+                await add_run_with_environment_binding(
+                    database,
+                    run=prepared.run,
+                    state=prepared.state,
+                    workspace_id=session.workspace_id,
+                )
+                await database.flush()
+                consume_async_result_for_successor(
+                    selected.counter,
+                    selected.entry,
+                    successor_run_id=prepared.run.id,
+                    state_digest_sha256=initial_state.digest_sha256,
+                    now=now,
+                )
+                bind_locked_unbound_async_entries(
+                    selected.later_entries,
+                    target_run_id=prepared.run.id,
+                )
+                selected.thread.version += 1
+                selected.thread.current_run_id = prepared.run.id
+                selected.thread.head_run_id = selected.selected_parent.id
+                selected.thread.updated_at = now
+                await database.flush()
+                return AsyncSubagentSuccessorReceipt(
+                    thread_id=thread_id,
+                    outcome="run_accepted",
+                    inbox_entry_id=selected.entry.id,
+                    successor=RunAcceptanceReceipt(
+                        session_id=selected.thread.session_id,
+                        thread_id=thread_id,
+                        thread_version=selected.thread.version,
+                        run_id=prepared.run.id,
+                        run_version=prepared.run.version,
+                    ),
+                )
+        except IntegrityError as error:
+            raise AsyncSubagentSuccessorError(
+                "automatic result successor lost a concurrent relational mutation"
+            ) from error
+
+    async def _signal_if_bound(
+        self,
+        *,
+        tenant_id: str,
+        receipt: AsyncSubagentSuccessorReceipt,
+    ) -> None:
+        if self._signals is None or receipt.outcome != "bound_active":
+            return
+        try:
+            await self._signals.publish(tenant_id=tenant_id, thread_id=receipt.thread_id)
+        except Exception:
+            logger.warning(
+                "async_subagent_successor_signal_failed",
+                extra={"event": "async_subagent_successor_signal_failed", "thread_id": receipt.thread_id},
+                exc_info=True,
+            )
+
+
+async def _validate_final_selection(
+    database: AsyncSession,
+    selected: LockedAsyncResultSelection,
+    prepared: PreparedAsyncResultSuccessor,
+    parent_state: StoredRunState,
+    initial_state: StoredRunState,
+) -> None:
+    await validate_async_subagent_result_authority(database, selected.entry.to_resource())
+    _verify_selected_parent_state(selected.selected_parent.to_resource(), parent_state)
+    expected = prepare_async_result_successor(
+        selected_parent=selected.selected_parent.to_resource(),
+        selected_parent_state=parent_state.envelope,
+        origin_run=selected.origin.to_resource(),
+        inbox_entry=selected.entry.to_resource(),
+        successor_run_id=prepared.run.id,
+        created_at=prepared.run.created_at,
+    )
+    if expected != prepared or initial_state.envelope != prepared.state:
+        raise AsyncSubagentSuccessorError("automatic successor preparation no longer matches authority")
+    validate_prepared_run(prepared.run, prepared.state)
+
+
+async def _authorize_successor(
+    database: AsyncSession,
+    selected: LockedAsyncResultSelection,
+) -> SessionRecord:
+    session = await database.scalar(
+        select(SessionRecord).where(
+            SessionRecord.tenant_id == selected.thread.tenant_id,
+            SessionRecord.id == selected.thread.session_id,
+        )
+    )
+    if session is None or selected.selected_parent.session_id != session.id or selected.origin.session_id != session.id:
+        raise AsyncSubagentSuccessorError("automatic successor Session authority is incomplete")
+    actor = AuthenticatedActor(
+        principal=selected.origin.to_resource().authority_principal,
+        auth_method="run_authority",
+        credential_id=f"run_{selected.origin.id}",
+        boundary_workspace_id=session.workspace_id,
+        request_id=selected.entry.id,
+    )
+    try:
+        await authorize_agent(
+            database,
+            actor=actor,
+            workspace_id=session.workspace_id,
+            agent_id=selected.selected_parent.agent_id,
+            action=WorkspaceAction.run_read,
+        )
+        await authorize_agent(
+            database,
+            actor=actor,
+            workspace_id=session.workspace_id,
+            agent_id=selected.selected_parent.agent_id,
+            action=WorkspaceAction.run_continue,
+        )
+        await authorize_agent(
+            database,
+            actor=actor,
+            workspace_id=session.workspace_id,
+            agent_id=selected.selected_parent.agent_id,
+            action=WorkspaceAction.agent_invoke,
+        )
+    except AuthorizationError as error:
+        raise AsyncSubagentSuccessorError("automatic successor is no longer authorized") from error
+    return session
+
+
+def _verify_selected_parent_state(parent: Run, state: StoredRunState) -> None:
+    sealed = parent.sealed_state
+    if sealed is None or (
+        sealed.digest_sha256,
+        sealed.size_bytes,
+        sealed.envelope_schema_version,
+        sealed.harness_schema_version,
+        sealed.checkpoint_seq,
+        sealed.content_type,
+    ) != (
+        state.digest_sha256,
+        len(state.body),
+        state.envelope.schema_version,
+        state.envelope.harness_schema_version,
+        state.envelope.checkpoint_seq,
+        RUN_STATE_CONTENT_TYPE,
+    ):
+        raise AsyncSubagentSuccessorError("selected parent state does not match its sealed reference")
+
+
+def _successor_run_id(tenant_id: str, entry_id: str, parent_run_id: str) -> str:
+    digest = hashlib.sha256(f"{tenant_id}:{entry_id}:{parent_run_id}".encode()).hexdigest()
+    return f"run_{digest[:24]}"
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+__all__ = [
+    "AsyncSubagentSuccessorError",
+    "AsyncSubagentSuccessorReceipt",
+    "AsyncSubagentSuccessorReconciler",
+]

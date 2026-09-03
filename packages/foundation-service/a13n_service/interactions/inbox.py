@@ -31,7 +31,8 @@ from .control_domain import (
     new_thread_inbox_entry_id,
 )
 from .control_models import ThreadInboxRecord
-from .inbox_persistence import ThreadInboxConflict, allocate_steer, reconcile_checkpoint
+from .inbox_allocation import allocate_steer
+from .inbox_persistence import ThreadInboxConflict, reconcile_checkpoint
 from .input import AcceptedAgentInput
 from .models import RunRecord, ThreadRecord
 from .objects import StoredRunState
