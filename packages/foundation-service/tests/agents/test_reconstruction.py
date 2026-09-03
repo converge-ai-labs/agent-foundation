@@ -111,8 +111,6 @@ def _effective_model(config: AgentConfig) -> EffectiveAgentModel:
             model_key=MODEL_KEY,
             upstream_model="gpt-5.6-terra",
             model_api="openai.responses",
-            profile={},
-            limits={},
         ),
         settings=config.model.settings,
         characteristics=config.model.characteristics,

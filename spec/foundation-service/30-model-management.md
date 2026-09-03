@@ -15,16 +15,17 @@ This contract covers only the primary text or multimodal generative model used b
 
 ## Boundaries and vocabulary
 
-| Concept            | Meaning                                                                                  | Durable resource |
-| ------------------ | ---------------------------------------------------------------------------------------- | ---------------- |
-| Provider type      | Trusted implementation family such as `openai`, `openrouter`, `ollama`, or `aws_bedrock` | No               |
-| Model Provider     | One Workspace-owned configured account or endpoint                                       | Yes              |
-| Calling API        | Request/response contract such as `openai.responses` or `anthropic.messages`             | Registry key     |
-| Model              | Stable Workspace alias for one upstream model under one Provider                         | Yes              |
-| Model API config   | Per-Model, per-calling-API profile and limits                                            | Model value      |
-| Provider adapter   | Trusted management and construction code selected by Provider type                       | No               |
-| Pydantic AI Model  | Process-local native model implementation used for a request                             | No               |
-| Execution snapshot | Model fields retained by an accepted Run                                                 | Embedded value   |
+| Concept              | Meaning                                                                                    | Durable resource |
+| -------------------- | ------------------------------------------------------------------------------------------ | ---------------- |
+| Provider type        | Trusted implementation family such as `openai`, `openrouter`, `ollama`, or `aws_bedrock`   | No               |
+| Model Provider       | One Workspace-owned configured account or endpoint                                         | Yes              |
+| Calling API          | Request/response contract such as `openai.responses` or `anthropic.messages`               | Registry key     |
+| Model                | Stable Workspace alias for one upstream model under one Provider                           | Yes              |
+| Model API config     | Per-Model, per-calling-API profile and limits                                              | Model value      |
+| Provider integration | Trusted connection, authentication, endpoint, and discovery code selected by Provider type | No               |
+| Calling API binding  | Trusted mapping from one calling-API key to one native Pydantic AI Model implementation    | Registry value   |
+| Pydantic AI Model    | Process-local native model implementation used for a request                               | No               |
+| Execution snapshot   | Model fields retained by an accepted Run                                                   | Embedded value   |
 
 An endpoint owner and a wire format are independent facts. An OpenRouter Provider can expose an OpenAI-compatible calling API without becoming an OpenAI Provider. An Ollama Provider can expose the same general format while retaining Ollama-specific discovery and authentication behavior. An OpenAI Provider can allow both Responses and Chat Completions, and one Model can declare either or both.
 
@@ -183,7 +184,7 @@ class AgentModel:
 
 Agent Revision creation resolves `model_key` to the internal `model_id`, validates that `model_api` is configured, and retains the resolved identity. It does not freeze the Model configuration. Invoking any Agent Revision resolves the latest enabled Model at Run acceptance. A caller or SDK can auto-select an API before saving only when the Model exposes exactly one API; the stored Agent value is still explicit.
 
-Run acceptance freezes:
+Run acceptance freezes only the Model identity and fields that determine outbound request selection:
 
 ```python
 class ModelExecutionSnapshot:
@@ -192,8 +193,6 @@ class ModelExecutionSnapshot:
     model_key: str
     upstream_model: str
     model_api: str
-    profile: ModelProfile
-    limits: ModelLimits
 
 
 class ModelExecutionObservation:
@@ -203,7 +202,7 @@ class ModelExecutionObservation:
     model_api: str
 ```
 
-The Provider ID is not duplicated in this snapshot because `Model.provider_id` is immutable. Runtime resolves the Provider through the retained `model_id`. The snapshot contains no endpoint, Provider config, credential, or secret. Replacement attempts and explicit Retry reuse the same Model snapshot, so a mid-Run Model edit does not change upstream model, selected API, profile, or limits.
+The Provider ID is not duplicated in this snapshot because `Model.provider_id` is immutable. Runtime resolves the Provider through the retained `model_id`. The snapshot contains no profile, limits, endpoint, Provider config, credential, or secret. Profile and limits remain current Model catalog metadata; they neither override the native Pydantic AI Model profile nor become Run reproducibility facts. Replacement attempts and explicit Retry reuse the same Model snapshot, so a mid-Run Model edit does not change upstream model or selected API.
 
 Provider values have different semantics. Immediately before every outbound model request, runtime:
 
@@ -219,12 +218,16 @@ Disabling either the Model or its Provider is a live kill switch: the next outbo
 
 ## Native construction and endpoint safety
 
-Pydantic AI owns provider invocation, message conversion, streaming, tool calls, and structured-output protocol behavior. Foundation's trusted Provider adapter owns only:
+Pydantic AI owns provider invocation, message conversion, streaming, tool calls, structured-output protocol behavior, and the effective native Model profile. Foundation keeps Provider integration and calling-API selection as two finite trusted registries rather than repeating protocol selection inside every Provider type.
+
+One Provider integration owns only:
 
 - Provider config and credential validation;
 - optional connection test and model discovery;
 - endpoint derivation and policy validation; and
-- construction of the registry-selected native Pydantic AI Model.
+- construction of the native Pydantic AI Provider from the current connection state.
+
+The calling-API registry maps each supported API key to its exact native Pydantic AI Model selection. Runtime first selects and constructs the current Provider integration, then applies the snapshotted calling-API binding to the opaque upstream model name. Compatibility remains the finite `(provider_type, model_api)` allowlist declared by the Provider integration. Most bindings use Pydantic AI's native model inference; a small explicit constructor override is permitted only when inference cannot preserve the selected calling API exactly.
 
 There is no Foundation `Interface`, `InterfaceAdapter`, or user-selectable adapter resource.
 

@@ -6,22 +6,17 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx2
 from pydantic import StringConstraints, model_validator
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.providers.azure import AzureProvider
 
-from ..domain import ModelExecutionSnapshot
 from .base import (
-    BuiltModel,
     ModelListRequest,
-    ProviderAdapter,
+    ProviderIntegration,
     join_url,
-    model_name,
     openai_style_discovery,
     require_credential,
     require_endpoint,
-    unsupported_model_api,
 )
-from .types import ProviderConfig, ProviderType, RuntimeProvider
+from .types import ProviderConfig, RuntimeProvider
 
 
 class Config(ProviderConfig):
@@ -34,18 +29,17 @@ class Config(ProviderConfig):
         return self
 
 
-def _build(snapshot: ModelExecutionSnapshot, provider: RuntimeProvider, http_client: httpx2.AsyncClient) -> BuiltModel:
-    native_provider = AzureProvider(
+def _build_provider(
+    provider: RuntimeProvider,
+    http_client: httpx2.AsyncClient,
+    _pydantic_provider_name: str,
+) -> AzureProvider:
+    return AzureProvider(
         azure_endpoint=str(provider.config["resource_endpoint"]),
         api_version=cast(str | None, provider.config.get("api_version")),
         api_key=require_credential(provider),
         http_client=http_client,
     )
-    if snapshot.model_api == "openai.responses":
-        return OpenAIResponsesModel(model_name(snapshot), provider=native_provider)
-    if snapshot.model_api == "openai.chat_completions":
-        return OpenAIChatModel(model_name(snapshot), provider=native_provider)
-    unsupported_model_api(snapshot)
 
 
 def _request(provider: RuntimeProvider) -> ModelListRequest:
@@ -53,12 +47,6 @@ def _request(provider: RuntimeProvider) -> ModelListRequest:
         url=join_url(require_endpoint(provider), "models"),
         headers={"api-key": require_credential(provider)},
     )
-
-
-ADAPTER = ProviderAdapter(
-    build_model=_build,
-    model_discovery=openai_style_discovery(_request),
-)
 
 
 def _endpoint(config: Mapping[str, object]) -> str:
@@ -91,12 +79,13 @@ def _official_endpoint(value: str) -> str:
     return urlunsplit(("https", parsed.netloc, path, "", ""))
 
 
-TYPE = ProviderType(
+INTEGRATION = ProviderIntegration(
     key="azure_openai",
     display_name="Azure OpenAI",
     config_model=Config,
     supported_model_apis=("openai.responses", "openai.chat_completions"),
+    build_provider=_build_provider,
     endpoint=_endpoint,
     endpoint_config_field="resource_endpoint",
-    supports_model_discovery=True,
+    model_discovery=openai_style_discovery(_request),
 )

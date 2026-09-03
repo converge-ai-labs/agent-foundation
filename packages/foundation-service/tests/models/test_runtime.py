@@ -140,7 +140,7 @@ async def test_factory_uses_explicit_calling_api_binding() -> None:
     }
     providers = _runtime_providers()
     async with httpx2.AsyncClient() as client:
-        factory = NativeModelFactory(client)
+        factory = NativeModelFactory(client, built_in_provider_registry())
         with patch(
             "a13n_service.models.provider_adapters.google_vertex.parse_google_service_account",
             return_value=AnonymousCredentials(),
@@ -163,8 +163,6 @@ def _snapshot(api: str) -> ModelExecutionSnapshot:
         model_key="primary",
         upstream_model=upstream_model,
         model_api=api,
-        profile={},
-        limits={},
     )
 
 

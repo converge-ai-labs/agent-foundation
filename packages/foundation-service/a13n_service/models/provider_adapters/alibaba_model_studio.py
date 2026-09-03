@@ -8,10 +8,9 @@ import httpx2
 from pydantic import StringConstraints, model_validator
 from pydantic_ai.providers.alibaba import AlibabaProvider
 
-from ..domain import ModelExecutionSnapshot
-from . import openai_chat
-from .base import BuiltModel, ProviderAdapter, bearer_models_request, openai_style_discovery
-from .types import ProviderConfig, ProviderType, RuntimeProvider
+from . import openai_provider
+from .base import ProviderIntegration, bearer_models_request, openai_style_discovery
+from .types import ProviderConfig, RuntimeProvider
 
 
 class DomainType(StrEnum):
@@ -45,14 +44,12 @@ class Config(ProviderConfig):
         return self
 
 
-def _build(snapshot: ModelExecutionSnapshot, provider: RuntimeProvider, http_client: httpx2.AsyncClient) -> BuiltModel:
-    return openai_chat.build(snapshot, provider, http_client, AlibabaProvider)
-
-
-ADAPTER = ProviderAdapter(
-    build_model=_build,
-    model_discovery=openai_style_discovery(bearer_models_request),
-)
+def _build_provider(
+    provider: RuntimeProvider,
+    http_client: httpx2.AsyncClient,
+    pydantic_provider_name: str,
+) -> AlibabaProvider:
+    return openai_provider.build(provider, http_client, pydantic_provider_name, AlibabaProvider)
 
 
 def _endpoint(config: Mapping[str, object]) -> str:
@@ -69,11 +66,12 @@ def _endpoint(config: Mapping[str, object]) -> str:
     raise ValueError("the selected Alibaba region requires alibaba_workspace_id")
 
 
-TYPE = ProviderType(
+INTEGRATION = ProviderIntegration(
     key="alibaba_model_studio",
     display_name="Alibaba Model Studio / Qwen",
     config_model=Config,
     supported_model_apis=("openai.chat_completions",),
+    build_provider=_build_provider,
     endpoint=_endpoint,
-    supports_model_discovery=True,
+    model_discovery=openai_style_discovery(bearer_models_request),
 )

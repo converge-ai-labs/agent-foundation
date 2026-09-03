@@ -172,7 +172,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
             )
             github_http_client = await stack.enter_async_context(httpx2.AsyncClient(follow_redirects=False))
-            native_model_factory = NativeModelFactory(model_http_client)
+            native_model_factory = NativeModelFactory(model_http_client, app.state.model_provider_registry)
             live_provider_resolver = LiveProviderResolver(
                 storage.sessions,
                 app.state.model_provider_registry,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import httpx2
 import pytest
-from a13n_service.models.provider_adapters.registry import BUILT_IN_PROVIDER_ADAPTERS
 from a13n_service.models.provider_operations import NativeProviderOperations
 from a13n_service.models.provider_runtime import RuntimeProvider
 from a13n_service.models.providers import built_in_provider_registry
@@ -16,15 +15,11 @@ class _ProviderResolver:
         return self.provider
 
 
-def test_provider_registry_and_adapters_stay_in_sync() -> None:
-    definitions = {definition.key: definition for definition in built_in_provider_registry().definitions()}
+def test_provider_registry_projects_integration_discovery_support() -> None:
+    registry = built_in_provider_registry()
 
-    assert BUILT_IN_PROVIDER_ADAPTERS.keys() == definitions.keys()
-    assert {
-        provider_type
-        for provider_type, adapter in BUILT_IN_PROVIDER_ADAPTERS.items()
-        if adapter.model_discovery is not None
-    } == {provider_type for provider_type, definition in definitions.items() if definition.supports_model_discovery}
+    for definition in registry.definitions():
+        assert definition.supports_model_discovery is (registry.integration(definition.key).model_discovery is not None)
 
 
 @pytest.mark.anyio

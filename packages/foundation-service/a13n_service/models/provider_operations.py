@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from typing import Protocol
 
 import httpx2
 
 from .domain import ModelApiConfig
-from .provider_adapters.base import DiscoveredModelIdentity, ProviderAdapter
-from .provider_adapters.registry import BUILT_IN_PROVIDER_ADAPTERS
+from .provider_adapters.base import DiscoveredModelIdentity
 from .provider_adapters.types import RuntimeProvider
 from .providers import DiscoveredModel, DiscoveredModelCollection, ProviderRegistry
 
@@ -36,12 +34,10 @@ class NativeProviderOperations:
         provider_resolver: ProviderStateResolver,
         registry: ProviderRegistry,
         http_client: httpx2.AsyncClient,
-        adapters: Mapping[str, ProviderAdapter] | None = None,
     ) -> None:
         self._provider_resolver = provider_resolver
         self._registry = registry
         self._http_client = http_client
-        self._adapters = BUILT_IN_PROVIDER_ADAPTERS if adapters is None else adapters
 
     async def test(self, *, provider_id: str, organization_id: str, workspace_id: str) -> None:
         provider = await self._resolve(provider_id, organization_id, workspace_id)
@@ -77,8 +73,7 @@ class NativeProviderOperations:
         )
 
     async def _list(self, provider: RuntimeProvider) -> list[DiscoveredModelIdentity]:
-        adapter = self._provider_adapter(provider.type)
-        discovery = adapter.model_discovery
+        discovery = self._registry.integration(provider.type).model_discovery
         if discovery is None:
             raise ValueError(f"Provider type {provider.type!r} does not support model discovery")
         request = discovery.request(provider)
@@ -90,9 +85,3 @@ class NativeProviderOperations:
                     raise ValueError("the Provider model-list response is too large")
                 body.extend(chunk)
         return discovery.parse(json.loads(body))
-
-    def _provider_adapter(self, provider_type: str) -> ProviderAdapter:
-        try:
-            return self._adapters[provider_type]
-        except KeyError as error:
-            raise ValueError(f"unknown Provider type {provider_type!r}") from error

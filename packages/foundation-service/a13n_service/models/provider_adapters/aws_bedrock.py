@@ -1,45 +1,38 @@
 """AWS Bedrock Provider adapter."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx2
 from pydantic import StringConstraints
-from pydantic_ai.models.bedrock import BedrockConverseModel
-from pydantic_ai.models.bedrock_mantle import BedrockMantleChatModel, BedrockMantleResponsesModel
+from pydantic_ai.providers import Provider
 from pydantic_ai.providers.bedrock import BedrockProvider
 from pydantic_ai.providers.bedrock_mantle import BedrockMantleProvider
 
 from ..credentials import parse_aws_credentials
-from ..domain import ModelExecutionSnapshot
-from .base import BuiltModel, ProviderAdapter, model_name, require_credential, unsupported_model_api
-from .types import CredentialFormat, ProviderConfig, ProviderType, RuntimeProvider
+from .base import ProviderIntegration, require_credential
+from .types import CredentialFormat, ProviderConfig, RuntimeProvider
 
 
-def _build(snapshot: ModelExecutionSnapshot, provider: RuntimeProvider, http_client: httpx2.AsyncClient) -> BuiltModel:
+def _build_provider(
+    provider: RuntimeProvider,
+    http_client: httpx2.AsyncClient,
+    pydantic_provider_name: str,
+) -> Provider[Any]:
     del http_client
     credentials = parse_aws_credentials(require_credential(provider))
     region = str(provider.config["region"])
-    if snapshot.model_api == "bedrock.converse":
-        return BedrockConverseModel(
-            model_name(snapshot),
-            provider=BedrockProvider(region_name=region, **credentials.model_dump()),
-        )
-    mantle = BedrockMantleProvider(region_name=region, **credentials.model_dump())
-    if snapshot.model_api == "bedrock_mantle.responses":
-        return BedrockMantleResponsesModel(model_name(snapshot), provider=mantle)
-    if snapshot.model_api == "bedrock_mantle.chat_completions":
-        return BedrockMantleChatModel(model_name(snapshot), provider=mantle)
-    unsupported_model_api(snapshot)
-
-
-ADAPTER = ProviderAdapter(build_model=_build)
+    if pydantic_provider_name == "bedrock":
+        return BedrockProvider(region_name=region, **credentials.model_dump())
+    if pydantic_provider_name == "bedrock-mantle":
+        return BedrockMantleProvider(region_name=region, **credentials.model_dump())
+    raise ValueError(f"unsupported Pydantic Provider {pydantic_provider_name!r}")
 
 
 class Config(ProviderConfig):
     region: Annotated[str, StringConstraints(pattern=r"^[a-z]{2}(?:-gov)?-[a-z]+-\d$")]
 
 
-TYPE = ProviderType(
+INTEGRATION = ProviderIntegration(
     key="aws_bedrock",
     display_name="AWS Bedrock",
     config_model=Config,
@@ -48,5 +41,6 @@ TYPE = ProviderType(
         "bedrock_mantle.responses",
         "bedrock_mantle.chat_completions",
     ),
+    build_provider=_build_provider,
     credential_format=CredentialFormat.aws_credentials_json,
 )

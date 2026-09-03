@@ -4,19 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, NoReturn, Protocol, cast
+from typing import Any, Protocol
 
 import httpx2
 from a13n_harness.errors import ModelResolutionError
-from openai import AsyncOpenAI
-from pydantic_ai.models import Model as PydanticModel
+from pydantic_ai.providers import Provider
 
-from ..domain import ModelExecutionSnapshot
-from .types import RuntimeProvider
+from .types import CredentialFormat, ProviderConfig, RuntimeProvider, ValidatedProviderConfig
 
 DiscoveredModelIdentity = tuple[str, str | None]
-BuiltModel = PydanticModel[Any]
-ModelBuilder = Callable[[ModelExecutionSnapshot, RuntimeProvider, httpx2.AsyncClient], BuiltModel]
+NativeProviderBuilder = Callable[[RuntimeProvider, httpx2.AsyncClient, str], Provider[Any]]
+EndpointResolver = Callable[[Mapping[str, object]], str | None]
+CredentialValidator = Callable[[Mapping[str, object], bool], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,9 +70,37 @@ class JsonModelDiscoveryAdapter:
 
 
 @dataclass(frozen=True, slots=True)
-class ProviderAdapter:
-    build_model: ModelBuilder
+class ProviderIntegration:
+    """One trusted Provider type's metadata and connection behavior."""
+
+    key: str
+    display_name: str
+    config_model: type[ProviderConfig]
+    supported_model_apis: tuple[str, ...]
+    build_provider: NativeProviderBuilder
+    credential_format: CredentialFormat | None = CredentialFormat.api_key
+    credential_required: bool = True
+    endpoint: str | EndpointResolver | None = None
+    endpoint_config_field: str | None = None
+    credential_validator: CredentialValidator | None = None
     model_discovery: ModelDiscoveryAdapter | None = None
+
+    def validate_config(self, config: Mapping[str, object], *, credential_configured: bool) -> ValidatedProviderConfig:
+        if self.credential_required and not credential_configured:
+            raise ValueError("the provider credential is required")
+        if self.credential_format is None and credential_configured:
+            raise ValueError("the provider does not accept a credential")
+        normalized = self.config_model.model_validate(dict(config)).model_dump(mode="json", exclude_none=True)
+        if self.credential_validator is not None:
+            self.credential_validator(normalized, credential_configured)
+        endpoint = self.endpoint(normalized) if callable(self.endpoint) else self.endpoint
+        return ValidatedProviderConfig(config=normalized, endpoint=endpoint)
+
+    def with_validated_endpoint(self, validated: ValidatedProviderConfig, endpoint: str) -> ValidatedProviderConfig:
+        normalized = dict(validated.config)
+        if self.endpoint_config_field is not None:
+            normalized[self.endpoint_config_field] = endpoint
+        return ValidatedProviderConfig(config=normalized, endpoint=endpoint)
 
 
 def openai_style_discovery(
@@ -93,31 +120,6 @@ def bearer_models_request(provider: RuntimeProvider) -> ModelListRequest:
     return ModelListRequest(
         url=join_url(require_endpoint(provider), "models"),
         headers={"authorization": f"Bearer {require_credential(provider)}"},
-    )
-
-
-def openai_client(provider: RuntimeProvider, http_client: httpx2.AsyncClient) -> AsyncOpenAI:
-    return AsyncOpenAI(
-        api_key=require_credential(provider),
-        base_url=require_endpoint(provider),
-        http_client=http_client,
-    )
-
-
-def model_name(snapshot: ModelExecutionSnapshot) -> Any:
-    return cast(Any, snapshot.upstream_model)
-
-
-def require_api(snapshot: ModelExecutionSnapshot, expected: str) -> None:
-    if snapshot.model_api != expected:
-        unsupported_model_api(snapshot)
-
-
-def unsupported_model_api(snapshot: ModelExecutionSnapshot) -> NoReturn:
-    raise ModelResolutionError(
-        "The accepted Model API is unavailable.",
-        code="model_api_unavailable",
-        details={"model_api": snapshot.model_api},
     )
 
 

@@ -242,8 +242,6 @@ class ModelExecutionSnapshot(BaseModel):
     model_key: str
     upstream_model: str
     model_api: str
-    profile: ModelProfile
-    limits: ModelLimits
 
     @classmethod
     def freeze(cls, model: Model, model_api: str) -> ModelExecutionSnapshot:
@@ -255,8 +253,6 @@ class ModelExecutionSnapshot(BaseModel):
             model_key=model.key,
             upstream_model=model.upstream_model,
             model_api=selected.api,
-            profile=selected.profile,
-            limits=selected.limits,
         )
 
     def observation(self) -> ModelExecutionObservation:

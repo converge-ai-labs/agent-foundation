@@ -8,8 +8,10 @@ from types import MappingProxyType
 from pydantic import BaseModel, ConfigDict
 
 from .domain import BoundedName, ModelApiConfig, UpstreamModel
-from .provider_adapters.registry import BUILT_IN_PROVIDER_TYPES
-from .provider_adapters.types import CredentialFormat, ProviderType, ValidatedProviderConfig
+from .model_apis import BUILT_IN_MODEL_APIS
+from .provider_adapters.base import ProviderIntegration
+from .provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
+from .provider_adapters.types import CredentialFormat, ValidatedProviderConfig
 
 
 class DiscoveredModel(BaseModel):
@@ -45,21 +47,27 @@ class ModelProviderTypeDefinitionCollection(BaseModel):
 
 
 class ProviderRegistry:
-    """Immutable allowlist of trusted Provider types and native Model API bindings."""
+    """Immutable allowlist of trusted Provider integrations."""
 
-    def __init__(self, provider_types: Iterable[ProviderType]) -> None:
-        indexed: dict[str, ProviderType] = {}
-        for provider_type in provider_types:
-            if provider_type.key in indexed:
-                raise ValueError(f"duplicate provider type {provider_type.key!r}")
-            indexed[provider_type.key] = provider_type
-        self._provider_types = MappingProxyType(indexed)
+    def __init__(self, integrations: Iterable[ProviderIntegration]) -> None:
+        indexed: dict[str, ProviderIntegration] = {}
+        for integration in integrations:
+            if integration.key in indexed:
+                raise ValueError(f"duplicate provider type {integration.key!r}")
+            unknown_apis = sorted(set(integration.supported_model_apis) - BUILT_IN_MODEL_APIS.keys())
+            if unknown_apis:
+                raise ValueError(f"unknown model APIs for {integration.key!r}: {', '.join(unknown_apis)}")
+            indexed[integration.key] = integration
+        self._integrations = MappingProxyType(indexed)
 
     def definitions(self) -> tuple[ModelProviderTypeDefinition, ...]:
-        return tuple(_definition(item) for item in self._provider_types.values())
+        return tuple(_definition(item) for item in self._integrations.values())
 
     def definition(self, provider_type: str) -> ModelProviderTypeDefinition:
         return _definition(self._require(provider_type))
+
+    def integration(self, provider_type: str) -> ProviderIntegration:
+        return self._require(provider_type)
 
     def validate_provider(
         self, provider_type: str, config: Mapping[str, object], *, credential_configured: bool
@@ -88,31 +96,31 @@ class ProviderRegistry:
     ) -> ValidatedProviderConfig:
         return self._require(provider_type).with_validated_endpoint(validated, endpoint)
 
-    def _require(self, provider_type: str) -> ProviderType:
+    def _require(self, provider_type: str) -> ProviderIntegration:
         try:
-            return self._provider_types[provider_type]
+            return self._integrations[provider_type]
         except KeyError as error:
             raise ValueError(f"unknown provider type {provider_type!r}") from error
 
 
 def built_in_provider_registry() -> ProviderRegistry:
-    return ProviderRegistry(BUILT_IN_PROVIDER_TYPES)
+    return ProviderRegistry(BUILT_IN_PROVIDER_INTEGRATIONS)
 
 
-def _definition(provider_type: ProviderType) -> ModelProviderTypeDefinition:
+def _definition(integration: ProviderIntegration) -> ModelProviderTypeDefinition:
     credential_schema: dict[str, object] = {"type": "null"}
-    if provider_type.credential_format is not None:
+    if integration.credential_format is not None:
         credential_schema = {
             "type": "string",
             "format": "password",
             "writeOnly": True,
-            "x-a13n-credential-format": provider_type.credential_format.value,
+            "x-a13n-credential-format": integration.credential_format.value,
         }
     return ModelProviderTypeDefinition(
-        key=provider_type.key,
-        display_name=provider_type.display_name,
-        config_schema=provider_type.config_model.model_json_schema(),
+        key=integration.key,
+        display_name=integration.display_name,
+        config_schema=integration.config_model.model_json_schema(),
         credential_schema=credential_schema,
-        supported_model_apis=provider_type.supported_model_apis,
-        supports_model_discovery=provider_type.supports_model_discovery,
+        supported_model_apis=integration.supported_model_apis,
+        supports_model_discovery=integration.model_discovery is not None,
     )

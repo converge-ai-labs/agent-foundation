@@ -7,21 +7,16 @@ from typing import Annotated, Self
 import httpx2
 from openai import AsyncOpenAI
 from pydantic import StringConstraints, model_validator
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from ..domain import ModelExecutionSnapshot
 from .base import (
-    BuiltModel,
     ModelListRequest,
-    ProviderAdapter,
+    ProviderIntegration,
     join_url,
-    model_name,
     openai_style_discovery,
     require_endpoint,
-    unsupported_model_api,
 )
-from .types import ProviderConfig, ProviderType, RuntimeProvider
+from .types import ProviderConfig, RuntimeProvider
 
 _RESERVED_HEADERS = {
     "connection",
@@ -59,7 +54,11 @@ class Config(ProviderConfig):
         return self
 
 
-def _build(snapshot: ModelExecutionSnapshot, provider: RuntimeProvider, http_client: httpx2.AsyncClient) -> BuiltModel:
+def _build_provider(
+    provider: RuntimeProvider,
+    http_client: httpx2.AsyncClient,
+    _pydantic_provider_name: str,
+) -> OpenAIProvider:
     config = provider.config
     credential = provider.credential or ""
     default_headers = None
@@ -72,12 +71,7 @@ def _build(snapshot: ModelExecutionSnapshot, provider: RuntimeProvider, http_cli
         http_client=http_client,
         _enforce_credentials=False,
     )
-    native_provider = OpenAIProvider(openai_client=client)
-    if snapshot.model_api == "openai.responses":
-        return OpenAIResponsesModel(model_name(snapshot), provider=native_provider)
-    if snapshot.model_api == "openai.chat_completions":
-        return OpenAIChatModel(model_name(snapshot), provider=native_provider)
-    unsupported_model_api(snapshot)
+    return OpenAIProvider(openai_client=client)
 
 
 def _request(provider: RuntimeProvider) -> ModelListRequest:
@@ -88,12 +82,6 @@ def _request(provider: RuntimeProvider) -> ModelListRequest:
         else:
             headers["authorization"] = f"Bearer {provider.credential}"
     return ModelListRequest(url=join_url(require_endpoint(provider), "models"), headers=headers)
-
-
-ADAPTER = ProviderAdapter(
-    build_model=_build,
-    model_discovery=openai_style_discovery(_request),
-)
 
 
 def _endpoint(config: Mapping[str, object]) -> str:
@@ -108,14 +96,15 @@ def _validate_credential(config: Mapping[str, object], configured: bool) -> None
         raise ValueError("the configured authentication mode requires a credential")
 
 
-TYPE = ProviderType(
+INTEGRATION = ProviderIntegration(
     key="openai_compatible",
     display_name="OpenAI-Compatible",
     config_model=Config,
     supported_model_apis=("openai.responses", "openai.chat_completions"),
+    build_provider=_build_provider,
     credential_required=False,
     endpoint=_endpoint,
     endpoint_config_field="base_url",
     credential_validator=_validate_credential,
-    supports_model_discovery=True,
+    model_discovery=openai_style_discovery(_request),
 )

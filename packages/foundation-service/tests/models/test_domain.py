@@ -24,8 +24,8 @@ def test_model_key_is_normalized_and_apis_are_explicit_and_unique() -> None:
         )
 
 
-def test_execution_snapshot_contains_no_provider_configuration() -> None:
+def test_execution_snapshot_contains_only_request_selection_fields() -> None:
     fields = set(ModelExecutionSnapshot.model_fields)
 
-    assert fields == {"schema_version", "model_id", "model_key", "upstream_model", "model_api", "profile", "limits"}
+    assert fields == {"schema_version", "model_id", "model_key", "upstream_model", "model_api"}
     assert new_model_provider_id().startswith("mprov_")

@@ -26,7 +26,7 @@ The key has no default and is never stored in the database. Provider credentials
 
 Model Providers and Models are mutable resources protected by strong `ETag` and `If-Match`; neither has a version or revision. Provider type, Model key, and the Model-to-Provider relationship are immutable. Models are retired with `enabled=false`; the service exposes no copy or hard-delete route. Custom endpoints are limited to Provider types whose schema declares them and are checked against `FOUNDATION_MODEL_PRIVATE_ENDPOINT_DOMAINS` and `FOUNDATION_MODEL_PRIVATE_ENDPOINT_CIDRS`. Redirects are not followed by built-in management operations.
 
-Run acceptance resolves the latest Model and freezes its upstream identity, explicit calling API, profile, and limits. `SnapshotRunModelResolver` retains those Model fields while `LiveProviderResolver` reloads and decrypts current Provider state for every outbound request, including later calls and replacement attempts within the same Run.
+Run acceptance resolves the latest Model and freezes its upstream identity and explicit calling API. Profile and limits remain editable catalog metadata rather than execution overrides. `SnapshotRunModelResolver` retains the request-selection fields while `LiveProviderResolver` reloads and decrypts current Provider state for every outbound request, including later calls and replacement attempts within the same Run.
 
 ## Asset Management
 
