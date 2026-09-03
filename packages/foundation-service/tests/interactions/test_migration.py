@@ -97,6 +97,10 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             "ck_thread_inbox_pending_binding_valid",
             "ck_thread_inbox_target_waiting_source_distinct",
         } <= inbox_checks
+        inbox_foreign_keys = {constraint["name"] for constraint in inspector.get_foreign_keys("thread_inbox")}
+        assert "fk_thread_inbox_async_subagent_relationship" in inbox_foreign_keys
+        inbox_unique = {constraint["name"] for constraint in inspector.get_unique_constraints("thread_inbox")}
+        assert "uq_thread_inbox_async_subagent_relationship" in inbox_unique
         queue_indexes = {index["name"] for index in inspector.get_indexes("thread_queued_submissions")}
         assert {
             "uq_thread_queued_submissions_position",

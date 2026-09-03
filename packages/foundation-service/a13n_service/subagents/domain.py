@@ -17,7 +17,7 @@ from a13n_service.interactions.domain import (
     UtcDateTime,
 )
 
-_MAX_RESULT_PAYLOAD_BYTES = 256 * 1024
+MAX_INLINE_ASYNC_RESULT_BYTES = 256 * 1024
 SubagentName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,62}$", max_length=63)]
 SpawnOperationId = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
@@ -70,7 +70,7 @@ class AsyncSubagentResultInboxPayload(StrictModel):
             encoded = rfc8785.dumps(value)
         except rfc8785.CanonicalizationError as error:
             raise ValueError("asynchronous child result payload must be canonical JSON") from error
-        if len(encoded) > _MAX_RESULT_PAYLOAD_BYTES:
+        if len(encoded) > MAX_INLINE_ASYNC_RESULT_BYTES:
             raise ValueError("asynchronous child result payload exceeds the inline limit")
         return value
 
@@ -86,6 +86,7 @@ def new_child_run_relationship_id() -> str:
 
 
 __all__ = [
+    "MAX_INLINE_ASYNC_RESULT_BYTES",
     "AsyncSubagentResultInboxPayload",
     "ChildCancellationPolicy",
     "ChildResultVisibility",

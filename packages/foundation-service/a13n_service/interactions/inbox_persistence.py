@@ -22,6 +22,10 @@ class ThreadInboxConflict(RuntimeError):
     """The selected inbox transition no longer matches relational authority."""
 
 
+class ThreadInboxCapacityExceeded(ThreadInboxConflict):
+    """The shared pending count or byte budget cannot admit an entry."""
+
+
 async def lock_inbox_related_runs(
     database: AsyncSession,
     *,
@@ -86,9 +90,9 @@ async def allocate_steer(
         raise ValueError("inbox admission limits must be positive")
     counter = await _lock_counter(database, tenant_id, thread_id)
     if counter.pending_count >= max_pending_count:
-        raise ThreadInboxConflict("Thread inbox pending-entry capacity is exhausted")
+        raise ThreadInboxCapacityExceeded("Thread inbox pending-entry capacity is exhausted")
     if counter.pending_bytes + payload_size_bytes > max_pending_bytes:
-        raise ThreadInboxConflict("Thread inbox pending-byte capacity is exhausted")
+        raise ThreadInboxCapacityExceeded("Thread inbox pending-byte capacity is exhausted")
     entry = ThreadInboxEntry(
         id=entry_id,
         tenant_id=tenant_id,
@@ -107,6 +111,59 @@ async def allocate_steer(
     counter.next_delivery_sequence += 1
     counter.pending_count += 1
     counter.pending_bytes += payload_size_bytes
+    return entry
+
+
+async def allocate_async_result(
+    database: AsyncSession,
+    *,
+    tenant_id: str,
+    thread_id: str,
+    origin_run_id: str,
+    relationship_id: str,
+    target_run_id: str | None,
+    source_waiting_run_id: str | None,
+    entry_id: str,
+    payload: dict[str, Any],
+    payload_size_bytes: int,
+    suppressed: bool,
+    max_pending_count: int,
+    max_pending_bytes: int,
+    now: datetime,
+) -> ThreadInboxEntry:
+    """Allocate one idempotent child-result FIFO position under locked authority."""
+
+    if payload_size_bytes < 1:
+        raise ValueError("inbox payload size must be positive")
+    if max_pending_count < 1 or max_pending_bytes < 1:
+        raise ValueError("inbox admission limits must be positive")
+    counter = await _lock_counter(database, tenant_id, thread_id)
+    if not suppressed:
+        if counter.pending_count >= max_pending_count:
+            raise ThreadInboxCapacityExceeded("Thread inbox pending-entry capacity is exhausted")
+        if counter.pending_bytes + payload_size_bytes > max_pending_bytes:
+            raise ThreadInboxCapacityExceeded("Thread inbox pending-byte capacity is exhausted")
+    entry = ThreadInboxEntry(
+        id=entry_id,
+        tenant_id=tenant_id,
+        thread_id=thread_id,
+        kind=ThreadInboxKind.async_subagent_result,
+        delivery_sequence=counter.next_delivery_sequence,
+        target_run_id=None if suppressed else target_run_id,
+        source_waiting_run_id=None if suppressed else source_waiting_run_id,
+        origin_run_id=origin_run_id,
+        async_subagent_relationship_id=relationship_id,
+        payload_schema_version="1",
+        payload=payload,
+        status=ThreadInboxStatus.suppressed if suppressed else ThreadInboxStatus.pending,
+        created_at=now,
+        finalized_at=now if suppressed else None,
+    )
+    database.add(thread_inbox_record(entry))
+    counter.next_delivery_sequence += 1
+    if not suppressed:
+        counter.pending_count += 1
+        counter.pending_bytes += payload_size_bytes
     return entry
 
 
@@ -518,8 +575,10 @@ def _validate_receipt_kinds(
 
 
 __all__ = [
+    "ThreadInboxCapacityExceeded",
     "ThreadInboxConflict",
     "abandon_waiting_entries",
+    "allocate_async_result",
     "allocate_steer",
     "apply_run_outcome",
     "bind_unbound_async_entries",
