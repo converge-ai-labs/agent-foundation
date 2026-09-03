@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver, PreparedRevisionConnectivity
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
@@ -15,6 +16,7 @@ from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExec
 from a13n_service.plugins.runtime import PluginRuntimeLockError
 from a13n_service.storage import short_session
 
+from .connectivity_resolution import freeze_revision_connectivity, prepare_revision_connectivity
 from .domain import (
     AgentConfig,
     ChildEnvironmentPolicy,
@@ -63,6 +65,7 @@ class PreparedRevisionResolution:
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
+    connectivity: PreparedRevisionConnectivity | None
 
 
 class AgentResolver:
@@ -76,6 +79,7 @@ class AgentResolver:
         plugin_runtime_mode: PluginRuntimeMode,
         environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
+        connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
@@ -85,6 +89,7 @@ class AgentResolver:
             sessions,
             runtime_mode=plugin_runtime_mode,
         )
+        self._connectivity_resolver = connectivity_resolver
         self.plugin_runtime_mode = plugin_runtime_mode
         self._protocol_policy = protocol_policy or AgentProtocolPolicy()
 
@@ -151,6 +156,13 @@ class AgentResolver:
             except EnvironmentManagementError as error:
                 raise agent_revision_create_failed(error.code, path="environment") from error
         _require_writable_skill_environment(config.skills, environment)
+        connectivity = await prepare_revision_connectivity(
+            self._connectivity_resolver,
+            actor=actor,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            config=config,
+        )
         return PreparedRevisionResolution(
             actor=actor,
             organization_id=organization_id,
@@ -162,6 +174,7 @@ class AgentResolver:
             plugins=plugins,
             skills=skills,
             subagents=subagents,
+            connectivity=connectivity,
         )
 
     async def freeze_in_transaction(
@@ -198,6 +211,7 @@ class AgentResolver:
             raise agent_revision_create_failed(error.code, path="environment") from error
         _require_writable_skill_environment(skills, environment)
         subagents = await self._freeze_subagents(session, prepared)
+        await freeze_revision_connectivity(self._connectivity_resolver, session, prepared.connectivity)
         try:
             runtime_lock = await self._plugin_resolver.freeze_runtime_lock(
                 session,
@@ -218,8 +232,10 @@ class AgentResolver:
             resolved_plugin_versions=plugins,
             runtime_lock_digest=runtime_lock.digest,
             resolved_skills=skills,
-            connector_tools=tuple(prepared.config.connector_tools.values()),
-            mcp_tools=tuple(prepared.config.mcp_tools.values()),
+            connector_tools=tuple(
+                prepared.config.connector_tools[name] for name in sorted(prepared.config.connector_tools)
+            ),
+            mcp_tools=tuple(prepared.config.mcp_tools[name] for name in sorted(prepared.config.mcp_tools)),
             resolved_environment=environment,
             resolved_subagents=subagents,
         )
@@ -231,9 +247,9 @@ class AgentResolver:
             raise agent_revision_create_failed("environment_resolution_unavailable", path="environment")
         if config.skills and config.environment is None:
             raise agent_revision_create_failed("skill_environment_required", path="environment")
-        if config.connector_tools:
+        if config.connector_tools and self._connectivity_resolver is None:
             raise agent_revision_create_failed("connector_tool_resolution_unavailable", path="connector_tools")
-        if config.mcp_tools:
+        if config.mcp_tools and self._connectivity_resolver is None:
             raise agent_revision_create_failed("mcp_tool_resolution_unavailable", path="mcp_tools")
         for index, skill in enumerate(config.skills):
             if skill.skill_key in {item.skill_key for item in config.skills[:index]}:

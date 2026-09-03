@@ -55,6 +55,7 @@ from a13n_service.connectivity.mcp.protocol import MCPProtocolClient
 from a13n_service.connectivity.mcp.reconciler import MCPReconciler
 from a13n_service.connectivity.mcp.router import router as mcp_router
 from a13n_service.connectivity.mcp.service import MCPConnectionService
+from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
@@ -415,12 +416,17 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     storage.sessions,
                     app.state.environment_provider_catalog,
                 )
+                app.state.connectivity_selection_resolver = ConnectivitySelectionResolver(
+                    storage.sessions,
+                    storage.objects,
+                )
                 app.state.agent_resolver = app.state.components.agent_resolver or AgentResolver(
                     storage.sessions,
                     app.state.accepted_model_selector,
                     plugin_runtime_mode=settings.plugin_runtime_mode,
                     environment_resolver=app.state.agent_environment_selection_resolver,
                     plugin_resolver=app.state.agent_plugin_selection_resolver,
+                    connectivity_resolver=app.state.connectivity_selection_resolver,
                 )
                 app.state.agent_invocation_resolver = (
                     app.state.components.agent_invocation_resolver
@@ -430,6 +436,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         plugin_runtime_mode=settings.plugin_runtime_mode,
                         environment_resolver=app.state.agent_environment_selection_resolver,
                         plugin_resolver=app.state.agent_plugin_selection_resolver,
+                        connectivity_resolver=app.state.connectivity_selection_resolver,
                     )
                 )
                 app.state.agent_service = AgentService(

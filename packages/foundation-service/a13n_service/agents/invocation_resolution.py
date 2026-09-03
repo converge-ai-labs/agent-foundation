@@ -9,6 +9,15 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.connectivity.selection_domain import (
+    ConnectorConnectionRunSelection,
+    MCPConnectionRunSelection,
+)
+from a13n_service.connectivity.selection_resolution import (
+    ConnectivitySelectionResolver,
+    PreparedRevisionConnectivity,
+    PreparedRunConnectivity,
+)
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -17,12 +26,14 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_workspace,
 )
+from a13n_service.interactions import MCPToolSnapshotRef
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
 from a13n_service.models.service import ModelError
 from a13n_service.plugins.runtime import PluginRuntimeLockError
 from a13n_service.skills.domain import SkillRevisionLock
 from a13n_service.storage import short_session
 
+from .connectivity_resolution import freeze_invocation_connectivity, prepare_invocation_connectivity
 from .domain import (
     AgentRevision,
     AgentRunOverride,
@@ -102,6 +113,7 @@ class PreparedAgentInvocation:
     environment: PreparedEnvironmentSelection | None
     resolved_environment: EnvironmentExecutionConfig | None
     subagents: tuple[PreparedInvocationSubagent, ...]
+    connectivity: PreparedRevisionConnectivity | PreparedRunConnectivity | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +124,9 @@ class FrozenAgentInvocation:
     effective_config: EffectiveAgentConfig
     sensitive_values: AgentRunSensitiveValues
     sensitive_values_digest: str
+    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
+    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
+    mcp_tool_snapshot: MCPToolSnapshotRef | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +146,7 @@ class AgentInvocationResolver:
         plugin_runtime_mode: PluginRuntimeMode,
         environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
+        connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
@@ -141,6 +157,7 @@ class AgentInvocationResolver:
             sessions,
             runtime_mode=plugin_runtime_mode,
         )
+        self._connectivity_resolver = connectivity_resolver
         self._protocol_policy = protocol_policy or AgentProtocolPolicy()
 
     async def prepare(
@@ -151,6 +168,7 @@ class AgentInvocationResolver:
         agent_revision_id: str | None = None,
         expected_current_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
+        run_id: str | None = None,
         _root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
     ) -> PreparedAgentInvocation:
         workspace_id = actor.boundary_workspace_id
@@ -196,7 +214,6 @@ class AgentInvocationResolver:
                     validate_agent_config(merged.config, protocol_policy=self._protocol_policy)
                 except AgentConfigValidationError as error:
                     raise agent_revision_not_executable(error.reason) from error
-                _require_connectivity_resolution(merged)
                 await authorize_workspace(
                     session,
                     actor=actor,
@@ -283,6 +300,14 @@ class AgentInvocationResolver:
                 )
             except ModelError as error:
                 raise agent_revision_not_executable(_model_reason(error)) from error
+            connectivity = await prepare_invocation_connectivity(
+                self._connectivity_resolver,
+                actor=actor,
+                organization_id=authorized.organization_id,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                config=merged.config,
+            )
         except AuthorizationError as error:
             raise _authorization_error(error) from error
         return PreparedAgentInvocation(
@@ -303,6 +328,7 @@ class AgentInvocationResolver:
             environment=environment,
             resolved_environment=resolved_environment,
             subagents=subagents,
+            connectivity=connectivity,
         )
 
     async def prepare_retained_revision_graph(
@@ -444,6 +470,11 @@ class AgentInvocationResolver:
             except PluginSelectionError as error:
                 raise agent_revision_not_executable(error.reason) from error
             subagents = await _freeze_subagents(session, prepared)
+            connectivity = await freeze_invocation_connectivity(
+                self._connectivity_resolver,
+                session,
+                prepared.connectivity,
+            )
         except AuthorizationError as error:
             raise _authorization_error(error) from error
 
@@ -476,8 +507,12 @@ class AgentInvocationResolver:
             "resolved_plugin_versions": plugins,
             "runtime_lock_digest": runtime_lock.digest,
             "skills": skills,
-            "connector_tools": tuple(prepared.merged.config.connector_tools.values()),
-            "mcp_tools": tuple(prepared.merged.config.mcp_tools.values()),
+            "connector_tools": tuple(
+                prepared.merged.config.connector_tools[name] for name in sorted(prepared.merged.config.connector_tools)
+            ),
+            "mcp_tools": tuple(
+                prepared.merged.config.mcp_tools[name] for name in sorted(prepared.merged.config.mcp_tools)
+            ),
             "resolved_environment": environment,
             "resolved_subagents": resolved_subagents,
             "instructions": prepared.merged.config.instructions,
@@ -509,6 +544,11 @@ class AgentInvocationResolver:
             effective_config=effective,
             sensitive_values=prepared.merged.sensitive_values,
             sensitive_values_digest=canonical_digest(prepared.merged.sensitive_values),
+            connector_connection_selections=(
+                connectivity.connector_connection_selections if connectivity is not None else ()
+            ),
+            mcp_connection_selections=(connectivity.mcp_connection_selections if connectivity is not None else ()),
+            mcp_tool_snapshot=(connectivity.mcp_tool_snapshot.reference if connectivity is not None else None),
         )
 
     async def _prepare_subagents(
@@ -602,13 +642,6 @@ def _require_writable_skill_environment(
         raise agent_revision_not_executable("skill_environment_required")
     if environment.access == "read_only":
         raise agent_revision_not_executable("skill_environment_not_writable")
-
-
-def _require_connectivity_resolution(merged: MergedAgentRun) -> None:
-    if merged.config.connector_tools:
-        raise agent_revision_not_executable("connector_tool_resolution_unavailable")
-    if merged.config.mcp_tools:
-        raise agent_revision_not_executable("mcp_tool_resolution_unavailable")
 
 
 async def _prepare_skills(
