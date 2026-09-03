@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 from a13n_environment_provider import build_environment_provider_catalog
 from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
-from a13n_service.database.metadata import service_metadata
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
@@ -36,10 +35,10 @@ def actor() -> AuthenticatedActor:
 
 
 @pytest.fixture
-async def environment_sessions(tmp_path: Path) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "environments.sqlite3"))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+async def environment_sessions(
+    service_sqlite_database: Path,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))

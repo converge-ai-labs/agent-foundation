@@ -131,10 +131,10 @@ async def interaction_object_store(tmp_path: Path):
 
 
 @pytest.fixture
-async def interaction_sessions() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=Path(":memory:")))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+async def interaction_sessions(
+    service_sqlite_database: Path,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     await _seed_interaction_database(sessions)
     try:

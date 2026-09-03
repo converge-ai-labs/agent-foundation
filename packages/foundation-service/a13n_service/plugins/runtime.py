@@ -9,7 +9,8 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from importlib.metadata import PackageNotFoundError, distributions, version
+from functools import cache
+from importlib.metadata import PackageNotFoundError, distributions, packages_distributions, version
 from typing import Literal, Protocol
 
 from packaging.requirements import Requirement
@@ -107,6 +108,11 @@ class WorkerReleaseManifest:
 def installed_distribution_versions() -> dict[str, str]:
     """Snapshot normalized distribution versions present in this service release."""
 
+    return dict(_installed_distribution_version_items())
+
+
+@cache
+def _installed_distribution_version_items() -> tuple[tuple[str, str], ...]:
     result: dict[str, str] = {}
     for distribution in distributions():
         distribution_name = distribution.metadata.get("Name")
@@ -114,7 +120,14 @@ def installed_distribution_versions() -> dict[str, str]:
             continue
         normalized = str(canonicalize_name(distribution_name))
         result.setdefault(normalized, distribution.version)
-    return result
+    return tuple(result.items())
+
+
+@cache
+def installed_top_level_packages() -> frozenset[str]:
+    """Snapshot import packages present in this service release."""
+
+    return frozenset(packages_distributions())
 
 
 class RuntimePluginContribution(Protocol):

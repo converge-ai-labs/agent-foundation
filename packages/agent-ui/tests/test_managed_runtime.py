@@ -18,7 +18,7 @@ from a13n_ui.managed_runtime import (
 )
 from a13n_ui.settings import EnvdRuntimeSettings
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.xdist_group("infrastructure")]
 
 
 def test_packaged_manifest_covers_every_supported_target() -> None:

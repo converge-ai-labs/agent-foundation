@@ -204,7 +204,7 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 
 .PHONY: test
 test: sync ## Run Python workspace tests
-	@uv run --locked python -m pytest
+	@uv run --locked python -m pytest -n 2 --dist loadgroup
 
 .PHONY: eip-generate
 eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspection artifacts

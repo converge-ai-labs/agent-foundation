@@ -16,7 +16,6 @@ from a13n_service.agents.environment_resolution import AgentEnvironmentSelection
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.agents.service import AgentService
-from a13n_service.database.metadata import service_metadata
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
@@ -112,11 +111,9 @@ async def create_current_revision(
 
 @pytest.fixture
 async def agent_sessions(
-    tmp_path: Path,
+    service_sqlite_database: Path,
 ) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "agents.sqlite3"))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))

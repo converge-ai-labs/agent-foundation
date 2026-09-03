@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from a13n_service.database.metadata import service_metadata
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.models.domain import PrincipalRef, WorkspaceSecretCredential
 from a13n_service.models.secrets import DatabaseSecretValueResolver, SecretResolutionError
@@ -69,10 +68,10 @@ def test_secret_protector_round_trips_and_binds_all_context_fields() -> None:
 
 
 @pytest.fixture
-async def encrypted_database(tmp_path: Path) -> AsyncIterator[tuple[DatabaseSecretValueResolver, AsyncEngine]]:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "secrets.sqlite3"))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+async def encrypted_database(
+    service_sqlite_database: Path,
+) -> AsyncIterator[tuple[DatabaseSecretValueResolver, AsyncEngine]]:
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     protected = protector().encrypt(
         "runtime-api-key",

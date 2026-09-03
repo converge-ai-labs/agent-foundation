@@ -7,7 +7,6 @@ from typing import Any, cast
 import httpx2
 import pytest
 from a13n_harness.errors import ModelResolutionError
-from a13n_service.database.metadata import service_metadata
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.models.domain import (
     ModelCapabilities,
@@ -153,11 +152,9 @@ async def test_openai_compatible_factory_honors_accepted_protocol() -> None:
 
 @pytest.fixture
 async def selector_database(
-    tmp_path: Path,
+    service_sqlite_database: Path,
 ) -> AsyncIterator[tuple[AcceptedModelSelector, async_sessionmaker, AsyncEngine]]:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "selector.sqlite3"))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
+    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     principal = PrincipalRef(principal_type="user", principal_id=USER_ID)
     async with transaction(sessions) as session:
