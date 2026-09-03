@@ -60,12 +60,33 @@ async def install_connectivity_lifespan(
         storage.sessions,
         secret_protector,
     )
+    await _install_connector_adapters(app, settings, stack)
     components: list[BackgroundComponent] = []
     if control_plane:
         components.extend(await _install_control_plane(app, settings, storage, stack))
     if data_plane:
         components.extend(_install_data_plane(app, settings, storage))
     return tuple(components)
+
+
+async def _install_connector_adapters(
+    app: FastAPI,
+    settings: ServiceSettings,
+    stack: AsyncExitStack,
+) -> None:
+    if not app.state.uses_builtin_connector_adapters:
+        return
+    http_client = await stack.enter_async_context(
+        httpx2.AsyncClient(
+            follow_redirects=False,
+            timeout=settings.connectivity_total_timeout_seconds,
+        )
+    )
+    app.state.connector_adapter_registry = built_in_connector_adapter_registry(
+        http_client,
+        app.state.connectivity_endpoint_policy,
+        response_max_bytes=settings.connectivity_response_max_bytes,
+    )
 
 
 async def _install_control_plane(
@@ -75,18 +96,6 @@ async def _install_control_plane(
     stack: AsyncExitStack,
 ) -> tuple[BackgroundComponent, ...]:
     app.state.connectivity_public_origin = settings.validated_connectivity_public_origin()
-    connector_http_client = await stack.enter_async_context(
-        httpx2.AsyncClient(
-            follow_redirects=False,
-            timeout=settings.connectivity_total_timeout_seconds,
-        )
-    )
-    if app.state.uses_builtin_connector_adapters:
-        app.state.connector_adapter_registry = built_in_connector_adapter_registry(
-            connector_http_client,
-            app.state.connectivity_endpoint_policy,
-            response_max_bytes=settings.connectivity_response_max_bytes,
-        )
     mcp_http_client = await stack.enter_async_context(
         httpx2.AsyncClient(
             follow_redirects=False,

@@ -332,6 +332,10 @@ async def test_role_lifespan_installs_only_owned_connectivity_components(
         assert hasattr(app.state, "mcp_reconciler") is serves_control
         assert hasattr(app.state, "ingress_event_service") is serves_connectivity
         assert hasattr(app.state, "ingress_admission_reconciler") is serves_connectivity
+        if serves_control or serves_connectivity:
+            assert app.state.connector_adapter_registry.keys() == ("composio", "openconnector")
+        else:
+            assert not hasattr(app.state, "connector_adapter_registry")
         assert hasattr(app.state, "native_model_factory") is serves_worker
         assert hasattr(app.state, "catalog_retention_reconciler") is serves_control
         assert hasattr(app.state, "ingress_retention_reconciler") is serves_connectivity
