@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from asyncio import gather
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -28,7 +29,7 @@ from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
-from a13n_service.secrets import InternalSecretService
+from a13n_service.secrets import InternalSecretService, SecretProtector
 from a13n_service.storage.object_store import LocalObjectStore
 from fastapi import FastAPI
 from sqlalchemy import func, select
@@ -123,6 +124,45 @@ async def test_provider_event_is_durable_before_ack_and_deduplicated(
     assert batches[0].id.startswith("ibat_")
     assert admissions[0].status == batches[0].status == "pending"
     assert admissions[0].request_digest not in response.body.decode()
+
+
+@pytest.mark.anyio
+async def test_postgresql_concurrent_duplicate_delivery_creates_one_admission(
+    postgres_connectivity_sessions: async_sessionmaker[AsyncSession],
+    connectivity_objects: LocalObjectStore,
+    ingress_adapter_registry: AdapterRegistry[IngressAdapter],
+) -> None:
+    secrets = InternalSecretService(
+        postgres_connectivity_sessions,
+        SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"),
+        clock=lambda: NOW,
+    )
+    ingress_service = IngressService(
+        postgres_connectivity_sessions,
+        ingress_adapter_registry,
+        secrets,
+        clock=lambda: NOW,
+    )
+    ingress_id = await _create_ingress(ingress_service)
+    event_service = _event_service(
+        postgres_connectivity_sessions,
+        secrets,
+        connectivity_objects,
+        ingress_adapter_registry,
+    )
+
+    responses = await gather(
+        event_service.receive(ingress_id=ingress_id, request=_request("concurrent-event")),
+        event_service.receive(ingress_id=ingress_id, request=_request("concurrent-event")),
+    )
+
+    assert [response.status_code for response in responses] == [202, 202]
+    assert sorted(json.loads(response.body)["duplicate"] for response in responses) == [False, True]
+    async with postgres_connectivity_sessions() as session:
+        admission_count = await session.scalar(select(func.count()).select_from(IngressAdmissionRecord))
+        batch_count = await session.scalar(select(func.count()).select_from(IngressBatchRecord))
+        link_count = await session.scalar(select(func.count()).select_from(IngressBatchEventRecord))
+    assert (admission_count, batch_count, link_count) == (1, 1, 1)
 
 
 @pytest.mark.anyio
