@@ -36,13 +36,13 @@ from a13n_service.connectivity.ingress.providers import built_in_ingress_adapter
 from a13n_service.connectivity.ingress.router import router as ingress_router
 from a13n_service.connectivity.lifespan import BackgroundComponent, install_connectivity_lifespan
 from a13n_service.connectivity.mcp.router import router as mcp_router
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.router import router as environment_router
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.environments.testing import EnvironmentAttachmentTester
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.models.connection_test import NativeModelConnectionTester
-from a13n_service.models.endpoint_policy import EndpointPolicy
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_operations import NativeProviderOperations
 from a13n_service.models.provider_runtime import LiveProviderResolver

@@ -22,8 +22,8 @@ from a13n_service.connectivity.bounds import (
     PROVIDER_REQUEST_MAX_BYTES,
     TOOL_RESULT_MAX_BYTES,
 )
-from a13n_service.connectivity.outbound_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.database import MigrationConfig
+from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.observability import TraceContent
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (

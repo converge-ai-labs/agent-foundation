@@ -7,7 +7,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 from a13n_service.connectivity.ingress.domain import JsonObject
-from a13n_service.connectivity.outbound_policy import EndpointPolicy
+from a13n_service.endpoint_policy import EndpointPolicy
 
 _JSON_OBJECT = TypeAdapter(JsonObject)
 

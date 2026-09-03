@@ -25,7 +25,7 @@ from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.protocol import MCPProtocolClient
 from a13n_service.connectivity.mcp.service import MCPConnectionService
-from a13n_service.connectivity.outbound_policy import EndpointPolicy
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.secrets import SecretOperation

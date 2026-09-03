@@ -17,7 +17,7 @@ from a13n_service.connectivity.http import (
     cookie_free_bounded_request,
 )
 from a13n_service.connectivity.ingress.domain import JsonObject
-from a13n_service.connectivity.outbound_policy import EndpointPolicy, EndpointPolicyError
+from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
 from .domain import MCP_PROTOCOL_REVISION, MCPTool
 

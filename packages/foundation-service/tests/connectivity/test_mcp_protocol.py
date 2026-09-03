@@ -14,7 +14,7 @@ from a13n_service.connectivity.mcp.credentials import (
 )
 from a13n_service.connectivity.mcp.domain import MCP_PROTOCOL_REVISION
 from a13n_service.connectivity.mcp.protocol import MCPProtocolClient, MCPProtocolError
-from a13n_service.connectivity.outbound_policy import EndpointPolicy
+from a13n_service.endpoint_policy import EndpointPolicy
 from pydantic import SecretStr
 
 

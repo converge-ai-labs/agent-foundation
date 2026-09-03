@@ -20,7 +20,7 @@ from a13n_service.connectivity.management import (
     record_command,
     replay_command,
 )
-from a13n_service.connectivity.outbound_policy import EndpointPolicy, EndpointPolicyError
+from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id

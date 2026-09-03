@@ -12,6 +12,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
@@ -26,7 +27,6 @@ from .domain import (
     UpdateModelProviderRequest,
     new_model_provider_id,
 )
-from .endpoint_policy import EndpointPolicy, EndpointPolicyError
 from .models import ModelProviderRecord
 from .providers import (
     DiscoveredModelCollection,

@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 import httpx2
 import pytest
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, MCPOAuthError, OAuthPreparation
-from a13n_service.connectivity.outbound_policy import EndpointPolicy
+from a13n_service.endpoint_policy import EndpointPolicy
 
 RESOURCE = "https://8.8.8.8/mcp"
 ISSUER = "https://8.8.4.4"

@@ -1,8 +1,9 @@
 """External connectivity resources and adapter composition."""
 
+from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
+
 from .adapters import ConnectorAdapter, IngressAdapter
 from .composition import AdapterDefinition, AdapterRegistry
-from .outbound_policy import EndpointPolicy, EndpointPolicyError
 
 __all__ = [
     "AdapterDefinition",
