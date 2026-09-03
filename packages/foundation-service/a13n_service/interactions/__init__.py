@@ -38,6 +38,12 @@ from .domain import (
     new_run_id,
     new_session_id,
 )
+from .harness_control import (
+    FOUNDATION_RUN_CONTROL_CAPABILITY_ID,
+    FoundationRunControlCapability,
+    RunControlCoordinator,
+    compose_run_control,
+)
 from .initialization import (
     RunStateSeed,
     initialize_completed_continuation_state,
@@ -78,6 +84,7 @@ from .state import (
 )
 
 __all__ = [
+    "FOUNDATION_RUN_CONTROL_CAPABILITY_ID",
     "AttemptAuthority",
     "AttemptAuthorityError",
     "AttemptExecutionService",
@@ -94,6 +101,7 @@ __all__ = [
     "ConsumedThreadInboxEntry",
     "DeferredContinuationState",
     "EncryptedRunConfigPayloadRef",
+    "FoundationRunControlCapability",
     "HostContinuationState",
     "MCPToolSnapshotRef",
     "PendingCallKind",
@@ -108,6 +116,7 @@ __all__ = [
     "RunAttempt",
     "RunAttemptStatus",
     "RunAttemptYieldReason",
+    "RunControlCoordinator",
     "RunInputKind",
     "RunLineageKind",
     "RunObjectError",
@@ -134,6 +143,7 @@ __all__ = [
     "ThreadRole",
     "WaitingOutcomeCandidate",
     "WorkerClaim",
+    "compose_run_control",
     "initialize_completed_continuation_state",
     "initialize_empty_thread_state",
     "initialize_fork_state",
