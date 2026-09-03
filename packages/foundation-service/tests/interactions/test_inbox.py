@@ -49,18 +49,11 @@ def _input(text: str) -> AcceptedAgentInput:
     return AcceptedAgentInput(schema_version="1", content=(TextContent(text=text),))
 
 
-async def test_steer_allocates_cross_kind_fifo_without_advancing_thread(
+async def test_steer_accepts_before_or_after_claim_without_advancing_thread(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    scheduler = AttemptScheduler(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=1),
-        token_factory=lambda: "lease-secret",
-        attempt_id_factory=lambda: "rat_1111111111111111",
-    )
-    assert isinstance(await scheduler.claim(run.id, _worker()), ClaimedAttempt)
     store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
 
     first = await store.append_steer(
@@ -69,6 +62,14 @@ async def test_steer_allocates_cross_kind_fifo_without_advancing_thread(
         input=_input("first"),
         entry_id="inb_1111111111111111",
     )
+
+    scheduler = AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "lease-secret",
+        attempt_id_factory=lambda: "rat_1111111111111111",
+    )
+    assert isinstance(await scheduler.claim(run.id, _worker()), ClaimedAttempt)
     second = await store.append_steer(
         tenant_id=TENANT_ID,
         run_id=run.id,
