@@ -480,22 +480,28 @@ class RunAcceptanceService:
 def validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
     if run.status is not RunStatus.accepted or run.version != 1:
         raise ValueError("prepared acceptance requires a version-one accepted Run")
-    if (state.run_id, state.thread_id) != (run.id, run.thread_id):
-        raise ValueError("prepared Run and initial state identities do not match")
     if state.checkpoint_kind != "initial" or state.checkpoint_seq != 0:
         raise ValueError("prepared acceptance requires initial Run state")
+    validate_run_state_selection(run, state)
+
+
+def validate_run_state_selection(run: Run, state: RunStateEnvelope) -> None:
+    """Validate immutable Run selection facts against any retained checkpoint."""
+
+    if (state.run_id, state.thread_id) != (run.id, run.thread_id):
+        raise ValueError("Run and state identities do not match")
     if (state.agent_id, state.agent_revision_id) != (run.agent_id, run.agent_revision_id):
-        raise ValueError("prepared Run and state Agent selection do not match")
+        raise ValueError("Run and state Agent selection do not match")
     effective = state.effective_agent_config
     effective_payload = effective.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
     if canonical_digest(effective_payload) != effective.content_digest:
-        raise ValueError("prepared Run effective configuration digest is invalid")
+        raise ValueError("Run effective configuration digest is invalid")
     if effective.content_digest != run.effective_agent_config_digest:
-        raise ValueError("prepared Run effective configuration digest does not match state")
+        raise ValueError("Run effective configuration digest does not match state")
     if effective.resolved_model.execution.observation() != run.model_execution_observation:
-        raise ValueError("prepared Run model observation does not match state")
+        raise ValueError("Run model observation does not match state")
     if state.runtime_lock_digest != run.runtime_lock_digest:
-        raise ValueError("prepared Run Runtime lock does not match state")
+        raise ValueError("Run Runtime lock does not match state")
 
 
 def _validate_new_thread(thread: Thread, run: Run, session: Session | None) -> None:
@@ -832,4 +838,5 @@ __all__ = [
     "RunAcceptanceReceipt",
     "RunAcceptanceService",
     "validate_prepared_run",
+    "validate_run_state_selection",
 ]

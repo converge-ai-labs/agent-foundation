@@ -13,7 +13,12 @@ from .domain import (
     ChildRunRelationship,
     new_child_run_relationship_id,
 )
-from .preparation import PreparedChildRunAcceptance, prepare_child_run
+from .preparation import (
+    PreparedChildRunAcceptance,
+    PreparedChildRunResume,
+    prepare_child_resume,
+    prepare_child_run,
+)
 from .result_delivery import AsyncSubagentResultMaterializer
 from .result_payload import (
     AsyncSubagentResultError,
@@ -50,9 +55,11 @@ __all__ = [
     "ChildRunRelationship",
     "PreparedAsyncResultSuccessor",
     "PreparedChildRunAcceptance",
+    "PreparedChildRunResume",
     "new_child_run_relationship_id",
     "parse_async_subagent_result_entry",
     "prepare_async_result_successor",
+    "prepare_child_resume",
     "prepare_child_run",
     "project_accepted_async_subagent_result",
     "project_async_subagent_result",

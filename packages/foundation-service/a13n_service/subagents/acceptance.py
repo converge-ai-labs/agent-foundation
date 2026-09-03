@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
-from a13n_service.interactions.acceptance import RunAcceptanceError, validate_prepared_run
+from a13n_service.interactions.acceptance import (
+    RunAcceptanceError,
+    validate_prepared_run,
+    validate_run_state_selection,
+)
 from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority, read_attempt_authority
 from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import Run, StrictModel, Thread
@@ -20,8 +24,14 @@ from a13n_service.interactions.environment_bindings import (
     add_run_with_environment_binding,
     verify_environment_binding,
 )
-from a13n_service.interactions.models import RunRecord, SessionRecord
-from a13n_service.interactions.objects import RunPayloadStore, RunStateStore, StaleStateWriter
+from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
+from a13n_service.interactions.objects import (
+    RUN_STATE_CONTENT_TYPE,
+    RunPayloadStore,
+    RunStateStore,
+    StaleStateWriter,
+    StoredRunState,
+)
 from a13n_service.interactions.records import thread_record
 from a13n_service.interactions.state import RunStateEnvelope
 from a13n_service.storage import short_session, transaction
@@ -30,6 +40,7 @@ from .domain import ChildRunRelationship
 from .models import ChildRunRelationshipRecord
 from .preparation import (
     PreparedChildRunAcceptance,
+    PreparedChildRunResume,
     require_frozen_subagent_edge,
     validate_child_environment_policy,
 )
@@ -88,7 +99,13 @@ class ChildRunAcceptanceService:
             prepared.relationship.parent_run_id,
             expected_thread_id=authority.thread_id,
         )
-        _validate_locked_parent(prepared, parent_resource, thread_resource, parent_state.envelope, authority)
+        _validate_new_child_parent(
+            prepared,
+            parent_resource,
+            thread_resource,
+            parent_state.envelope,
+            authority,
+        )
         if prepared.run.input_object is not None:
             await self._payloads.verify_reference(
                 prepared.run.tenant_id,
@@ -113,7 +130,7 @@ class ChildRunAcceptanceService:
                     child=prepared.run,
                     workspace_id=session.workspace_id,
                 )
-                _validate_locked_parent(
+                _validate_new_child_parent(
                     prepared,
                     parent_resource,
                     parent_thread.to_resource(),
@@ -139,7 +156,142 @@ class ChildRunAcceptanceService:
             ) from error
         return _receipt(prepared.relationship, prepared.run.session_id)
 
-    async def _publish_initial(self, prepared: PreparedChildRunAcceptance) -> None:
+    async def accept_resume(
+        self,
+        prepared: PreparedChildRunResume,
+        authority: AttemptContext,
+    ) -> ChildRunAcceptanceReceipt:
+        """Accept one linked continuation in the retained child Thread."""
+
+        _validate_resume_bundle(prepared)
+        replay = await self._load_replay(prepared)
+        if replay is not None:
+            return replay
+        async with short_session(self._sessions) as database:
+            parent, _, parent_thread = await read_attempt_authority(database, authority, _utc(self._clock()))
+            session = await _require_session(database, parent)
+            parent_resource = parent.to_resource()
+            await _reauthorize(
+                database,
+                parent=parent_resource,
+                child=prepared.run,
+                workspace_id=session.workspace_id,
+            )
+        parent_state = await self._states.read(
+            prepared.run.tenant_id,
+            prepared.relationship.parent_run_id,
+            expected_thread_id=authority.thread_id,
+        )
+        source_state = await self._states.read(
+            prepared.run.tenant_id,
+            prepared.resumed_from_child_run_id,
+            expected_thread_id=prepared.run.thread_id,
+        )
+        _validate_parent_authority(
+            run=prepared.run,
+            child_state=prepared.state,
+            relationship=prepared.relationship,
+            parent=parent_resource,
+            parent_thread=parent_thread.to_resource(),
+            parent_state=parent_state.envelope,
+            authority=authority,
+        )
+        if source_state.envelope != prepared.source_state:
+            raise ChildRunAcceptanceError(
+                "child_run_resume_state_conflict",
+                "Retained child source state changed before continuation acceptance",
+            )
+        if prepared.run.input_object is not None:
+            await self._payloads.verify_reference(
+                prepared.run.tenant_id,
+                prepared.run.id,
+                "input",
+                prepared.run.input_object,
+            )
+        await self._publish_initial(prepared)
+        try:
+            async with transaction(self._sessions) as database:
+                parent, _, parent_thread = await lock_attempt_authority(
+                    database,
+                    authority,
+                    _utc(self._clock()),
+                    lock_inbox_origins=True,
+                )
+                session = await _require_session(database, parent)
+                parent_resource = parent.to_resource()
+                await _reauthorize(
+                    database,
+                    parent=parent_resource,
+                    child=prepared.run,
+                    workspace_id=session.workspace_id,
+                )
+                _validate_parent_authority(
+                    run=prepared.run,
+                    child_state=prepared.state,
+                    relationship=prepared.relationship,
+                    parent=parent_resource,
+                    parent_thread=parent_thread.to_resource(),
+                    parent_state=parent_state.envelope,
+                    authority=authority,
+                )
+                child_thread = await database.scalar(
+                    select(ThreadRecord)
+                    .where(
+                        ThreadRecord.tenant_id == prepared.run.tenant_id,
+                        ThreadRecord.id == prepared.run.thread_id,
+                    )
+                    .with_for_update()
+                )
+                source_run = await database.scalar(
+                    select(RunRecord)
+                    .where(
+                        RunRecord.tenant_id == prepared.run.tenant_id,
+                        RunRecord.id == prepared.resumed_from_child_run_id,
+                    )
+                    .with_for_update()
+                )
+                source_relationship = await database.scalar(
+                    select(ChildRunRelationshipRecord)
+                    .where(
+                        ChildRunRelationshipRecord.tenant_id == prepared.run.tenant_id,
+                        ChildRunRelationshipRecord.id == prepared.resumed_from_relationship_id,
+                    )
+                    .with_for_update()
+                )
+                _validate_locked_resume_source(
+                    prepared,
+                    parent_thread_id=authority.thread_id,
+                    child_thread=child_thread,
+                    source_run=source_run,
+                    source_relationship=source_relationship,
+                    source_state=source_state,
+                )
+                await add_run_with_environment_binding(
+                    database,
+                    run=prepared.run,
+                    state=prepared.state,
+                    workspace_id=session.workspace_id,
+                )
+                database.add(child_run_relationship_record(prepared.relationship, tenant_id=prepared.run.tenant_id))
+                assert child_thread is not None
+                child_thread.version += 1
+                child_thread.current_run_id = prepared.run.id
+                child_thread.updated_at = _utc(self._clock())
+                await database.flush()
+        except IntegrityError as error:
+            replay = await self._load_replay(prepared)
+            if replay is not None:
+                return replay
+            raise ChildRunAcceptanceError(
+                "child_run_resume_conflict",
+                "Child Run continuation lost a concurrent mutation",
+            ) from error
+        return _receipt(prepared.relationship, prepared.run.session_id)
+
+    async def _publish_initial(
+        self,
+        prepared: PreparedChildRunAcceptance | PreparedChildRunResume,
+    ) -> None:
         try:
             await self._states.create(prepared.run.tenant_id, prepared.state)
         except StaleStateWriter:
@@ -156,7 +308,7 @@ class ChildRunAcceptanceService:
 
     async def _load_replay(
         self,
-        prepared: PreparedChildRunAcceptance,
+        prepared: PreparedChildRunAcceptance | PreparedChildRunResume,
     ) -> ChildRunAcceptanceReceipt | None:
         relationship = prepared.relationship
         async with short_session(self._sessions) as database:
@@ -199,7 +351,7 @@ class ChildRunAcceptanceService:
             child_resource.id,
             expected_thread_id=child_resource.thread_id,
         )
-        validate_prepared_run(child_resource, state.envelope)
+        validate_run_state_selection(child_resource, state.envelope)
         async with short_session(self._sessions) as database:
             await verify_environment_binding(database, run=child_resource, state=state.envelope)
         return _receipt(existing, child_resource.session_id)
@@ -228,26 +380,65 @@ def _validate_bundle(prepared: PreparedChildRunAcceptance) -> None:
         raise ValueError("prepared child Run does not retain its spawning operation correlation")
 
 
-def _validate_locked_parent(
+def _validate_resume_bundle(prepared: PreparedChildRunResume) -> None:
+    validate_prepared_run(prepared.run, prepared.state)
+    relationship = prepared.relationship
+    run = prepared.run
+    if (
+        run.id != relationship.child_run_id
+        or run.thread_id != relationship.child_thread_id
+        or run.parent_run_id != prepared.resumed_from_child_run_id
+        or run.lineage_kind.value != "continue"
+        or run.parent_tool_call_id != relationship.spawn_operation_id
+        or run.delegation_id != relationship.id
+        or run.trigger_entity_id != relationship.id
+        or prepared.resumed_from_relationship_id == relationship.id
+        or prepared.source_thread_version < 1
+    ):
+        raise ValueError("prepared resumed child Run and relationship identities do not match")
+
+
+def _validate_new_child_parent(
     prepared: PreparedChildRunAcceptance,
     parent: Run,
     parent_thread: Thread,
     parent_state: RunStateEnvelope,
     authority: AttemptContext,
 ) -> None:
-    relationship = prepared.relationship
+    if prepared.thread.origin_thread_id != parent.thread_id:
+        raise ChildRunAcceptanceError("child_run_parent_conflict", "Child Run parent authority changed")
+    _validate_parent_authority(
+        run=prepared.run,
+        child_state=prepared.state,
+        relationship=prepared.relationship,
+        parent=parent,
+        parent_thread=parent_thread,
+        parent_state=parent_state,
+        authority=authority,
+    )
+
+
+def _validate_parent_authority(
+    *,
+    run: Run,
+    child_state: RunStateEnvelope,
+    relationship: ChildRunRelationship,
+    parent: Run,
+    parent_thread: Thread,
+    parent_state: RunStateEnvelope,
+    authority: AttemptContext,
+) -> None:
     if (
         relationship.parent_run_id != parent.id
         or relationship.parent_run_attempt_id != authority.run_attempt_id
         or relationship.parent_run_attempt_generation != authority.fence
-        or prepared.thread.origin_thread_id != parent.thread_id
         or parent_thread.id != parent.thread_id
-        or prepared.run.session_id != parent.session_id
-        or prepared.run.authority_principal != parent.authority_principal
+        or run.session_id != parent.session_id
+        or run.authority_principal != parent.authority_principal
     ):
         raise ChildRunAcceptanceError("child_run_parent_conflict", "Child Run parent authority changed")
     edge = require_frozen_subagent_edge(parent, parent_state, relationship.subagent_name)
-    if (prepared.run.agent_id, prepared.run.agent_revision_id) != (
+    if (run.agent_id, run.agent_revision_id) != (
         edge.child_agent_id,
         edge.child_agent_revision_id,
     ):
@@ -255,8 +446,70 @@ def _validate_locked_parent(
     validate_child_environment_policy(
         edge,
         parent=parent_state.effective_agent_config,
-        child=prepared.state.effective_agent_config,
+        child=child_state.effective_agent_config,
     )
+
+
+def _validate_locked_resume_source(
+    prepared: PreparedChildRunResume,
+    *,
+    parent_thread_id: str,
+    child_thread: ThreadRecord | None,
+    source_run: RunRecord | None,
+    source_relationship: ChildRunRelationshipRecord | None,
+    source_state: StoredRunState,
+) -> None:
+    if child_thread is None or source_run is None or source_relationship is None:
+        raise ChildRunAcceptanceError(
+            "child_run_resume_source_missing",
+            "Retained child continuation source was not found",
+        )
+    source = source_run.to_resource()
+    relationship = source_relationship.to_resource()
+    if (
+        child_thread.version != prepared.source_thread_version
+        or child_thread.session_id != prepared.run.session_id
+        or child_thread.role != "child"
+        or child_thread.origin_kind != "child"
+        or child_thread.origin_thread_id != parent_thread_id
+        or child_thread.origin_run_id != prepared.relationship.parent_run_id
+        or child_thread.current_run_id != source.id
+        or child_thread.head_run_id != source.id
+        or relationship.id != prepared.resumed_from_relationship_id
+        or relationship.parent_run_id != prepared.relationship.parent_run_id
+        or relationship.subagent_name != prepared.relationship.subagent_name
+        or relationship.child_thread_id != child_thread.id
+        or relationship.child_run_id != source.id
+        or source.status.value != "completed"
+        or source.thread_id != child_thread.id
+        or source.agent_id != prepared.run.agent_id
+        or source.agent_revision_id != prepared.run.agent_revision_id
+        or source_state.envelope != prepared.source_state
+    ):
+        raise ChildRunAcceptanceError(
+            "child_run_resume_source_conflict",
+            "Retained child execution is no longer the selected resumable head",
+        )
+    sealed = source.sealed_state
+    if sealed is None or (
+        sealed.digest_sha256,
+        sealed.size_bytes,
+        sealed.content_type,
+        sealed.envelope_schema_version,
+        sealed.harness_schema_version,
+        sealed.checkpoint_seq,
+    ) != (
+        source_state.digest_sha256,
+        len(source_state.body),
+        RUN_STATE_CONTENT_TYPE,
+        source_state.envelope.schema_version,
+        source_state.envelope.harness_schema_version,
+        source_state.envelope.checkpoint_seq,
+    ):
+        raise ChildRunAcceptanceError(
+            "child_run_resume_state_conflict",
+            "Retained child source state does not match its sealed Run reference",
+        )
 
 
 async def _require_session(database: AsyncSession, parent: RunRecord) -> SessionRecord:
@@ -336,7 +589,7 @@ async def _reauthorize(
 def _validate_replay_intent(
     existing: ChildRunRelationship,
     child: RunRecord,
-    prepared: PreparedChildRunAcceptance,
+    prepared: PreparedChildRunAcceptance | PreparedChildRunResume,
 ) -> None:
     candidate = prepared.relationship
     if (

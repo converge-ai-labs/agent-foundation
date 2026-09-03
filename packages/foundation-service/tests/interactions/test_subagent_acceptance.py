@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -18,6 +19,7 @@ from a13n_service.interactions import (
     AttemptScheduler,
     Run,
     RunAcceptanceService,
+    RunOutcomeService,
     RunPayloadStore,
     RunStateSeed,
     RunStateStore,
@@ -32,6 +34,7 @@ from a13n_service.storage import ObjectNotFound, ObjectStore, short_session, tra
 from a13n_service.subagents import (
     ChildRunAcceptanceError,
     ChildRunAcceptanceService,
+    prepare_child_resume,
     prepare_child_run,
 )
 from a13n_service.subagents.models import ChildRunRelationshipRecord
@@ -50,7 +53,7 @@ from .conftest import (
     effective_agent_config,
 )
 from .test_acceptance import _accepted_run
-from .test_attempt_execution import _authority, _worker
+from .test_attempt_execution import _authority, _completed_state, _worker
 
 pytestmark = pytest.mark.anyio
 
@@ -140,6 +143,15 @@ async def test_child_acceptance_is_fenced_atomic_and_idempotent(
         assert (child_thread.session_id, child_thread.origin_run_id) == (SESSION_ID, running_parent.id)
         assert relationships == 1
         assert threads == 1
+
+    child_claim = await AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=4),
+        token_factory=lambda: "child-lease",
+        attempt_id_factory=lambda: "rat_2323232323232323",
+    ).claim(accepted.child_run_id, _worker())
+    assert child_claim is not None
+    assert await service.accept(second, authority) == accepted
 
 
 async def test_child_acceptance_rejects_stale_generation_before_publishing_state(
@@ -273,6 +285,140 @@ async def test_concurrent_child_acceptance_converges_on_postgresql(
             await database.scalar(select(func.count()).select_from(ThreadRecord).where(ThreadRecord.role == "child"))
             == 1
         )
+
+
+async def test_completed_child_can_resume_as_linked_continuation(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    await _grant_and_seed_child(interaction_sessions)
+    states, parent, parent_state = await _accept_parent(interaction_sessions, interaction_object_store)
+    parent_claim = await AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "parent-lease",
+        attempt_id_factory=lambda: "rat_3434343434343434",
+    ).claim(parent.id, _worker())
+    assert parent_claim is not None
+    parent_authority = _authority(parent_claim)
+    async with short_session(interaction_sessions) as database:
+        parent_record = await database.get(RunRecord, parent.id)
+        assert parent_record is not None
+        running_parent = parent_record.to_resource()
+    child_config = effective_agent_config()
+    first = _prepared_child(
+        running_parent,
+        parent_state,
+        parent_authority.run_attempt_id,
+        parent_authority.fence,
+        child_config,
+        suffix="d",
+    )
+    service = ChildRunAcceptanceService(
+        interaction_sessions,
+        states,
+        RunPayloadStore(interaction_object_store),
+        clock=lambda: NOW + timedelta(seconds=2),
+    )
+    accepted = await service.accept(first, parent_authority)
+    child_claim = await AttemptScheduler(
+        interaction_sessions,
+        clock=lambda: NOW + timedelta(seconds=3),
+        token_factory=lambda: "child-lease",
+        attempt_id_factory=lambda: "rat_4545454545454545",
+    ).claim(accepted.child_run_id, _worker())
+    assert child_claim is not None
+    completed_child = await _complete_run(
+        interaction_sessions,
+        interaction_object_store,
+        states,
+        first.run,
+        _authority(child_claim),
+    )
+    source_state = await states.read(TENANT_ID, completed_child.id, expected_thread_id=first.thread.id)
+    async with short_session(interaction_sessions) as database:
+        source_thread_record = await database.get(ThreadRecord, first.thread.id)
+        source_relationship_record = await database.get(ChildRunRelationshipRecord, accepted.relationship.id)
+        assert source_thread_record is not None and source_relationship_record is not None
+        source_thread = source_thread_record.to_resource()
+        source_relationship = source_relationship_record.to_resource()
+
+    resumed = prepare_child_resume(
+        parent_run=running_parent,
+        parent_state=parent_state,
+        parent_run_attempt_id=parent_authority.run_attempt_id,
+        parent_run_attempt_generation=parent_authority.fence,
+        parent_agent_instance_id="agent-parent",
+        spawn_operation_id="resume-call-1",
+        subagent_name="researcher",
+        delegated_input='{"delegated_task":"continue"}',
+        child_definition_id=f"agent-config-{child_config.content_digest[:24]}",
+        child_agent_id=CHILD_AGENT_ID,
+        child_agent_revision_id=CHILD_REVISION_ID,
+        child_effective_config=child_config,
+        source_relationship=source_relationship,
+        source_thread=source_thread,
+        source_run=completed_child,
+        source_state=source_state.envelope,
+        child_run_id="run_eeeeeeeeeeeeeeee",
+        relationship_id="crr_eeeeeeeeeeeeeeee",
+        mcp_tool_snapshot=running_parent.mcp_tool_snapshot,
+        recovery_budget=running_parent.recovery_budget,
+        created_at=NOW + timedelta(seconds=5),
+    )
+
+    receipt = await service.accept_resume(resumed, parent_authority)
+
+    assert receipt.child_thread_id == source_thread.id
+    assert receipt.child_run_id == resumed.run.id
+    resumed_state = await states.read(TENANT_ID, resumed.run.id, expected_thread_id=source_thread.id)
+    assert resumed_state.envelope.checkpoint_seq == 0
+    assert resumed_state.envelope.harness.message_history == source_state.envelope.harness.message_history
+    async with short_session(interaction_sessions) as database:
+        child_thread = await database.get(ThreadRecord, source_thread.id)
+        child_run = await database.get(RunRecord, resumed.run.id)
+        assert child_thread is not None and child_run is not None
+        assert (child_thread.version, child_thread.current_run_id, child_thread.head_run_id) == (
+            source_thread.version + 1,
+            resumed.run.id,
+            completed_child.id,
+        )
+        assert child_run.parent_run_id == completed_child.id
+        assert child_run.lineage_kind == "continue"
+
+
+async def _complete_run(
+    sessions: async_sessionmaker[AsyncSession],
+    objects: ObjectStore,
+    states: RunStateStore,
+    run: Run,
+    authority,
+) -> Run:
+    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=3))
+    preparation = await execution.commit_preparation_success(authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(
+        authority,
+        preparation=preparation,
+        harness_run_id="completed-child",
+    )
+    authority = replace(
+        authority,
+        expected_run_version=entered.run_version,
+        expected_attempt_version=entered.attempt_version,
+    )
+    current = await states.read(TENANT_ID, run.id)
+    candidate = _completed_state(current.envelope, authority.run_attempt_id, authority.fence)
+    stored = await execution.publish_checkpoint(authority, states, current, candidate)
+    await RunOutcomeService(
+        sessions,
+        RunPayloadStore(objects),
+        clock=lambda: NOW + timedelta(seconds=4),
+    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    async with short_session(sessions) as database:
+        row = await database.get(RunRecord, run.id)
+        assert row is not None
+        return row.to_resource()
 
 
 def _prepared_child(
