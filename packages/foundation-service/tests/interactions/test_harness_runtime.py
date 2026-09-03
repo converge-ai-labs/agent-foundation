@@ -24,6 +24,8 @@ from a13n_harness import (
     AgentInstanceContext,
     AgentSpec,
     DeferredToolResume,
+    EnvironmentAccess,
+    EnvironmentMount,
     HarnessBuilder,
     HarnessEvent,
     HarnessObservationContext,
@@ -279,7 +281,12 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
                 ),
             ),
             environment=MountedHarnessEnvironments(
-                entries={"source": environment},
+                entries={
+                    "source": EnvironmentMount(
+                        environment,
+                        access=EnvironmentAccess.READ_ONLY,
+                    )
+                },
                 default_environment="source",
             ),
             usage=usage,
@@ -299,6 +306,11 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
         "environment.entry.ready",
         "environment.adapter.closed",
     )
+    assert projector.environment_events[0].payload["access"] == "read_only"
+    permissions = projector.environment_events[1].payload["permissions"]
+    assert isinstance(permissions, list)
+    assert "environment.file.read_text" in permissions
+    assert "environment.file.write_text" not in permissions
     assert "runtime-workspace" not in str(projector.environment_events)
     assert str(tmp_path / "workspace") not in str(projector.environment_events)
     assert usage.requests == 1

@@ -128,9 +128,8 @@ class ObservedEnvironment(Environment, EnvironmentEntryValidationObserver):
     ) -> None:
         self._require_mount_id(mount_id)
         operation_families = _JSON_LIST.validate_python(sorted(descriptor.operation_families), strict=True)
-        permissions = _JSON_LIST.validate_python(
-            sorted(item.value for item in descriptor.permissions.operations), strict=True
-        )
+        effective_permissions = descriptor.permissions.operations & self._access.permission_set().operations
+        permissions = _JSON_LIST.validate_python(sorted(item.value for item in effective_permissions), strict=True)
         ready_families = _JSON_LIST.validate_python(sorted(availability.ready_families), strict=True)
         self._emit(
             "environment.entry.ready",
