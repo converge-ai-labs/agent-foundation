@@ -13,6 +13,7 @@ INTERACTION_TABLES = {
     "thread_inbox_counters",
     "thread_inbox",
     "thread_queued_submissions",
+    "child_run_relationships",
 }
 
 
@@ -51,7 +52,12 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             "ck_runs_sealed_state_lifecycle_valid",
         } <= run_checks
         attempt_indexes = {index["name"] for index in inspector.get_indexes("run_attempts")}
-        assert {"ix_run_attempts_live_lease", "uq_run_attempts_fence", "uq_run_attempts_number"} <= attempt_indexes
+        assert {
+            "ix_run_attempts_live_lease",
+            "uq_run_attempts_fence",
+            "uq_run_attempts_number",
+            "uq_run_attempts_generation_identity",
+        } <= attempt_indexes
         attempt_checks = {constraint["name"] for constraint in inspector.get_check_constraints("run_attempts")}
         assert {
             "ck_run_attempts_harness_lifecycle_valid",
@@ -101,6 +107,23 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             constraint["name"] for constraint in inspector.get_foreign_keys("thread_queued_submissions")
         }
         assert "fk_queued_submissions_consumed_run_authority" in queue_foreign_keys
+        child_relationship_foreign_keys = {
+            constraint["name"] for constraint in inspector.get_foreign_keys("child_run_relationships")
+        }
+        assert {
+            "fk_child_run_relationships_parent_run",
+            "fk_child_run_relationships_parent_attempt",
+            "fk_child_run_relationships_child_thread",
+            "fk_child_run_relationships_child_run",
+        } <= child_relationship_foreign_keys
+        child_relationship_unique = {
+            constraint["name"] for constraint in inspector.get_unique_constraints("child_run_relationships")
+        }
+        assert {
+            "uq_child_run_relationships_tenant_id",
+            "uq_child_run_relationships_spawn_operation",
+            "uq_child_run_relationships_child_run",
+        } <= child_relationship_unique
         with engine.connect() as connection:
             if connection.dialect.name == "postgresql":
                 trigger_names = set(
