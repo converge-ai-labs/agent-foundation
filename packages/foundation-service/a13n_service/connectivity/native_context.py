@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType, WorkspaceAction, authorize_workspace
 
 from .accounts.models import AccountRecord
+from .accounts.providers import validate_scope
 from .accounts.queries import require_account
-from .accounts.targets import validate_scope
 from .domain import JsonObject
 from .ingress.admission_domain import PreparedIngressBatch
 

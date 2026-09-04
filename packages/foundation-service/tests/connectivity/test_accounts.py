@@ -4,7 +4,6 @@ import json
 
 import httpx2
 import pytest
-from a13n_service.connectivity.accounts.actions import account_actions
 from a13n_service.connectivity.accounts.domain import (
     AccountStatus,
     CreateAccountRequest,
@@ -12,6 +11,7 @@ from a13n_service.connectivity.accounts.domain import (
     UpdateAccountRequest,
 )
 from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.accounts.providers import account_actions
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.ingress.domain import IngressStatus

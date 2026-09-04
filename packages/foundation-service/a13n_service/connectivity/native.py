@@ -15,7 +15,7 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 
-from .accounts.actions import account_actions
+from .accounts.providers import account_actions
 from .connectors.management import decode_credentials
 from .domain import JsonObject
 from .ingress.models import IngressRecord, RouteRecord
