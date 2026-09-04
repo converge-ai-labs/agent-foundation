@@ -64,7 +64,7 @@ The model never receives the endpoint URL, MCPConnection ID, authorization metad
 
 `none` sends no credential and is valid only when the Remote MCP endpoint permits anonymous access.
 
-`bearer` accepts one opaque bearer value through the MCPConnection setup or replacement operation. Foundation stores it as an internal MCPConnection-owned Secret and sends it only in the standard authorization header to the exact endpoint. The value is never returned after acceptance.
+`bearer` accepts one opaque bearer value through the MCPConnection setup or replacement operation. Foundation stores it in the MCPConnection-owned encrypted bundle and sends it only in the standard authorization header to the exact endpoint. The value is never returned after acceptance.
 
 `static_headers` accepts a bounded non-empty map of static application header names and secret values during setup. It supports endpoints that use `X-API-Key`, a custom authorization scheme, or another fixed application header. Names are ASCII, case-insensitively unique, and fixed for the MCPConnection identity; values are bounded, reject control characters and line breaks, remain write-only, and can be replaced together for rotation. Foundation rejects hop-by-hop, proxy, routing, cookie, content framing, origin-forwarding, and MCP protocol or session control headers. It sends accepted headers only to the exact validated endpoint origin and never forwards them across an origin-changing redirect. One MCPConnection has exactly one authentication mode, so `static_headers`, `bearer`, and `oauth` cannot be combined.
 
@@ -86,7 +86,7 @@ sequenceDiagram
     participant Control as Foundation control
     participant MCP as Remote MCP endpoint
     participant AS as Authorization server
-    participant Secrets as Foundation Secret store
+    participant Credentials as MCPConnection persistence
 
     User->>Control: connect MCP endpoint
     Control->>MCP: protected request and metadata discovery
@@ -99,7 +99,7 @@ sequenceDiagram
     Control->>Control: consume state and validate issuer, redirect, PKCE, and resource
     Control->>AS: exchange code
     AS-->>Control: access token and optional refresh token
-    Control->>Secrets: encrypt current credential bundle
+    Control->>Credentials: encrypt current credential bundle
     Control->>MCP: authenticated discovery
     Control-->>User: MCPConnection ready
 ```
@@ -114,9 +114,9 @@ Foundation requires RFC 9728 Protected Resource Metadata, discovered from the Be
 
 Access tokens, refresh tokens, and any Dynamic Client Registration client ID, secret, registration access token, and registration management URI form one MCPConnection-owned encrypted credential bundle. Bearer and static-header modes likewise retain one current encrypted credential bundle under the same owner. Refresh or replacement swaps the applicable current bundle without exposing it or changing the MCPConnection's endpoint identity. Deletion or replacement of a DCR client attempts standards-defined deletion only at the exact stored registration URI with its stored registration access token and outbound-policy revalidation. Failure or an unknown result leaves bounded cleanup evidence for reconciliation and never restores MCPConnection eligibility. An OAuth refresh failure, invalid grant, insufficient-scope condition requiring interaction, or confirmed revocation moves the MCPConnection to `action_required` with `reauthorization_required`. An issuer, endpoint, protocol, or tool-discovery incompatibility that needs user repair uses `incompatible`. Agent execution never opens an interactive browser flow.
 
-## Secret Boundary
+## Credential Boundary
 
-MCPConnection credentials use the [Foundation Secret protection contract](../27-secret-management.md) under the internal `mcp_connection` owner type. Generic Secret routes cannot create, enumerate, replace, or delete those values. MCPConnection setup, reconnect, bearer or static-header replacement, OAuth refresh, disablement, revocation, and deletion own their credential lifecycle.
+MCPConnection records store their own ciphertext, nonce, encryption-key identifier, and credential generation using the [shared protection contract](../27-secret-management.md#protection-boundary). There is no internal Secret reference. Generic Secret routes cannot create, enumerate, replace, or delete these credentials. OAuth authorization sessions own separately encrypted setup material, including PKCE verifier and registration credentials, bound to that exact session and tenant. Completion atomically replaces the connection bundle and clears session material; expiration retains setup material only until bounded registration cleanup finishes. Refresh leases and exact credential-generation checks fence concurrent refresh, replacement, disablement, and deletion. Cleanup clears all encryption fields together. MCPConnection setup, reconnect, bearer or static-header replacement, OAuth refresh, disablement, revocation, and deletion own their credential lifecycle.
 
 No plaintext credential enters Agent configuration, Run state, discovered tool definitions, model context, Tool arguments, events, Items, errors, logs, traces, or tool results. The Worker resolves only the exact credential required for the current fenced RunAttempt and endpoint request.
 
@@ -160,5 +160,5 @@ Foundation validates negotiated MCP protocol compatibility through its supported
 2. Foundation Service never launches user-configured MCP processes.
 3. Foundation implements one standards-based MCP OAuth client using a Client ID Metadata Document when supported and DCR otherwise, without provider-specific branches.
 4. Workspace-shared MCPConnections can be delegated through Agent and Route configuration; User-owned MCPConnections require the same active Foundation User and are never authorized by an unmatched external actor.
-5. OAuth, bearer, and bounded static-header credentials are MCPConnection-owned Secrets and never model-visible data.
+5. OAuth, bearer, and bounded static-header credentials are MCPConnection-owned encrypted bundles and never model-visible data.
 6. Discovery and authenticated clients are isolated by MCPConnection identity; accepted Runs retain source selections, not immutable tool catalogs.

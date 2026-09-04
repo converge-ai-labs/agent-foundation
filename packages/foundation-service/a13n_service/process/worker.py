@@ -35,7 +35,6 @@ from a13n_service.process.background import BackgroundTask
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
 from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
-from a13n_service.secrets import InternalSecretService
 from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
 
@@ -140,7 +139,7 @@ async def build_worker_runtime(
     )
     external_tools = ExternalToolRuntime(
         shared.storage.sessions,
-        InternalSecretService(shared.storage.sessions, shared.secret_protector),
+        shared.secret_protector,
         connector_providers
         or built_in_connector_provider_registry(
             http, endpoint_policy, response_max_bytes=settings.connectivity_response_max_bytes

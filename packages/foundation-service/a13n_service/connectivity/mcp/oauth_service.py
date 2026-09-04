@@ -22,14 +22,12 @@ from a13n_service.connectivity.management import (
     record_command,
     replay_command,
 )
+from a13n_service.credentials import CredentialSnapshot
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import (
-    InternalSecretError,
-    InternalSecretService,
-    SecretOperation,
-    SecretOwnerType,
-    SecretUseContext,
+    SecretProtectionError,
+    SecretProtector,
 )
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -43,14 +41,12 @@ from .management import (
     map_management_error,
     require_connection,
     require_version,
-    secret_context,
 )
 from .models import MCPConnectionRecord, MCPOAuthSessionRecord
 from .oauth_bundles import (
     decode_oauth_bundle,
     oauth_preparation,
     oauth_setup_bundle,
-    oauth_setup_secret_key,
     optional_expiration,
     required_oauth_string,
     validate_oauth_bundle,
@@ -77,6 +73,7 @@ class RefreshSource:
     credential_generation: int
     claim_generation: int
     claim_owner: str
+    credential: CredentialSnapshot
 
 
 class MCPOAuthService:
@@ -84,7 +81,7 @@ class MCPOAuthService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         oauth: MCPOAuthClient,
-        secrets: InternalSecretService,
+        protector: SecretProtector,
         discovery: ConnectionDiscovery,
         *,
         public_origin: str,
@@ -96,7 +93,7 @@ class MCPOAuthService:
     ) -> None:
         self._sessions = sessions
         self._oauth = oauth
-        self._secrets = secrets
+        self._protector = protector
         self._discovery = discovery
         self._public_origin = public_origin.rstrip("/")
         self._client_name = client_name
@@ -185,7 +182,7 @@ class MCPOAuthService:
         _require_user(actor)
         source = await self._reserve_callback(actor=actor, state=state, issuer=issuer)
         try:
-            setup = await self._resolve_setup(source.connection, source.session)
+            setup = self._resolve_setup(source.session)
             preparation = oauth_preparation(source.session, setup)
             credential = await self._oauth.exchange_code(
                 preparation,
@@ -195,7 +192,7 @@ class MCPOAuthService:
             )
             credential = with_expiration(credential, self._clock())
             await self._complete_callback(actor, source, credential)
-        except (InternalSecretError, MCPOAuthError, ValueError) as error:
+        except (SecretProtectionError, MCPOAuthError, ValueError) as error:
             await self._callback_failed(source, error)
             unavailable = isinstance(error, MCPOAuthError) and error.code == "token_exchange_unavailable"
             raise MCPConnectionError(
@@ -225,13 +222,13 @@ class MCPOAuthService:
         if source is None:
             return False
         try:
-            raw = await self._secrets.resolve(_refresh_secret_context(source))
+            raw = source.credential.decrypt(self._protector)
             bundle = decode_oauth_bundle(raw)
             candidate = with_expiration(await self._oauth.refresh(dict(bundle)), self._clock())
         except MCPOAuthError as error:
             await self._finish_refresh(source, action_required=error.action_required, error_code=error.code)
             return False
-        except (InternalSecretError, ValueError):
+        except (SecretProtectionError, ValueError):
             await self._finish_refresh(source, action_required=False, error_code="credential_unavailable")
             return False
         except httpx2.HTTPError:
@@ -241,12 +238,8 @@ class MCPOAuthService:
             current = await require_connection(session, connection_id, lock=True)
             if not _refresh_claim_matches(current, source):
                 return False
-            secret_ref = await self._secrets.replace_in_transaction(
-                session,
-                secret_context(current, operation=SecretOperation.reconciliation),
-                canonical_json(candidate),
-            )
-            current.credential_generation = secret_ref.version
+            current.replace_credential(canonical_json(candidate), self._protector)
+
             current.refresh_claim_owner = None
             current.refresh_claim_expires_at = None
             current.refresh_available_at = self._clock()
@@ -257,19 +250,13 @@ class MCPOAuthService:
     async def refresh_if_due(self, connection_id: str, *, skew_seconds: int = 60) -> bool | None:
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id)
-            if connection.auth_mode != "oauth" or connection.credential_secret_id is None:
+            if connection.auth_mode != "oauth" or connection.ciphertext is None:
                 return None
             generation = connection.credential_generation
         try:
-            raw = await self._secrets.resolve(
-                secret_context(
-                    connection,
-                    operation=SecretOperation.reconciliation,
-                    generation=generation,
-                )
-            )
+            raw = connection.credential_snapshot().decrypt(self._protector)
             expires_at = optional_expiration(decode_oauth_bundle(raw).get("expires_at"))
-        except (InternalSecretError, ValueError):
+        except (SecretProtectionError, ValueError):
             async with transaction(self._sessions) as session:
                 current = await require_connection(session, connection_id, lock=True)
                 if current.credential_generation == generation:
@@ -295,7 +282,7 @@ class MCPOAuthService:
                 return True
             if oauth_session.claim_expires_at is not None and assume_utc(oauth_session.claim_expires_at) > now:
                 return False
-            connection = await require_connection(
+            await require_connection(
                 session,
                 oauth_session.mcp_connection_id,
                 include_deleted=True,
@@ -305,10 +292,10 @@ class MCPOAuthService:
             oauth_session.claim_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
             claim_generation = oauth_session.claim_generation
         try:
-            setup = await self._resolve_setup(connection, oauth_session)
+            setup = self._resolve_setup(oauth_session)
             cleaned = await self._oauth.cleanup_registration_bundle(dict(setup))
             unavailable = False
-        except (InternalSecretError, ValueError):
+        except (SecretProtectionError, ValueError):
             cleaned = False
             unavailable = True
         async with transaction(self._sessions) as session:
@@ -320,24 +307,17 @@ class MCPOAuthService:
                 or current.claim_owner != self._instance_id
             ):
                 return False
-            connection = await require_connection(
+            await require_connection(
                 session,
                 current.mcp_connection_id,
                 include_deleted=True,
             )
             if cleaned:
-                await self._secrets.tombstone_in_transaction(
-                    session,
-                    secret_context(
-                        connection,
-                        operation=SecretOperation.reconciliation,
-                        key=oauth_setup_secret_key(current.id),
-                        generation=current.setup_secret_generation,
-                    ),
-                )
+                current.clear_credential()
                 current.consumed_at = self._clock()
                 current.last_error_code = None
             elif unavailable:
+                current.clear_credential()
                 current.consumed_at = self._clock()
                 current.last_error_code = "oauth_setup_credential_unavailable"
             else:
@@ -440,16 +420,7 @@ class MCPOAuthService:
                     updated_at=now,
                 )
             )
-            secret_ref = await self._secrets.create_in_transaction(
-                session,
-                secret_context(
-                    connection,
-                    operation=SecretOperation.management,
-                    key=oauth_setup_secret_key(session_id),
-                    generation=1,
-                ),
-                setup_value,
-            )
+
             oauth_session = MCPOAuthSessionRecord(
                 id=session_id,
                 organization_id=source.organization_id,
@@ -464,8 +435,7 @@ class MCPOAuthService:
                 registration_endpoint=preparation.registration_endpoint,
                 client_id=None,
                 scope=None,
-                setup_secret_id=secret_ref.secret_id,
-                setup_secret_generation=secret_ref.version,
+                credential_generation=0,
                 status="pending",
                 claim_generation=0,
                 claim_owner=None,
@@ -476,6 +446,7 @@ class MCPOAuthService:
                 created_at=now,
                 updated_at=now,
             )
+            oauth_session.replace_credential(setup_value, self._protector)
             session.add(oauth_session)
             connection.status = "pending"
             connection.status_reason = None
@@ -511,8 +482,8 @@ class MCPOAuthService:
 
     async def _launch_from_session(self, oauth_session: MCPOAuthSessionRecord) -> MCPAuthorizationLaunch:
         async with transaction(self._sessions) as session:
-            connection = await require_connection(session, oauth_session.mcp_connection_id)
-        setup = await self._resolve_setup(connection, oauth_session)
+            await require_connection(session, oauth_session.mcp_connection_id)
+        setup = self._resolve_setup(oauth_session)
         preparation = oauth_preparation(oauth_session, setup)
         verifier = required_oauth_string(setup, "verifier")
         return MCPAuthorizationLaunch(
@@ -574,19 +545,11 @@ class MCPOAuthService:
                 claim_owner=self._instance_id,
             )
 
-    async def _resolve_setup(
+    def _resolve_setup(
         self,
-        connection: MCPConnectionRecord,
         oauth_session: MCPOAuthSessionRecord,
     ) -> JsonObject:
-        raw = await self._secrets.resolve(
-            secret_context(
-                connection,
-                operation=SecretOperation.callback,
-                key=oauth_setup_secret_key(oauth_session.id),
-                generation=oauth_session.setup_secret_generation,
-            )
-        )
+        raw = oauth_session.credential_snapshot().decrypt(self._protector)
         return decode_oauth_bundle(raw)
 
     async def _complete_callback(
@@ -604,29 +567,9 @@ class MCPOAuthService:
                     "oauth_callback_lost_race", "OAuth callback changed concurrently.", status_code=409
                 )
             value = canonical_json(validate_oauth_bundle(credential))
-            if connection.credential_secret_id is None:
-                secret_ref = await self._secrets.create_in_transaction(
-                    session,
-                    secret_context(connection, operation=SecretOperation.callback, generation=1),
-                    value,
-                )
-            else:
-                secret_ref = await self._secrets.replace_in_transaction(
-                    session,
-                    secret_context(connection, operation=SecretOperation.callback),
-                    value,
-                )
-            await self._secrets.tombstone_in_transaction(
-                session,
-                secret_context(
-                    connection,
-                    operation=SecretOperation.callback,
-                    key=oauth_setup_secret_key(oauth_session.id),
-                    generation=oauth_session.setup_secret_generation,
-                ),
-            )
-            connection.credential_secret_id = secret_ref.secret_id
-            connection.credential_generation = secret_ref.version
+            connection.replace_credential(value, self._protector)
+            oauth_session.clear_credential()
+
             connection.status = "pending"
             connection.status_reason = None
             connection.updated_at = now
@@ -652,15 +595,7 @@ class MCPOAuthService:
             if isinstance(error, MCPOAuthError) and error.action_required:
                 oauth_session.status = "failed"
                 connection = await require_connection(session, source.connection.id, lock=True)
-                await self._secrets.tombstone_in_transaction(
-                    session,
-                    secret_context(
-                        connection,
-                        operation=SecretOperation.reconciliation,
-                        key=oauth_setup_secret_key(oauth_session.id),
-                        generation=oauth_session.setup_secret_generation,
-                    ),
-                )
+                oauth_session.clear_credential()
                 connection.status = "action_required"
                 connection.status_reason = "reauthorization_required"
                 connection.updated_at = oauth_session.updated_at
@@ -680,7 +615,7 @@ class MCPOAuthService:
             connection = await require_connection(session, connection_id, lock=True)
             if (
                 connection.auth_mode != "oauth"
-                or connection.credential_secret_id is None
+                or connection.ciphertext is None
                 or connection.status == "disabled"
                 or (
                     connection.refresh_claim_expires_at is not None
@@ -696,6 +631,7 @@ class MCPOAuthService:
                 organization_id=connection.organization_id,
                 workspace_id=connection.workspace_id,
                 credential_generation=connection.credential_generation,
+                credential=connection.credential_snapshot(),
                 claim_generation=connection.refresh_claim_generation,
                 claim_owner=self._instance_id,
             )
@@ -756,18 +692,6 @@ def _refresh_claim_matches(connection: MCPConnectionRecord, source: RefreshSourc
         and connection.credential_generation == source.credential_generation
         and connection.refresh_claim_generation == source.claim_generation
         and connection.refresh_claim_owner == source.claim_owner
-    )
-
-
-def _refresh_secret_context(source: RefreshSource) -> SecretUseContext:
-    return SecretUseContext(
-        organization_id=source.organization_id,
-        workspace_id=source.workspace_id,
-        owner_type=SecretOwnerType.mcp_connection,
-        owner_id=source.connection_id,
-        key="credential_bundle",
-        operation=SecretOperation.reconciliation,
-        credential_generation=source.credential_generation,
     )
 
 

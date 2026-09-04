@@ -21,6 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.agents.domain import AgentRunOverride
+from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
@@ -30,9 +31,14 @@ from .domain import Ingress, IngressStatus, InputBatchingPolicy, Route
 _OVERLAYS = TypeAdapter(dict[str, AgentRunOverride])
 
 
-class IngressRecord(Base):
+class IngressRecord(ResourceCredential, Base):
+    credential_owner_type = "ingress"
     __tablename__ = "ingresses"
     __table_args__ = (
+        CheckConstraint(
+            "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
+            name="credential_material_consistent",
+        ),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
@@ -68,10 +74,6 @@ class IngressRecord(Base):
     default_agent_id: Mapped[str] = mapped_column(String(72), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    credential_secret_id: Mapped[str] = mapped_column(
-        String(72), ForeignKey("secrets.id", ondelete="RESTRICT"), nullable=False
-    )
-    credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

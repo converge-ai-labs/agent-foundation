@@ -14,7 +14,7 @@ from a13n_service.connectivity.mcp.domain import (
     ReplaceMCPCredentialsRequest,
 )
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
-from a13n_service.connectivity.mcp.management import invalidate_refresh_claim, require_connection, secret_context
+from a13n_service.connectivity.mcp.management import invalidate_refresh_claim, require_connection
 from a13n_service.connectivity.mcp.models import (
     MCPConnectionRecord,
     MCPOAuthSessionRecord,
@@ -26,7 +26,6 @@ from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
-from a13n_service.secrets import SecretOperation
 from a13n_service.storage import transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from anyio import Event
@@ -178,7 +177,7 @@ def _rpc(identifier: int, result: dict[str, object], *, headers: dict[str, str] 
 @pytest.fixture
 async def mcp_services(
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets,
+    credential_protector,
     connectivity_objects: LocalObjectStore,
 ) -> AsyncIterator[tuple[MCPConnectionService, MCPOAuthService, RemoteServer]]:
     remote = RemoteServer()
@@ -186,12 +185,12 @@ async def mcp_services(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(remote), follow_redirects=False) as http_client:
         oauth_client = MCPOAuthClient(http_client, policy)
         discovery = MCPDiscoveryService(
-            connectivity_sessions, RemoteTransport(policy, transport=httpx2.MockTransport(remote)), connectivity_secrets
+            connectivity_sessions, RemoteTransport(policy, transport=httpx2.MockTransport(remote)), credential_protector
         )
         connections = MCPConnectionService(
             connectivity_sessions,
             policy,
-            connectivity_secrets,
+            credential_protector,
             discovery,
             registration_cleaner=oauth_client,
             clock=lambda: NOW,
@@ -199,7 +198,7 @@ async def mcp_services(
         oauth = MCPOAuthService(
             connectivity_sessions,
             oauth_client,
-            connectivity_secrets,
+            credential_protector,
             discovery,
             public_origin=PUBLIC_ORIGIN,
             client_name="Foundation Test",
@@ -561,6 +560,11 @@ async def test_delete_fences_connection_and_cleans_exact_dcr_registration(
     assert deleted is not None
     assert deleted.cleanup_pending is False
     assert deleted.deleted_at is not None
+    assert deleted.ciphertext is deleted.nonce is deleted.encryption_key_id is None
+    async with connectivity_sessions() as session:
+        completed = await session.get(MCPOAuthSessionRecord, launch.id)
+    assert completed is not None
+    assert completed.ciphertext is completed.nonce is completed.encryption_key_id is None
 
 
 @pytest.mark.anyio
@@ -631,7 +635,7 @@ async def test_oauth_invalid_grant_requires_reauthorization(mcp_services) -> Non
 async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
     mcp_services,
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets,
+    credential_protector,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connections, oauth, _remote = mcp_services
@@ -666,9 +670,7 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
     await started.wait()
     async with transaction(connectivity_sessions) as session:
         connection = await require_connection(session, ready.id, lock=True)
-        secret_ref = await connectivity_secrets.replace_in_transaction(
-            session,
-            secret_context(connection, operation=SecretOperation.management),
+        connection.replace_credential(
             json.dumps(
                 {
                     "kind": "oauth",
@@ -677,8 +679,8 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
                     "token_type": "Bearer",
                 }
             ),
+            credential_protector,
         )
-        connection.credential_generation = secret_ref.version
         invalidate_refresh_claim(connection, now=NOW)
     proceed.set()
 
@@ -727,6 +729,10 @@ async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
         )
     assert expired is not None
     assert await oauth.cleanup_expired_session(expired.id) is True
+    async with connectivity_sessions() as session:
+        cleaned = await session.get(MCPOAuthSessionRecord, expired.id)
+    assert cleaned is not None
+    assert cleaned.ciphertext is cleaned.nonce is cleaned.encryption_key_id is None
     assert remote.registration_deleted is True
     state = parse_qs(urlsplit(first.authorization_url).query)["state"][0]
     with pytest.raises(MCPConnectionError, match="unavailable"):

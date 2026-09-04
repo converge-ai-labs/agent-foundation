@@ -120,7 +120,7 @@ class MCPReconciler:
                         MCPConnectionRecord.refresh_claim_expires_at <= self._clock(),
                     ),
                     MCPConnectionRecord.auth_mode == "oauth",
-                    MCPConnectionRecord.credential_secret_id.is_not(None),
+                    MCPConnectionRecord.ciphertext.is_not(None),
                 )
                 .order_by(MCPConnectionRecord.refresh_available_at, MCPConnectionRecord.id)
                 .limit(1)

@@ -40,7 +40,7 @@ from a13n_service.connectivity.selection_resolution import ConnectivitySelection
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 from a13n_service.process.background import BackgroundTask
-from a13n_service.secrets import InternalSecretService, SecretProtector
+from a13n_service.secrets import SecretProtector
 from a13n_service.settings import Settings
 from a13n_service.storage import StorageResources
 
@@ -81,21 +81,20 @@ async def build_connectivity_runtime(
         return None, None, ()
     if ingress_adapters is None:
         raise RuntimeError("Connectivity ingress adapters were not prepared")
-    internal_secrets = InternalSecretService(storage.sessions, secret_protector)
     control, selection_resolver, control_components = (
         await _build_control_runtime(
             settings,
             storage,
             ingress_adapters,
             connector_providers,
-            internal_secrets,
+            secret_protector,
             stack,
         )
         if control_plane
         else (None, None, ())
     )
     data, data_components = (
-        _build_data_runtime(settings, input_acceptor, storage, ingress_adapters, internal_secrets)
+        _build_data_runtime(settings, input_acceptor, storage, ingress_adapters, secret_protector)
         if data_plane
         else (None, ())
     )
@@ -114,7 +113,7 @@ async def _build_control_runtime(
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
     connector_providers: ConnectorProviderRegistry | None,
-    internal_secrets: InternalSecretService,
+    secret_protector: SecretProtector,
     stack: AsyncExitStack,
 ) -> tuple[ConnectivityControlRuntime, ConnectivitySelectionResolver, tuple[BackgroundTask, ...]]:
     public_origin = settings.validated_connectivity_public_origin()
@@ -136,7 +135,7 @@ async def _build_control_runtime(
         settings,
         storage,
         connector_providers,
-        internal_secrets,
+        secret_protector,
         public_origin,
     )
     mcp_http_client = await stack.enter_async_context(
@@ -149,13 +148,13 @@ async def _build_control_runtime(
         settings,
         storage,
         endpoint_policy,
-        internal_secrets,
+        secret_protector,
         public_origin,
         mcp_http_client,
     )
     runtime = ConnectivityControlRuntime(
         public_origin=public_origin,
-        ingresses=IngressService(storage.sessions, ingress_adapters, internal_secrets),
+        ingresses=IngressService(storage.sessions, ingress_adapters, secret_protector),
         routes=RouteService(
             storage.sessions,
             ingress_adapters,
@@ -178,15 +177,15 @@ def _build_connector_control(
     settings: Settings,
     storage: StorageResources,
     connector_providers: ConnectorProviderRegistry,
-    internal_secrets: InternalSecretService,
+    secret_protector: SecretProtector,
     public_origin: str,
 ) -> _ConnectorControl:
-    service = ConnectorProviderService(storage.sessions, connector_providers, internal_secrets)
+    service = ConnectorProviderService(storage.sessions, connector_providers, secret_protector)
     correlation_secret = settings.connectivity_setup_correlation_secret
     connections = ConnectorConnectionService(
         storage.sessions,
         connector_providers,
-        internal_secrets,
+        secret_protector,
         correlation_secret=(correlation_secret.get_secret_value().encode() if correlation_secret is not None else None),
         public_origin=public_origin,
         setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
@@ -208,12 +207,12 @@ def _build_mcp_control(
     settings: Settings,
     storage: StorageResources,
     endpoint_policy: EndpointPolicy,
-    internal_secrets: InternalSecretService,
+    secret_protector: SecretProtector,
     public_origin: str,
     http_client: httpx2.AsyncClient,
 ) -> _MCPControl:
     instance_id = settings.service_instance_id or new_object_id("svc")
-    discovery = MCPDiscoveryService(storage.sessions, RemoteTransport(endpoint_policy), internal_secrets)
+    discovery = MCPDiscoveryService(storage.sessions, RemoteTransport(endpoint_policy), secret_protector)
     oauth_client = MCPOAuthClient(
         http_client,
         endpoint_policy,
@@ -223,14 +222,14 @@ def _build_mcp_control(
     connections = MCPConnectionService(
         storage.sessions,
         endpoint_policy,
-        internal_secrets,
+        secret_protector,
         discovery,
         registration_cleaner=oauth_client,
     )
     oauth = MCPOAuthService(
         storage.sessions,
         oauth_client,
-        internal_secrets,
+        secret_protector,
         discovery,
         public_origin=public_origin,
         client_name=settings.connectivity_oauth_client_name,
@@ -259,12 +258,12 @@ def _build_data_runtime(
     input_acceptor: InputAcceptor | None,
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
-    internal_secrets: InternalSecretService,
+    secret_protector: SecretProtector,
 ) -> tuple[ConnectivityDataRuntime, tuple[BackgroundTask, ...]]:
     ingress_events = IngressEventService(
         storage.sessions,
         ingress_adapters,
-        internal_secrets,
+        secret_protector,
         IngressRawObjectStore(storage.objects),
         request_max_bytes=settings.connectivity_provider_request_max_bytes,
         raw_retention_seconds=settings.connectivity_protected_raw_retention_seconds,

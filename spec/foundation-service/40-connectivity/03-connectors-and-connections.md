@@ -18,7 +18,7 @@ class ConnectorProviderDefinition:
     credential_schema: JsonObject
 ```
 
-The implementation's strongly typed configuration model is the single authority for both `configuration_schema` and deterministic validation. The schema contains non-secret fields, bounds, defaults, and descriptions. `credential_schema` describes the write-only service-access credential input accepted by the owning create or credential-rotation operation. Foundation stores those values as lifecycle-owned Secrets rather than embedding them in configuration or returning them on reads. Connection testing and Connector discovery perform external I/O only after configuration has passed deterministic validation. Type-definition reads inspect safe registered metadata only, never accounts or upstream catalogs.
+The implementation's strongly typed configuration model is the single authority for both `configuration_schema` and deterministic validation. The schema contains non-secret fields, bounds, defaults, and descriptions. `credential_schema` describes the write-only service-access credential input accepted by the owning create or credential-rotation operation. Foundation stores those values as an encrypted credential bundle on the ConnectorProvider rather than embedding them in configuration or returning them on reads. Connection testing and Connector discovery perform external I/O only after configuration has passed deterministic validation. Type-definition reads inspect safe registered metadata only, never accounts or upstream catalogs.
 
 There is no cross-domain Provider definition or runtime base class. Connector Provider definitions, Model Provider definitions, and Environment Provider specifications have distinct operations and lifecycles even when management surfaces render their schemas similarly.
 
@@ -34,7 +34,7 @@ class ConnectorProvider:
     name: str
     type: str
     configuration: JsonObject
-    credential_secret_id: SecretId | None
+    credential_generation: int
     status: Literal["active", "disabled"]
     version: int
     created_by: PrincipalRef
@@ -46,7 +46,7 @@ class ConnectorProvider:
 
 Organization, Workspace, type, and behavior-defining configuration are immutable. Changing one creates another Connector Provider so an accepted Run cannot silently dispatch to a different backend under the same ID. Name, credential rotation, safe observations, and administrative status can change under exact management-version preconditions without changing Connector Provider identity.
 
-`credential_secret_id` is the internal reference to the lifecycle-owned Secret that authenticates Foundation to the external integration service. The Secret can hold a self-hosted access token or BYOK integration-service API key through the [Foundation Secret contract](../27-secret-management.md). Provider authoring supplies write-only credential values, not this internal reference; management reads return only safe credential-configured metadata. The Secret never holds a third-party account OAuth token.
+`credential_generation` identifies the current Provider-owned encrypted bundle that authenticates Foundation to the external integration service. The bundle can hold a self-hosted access token or BYOK integration-service API key, protected using the [shared credential protection contract](../27-secret-management.md#protection-boundary). Provider authoring supplies write-only values; management reads return safe metadata and never material or a Secret reference. The owning record stores ciphertext, nonce, and encryption-key identifier. Replacement atomically advances the generation and resource version. The bundle never holds a third-party account OAuth token.
 
 `active` means the Connector Provider is administratively enabled; it is not a continuous health claim. Disabling it prevents new setup, discovery, and dispatch without reinterpreting or deleting retained Connector Connections, Run selections, or audit facts. Transient endpoint or credential failures remain bounded safe observations rather than another lifecycle state.
 
@@ -208,7 +208,7 @@ POST  /api/v1/connector-providers/{connector_provider_id}/test
 POST  /api/v1/connector-providers/{connector_provider_id}/discover-connectors
 ```
 
-Provider creation accepts `type`, `configuration`, and separate write-only service credentials validated by `credential_schema` when the selected implementation requires them. Unknown types and configuration fields fail validation. Type, endpoint, and behavior-defining configuration changes require another Provider; mutable updates retain the existing exact management-version precondition. Credential replacement uses the owning management operation and preserves the internal Secret boundary. Testing and discovery are explicit bounded operations outside database transactions and never create Connector Connections.
+Provider creation accepts `type`, `configuration`, and separate write-only service credentials validated by `credential_schema` when the selected implementation requires them. Unknown types and configuration fields fail validation. Type, endpoint, and behavior-defining configuration changes require another Provider; mutable updates retain the existing exact management-version precondition. Credential replacement uses the owning management operation and atomically replaces the Provider-owned encrypted bundle. Testing and discovery are explicit bounded operations outside database transactions and never create Connector Connections.
 
 Type-definition and Connector discovery reads require the safe-read authority defined by [IAM](../33-identity-and-access-management.md#stable-action-registry); Provider management and testing require `connector_provider.manage`. Discovery additionally checks the exact Provider's Workspace visibility, current active status, and service credential eligibility. A response contains safe metadata only and never a credential value, external account reference, or import target.
 
@@ -230,7 +230,7 @@ Connector Provider adapters and provider tool contracts version independently fr
 ## Invariants
 
 1. No ConnectorProvider implementation is a required Foundation dependency.
-2. Foundation Secrets can protect Connector Provider access credentials but never contain an externally managed third-party account credential.
+2. Connector Providers protect their own access credentials and never hold an externally managed third-party account credential.
 3. Every Connector Connection fixes one exact Connector Provider and Connector key; setup assigns at most one verified opaque external reference, and the model never receives that reference.
 4. Capability configuration, not a duplicate ConnectorConnection-owned assignment list, is authoritative for Agent and Route use.
 5. All Connector tools reach the Agent through the a13n MCP authorization and result-safety boundary.

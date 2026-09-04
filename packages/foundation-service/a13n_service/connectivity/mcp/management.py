@@ -14,7 +14,6 @@ from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import SecretOperation, SecretOwnerType, SecretUseContext
 
 from .errors import MCPConnectionError
 from .models import MCPConnectionRecord
@@ -83,24 +82,6 @@ async def require_connection(
     if record is None:
         raise not_found()
     return record
-
-
-def secret_context(
-    connection: MCPConnectionRecord,
-    *,
-    operation: SecretOperation,
-    key: str = "credential_bundle",
-    generation: int | None = None,
-) -> SecretUseContext:
-    return SecretUseContext(
-        organization_id=connection.organization_id,
-        workspace_id=connection.workspace_id,
-        owner_type=SecretOwnerType.mcp_connection,
-        owner_id=connection.id,
-        key=key,
-        operation=operation,
-        credential_generation=generation if generation is not None else connection.credential_generation,
-    )
 
 
 def audit(

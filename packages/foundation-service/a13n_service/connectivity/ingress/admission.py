@@ -15,11 +15,11 @@ from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from ._management import require_adapter, require_ingress, secret_context
+from ._management import require_adapter, require_ingress
 from .admission_domain import ProtectedRawRef
 from .admission_models import (
     IngressAdmissionRecord,
@@ -78,7 +78,7 @@ class IngressEventService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         adapters: AdapterRegistry[IngressAdapter],
-        secrets: InternalSecretService,
+        protector: SecretProtector,
         raw_objects: IngressRawObjectStore,
         *,
         request_max_bytes: int,
@@ -93,7 +93,7 @@ class IngressEventService:
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
-        self._secrets = secrets
+        self._protector = protector
         self._raw_objects = raw_objects
         self._request_max_bytes = request_max_bytes
         self._raw_retention_seconds = raw_retention_seconds
@@ -158,21 +158,14 @@ class IngressEventService:
             except IngressError as error:
                 raise IngressError("ingress_not_found", "Ingress was not found.", status_code=404) from error
             snapshot = _snapshot(record)
+            credential = record.credential_snapshot()
         adapter = require_adapter(self._adapters, snapshot.provider_key, snapshot.provider_config_version)
         try:
-            value = await self._secrets.resolve(
-                secret_context(
-                    organization_id=snapshot.organization_id,
-                    workspace_id=snapshot.workspace_id,
-                    ingress_id=snapshot.id,
-                    generation=snapshot.credential_generation,
-                    operation=SecretOperation.runtime,
-                )
-            )
+            value = credential.decrypt(self._protector)
             credentials = json.loads(value)
             if not isinstance(credentials, dict) or any(not isinstance(key, str) for key in credentials):
                 raise ValueError("invalid credential bundle")
-        except (InternalSecretError, ValueError, json.JSONDecodeError) as error:
+        except (SecretProtectionError, ValueError, json.JSONDecodeError) as error:
             raise IngressError("ingress_not_found", "Ingress was not found.", status_code=404) from error
         return snapshot, adapter, credentials
 

@@ -79,6 +79,12 @@ def test_service_baseline_matches_postgresql_metadata(pg_url: str) -> None:
             columns = {item["name"] for item in inspector.get_columns("connector_providers")}
             assert {"type", "configuration_json"} <= columns
             assert {"endpoint", "driver_key", "config_version", "config_json"}.isdisjoint(columns)
+            for name in ("connector_providers", "ingresses", "mcp_connections", "mcp_oauth_sessions"):
+                columns = {item["name"] for item in inspector.get_columns(name)}
+                assert {"ciphertext", "nonce", "encryption_key_id", "credential_generation"} <= columns
+                assert {"credential_secret_id", "setup_secret_id", "setup_secret_generation"}.isdisjoint(columns)
+                assert all(key["referred_table"] != "secrets" for key in inspector.get_foreign_keys(name))
+
     finally:
         engine.dispose()
         migrator.downgrade("base")

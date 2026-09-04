@@ -28,7 +28,6 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import SecretOperation, SecretOwnerType, SecretUseContext
 
 from .errors import IngressError
 from .models import IngressAgentRecord, IngressRecord, RouteRecord
@@ -146,25 +145,6 @@ async def replay_command(
         raise IngressError(
             "idempotency_conflict", "Idempotency key was used for another request.", status_code=409
         ) from error
-
-
-def secret_context(
-    *,
-    organization_id: str,
-    workspace_id: str,
-    ingress_id: str,
-    generation: int,
-    operation: SecretOperation = SecretOperation.management,
-) -> SecretUseContext:
-    return SecretUseContext(
-        organization_id=organization_id,
-        workspace_id=workspace_id,
-        owner_type=SecretOwnerType.ingress,
-        owner_id=ingress_id,
-        key="credential_bundle",
-        operation=operation,
-        credential_generation=generation,
-    )
 
 
 def require_version(current: int, expected: int) -> None:

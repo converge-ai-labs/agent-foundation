@@ -43,15 +43,15 @@ def connector_registry(connector_backend: FakeConnectorBackend) -> ConnectorProv
 @pytest.fixture
 async def connector_services(
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets,
+    credential_protector,
     connector_registry,
 ) -> AsyncIterator[tuple[ConnectorProviderService, ConnectorConnectionService]]:
     yield (
-        ConnectorProviderService(connectivity_sessions, connector_registry, connectivity_secrets, clock=lambda: NOW),
+        ConnectorProviderService(connectivity_sessions, connector_registry, credential_protector, clock=lambda: NOW),
         ConnectorConnectionService(
             connectivity_sessions,
             connector_registry,
-            connectivity_secrets,
+            credential_protector,
             correlation_secret=b"c" * 32,
             public_origin="https://foundation.example",
             setup_ttl_seconds=600,
@@ -256,7 +256,7 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
     connector_services,
     connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets,
+    credential_protector,
     connectivity_objects,
 ) -> None:
     connectors, connections = connector_services
@@ -297,7 +297,7 @@ async def test_unknown_revoke_reconciles_only_from_same_external_reference(
     connector_services,
     connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets,
+    credential_protector,
     connectivity_objects,
 ) -> None:
     connectors, connections = connector_services
@@ -468,7 +468,7 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     connector_services,
     connector_registry,
     connectivity_sessions,
-    connectivity_secrets,
+    credential_protector,
     monkeypatch,
 ):
     from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
@@ -510,7 +510,7 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     monkeypatch.setattr(FakeConnection, "execute_tool", execute)
     policy = EndpointPolicy()
     runtime = ExternalToolRuntime(
-        connectivity_sessions, connectivity_secrets, connector_registry, RemoteTransport(policy), policy
+        connectivity_sessions, credential_protector, connector_registry, RemoteTransport(policy), policy
     )
     capability = await runtime._connector(
         ConnectorConnectionRunSelection(

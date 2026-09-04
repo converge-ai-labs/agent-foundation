@@ -5,23 +5,23 @@ from __future__ import annotations
 from pydantic_ai.mcp import MCPToolset
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.secrets import InternalSecretService, SecretOperation
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session, transaction
 
 from .credentials import decode_request_headers
 from .domain import MCPTool
 from .errors import MCPConnectionError
-from .management import require_connection, secret_context
+from .management import require_connection
 from .transport import RemoteTransport
 
 
 class MCPDiscoveryService:
     def __init__(
-        self, sessions: async_sessionmaker[AsyncSession], transport: RemoteTransport, secrets: InternalSecretService
+        self, sessions: async_sessionmaker[AsyncSession], transport: RemoteTransport, protector: SecretProtector
     ) -> None:
         self._sessions = sessions
         self._transport = transport
-        self._secrets = secrets
+        self._protector = protector
 
     async def discover(self, connection_id: str) -> tuple[MCPTool, ...]:
         async with short_session(self._sessions) as session:
@@ -29,10 +29,8 @@ class MCPDiscoveryService:
             if record.status == "disabled":
                 raise MCPConnectionError("connection_disabled", "MCPConnection is disabled.", status_code=409)
             endpoint, generation, version = record.endpoint_url, record.credential_generation, record.version
-            context = (
-                secret_context(record, operation=SecretOperation.reconciliation) if record.auth_mode != "none" else None
-            )
-        headers = decode_request_headers(await self._secrets.resolve(context)) if context is not None else {}
+            context = record.credential_snapshot() if record.auth_mode != "none" else None
+        headers = decode_request_headers(context.decrypt(self._protector)) if context is not None else {}
         try:
             async with self._transport.connect(endpoint, headers=headers) as client:
                 toolset = MCPToolset(client)

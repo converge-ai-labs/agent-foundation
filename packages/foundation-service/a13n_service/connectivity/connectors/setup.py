@@ -22,7 +22,7 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_digest
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
-from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -41,7 +41,6 @@ from .management import (
     require_active_provider,
     require_connection,
     require_connector_provider,
-    secret_context,
 )
 from .models import ConnectorConnectionRecord, ConnectorProviderRecord, ConnectorSetupAttemptRecord
 
@@ -58,7 +57,7 @@ class ConnectorSetupCoordinator:
         self,
         sessions: async_sessionmaker[AsyncSession],
         adapters: ConnectorProviderRegistry,
-        secrets: InternalSecretService,
+        protector: SecretProtector,
         *,
         correlation_secret: bytes | None,
         public_origin: str | None,
@@ -69,7 +68,7 @@ class ConnectorSetupCoordinator:
             raise ValueError("ConnectorProvider setup correlation secret must be at least 32 bytes")
         self._sessions = sessions
         self._adapters = adapters
-        self._secrets = secrets
+        self._protector = protector
         self._correlation_secret = correlation_secret
         self._public_origin = public_origin.rstrip("/") if public_origin is not None else None
         self._setup_ttl_seconds = setup_ttl_seconds
@@ -227,7 +226,7 @@ class ConnectorSetupCoordinator:
         claim_owner: str | None = None,
         claim_generation: int | None = None,
     ) -> SetupStarted:
-        snapshot = await self.attempt_snapshot(attempt_id, operation=SecretOperation.setup)
+        snapshot = await self.attempt_snapshot(attempt_id)
         require_active_provider(snapshot.connector)
         runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
         try:
@@ -320,7 +319,7 @@ class ConnectorSetupCoordinator:
                     )
                 )
 
-    async def attempt_snapshot(self, attempt_id: str, *, operation: SecretOperation) -> AttemptSnapshot:
+    async def attempt_snapshot(self, attempt_id: str) -> AttemptSnapshot:
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
@@ -328,8 +327,8 @@ class ConnectorSetupCoordinator:
             connection = await require_connection(session, attempt.connector_connection_id)
             connector = await require_connector_provider(session, connection.connector_provider_id)
         try:
-            raw = await self._secrets.resolve(secret_context(connector, operation=operation))
-        except InternalSecretError as error:
+            raw = connector.credential_snapshot().decrypt(self._protector)
+        except SecretProtectionError as error:
             raise ConnectorError(
                 "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
             ) from error
@@ -397,7 +396,7 @@ class ConnectorSetupCoordinator:
         return f"{self._public_origin}/connectivity/v1/connector-setup/callback"
 
     async def _complete_attempt(self, attempt_id: str, *, session_uri: str) -> ConnectionInspection:
-        snapshot = await self.attempt_snapshot(attempt_id, operation=SecretOperation.callback)
+        snapshot = await self.attempt_snapshot(attempt_id)
         if snapshot.attempt.external_ref is None:
             raise ConnectorProviderError("setup_incomplete")
         require_active_provider(snapshot.connector)

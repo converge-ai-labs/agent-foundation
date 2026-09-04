@@ -5,7 +5,6 @@ from a13n_service.connectivity.connectors.models import (
     ConnectorProviderRecord,
 )
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
-from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import transaction
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,24 +24,6 @@ async def seed_selection_sources(
 ) -> None:
     async with transaction(sessions) as session:
         session.add(
-            SecretRecord(
-                id=CONNECTOR_SECRET_ID,
-                organization_id=ORG_ID,
-                workspace_id=WORKSPACE_ID,
-                owner_type="connector_provider",
-                owner_id=CONNECTOR_ID,
-                key="credential_bundle",
-                version=1,
-                ciphertext=b"encrypted",
-                nonce=b"123456789012",
-                encryption_key_id="test-key",
-                created_at=NOW,
-                value_updated_at=NOW,
-                deleted_at=None,
-            )
-        )
-        await session.flush()
-        session.add(
             ConnectorProviderRecord(
                 id=CONNECTOR_ID,
                 organization_id=ORG_ID,
@@ -53,7 +34,9 @@ async def seed_selection_sources(
                 configuration_json={"endpoint": "https://connector.example"},
                 status="active",
                 version=1,
-                credential_secret_id=CONNECTOR_SECRET_ID,
+                ciphertext=b"encrypted",
+                nonce=b"123456789012",
+                encryption_key_id="test-key",
                 credential_generation=1,
                 created_by_type="user",
                 created_by_id=USER_ID,
@@ -103,7 +86,6 @@ async def seed_selection_sources(
                 status="ready",
                 status_reason=None,
                 version=1,
-                credential_secret_id=None,
                 credential_generation=0,
                 refresh_claim_generation=0,
                 refresh_claim_owner=None,

@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
@@ -25,9 +26,15 @@ from a13n_service.temporal import assume_utc
 from .domain import MCPAuthMode, MCPConnection, MCPConnectionStatus, MCPConnectionStatusReason
 
 
-class MCPConnectionRecord(Base):
+class MCPConnectionRecord(ResourceCredential, Base):
+    credential_owner_type = "mcp_connection"
     __tablename__ = "mcp_connections"
     __table_args__ = (
+        CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name="credential_material_consistent",
+        ),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
@@ -68,8 +75,6 @@ class MCPConnectionRecord(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     status_reason: Mapped[str | None] = mapped_column(String(32))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    credential_secret_id: Mapped[str | None] = mapped_column(String(72), ForeignKey("secrets.id", ondelete="RESTRICT"))
-    credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     refresh_claim_generation: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)
     refresh_claim_owner: Mapped[str | None] = mapped_column(String(128))
     refresh_claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -100,7 +105,7 @@ class MCPConnectionRecord(Base):
             status=MCPConnectionStatus(self.status),
             status_reason=MCPConnectionStatusReason(self.status_reason) if self.status_reason else None,
             version=self.version,
-            credential_configured=self.credential_secret_id is not None,
+            credential_configured=self.ciphertext is not None,
             credential_generation=self.credential_generation,
             created_by=PrincipalRef(
                 principal_type=PrincipalType(self.created_by_type),
@@ -111,15 +116,22 @@ class MCPConnectionRecord(Base):
         )
 
 
-class MCPOAuthSessionRecord(Base):
+class MCPOAuthSessionRecord(ResourceCredential, Base):
+    credential_owner_type = "mcp_oauth_session"
     __tablename__ = "mcp_oauth_sessions"
     __table_args__ = (
+        CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name="credential_material_consistent",
+        ),
         ForeignKeyConstraint(
             ("mcp_connection_id", "organization_id", "workspace_id"),
             ("mcp_connections.id", "mcp_connections.organization_id", "mcp_connections.workspace_id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint("status IN ('pending', 'exchanging', 'completed', 'failed', 'expired')", name="status_valid"),
+        CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint("claim_generation >= 0", name="claim_generation_non_negative"),
         Index("uq_mcp_oauth_sessions_state", "state_digest", unique=True),
         Index("ix_mcp_oauth_sessions_connection", "mcp_connection_id", "status", "created_at", "id"),
@@ -141,10 +153,6 @@ class MCPOAuthSessionRecord(Base):
     registration_endpoint: Mapped[str | None] = mapped_column(String(2048))
     client_id: Mapped[str | None] = mapped_column(String(2048))
     scope: Mapped[str | None] = mapped_column(String(2048))
-    setup_secret_id: Mapped[str] = mapped_column(
-        String(72), ForeignKey("secrets.id", ondelete="RESTRICT"), nullable=False
-    )
-    setup_secret_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     claim_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     claim_owner: Mapped[str | None] = mapped_column(String(128))
@@ -154,3 +162,7 @@ class MCPOAuthSessionRecord(Base):
     last_error_code: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    @property
+    def credential_owner_id(self) -> str:
+        return self.mcp_connection_id

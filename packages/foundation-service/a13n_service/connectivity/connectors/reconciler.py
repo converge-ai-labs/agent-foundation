@@ -14,7 +14,6 @@ from a13n_service.connectivity.connectors.contracts import (
     ConnectorProviderError,
 )
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
-from a13n_service.secrets import SecretOperation
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -135,7 +134,7 @@ class ConnectorReconciler:
                 except ConnectorError as error:
                     await self._defer_attempt(attempt_id, claim_generation, code=error.code, increment=False)
                 return
-            snapshot = await self._setup.attempt_snapshot(attempt_id, operation=SecretOperation.reconciliation)
+            snapshot = await self._setup.attempt_snapshot(attempt_id)
             require_active_provider(snapshot.connector)
             if status == "attached" and snapshot.attempt.supports_verified_callback:
                 await self._defer_attempt(attempt_id, claim_generation, code=None, increment=False)
@@ -224,7 +223,7 @@ class ConnectorReconciler:
             )
         if attempt is None or attempt.external_ref is None:
             return False
-        snapshot = await self._setup.attempt_snapshot(attempt.id, operation=SecretOperation.reconciliation)
+        snapshot = await self._setup.attempt_snapshot(attempt.id)
         runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
         try:
             binding = ConnectionBinding(

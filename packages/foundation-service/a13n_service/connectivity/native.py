@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
-from a13n_service.secrets import InternalSecretService, SecretOperation, SecretOwnerType, SecretUseContext
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 
 from .connectors.management import decode_credentials
@@ -60,7 +60,7 @@ class IngressRunContext(BaseModel):
 
 async def native_capability(
     sessions: async_sessionmaker[AsyncSession],
-    secrets: InternalSecretService,
+    protector: SecretProtector,
     scope: AttemptToolScope,
     guard: Callable[[], Awaitable[None]],
     endpoints: EndpointPolicy,
@@ -97,16 +97,8 @@ async def native_capability(
                 if route is None or route.ingress_id != ingress.id or not route.enabled:
                     raise ValueError("native_route_unavailable")
             configuration = dict(ingress.provider_config_json)
-            credential_context = SecretUseContext(
-                organization_id=scope.organization_id,
-                workspace_id=scope.workspace_id,
-                owner_type=SecretOwnerType.ingress,
-                owner_id=ingress.id,
-                key="credential_bundle",
-                operation=SecretOperation.runtime,
-                credential_generation=ingress.credential_generation,
-            )
-        return configuration, decode_credentials(await secrets.resolve(credential_context))
+            credential_context = ingress.credential_snapshot()
+        return configuration, decode_credentials(credential_context.decrypt(protector))
 
     configuration, credentials = await source()
     async with httpx2.AsyncClient(timeout=30, follow_redirects=False) as http:

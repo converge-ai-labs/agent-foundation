@@ -39,7 +39,7 @@ class ToolServer(RemoteServer):
 
 
 @pytest.fixture
-async def remote_runtime(connectivity_sessions, connectivity_secrets):
+async def remote_runtime(connectivity_sessions, credential_protector):
     await seed_selection_sources(connectivity_sessions)
     async with transaction(connectivity_sessions) as session:
         source = await session.get(MCPConnectionRecord, MCP_CONNECTION_ID)
@@ -48,7 +48,7 @@ async def remote_runtime(connectivity_sessions, connectivity_secrets):
     policy = EndpointPolicy()
     transport = RemoteTransport(policy, transport=httpx2.MockTransport(server))
     return ExternalToolRuntime(
-        connectivity_sessions, connectivity_secrets, ConnectorProviderRegistry(()), transport, policy
+        connectivity_sessions, credential_protector, ConnectorProviderRegistry(()), transport, policy
     ), server
 
 

@@ -14,7 +14,7 @@ All adapters reject unknown configuration versions and request bodies beyond the
 
 `provider_key = "slack"` and `provider_config_version = "slack_http_v1"` select this profile. The immutable provider configuration contains `api_app_id`, exactly one installed `team_id`, optional `enterprise_id`, verified `bot_user_id`, and `events_transport = "http"`. A changed App, installation, enterprise scope, or bot identity creates another Ingress.
 
-The Ingress owns write-only Secrets `signing_secret` and `bot_token`. The signing Secret authenticates webhooks. The bot token is used only for the enabled native Slack operations against `https://slack.com`; it never authenticates inbound delivery.
+The Ingress owns write-only credential fields `signing_secret` and `bot_token`. The signing secret authenticates webhooks. The bot token is used only for the enabled native Slack operations against `https://slack.com`; it never authenticates inbound delivery.
 
 ### Authentication and events
 
@@ -58,7 +58,7 @@ The model cannot provide a team, channel, thread, message, token, or Ingress ide
 
 `provider_key = "lark"` and `provider_config_version = "lark_http_v1"` select both brands. Immutable configuration contains `brand` in `feishu` or `lark`, an official or exact operator-allowed `open_api_origin`, `app_id`, installed `tenant_key`, verified `bot_open_id`, and `events_transport = "http"`. Brand and origin are explicit configuration rather than separate provider keys.
 
-The Ingress owns write-only Secrets `app_secret`, `encrypt_key`, and `verification_token`. `encrypt_key` can be absent only for an installation deliberately configured without encrypted event delivery. A short-lived tenant access token is derived from `app_id` and `app_secret`, refreshed before provider expiry through async single-flight, and retained only in process memory or the shared ephemeral cache; it is not another durable Secret.
+The Ingress owns write-only credential fields `app_secret`, `encrypt_key`, and `verification_token`. `encrypt_key` can be absent only for an installation deliberately configured without encrypted event delivery. A short-lived tenant access token is derived from `app_id` and `app_secret`, refreshed before provider expiry through async single-flight, and retained only in process memory or the shared ephemeral cache; it is not another durable credential.
 
 ### Authentication, decryption, and events
 
@@ -94,7 +94,7 @@ The model cannot provide an App, tenant, chat, thread, message, token, or Ingres
 
 `provider_key = "github"` and `provider_config_version = "github_app_http_v1"` select this profile. Immutable configuration contains exact operator-allowed `api_origin` and `web_origin`, GitHub App ID, installation ID, installation account ID, and a bot account database ID verified from the App installation. GitHub.com uses its official origins; GitHub Enterprise origins require an explicit Connectivity allowlist entry.
 
-The Ingress owns write-only Secrets `webhook_secret` and `app_private_key_pem`. The private key signs RS256 App JWTs whose lifetime is at most ten minutes. The adapter exchanges them for installation access tokens, retains provider expiry, refreshes with safety skew through async single-flight, and never stores those tokens durably.
+The Ingress owns write-only credential fields `webhook_secret` and `app_private_key_pem`. The private key signs RS256 App JWTs whose lifetime is at most ten minutes. The adapter exchanges them for installation access tokens, retains provider expiry, refreshes with safety skew through async single-flight, and never stores those tokens durably.
 
 ### Authentication and events
 

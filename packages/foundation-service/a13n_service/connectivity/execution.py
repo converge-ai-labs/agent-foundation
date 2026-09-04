@@ -22,19 +22,18 @@ from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.interactions.models import SessionRecord
-from a13n_service.secrets import InternalSecretService, SecretOperation
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
 from .connectors.connection_access import connection_binding
 from .connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
-from .connectors.management import decode_credentials, require_connection, require_connector_provider, secret_context
+from .connectors.management import decode_credentials, require_connection, require_connector_provider
 from .connectors.registry import ConnectorProviderRegistry
 from .connectors.tool_discovery import discover_tools, mcp_tool
 from .domain import JsonObject
 from .mcp.credentials import decode_request_headers
 from .mcp.management import require_connection as require_mcp_connection
-from .mcp.management import secret_context as mcp_secret_context
 from .mcp.oauth_bundles import decode_oauth_bundle, optional_expiration
 from .mcp.transport import RemoteTransport
 from .selection_domain import ConnectorConnectionRunSelection, MCPConnectionRunSelection
@@ -59,13 +58,13 @@ class ExternalToolRuntime:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        secrets: InternalSecretService,
+        protector: SecretProtector,
         providers: ConnectorProviderRegistry,
         remote: RemoteTransport,
         endpoints: EndpointPolicy,
     ) -> None:
         self._sessions = sessions
-        self._secrets = secrets
+        self._protector = protector
         self._providers = providers
         self._remote = remote
         self._endpoints = endpoints
@@ -155,8 +154,8 @@ class ExternalToolRuntime:
                 provider = await require_connector_provider(session, selection.connector_provider_id)
                 binding = await connection_binding(session, record)
                 provider_type, configuration = provider.type, dict(provider.configuration_json)
-                context = secret_context(provider, operation=SecretOperation.runtime)
-            raw = await self._secrets.resolve(context)
+                context = provider.credential_snapshot()
+            raw = context.decrypt(self._protector)
             runtime = self._providers.require(provider_type).configure(configuration, decode_credentials(raw))
             async with aclosing(runtime), aclosing(runtime.connect(binding)) as connected:
                 yield connected
@@ -214,9 +213,9 @@ class ExternalToolRuntime:
                     raise ValueError("mcp_endpoint_changed")
                 if record.auth_mode == "none":
                     return {}
-                context = mcp_secret_context(record, operation=SecretOperation.runtime)
+                context = record.credential_snapshot()
                 auth_mode = record.auth_mode
-            value = await self._secrets.resolve(context)
+            value = context.decrypt(self._protector)
             if auth_mode == "oauth":
                 expires_at = optional_expiration(decode_oauth_bundle(value).get("expires_at"))
                 if expires_at is not None and expires_at <= utc_now():
@@ -258,5 +257,5 @@ class ExternalToolRuntime:
     ) -> tuple[MCP[AgentContext], ...]:
         from .native import native_capability
 
-        capability = await native_capability(self._sessions, self._secrets, scope, guard, self._endpoints)
+        capability = await native_capability(self._sessions, self._protector, scope, guard, self._endpoints)
         return (capability,) if capability is not None else ()

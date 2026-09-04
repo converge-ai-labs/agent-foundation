@@ -26,7 +26,7 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import InternalSecretError, InternalSecretService
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -41,7 +41,6 @@ from ._management import (
     require_limit,
     require_routes_fit_agents,
     require_version,
-    secret_context,
 )
 from .domain import (
     CreateIngressRequest,
@@ -60,13 +59,13 @@ class IngressService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         adapters: AdapterRegistry[IngressAdapter],
-        secrets: InternalSecretService,
+        protector: SecretProtector,
         *,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
-        self._secrets = secrets
+        self._protector = protector
         self._clock = clock
 
     async def create_ingress(
@@ -105,16 +104,7 @@ class IngressService:
                     execution_service_account_id=request.execution_service_account_id,
                     agent_ids=request.agents,
                 )
-                secret_ref = await self._secrets.create_in_transaction(
-                    session,
-                    secret_context(
-                        organization_id=workspace.organization_id,
-                        workspace_id=workspace_id,
-                        ingress_id=ingress_id,
-                        generation=1,
-                    ),
-                    canonical_json(credentials),
-                )
+
                 record = IngressRecord(
                     id=ingress_id,
                     organization_id=workspace.organization_id,
@@ -128,13 +118,13 @@ class IngressService:
                     default_agent_id=request.default_agent_id,
                     status=IngressStatus.active.value,
                     version=1,
-                    credential_secret_id=secret_ref.secret_id,
-                    credential_generation=secret_ref.version,
+                    credential_generation=0,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
                     created_at=now,
                     updated_at=now,
                 )
+                record.replace_credential(canonical_json(credentials), self._protector)
                 session.add(record)
                 await session.flush()
                 session.add_all(
@@ -167,7 +157,7 @@ class IngressService:
             raise IngressError(
                 "ingress_conflict", "Ingress identity or name already exists.", status_code=409
             ) from error
-        except InternalSecretError as error:
+        except SecretProtectionError as error:
             raise IngressError(
                 "credential_conflict", "Ingress credentials could not be stored.", status_code=409
             ) from error
@@ -316,17 +306,8 @@ class IngressService:
             require_version(record.version, request.expected_version)
             adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
             credentials = _validate_credentials(adapter, request.credentials, record.provider_config_version)
-            secret_ref = await self._secrets.replace_in_transaction(
-                session,
-                secret_context(
-                    organization_id=record.organization_id,
-                    workspace_id=record.workspace_id,
-                    ingress_id=ingress_id,
-                    generation=record.credential_generation,
-                ),
-                canonical_json(credentials),
-            )
-            record.credential_generation = secret_ref.version
+            record.replace_credential(canonical_json(credentials), self._protector)
+
             record.version += 1
             record.updated_at = self._clock()
             _record_ingress_command(session, actor, record, "ingress.credentials", key_digest, request_fingerprint)

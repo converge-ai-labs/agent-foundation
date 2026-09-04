@@ -19,7 +19,7 @@ from a13n_service.connectivity.ingress.providers.github import GitHubIngressAdap
 from a13n_service.connectivity.ingress.providers.registry import built_in_ingress_adapter_registry
 from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.service import IngressService
-from a13n_service.secrets import InternalSecretService
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -340,12 +340,12 @@ async def test_github_route_predicates_overlap_and_native_actions(
 @pytest.mark.anyio
 async def test_github_real_protocol_fixture_is_durable_and_duplicate_acknowledges_200(
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets: InternalSecretService,
+    credential_protector: SecretProtector,
     connectivity_objects: LocalObjectStore,
     github_private_key_pem: str,
 ) -> None:
     registry = built_in_ingress_adapter_registry()
-    ingress_service = IngressService(connectivity_sessions, registry, connectivity_secrets, clock=lambda: NOW)
+    ingress_service = IngressService(connectivity_sessions, registry, credential_protector, clock=lambda: NOW)
     ingress = await ingress_service.create_ingress(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -364,7 +364,7 @@ async def test_github_real_protocol_fixture_is_durable_and_duplicate_acknowledge
     event_service = IngressEventService(
         connectivity_sessions,
         registry,
-        connectivity_secrets,
+        credential_protector,
         IngressRawObjectStore(connectivity_objects),
         request_max_bytes=8 * 1024 * 1024,
         raw_retention_seconds=0,

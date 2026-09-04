@@ -6,6 +6,8 @@ Native Ingresses receive provider events, authenticate and normalize them, route
 
 Provider configuration is intentionally typed by each adapter. Slack signing secrets, Lark app credentials, Discord gateway configuration, Gmail watch state, and GitHub App installation data do not enter one universal credential or event schema. The stable contract begins with Foundation-owned Ingress identity and the normalized event envelope.
 
+The Ingress owns its provider-specific encrypted credential bundle, credential generation, nonce, and encryption-key identifier under the [shared protection contract](../27-secret-management.md#protection-boundary). Create and replacement accept write-only values through the Ingress operation; replacement atomically advances its generation and resource version. Runtime resolution requires the exact tenant and authorized inbound or native operation. Disablement immediately removes use eligibility; owning-resource deletion clears material. No public Secret or separate application-account resource is created.
+
 ## Ingress and Route
 
 The following conceptual schemas are not wire or ORM models:

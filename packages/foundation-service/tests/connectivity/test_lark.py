@@ -23,7 +23,7 @@ from a13n_service.connectivity.ingress.providers.lark import LarkIngressAdapter
 from a13n_service.connectivity.ingress.providers.registry import built_in_ingress_adapter_registry
 from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.service import IngressService
-from a13n_service.secrets import InternalSecretService
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage.object_store import LocalObjectStore
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
@@ -325,11 +325,11 @@ def _normalized_event() -> InboundEvent:
 @pytest.mark.anyio
 async def test_lark_real_protocol_fixture_is_durable_before_ack(
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets: InternalSecretService,
+    credential_protector: SecretProtector,
     connectivity_objects: LocalObjectStore,
 ) -> None:
     registry = built_in_ingress_adapter_registry()
-    ingress_service = IngressService(connectivity_sessions, registry, connectivity_secrets, clock=lambda: NOW)
+    ingress_service = IngressService(connectivity_sessions, registry, credential_protector, clock=lambda: NOW)
     ingress = await ingress_service.create_ingress(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -348,7 +348,7 @@ async def test_lark_real_protocol_fixture_is_durable_before_ack(
     event_service = IngressEventService(
         connectivity_sessions,
         registry,
-        connectivity_secrets,
+        credential_protector,
         IngressRawObjectStore(connectivity_objects),
         request_max_bytes=8 * 1024 * 1024,
         raw_retention_seconds=0,

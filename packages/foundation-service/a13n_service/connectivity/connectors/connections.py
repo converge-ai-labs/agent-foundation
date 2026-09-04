@@ -19,7 +19,7 @@ from a13n_service.connectivity.management import (
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import InternalSecretService
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -63,7 +63,7 @@ class ConnectorConnectionService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         adapters: ConnectorProviderRegistry,
-        secrets: InternalSecretService,
+        protector: SecretProtector,
         *,
         correlation_secret: bytes | None,
         public_origin: str | None,
@@ -72,18 +72,18 @@ class ConnectorConnectionService:
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
-        self._secrets = secrets
+        self._protector = protector
         self._clock = clock
         self._setup = ConnectorSetupCoordinator(
             sessions,
             adapters,
-            secrets,
+            protector,
             correlation_secret=correlation_secret,
             public_origin=public_origin,
             setup_ttl_seconds=setup_ttl_seconds,
             clock=clock,
         )
-        self._revocation = ConnectorRevocationService(sessions, adapters, secrets, clock=clock)
+        self._revocation = ConnectorRevocationService(sessions, adapters, protector, clock=clock)
 
     @property
     def setup_coordinator(self) -> ConnectorSetupCoordinator:

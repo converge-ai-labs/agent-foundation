@@ -32,12 +32,18 @@ def upgrade() -> None:
         sa.Column("default_agent_id", sa.String(length=72), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("credential_secret_id", sa.String(length=72), nullable=False),
+        sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
+        sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
+        sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
         sa.Column("credential_generation", sa.BigInteger(), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
+            name=op.f("ck_ingresses_credential_material_consistent"),
+        ),
         sa.CheckConstraint(
             "created_by_type IN ('user', 'service_account')", name=op.f("ck_ingresses_created_by_type_valid")
         ),
@@ -45,12 +51,6 @@ def upgrade() -> None:
         sa.CheckConstraint("credential_generation >= 1", name=op.f("ck_ingresses_credential_generation_positive")),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_ingresses_name_bounded")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_ingresses_version_positive")),
-        sa.ForeignKeyConstraint(
-            ["credential_secret_id"],
-            ["secrets.id"],
-            name=op.f("fk_ingresses_credential_secret_id_secrets"),
-            ondelete="RESTRICT",
-        ),
         sa.ForeignKeyConstraint(
             ["default_agent_id", "organization_id", "workspace_id"],
             ["agents.id", "agents.organization_id", "agents.workspace_id"],

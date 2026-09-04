@@ -818,7 +818,7 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     from a13n_service.connectivity.mcp.transport import RemoteTransport
     from a13n_service.iam import AuthorizationError
     from a13n_service.iam.models import RoleBindingRecord, UserRecord
-    from a13n_service.secrets import InternalSecretService, SecretProtector
+    from a13n_service.secrets import SecretProtector
     from a13n_service.storage import transaction
 
     states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
@@ -859,7 +859,7 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     policy = EndpointPolicy()
     runtime = ExternalToolRuntime(
         interaction_sessions,
-        InternalSecretService(interaction_sessions, SecretProtector(key=b"k" * 32, encryption_key_id="test")),
+        SecretProtector(key=b"k" * 32, encryption_key_id="test"),
         ConnectorProviderRegistry(()),
         RemoteTransport(policy),
         policy,

@@ -36,7 +36,7 @@ from a13n_service.iam.models import (
     UserRecord,
     WorkspaceRecord,
 )
-from a13n_service.secrets import InternalSecretService, SecretProtector
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.object_store import LocalObjectStore
@@ -379,23 +379,19 @@ async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]
 
 
 @pytest.fixture
-def connectivity_secrets(connectivity_sessions: async_sessionmaker[AsyncSession]) -> InternalSecretService:
-    return InternalSecretService(
-        connectivity_sessions,
-        SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"),
-        clock=lambda: NOW,
-    )
+def credential_protector(connectivity_sessions: async_sessionmaker[AsyncSession]) -> SecretProtector:
+    return SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test")
 
 
 @pytest.fixture
 def ingress_service(
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets: InternalSecretService,
+    credential_protector: SecretProtector,
 ) -> IngressService:
     return IngressService(
         connectivity_sessions,
         adapter_registry(),
-        connectivity_secrets,
+        credential_protector,
         clock=lambda: NOW,
     )
 
@@ -408,13 +404,13 @@ async def connectivity_objects(tmp_path: Path) -> LocalObjectStore:
 @pytest.fixture
 def ingress_event_service(
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets: InternalSecretService,
+    credential_protector: SecretProtector,
     connectivity_objects: LocalObjectStore,
 ) -> IngressEventService:
     return IngressEventService(
         connectivity_sessions,
         adapter_registry(),
-        connectivity_secrets,
+        credential_protector,
         IngressRawObjectStore(connectivity_objects),
         request_max_bytes=1024 * 1024,
         raw_retention_seconds=3600,

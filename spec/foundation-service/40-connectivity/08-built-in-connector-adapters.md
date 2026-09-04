@@ -44,7 +44,7 @@ Control uses discovery for setup checks and advisory management projections. The
 
 ## OpenConnector native v1
 
-`type = "openconnector"` and `api_profile = "native_v1"` select the native `/api/v1` surface. Configuration identifies `deployment` as `cloud` or `self_hosted`, an exact normalized endpoint, and enabled Connector slugs. Cloud and self-hosted installations are one implementation with different endpoint policy, not different resource kinds. The ConnectorProvider owns write-only Secret `api_key`, sent only as `x-api-key` to the configured origin.
+`type = "openconnector"` and `api_profile = "native_v1"` select the native `/api/v1` surface. Configuration identifies `deployment` as `cloud` or `self_hosted`, an exact normalized endpoint, and enabled Connector slugs. Cloud and self-hosted installations are one implementation with different endpoint policy, not different resource kinds. The ConnectorProvider owns write-only credential field `api_key`, sent only as `x-api-key` to the configured origin.
 
 OAuth setup calls `POST /api/v1/connectors/{slug}/initiate` with the selected auth configuration and opaque external-user correlation, and accepts only a bounded `connectionId` and external-service-hosted `redirectUrl`. Safe inspection, list, refresh, and deletion use the native connected-account routes for that exact ID. Direct server-side `/connect` is unsupported because its credential body would cross Foundation. A ConnectorProvider without a hosted form for its required non-OAuth credential is incompatible with this profile.
 
@@ -54,7 +54,7 @@ OpenConnector retains provider OAuth callbacks and tokens in its own vault. Foun
 
 ## Composio v3.1
 
-`type = "composio"`, `connected_accounts_profile = "v3_1"`, and `tools_profile = "v3_1"` select the current REST profiles at `https://backend.composio.dev` or one exact operator-allowed compatible origin. The ConnectorProvider owns write-only Secret `api_key`; deployments should use a scoped project key limited to required Connected Account read/write and tool read/execute operations.
+`type = "composio"`, `connected_accounts_profile = "v3_1"`, and `tools_profile = "v3_1"` select the current REST profiles at `https://backend.composio.dev` or one exact operator-allowed compatible origin. The ConnectorProvider owns write-only credential field `api_key`; deployments should use a scoped project key limited to required Connected Account read/write and tool read/execute operations.
 
 Hosted setup uses `POST /api/v3.1/connected_accounts/link` with the intended auth configuration and opaque external-user correlation. Safe inspection, refresh, status change, revocation, and deletion use only the `/api/v3.1/connected_accounts` resources for the returned account. The project must configure Foundation's callback as its identity verifier. After the browser returns, Foundation posts the single-use `session_uri` and exact expected external-user correlation to `POST /api/v3.1/connected_accounts/complete_auth`; the session is accepted for no more than ten minutes. Completion must return the intended connected-account ID and toolkit before the ConnectorConnection can become ready.
 

@@ -32,7 +32,9 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("status_reason", sa.String(length=32), nullable=True),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("credential_secret_id", sa.String(length=72), nullable=True),
+        sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
+        sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
+        sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
         sa.Column("credential_generation", sa.BigInteger(), nullable=False),
         sa.Column("refresh_claim_generation", sa.BigInteger(), server_default="0", nullable=False),
         sa.Column("refresh_claim_owner", sa.String(length=128), nullable=True),
@@ -53,6 +55,11 @@ def upgrade() -> None:
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name=op.f("ck_mcp_connections_credential_material_consistent"),
+        ),
         sa.CheckConstraint(
             "(status = 'action_required') = (status_reason IS NOT NULL)",
             name=op.f("ck_mcp_connections_status_reason_valid"),
@@ -82,12 +89,6 @@ def upgrade() -> None:
         sa.CheckConstraint("version >= 1", name=op.f("ck_mcp_connections_version_positive")),
         sa.CheckConstraint(
             "refresh_claim_generation >= 0", name=op.f("ck_mcp_connections_refresh_claim_generation_non_negative")
-        ),
-        sa.ForeignKeyConstraint(
-            ["credential_secret_id"],
-            ["secrets.id"],
-            name=op.f("fk_mcp_connections_credential_secret_id_secrets"),
-            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["owner_user_id"], ["users.id"], name=op.f("fk_mcp_connections_owner_user_id_users"), ondelete="RESTRICT"
@@ -136,8 +137,10 @@ def upgrade() -> None:
         sa.Column("registration_endpoint", sa.String(length=2048), nullable=True),
         sa.Column("client_id", sa.String(length=2048), nullable=True),
         sa.Column("scope", sa.String(length=2048), nullable=True),
-        sa.Column("setup_secret_id", sa.String(length=72), nullable=False),
-        sa.Column("setup_secret_generation", sa.BigInteger(), nullable=False),
+        sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
+        sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
+        sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
+        sa.Column("credential_generation", sa.BigInteger(), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("claim_generation", sa.BigInteger(), nullable=False),
         sa.Column("claim_owner", sa.String(length=128), nullable=True),
@@ -148,8 +151,16 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name=op.f("ck_mcp_oauth_sessions_credential_material_consistent"),
+        ),
+        sa.CheckConstraint(
             "status IN ('pending', 'exchanging', 'completed', 'failed', 'expired')",
             name=op.f("ck_mcp_oauth_sessions_status_valid"),
+        ),
+        sa.CheckConstraint(
+            "credential_generation >= 1", name=op.f("ck_mcp_oauth_sessions_credential_generation_positive")
         ),
         sa.CheckConstraint("claim_generation >= 0", name=op.f("ck_mcp_oauth_sessions_claim_generation_non_negative")),
         sa.ForeignKeyConstraint(
@@ -162,12 +173,6 @@ def upgrade() -> None:
             ["mcp_connection_id", "organization_id", "workspace_id"],
             ["mcp_connections.id", "mcp_connections.organization_id", "mcp_connections.workspace_id"],
             name=op.f("fk_mcp_oauth_sessions_mcp_connection_id_mcp_connections"),
-            ondelete="RESTRICT",
-        ),
-        sa.ForeignKeyConstraint(
-            ["setup_secret_id"],
-            ["secrets.id"],
-            name=op.f("fk_mcp_oauth_sessions_setup_secret_id_secrets"),
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_mcp_oauth_sessions")),
