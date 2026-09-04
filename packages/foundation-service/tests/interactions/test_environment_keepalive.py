@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import (
     EnvironmentTargetIdentity,
     EnvironmentTargetRetentionBehavior,
@@ -17,6 +18,7 @@ from a13n_service.environments.keepalive import (
 )
 from a13n_service.environments.models import EnvironmentTargetRecord
 from a13n_service.environments.targets import upsert_environment_target
+from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions import Run, Session, Thread, ThreadOriginKind, ThreadRole
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.initialization import RunStateSeed, initialize_start_state
@@ -358,6 +360,7 @@ async def _accept_environment_run(
         sessions,
         RunStateStore(objects),
         RunPayloadStore(objects),
+        InlineHookValidator(EndpointPolicy()),
         clock=lambda: NOW,
     ).accept_new_thread(
         session=Session(
