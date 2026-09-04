@@ -11,13 +11,13 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     ForeignKeyConstraint,
     Index,
     String,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
@@ -31,9 +31,14 @@ from .domain import (
 )
 
 
-class ConnectorProviderRecord(Base):
+class ConnectorProviderRecord(ResourceCredential, Base):
+    credential_owner_type = "connector_provider"
     __tablename__ = "connector_providers"
     __table_args__ = (
+        CheckConstraint(
+            "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
+            name="credential_material_consistent",
+        ),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
@@ -59,10 +64,6 @@ class ConnectorProviderRecord(Base):
     configuration_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    credential_secret_id: Mapped[str] = mapped_column(
-        String(72), ForeignKey("secrets.id", ondelete="RESTRICT"), nullable=False
-    )
-    credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -110,13 +111,6 @@ class ConnectorConnectionRecord(Base):
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("setup_generation >= 1", name="setup_generation_positive"),
         CheckConstraint("revoke_generation >= 0", name="revoke_generation_non_negative"),
-        CheckConstraint("catalog_generation >= 0", name="catalog_generation_non_negative"),
-        CheckConstraint(
-            "current_catalog_digest IS NULL OR length(current_catalog_digest) = 64",
-            name="current_catalog_digest_valid",
-        ),
-        CheckConstraint("catalog_attempt_count >= 0", name="catalog_attempt_count_non_negative"),
-        CheckConstraint("catalog_claim_generation >= 0", name="catalog_claim_generation_non_negative"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("owner_type IS NULL OR owner_type IN ('user', 'service_account')", name="owner_type_valid"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
@@ -154,14 +148,6 @@ class ConnectorConnectionRecord(Base):
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     setup_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     revoke_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    catalog_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    current_catalog_digest: Mapped[str | None] = mapped_column(String(64))
-    catalog_attempt_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    catalog_claim_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    catalog_claim_owner: Mapped[str | None] = mapped_column(String(128))
-    catalog_claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    catalog_available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    catalog_last_error_code: Mapped[str | None] = mapped_column(String(128))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -184,7 +170,6 @@ class ConnectorConnectionRecord(Base):
                 ConnectorConnectionStatusReason(self.status_reason) if self.status_reason is not None else None
             ),
             version=self.version,
-            catalog_digest=self.current_catalog_digest,
             created_by=_principal(self.created_by_type, self.created_by_id),
             created_at=assume_utc(self.created_at),
             updated_at=assume_utc(self.updated_at),
@@ -285,40 +270,6 @@ class ConnectorOperationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class ConnectorToolCatalogRecord(Base):
-    __tablename__ = "connector_tool_catalogs"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ("connector_connection_id", "organization_id", "workspace_id"),
-            ("connector_connections.id", "connector_connections.organization_id", "connector_connections.workspace_id"),
-            ondelete="RESTRICT",
-        ),
-        CheckConstraint("length(digest_sha256) = 64", name="digest_bounded"),
-        CheckConstraint("size_bytes >= 1", name="size_positive"),
-        CheckConstraint("tool_count >= 0", name="tool_count_non_negative"),
-        CheckConstraint("connector_credential_generation >= 1", name="credential_generation_positive"),
-        CheckConstraint("connection_setup_generation >= 1", name="connection_setup_generation_positive"),
-        Index("uq_connector_tool_catalogs_digest", "connector_connection_id", "digest_sha256", unique=True),
-        Index("ix_connector_tool_catalogs_latest", "connector_connection_id", "published_at", "id"),
-        Index("ix_connector_tool_catalogs_retention", "retain_until", "id"),
-    )
-
-    id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    connector_connection_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    object_key: Mapped[str] = mapped_column(String(1024), nullable=False)
-    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    tool_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    connector_credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    connection_setup_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    compatibility_profile: Mapped[str] = mapped_column(String(128), nullable=False)
-    provider_version: Mapped[str] = mapped_column(String(128), nullable=False)
-    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    retain_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 def _principal(kind: str, identifier: str) -> PrincipalRef:

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from a13n_service.agents.application import AgentManagement
     from a13n_service.assets.service import AssetService
+    from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
     from a13n_service.environments.service import EnvironmentManagementService
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
     from a13n_service.plugins.service import PluginService
     from a13n_service.run_stream import RedisRunStream, RunReplayStore
     from a13n_service.secrets import SecretProtector
-    from a13n_service.settings import ServiceSettings
+    from a13n_service.settings import Settings
     from a13n_service.skills.catalog import SkillCatalogService
     from a13n_service.skills.publication import SkillPublicationService
     from a13n_service.skills.runtime import SkillRuntimePreparer
@@ -65,6 +66,7 @@ class ControlRuntime:
 class WorkerRuntime:
     """Worker-owned execution components."""
 
+    external_tools: ExternalToolRuntime
     plugin_materializer: PluginRuntimeMaterializer
     plugin_runtime: OnDemandPluginRuntime | PluginRunnerSupervisor
     native_model_factory: NativeModelFactory
@@ -83,10 +85,10 @@ class ProcessStatus:
 
 
 @dataclass(frozen=True, slots=True)
-class ServiceRuntime:
+class ProcessRuntime:
     """One explicit runtime for the selected process-role composition."""
 
-    settings: ServiceSettings
+    settings: Settings
     status: ProcessStatus
     request_authenticator: RequestAuthenticator | None
     observability: ObservabilityRuntime
@@ -98,8 +100,8 @@ class ServiceRuntime:
 
 __all__ = [
     "ControlRuntime",
+    "ProcessRuntime",
     "ProcessStatus",
-    "ServiceRuntime",
     "SharedRuntime",
     "WorkerRuntime",
 ]

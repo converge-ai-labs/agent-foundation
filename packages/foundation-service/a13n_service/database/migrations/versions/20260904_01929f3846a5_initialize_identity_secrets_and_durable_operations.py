@@ -249,7 +249,7 @@ def upgrade() -> None:
             "owner_type != 'workspace' OR owner_id = workspace_id", name=op.f("ck_secrets_workspace_owner_consistent")
         ),
         sa.CheckConstraint(
-            "owner_type IN ('workspace', 'user', 'ingress', 'connector_provider', 'mcp_connection', 'a2a_push_configuration')",
+            "owner_type IN ('workspace', 'user')",
             name=op.f("ck_secrets_owner_type_valid"),
         ),
         sa.CheckConstraint(

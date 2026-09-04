@@ -6,7 +6,6 @@ on:
     paths:
       - ".github/workflows/ci-foundation.yml"
       - ".github/workflows/release-foundation.yml"
-      - "apps/foundation-web/**"
       - "dev/**"
       - "packages/foundation-service/**"
       - "packages/logging/**"
@@ -18,7 +17,6 @@ on:
     paths:
       - ".github/workflows/ci-foundation.yml"
       - ".github/workflows/release-foundation.yml"
-      - "apps/foundation-web/**"
       - "dev/**"
       - "packages/foundation-service/**"
       - "packages/logging/**"
@@ -45,7 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.filter.outputs.python }}
-      web: ${{ steps.filter.outputs.web }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -67,9 +64,6 @@ jobs:
               - 'pyproject.toml'
               - 'scripts/dev.sh'
               - 'uv.lock'
-            web:
-              - '.github/workflows/ci-foundation.yml'
-              - 'apps/foundation-web/**'
 
   python:
     name: Foundation Python
@@ -112,24 +106,3 @@ jobs:
         run: |
           uv build --package a13n-logging --out-dir dist/foundation
           uv build --package a13n-service --out-dir dist/foundation
-
-  web:
-    name: Foundation Web
-    needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: apps/foundation-web/package-lock.json
-
-      - name: Run complete Foundation Web checks
-        run: make foundation-web-check-all

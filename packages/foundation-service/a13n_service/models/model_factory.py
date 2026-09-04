@@ -12,6 +12,7 @@ from .domain import ModelExecutionSnapshot
 from .model_apis import BUILT_IN_MODEL_APIS
 from .provider_adapters.types import RuntimeProvider
 from .providers import ProviderRegistry
+from .service_common import ModelError
 
 
 class NativeModelFactory:
@@ -36,7 +37,7 @@ class NativeModelFactory:
         try:
             self._registry.validate_model_api(provider.type, snapshot.model_api)
             binding = BUILT_IN_MODEL_APIS[snapshot.model_api]
-        except (KeyError, ValueError) as error:
+        except (KeyError, ValueError, ModelError) as error:
             raise ModelResolutionError(
                 "The accepted Model API is unavailable.",
                 code="model_api_unavailable",

@@ -50,8 +50,7 @@ def test_scalar_and_list_overrides_replace_and_clear() -> None:
     merged = merge_agent_run_override(base, override)
 
     assert merged.config.model.model_key == base.model.model_key
-    assert merged.config.model.model_api == base.model.model_api
-    assert merged.config.model.settings == {}
+    assert merged.config.model.settings == base.model.settings
     assert merged.config.model.characteristics.context_window == 32000
     assert merged.config.instructions == ""
     assert merged.config.plugins == ()
@@ -85,7 +84,7 @@ def test_client_tool_override_narrows_optional_protocol_surface() -> None:
     assert [item.name for item in merged.config.protocol.client_tools] == ["required_tool"]
 
 
-def test_client_tool_override_cannot_remove_required_protocol_tool() -> None:
+def test_client_tool_override_retains_missing_required_protocol_tool_for_validation() -> None:
     payload = agent_config().model_dump(mode="json", by_alias=True)
     payload["client_tools"] = [
         {"name": "required_tool", "description": "Required.", "parameters_json_schema": {"type": "object"}},
@@ -93,10 +92,10 @@ def test_client_tool_override_cannot_remove_required_protocol_tool() -> None:
     payload["protocol"]["client_tools"] = [{"name": "required_tool", "required": True}]
     base = agent_config().__class__.model_validate(payload)
 
-    with pytest.raises(AgentError) as invalid:
-        merge_agent_run_override(base, AgentRunOverride(client_tools=()))
+    merged = merge_agent_run_override(base, AgentRunOverride(client_tools=()))
 
-    assert invalid.value.details == {"path": "client_tools", "reason": "required_protocol_tool_missing"}
+    assert merged.config.client_tools == ()
+    assert [item.name for item in merged.config.protocol.client_tools] == ["required_tool"]
 
 
 def test_empty_retry_patch_is_a_noop() -> None:
@@ -203,53 +202,26 @@ def test_shared_root_child_accepts_narrower_access_to_the_exact_target() -> None
     assert incompatible.value.details == {"reason": "subagent_environment_incompatible"}
 
 
-def test_connection_tool_patches_are_name_keyed() -> None:
+def test_connection_tool_overrides_replace_complete_lists() -> None:
     base = agent_config(
-        connector_tools={
-            "orders": {
-                "connector_connection_id": "cconn_1234567890abcdef",
-                "tools": ["orders.lookup"],
-            },
-            "legacy": {"connector_connection_id": "cconn_abcdef1234567890"},
-        },
-        mcp_tools={
-            "docs": {"mcp_connection_id": "mcpc_1234567890abcdef", "tools": ["search"]},
-        },
+        connector_tools=({"connector_connection_id": "cconn_1234567890abcdef", "tools": ["lookup"]},),
+        mcp_tools=({"mcp_connection_id": "mcpc_1234567890abcdef"},),
     )
     override = AgentRunOverride.model_validate(
         {
-            "connector_tools": {
-                "orders": {"tools": None, "exposure": "catalog"},
-                "legacy": None,
-                "billing": {"connector_connection_id": "cconn_1111111111111111", "tools": []},
-            },
-            "mcp_tools": {},
+            "connector_tools": [
+                {"connector_connection_id": "cconn_1111111111111111", "tools": [], "defer_loading": True}
+            ],
+            "mcp_tools": [],
         }
     )
-
     merged = merge_agent_run_override(base, override)
-
-    assert tuple(merged.config.connector_tools) == ("orders", "billing")
-    assert merged.config.connector_tools["orders"].connector_connection_id == "cconn_1234567890abcdef"
-    assert merged.config.connector_tools["orders"].tools is None
-    assert merged.config.connector_tools["orders"].exposure == "catalog"
-    assert merged.config.connector_tools["billing"].tools == ()
-    assert merged.config.mcp_tools == base.mcp_tools
-
-
-def test_null_connection_tool_map_clears_all_entries() -> None:
-    base = agent_config(
-        connector_tools={"orders": {"connector_connection_id": "cconn_1234567890abcdef"}},
-        mcp_tools={"docs": {"mcp_connection_id": "mcpc_1234567890abcdef"}},
-    )
-
-    merged = merge_agent_run_override(
-        base,
-        AgentRunOverride.model_validate({"connector_tools": None, "mcp_tools": None}),
-    )
-
-    assert merged.config.connector_tools == {}
-    assert merged.config.mcp_tools == {}
+    assert len(merged.config.connector_tools) == 1
+    assert merged.config.connector_tools[0].connector_connection_id == "cconn_1111111111111111"
+    assert merged.config.connector_tools[0].tools == ()
+    assert merged.config.connector_tools[0].defer_loading
+    assert merged.config.mcp_tools == ()
+    assert merge_agent_run_override(base, AgentRunOverride()).config.connector_tools == base.connector_tools
 
 
 @pytest.mark.parametrize(
@@ -259,15 +231,10 @@ def test_null_connection_tool_map_clears_all_entries() -> None:
         ({"instructions": None}, "instructions", "null_not_allowed"),
         ({"skills": None}, "skills", "null_not_allowed"),
         ({"retries": None}, "retries", "null_not_allowed"),
-        ({"model": {"settings": None}}, "model.settings", "null_not_allowed"),
         ({"retries": {"tools": None}}, "retries.tools", "null_not_allowed"),
         ({"subagents": {"new": {}}}, "subagents.new.agent_id", "required"),
-        (
-            {"connector_tools": {"new": {}}},
-            "connector_tools.new.connector_connection_id",
-            "required",
-        ),
-        ({"mcp_tools": {"new": {}}}, "mcp_tools.new.mcp_connection_id", "required"),
+        ({"connector_tools": None}, "connector_tools", "null_not_allowed"),
+        ({"mcp_tools": None}, "mcp_tools", "null_not_allowed"),
     ],
 )
 def test_invalid_null_or_incomplete_overrides_are_bounded(payload: dict[str, object], path: str, reason: str) -> None:
@@ -341,11 +308,11 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
     ("override", "reason"),
     [
         (
-            {"connector_tools": {"orders": {"connector_connection_id": "cconn_1234567890abcdef"}}},
+            {"connector_tools": [{"connector_connection_id": "cconn_1234567890abcdef"}]},
             "connector_tool_resolution_unavailable",
         ),
         (
-            {"mcp_tools": {"docs": {"mcp_connection_id": "mcpc_1234567890abcdef"}}},
+            {"mcp_tools": [{"mcp_connection_id": "mcpc_1234567890abcdef"}]},
             "mcp_tool_resolution_unavailable",
         ),
     ],
@@ -438,3 +405,79 @@ async def test_current_selector_detects_revision_change_between_prepare_and_comm
         async with transaction(agent_sessions) as session:
             await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     assert conflict.value.code == "current_revision_conflict"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("override", "temperature"),
+    [({}, 0.2), ({"settings": {}}, 0.2), ({"settings": None}, 0.8), ({"settings": {"temperature": 0.5}}, 0.5)],
+)
+async def test_run_freezes_model_defaults_agent_settings_and_explicit_overrides(
+    agent_management: AgentManagement,
+    agent_invocation_resolver: AgentInvocationResolver,
+    agent_sessions: async_sessionmaker[AsyncSession],
+    override: dict,
+    temperature: float,
+) -> None:
+    from a13n_service.models.models import ModelRecord
+
+    from .conftest import MODEL_ID
+
+    async with transaction(agent_sessions) as session:
+        record = await session.get(ModelRecord, MODEL_ID)
+        assert record is not None
+        record.settings = {"temperature": 0.8, "max_tokens": 123}
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="defaults-create",
+        request=CreateAgentRequest(name="Defaults", config=agent_config()),
+    )
+    assert created.revision.resolved_model.settings == {"temperature": 0.2}
+    assert "model_api" not in created.revision.resolved_model.model_dump()
+    prepared = await agent_invocation_resolver.preparation.prepare(
+        actor=actor(), agent_id=created.agent.id, config_override=AgentRunOverride.model_validate({"model": override})
+    )
+    async with transaction(agent_sessions) as session:
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
+    assert frozen.effective_config.resolved_model.settings == {"temperature": temperature, "max_tokens": 123}
+    async with transaction(agent_sessions) as session:
+        record = await session.get(ModelRecord, MODEL_ID)
+        assert record is not None
+        record.settings = {"max_tokens": 456}
+    assert frozen.effective_config.resolved_model.settings["max_tokens"] == 123
+
+
+@pytest.mark.anyio
+async def test_invalid_run_settings_preserve_the_parameter_error(
+    agent_management: AgentManagement,
+    agent_invocation_resolver: AgentInvocationResolver,
+) -> None:
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="invalid-settings-create",
+        request=CreateAgentRequest(name="Settings", config=agent_config()),
+    )
+    with pytest.raises(AgentError) as invalid:
+        await agent_invocation_resolver.preparation.prepare(
+            actor=actor(),
+            agent_id=created.agent.id,
+            config_override=AgentRunOverride.model_validate({"model": {"settings": {"temperature": "secret"}}}),
+        )
+    assert invalid.value.code == "invalid_model_settings"
+    assert invalid.value.details["path"] == ["settings", "temperature"]
+    assert "secret" not in str(invalid.value.details)
+
+
+@pytest.mark.parametrize("field", ["account_tools", "native_tool_contexts"])
+def test_native_authority_cannot_be_supplied_through_agent_config_or_override(field):
+    from a13n_service.agents.domain import AgentConfig, AgentRevision, EffectiveAgentConfig
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        AgentConfig.model_validate({**agent_config().model_dump(), field: []})
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        AgentRunOverride.model_validate({field: []})
+    assert field not in AgentRevision.model_fields
+    assert field not in EffectiveAgentConfig.model_fields

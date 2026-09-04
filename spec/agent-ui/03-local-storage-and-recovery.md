@@ -5,7 +5,7 @@
 Agent UI keeps persistence continuation-oriented:
 
 1. editable YAML and local Markdown files own desired resources and global defaults;
-2. data-root Content Plugin registrations select immutable Git-derived content objects;
+2. data-root Content Plugin registrations select editable Git-derived local content objects;
 3. SQLite owns accepted-generation indexes, Project/resource lookup projections, sticky Thread configurations, execution heads, and selected references;
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
 5. live runtime objects remain in process memory.
@@ -14,20 +14,20 @@ The store supports local restart and inspection, not durable work scheduling. Ag
 
 ## Persisted Values
 
-| Value                                                                                             | Storage                       | Authority                                                              |
-| ------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------- |
-| Desired resource definitions and global defaults                                                  | YAML and local Markdown files | Human-editable desired behavior                                        |
-| Installed Content Plugin registrations and payloads                                               | Data-root files               | Current declarative plugin availability and retained immutable content |
-| Accepted configuration generation and resource indexes                                            | SQLite plus immutable object  | Current complete validated file and plugin generation                  |
-| Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                        | Identity, mutable presentation, defaults, and first-Run bootstrap      |
-| Empty initial `HarnessState`                                                                      | Immutable object              | Harness-generated Thread identity before any selected Run              |
-| Resolved Run composition                                                                          | Immutable object              | Exact behavior and dependency provenance captured for one Run          |
-| Root or child continuation bundle                                                                 | Immutable object              | Exact selected `HarnessState` resume authority                         |
-| Child execution heads                                                                             | SQLite                        | Segment correlation, saved status, and selected checkpoint             |
-| Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                                |
-| Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                       |
-| Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                       |
-| Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                       |
+| Value                                                                                             | Storage                       | Authority                                                             |
+| ------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| Desired resource definitions and global defaults                                                  | YAML and local Markdown files | Human-editable desired behavior                                       |
+| Installed Content Plugin registrations and payloads                                               | Data-root files               | Current declarative plugin availability and editable retained content |
+| Accepted configuration generation and resource indexes                                            | SQLite plus immutable object  | Current complete validated file and plugin generation                 |
+| Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                        | Identity, mutable presentation, defaults, and first-Run bootstrap     |
+| Empty initial `HarnessState`                                                                      | Immutable object              | Harness-generated Thread identity before any selected Run             |
+| Resolved Run composition                                                                          | Immutable object              | Exact behavior and dependency provenance captured for one Run         |
+| Root or child continuation bundle                                                                 | Immutable object              | Exact selected `HarnessState` resume authority                        |
+| Child execution heads                                                                             | SQLite                        | Segment correlation, saved status, and selected checkpoint            |
+| Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                               |
+| Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                      |
+| Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                      |
+| Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                      |
 
 ## SQLite Contract
 

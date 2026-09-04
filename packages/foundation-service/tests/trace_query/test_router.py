@@ -37,11 +37,11 @@ class StubTraceQueryService:
         raise TraceQueryError("trace_not_found", "The Trace was not found.", status_code=404)
 
 
-def application(service: object, service_runtime_factory) -> FastAPI:
+def application(service: object, process_runtime_factory) -> FastAPI:
     app = FastAPI()
     install_api_conventions(app)
     app.include_router(router)
-    app.state.runtime = service_runtime_factory(
+    app.state.runtime = process_runtime_factory(
         request_authenticator=authenticate,
         trace_queries=service,
     )
@@ -49,9 +49,9 @@ def application(service: object, service_runtime_factory) -> FastAPI:
 
 
 @pytest.mark.anyio
-async def test_list_route_parses_the_native_contract(service_runtime_factory) -> None:
+async def test_list_route_parses_the_native_contract(process_runtime_factory) -> None:
     service = StubTraceQueryService()
-    transport = httpx2.ASGITransport(app=application(service, service_runtime_factory))
+    transport = httpx2.ASGITransport(app=application(service, process_runtime_factory))
 
     async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get(
@@ -74,9 +74,9 @@ async def test_list_route_parses_the_native_contract(service_runtime_factory) ->
 
 
 @pytest.mark.anyio
-async def test_disabled_query_uses_the_shared_safe_error_envelope(service_runtime_factory) -> None:
+async def test_disabled_query_uses_the_shared_safe_error_envelope(process_runtime_factory) -> None:
     service = TraceQueryService(provider_key="none", provider=None, authorizer=None)
-    transport = httpx2.ASGITransport(app=application(service, service_runtime_factory))
+    transport = httpx2.ASGITransport(app=application(service, process_runtime_factory))
 
     async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get(
@@ -96,9 +96,9 @@ async def test_disabled_query_uses_the_shared_safe_error_envelope(service_runtim
 
 
 @pytest.mark.anyio
-async def test_route_validation_uses_400_and_detail_defaults_to_full(service_runtime_factory) -> None:
+async def test_route_validation_uses_400_and_detail_defaults_to_full(process_runtime_factory) -> None:
     service = StubTraceQueryService()
-    app = application(service, service_runtime_factory)
+    app = application(service, process_runtime_factory)
     transport = httpx2.ASGITransport(app=app)
 
     async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:

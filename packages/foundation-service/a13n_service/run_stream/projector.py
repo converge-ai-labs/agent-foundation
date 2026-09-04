@@ -11,6 +11,7 @@ from a13n_harness import SafeFailure
 from anyio import create_task_group
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.interactions.domain import RunPayloadObjectRef
 from a13n_service.lifecycle import (
     LifecycleEvent,
     LifecycleProjectionClaim,
@@ -20,7 +21,13 @@ from a13n_service.lifecycle import (
 )
 from a13n_service.storage import transaction
 
-from .domain import CompleteRunStream, RetainedReplayUnavailable, RunStreamEvent, deterministic_run_stream_event_id
+from .domain import (
+    CompleteRunStream,
+    RetainedReplayUnavailable,
+    RunStreamEvent,
+    deterministic_item_id,
+    deterministic_run_stream_event_id,
+)
 from .redis import RedisRunStream
 from .replay import RunReplayStore, project_retained_items
 
@@ -167,6 +174,23 @@ class LifecycleRunStreamProjector:
     async def _project_event(self, event: LifecycleEvent) -> None:
         if event.thread_id is None:
             raise ValueError("Run lifecycle projection requires Thread correlation")
+        output = _run_output_item(event)
+        payload = {
+            "resource_type": event.entity_type.value,
+            "resource_id": event.entity_id,
+            "resource_seq": event.resource_seq,
+            "resource_version": event.entity_version,
+            "schema_version": event.schema_version,
+            "actor_type": event.actor_type,
+            "actor_id": event.actor_id,
+            "data": event.payload,
+        }
+        if output is not None:
+            payload.update(
+                item_kind="run_output",
+                item_state="completed",
+                content=output.model_dump(mode="json", by_alias=True),
+            )
         await self._stream.append(
             event.tenant_id,
             RunStreamEvent(
@@ -177,17 +201,11 @@ class LifecycleRunStreamProjector:
                 run_attempt_id=event.run_attempt_id,
                 harness_run_id=_harness_run_id(event),
                 lifecycle_event_id=event.id,
+                item_id=(
+                    deterministic_item_id(event.run_id, "run_output", event.run_id) if output is not None else None
+                ),
                 occurred_at=event.occurred_at,
-                payload={
-                    "resource_type": event.entity_type.value,
-                    "resource_id": event.entity_id,
-                    "resource_seq": event.resource_seq,
-                    "resource_version": event.entity_version,
-                    "schema_version": event.schema_version,
-                    "actor_type": event.actor_type,
-                    "actor_id": event.actor_id,
-                    "data": event.payload,
-                },
+                payload=payload,
             ),
         )
         if event.event_type not in _TERMINAL_RUN_EVENTS:
@@ -282,6 +300,15 @@ def _harness_run_id(event: LifecycleEvent) -> str | None:
     if not isinstance(value, str) or not value:
         raise ValueError("RunAttempt running lifecycle event omitted Harness correlation")
     return value
+
+
+def _run_output_item(event: LifecycleEvent) -> RunPayloadObjectRef | None:
+    if event.event_type != "run.completed":
+        return None
+    output_object = event.payload.get("output_object")
+    if isinstance(output_object, dict):
+        return RunPayloadObjectRef.model_validate(output_object)
+    return None
 
 
 __all__ = ["LifecycleRunStreamProjector"]

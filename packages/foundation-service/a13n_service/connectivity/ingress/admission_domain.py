@@ -42,6 +42,7 @@ class PreparedIngressBatch(_StrictModel):
     organization_id: str
     workspace_id: str
     ingress_id: str
+    account_id: str
     ingress_version: int = Field(ge=1)
     execution_service_account_id: str
     provider_key: str
@@ -86,11 +87,11 @@ class LostRaceInputOutcome(_StrictModel):
 type InputAcceptanceOutcome = AcceptedInputOutcome | RetryableInputOutcome | RejectedInputOutcome | LostRaceInputOutcome
 
 
-class FoundationInputAcceptor(Protocol):
+class InputAcceptor(Protocol):
     async def accept_ingress_batch(self, batch: PreparedIngressBatch) -> InputAcceptanceOutcome: ...
 
 
-class UnavailableFoundationInputAcceptor:
+class UnavailableInputAcceptor:
     def __init__(
         self,
         *,

@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("normalized_name", sa.String(length=128), nullable=False),
         sa.Column("configuration", sa.JSON(), nullable=False),
-        sa.Column("credential_version", sa.BigInteger(), nullable=False),
+        sa.Column("credential_generation", sa.BigInteger(), nullable=False),
         sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
         sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
         sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
@@ -48,7 +48,9 @@ def upgrade() -> None:
             "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR (ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
             name=op.f("ck_model_providers_credential_material_consistent"),
         ),
-        sa.CheckConstraint("credential_version >= 0", name=op.f("ck_model_providers_credential_version_nonnegative")),
+        sa.CheckConstraint(
+            "credential_generation >= 0", name=op.f("ck_model_providers_credential_generation_nonnegative")
+        ),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_model_providers_name_bounded")),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
@@ -78,7 +80,10 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("description", sa.String(length=2048), nullable=True),
         sa.Column("upstream_model", sa.String(length=256), nullable=False),
-        sa.Column("model_apis", sa.JSON(), nullable=False),
+        sa.Column("model_api", sa.String(length=96), nullable=False),
+        sa.Column("settings", sa.JSON(), nullable=False),
+        sa.Column("profile", sa.JSON(), nullable=False),
+        sa.Column("limits", sa.JSON(), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),

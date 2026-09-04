@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
-from a13n_service.request_runtime import get_control_runtime, get_service_runtime
+from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
 from .domain import (
     Plugin,
@@ -192,7 +192,7 @@ def _content_length(request: Request) -> int | None:
         raise PluginError("invalid_request", "Content-Length is invalid.", status_code=400) from error
     if parsed < 0:
         raise PluginError("invalid_request", "Content-Length is invalid.", status_code=400)
-    runtime = get_service_runtime(request)
+    runtime = get_process_runtime(request)
     if runtime is None:
         raise PluginError("plugin_management_unavailable", "Plugin Management is unavailable.", status_code=503)
     settings = runtime.settings

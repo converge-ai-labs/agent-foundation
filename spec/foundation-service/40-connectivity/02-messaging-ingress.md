@@ -2,17 +2,15 @@
 
 ## Design Position
 
-Slack, Lark, Discord, and Teams use native messaging Ingresses. One installed App or Bot identity can serve several allowed Agents without requiring one external App per Agent. The user configures the external identity once, then chooses its allowed Agents, default Agent, and per-channel, group, or direct-message Routes.
+Slack, Lark, Discord, and Teams use native messaging Ingresses. One installed App or Bot identity can serve several allowed Agents without requiring one external App per Agent. The user configures the Account identity once, then configures its Ingress and chooses allowed Agents, default Agent, and per-channel, group, or direct-message Routes.
 
 Messaging terminology remains local to this contract. `Conversation` means the provider's channel, group, or direct-message container. `Discussion` means the provider-declared continuation unit inside it, such as a Slack thread, Lark topic or reply chain, Discord thread, Teams reply chain, or a direct-message container. Neither term replaces a Foundation Agent `Thread`.
 
 ## Provider-Native Identity
 
-The Ingress represents one concrete App installation or Bot identity in one provider tenant, workspace, or guild. Provider credentials, event subscription, permissions, conversation discovery, and identifiers remain provider-specific. An a13n official App definition can back many customer Ingresses; each customer Ingress has independent Agents, Routes, permissions, and lifecycle.
+The [Application Account](01a-application-accounts.md) represents one concrete App installation or Bot identity in one provider tenant, workspace, or guild. The optional Ingress owns event subscription and routing. An official application definition can support many customer Accounts, each with its own identity, credentials, and administrative availability.
 
-Open-source deployments can use a developer-created App. The setup UI can collect App definition and installation data in one flow without merging their identity or lifecycle in the durable model.
-
-Native event receipt and the Bot's basic provider actions belong to this Ingress. Users do not create a second ConnectorConnection merely so the same Bot can receive or send ordinary messages. A ConnectorConnection is separate and optional when the Agent needs broader SaaS actions or another account.
+The setup UI can collect application and installation data together without introducing an application-definition resource. An Account supplies provider-native actions; no ConnectorConnection is required for the same Bot to receive or send ordinary messages. General Connector tools remain a separate optional source.
 
 ## Interaction Policy
 

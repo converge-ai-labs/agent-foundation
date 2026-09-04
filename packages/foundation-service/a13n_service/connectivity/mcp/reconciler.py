@@ -1,4 +1,4 @@
-"""Bounded background reconciliation for MCP setup, catalogs, and cleanup."""
+"""Bounded background reconciliation for MCP OAuth, credential refresh, and cleanup."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .catalog_service import MCPCatalogService
-from .errors import MCPConnectionError
 from .models import MCPConnectionRecord, MCPOAuthSessionRecord
 from .oauth_service import MCPOAuthService
 from .service import MCPConnectionService
@@ -22,7 +20,6 @@ class MCPReconciler:
         sessions: async_sessionmaker[AsyncSession],
         connections: MCPConnectionService,
         oauth: MCPOAuthService,
-        catalog: MCPCatalogService,
         *,
         poll_interval_seconds: float = 2,
         refresh_skew_seconds: int = 60,
@@ -31,7 +28,6 @@ class MCPReconciler:
         self._sessions = sessions
         self._connections = connections
         self._oauth = oauth
-        self._catalog = catalog
         self._poll_interval_seconds = poll_interval_seconds
         self._refresh_skew_seconds = refresh_skew_seconds
         self._clock = clock
@@ -52,18 +48,13 @@ class MCPReconciler:
         if cleanup_id is not None:
             await self._connections.reconcile_cleanup(cleanup_id)
             return True
-        connection_id = await self._catalog_candidate()
+        connection_id = await self._refresh_candidate()
         if connection_id is None:
             return False
-        refresh = await self._oauth.refresh_if_due(
+        await self._oauth.refresh_if_due(
             connection_id,
             skew_seconds=self._refresh_skew_seconds,
         )
-        if refresh is None:
-            try:
-                await self._catalog.refresh(connection_id)
-            except MCPConnectionError:
-                pass
         return True
 
     async def _expire_oauth_session(self) -> bool:
@@ -116,23 +107,21 @@ class MCPReconciler:
                 .limit(1)
             )
 
-    async def _catalog_candidate(self) -> str | None:
+    async def _refresh_candidate(self) -> str | None:
         async with transaction(self._sessions) as session:
             return await session.scalar(
                 select(MCPConnectionRecord.id)
                 .where(
                     MCPConnectionRecord.deleted_at.is_(None),
                     MCPConnectionRecord.status.in_(("pending", "ready")),
-                    MCPConnectionRecord.catalog_available_at <= self._clock(),
+                    MCPConnectionRecord.refresh_available_at <= self._clock(),
                     or_(
-                        MCPConnectionRecord.catalog_claim_expires_at.is_(None),
-                        MCPConnectionRecord.catalog_claim_expires_at <= self._clock(),
+                        MCPConnectionRecord.refresh_claim_expires_at.is_(None),
+                        MCPConnectionRecord.refresh_claim_expires_at <= self._clock(),
                     ),
-                    or_(
-                        MCPConnectionRecord.auth_mode == "none",
-                        MCPConnectionRecord.credential_secret_id.is_not(None),
-                    ),
+                    MCPConnectionRecord.auth_mode == "oauth",
+                    MCPConnectionRecord.ciphertext.is_not(None),
                 )
-                .order_by(MCPConnectionRecord.catalog_available_at, MCPConnectionRecord.id)
+                .order_by(MCPConnectionRecord.refresh_available_at, MCPConnectionRecord.id)
                 .limit(1)
             )

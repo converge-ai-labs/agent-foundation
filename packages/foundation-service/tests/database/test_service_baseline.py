@@ -35,6 +35,10 @@ def test_domain_baselines_upgrade_and_downgrade_at_every_boundary(
             migrator.upgrade(revision.revision)
             inspector = inspect(engine)
             tables = set(inspector.get_table_names()) - {"alembic_version"}
+            assert {"connector_tool_catalogs", "mcp_tool_catalogs"}.isdisjoint(tables)
+            for table in tables & {"runs", "connector_connections", "mcp_connections"}:
+                columns = {column["name"] for column in inspector.get_columns(table)}
+                assert not any("catalog" in column or column.startswith("mcp_tool_snapshot_") for column in columns)
             for table in tables:
                 for foreign_key in inspector.get_foreign_keys(table):
                     assert foreign_key["referred_table"] in tables, (revision.revision, table, foreign_key)
@@ -75,6 +79,23 @@ def test_service_baseline_matches_postgresql_metadata(pg_url: str) -> None:
             columns = {item["name"] for item in inspector.get_columns("connector_providers")}
             assert {"type", "configuration_json"} <= columns
             assert {"endpoint", "driver_key", "config_version", "config_json"}.isdisjoint(columns)
+            for name in (
+                "model_providers",
+                "connector_providers",
+                "application_accounts",
+                "mcp_connections",
+                "mcp_oauth_sessions",
+            ):
+                columns = {item["name"] for item in inspector.get_columns(name)}
+                assert {"ciphertext", "nonce", "encryption_key_id", "credential_generation"} <= columns
+                assert {
+                    "credential_version",
+                    "credential_secret_id",
+                    "setup_secret_id",
+                    "setup_secret_generation",
+                }.isdisjoint(columns)
+                assert all(key["referred_table"] != "secrets" for key in inspector.get_foreign_keys(name))
+
     finally:
         engine.dispose()
         migrator.downgrade("base")

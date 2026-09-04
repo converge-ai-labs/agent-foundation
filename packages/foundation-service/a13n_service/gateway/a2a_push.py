@@ -19,6 +19,7 @@ from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.credentials import CredentialSnapshot
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.outbox import OutboxClaim, complete_outbox, fail_outbox
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
@@ -31,8 +32,7 @@ from a13n_service.iam import (
 )
 from a13n_service.ids import new_object_id
 from a13n_service.lifecycle.models import LifecycleEventRecord
-from a13n_service.secrets import InternalSecretError, InternalSecretService
-from a13n_service.secrets.domain import SecretOperation, SecretOwnerType, SecretUseContext
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 
 from .models import A2APushConfigurationRecord, A2ATaskBindingRecord
@@ -200,7 +200,7 @@ class A2APushPublisher:
         sessions: async_sessionmaker[AsyncSession],
         http_client: httpx2.AsyncClient,
         endpoint_policy: EndpointPolicy,
-        secrets: InternalSecretService,
+        secret_protector: SecretProtector,
         *,
         poll_interval_seconds: float,
         lease_seconds: float,
@@ -224,7 +224,7 @@ class A2APushPublisher:
         self._sessions = sessions
         self._http_client = http_client
         self._endpoint_policy = endpoint_policy
-        self._secrets = secrets
+        self._secret_protector = secret_protector
         self._poll_interval_seconds = poll_interval_seconds
         self._lease_duration = timedelta(seconds=lease_seconds)
         self._claim_limit = claim_limit
@@ -329,12 +329,10 @@ class A2APushPublisher:
             except AuthorizationError as error:
                 raise A2APushMaterialError("a2a_push_authority_revoked") from error
             payload = _event_payload(task, event)
-            token_context = _secret_context(configuration, key=_TOKEN_KEY)
-            credentials_context = _secret_context(configuration, key=_CREDENTIALS_KEY)
+            credential_snapshot = configuration.credential_snapshot()
         try:
-            token = None if token_context is None else await self._secrets.resolve(token_context)
-            credentials = None if credentials_context is None else await self._secrets.resolve(credentials_context)
-        except InternalSecretError as error:
+            token, credentials = _decrypt_credential_bundle(credential_snapshot, self._secret_protector)
+        except (SecretProtectionError, ValueError) as error:
             raise A2APushMaterialError("a2a_push_secret_unavailable", retryable=True) from error
         return A2APushMaterial(
             endpoint_url=configuration.endpoint_url,
@@ -516,23 +514,22 @@ def _event_artifacts(task: A2ATaskBindingRecord, event: LifecycleEventRecord) ->
     return [a2a.Artifact(artifact_id=f"artifact-{task.id}-result", name="result", parts=parts)]
 
 
-def _secret_context(
-    configuration: A2APushConfigurationRecord,
-    *,
-    key: str,
-) -> SecretUseContext | None:
-    version = configuration.token_secret_version if key == _TOKEN_KEY else configuration.authentication_secret_version
-    if version is None:
-        return None
-    return SecretUseContext(
-        organization_id=configuration.organization_id,
-        workspace_id=configuration.workspace_id,
-        owner_type=SecretOwnerType.a2a_push_configuration,
-        owner_id=configuration.id,
-        key=key,
-        operation=SecretOperation.callback,
-        credential_generation=version,
-    )
+def _decrypt_credential_bundle(
+    snapshot: CredentialSnapshot,
+    protector: SecretProtector,
+) -> tuple[str | None, str | None]:
+    if snapshot.ciphertext is None:
+        return None, None
+    value = json.loads(snapshot.decrypt(protector))
+    if not isinstance(value, dict) or set(value).difference({_TOKEN_KEY, _CREDENTIALS_KEY}):
+        raise ValueError("A2A push credential bundle is invalid")
+    token = value.get(_TOKEN_KEY)
+    credentials = value.get(_CREDENTIALS_KEY)
+    if (token is not None and not isinstance(token, str)) or (
+        credentials is not None and not isinstance(credentials, str)
+    ):
+        raise ValueError("A2A push credential bundle is invalid")
+    return token, credentials
 
 
 def _destination_ref(config_id: str, generation: int) -> str:

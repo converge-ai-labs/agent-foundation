@@ -120,7 +120,7 @@ flowchart LR
     Boundary --> Manager[Final Tool Manager and model request]
 ```
 
-When CodeAct is absent, the execution boundary directly wraps surface resolution. CodeAct builds and validates its catalog only from the effective surface, then adds its runner tools. The execution boundary normalizes, authorizes, bounds, and records only that final effective surface. `AgentContext` may retain the resulting managed surface snapshot for resume validation and diagnostics, but that snapshot is an output of resolution and never an input used by sibling Toolsets.
+Mandatory surface resolution wraps upstream tool search and deferred capability loading, so the `load_capability` tool and newly loaded definitions receive the same surface and execution checks. When CodeAct is absent, the execution boundary directly wraps surface resolution. CodeAct builds and validates its catalog only from the effective surface, then adds its runner tools. The execution boundary normalizes, authorizes, bounds, and records only that final effective surface. `AgentContext` may retain the resulting managed surface snapshot for resume validation and diagnostics, but that snapshot is an output of resolution and never an input used by sibling Toolsets.
 
 ### Passive Tool Runtime Metadata
 

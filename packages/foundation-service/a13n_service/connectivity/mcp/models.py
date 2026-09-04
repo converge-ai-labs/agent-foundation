@@ -1,4 +1,4 @@
-"""Relational MCPConnection, OAuth session, and immutable catalog facts."""
+"""Relational MCPConnection, OAuth session, and token-refresh coordination."""
 
 from __future__ import annotations
 
@@ -14,9 +14,11 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     String,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
@@ -24,9 +26,15 @@ from a13n_service.temporal import assume_utc
 from .domain import MCPAuthMode, MCPConnection, MCPConnectionStatus, MCPConnectionStatusReason
 
 
-class MCPConnectionRecord(Base):
+class MCPConnectionRecord(ResourceCredential, Base):
+    credential_owner_type = "mcp_connection"
     __tablename__ = "mcp_connections"
     __table_args__ = (
+        CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name="credential_material_consistent",
+        ),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
@@ -41,12 +49,7 @@ class MCPConnectionRecord(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("credential_generation >= 0", name="credential_generation_non_negative"),
-        CheckConstraint("catalog_generation >= 0", name="catalog_generation_non_negative"),
-        CheckConstraint(
-            "current_catalog_digest IS NULL OR length(current_catalog_digest) = 64",
-            name="current_catalog_digest_valid",
-        ),
-        CheckConstraint("catalog_claim_generation >= 0", name="catalog_claim_generation_non_negative"),
+        CheckConstraint("refresh_claim_generation >= 0", name="refresh_claim_generation_non_negative"),
         CheckConstraint("cleanup_attempt_count >= 0", name="cleanup_attempt_count_non_negative"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
@@ -55,7 +58,7 @@ class MCPConnectionRecord(Base):
         Index("ix_mcp_connections_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_mcp_connections_owner", "workspace_id", "owner_user_id", "status", "id"),
         Index(
-            "ix_mcp_connections_catalog_reconcile", "status", "catalog_available_at", "catalog_claim_expires_at", "id"
+            "ix_mcp_connections_refresh_reconcile", "status", "refresh_available_at", "refresh_claim_expires_at", "id"
         ),
         Index("ix_mcp_connections_cleanup", "cleanup_pending", "cleanup_available_at", "id"),
     )
@@ -72,15 +75,13 @@ class MCPConnectionRecord(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     status_reason: Mapped[str | None] = mapped_column(String(32))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    credential_secret_id: Mapped[str | None] = mapped_column(String(72), ForeignKey("secrets.id", ondelete="RESTRICT"))
-    credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    catalog_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    current_catalog_digest: Mapped[str | None] = mapped_column(String(64))
-    catalog_claim_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    catalog_claim_owner: Mapped[str | None] = mapped_column(String(128))
-    catalog_claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    catalog_available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    catalog_last_error_code: Mapped[str | None] = mapped_column(String(128))
+    refresh_claim_generation: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)
+    refresh_claim_owner: Mapped[str | None] = mapped_column(String(128))
+    refresh_claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), nullable=False
+    )
+    refresh_last_error_code: Mapped[str | None] = mapped_column(String(128))
     cleanup_pending: Mapped[bool] = mapped_column(Boolean, nullable=False)
     cleanup_attempt_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
     cleanup_available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -104,9 +105,8 @@ class MCPConnectionRecord(Base):
             status=MCPConnectionStatus(self.status),
             status_reason=MCPConnectionStatusReason(self.status_reason) if self.status_reason else None,
             version=self.version,
-            credential_configured=self.credential_secret_id is not None,
+            credential_configured=self.ciphertext is not None,
             credential_generation=self.credential_generation,
-            catalog_digest=self.current_catalog_digest,
             created_by=PrincipalRef(
                 principal_type=PrincipalType(self.created_by_type),
                 principal_id=self.created_by_id,
@@ -116,15 +116,22 @@ class MCPConnectionRecord(Base):
         )
 
 
-class MCPOAuthSessionRecord(Base):
+class MCPOAuthSessionRecord(ResourceCredential, Base):
+    credential_owner_type = "mcp_oauth_session"
     __tablename__ = "mcp_oauth_sessions"
     __table_args__ = (
+        CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name="credential_material_consistent",
+        ),
         ForeignKeyConstraint(
             ("mcp_connection_id", "organization_id", "workspace_id"),
             ("mcp_connections.id", "mcp_connections.organization_id", "mcp_connections.workspace_id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint("status IN ('pending', 'exchanging', 'completed', 'failed', 'expired')", name="status_valid"),
+        CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint("claim_generation >= 0", name="claim_generation_non_negative"),
         Index("uq_mcp_oauth_sessions_state", "state_digest", unique=True),
         Index("ix_mcp_oauth_sessions_connection", "mcp_connection_id", "status", "created_at", "id"),
@@ -146,10 +153,6 @@ class MCPOAuthSessionRecord(Base):
     registration_endpoint: Mapped[str | None] = mapped_column(String(2048))
     client_id: Mapped[str | None] = mapped_column(String(2048))
     scope: Mapped[str | None] = mapped_column(String(2048))
-    setup_secret_id: Mapped[str] = mapped_column(
-        String(72), ForeignKey("secrets.id", ondelete="RESTRICT"), nullable=False
-    )
-    setup_secret_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     claim_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     claim_owner: Mapped[str | None] = mapped_column(String(128))
@@ -160,36 +163,6 @@ class MCPOAuthSessionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-
-class MCPToolCatalogRecord(Base):
-    __tablename__ = "mcp_tool_catalogs"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ("mcp_connection_id", "organization_id", "workspace_id"),
-            ("mcp_connections.id", "mcp_connections.organization_id", "mcp_connections.workspace_id"),
-            ondelete="RESTRICT",
-        ),
-        CheckConstraint("size_bytes > 0", name="size_bytes_positive"),
-        CheckConstraint("tool_count >= 0", name="tool_count_non_negative"),
-        CheckConstraint("credential_generation >= 0", name="credential_generation_non_negative"),
-        CheckConstraint("catalog_generation >= 1", name="catalog_generation_positive"),
-        Index("uq_mcp_tool_catalogs_digest", "mcp_connection_id", "digest_sha256", unique=True),
-        Index("ix_mcp_tool_catalogs_latest", "mcp_connection_id", "published_at", "id"),
-        Index("ix_mcp_tool_catalogs_retention", "retain_until", "id"),
-    )
-
-    id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    mcp_connection_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    object_key: Mapped[str] = mapped_column(String(1024), nullable=False)
-    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    tool_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    catalog_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    protocol_revision: Mapped[str] = mapped_column(String(32), nullable=False)
-    server_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    server_version: Mapped[str] = mapped_column(String(128), nullable=False)
-    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    retain_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    @property
+    def credential_owner_id(self) -> str:
+        return self.mcp_connection_id

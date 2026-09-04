@@ -4,7 +4,7 @@
 
 Foundation publishes independent Python, Go, Rust, and TypeScript SDKs for the complete public Native Foundation Service contract. The SDKs map the same resources, trace query views, commands, receipts, errors, pagination, Run SSE, Workspace lifecycle events, and Native notifications without creating language-specific lifecycle or retry semantics.
 
-Foundation Web and the remote `agent-foundation` CLI are first-party clients of that public boundary. Standard AG-UI and A2A clients call their respective Gateway protocols directly and do not need a Foundation SDK.
+The remote `agent-foundation` CLI is a first-party client of that public boundary. Standard AG-UI and A2A clients call their respective Gateway protocols directly and do not need a Foundation SDK.
 
 ## Boundaries
 
@@ -15,7 +15,6 @@ Foundation Web and the remote `agent-foundation` CLI are first-party clients of 
 | Run SSE, lifecycle events, and notification WebSocket    | [Native Streaming and Notifications](21-native-streaming-and-notifications.md) |
 | Language transport, public types, and idiomatic lifetime | Each SDK                                                                       |
 | CLI command composition and presentation                 | `agent-foundation` CLI                                                         |
-| Browser navigation and user experience                   | Foundation Web                                                                 |
 
 An SDK does not own service startup, migrations, Worker control, persistence, internal operator routes, direct Redis/object access, or another HTTP contract.
 
@@ -84,12 +83,6 @@ The `agent-foundation` executable is the remote command-line client. Every netwo
 
 A CLI command exists only when its service operation and Rust SDK method are real. The CLI can offer interactive terminal presentation, follow a Run stream, or watch notifications, but Foundation defines no separate Remote TUI product or remote Session model.
 
-## Foundation Web
-
-Foundation Web uses only public Native API, including Trace Query, Run SSE, Workspace event, and notification WebSocket contracts. It does not query Foundation tables, Redis, object storage, trace backends, Worker endpoints, or internal operator routes.
-
-Foundation Web implements the product's supported browser workflows; it is not required to provide a page for every administrative resource in the Management API. An absent browser page does not remove the corresponding public API or SDK contract. Browser cookie authentication, Origin, CSRF, and same-origin behavior follow the shared ingress and IAM contracts.
-
 ## Standard Protocol Clients
 
 Hosted AG-UI and A2A remain independently interoperable standards. Foundation SDKs can add convenience factories or typed references for their URLs, but a client never needs Foundation-specific serialization to use a standard AG-UI Run or A2A Task. Such helpers cannot introduce another event model or hide standard protocol errors.
@@ -98,7 +91,7 @@ Hosted AG-UI and A2A remain independently interoperable standards. Foundation SD
 
 The four SDK languages version and release independently under the repository release model. Release independence does not permit behavioral drift: the repository compatibility matrix and end-to-end tests identify the server API line, stream subprotocol, and feature set supported by each SDK release.
 
-The Rust CLI releases independently from the Rust SDK source package but pins a compatible SDK dependency. Foundation Web ships as private application assets inside the Foundation Service image and is validated against the same public contract.
+The Rust CLI releases independently from the Rust SDK source package but pins a compatible SDK dependency.
 
 ## Invariants
 
@@ -107,6 +100,5 @@ The Rust CLI releases independently from the Rust SDK source package but pins a 
 3. Stream and client close never cancel a Run.
 4. Native notifications remain best-effort wake-ups and are reconciled through durable APIs.
 5. The remote CLI performs every network operation through the Rust SDK.
-6. Foundation Web uses only public Native surfaces and need not mirror every management resource as a page.
-7. Standard AG-UI and A2A clients require no Foundation SDK.
-8. Asset helpers preserve one-create-per-publication identity, caller-supplied idempotency keys, and streaming binary transfer; they never expose object-storage keys or emulate in-place replacement.
+6. Standard AG-UI and A2A clients require no Foundation SDK.
+7. Asset helpers preserve one-create-per-publication identity, caller-supplied idempotency keys, and streaming binary transfer; they never expose object-storage keys or emulate in-place replacement.

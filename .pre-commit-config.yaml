@@ -59,12 +59,6 @@ repos:
         files: ^sdk/rust/agent-foundation-cli/.*\.rs$
         pass_filenames: false
 
-      - id: foundation-web-prettier
-        name: Prettier (Foundation Web)
-        entry: npm exec --offline --prefix apps/foundation-web -- prettier --write
-        language: system
-        files: ^apps/foundation-web/.*\.(css|html|js|json|jsx|md|mjs|ts|tsx|yaml|yml)$
-
       - id: harness-ui-prettier
         name: Prettier (Harness UI)
         entry: npm exec --offline --prefix apps/harness-ui -- prettier --write

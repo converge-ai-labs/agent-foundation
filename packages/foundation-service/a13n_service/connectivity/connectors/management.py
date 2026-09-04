@@ -21,7 +21,6 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import SecretOperation, SecretOwnerType, SecretUseContext
 
 from .contracts import ConnectorProviderRuntime
 from .errors import ConnectorError
@@ -95,23 +94,6 @@ async def require_connection(
     if record is None:
         raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
     return record
-
-
-def secret_context(
-    connector: ConnectorProviderRecord,
-    *,
-    operation: SecretOperation,
-    generation: int | None = None,
-) -> SecretUseContext:
-    return SecretUseContext(
-        organization_id=connector.organization_id,
-        workspace_id=connector.workspace_id,
-        owner_type=SecretOwnerType.connector_provider,
-        owner_id=connector.id,
-        key="credentials",
-        operation=operation,
-        credential_generation=generation or connector.credential_generation,
-    )
 
 
 def decode_credentials(value: str) -> JsonObject:

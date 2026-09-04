@@ -465,7 +465,7 @@ class _PluginContribution:
         )
 
 
-class FoundationPluginRuntimeCandidateResolver:
+class DurableRuntimeCandidateResolver:
     """Resolve one exact candidate and durably bind it to the command operation."""
 
     def __init__(

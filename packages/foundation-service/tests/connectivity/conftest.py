@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 from a13n_service.agents.models import AgentRecord
+from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.connectivity.ingress.admission import IngressEventService
@@ -27,6 +29,7 @@ from a13n_service.connectivity.ingress.provider import (
 from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
+from a13n_service.connectivity.management import canonical_digest
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import (
@@ -36,7 +39,7 @@ from a13n_service.iam.models import (
     UserRecord,
     WorkspaceRecord,
 )
-from a13n_service.secrets import InternalSecretService, SecretProtector
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.object_store import LocalObjectStore
@@ -50,6 +53,7 @@ ORG_ID = "org_abcdef1234567890"
 WORKSPACE_ID = "ws_abcdef1234567890"
 USER_ID = "usr_abcdef1234567890"
 SERVICE_ACCOUNT_ID = "sa_abcdef1234567890"
+ACCOUNT_ID = "acct_abcdef1234567890"
 AGENT_ID = "agt_abcdef1234567890"
 
 
@@ -92,10 +96,10 @@ class FakeIngressAdapter:
         *,
         match: object,
         provider_policy: object,
-        ingress_config: dict[str, object],
+        account_config: dict[str, object],
         config_version: str,
     ) -> tuple[dict[str, object], dict[str, object]]:
-        del ingress_config, config_version
+        del account_config, config_version
         if not isinstance(match, dict) or set(match) != {"channel"} or not isinstance(match["channel"], str):
             raise ValueError("invalid match")
         if provider_policy != {}:
@@ -110,7 +114,7 @@ class FakeIngressAdapter:
         request: ProviderRequest,
         *,
         ingress_id: str,
-        ingress_config: dict[str, object],
+        account_config: dict[str, object],
         credentials: dict[str, object],
         received_at: datetime,
     ) -> ProviderRequestDecision:
@@ -132,7 +136,7 @@ class FakeIngressAdapter:
                 reason_code="invalid_payload",
             )
         installation_id = payload.get("installation_id")
-        if installation_id != ingress_config["installation_id"]:
+        if installation_id != account_config["installation_id"]:
             return ProviderCompleteDecision(
                 response=ProviderHttpResponse(status_code=401, body=b"unauthorized"),
             )
@@ -167,11 +171,11 @@ class FakeIngressAdapter:
     def default_route(
         self,
         event: InboundEvent,
-        ingress_config: dict[str, object],
+        account_config: dict[str, object],
         *,
         config_version: str,
     ) -> DefaultRoute:
-        del ingress_config, config_version
+        del account_config, config_version
         return DefaultRoute(
             input_mapping={
                 "op": "object",
@@ -189,11 +193,11 @@ class FakeIngressAdapter:
         self,
         event: InboundEvent,
         provider_policy: dict[str, object],
-        ingress_config: dict[str, object],
+        account_config: dict[str, object],
         *,
         config_version: str,
     ) -> ProviderEligibleEventRouting:
-        del provider_policy, ingress_config, config_version
+        del provider_policy, account_config, config_version
         return ProviderEligibleEventRouting(
             kind="eligible",
             external_ref_key="conversation",
@@ -377,25 +381,41 @@ async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]
             )
         )
 
+        account = AccountRecord(
+            id=ACCOUNT_ID,
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            name="Default Account",
+            normalized_name="default account",
+            provider_key="fake",
+            provider_config_version="fake_http_v1",
+            provider_config_json={"installation_id": "installation-1"},
+            identity_digest=canonical_digest("installation-1"),
+            status="active",
+            version=1,
+            credential_generation=0,
+            created_by_type="user",
+            created_by_id=USER_ID,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        account.replace_credential(
+            '{"token":"secret-value"}', SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test")
+        )
+        session.add(account)
+
 
 @pytest.fixture
-def connectivity_secrets(connectivity_sessions: async_sessionmaker[AsyncSession]) -> InternalSecretService:
-    return InternalSecretService(
-        connectivity_sessions,
-        SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"),
-        clock=lambda: NOW,
-    )
+def credential_protector(connectivity_sessions: async_sessionmaker[AsyncSession]) -> SecretProtector:
+    return SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test")
 
 
 @pytest.fixture
 def ingress_service(
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets: InternalSecretService,
 ) -> IngressService:
     return IngressService(
         connectivity_sessions,
-        adapter_registry(),
-        connectivity_secrets,
         clock=lambda: NOW,
     )
 
@@ -408,13 +428,13 @@ async def connectivity_objects(tmp_path: Path) -> LocalObjectStore:
 @pytest.fixture
 def ingress_event_service(
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets: InternalSecretService,
+    credential_protector: SecretProtector,
     connectivity_objects: LocalObjectStore,
 ) -> IngressEventService:
     return IngressEventService(
         connectivity_sessions,
         adapter_registry(),
-        connectivity_secrets,
+        credential_protector,
         IngressRawObjectStore(connectivity_objects),
         request_max_bytes=1024 * 1024,
         raw_retention_seconds=3600,
@@ -437,3 +457,8 @@ def route_service(connectivity_sessions: async_sessionmaker[AsyncSession]) -> Ro
         batch_max_wait_seconds=300,
         clock=lambda: NOW,
     )
+
+
+@pytest.fixture
+def account_service(connectivity_sessions, credential_protector):
+    return AccountService(connectivity_sessions, adapter_registry(), credential_protector, clock=lambda: NOW)

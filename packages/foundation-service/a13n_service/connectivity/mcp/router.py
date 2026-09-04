@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
-from a13n_service.request_runtime import get_connectivity_control_runtime, get_service_runtime
+from a13n_service.request_runtime import get_connectivity_control_runtime, get_process_runtime
 
 from .domain import (
     CreateMCPConnectionRequest,
@@ -58,7 +58,7 @@ def _etag(response: Response, resource: MCPConnection) -> None:
 @router.get("/api/v1/oauth/mcp/client-metadata.json", response_model=MCPClientMetadata)
 async def mcp_client_metadata(request: Request) -> MCPClientMetadata:
     oauth = _oauth(request)
-    runtime = get_service_runtime(request)
+    runtime = get_process_runtime(request)
     if runtime is None:
         raise MCPConnectionError("mcp_oauth_unavailable", "MCP OAuth is unavailable.", status_code=503)
     return MCPClientMetadata(

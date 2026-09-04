@@ -35,7 +35,7 @@ from a13n_service.interactions import (
     UpdateQueuedSubmissionRequest,
     WaitingRunFeedbackRequest,
 )
-from a13n_service.process.runtime import ServiceRuntime
+from a13n_service.process.runtime import ProcessRuntime
 from a13n_service.public_errors import PublicError
 from a13n_service.request_runtime import get_control_runtime
 
@@ -623,7 +623,7 @@ async def stream_run(
 @router.websocket("/api/v1/notifications")
 async def notifications(websocket: WebSocket) -> None:
     runtime = getattr(websocket.app.state, "runtime", None)
-    if not isinstance(runtime, ServiceRuntime) or runtime.control is None:
+    if not isinstance(runtime, ProcessRuntime) or runtime.control is None:
         await _deny_websocket(websocket, 503, "gateway_unavailable", "The Protocol Gateway is unavailable.")
         return
     if NOTIFICATION_SUBPROTOCOL not in websocket.scope.get("subprotocols", ()):
@@ -656,7 +656,7 @@ class _NotificationConnection:
         *,
         actor: AuthenticatedActor,
         service: NotificationService,
-        runtime: ServiceRuntime,
+        runtime: ProcessRuntime,
     ) -> None:
         self._websocket = websocket
         self._actor = actor

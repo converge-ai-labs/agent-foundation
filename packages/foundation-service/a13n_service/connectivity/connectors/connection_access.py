@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.connectors.contracts import (
-    AdapterConnectionStatus,
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
@@ -154,10 +153,6 @@ def apply_inspection(
     connection.safe_metadata_json = inspection.safe_metadata
     connection.version += 1
     connection.updated_at = now
-    if inspection.status is AdapterConnectionStatus.ready:
-        connection.catalog_generation += 1
-        connection.current_catalog_digest = None
-        connection.catalog_available_at = now
 
 
 def require_version(current: int, expected: int) -> None:

@@ -3,14 +3,14 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_service.app import ServiceComponents, create_app
+from a13n_service.app import Components, create_app
 from a13n_service.plugins.commands import PluginRuntimeCatalogSnapshot, PluginRuntimeCommand
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime import PluginRuntimeLock
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
-from a13n_service.settings import ServiceRole
+from a13n_service.settings import ProcessRole
 from anyio import sleep_forever
 
 from .support import local_settings
@@ -76,7 +76,7 @@ async def test_on_demand_import_failure_removes_worker_readiness(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app = create_app(local_settings(tmp_path, role=ServiceRole.worker))
+    app = create_app(local_settings(tmp_path, role=ProcessRole.worker))
 
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
@@ -96,10 +96,10 @@ async def test_lifespan_rejects_partial_plugin_runtime_coordination(tmp_path: Pa
     app = create_app(
         local_settings(
             tmp_path,
-            role=ServiceRole.control,
+            role=ProcessRole.control,
             plugin_runtime_mode="runner",
         ),
-        components=ServiceComponents(
+        components=Components(
             plugin_runtime_candidate_resolver=_UnusedPluginRuntimeCandidateResolver(),
         ),
     )
@@ -112,8 +112,8 @@ async def test_lifespan_rejects_partial_plugin_runtime_coordination(tmp_path: Pa
 @pytest.mark.anyio
 async def test_lifespan_rejects_runner_coordination_in_on_demand_mode(tmp_path: Path) -> None:
     app = create_app(
-        local_settings(tmp_path, role=ServiceRole.control),
-        components=ServiceComponents(
+        local_settings(tmp_path, role=ProcessRole.control),
+        components=Components(
             plugin_runtime_candidate_resolver=_UnusedPluginRuntimeCandidateResolver(),
             plugin_runtime_staging_authority=_UnusedPluginRuntimeStagingAuthority(),
         ),
@@ -132,12 +132,12 @@ async def test_lifespan_wires_durable_plugin_runtime_coordinator(
     app = create_app(
         local_settings(
             tmp_path,
-            role=ServiceRole.control,
+            role=ProcessRole.control,
             plugin_runtime_mode="runner",
             plugin_runtime_command_poll_interval_seconds=0.01,
             plugin_runtime_command_lease_seconds=4,
         ),
-        components=ServiceComponents(
+        components=Components(
             plugin_runtime_candidate_resolver=_UnusedPluginRuntimeCandidateResolver(),
             plugin_runtime_staging_authority=_UnusedPluginRuntimeStagingAuthority(),
         ),
@@ -163,19 +163,19 @@ async def test_lifespan_builds_default_plugin_runtime_candidate_resolver(
         return resolver
 
     monkeypatch.setattr(
-        "a13n_service.process.control.plugin.FoundationPluginRuntimeCandidateResolver",
+        "a13n_service.process.control.plugin.DurableRuntimeCandidateResolver",
         build_candidate_resolver,
     )
     app = create_app(
         local_settings(
             tmp_path,
-            role=ServiceRole.control,
+            role=ProcessRole.control,
             plugin_runtime_mode="runner",
             plugin_runtime_command_poll_interval_seconds=0.01,
             plugin_runtime_command_lease_seconds=4,
             plugin_runtime_default_index_url="https://user:index-secret@packages.example/simple",
         ),
-        components=ServiceComponents(
+        components=Components(
             plugin_runtime_staging_authority=_UnusedPluginRuntimeStagingAuthority(),
         ),
     )
@@ -210,7 +210,7 @@ async def test_all_in_one_runner_mode_uses_local_supervisor_as_staging_authority
 
 @pytest.mark.anyio
 async def test_worker_runner_mode_owns_supervisor_without_control_coordinator(tmp_path: Path) -> None:
-    app = create_app(local_settings(tmp_path, role=ServiceRole.worker, plugin_runtime_mode="runner"))
+    app = create_app(local_settings(tmp_path, role=ProcessRole.worker, plugin_runtime_mode="runner"))
 
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime

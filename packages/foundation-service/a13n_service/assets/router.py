@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from a13n_service.iam import AuthenticatedActor, authenticate_request
-from a13n_service.request_runtime import get_control_runtime, get_service_runtime
+from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
 from .domain import Asset, AssetCollection, AssetSourceKind
 from .errors import AssetError, asset_limit
@@ -124,7 +124,7 @@ def _content_length(request: Request) -> int | None:
         raise AssetError("invalid_request", "Content-Length is invalid.", status_code=400) from error
     if parsed < 0:
         raise AssetError("invalid_request", "Content-Length is invalid.", status_code=400)
-    runtime = get_service_runtime(request)
+    runtime = get_process_runtime(request)
     if runtime is None:
         raise AssetError("asset_management_unavailable", "Asset Management is unavailable.", status_code=503)
     settings = runtime.settings

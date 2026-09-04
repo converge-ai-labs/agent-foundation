@@ -42,6 +42,7 @@ class ConnectorHttpClient:
         endpoint: str,
         path: str,
         api_key: str,
+        authentication: Literal["api_key", "bearer"] = "api_key",
         json_body: JsonObject | None = None,
         params: dict[str, str] | None = None,
         write: bool = False,
@@ -56,8 +57,11 @@ class ConnectorHttpClient:
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
-            "x-api-key": api_key,
         }
+        if authentication == "bearer":
+            headers["authorization"] = f"Bearer {api_key}"
+        else:
+            headers["x-api-key"] = api_key
         if extra_headers is not None:
             headers.update(extra_headers)
         try:
@@ -81,6 +85,7 @@ class ConnectorHttpClient:
                     retryable=error.retryable,
                     outcome_unknown=True,
                     retry_after_seconds=error.retry_after_seconds,
+                    http_status=error.http_status,
                 ) from error
             raise
         except (ConnectivityHttpError, httpx2.HTTPError) as error:
@@ -104,11 +109,12 @@ async def _read_response(response: httpx2.Response, *, max_bytes: int) -> JsonVa
             "rate_limited",
             retryable=True,
             retry_after_seconds=retry_after,
+            http_status=response.status_code,
         )
     if response.status_code >= 500:
-        raise ConnectorProviderError("provider_unavailable", retryable=True)
+        raise ConnectorProviderError("provider_unavailable", retryable=True, http_status=response.status_code)
     if response.status_code < 200 or response.status_code >= 300:
-        raise ConnectorProviderError("provider_rejected")
+        raise ConnectorProviderError("provider_rejected", http_status=response.status_code)
     if not body:
         return None
     try:

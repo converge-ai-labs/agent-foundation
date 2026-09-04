@@ -4,7 +4,7 @@ import json
 
 import httpx2
 import pytest
-from a13n_service.connectivity.ingress.providers.slack.client import (
+from a13n_service.connectivity.providers.slack.client import (
     SlackActionBinding,
     SlackAutoReplyArguments,
     SlackForcedReplyArguments,

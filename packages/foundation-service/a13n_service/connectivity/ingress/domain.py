@@ -4,16 +4,21 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from a13n_service.agents.domain import AgentRunOverride
-from a13n_service.connectivity.domain import AdapterKey, BoundedName, ConfigVersion, JsonObject
+from a13n_service.connectivity.domain import BoundedName, ConfigVersion, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class IngressProviderConfig(StrictModel):
+    events_transport: Literal["http"] = "http"
 
 
 class IngressStatus(StrEnum):
@@ -31,16 +36,13 @@ class Ingress(StrictModel):
     organization_id: str
     workspace_id: str
     name: BoundedName
-    provider_key: AdapterKey
-    provider_config_version: ConfigVersion
-    provider_config: JsonObject
+    account_id: str
+    provider_config: IngressProviderConfig
     execution_principal_ref: PrincipalRef
     agents: tuple[str, ...] = Field(min_length=1, max_length=128)
     default_agent_id: str
     status: IngressStatus
     version: int = Field(ge=1)
-    credential_configured: bool
-    credential_generation: int = Field(ge=1)
     created_by: PrincipalRef
     created_at: datetime
     updated_at: datetime
@@ -53,18 +55,11 @@ class IngressCollection(StrictModel):
 
 class CreateIngressRequest(StrictModel):
     name: BoundedName
-    provider_key: AdapterKey
-    provider_config_version: ConfigVersion
-    provider_config: JsonObject
+    account_id: str
+    provider_config: IngressProviderConfig
     execution_service_account_id: str
     agents: tuple[str, ...] = Field(min_length=1, max_length=128)
     default_agent_id: str
-    credentials: dict[str, SecretStr] = Field(
-        min_length=1,
-        max_length=16,
-        repr=False,
-        json_schema_extra={"writeOnly": True},
-    )
 
     @model_validator(mode="after")
     def validate_agent_set(self) -> CreateIngressRequest:
@@ -78,7 +73,7 @@ class CreateIngressRequest(StrictModel):
 class UpdateIngressRequest(StrictModel):
     expected_version: int = Field(ge=1)
     name: BoundedName | None = None
-    provider_config: JsonObject | None = None
+    provider_config: IngressProviderConfig | None = None
     agents: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=128)
     default_agent_id: str | None = None
 
@@ -95,15 +90,6 @@ class UpdateIngressRequest(StrictModel):
 
 class IngressCommandRequest(StrictModel):
     expected_version: int = Field(ge=1)
-
-
-class ReplaceIngressCredentialsRequest(IngressCommandRequest):
-    credentials: dict[str, SecretStr] = Field(
-        min_length=1,
-        max_length=16,
-        repr=False,
-        json_schema_extra={"writeOnly": True},
-    )
 
 
 class Route(StrictModel):

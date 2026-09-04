@@ -13,7 +13,7 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.connectivity.management import canonical_digest, record_command
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -34,7 +34,6 @@ from .management import (
     decode_credentials,
     require_connection,
     require_connector_provider,
-    secret_context,
 )
 from .models import ConnectorOperationRecord
 
@@ -44,13 +43,13 @@ class ConnectorRevocationService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         adapters: ConnectorProviderRegistry,
-        secrets: InternalSecretService,
+        protector: SecretProtector,
         *,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
-        self._secrets = secrets
+        self._protector = protector
         self._clock = clock
 
     async def revoke(
@@ -210,11 +209,11 @@ class ConnectorRevocationService:
                 raise ConnectorError("setup_incomplete", "ConnectorConnection setup is incomplete.", status_code=409)
             binding = await connection_binding(session, connection)
         try:
-            raw = await self._secrets.resolve(secret_context(connector, operation=SecretOperation.reconciliation))
+            raw = connector.credential_snapshot().decrypt(self._protector)
             runtime = configure_provider(self._adapters, connector, decode_credentials(raw))
             async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
                 await connection_runtime.revoke(operation_id=operation_id)
-        except (ConnectorProviderError, InternalSecretError) as error:
+        except (ConnectorProviderError, SecretProtectionError) as error:
             await self._record_failure(
                 operation_id,
                 error,
@@ -235,7 +234,7 @@ class ConnectorRevocationService:
     async def _record_failure(
         self,
         operation_id: str,
-        error: ConnectorProviderError | InternalSecretError,
+        error: ConnectorProviderError | SecretProtectionError,
         *,
         claim_owner: str | None,
         claim_generation: int | None,

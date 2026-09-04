@@ -28,8 +28,8 @@ from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
-from a13n_service.secrets import InternalSecretService, SecretProtector
-from a13n_service.settings import ServiceSettings
+from a13n_service.secrets import SecretProtector
+from a13n_service.settings import Settings
 from a13n_service.storage.object_store import LocalObjectStore
 from fastapi import FastAPI
 from sqlalchemy import func, select
@@ -78,7 +78,7 @@ async def _create_ingress(service: IngressService) -> str:
 
 def _event_service(
     sessions: async_sessionmaker[AsyncSession],
-    secrets: InternalSecretService,
+    secrets: SecretProtector,
     objects: LocalObjectStore,
     registry: AdapterRegistry[IngressAdapter],
     *,
@@ -132,15 +132,9 @@ async def test_postgresql_concurrent_duplicate_delivery_creates_one_admission(
     connectivity_objects: LocalObjectStore,
     ingress_adapter_registry: AdapterRegistry[IngressAdapter],
 ) -> None:
-    secrets = InternalSecretService(
-        postgres_connectivity_sessions,
-        SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"),
-        clock=lambda: NOW,
-    )
+    secrets = SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test")
     ingress_service = IngressService(
         postgres_connectivity_sessions,
-        ingress_adapter_registry,
-        secrets,
         clock=lambda: NOW,
     )
     ingress_id = await _create_ingress(ingress_service)
@@ -169,13 +163,13 @@ async def test_postgresql_concurrent_duplicate_delivery_creates_one_admission(
 async def test_data_plane_streams_into_provider_adapter_with_bounded_failures(
     ingress_service: IngressService,
     ingress_event_service: IngressEventService,
-    service_runtime_factory,
+    process_runtime_factory,
 ) -> None:
     ingress_id = await _create_ingress(ingress_service)
     app = FastAPI()
     install_api_conventions(app)
-    app.state.runtime = service_runtime_factory(
-        settings=ServiceSettings(_env_file=None, connectivity_provider_request_max_bytes=1024),
+    app.state.runtime = process_runtime_factory(
+        settings=Settings(_env_file=None, connectivity_provider_request_max_bytes=1024),
         ingress_events=ingress_event_service,
     )
     app.include_router(ingress_data_router)
@@ -225,7 +219,7 @@ async def test_delivery_identity_conflict_keeps_first_admission(
 async def test_runtime_route_ambiguity_is_durably_rejected(
     ingress_service: IngressService,
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets: InternalSecretService,
+    credential_protector: SecretProtector,
     connectivity_objects: LocalObjectStore,
 ) -> None:
     class RuntimeAmbiguousAdapter(FakeIngressAdapter):
@@ -261,7 +255,7 @@ async def test_runtime_route_ambiguity_is_durably_rejected(
         idempotency_key="ambiguous-2",
         request=route_request().model_copy(update={"name": "Second matching route"}),
     )
-    service = _event_service(connectivity_sessions, connectivity_secrets, connectivity_objects, registry)
+    service = _event_service(connectivity_sessions, credential_protector, connectivity_objects, registry)
 
     response = await service.receive(ingress_id=ingress_id, request=_request("event-1"))
 
@@ -423,14 +417,14 @@ async def test_acceptor_crash_is_retryable_and_keeps_durable_input(
 async def test_capacity_exhaustion_never_creates_ack_eligible_state(
     ingress_service: IngressService,
     connectivity_sessions: async_sessionmaker[AsyncSession],
-    connectivity_secrets: InternalSecretService,
+    credential_protector: SecretProtector,
     connectivity_objects: LocalObjectStore,
     ingress_adapter_registry: AdapterRegistry[IngressAdapter],
 ) -> None:
     ingress_id = await _create_ingress(ingress_service)
     service = _event_service(
         connectivity_sessions,
-        connectivity_secrets,
+        credential_protector,
         connectivity_objects,
         ingress_adapter_registry,
         pending_max_count=0,

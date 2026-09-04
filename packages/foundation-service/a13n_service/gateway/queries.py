@@ -27,7 +27,7 @@ from a13n_service.interactions.models import RunAttemptRecord, RunRecord, Sessio
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.reconciliation import load_owning_run
 from a13n_service.public_errors import PublicError
-from a13n_service.run_stream import RunReplayIntegrityError, RunReplayStore
+from a13n_service.run_stream import RetainedReplayUnavailable, RunReplayIntegrityError, RunReplayStore
 from a13n_service.storage import ObjectStoreError, short_session
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
@@ -497,7 +497,7 @@ class NativeInteractionQueries:
             tenant_id = run.tenant_id
         try:
             snapshot = await self._replay.read(tenant_id, run_id)
-        except (ObjectStoreError, RunReplayIntegrityError) as error:
+        except (ObjectStoreError, RetainedReplayUnavailable, RunReplayIntegrityError) as error:
             raise NativeQueryError(
                 "items_unavailable",
                 "Retained Items are unavailable for this Run.",

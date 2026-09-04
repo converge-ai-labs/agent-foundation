@@ -30,7 +30,6 @@ from a13n_service.temporal import assume_utc, optional_assume_utc
 from .domain import (
     EncryptedRunConfigPayloadRef,
     JsonObject,
-    MCPToolSnapshotRef,
     RecoveryBudget,
     RecoveryUsage,
     RecoveryUsageLimit,
@@ -59,7 +58,6 @@ _FAILURE_ADAPTER = TypeAdapter(SafeFailure | None)
 _JSON_OBJECTS_ADAPTER = TypeAdapter(tuple[JsonObject, ...])
 _JSON_OBJECT_ADAPTER = TypeAdapter(JsonObject | None)
 _ENCRYPTED_CONFIG_REF_ADAPTER = TypeAdapter(EncryptedRunConfigPayloadRef)
-_MCP_TOOL_SNAPSHOT_REF_ADAPTER = TypeAdapter(MCPToolSnapshotRef)
 _RUN_PAYLOAD_REF_ADAPTER = TypeAdapter(RunPayloadObjectRef)
 _SEALED_STATE_ADAPTER = TypeAdapter(SealedRunState)
 
@@ -339,12 +337,6 @@ class RunRecord(Base):
         CheckConstraint("length(effective_agent_config_digest) = 64", name="effective_config_digest_sha256"),
         CheckConstraint("length(runtime_lock_digest) = 64", name="runtime_lock_digest_sha256"),
         CheckConstraint("length(request_fingerprint) = 64", name="request_fingerprint_sha256"),
-        CheckConstraint("length(mcp_tool_snapshot_digest_sha256) = 64", name="mcp_snapshot_digest_sha256"),
-        CheckConstraint("mcp_tool_snapshot_size_bytes > 0", name="mcp_snapshot_size_positive"),
-        CheckConstraint(
-            "mcp_tool_snapshot_content_type = 'application/vnd.a13n.mcp-tool-snapshot+json'",
-            name="mcp_snapshot_content_type_valid",
-        ),
         CheckConstraint(
             "(encrypted_config_ciphertext_digest_sha256 IS NULL OR "
             "length(encrypted_config_ciphertext_digest_sha256) = 64) AND "
@@ -448,11 +440,7 @@ class RunRecord(Base):
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     connector_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     mcp_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    ingress_context_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
-    mcp_tool_snapshot_digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    mcp_tool_snapshot_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    mcp_tool_snapshot_content_type: Mapped[str] = mapped_column(String(255), nullable=False)
-    mcp_tool_snapshot_schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    native_tool_contexts_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     queue_name: Mapped[str] = mapped_column(String(256), nullable=False)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -534,15 +522,7 @@ class RunRecord(Base):
                 self.connector_connection_selections_json
             ),
             "mcp_connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.mcp_connection_selections_json),
-            "ingress_context": _JSON_OBJECT_ADAPTER.validate_python(self.ingress_context_json),
-            "mcp_tool_snapshot": _MCP_TOOL_SNAPSHOT_REF_ADAPTER.validate_python(
-                {
-                    "digest_sha256": self.mcp_tool_snapshot_digest_sha256,
-                    "size_bytes": self.mcp_tool_snapshot_size_bytes,
-                    "content_type": self.mcp_tool_snapshot_content_type,
-                    "schema_version": self.mcp_tool_snapshot_schema_version,
-                }
-            ),
+            "native_tool_contexts": _JSON_OBJECTS_ADAPTER.validate_python(self.native_tool_contexts_json),
             "priority": self.priority,
             "queue_name": self.queue_name,
             "available_at": assume_utc(self.available_at),
@@ -695,6 +675,14 @@ class RunAttemptRecord(Base):
         ),
         Index("uq_run_attempts_tenant_id", "tenant_id", "id", unique=True),
         UniqueConstraint("tenant_id", "run_id", "id", name="uq_run_attempts_run_id"),
+        Index(
+            "uq_run_attempts_generation_identity",
+            "tenant_id",
+            "run_id",
+            "id",
+            "fence",
+            unique=True,
+        ),
         Index("uq_run_attempts_number", "tenant_id", "run_id", "attempt_number", unique=True),
         Index("uq_run_attempts_fence", "tenant_id", "run_id", "fence", unique=True),
         Index(

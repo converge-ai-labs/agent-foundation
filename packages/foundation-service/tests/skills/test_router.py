@@ -10,11 +10,11 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_service.app import ServiceComponents, create_app
+from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.skills.router import _content_chunks
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
@@ -48,8 +48,8 @@ async def authenticate(request: Request) -> AuthenticatedActor:
     )
 
 
-def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
-    return ServiceSettings(
+def settings(tmp_path: Path, database_path: Path) -> Settings:
+    return Settings(
         _env_file=None,
         database_backend="sqlite",
         database_sqlite_path=database_path,
@@ -65,7 +65,7 @@ def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
     )
 
 
-async def seed_database(config: ServiceSettings) -> None:
+async def seed_database(config: Settings) -> None:
     engine = create_sql_engine(config.database_config())
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
@@ -136,7 +136,7 @@ async def api_client(
 ) -> AsyncIterator[httpx2.AsyncClient]:
     config = settings(tmp_path, service_sqlite_database)
     await seed_database(config)
-    app = create_app(config, components=ServiceComponents(request_authenticator=authenticate))
+    app = create_app(config, components=Components(request_authenticator=authenticate))
     async with app.router.lifespan_context(app):
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:

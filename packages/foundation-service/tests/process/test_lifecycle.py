@@ -4,7 +4,7 @@ from typing import cast
 
 import httpx2
 import pytest
-from a13n_service.app import ServiceComponents, create_app
+from a13n_service.app import Components, create_app
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
@@ -15,10 +15,10 @@ from a13n_service.lifecycle.service import LifecycleEventService
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.on_demand import OnDemandPluginRuntime
 from a13n_service.process.background import run_critical_component
-from a13n_service.process.components import snapshot_service_components
+from a13n_service.process.components import snapshot_components
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
 from a13n_service.secrets import SecretProtectionError
-from a13n_service.settings import ServiceRole, ServiceSettings
+from a13n_service.settings import ProcessRole, Settings
 from a13n_service.skills import SkillRuntimePreparer
 from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 
@@ -54,8 +54,8 @@ async def test_worker_requires_a_source_resolver_for_retaining_environment_provi
             return (Entry(),)
 
     app = create_app(
-        local_settings(tmp_path, role=ServiceRole.worker),
-        components=ServiceComponents(
+        local_settings(tmp_path, role=ProcessRole.worker),
+        components=Components(
             environment_provider_catalog=cast(FoundationEnvironmentProviderCatalog, Catalog()),
         ),
     )
@@ -79,21 +79,21 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
             factory=Adapter,
         )
     )
-    components = ServiceComponents(
+    components = Components(
         ingress_adapter_registry=ingress_registry,
         connector_provider_registry=connector_registry,
     )
 
-    control = snapshot_service_components(
-        ServiceSettings(_env_file=None, role=ServiceRole.control),
+    control = snapshot_components(
+        Settings(_env_file=None, role=ProcessRole.control),
         components,
     )
-    connectivity = snapshot_service_components(
-        ServiceSettings(_env_file=None, role=ServiceRole.connectivity),
+    connectivity = snapshot_components(
+        Settings(_env_file=None, role=ProcessRole.connectivity),
         components,
     )
-    worker = snapshot_service_components(
-        ServiceSettings(_env_file=None, role=ServiceRole.worker),
+    worker = snapshot_components(
+        Settings(_env_file=None, role=ProcessRole.worker),
         components,
     )
     ingress_registry.register(
@@ -112,7 +112,9 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     assert connectivity.ingress_adapter_registry is not None
     assert connectivity.ingress_adapter_registry.keys() == ("fake",)
     assert connectivity.connector_provider_registry is None
-    assert worker is components
+    assert worker.ingress_adapter_registry is None
+    assert worker.connector_provider_registry is not None
+    assert tuple(item.type for item in worker.connector_provider_registry.definitions()) == ("fake_connector",)
 
 
 @pytest.mark.anyio
@@ -123,6 +125,9 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         runtime = app.state.runtime
         assert runtime.control is not None
         assert runtime.worker is not None
+        from a13n_service.connectivity.execution import ExternalToolRuntime
+
+        assert isinstance(runtime.worker.external_tools, ExternalToolRuntime)
         assert isinstance(runtime.worker.skill_runtime, SkillRuntimePreparer)
         assert runtime.control.plugins is not None
         assert isinstance(runtime.worker.plugin_materializer, PluginRuntimeMaterializer)
@@ -139,17 +144,17 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("role", tuple(ServiceRole))
+@pytest.mark.parametrize("role", tuple(ProcessRole))
 async def test_role_lifespan_installs_only_owned_connectivity_components(
     tmp_path: Path,
-    role: ServiceRole,
+    role: ProcessRole,
 ) -> None:
     app = create_app(local_settings(tmp_path / role.value, role=role))
 
     async with app.router.lifespan_context(app):
-        serves_control = role in {ServiceRole.all, ServiceRole.control}
-        serves_connectivity = role in {ServiceRole.all, ServiceRole.connectivity}
-        serves_worker = role in {ServiceRole.all, ServiceRole.worker}
+        serves_control = role in {ProcessRole.all, ProcessRole.control}
+        serves_connectivity = role in {ProcessRole.all, ProcessRole.connectivity}
+        serves_worker = role in {ProcessRole.all, ProcessRole.worker}
         runtime = app.state.runtime
         connectivity = runtime.connectivity
         assert (connectivity is not None) is (serves_control or serves_connectivity)
@@ -173,7 +178,7 @@ async def test_connectivity_role_does_not_build_control_adapters(
         "a13n_service.process.connectivity.built_in_connector_provider_registry",
         fail_if_called,
     )
-    app = create_app(local_settings(tmp_path, role=ServiceRole.connectivity))
+    app = create_app(local_settings(tmp_path, role=ProcessRole.connectivity))
 
     async with app.router.lifespan_context(app):
         assert app.state.runtime.connectivity.control is None
@@ -181,7 +186,7 @@ async def test_connectivity_role_does_not_build_control_adapters(
 
 @pytest.mark.anyio
 async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(tmp_path: Path) -> None:
-    app = create_app(local_settings(tmp_path, role=ServiceRole.connectivity))
+    app = create_app(local_settings(tmp_path, role=ProcessRole.connectivity))
 
     async with app.router.lifespan_context(app):
         app.state.runtime.status.draining = True
@@ -203,14 +208,14 @@ async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(tmp_
 
 @pytest.mark.anyio
 async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_path: Path) -> None:
-    control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control))
+    control = create_app(local_settings(tmp_path / "control", role=ProcessRole.control))
     async with control.router.lifespan_context(control):
         assert control.state.runtime.control is not None
         assert control.state.runtime.worker is None
         assert isinstance(control.state.runtime.control.hook_subscriptions, HookSubscriptionService)
         assert isinstance(control.state.runtime.control.lifecycle_events, LifecycleEventService)
 
-    worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker))
+    worker = create_app(local_settings(tmp_path / "worker", role=ProcessRole.worker))
     async with worker.router.lifespan_context(worker):
         assert worker.state.runtime.control is None
         assert isinstance(worker.state.runtime.worker.skill_runtime, SkillRuntimePreparer)
@@ -226,8 +231,8 @@ async def test_trace_query_client_is_created_only_for_control_plane_roles(tmp_pa
         "observability_query_langfuse_public_key": "pk-test",
         "observability_query_langfuse_secret_key": "sk-test",
     }
-    control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control, **query_values))
-    worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker, **query_values))
+    control = create_app(local_settings(tmp_path / "control", role=ProcessRole.control, **query_values))
+    worker = create_app(local_settings(tmp_path / "worker", role=ProcessRole.worker, **query_values))
 
     async with control.router.lifespan_context(control):
         assert control.state.runtime.control.trace_queries is not None
@@ -249,11 +254,11 @@ async def test_distribution_registered_trace_query_provider_is_selected_only_by_
         return provider
 
     registry.register("custom", create_provider)  # type: ignore[arg-type]
-    components = ServiceComponents(trace_query_provider_registry=registry)
+    components = Components(trace_query_provider_registry=registry)
     control = create_app(
         local_settings(
             tmp_path / "control-custom",
-            role=ServiceRole.control,
+            role=ProcessRole.control,
             observability_query_provider="custom",
         ),
         components=components,
@@ -261,7 +266,7 @@ async def test_distribution_registered_trace_query_provider_is_selected_only_by_
     worker = create_app(
         local_settings(
             tmp_path / "worker-custom",
-            role=ServiceRole.worker,
+            role=ProcessRole.worker,
             observability_query_provider="custom",
         ),
         components=components,
@@ -282,7 +287,7 @@ def test_distribution_cannot_replace_the_builtin_langfuse_provider(tmp_path: Pat
     with pytest.raises(ValueError, match="already registered"):
         create_app(
             local_settings(tmp_path),
-            components=ServiceComponents(trace_query_provider_registry=registry),
+            components=Components(trace_query_provider_registry=registry),
         )
 
 
@@ -306,7 +311,7 @@ async def test_control_lifespan_requires_connectivity_public_origin(tmp_path: Pa
     app = create_app(
         local_settings(
             tmp_path,
-            role=ServiceRole.control,
+            role=ProcessRole.control,
             connectivity_public_origin=None,
         )
     )

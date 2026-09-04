@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from a13n_service.models.domain import ModelApiConfig
 from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.service_common import ModelError
 
 
 def test_registry_separates_provider_type_from_calling_api() -> None:
@@ -19,8 +19,8 @@ def test_registry_separates_provider_type_from_calling_api() -> None:
 def test_registry_rejects_unbound_provider_api_combinations() -> None:
     registry = built_in_provider_registry()
 
-    with pytest.raises(ValueError, match="unsupported model APIs"):
-        registry.validate_model_apis("openrouter", [ModelApiConfig(api="anthropic.messages")])
+    with pytest.raises(ModelError, match="not supported"):
+        registry.validate_model_api("openrouter", "anthropic.messages")
 
 
 def test_provider_config_does_not_select_a_calling_api() -> None:

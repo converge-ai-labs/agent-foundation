@@ -10,7 +10,12 @@ from typing import Any, cast
 from a13n_harness.errors import ModelResolutionError
 from pydantic_ai.models import Model as PydanticModel
 from pydantic_ai.models import infer_model
+from pydantic_ai.models.anthropic import AnthropicModelSettings
+from pydantic_ai.models.bedrock import BedrockModelSettings
 from pydantic_ai.models.bedrock_mantle import BedrockMantleChatModel, BedrockMantleResponsesModel
+from pydantic_ai.models.google import GoogleModelSettings
+from pydantic_ai.models.openai import OpenAIChatModelSettings, OpenAIResponsesModelSettings
+from pydantic_ai.models.openrouter import OpenRouterModelSettings
 from pydantic_ai.providers import Provider
 from pydantic_ai.providers.bedrock_mantle import BedrockMantleProvider
 
@@ -23,7 +28,9 @@ ExplicitModelBuilder = Callable[[str, NativeProvider], BuiltModel]
 class ModelApiBinding:
     key: str
     pydantic_provider_name: str
+    settings_type: Any
     explicit_builder: ExplicitModelBuilder | None = None
+    supports_extra_body: bool = True
 
     def build(self, upstream_model: str, provider: NativeProvider) -> BuiltModel:
         if self.explicit_builder is not None:
@@ -62,22 +69,24 @@ def _index(bindings: Iterable[ModelApiBinding]) -> Mapping[str, ModelApiBinding]
 
 BUILT_IN_MODEL_APIS = _index(
     (
-        ModelApiBinding("openai.responses", "openai-responses"),
-        ModelApiBinding("openai.chat_completions", "openai-chat"),
-        ModelApiBinding("anthropic.messages", "anthropic"),
-        ModelApiBinding("google.generate_content", "google"),
-        ModelApiBinding("bedrock.converse", "bedrock"),
+        ModelApiBinding("openai.responses", "openai-responses", OpenAIResponsesModelSettings),
+        ModelApiBinding("openai.chat_completions", "openai-chat", OpenAIChatModelSettings),
+        ModelApiBinding("anthropic.messages", "anthropic", AnthropicModelSettings),
+        ModelApiBinding("google.generate_content", "google", GoogleModelSettings, supports_extra_body=False),
+        ModelApiBinding("bedrock.converse", "bedrock", BedrockModelSettings, supports_extra_body=False),
         ModelApiBinding(
             "bedrock_mantle.responses",
             "bedrock-mantle",
+            settings_type=OpenAIResponsesModelSettings,
             explicit_builder=_bedrock_mantle_responses,
         ),
         ModelApiBinding(
             "bedrock_mantle.chat_completions",
             "bedrock-mantle",
+            settings_type=OpenAIChatModelSettings,
             explicit_builder=_bedrock_mantle_chat,
         ),
-        ModelApiBinding("openrouter.chat_completions", "openrouter"),
-        ModelApiBinding("ollama.chat_completions", "ollama"),
+        ModelApiBinding("openrouter.chat_completions", "openrouter", OpenRouterModelSettings),
+        ModelApiBinding("ollama.chat_completions", "ollama", OpenAIChatModelSettings),
     )
 )

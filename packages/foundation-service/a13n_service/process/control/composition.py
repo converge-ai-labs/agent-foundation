@@ -31,12 +31,11 @@ from a13n_service.interactions import (
 )
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.background import BackgroundTask
-from a13n_service.process.components import ServiceComponents
+from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import ControlRuntime, SharedRuntime, WorkerRuntime
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
-from a13n_service.secrets import InternalSecretService
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
 from .agent import build_agent_management
@@ -50,8 +49,8 @@ from .trace import build_trace_query_service
 
 
 async def build_control_runtime(
-    settings: ServiceSettings,
-    components: ServiceComponents,
+    settings: Settings,
+    components: Components,
     shared: SharedRuntime,
     execution: ExecutionResources,
     worker: WorkerRuntime | None,
@@ -110,7 +109,6 @@ async def build_control_runtime(
     gateway_states = RunStateStore(shared.storage.objects)
     gateway_payloads = RunPayloadStore(shared.storage.objects)
     gateway_control_signals = RedisThreadControlSignals(shared.storage.redis)
-    a2a_secrets = InternalSecretService(shared.storage.sessions, shared.secret_protector)
     a2a_endpoint_policy = EndpointPolicy.from_operator_allowlist(
         private_domains=settings.webhook_private_endpoint_domains,
         private_cidrs=settings.webhook_private_endpoint_cidrs,
@@ -140,7 +138,7 @@ async def build_control_runtime(
             shared.storage.sessions,
             a2a_http_client,
             a2a_endpoint_policy,
-            a2a_secrets,
+            shared.secret_protector,
             poll_interval_seconds=settings.webhook_poll_interval_seconds,
             lease_seconds=settings.webhook_claim_lease_seconds,
             claim_limit=settings.webhook_claim_limit,
@@ -219,7 +217,7 @@ async def build_control_runtime(
             A2AService(
                 shared.storage.sessions,
                 gateway_commands,
-                a2a_secrets,
+                shared.secret_protector,
                 a2a_endpoint_policy,
                 A2APartImporter(
                     assets.service,

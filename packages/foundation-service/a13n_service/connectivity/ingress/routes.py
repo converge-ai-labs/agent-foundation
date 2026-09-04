@@ -12,25 +12,23 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
+from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.management import fingerprint, record_command
+from a13n_service.connectivity.native_management import (
+    audit,
+    authorize,
+    idempotency_key_digest,
+    replay_command,
+    require_adapter,
+    require_limit,
+    require_version,
+)
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
-from ._management import (
-    audit,
-    authorize,
-    idempotency_key_digest,
-    ingress_agent_ids,
-    replay_command,
-    require_adapter,
-    require_ingress,
-    require_limit,
-    require_non_overlapping,
-    require_route,
-    require_version,
-)
+from ._management import ingress_agent_ids, require_ingress, require_non_overlapping, require_route
 from .domain import (
     CreateRouteRequest,
     InputBatchingPolicy,
@@ -38,7 +36,6 @@ from .domain import (
     RouteCollection,
     UpdateRouteRequest,
 )
-from .errors import IngressError
 from .mapping import MappingError, compile_mapping
 from .models import IngressRecord, RouteRecord
 
@@ -86,7 +83,9 @@ class RouteService:
                 )
                 if replay is not None:
                     return (await require_route(session, replay.resource_id)).to_resource()
-                adapter = require_adapter(self._adapters, ingress.provider_key, ingress.provider_config_version)
+                adapter = require_adapter(
+                    self._adapters, ingress.account.provider_key, ingress.account.provider_config_version
+                )
                 match, policy = _validate_route(adapter, ingress, request)
                 input_mapping = _compile_input_mapping(request.input_mapping)
                 await _validate_route_agents(session, ingress, request.agent_id, request.capability_overlays)
@@ -103,7 +102,7 @@ class RouteService:
                     ingress_id=ingress_id,
                     name=request.name,
                     normalized_name=request.name.casefold(),
-                    provider_config_version=ingress.provider_config_version,
+                    provider_config_version=ingress.account.provider_config_version,
                     match_json=match,
                     agent_id=request.agent_id,
                     input_mapping_json=input_mapping,
@@ -139,7 +138,7 @@ class RouteService:
                 await session.flush()
                 return record.to_resource()
         except IntegrityError as error:
-            raise IngressError("route_conflict", "Route identity or name already exists.", status_code=409) from error
+            raise NativeError("route_conflict", "Route identity or name already exists.", status_code=409) from error
 
     async def list_routes(
         self,
@@ -157,7 +156,7 @@ class RouteService:
             try:
                 position = decode_cursor(cursor, scope=scope, id_prefix="rte") if cursor is not None else None
             except CursorError as error:
-                raise IngressError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+                raise NativeError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
             query = select(RouteRecord).where(RouteRecord.ingress_id == ingress_id)
             if position is not None:
                 query = query.where(
@@ -198,7 +197,9 @@ class RouteService:
             ingress = await require_ingress(session, record.ingress_id)
             await authorize(session, actor, record.workspace_id, WorkspaceAction.route_manage)
             require_version(record.version, request.expected_version)
-            adapter = require_adapter(self._adapters, ingress.provider_key, ingress.provider_config_version)
+            adapter = require_adapter(
+                self._adapters, ingress.account.provider_key, ingress.account.provider_config_version
+            )
             candidate = _updated_route(record, request)
             match, policy = _validate_route(adapter, ingress, candidate)
             input_mapping = _compile_input_mapping(candidate.input_mapping)
@@ -231,7 +232,7 @@ class RouteService:
 
     def _validate_batching(self, min_interval_ms: int, max_batch_events: int) -> None:
         if min_interval_ms > self._batch_max_wait_ms or max_batch_events > self._batch_max_events:
-            raise IngressError("invalid_batching_policy", "Route batching exceeds deployment bounds.", status_code=400)
+            raise NativeError("invalid_batching_policy", "Route batching exceeds deployment bounds.", status_code=400)
 
 
 def _updated_route(record: RouteRecord, request: UpdateRouteRequest) -> CreateRouteRequest:
@@ -265,11 +266,11 @@ def _validate_route(
         return adapter.validate_route(
             match=request.match,
             provider_policy=request.provider_policy,
-            ingress_config=ingress.provider_config_json,
-            config_version=ingress.provider_config_version,
+            account_config=ingress.account.provider_config_json,
+            config_version=ingress.account.provider_config_version,
         )
     except ValueError as error:
-        raise IngressError(
+        raise NativeError(
             "invalid_route_config", "Route provider configuration is invalid.", status_code=400
         ) from error
 
@@ -285,7 +286,7 @@ async def _validate_route_agents(
     if agent_id is not None:
         selected.add(agent_id)
     if not selected <= allowed:
-        raise IngressError("invalid_agent_selection", "Route Agent must be allowed by its Ingress.", status_code=400)
+        raise NativeError("invalid_agent_selection", "Route Agent must be allowed by its Ingress.", status_code=400)
 
 
 def _compile_input_mapping(value: object | None) -> dict[str, JsonValue] | None:
@@ -294,4 +295,4 @@ def _compile_input_mapping(value: object | None) -> dict[str, JsonValue] | None:
     try:
         return compile_mapping(value).value
     except MappingError as error:
-        raise IngressError("invalid_input_mapping", "Route input mapping is invalid.", status_code=400) from error
+        raise NativeError("invalid_input_mapping", "Route input mapping is invalid.", status_code=400) from error

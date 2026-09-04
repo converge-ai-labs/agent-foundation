@@ -5,7 +5,7 @@ from __future__ import annotations
 from asyncio import timeout
 from contextlib import aclosing
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,7 +25,7 @@ from a13n_service.connectivity.management import (
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -51,9 +51,8 @@ from .management import (
     map_management_value_error,
     require_connector_provider,
     require_implementation,
-    secret_context,
 )
-from .models import ConnectorConnectionRecord, ConnectorProviderRecord
+from .models import ConnectorProviderRecord
 from .registry import ConnectorProviderDefinitionCollection
 
 
@@ -62,13 +61,13 @@ class ConnectorProviderService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         adapters: ConnectorProviderRegistry,
-        secrets: InternalSecretService,
+        protector: SecretProtector,
         *,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
-        self._secrets = secrets
+        self._protector = protector
         self._clock = clock
 
     async def type_definitions(self, *, actor: AuthenticatedActor) -> ConnectorProviderDefinitionCollection:
@@ -86,9 +85,7 @@ class ConnectorProviderService:
                 raise ConnectorError("connector_provider_disabled", "Connector Provider is disabled.", status_code=409)
             generation = record.credential_generation
         try:
-            raw = await self._secrets.resolve(
-                secret_context(record, operation=SecretOperation.reconciliation, generation=generation)
-            )
+            raw = record.credential_snapshot().decrypt(self._protector)
             async with (
                 timeout(30),
                 aclosing(configure_provider(self._adapters, record, decode_credentials(raw))) as runtime,
@@ -101,7 +98,7 @@ class ConnectorProviderService:
             ) from error
         except ConnectorProviderError as error:
             raise external_error(error) from error
-        except InternalSecretError as error:
+        except SecretProtectionError as error:
             raise ConnectorError(
                 "credential_unavailable", "Connector Provider credentials are unavailable.", status_code=503
             ) from error
@@ -174,20 +171,14 @@ class ConnectorProviderService:
                     configuration_json=configuration,
                     status=ConnectorProviderStatus.active.value,
                     version=1,
-                    credential_secret_id="",
-                    credential_generation=1,
+                    credential_generation=0,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
                     created_at=now,
                     updated_at=now,
                 )
-                secret_ref = await self._secrets.create_in_transaction(
-                    session,
-                    secret_context(record, operation=SecretOperation.management),
-                    canonical_json(credentials),
-                )
-                record.credential_secret_id = secret_ref.secret_id
-                record.credential_generation = secret_ref.version
+                record.replace_credential(canonical_json(credentials), self._protector)
+
                 session.add(record)
                 record_command(
                     session,
@@ -222,7 +213,7 @@ class ConnectorProviderService:
                 "ConnectorProvider identity or name already exists.",
                 status_code=409,
             ) from error
-        except InternalSecretError as error:
+        except SecretProtectionError as error:
             raise ConnectorError(
                 "credential_conflict",
                 "ConnectorProvider credentials could not be stored.",
@@ -354,12 +345,8 @@ class ConnectorProviderService:
                 credentials = adapter.validate_credentials(
                     credentials,
                 )
-                secret_ref = await self._secrets.replace_in_transaction(
-                    session,
-                    secret_context(record, operation=SecretOperation.management),
-                    canonical_json(credentials),
-                )
-            except InternalSecretError as error:
+                record.replace_credential(canonical_json(credentials), self._protector)
+            except SecretProtectionError as error:
                 raise ConnectorError(
                     "credential_conflict", "ConnectorProvider credentials could not be replaced.", status_code=409
                 ) from error
@@ -367,22 +354,9 @@ class ConnectorProviderService:
                 raise ConnectorError(
                     "invalid_credentials", "ConnectorProvider credentials are invalid.", status_code=400
                 ) from error
-            record.credential_generation = secret_ref.version
+
             record.version += 1
             record.updated_at = self._clock()
-            await session.execute(
-                update(ConnectorConnectionRecord)
-                .where(
-                    ConnectorConnectionRecord.connector_provider_id == record.id,
-                    ConnectorConnectionRecord.status == "ready",
-                    ConnectorConnectionRecord.deleted_at.is_(None),
-                )
-                .values(
-                    catalog_generation=ConnectorConnectionRecord.catalog_generation + 1,
-                    current_catalog_digest=None,
-                    catalog_available_at=record.updated_at,
-                )
-            )
             record_command(
                 session,
                 actor=actor,
@@ -450,19 +424,13 @@ class ConnectorProviderService:
             frozen_version = record.version
             frozen_credential_generation = record.credential_generation
         try:
-            raw = await self._secrets.resolve(
-                secret_context(
-                    record,
-                    operation=SecretOperation.reconciliation,
-                    generation=frozen_credential_generation,
-                )
-            )
+            raw = record.credential_snapshot().decrypt(self._protector)
             adapter = require_implementation(self._adapters, record.type)
             async with aclosing(adapter.configure(record.configuration_json, decode_credentials(raw))) as runtime:
                 await runtime.test()
         except ConnectorProviderError as error:
             raise external_error(error) from error
-        except InternalSecretError as error:
+        except SecretProtectionError as error:
             raise ConnectorError(
                 "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
             ) from error

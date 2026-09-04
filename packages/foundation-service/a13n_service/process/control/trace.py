@@ -6,16 +6,16 @@ from contextlib import AsyncExitStack
 
 import httpx2
 
-from a13n_service.process.components import ServiceComponents
-from a13n_service.settings import ServiceSettings
+from a13n_service.process.components import Components
+from a13n_service.settings import Settings
 from a13n_service.trace_query.langfuse import LangfuseTraceQueryProvider
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 from a13n_service.trace_query.service import TraceQueryService
 
 
 async def build_trace_query_service(
-    settings: ServiceSettings,
-    components: ServiceComponents,
+    settings: Settings,
+    components: Components,
     registry: TraceQueryProviderRegistry,
     stack: AsyncExitStack,
 ) -> TraceQueryService:

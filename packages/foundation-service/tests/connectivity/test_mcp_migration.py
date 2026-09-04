@@ -5,7 +5,7 @@ from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
-TABLES = {"mcp_connections", "mcp_oauth_sessions", "mcp_tool_catalogs"}
+TABLES = {"mcp_connections", "mcp_oauth_sessions"}
 
 
 def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
@@ -15,6 +15,7 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
     engine = create_engine(sync_database_url(config))
     try:
         inspector = inspect(engine)
+        assert "mcp_tool_catalogs" not in inspector.get_table_names()
         assert TABLES <= set(inspector.get_table_names())
         connection_columns = {column["name"] for column in inspector.get_columns("mcp_connections")}
         assert {
@@ -22,12 +23,24 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
             "auth_mode",
             "owner_user_id",
             "credential_generation",
-            "catalog_generation",
-            "current_catalog_digest",
+            "refresh_claim_generation",
+            "refresh_claim_owner",
+            "refresh_claim_expires_at",
+            "refresh_available_at",
+            "refresh_last_error_code",
             "deleted_at",
         } <= connection_columns
+        indexes = {index["name"]: index for index in inspector.get_indexes("mcp_connections")}
+        assert indexes["ix_mcp_connections_refresh_reconcile"]["column_names"] == [
+            "status",
+            "refresh_available_at",
+            "refresh_claim_expires_at",
+            "id",
+        ]
+        constraints = {constraint["name"] for constraint in inspector.get_check_constraints("mcp_connections")}
+        assert "ck_mcp_connections_refresh_claim_generation_non_negative" in constraints
         session_columns = {column["name"] for column in inspector.get_columns("mcp_oauth_sessions")}
-        assert {"state_digest", "setup_secret_id", "claim_generation", "expires_at"} <= session_columns
+        assert {"state_digest", "ciphertext", "claim_generation", "expires_at"} <= session_columns
     finally:
         engine.dispose()
     migrator.downgrade("base")

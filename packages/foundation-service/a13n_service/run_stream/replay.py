@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import JsonValue, TypeAdapter
 
-from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectStore
+from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectNotFound, ObjectStore, ObjectStoreError
 from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
 
 from .domain import (
@@ -25,6 +25,7 @@ from .redis import run_stream_key_digest_sha256
 
 RUN_REPLAY_CONTENT_TYPE = "application/vnd.converge.run-replay+json"
 _SNAPSHOT_ADAPTER = TypeAdapter(RunReplaySnapshot)
+_JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
 
 
 class RunReplayIntegrityError(RunStreamError):
@@ -100,9 +101,20 @@ class RunReplayStore:
         _verify_info(info, key=key, body=body, metadata=metadata)
         return snapshot
 
-    async def read(self, tenant_id: str, run_id: str) -> RunReplaySnapshot:
+    async def read(
+        self,
+        tenant_id: str,
+        run_id: str,
+        *,
+        expected_thread_id: str | None = None,
+    ) -> RunReplaySnapshot:
         key = run_replay_key(tenant_id, run_id)
-        body, info = await _read_object(self._objects, key, max_bytes=self._max_bytes)
+        try:
+            body, info = await _read_object(self._objects, key, max_bytes=self._max_bytes)
+        except ObjectNotFound as error:
+            raise RetainedReplayUnavailable("retained Run replay is unavailable") from error
+        except ObjectStoreError as error:
+            raise RunReplayIntegrityError("retained Run replay could not be read") from error
         digest = hashlib.sha256(body).hexdigest()
         metadata = {"schema-version": "1", "run-id": run_id, "digest-sha256": digest}
         _verify_info(info, key=key, body=body, metadata=metadata)
@@ -110,7 +122,7 @@ class RunReplayStore:
             snapshot = decode_canonical_model(body, _SNAPSHOT_ADAPTER)
         except DurableObjectCodecError as error:
             raise RunReplayIntegrityError("retained replay body is invalid") from error
-        if snapshot.run_id != run_id:
+        if snapshot.run_id != run_id or (expected_thread_id is not None and snapshot.thread_id != expected_thread_id):
             raise RunReplayIntegrityError("retained replay body belongs to another Run")
         if snapshot.stream_key_digest_sha256 != run_stream_key_digest_sha256(tenant_id, run_id):
             raise RunReplayIntegrityError("retained replay Stream identity is invalid")
@@ -139,9 +151,16 @@ def _retained_item(item_id: str, entries: list[RunStreamEntry]) -> RetainedItem:
     parent = first.event.payload.get("parent_item_id")
     if not isinstance(parent, str):
         parent = None
-    content: JsonValue = {
-        "events": [{"event_type": entry.event.event_type, "payload": entry.event.payload} for entry in entries]
-    }
+    content: JsonValue
+    if kind == "run_output":
+        content = last.event.payload.get("content")
+        if not isinstance(content, dict):
+            raise RunReplayIntegrityError("terminal Run output Item omitted its selected content")
+    else:
+        content = _JSON_VALUE_ADAPTER.validate_python(
+            {"events": [{"event_type": entry.event.event_type, "payload": entry.event.payload} for entry in entries]},
+            strict=True,
+        )
     return RetainedItem(
         id=item_id,
         kind=kind,

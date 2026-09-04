@@ -34,8 +34,12 @@ nav:
           - Overview: agent-environment-provider/index.md
           - Built-in Examples: agent-environment-provider/examples.md
       - agent-envd: agent-envd/index.md
+  - Foundation Service:
+      - External Tools: foundation-service/external-tools.md
   - Streaming:
       - Agent Stream Protocol: agent-stream-protocol/index.md
+  - Foundation Service:
+      - Configure Models: foundation-service/models.md
 
 theme:
   name: material

@@ -7,6 +7,7 @@ import pytest
 from a13n_harness import HarnessEvent, HarnessRunResult, HarnessRunResultEvent, HarnessState, SafeFailure
 from a13n_service.interactions import EnvironmentHookObservation
 from a13n_service.run_stream import (
+    MAX_RUN_STREAM_PAYLOAD_BYTES,
     RedisRunStream,
     RetainedReplayUnavailable,
     RunStreamEvent,
@@ -134,6 +135,41 @@ async def test_projects_terminal_harness_result(
 
     assert tuple(entry.event.event_type for entry in page.items) == (expected_type,)
     assert page.items[0].event.item_id is None
+
+
+async def test_oversized_terminal_result_is_explicitly_omitted(redis_client: Redis) -> None:
+    stream = RedisRunStream(redis_client)
+    projector = RunStreamHarnessProjector(
+        stream,
+        tenant_id=TENANT_ID,
+        run_id=RUN_ID,
+        thread_id=THREAD_ID,
+        run_attempt_id=ATTEMPT_ID,
+        harness_run_id=HARNESS_RUN_ID,
+    )
+    projector.project(
+        HarnessRunResultEvent(
+            thread_id=THREAD_ID,
+            run_id=HARNESS_RUN_ID,
+            sequence=0,
+            occurred_at=NOW,
+            result=HarnessRunResult(
+                thread_id=THREAD_ID,
+                run_id=HARNESS_RUN_ID,
+                status="completed",
+                output="x" * (MAX_RUN_STREAM_PAYLOAD_BYTES + 1),
+                state=HarnessState.new(thread_id=THREAD_ID),
+                usage=RunUsage(),
+            ),
+        )
+    )
+
+    await projector.close()
+    page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
+
+    assert len(page.items) == 1
+    assert page.items[0].event.payload["result"] is None
+    assert page.items[0].event.payload["result_omitted"] is True
 
 
 async def test_tool_item_closes_only_after_successful_result(redis_client: Redis) -> None:

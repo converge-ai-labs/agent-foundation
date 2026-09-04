@@ -4,7 +4,7 @@
 
 Foundation Service Protocol Gateway is the public protocol boundary of the `control` and `all` roles. It exposes Foundation-owned Native APIs, hosted AG-UI, and A2A without introducing another interaction model, execution authority, or independently deployed proxy. Each adapter validates and maps its own wire protocol, then calls the same Foundation application commands, queries, and authorized subscription ports.
 
-The [External Connectivity subsystem](40-connectivity/README.md) owns provider event ingress and the Agent-facing a13n MCP on `connectivity` and `all` roles. Those surfaces are not Protocol Gateway adapters and do not enter the Native `/api/v1` namespace.
+The [External Connectivity subsystem](40-connectivity/README.md) owns provider event ingress on `connectivity` and `all` roles. Its in-process a13n MCP tool groups execute inside Workers or Runners and have no HTTP listener. Neither is a Protocol Gateway adapter or Native `/api/v1` operation.
 
 The Gateway does not own Agent execution, Run scheduling, persistence, or authorization policy. The durable [`Session`, `Thread`, `Run`, and `Item`](../interaction-model.md) model, current [IAM](33-identity-and-access-management.md), and the owning domain use case remain authoritative regardless of which protocol accepted or delivered the operation.
 
@@ -19,7 +19,7 @@ The Gateway does not own Agent execution, Run scheduling, persistence, or author
 | Native Run replay and notifications                   | [Native Streaming and Notifications](21-native-streaming-and-notifications.md)                                                      | Gateway supplies SSE and WebSocket transports                                                                        |
 | Hosted AG-UI input and delivery                       | [Hosted AG-UI](22-hosted-ag-ui.md)                                                                                                  | Gateway maps standard input and events to Foundation operations                                                      |
 | A2A discovery, Task projection, and delivery          | [A2A](23-a2a.md)                                                                                                                    | Gateway implements the selected A2A binding                                                                          |
-| SDK, CLI, and browser consumption                     | [Service SDKs and Clients](37-service-sdks-and-clients.md)                                                                          | Clients consume public protocols only                                                                                |
+| SDK and CLI consumption                               | [Service SDKs and Clients](37-service-sdks-and-clients.md)                                                                          | Clients consume public protocols only                                                                                |
 | Durable interaction identity and Run lifecycle        | [Agent Interaction and Execution Model](10-agent-interaction-and-execution-model.md) and [Durable Run State](12-run-persistence.md) | Protocol responses report but never replace durable facts                                                            |
 | Stream sources and retained projection                | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md)                                                          | Protocol delivery reads authorized projections                                                                       |
 | Agent protocol metadata and policy                    | [Agent Management](28-agent-management.md#protocol-configuration)                                                                   | Acceptance freezes the selected Agent Revision and protocol configuration                                            |
@@ -33,7 +33,7 @@ Only `control` and `all` roles expose the protocols owned by this Gateway. A `wo
 
 | Surface      | Namespace                                                  | Availability                                                               | Primary callers                                  |
 | ------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------ |
-| Native API   | `/api/v1`                                                  | Always present on `control` and `all`                                      | SDKs, Foundation Web, and remote CLI             |
+| Native API   | `/api/v1`                                                  | Always present on `control` and `all`                                      | SDKs and remote CLI                              |
 | Hosted AG-UI | `/ag-ui/v1`                                                | Always present on `control` and `all`                                      | Standard AG-UI clients and third-party frontends |
 | A2A          | direct `/a2a/v1/agents/{agent_id}` plus hostname discovery | Controlled only by deployment-wide `a2a_enabled`, which defaults to `true` | Remote Agents and Agent platforms                |
 

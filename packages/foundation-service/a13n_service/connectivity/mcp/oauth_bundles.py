@@ -63,10 +63,6 @@ def required_oauth_string(value: JsonObject, key: str) -> str:
     return _required_string(value, key)
 
 
-def oauth_setup_secret_key(session_id: str) -> str:
-    return f"oauth_setup.{session_id}"
-
-
 def with_expiration(bundle: dict[str, Any], now: datetime) -> dict[str, Any]:
     expires_in = bundle.get("expires_in")
     if expires_in is None:

@@ -19,7 +19,6 @@ def _connection(**changes: object) -> ConnectorConnection:
         "status": "pending",
         "status_reason": None,
         "version": 1,
-        "catalog_digest": None,
         "created_by": PrincipalRef(principal_type="user", principal_id="usr_abcdef1234567890"),
         "created_at": datetime(2026, 9, 3, tzinfo=UTC),
         "updated_at": datetime(2026, 9, 3, tzinfo=UTC),
@@ -44,8 +43,8 @@ def test_connector_connection_public_shape_excludes_external_reference() -> None
 @pytest.mark.parametrize(
     "legacy",
     [
-        {"driver_key": "openconnector"},
-        {"config_version": "native_v1"},
+        {"driver_key": "composio"},
+        {"config_version": "v3_1"},
         {"endpoint": "https://other.example"},
         {"config": {}},
     ],
@@ -57,7 +56,7 @@ def test_provider_creation_rejects_removed_fields(legacy) -> None:
         CreateConnectorProviderRequest.model_validate(
             {
                 "name": "Work",
-                "type": "openconnector",
+                "type": "composio",
                 "configuration": {"deployment": "cloud", "enabled_provider_slugs": ["github"]},
                 "credentials": {"api_key": "secret"},
                 **legacy,

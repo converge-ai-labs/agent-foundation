@@ -218,7 +218,7 @@ flowchart LR
     Generation & Thread --> Graph --> Validate --> Composition --> Native
 ```
 
-The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, Project roots, the exact installed Content Plugin identities and immutable paths, Environment profile selection, Environment Run Extensions, and dependency provenance. A selected `skills` Capability captures only its ordered explicit Environment roots; automatic Project, plugin, and user sources are derived during fresh reconstruction under [Environment Skill Sources](02b-environment-skill-sources.md). The composition contains no Skill bytes or discovered catalog, credential bytes, native client, Environment adapter, task, callback, or active state coordinator.
+The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, Project roots, the exact installed Content Plugin identities and captured editable paths, Environment profile selection, Environment Run Extensions, and dependency provenance. A selected `skills` Capability captures only its ordered explicit Environment roots; automatic Project, plugin, and user sources are derived during fresh reconstruction under [Environment Skill Sources](02b-environment-skill-sources.md). The composition contains no Skill bytes or discovered catalog, credential bytes, native client, Environment adapter, task, callback, or active state coordinator.
 
 ## Continuing Across Composition Changes
 
@@ -230,7 +230,7 @@ Every continuation bundle records the Run composition that produced it. This is 
 
 ## Invariants
 
-1. Agent, Model, MCP, and local Markdown resources are human-editable current definitions; plugin Markdown is an immutable installed catalog input.
+1. Agent, Model, MCP, local Markdown, and installed plugin Markdown resources are human-editable current definitions.
 2. Agent configuration selects Capabilities; Capabilities own Toolsets.
 3. Thread selections can replace Agent Plugin and MCP defaults between Runs.
 4. Every Run captures a complete immutable composition before native construction.

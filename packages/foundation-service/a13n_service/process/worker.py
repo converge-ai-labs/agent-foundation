@@ -5,7 +5,13 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 from datetime import timedelta
 
+import httpx2
+
 from a13n_service.agents.domain import PluginRuntimeMode
+from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from a13n_service.connectivity.execution import ExternalToolRuntime
+from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.domain import EnvironmentTargetRetentionBehavior
 from a13n_service.environments.keepalive import (
@@ -31,7 +37,7 @@ from a13n_service.process.background import BackgroundTask
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
 from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
 
 
@@ -42,12 +48,13 @@ class _NoEnvironmentKeepaliveSources:
 
 
 async def build_worker_runtime(
-    settings: ServiceSettings,
+    settings: Settings,
     shared: SharedRuntime,
     execution: ExecutionResources,
     environment_catalog: FoundationEnvironmentProviderCatalog,
     keepalive_sources: EnvironmentKeepaliveSourceResolver | None,
     stack: AsyncExitStack,
+    connector_providers: ConnectorProviderRegistry | None = None,
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
 
@@ -136,7 +143,22 @@ async def build_worker_runtime(
             ),
         ).project,
     )
+    endpoint_policy = settings.connectivity_endpoint_policy()
+    http = await stack.enter_async_context(
+        httpx2.AsyncClient(timeout=settings.connectivity_total_timeout_seconds, follow_redirects=False)
+    )
+    external_tools = ExternalToolRuntime(
+        shared.storage.sessions,
+        shared.secret_protector,
+        connector_providers
+        or built_in_connector_provider_registry(
+            http, endpoint_policy, response_max_bytes=settings.connectivity_response_max_bytes
+        ),
+        RemoteTransport(endpoint_policy, timeout_seconds=settings.connectivity_total_timeout_seconds),
+        endpoint_policy,
+    )
     runtime = WorkerRuntime(
+        external_tools=external_tools,
         plugin_materializer=materializer,
         plugin_runtime=plugin_runtime,
         native_model_factory=execution.native_model_factory,

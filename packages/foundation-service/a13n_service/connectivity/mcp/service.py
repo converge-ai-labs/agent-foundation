@@ -23,7 +23,7 @@ from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import InternalSecretError, InternalSecretService, SecretOperation
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -39,6 +39,7 @@ from .domain import (
     MCPConnection,
     MCPConnectionCollection,
     MCPConnectionStatus,
+    MCPTool,
     ReplaceMCPCredentialsRequest,
     UpdateMCPConnectionRequest,
 )
@@ -48,18 +49,17 @@ from .management import (
     authorize_connection,
     authorize_workspace_action,
     has_admin_access,
-    invalidate_catalog_claim,
+    invalidate_refresh_claim,
     map_management_error,
     not_found,
     require_connection,
     require_version,
-    secret_context,
 )
 from .models import MCPConnectionRecord, MCPOAuthSessionRecord
 
 
-class CatalogRefresher(Protocol):
-    async def refresh(self, connection_id: str) -> str: ...
+class ConnectionDiscovery(Protocol):
+    async def discover(self, connection_id: str) -> tuple[MCPTool, ...]: ...
 
 
 class RegistrationCleaner(Protocol):
@@ -71,16 +71,16 @@ class MCPConnectionService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         endpoint_policy: EndpointPolicy,
-        secrets: InternalSecretService,
-        catalog: CatalogRefresher,
+        protector: SecretProtector,
+        discovery: ConnectionDiscovery,
         *,
         registration_cleaner: RegistrationCleaner | None = None,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._endpoint_policy = endpoint_policy
-        self._secrets = secrets
-        self._catalog = catalog
+        self._protector = protector
+        self._discovery = discovery
         self._registration_cleaner = registration_cleaner
         self._clock = clock
 
@@ -148,15 +148,12 @@ class MCPConnectionService:
                     status=MCPConnectionStatus.pending.value,
                     status_reason=None,
                     version=1,
-                    credential_secret_id=None,
                     credential_generation=0,
-                    catalog_generation=0,
-                    current_catalog_digest=None,
-                    catalog_claim_generation=0,
-                    catalog_claim_owner=None,
-                    catalog_claim_expires_at=None,
-                    catalog_available_at=now,
-                    catalog_last_error_code=None,
+                    refresh_claim_generation=0,
+                    refresh_claim_owner=None,
+                    refresh_claim_expires_at=None,
+                    refresh_available_at=now,
+                    refresh_last_error_code=None,
                     cleanup_pending=False,
                     cleanup_attempt_count=0,
                     cleanup_available_at=now,
@@ -191,7 +188,7 @@ class MCPConnectionService:
                 status_code=409,
             ) from error
         if request.auth_mode is MCPAuthMode.none:
-            await self._catalog.refresh(connection_id)
+            await self._discovery.discover(connection_id)
         return await self.get(actor=actor, connection_id=connection_id)
 
     async def list(
@@ -299,35 +296,19 @@ class MCPConnectionService:
                 return await self._resource(session, record.id)
             require_version(record.version, request.expected_version)
             try:
-                if record.credential_secret_id is None:
-                    secret_ref = await self._secrets.create_in_transaction(
-                        session,
-                        secret_context(
-                            record,
-                            operation=SecretOperation.management,
-                            generation=1,
-                        ),
-                        credential_value,
-                    )
-                else:
-                    secret_ref = await self._secrets.replace_in_transaction(
-                        session,
-                        secret_context(record, operation=SecretOperation.management),
-                        credential_value,
-                    )
-            except InternalSecretError as error:
+                record.replace_credential(credential_value, self._protector)
+            except SecretProtectionError as error:
                 raise MCPConnectionError(
                     "credential_conflict",
                     "MCP credentials could not be stored.",
                     status_code=409,
                 ) from error
-            record.credential_secret_id = secret_ref.secret_id
-            record.credential_generation = secret_ref.version
+
             record.status = "pending"
             record.status_reason = None
             record.version += 1
             record.updated_at = self._clock()
-            invalidate_catalog_claim(record, now=record.updated_at)
+            invalidate_refresh_claim(record, now=record.updated_at)
             self._record(
                 session,
                 actor=actor,
@@ -336,7 +317,7 @@ class MCPConnectionService:
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
             )
-        await self._catalog.refresh(connection_id)
+        await self._discovery.discover(connection_id)
         return await self.get(actor=actor, connection_id=connection_id)
 
     async def reconnect(
@@ -363,13 +344,13 @@ class MCPConnectionService:
             if replay:
                 return await self._resource(session, record.id)
             require_version(record.version, expected_version)
-            if record.auth_mode != "none" and record.credential_secret_id is None:
+            if record.auth_mode != "none" and record.ciphertext is None:
                 raise MCPConnectionError("credentials_required", "MCP credentials are required.", status_code=409)
             record.status = "pending"
             record.status_reason = None
             record.version += 1
             record.updated_at = self._clock()
-            invalidate_catalog_claim(record, now=record.updated_at)
+            invalidate_refresh_claim(record, now=record.updated_at)
             self._record(
                 session,
                 actor=actor,
@@ -378,7 +359,7 @@ class MCPConnectionService:
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
             )
-        await self._catalog.refresh(connection_id)
+        await self._discovery.discover(connection_id)
         return await self.get(actor=actor, connection_id=connection_id)
 
     async def set_enabled(
@@ -412,17 +393,16 @@ class MCPConnectionService:
             if not replay:
                 require_version(record.version, expected_version)
                 if enabled:
-                    digest = record.current_catalog_digest
-                    if digest is None or (record.auth_mode != "none" and record.credential_secret_id is None):
+                    if record.auth_mode != "none" and record.ciphertext is None:
                         raise MCPConnectionError(
                             "connection_not_ready",
-                            "MCPConnection has no compatible credentials and catalog.",
+                            "MCPConnection has no eligible credentials.",
                             status_code=409,
                         )
                     record.status = "ready"
                 else:
                     record.status = "disabled"
-                    invalidate_catalog_claim(record, now=self._clock())
+                    invalidate_refresh_claim(record, now=self._clock())
                 record.status_reason = None
                 record.version += 1
                 record.updated_at = self._clock()
@@ -461,12 +441,9 @@ class MCPConnectionService:
             if replay:
                 return
             require_version(record.version, expected_version)
-            cleanup_required = record.auth_mode == MCPAuthMode.oauth.value and record.credential_secret_id is not None
-            if record.credential_secret_id is not None and not cleanup_required:
-                await self._secrets.tombstone_in_transaction(
-                    session,
-                    secret_context(record, operation=SecretOperation.management),
-                )
+            cleanup_required = record.auth_mode == MCPAuthMode.oauth.value and record.ciphertext is not None
+            if record.ciphertext is not None and not cleanup_required:
+                record.clear_credential()
             deleted_at = self._clock()
             record.status = "disabled"
             record.status_reason = None
@@ -475,7 +452,7 @@ class MCPConnectionService:
             record.deleted_at = deleted_at
             record.version += 1
             record.updated_at = deleted_at
-            invalidate_catalog_claim(record, now=deleted_at)
+            invalidate_refresh_claim(record, now=deleted_at)
             oauth_sessions = await session.scalars(
                 select(MCPOAuthSessionRecord).where(
                     MCPOAuthSessionRecord.mcp_connection_id == record.id,
@@ -501,22 +478,16 @@ class MCPConnectionService:
     async def reconcile_cleanup(self, connection_id: str) -> bool:
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, include_deleted=True)
-            if not record.cleanup_pending or record.credential_secret_id is None:
+            if not record.cleanup_pending or record.ciphertext is None:
                 return True
             generation = record.credential_generation
         cleaned = False
         try:
-            raw = await self._secrets.resolve(
-                secret_context(
-                    record,
-                    operation=SecretOperation.reconciliation,
-                    generation=generation,
-                )
-            )
+            raw = record.credential_snapshot().decrypt(self._protector)
             bundle = json.loads(raw)
             if isinstance(bundle, dict) and self._registration_cleaner is not None:
                 cleaned = await self._registration_cleaner.cleanup_registration_bundle(bundle)
-        except (InternalSecretError, json.JSONDecodeError, UnicodeDecodeError, RecursionError, ValueError):
+        except (SecretProtectionError, json.JSONDecodeError, UnicodeDecodeError, RecursionError, ValueError):
             cleaned = False
         now = self._clock()
         async with transaction(self._sessions) as session:
@@ -530,10 +501,7 @@ class MCPConnectionService:
                 delay = min(3600, 30 * (2 ** min(current.cleanup_attempt_count - 1, 7)))
                 current.cleanup_available_at = now + timedelta(seconds=delay)
                 return False
-            await self._secrets.tombstone_in_transaction(
-                session,
-                secret_context(current, operation=SecretOperation.reconciliation),
-            )
+            current.clear_credential()
             current.cleanup_pending = False
             current.cleanup_last_error_code = None
             return True

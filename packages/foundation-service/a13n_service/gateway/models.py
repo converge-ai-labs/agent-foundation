@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 
 
@@ -302,9 +303,10 @@ class A2AMessageBindingRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class A2APushConfigurationRecord(Base):
+class A2APushConfigurationRecord(ResourceCredential, Base):
     """One protected future-delivery configuration owned by an A2A Task."""
 
+    credential_owner_type = "a2a_push_configuration"
     __tablename__ = "a2a_push_configurations"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -315,15 +317,11 @@ class A2APushConfigurationRecord(Base):
         CheckConstraint("creator_principal_type IN ('user', 'service_account')", name="creator_type_valid"),
         CheckConstraint("state IN ('active', 'disabled')", name="state_valid"),
         CheckConstraint("delivery_generation >= 1", name="delivery_generation_positive"),
-        CheckConstraint("token_secret_version IS NULL OR token_secret_version >= 1", name="token_version_positive"),
+        CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint(
-            "authentication_secret_version IS NULL OR authentication_secret_version >= 1",
-            name="authentication_version_positive",
-        ),
-        CheckConstraint(
-            "(authentication_scheme IS NULL AND authentication_secret_version IS NULL) OR "
-            "(authentication_scheme IS NOT NULL)",
-            name="authentication_shape_valid",
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name="credential_material_consistent",
         ),
         CheckConstraint(
             "(state = 'active' AND deleted_at IS NULL) OR (state = 'disabled' AND deleted_at IS NOT NULL)",
@@ -347,8 +345,6 @@ class A2APushConfigurationRecord(Base):
     creator_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)
     endpoint_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     authentication_scheme: Mapped[str | None] = mapped_column(String(128))
-    token_secret_version: Mapped[int | None] = mapped_column(BigInteger)
-    authentication_secret_version: Mapped[int | None] = mapped_column(BigInteger)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
     protocol_version: Mapped[str] = mapped_column(String(32), nullable=False)
     delivery_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)

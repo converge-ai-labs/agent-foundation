@@ -9,14 +9,14 @@ from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.models.runtime import AcceptedModelSelector
-from a13n_service.process.components import ServiceComponents
+from a13n_service.process.components import Components
 from a13n_service.process.runtime import SharedRuntime
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 
 
 def build_agent_management(
-    settings: ServiceSettings,
-    components: ServiceComponents,
+    settings: Settings,
+    components: Components,
     shared: SharedRuntime,
     accepted_models: AcceptedModelSelector,
     environment_selection: AgentEnvironmentSelectionResolver,

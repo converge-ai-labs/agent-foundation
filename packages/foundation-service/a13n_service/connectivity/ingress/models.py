@@ -18,14 +18,15 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from a13n_service.agents.domain import AgentRunOverride
+from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
 
-from .domain import Ingress, IngressStatus, InputBatchingPolicy, Route
+from .domain import Ingress, IngressProviderConfig, IngressStatus, InputBatchingPolicy, Route
 
 _OVERLAYS = TypeAdapter(dict[str, AgentRunOverride])
 
@@ -33,6 +34,12 @@ _OVERLAYS = TypeAdapter(dict[str, AgentRunOverride])
 class IngressRecord(Base):
     __tablename__ = "ingresses"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ("account_id", "organization_id", "workspace_id"),
+            ("application_accounts.id", "application_accounts.organization_id", "application_accounts.workspace_id"),
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("account_id", name="uq_ingresses_account"),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
@@ -45,13 +52,11 @@ class IngressRecord(Base):
         ),
         CheckConstraint("status IN ('active', 'disabled')", name="status_valid"),
         CheckConstraint("version >= 1", name="version_positive"),
-        CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         Index("uq_ingresses_id_tenant", "id", "organization_id", "workspace_id", unique=True),
         Index("uq_ingresses_workspace_name", "workspace_id", "normalized_name", unique=True),
         Index("ix_ingresses_workspace_updated", "workspace_id", "updated_at", "id"),
-        Index("ix_ingresses_provider_status", "provider_key", "status", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -59,8 +64,8 @@ class IngressRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    provider_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    provider_config_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    account_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    account: Mapped[AccountRecord] = relationship(lazy="joined", innerjoin=True)
     provider_config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     execution_service_account_id: Mapped[str] = mapped_column(
         String(72), ForeignKey("service_accounts.id", ondelete="RESTRICT"), nullable=False
@@ -68,10 +73,6 @@ class IngressRecord(Base):
     default_agent_id: Mapped[str] = mapped_column(String(72), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    credential_secret_id: Mapped[str] = mapped_column(
-        String(72), ForeignKey("secrets.id", ondelete="RESTRICT"), nullable=False
-    )
-    credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -83,9 +84,8 @@ class IngressRecord(Base):
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
             name=self.name,
-            provider_key=self.provider_key,
-            provider_config_version=self.provider_config_version,
-            provider_config=self.provider_config_json,
+            account_id=self.account_id,
+            provider_config=IngressProviderConfig.model_validate(self.provider_config_json),
             execution_principal_ref=PrincipalRef(
                 principal_type=PrincipalType.service_account,
                 principal_id=self.execution_service_account_id,
@@ -94,8 +94,6 @@ class IngressRecord(Base):
             default_agent_id=self.default_agent_id,
             status=IngressStatus(self.status),
             version=self.version,
-            credential_configured=True,
-            credential_generation=self.credential_generation,
             created_by=PrincipalRef(
                 principal_type=PrincipalType(self.created_by_type),
                 principal_id=self.created_by_id,

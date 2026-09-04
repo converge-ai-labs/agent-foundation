@@ -10,10 +10,10 @@ from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelService
-from a13n_service.process.components import ServiceComponents
+from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,8 +24,8 @@ class _ModelBundle:
 
 
 def build_model_bundle(
-    settings: ServiceSettings,
-    components: ServiceComponents,
+    settings: Settings,
+    components: Components,
     shared: SharedRuntime,
     execution: ExecutionResources,
 ) -> _ModelBundle:

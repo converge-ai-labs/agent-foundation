@@ -57,7 +57,7 @@ Use the Makefile as the stable development interface:
 | `make help`                 | List available commands                                           |
 | `make install`              | Synchronize locked workspace, application, and SDK dependencies   |
 | `make setup`                | Start local PostgreSQL and Redis                                  |
-| `make dev`                  | Upgrade the schema and run Foundation Service with Foundation Web |
+| `make dev`                  | Upgrade the schema and run Foundation Service                     |
 | `make dev-down`             | Stop local infrastructure and remove its data volumes             |
 | `make langfuse-up`          | Start the isolated local Langfuse trace backend                   |
 | `make langfuse-down`        | Stop local Langfuse while preserving its data                     |
@@ -75,8 +75,6 @@ Use the Makefile as the stable development interface:
 | `make rust-check`           | Format-check and lint the root Rust workspace                     |
 | `make sdk-check`            | Lint and type-check the standalone SDKs                           |
 | `make foundation-cli-check` | Format-check and lint the standalone Foundation CLI               |
-| `make foundation-web-check` | Format-check and type-check Foundation Web                        |
-| `make foundation-web-build` | Build Foundation Web production assets                            |
 | `make build`                | Build all workspace packages, applications, and standalone SDKs   |
 | `make images`               | Build the foundation-service and sandbox images                   |
 | `make image-check`          | Build and smoke-check both container images                       |

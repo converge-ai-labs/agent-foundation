@@ -10,7 +10,7 @@ from a13n_service.assets.service import AssetService
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.runtime import SharedRuntime
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,7 +20,7 @@ class _AssetBundle:
 
 
 async def build_asset_bundle(
-    settings: ServiceSettings,
+    settings: Settings,
     shared: SharedRuntime,
 ) -> _AssetBundle:
     """Construct Asset storage services and cleanup reconciliation."""

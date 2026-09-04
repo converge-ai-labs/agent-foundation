@@ -1,4 +1,4 @@
-from a13n_service.request_runtime import get_service_runtime
+from a13n_service.request_runtime import get_process_runtime
 from fastapi import FastAPI, Request
 
 
@@ -14,16 +14,16 @@ def _request(app: FastAPI) -> Request:
     )
 
 
-def test_service_runtime_rejects_untyped_application_state() -> None:
+def test_process_runtime_rejects_untyped_application_state() -> None:
     app = FastAPI()
     app.state.runtime = object()
 
-    assert get_service_runtime(_request(app)) is None
+    assert get_process_runtime(_request(app)) is None
 
 
-def test_service_runtime_accepts_typed_application_state(service_runtime_factory) -> None:
+def test_process_runtime_accepts_typed_application_state(process_runtime_factory) -> None:
     app = FastAPI()
-    runtime = service_runtime_factory()
+    runtime = process_runtime_factory()
     app.state.runtime = runtime
 
-    assert get_service_runtime(_request(app)) is runtime
+    assert get_process_runtime(_request(app)) is runtime

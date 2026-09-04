@@ -39,31 +39,3 @@ class SecretOwnerType(StrEnum):
 
     workspace = "workspace"
     user = "user"
-    ingress = "ingress"
-    connector_provider = "connector_provider"
-    mcp_connection = "mcp_connection"
-    a2a_push_configuration = "a2a_push_configuration"
-
-
-class SecretOperation(StrEnum):
-    """Finite internal reasons for resolving or changing protected material."""
-
-    management = "management"
-    runtime = "runtime"
-    setup = "setup"
-    callback = "callback"
-    reconciliation = "reconciliation"
-
-
-class SecretUseContext(BaseModel):
-    """Exact owner, key, generation, and operation for one internal Secret use."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    organization_id: str = Field(min_length=1, max_length=72)
-    workspace_id: str = Field(min_length=1, max_length=72)
-    owner_type: SecretOwnerType
-    owner_id: str = Field(min_length=1, max_length=72)
-    key: SecretKey
-    operation: SecretOperation
-    credential_generation: int = Field(ge=1)

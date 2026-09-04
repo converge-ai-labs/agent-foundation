@@ -29,8 +29,10 @@ def upgrade() -> None:
         sa.Column("creator_principal_id", sa.String(length=72), nullable=False),
         sa.Column("endpoint_url", sa.String(length=2048), nullable=False),
         sa.Column("authentication_scheme", sa.String(length=128), nullable=True),
-        sa.Column("token_secret_version", sa.BigInteger(), nullable=True),
-        sa.Column("authentication_secret_version", sa.BigInteger(), nullable=True),
+        sa.Column("credential_generation", sa.BigInteger(), nullable=False),
+        sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
+        sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
+        sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
         sa.Column("state", sa.String(length=32), nullable=False),
         sa.Column("protocol_version", sa.String(length=32), nullable=False),
         sa.Column("delivery_generation", sa.BigInteger(), nullable=False),
@@ -47,19 +49,16 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("state IN ('active', 'disabled')", name=op.f("ck_a2a_push_configurations_state_valid")),
         sa.CheckConstraint(
-            "(authentication_scheme IS NULL AND authentication_secret_version IS NULL) OR (authentication_scheme IS NOT NULL)",
-            name=op.f("ck_a2a_push_configurations_authentication_shape_valid"),
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name=op.f("ck_a2a_push_configurations_credential_material_consistent"),
         ),
         sa.CheckConstraint(
-            "authentication_secret_version IS NULL OR authentication_secret_version >= 1",
-            name=op.f("ck_a2a_push_configurations_authentication_version_positive"),
+            "credential_generation >= 1",
+            name=op.f("ck_a2a_push_configurations_credential_generation_positive"),
         ),
         sa.CheckConstraint(
             "delivery_generation >= 1", name=op.f("ck_a2a_push_configurations_delivery_generation_positive")
-        ),
-        sa.CheckConstraint(
-            "token_secret_version IS NULL OR token_secret_version >= 1",
-            name=op.f("ck_a2a_push_configurations_token_version_positive"),
         ),
         sa.ForeignKeyConstraint(
             ["task_id", "organization_id"],

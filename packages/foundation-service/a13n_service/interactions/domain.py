@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -117,13 +118,6 @@ class RunPayloadObjectRef(StrictModel):
     digest_sha256: Sha256Digest
     size_bytes: int = Field(ge=1)
     content_type: Annotated[str, StringConstraints(min_length=1, max_length=255)]
-    schema_version: SchemaVersion
-
-
-class MCPToolSnapshotRef(StrictModel):
-    digest_sha256: Sha256Digest
-    size_bytes: int = Field(ge=1)
-    content_type: Literal["application/vnd.a13n.mcp-tool-snapshot+json"]
     schema_version: SchemaVersion
 
 
@@ -291,8 +285,7 @@ class Run(StrictModel):
     model_execution_observation: ModelExecutionObservation
     connector_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     mcp_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
-    ingress_context: JsonObject | None = None
-    mcp_tool_snapshot: MCPToolSnapshotRef
+    native_tool_contexts: tuple[JsonObject, ...] = Field(default=(), max_length=128, repr=False)
     priority: int
     queue_name: BoundedName
     available_at: UtcDateTime
@@ -453,7 +446,7 @@ def new_session_id() -> str:
 
 
 def new_thread_id() -> str:
-    return new_object_id("thread")
+    return f"thread-{secrets.token_hex(16)}"
 
 
 def new_run_id() -> str:
@@ -468,7 +461,6 @@ __all__ = [
     "BoundedKey",
     "EncryptedRunConfigPayloadRef",
     "JsonObject",
-    "MCPToolSnapshotRef",
     "ObjectId",
     "PendingCallKind",
     "PendingCallSummary",

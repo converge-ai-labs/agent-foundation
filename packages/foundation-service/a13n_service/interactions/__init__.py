@@ -61,7 +61,6 @@ from .control_domain import (
 )
 from .domain import (
     EncryptedRunConfigPayloadRef,
-    MCPToolSnapshotRef,
     PendingCallKind,
     PendingCallSummary,
     RecoveryBudget,
@@ -91,30 +90,30 @@ from .environment_observation import EnvironmentHookObservation, EnvironmentHook
 from .feedback import WaitingFeedbackMappingError, map_waiting_feedback
 from .handoff import CombinedQueueHandoffReceipt, CompletionQueueHandoffService
 from .harness_control import (
-    FOUNDATION_RUN_CONTROL_CAPABILITY_ID,
-    FoundationRunControlCapability,
+    RUN_CONTROL_CAPABILITY_ID,
     HarnessContextBinding,
     HarnessControlDriver,
     HarnessHookBoundary,
     HarnessRunIdentity,
+    RunControlCapability,
     compose_run_control,
 )
 from .harness_results import (
-    FoundationHarnessOutcomeAdapter,
     HarnessOutcomeAdapter,
     HarnessOutcomeProjection,
     HarnessOutcomeProjectionError,
     RunTerminalCommitter,
     RunTerminalDisposition,
     RunTerminalReceipt,
+    StoredHarnessOutcomeAdapter,
 )
 from .harness_runtime import (
-    FoundationHarnessCollaborators,
     FoundationHarnessEnvironment,
-    FoundationHarnessInput,
-    FoundationHarnessInvocation,
+    HarnessCollaborators,
     HarnessDriver,
     HarnessEventProjector,
+    HarnessInput,
+    HarnessInvocation,
     ImmediateHarnessInput,
     MaterializedHarnessInput,
     MountedHarnessEnvironments,
@@ -205,7 +204,7 @@ from .state import (
 )
 
 __all__ = [
-    "FOUNDATION_RUN_CONTROL_CAPABILITY_ID",
+    "RUN_CONTROL_CAPABILITY_ID",
     "AcceptedAgentInput",
     "AcceptedBinaryContent",
     "AcceptedPendingResolution",
@@ -253,17 +252,15 @@ __all__ = [
     "EnvironmentHookObservation",
     "EnvironmentHookProjector",
     "EnvironmentInputWriter",
-    "FoundationHarnessCollaborators",
     "FoundationHarnessEnvironment",
-    "FoundationHarnessInput",
-    "FoundationHarnessInvocation",
-    "FoundationHarnessOutcomeAdapter",
-    "FoundationRunControlCapability",
+    "HarnessCollaborators",
     "HarnessContextBinding",
     "HarnessControlDriver",
     "HarnessDriver",
     "HarnessEventProjector",
     "HarnessHookBoundary",
+    "HarnessInput",
+    "HarnessInvocation",
     "HarnessOutcomeAdapter",
     "HarnessOutcomeProjection",
     "HarnessOutcomeProjectionError",
@@ -275,7 +272,6 @@ __all__ = [
     "InputAdapter",
     "InterruptRequest",
     "LeaseMonitor",
-    "MCPToolSnapshotRef",
     "MaterializedHarnessInput",
     "MountedHarnessEnvironments",
     "NoHarnessEnvironment",
@@ -307,6 +303,7 @@ __all__ = [
     "RunAttemptExecutor",
     "RunAttemptStatus",
     "RunAttemptYieldReason",
+    "RunControlCapability",
     "RunInputKind",
     "RunLineageKind",
     "RunObjectError",
@@ -333,6 +330,7 @@ __all__ = [
     "StaleStateWriter",
     "SteerReceipt",
     "SteerStatus",
+    "StoredHarnessOutcomeAdapter",
     "StoredRunState",
     "SubmittedPendingResolution",
     "TextContent",

@@ -7,10 +7,10 @@ import uvicorn
 
 from a13n_service.database import DatabaseMigrator
 from a13n_service.log import configure_logging
-from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
+from a13n_service.settings import ProcessRole, Settings, get_settings
 
 
-def _migrator(settings: ServiceSettings | None = None) -> DatabaseMigrator:
+def _migrator(settings: Settings | None = None) -> DatabaseMigrator:
     resolved = settings or get_settings()
     return DatabaseMigrator(resolved.database_config(), resolved.migration_config())
 
@@ -22,7 +22,7 @@ def main() -> None:
 
 @main.command()
 @click.option("--host", default=None, help="Bind host; defaults to FOUNDATION_HOST.")
-@click.option("--role", default=None, type=click.Choice([role.value for role in ServiceRole]))
+@click.option("--role", default=None, type=click.Choice([role.value for role in ProcessRole]))
 def serve(host: str | None, role: str | None) -> None:
     """Start the FastAPI service."""
 
@@ -30,7 +30,7 @@ def serve(host: str | None, role: str | None) -> None:
 
     settings = get_settings()
     if role is not None:
-        settings = settings.model_copy(update={"role": ServiceRole(role)})
+        settings = settings.model_copy(update={"role": ProcessRole(role)})
     configure_logging(settings)
     uvicorn.run(
         create_app(settings),

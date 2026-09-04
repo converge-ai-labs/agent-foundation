@@ -1,7 +1,7 @@
 """add hosted agui bindings.
 
 Revision ID: c1870a69a442
-Revises: 023eff74515b
+Revises: 8c85e610ca5a
 Create Date: 2026-09-04 09:33:40.486173+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c1870a69a442"
-down_revision: str | Sequence[str] | None = "023eff74515b"
+down_revision: str | Sequence[str] | None = "8c85e610ca5a"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

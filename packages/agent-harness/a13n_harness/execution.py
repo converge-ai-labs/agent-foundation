@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationE
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunEvents
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import AbstractCapability, Instrumentation, ResolveModelId
+from pydantic_ai.capabilities import MCP, AbstractCapability, Instrumentation, ResolveModelId
 from pydantic_ai.exceptions import AgentRunError, RunCancelled, UsageLimitExceeded, UserError
 from pydantic_ai.messages import (
     AgentStreamEvent,
@@ -2865,6 +2865,7 @@ def _validate_capability_source(
 ) -> frozenset[str]:
     """Flatten Capability trees and preserve ownership of reserved Harness IDs."""
     run_types = (
+        MCP,
         InvocationPolicyCapability,
         ClientToolsRunCapability,
         SkillSelectionRunCapability,

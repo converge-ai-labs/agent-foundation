@@ -153,11 +153,7 @@ def upgrade() -> None:
         sa.Column("model_execution_observation_json", sa.JSON(), nullable=False),
         sa.Column("connector_connection_selections_json", sa.JSON(), nullable=False),
         sa.Column("mcp_connection_selections_json", sa.JSON(), nullable=False),
-        sa.Column("ingress_context_json", sa.JSON(none_as_null=True), nullable=True),
-        sa.Column("mcp_tool_snapshot_digest_sha256", sa.String(length=64), nullable=False),
-        sa.Column("mcp_tool_snapshot_size_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("mcp_tool_snapshot_content_type", sa.String(length=255), nullable=False),
-        sa.Column("mcp_tool_snapshot_schema_version", sa.String(length=32), nullable=False),
+        sa.Column("native_tool_contexts_json", sa.JSON(), nullable=False),
         sa.Column("priority", sa.Integer(), nullable=False),
         sa.Column("queue_name", sa.String(length=256), nullable=False),
         sa.Column("available_at", sa.DateTime(timezone=True), nullable=False),
@@ -243,10 +239,6 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("lineage_kind IN ('root', 'continue', 'fork')", name=op.f("ck_runs_lineage_kind_valid")),
         sa.CheckConstraint(
-            "mcp_tool_snapshot_content_type = 'application/vnd.a13n.mcp-tool-snapshot+json'",
-            name=op.f("ck_runs_mcp_snapshot_content_type_valid"),
-        ),
-        sa.CheckConstraint(
             "status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')",
             name=op.f("ck_runs_status_valid"),
         ),
@@ -281,16 +273,12 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "length(effective_agent_config_digest) = 64", name=op.f("ck_runs_effective_config_digest_sha256")
         ),
-        sa.CheckConstraint(
-            "length(mcp_tool_snapshot_digest_sha256) = 64", name=op.f("ck_runs_mcp_snapshot_digest_sha256")
-        ),
         sa.CheckConstraint("length(request_fingerprint) = 64", name=op.f("ck_runs_request_fingerprint_sha256")),
         sa.CheckConstraint("length(runtime_lock_digest) = 64", name=op.f("ck_runs_runtime_lock_digest_sha256")),
         sa.CheckConstraint(
             "max_recovery_attempts >= 0 AND max_handoffs >= 0 AND attempts_started >= 0 AND recovery_attempts_started >= 0 AND handoffs_completed >= 0",
             name=op.f("ck_runs_recovery_values_non_negative"),
         ),
-        sa.CheckConstraint("mcp_tool_snapshot_size_bytes > 0", name=op.f("ck_runs_mcp_snapshot_size_positive")),
         sa.CheckConstraint("next_attempt_fence >= 1", name=op.f("ck_runs_next_attempt_fence_positive")),
         sa.CheckConstraint(
             "recovery_attempts_started <= max_recovery_attempts AND handoffs_completed <= max_handoffs AND recovery_attempts_started <= attempts_started AND attempts_started <= recovery_attempts_started + handoffs_completed",

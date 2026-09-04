@@ -3,7 +3,6 @@ from __future__ import annotations
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions import (
-    MCPToolSnapshotRef,
     RecoveryBudget,
     RecoveryUsage,
     Run,
@@ -160,12 +159,6 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
                     effective_agent_config_digest=config.content_digest,
                     runtime_lock_digest=config.runtime_lock_digest,
                     model_execution_observation=config.resolved_model.execution.observation(),
-                    mcp_tool_snapshot=MCPToolSnapshotRef(
-                        digest_sha256="e" * 64,
-                        size_bytes=2,
-                        content_type="application/vnd.a13n.mcp-tool-snapshot+json",
-                        schema_version="1",
-                    ),
                     priority=0,
                     queue_name="default",
                     available_at=NOW,

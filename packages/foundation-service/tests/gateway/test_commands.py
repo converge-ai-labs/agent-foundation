@@ -24,7 +24,6 @@ from a13n_service.interactions import (
     ClaimedAttempt,
     CompletedOutcomeCandidate,
     InterruptRequest,
-    MCPToolSnapshotRef,
     RunAcceptanceService,
     RunOutcomeService,
     RunPayloadStore,
@@ -75,12 +74,6 @@ def _frozen(*, runtime_lock_digest: str = "a" * 64) -> FrozenAgentInvocation:
         sensitive_values_digest="0" * 64,
         connector_connection_selections=(),
         mcp_connection_selections=(),
-        mcp_tool_snapshot=MCPToolSnapshotRef(
-            digest_sha256="d" * 64,
-            size_bytes=2,
-            content_type="application/vnd.a13n.mcp-tool-snapshot+json",
-            schema_version="1",
-        ),
     )
 
 
@@ -290,7 +283,7 @@ async def test_start_accepts_root_run_and_replays_before_resolution(
     assert repeated == first
     assert preparation.calls == 1
     assert freezing.calls == 2
-    assert first.thread_id.startswith("thread_")
+    assert first.thread_id.startswith("thread-")
     async with short_session(interaction_sessions) as database:
         run = await database.scalar(select(RunRecord).where(RunRecord.id == first.run_id))
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == first.thread_id))

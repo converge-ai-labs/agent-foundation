@@ -144,4 +144,76 @@ async def test_provider_native_discovery_is_advisory(
         )
 
     assert result.items[0].upstream_model == expected
-    assert bool(result.items[0].suggested_model_apis) is suggests_api
+    assert (
+        result.items[0].suggested_model_api == built_in_provider_registry().definition(provider.type).default_model_api
+    )
+
+
+@pytest.mark.anyio
+async def test_discovery_follows_pages_deduplicates_and_does_not_truncate() -> None:
+    calls = 0
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx2.Response(
+                200,
+                json={
+                    "models": [{"name": "models/embedding", "supportedGenerationMethods": ["embedContent"]}],
+                    "nextPageToken": "next",
+                },
+            )
+        assert request.url.params["pageToken"] == "next"
+        return httpx2.Response(200, json={"models": [{"name": f"models/gemini-{i:04}"} for i in range(601)]})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        operations = NativeProviderOperations(
+            provider_resolver=_ProviderResolver(
+                RuntimeProvider("google_gemini", {}, "https://generativelanguage.googleapis.com", "secret")
+            ),
+            registry=built_in_provider_registry(),
+            http_client=client,
+        )
+        result = await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
+    assert len(result.items) == 601
+    assert calls == 2
+    assert result.items[-1].upstream_model == "gemini-0600"
+
+
+@pytest.mark.anyio
+async def test_failed_metadata_falls_back_but_invalid_binding_does_not() -> None:
+    from a13n_service.models.service_common import ModelError
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(503)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        operations = NativeProviderOperations(
+            provider_resolver=_ProviderResolver(
+                RuntimeProvider("openrouter", {}, "https://openrouter.ai/api/v1", "secret")
+            ),
+            registry=built_in_provider_registry(),
+            http_client=client,
+        )
+        result = await operations.describe(
+            provider_id="p",
+            organization_id="o",
+            workspace_id="w",
+            provider_type="openrouter",
+            upstream_model="unlisted",
+            model_api=None,
+        )
+        assert result.suggested_model_api == "openrouter.chat_completions"
+        assert result.suggested_settings == {}
+        with pytest.raises(ModelError):
+            await operations.describe(
+                provider_id="p",
+                organization_id="o",
+                workspace_id="w",
+                provider_type="openrouter",
+                upstream_model="unlisted",
+                model_api="anthropic.messages",
+            )
+        with pytest.raises(httpx2.HTTPStatusError):
+            await operations.discover(provider_id="p", organization_id="o", workspace_id="w")

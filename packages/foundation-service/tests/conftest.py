@@ -17,8 +17,8 @@ import pytest
 from a13n_service.connectivity.runtime import ConnectivityDataRuntime, ConnectivityRuntime
 from a13n_service.database.metadata import service_metadata
 from a13n_service.observability import ObservabilityRuntime
-from a13n_service.process.runtime import ControlRuntime, ProcessStatus, ServiceRuntime, SharedRuntime
-from a13n_service.settings import ServiceSettings
+from a13n_service.process.runtime import ControlRuntime, ProcessRuntime, ProcessStatus, SharedRuntime
+from a13n_service.settings import Settings
 from a13n_service.storage.config import RedisMemoryConfig, RedisServerConfig
 from a13n_service.storage.object_store import LocalObjectStore, ObjectStore, S3ObjectStore
 from a13n_service.storage.redis import open_redis
@@ -85,13 +85,13 @@ class S3Service:
 
 
 @dataclass(frozen=True, slots=True)
-class ServiceRuntimeFactory:
+class ProcessRuntimeFactory:
     """Build real process-runtime dataclasses for isolated router tests."""
 
     def __call__(
         self,
         *,
-        settings: ServiceSettings | None = None,
+        settings: Settings | None = None,
         request_authenticator: RequestAuthenticator | None = None,
         agents: object | None = None,
         trace_queries: object | None = None,
@@ -99,7 +99,7 @@ class ServiceRuntimeFactory:
         lifecycle_events: object | None = None,
         gateway: object | None = None,
         ingress_events: IngressEventService | None = None,
-    ) -> ServiceRuntime:
+    ) -> ProcessRuntime:
         placeholder = Mock()
         control = (
             ControlRuntime(
@@ -130,8 +130,8 @@ class ServiceRuntimeFactory:
             if ingress_events is not None
             else None
         )
-        return ServiceRuntime(
-            settings=settings or ServiceSettings(_env_file=None),
+        return ProcessRuntime(
+            settings=settings or Settings(_env_file=None),
             status=ProcessStatus(startup_complete=True),
             request_authenticator=request_authenticator,
             observability=Mock(spec=ObservabilityRuntime),
@@ -143,8 +143,8 @@ class ServiceRuntimeFactory:
 
 
 @pytest.fixture
-def service_runtime_factory() -> ServiceRuntimeFactory:
-    return ServiceRuntimeFactory()
+def process_runtime_factory() -> ProcessRuntimeFactory:
+    return ProcessRuntimeFactory()
 
 
 @pytest.fixture(scope="session")

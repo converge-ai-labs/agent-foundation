@@ -14,14 +14,14 @@ from .attempts import (
     AttemptPreparationRejected,
 )
 from .harness_results import HarnessOutcomeAdapter, RunTerminalCommitter, RunTerminalReceipt
-from .harness_runtime import FoundationHarnessInvocation, HarnessDriver
+from .harness_runtime import HarnessDriver, HarnessInvocation
 from .run_control import RunAttemptControl
 
 
 class AttemptPreparer[OutputT](Protocol):
     """Perform non-authoritative dependency preflight and reconstruct one invocation."""
 
-    async def prepare(self, context: AttemptContext) -> FoundationHarnessInvocation[OutputT]: ...
+    async def prepare(self, context: AttemptContext) -> HarnessInvocation[OutputT]: ...
 
 
 class ControlWakeupSource(Protocol):

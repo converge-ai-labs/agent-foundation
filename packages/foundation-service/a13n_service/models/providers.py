@@ -2,30 +2,52 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from types import MappingProxyType
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from .domain import BoundedName, ModelApiConfig, UpstreamModel
+from .domain import BoundedName, ModelApi, ModelLimits, ModelProfile, UpstreamModel
 from .model_apis import BUILT_IN_MODEL_APIS
 from .provider_adapters.base import ProviderIntegration
 from .provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
 from .provider_adapters.types import CredentialFormat, ValidatedProviderConfiguration
+from .service_common import ModelError
 
 
-class DiscoveredModel(BaseModel):
+class ModelDescription(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     upstream_model: UpstreamModel
     display_name: BoundedName | None = None
-    suggested_model_apis: tuple[ModelApiConfig, ...]
+    suggested_model_api: str
+    suggested_settings: dict[str, JsonValue] = Field(default_factory=dict)
+    suggested_profile: ModelProfile = Field(default_factory=ModelProfile)
+    suggested_limits: ModelLimits = Field(default_factory=ModelLimits)
+    settings_schema: dict[str, object]
+    parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]] = Field(default_factory=dict)
 
 
-class DiscoveredModelCollection(BaseModel):
+class ModelDescriptionCollection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    items: tuple[DiscoveredModel, ...]
+    items: tuple[ModelDescription, ...]
+    next_cursor: str | None = None
+
+
+class DiscoverModelsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(default=50, ge=1, le=100)
+    cursor: str | None = Field(default=None, max_length=2048)
+
+
+class DescribeModelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    upstream_model: UpstreamModel
+    model_api: ModelApi | None = None
 
 
 class ModelProviderDefinition(BaseModel):
@@ -36,6 +58,7 @@ class ModelProviderDefinition(BaseModel):
     configuration_schema: dict[str, object]
     credential_schema: dict[str, object]
     supported_model_apis: tuple[str, ...]
+    default_model_api: str
     supports_model_discovery: bool
 
 
@@ -57,6 +80,11 @@ class ProviderRegistry:
             unknown_apis = sorted(set(integration.supported_model_apis) - BUILT_IN_MODEL_APIS.keys())
             if unknown_apis:
                 raise ValueError(f"unknown model APIs for {integration.type!r}: {', '.join(unknown_apis)}")
+            if not integration.supported_model_apis or (
+                integration.default_model_api is not None
+                and integration.default_model_api not in integration.supported_model_apis
+            ):
+                raise ValueError("the default Model API must be a supported binding")
             indexed[integration.type] = integration
         self._integrations = MappingProxyType(indexed)
 
@@ -76,16 +104,10 @@ class ProviderRegistry:
             configuration, credential_configured=credential_configured
         )
 
-    def validate_model_apis(self, provider_type: str, model_apis: Sequence[ModelApiConfig]) -> None:
-        allowed = set(self._require(provider_type).supported_model_apis)
-        unsupported = sorted(item.api for item in model_apis if item.api not in allowed)
-        if unsupported:
-            raise ValueError(f"unsupported model APIs: {', '.join(unsupported)}")
-
     def validate_model_api(self, provider_type: str, model_api: str) -> None:
         allowed = self._require(provider_type).supported_model_apis
         if model_api not in allowed:
-            raise ValueError(f"unsupported model API: {model_api}")
+            raise ModelError("invalid_model_api", "The Model API is not supported by this Provider.", status_code=400)
 
     def credential_format(self, provider_type: str) -> CredentialFormat | None:
         return self._require(provider_type).credential_format
@@ -124,5 +146,6 @@ def _definition(integration: ProviderIntegration) -> ModelProviderDefinition:
         configuration_schema=integration.configuration_model.model_json_schema(),
         credential_schema=credential_schema,
         supported_model_apis=integration.supported_model_apis,
+        default_model_api=integration.default_model_api or integration.supported_model_apis[0],
         supports_model_discovery=integration.model_discovery is not None,
     )

@@ -4,27 +4,28 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from pydantic import JsonValue
 from sqlalchemy import (
     JSON,
-    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
     Index,
-    LargeBinary,
     String,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
 
-from .domain import Model, ModelApiConfig, ModelProvider
+from .domain import Model, ModelLimits, ModelProfile, ModelProvider
 
 
-class ModelProviderRecord(Base):
+class ModelProviderRecord(ResourceCredential, Base):
+    credential_owner_type = "model_provider"
     __tablename__ = "model_providers"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -33,7 +34,7 @@ class ModelProviderRecord(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
-        CheckConstraint("credential_version >= 0", name="credential_version_nonnegative"),
+        CheckConstraint("credential_generation >= 0", name="credential_generation_nonnegative"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
         CheckConstraint(
@@ -53,10 +54,6 @@ class ModelProviderRecord(Base):
     name: Mapped[str] = mapped_column(String(128))
     normalized_name: Mapped[str] = mapped_column(String(128))
     configuration: Mapped[dict[str, object]] = mapped_column(JSON)
-    credential_version: Mapped[int] = mapped_column(BigInteger)
-    ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
-    nonce: Mapped[bytes | None] = mapped_column(LargeBinary(12))
-    encryption_key_id: Mapped[str | None] = mapped_column(String(128))
     enabled: Mapped[bool] = mapped_column(Boolean)
     created_by_type: Mapped[str] = mapped_column(String(32))
     created_by_id: Mapped[str] = mapped_column(String(72))
@@ -115,7 +112,10 @@ class ModelRecord(Base):
     name: Mapped[str] = mapped_column(String(128))
     description: Mapped[str | None] = mapped_column(String(2048))
     upstream_model: Mapped[str] = mapped_column(String(256))
-    model_apis: Mapped[list[dict[str, object]]] = mapped_column(JSON)
+    model_api: Mapped[str] = mapped_column(String(96))
+    settings: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
+    profile: Mapped[dict[str, object]] = mapped_column(JSON)
+    limits: Mapped[dict[str, object]] = mapped_column(JSON)
     enabled: Mapped[bool] = mapped_column(Boolean)
     created_by_type: Mapped[str] = mapped_column(String(32))
     created_by_id: Mapped[str] = mapped_column(String(72))
@@ -134,7 +134,10 @@ class ModelRecord(Base):
             name=self.name,
             description=self.description,
             upstream_model=self.upstream_model,
-            model_apis=tuple(ModelApiConfig.model_validate(item) for item in self.model_apis),
+            model_api=self.model_api,
+            settings=self.settings,
+            profile=ModelProfile.model_validate(self.profile),
+            limits=ModelLimits.model_validate(self.limits),
             enabled=self.enabled,
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),

@@ -4,7 +4,7 @@
 
 Native Ingresses receive provider events, authenticate and normalize them, route them to one Agent input destination, and submit them through Foundation's existing durable input contracts. They do not execute an Agent, send provider messages, or own another inbox.
 
-Provider configuration is intentionally typed by each adapter. Slack signing secrets, Lark app credentials, Discord gateway configuration, Gmail watch state, and GitHub App installation data do not enter one universal credential or event schema. The stable contract begins with Foundation-owned Ingress identity and the normalized event envelope.
+Account configuration and credentials remain strongly typed by each adapter. Ingress configuration contains only provider-specific event transport and subscription settings. The stable common event contract begins after the Account adapter authenticates and normalizes a delivery.
 
 ## Ingress and Route
 
@@ -16,8 +16,7 @@ class Ingress:
     organization_id: OrganizationId
     workspace_id: WorkspaceId
     name: str
-    provider_key: str
-    provider_config_version: str
+    account_id: AccountId
     provider_config: IngressProviderConfig
     execution_principal_ref: PrincipalRef
     agents: tuple[AgentId, ...]
@@ -44,15 +43,15 @@ class Route:
     version: int
 ```
 
-`IngressProviderConfig` and `RouteMatchConfig` are adapter-owned tagged unions of strong provider-specific types, such as `SlackIngressConfig` and `GitHubRouteMatch`. They are not arbitrary JSON dictionaries and have no universal credential or matching schema.
+`AccountProviderConfig`, `IngressProviderConfig`, and `RouteMatchConfig` are adapter-owned tagged unions of strong provider-specific types, such as `SlackAccountConfig` and `GitHubRouteMatch`. They are not arbitrary JSON dictionaries and have no universal credential or matching schema.
 
-An Ingress is one concrete installed or authorized inbound-capable external identity in one Foundation Workspace. A provider's reusable application definition can support many tenant installations, but routes, allowed Agents, and current credentials belong to each concrete Ingress. An Ingress can be receive-only or receive plus bounded same-identity native actions; a send-only identity belongs in the ConnectorProvider or Remote MCP path.
+An Ingress is the optional event-reception configuration for one same-Workspace [Application Account](01a-application-accounts.md). Its immutable `account_id` is unique across Ingresses. The Account owns concrete provider identity and shared credentials; Ingress owns transport, subscription configuration, allowed Agents, and input execution authority. An Account can perform explicitly authorized outbound operations without an Ingress.
 
 `execution_principal_ref` is an immutable reference to one active Service Account in the same Workspace. It is the Foundation Principal for every Run or Steer initiated by that Ingress. The external Slack, Lark, Discord, Teams, GitHub, Gmail, or other provider actor remains authenticated audit and model context but never becomes a Foundation Principal by identifier, username, or email coincidence. Admission and every later RunAttempt reauthorize the Service Account's current Agent invocation and shared capability grants. Disabling or deleting it, removing a required RoleBinding, or losing authority for the selected Agent blocks new input without rewriting accepted work.
 
-Organization, Workspace, provider key, execution Principal, and the adapter-declared external installation, tenant, or account identity are immutable. Changing any of them creates another Ingress so retained bindings and event identity never change meaning. Credential rotation, event-subscription state, display configuration, allowed Agents, default Agent, status, and other identity-preserving provider settings update the existing Ingress under exact version preconditions.
+Organization, Workspace, account reference, and execution Principal are immutable. Identity-preserving subscription or transport changes update the existing Ingress under exact version preconditions. Provider identity and credential rotation are Account operations.
 
-`active` means the Ingress is administratively enabled; it is not a continuous health claim. `disabled` blocks new event admission and native action use until explicitly re-enabled. Authentication, subscription, transport, and provider failures remain bounded safe observations and do not create another Ingress lifecycle state. Transient failures remain retryable under the provider contract, while a credential or configuration problem that needs user action is reported through safe diagnostics until the user repairs or disables the Ingress.
+`active` means reception is administratively enabled, not that the provider is continuously healthy. `disabled` blocks new admission and unaccepted pending input. Previously accepted Runs retain their bounded reply authority and continue checking Account availability, Route authority, execution Principal, target policy, and Attempt fencing. Disabling the Account blocks both reception and subsequent dispatch. Transient failures remain retryable under the provider contract; safe observations report configuration or authentication failures.
 
 The default Agent, every Route-selected Agent, and every Agent named by `capability_overlays` must occur in the Ingress's unique `agents`. For an unbound external reference, a Route-selected Agent overrides the Ingress default only for events matched by that Route. An existing Binding remains fixed. Event content cannot select or switch an Agent.
 
@@ -60,7 +59,7 @@ The default Agent, every Route-selected Agent, and every Agent named by `capabil
 
 One event resolves to zero or one Route. Route matchers under one Ingress must be non-overlapping for every provider event type; configuration validation rejects overlap it can prove, and runtime ambiguity fails closed. An unmatched event uses the provider's bounded default policy, input mapping, input batching, and no Route capability overlay; an unbound target uses the Ingress default Agent, while an existing Binding retains its Agent. An event never fans out because several Routes match.
 
-Disabling an Ingress rejects new event admission after authentication and prevents native action use. An event in the scope of a disabled Route is ignored or rejected under provider policy and never falls through to the unmatched Ingress defaults. Disablement rewrites no retained event, Binding, Thread, or Run fact.
+Disabling an Ingress rejects new event admission after authentication; it does not revoke replies authorized for an already accepted Run. An event in the scope of a disabled Route is ignored or rejected under provider policy and never falls through to the unmatched Ingress defaults. Disablement rewrites no retained event, Binding, Thread, or Run fact.
 
 ## Normalized Event
 
@@ -213,7 +212,7 @@ Every HTTP webhook adapter is mounted by `connectivity` and `all` at one externa
 POST /connectivity/v1/ingresses/{ingress_id}/events
 ```
 
-The path version owns Foundation's provider-ingress envelope and operational behavior, not the upstream provider payload version. `ingress_id` locates typed configuration and credentials but is not authentication. The adapter still authenticates the exact raw request and verifies the provider installation, application, tenant, or account identity carried by the payload. Missing, concealed, or cross-tenant identifiers return the same bounded `404 ingress_not_found`; authentication failures disclose no configured identity. Provider-specific challenge and acknowledgement bodies remain owned by the adapter. Other errors use bounded provider-compatible responses and one safe Foundation request ID.
+The path version owns Foundation's provider-ingress envelope and operational behavior, not the upstream provider payload version. `ingress_id` locates reception configuration and its Account credentials but is not authentication. The adapter still authenticates the exact raw request and verifies the provider installation, application, tenant, or account identity carried by the payload. Missing, concealed, or cross-tenant identifiers return the same bounded `404 ingress_not_found`; authentication failures disclose no configured identity. Provider-specific challenge and acknowledgement bodies remain owned by the adapter. Other errors use bounded provider-compatible responses and one safe Foundation request ID.
 
 During drain the process stops accepting new webhook requests, permits requests that have begun authentication or admission to finish within the common shutdown bound, and then releases admission claims. It never starts Agent work while draining. `control` and `worker` do not mount this route.
 

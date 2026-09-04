@@ -17,10 +17,19 @@ def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: b
             assert MODEL_TABLES <= tables
             assert "model_revisions" not in tables
             provider_columns = {item["name"] for item in inspector.get_columns("model_providers")}
-            assert {"type", "configuration", "credential_version", "ciphertext", "enabled"} <= provider_columns
+            assert {"type", "configuration", "credential_generation", "ciphertext", "enabled"} <= provider_columns
             model_columns = {item["name"] for item in inspector.get_columns("models")}
-            assert {"key", "provider_id", "upstream_model", "model_apis", "enabled"} <= model_columns
-            assert {"version", "current_revision_id"}.isdisjoint(model_columns)
+            assert {
+                "key",
+                "provider_id",
+                "upstream_model",
+                "model_api",
+                "settings",
+                "profile",
+                "limits",
+                "enabled",
+            } <= model_columns
+            assert {"version", "current_revision_id", "model_apis"}.isdisjoint(model_columns)
         else:
             assert MODEL_TABLES.isdisjoint(tables)
     finally:
@@ -29,6 +38,8 @@ def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: b
 
 def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
     migrator = DatabaseMigrator(configuration)
+    migrator.upgrade("6fd6194d64ec")
+    _assert_schema(configuration, present=True)
     migrator.upgrade()
     migrator.current(check_heads=True, verbose=False)
     _assert_schema(configuration, present=True)

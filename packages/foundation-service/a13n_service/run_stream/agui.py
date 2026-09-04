@@ -6,13 +6,19 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
 
+import rfc8785
 from a13n_harness import HarnessEvent, HarnessRunResultEvent
 from a13n_stream_protocol import HarnessAguiObserver
 from ag_ui.core import Event
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai.messages import FunctionToolResultEvent, OutputToolResultEvent, ToolReturnPart
 
-from .domain import RunStreamEvent, deterministic_item_id, deterministic_run_stream_event_id
+from .domain import (
+    MAX_RUN_STREAM_PAYLOAD_BYTES,
+    RunStreamEvent,
+    deterministic_item_id,
+    deterministic_run_stream_event_id,
+)
 from .redis import RedisRunStream
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
@@ -69,6 +75,7 @@ class HarnessAguiRunStreamWriter:
             item = _item_projection(self._run_id, event, event_type, payload)
             if item is not None:
                 payload.update(item.fields)
+            payload = _bounded_payload(event_type, payload)
             stream_id = await self._stream.append(
                 self._tenant_id,
                 RunStreamEvent(
@@ -162,6 +169,15 @@ def _payload(event: Event) -> dict[str, JsonValue]:
         event.model_dump(mode="json", by_alias=True, exclude={"raw_event", "type"}),
         strict=True,
     )
+
+
+def _bounded_payload(event_type: str, payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    if len(rfc8785.dumps(payload)) <= MAX_RUN_STREAM_PAYLOAD_BYTES:
+        return payload
+    if event_type != "run_finished":
+        return payload
+    bounded = {**payload, "result": None, "result_omitted": True}
+    return bounded
 
 
 def _item_projection(

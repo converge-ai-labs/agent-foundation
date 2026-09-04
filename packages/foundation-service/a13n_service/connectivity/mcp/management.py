@@ -14,7 +14,6 @@ from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import SecretOperation, SecretOwnerType, SecretUseContext
 
 from .errors import MCPConnectionError
 from .models import MCPConnectionRecord
@@ -85,24 +84,6 @@ async def require_connection(
     return record
 
 
-def secret_context(
-    connection: MCPConnectionRecord,
-    *,
-    operation: SecretOperation,
-    key: str = "credential_bundle",
-    generation: int | None = None,
-) -> SecretUseContext:
-    return SecretUseContext(
-        organization_id=connection.organization_id,
-        workspace_id=connection.workspace_id,
-        owner_type=SecretOwnerType.mcp_connection,
-        owner_id=connection.id,
-        key=key,
-        operation=operation,
-        credential_generation=generation if generation is not None else connection.credential_generation,
-    )
-
-
 def audit(
     actor: AuthenticatedActor,
     connection: MCPConnectionRecord,
@@ -139,13 +120,13 @@ def require_version(current: int, expected: int) -> None:
         raise MCPConnectionError("version_conflict", "MCPConnection changed concurrently.", status_code=409)
 
 
-def invalidate_catalog_claim(connection: MCPConnectionRecord, *, now: datetime) -> None:
-    """Fence in-flight discovery before an authorization-affecting change."""
+def invalidate_refresh_claim(connection: MCPConnectionRecord, *, now: datetime) -> None:
+    """Fence in-flight credential refresh before an authorization-affecting change."""
 
-    connection.catalog_claim_generation += 1
-    connection.catalog_claim_owner = None
-    connection.catalog_claim_expires_at = None
-    connection.catalog_available_at = now
+    connection.refresh_claim_generation += 1
+    connection.refresh_claim_owner = None
+    connection.refresh_claim_expires_at = None
+    connection.refresh_available_at = now
 
 
 def not_found() -> MCPConnectionError:

@@ -107,7 +107,7 @@ class AgentResolver:
             organization_id=organization_id,
             workspace_id=workspace_id,
             model_key=config.model.model_key,
-            model_api=config.model.model_api,
+            settings=config.model.settings,
         )
         async with short_session(self._sessions) as session:
             await authorize_agent(
@@ -225,17 +225,14 @@ class AgentResolver:
             resolved_model=ResolvedAgentModel(
                 model_id=model.model_id,
                 model_key=model.model_key,
-                model_api=model.model_api,
                 settings=prepared.config.model.settings,
                 characteristics=prepared.config.model.characteristics,
             ),
             resolved_plugin_versions=plugins,
             runtime_lock_digest=runtime_lock.digest,
             resolved_skills=skills,
-            connector_tools=tuple(
-                prepared.config.connector_tools[name] for name in sorted(prepared.config.connector_tools)
-            ),
-            mcp_tools=tuple(prepared.config.mcp_tools[name] for name in sorted(prepared.config.mcp_tools)),
+            connector_tools=prepared.config.connector_tools,
+            mcp_tools=prepared.config.mcp_tools,
             resolved_environment=environment,
             resolved_subagents=subagents,
         )

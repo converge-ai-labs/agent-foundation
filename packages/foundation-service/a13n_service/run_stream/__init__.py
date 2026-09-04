@@ -1,6 +1,7 @@
 """Run-scoped live presentation and retained replay persistence."""
 
 from .domain import (
+    MAX_RUN_STREAM_PAYLOAD_BYTES,
     CompleteRunStream,
     RetainedItem,
     RetainedReplayUnavailable,
@@ -21,6 +22,7 @@ from .redis import RedisRunStream, run_stream_key_digest_sha256
 from .replay import RUN_REPLAY_CONTENT_TYPE, RunReplayIntegrityError, RunReplayStore, run_replay_key
 
 __all__ = [
+    "MAX_RUN_STREAM_PAYLOAD_BYTES",
     "RUN_REPLAY_CONTENT_TYPE",
     "CompleteRunStream",
     "LifecycleRunStreamProjector",

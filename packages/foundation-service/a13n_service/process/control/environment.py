@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.service import EnvironmentManagementService
-from a13n_service.process.components import ServiceComponents
+from a13n_service.process.components import Components
 from a13n_service.process.runtime import SharedRuntime
 
 
@@ -18,7 +18,7 @@ class _EnvironmentBundle:
 
 
 def build_environment_bundle(
-    components: ServiceComponents,
+    components: Components,
     shared: SharedRuntime,
     catalog: FoundationEnvironmentProviderCatalog,
 ) -> _EnvironmentBundle:

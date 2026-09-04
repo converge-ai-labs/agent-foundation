@@ -27,8 +27,7 @@ from a13n_service.gateway.models import (
     A2ATaskBindingRecord,
 )
 from a13n_service.interactions.models import RunRecord
-from a13n_service.secrets import InternalSecretService, SecretProtector
-from a13n_service.secrets.models import SecretRecord
+from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from fastapi import FastAPI, Request
@@ -41,6 +40,10 @@ from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import AGENT_ID, NOW
 
 pytestmark = pytest.mark.anyio
+
+
+def _protector() -> SecretProtector:
+    return SecretProtector(key=b"a" * 32, encryption_key_id="test-key")
 
 
 def _request(
@@ -79,16 +82,11 @@ async def _service(
         clock=lambda: NOW,
     )
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]), assets=assets)
-    secrets = InternalSecretService(
-        sessions,
-        SecretProtector(key=b"a" * 32, encryption_key_id="test-key"),
-        clock=lambda: NOW,
-    )
     return (
         A2AService(
             sessions,
             commands,
-            secrets,
+            _protector(),
             EndpointPolicy(require_https=True),
             A2APartImporter(
                 assets,
@@ -408,7 +406,7 @@ async def test_stream_delivers_complete_artifact_before_terminal_status(
 
 async def test_list_tasks_http_binding_preserves_empty_page_token_and_a2a_query_errors(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
-    service_runtime_factory,
+    process_runtime_factory,
     tmp_path,
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
@@ -421,7 +419,7 @@ async def test_list_tasks_http_binding_preserves_empty_page_token_and_a2a_query_
     async def authenticate(_request: Request):
         return _actor()
 
-    runtime = service_runtime_factory(
+    runtime = process_runtime_factory(
         request_authenticator=authenticate,
         gateway=SimpleNamespace(a2a=service),
     )
@@ -468,7 +466,7 @@ async def test_list_tasks_http_binding_preserves_empty_page_token_and_a2a_query_
 
 async def test_a2a_authentication_failure_uses_a2a_error_envelope(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
-    service_runtime_factory,
+    process_runtime_factory,
     tmp_path,
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
@@ -476,7 +474,7 @@ async def test_a2a_authentication_failure_uses_a2a_error_envelope(
     app = FastAPI()
     install_api_conventions(app)
     app.include_router(a2a_router)
-    runtime = service_runtime_factory(request_authenticator=None, gateway=SimpleNamespace(a2a=service))
+    runtime = process_runtime_factory(request_authenticator=None, gateway=SimpleNamespace(a2a=service))
     app.state.runtime = runtime
     app.state.settings = runtime.settings
 
@@ -561,10 +559,13 @@ async def test_send_message_atomically_registers_push_configuration_and_replays_
     assert next_page_token is None
     async with short_session(lifecycle_interaction_sessions) as database:
         records = tuple((await database.scalars(select(A2APushConfigurationRecord))).all())
-        secrets = tuple((await database.scalars(select(SecretRecord))).all())
     assert len(records) == 1
     assert records[0].task_id == task.id
-    assert len(secrets) == 2
+    assert records[0].credential_generation == 1
+    assert json.loads(records[0].credential_snapshot().decrypt(_protector())) == {
+        "authentication_credentials": "secret-credential",
+        "token": "opaque-client-token",
+    }
 
 
 async def test_send_message_rejects_push_configuration_for_existing_task(
@@ -629,12 +630,13 @@ async def test_push_configuration_secrets_are_write_only_and_delete_is_fenced(
     assert next_page_token is None
     async with short_session(lifecycle_interaction_sessions) as database:
         stored = await database.get(A2APushConfigurationRecord, created.id)
-        secrets = tuple((await database.scalars(select(SecretRecord))).all())
     assert stored is not None
-    assert stored.token_secret_version == 1
-    assert stored.authentication_secret_version == 1
-    assert len(secrets) == 2
-    assert all(secret.ciphertext for secret in secrets)
+    assert stored.credential_generation == 1
+    assert stored.ciphertext is not None
+    assert json.loads(stored.credential_snapshot().decrypt(_protector())) == {
+        "authentication_credentials": "secret-credential",
+        "token": "opaque-client-token",
+    }
     async with short_session(lifecycle_interaction_sessions) as database:
         binding = await database.get(A2ATaskBindingRecord, task.id)
     assert binding is not None
@@ -667,12 +669,14 @@ async def test_push_configuration_secrets_are_write_only_and_delete_is_fenced(
         )
     async with short_session(lifecycle_interaction_sessions) as database:
         stored = await database.get(A2APushConfigurationRecord, created.id)
-        secrets = tuple((await database.scalars(select(SecretRecord))).all())
         outbox = await database.scalar(select(OutboxRecord.id).where(OutboxRecord.destination_kind == "a2a_push"))
     assert stored is not None
     assert stored.state == "disabled"
     assert stored.delivery_generation == 2
-    assert all(secret.deleted_at is not None and secret.ciphertext is None for secret in secrets)
+    assert stored.credential_generation == 2
+    assert stored.ciphertext is None
+    assert stored.nonce is None
+    assert stored.encryption_key_id is None
     assert outbox is None
 
 
@@ -706,13 +710,13 @@ async def test_push_publisher_delivers_committed_terminal_task_through_outbox(
         requests.append(request)
         return httpx2.Response(204)
 
-    protector = SecretProtector(key=b"a" * 32, encryption_key_id="test-key")
+    protector = _protector()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         publisher = A2APushPublisher(
             lifecycle_interaction_sessions,
             client,
             EndpointPolicy(require_https=True),
-            InternalSecretService(lifecycle_interaction_sessions, protector),
+            protector,
             poll_interval_seconds=1,
             lease_seconds=30,
             claim_limit=10,
@@ -820,13 +824,13 @@ async def test_push_publisher_follows_redirects_and_fences_credentials_by_origin
             return httpx2.Response(308, headers={"Location": "https://1.1.1.1/final"})
         return httpx2.Response(204)
 
-    protector = SecretProtector(key=b"a" * 32, encryption_key_id="test-key")
+    protector = _protector()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         publisher = A2APushPublisher(
             lifecycle_interaction_sessions,
             client,
             EndpointPolicy(require_https=True),
-            InternalSecretService(lifecycle_interaction_sessions, protector),
+            protector,
             poll_interval_seconds=1,
             lease_seconds=30,
             claim_limit=10,
@@ -863,13 +867,13 @@ async def test_push_publisher_rejects_redirects_beyond_bound(
     def respond(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(307, headers={"Location": "/again"})
 
-    protector = SecretProtector(key=b"a" * 32, encryption_key_id="test-key")
+    protector = _protector()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         publisher = A2APushPublisher(
             lifecycle_interaction_sessions,
             client,
             EndpointPolicy(require_https=True),
-            InternalSecretService(lifecycle_interaction_sessions, protector),
+            protector,
             poll_interval_seconds=1,
             lease_seconds=30,
             claim_limit=10,

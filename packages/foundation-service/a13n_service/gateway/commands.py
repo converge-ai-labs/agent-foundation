@@ -219,12 +219,6 @@ class NativeInteractionCommands:
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        if frozen.mcp_tool_snapshot is None:
-            raise GatewayCommandError(
-                "run_connectivity_unavailable",
-                "The Run tool snapshot could not be frozen.",
-                status_code=409,
-            )
 
         accepted_input = await self._accept_input(
             actor=actor,
@@ -283,8 +277,6 @@ class NativeInteractionCommands:
                 item.model_dump(mode="json") for item in frozen.connector_connection_selections
             ),
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
-            ingress_context=None,
-            mcp_tool_snapshot=frozen.mcp_tool_snapshot,
             priority=self._priority,
             queue_name=self._queue_name,
             available_at=now,
@@ -392,12 +384,6 @@ class NativeInteractionCommands:
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        if frozen.mcp_tool_snapshot is None:
-            raise GatewayCommandError(
-                "run_connectivity_unavailable",
-                "The Run tool snapshot could not be frozen.",
-                status_code=409,
-            )
         accepted_input = await self._accept_input_value(
             actor=actor,
             workspace_id=actor.boundary_workspace_id,
@@ -436,8 +422,6 @@ class NativeInteractionCommands:
                 item.model_dump(mode="json") for item in frozen.connector_connection_selections
             ),
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
-            ingress_context=None,
-            mcp_tool_snapshot=frozen.mcp_tool_snapshot,
             priority=self._priority,
             queue_name=self._queue_name,
             available_at=now,
@@ -537,12 +521,6 @@ class NativeInteractionCommands:
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        if frozen.mcp_tool_snapshot is None:
-            raise GatewayCommandError(
-                "run_connectivity_unavailable",
-                "The Run tool snapshot could not be frozen.",
-                status_code=409,
-            )
         accepted_input = await self._accept_input_value(
             actor=actor,
             workspace_id=actor.boundary_workspace_id,
@@ -581,8 +559,6 @@ class NativeInteractionCommands:
                 item.model_dump(mode="json") for item in frozen.connector_connection_selections
             ),
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
-            ingress_context=None,
-            mcp_tool_snapshot=frozen.mcp_tool_snapshot,
             priority=self._priority,
             queue_name=self._queue_name,
             available_at=now,
@@ -697,12 +673,6 @@ class NativeInteractionCommands:
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        if frozen.mcp_tool_snapshot is None:
-            raise GatewayCommandError(
-                "run_connectivity_unavailable",
-                "The Run tool snapshot could not be frozen.",
-                status_code=409,
-            )
         if reuse_exact_source and frozen.effective_config != source_state.envelope.effective_agent_config:
             raise GatewayCommandError(
                 "run_fork_source_changed",
@@ -747,8 +717,6 @@ class NativeInteractionCommands:
                 item.model_dump(mode="json") for item in frozen.connector_connection_selections
             ),
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
-            ingress_context=None,
-            mcp_tool_snapshot=frozen.mcp_tool_snapshot,
             priority=self._priority,
             queue_name=self._queue_name,
             available_at=now,
@@ -1025,12 +993,6 @@ class NativeInteractionCommands:
         )
         async with transaction(self._sessions) as database:
             frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        if frozen.mcp_tool_snapshot is None:
-            raise GatewayCommandError(
-                "run_connectivity_unavailable",
-                "The Run tool snapshot could not be frozen.",
-                status_code=409,
-            )
         accepted_input = await self._accept_input_value(
             actor=retained_actor,
             workspace_id=actor.boundary_workspace_id,
@@ -1081,8 +1043,6 @@ class NativeInteractionCommands:
                 item.model_dump(mode="json") for item in frozen.connector_connection_selections
             ),
             mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
-            ingress_context=None,
-            mcp_tool_snapshot=frozen.mcp_tool_snapshot,
             priority=self._priority,
             queue_name=self._queue_name,
             available_at=now,
@@ -1256,8 +1216,6 @@ class NativeInteractionCommands:
             model_execution_observation=source.model_execution_observation,
             connector_connection_selections=source.connector_connection_selections,
             mcp_connection_selections=source.mcp_connection_selections,
-            ingress_context=source.ingress_context,
-            mcp_tool_snapshot=source.mcp_tool_snapshot,
             priority=source.priority,
             queue_name=source.queue_name,
             available_at=now,
@@ -1423,8 +1381,6 @@ class NativeInteractionCommands:
             model_execution_observation=source.model_execution_observation,
             connector_connection_selections=source.connector_connection_selections,
             mcp_connection_selections=source.mcp_connection_selections,
-            ingress_context=source.ingress_context,
-            mcp_tool_snapshot=source.mcp_tool_snapshot,
             priority=source.priority,
             queue_name=source.queue_name,
             available_at=now,

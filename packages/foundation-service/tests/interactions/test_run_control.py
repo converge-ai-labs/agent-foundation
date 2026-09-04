@@ -31,10 +31,9 @@ from a13n_service.interactions import (
     ConsumedThreadInboxEntry,
     DeferredContinuationState,
     EnvironmentHookObservation,
-    FoundationHarnessCollaborators,
-    FoundationHarnessInvocation,
-    FoundationHarnessOutcomeAdapter,
+    HarnessCollaborators,
     HarnessDriver,
+    HarnessInvocation,
     HostContinuationState,
     ImmediateHarnessInput,
     RunAttemptControl,
@@ -44,6 +43,7 @@ from a13n_service.interactions import (
     RunStateStore,
     RunTerminalDisposition,
     RunTerminalReceipt,
+    StoredHarnessOutcomeAdapter,
     StoredRunState,
 )
 from a13n_service.storage import ObjectStore
@@ -291,8 +291,8 @@ async def _stored_state(objects: ObjectStore, envelope: RunStateEnvelope) -> tup
     return states, await states.create(TENANT_ID, envelope)
 
 
-def _outcome_adapter(objects: ObjectStore) -> FoundationHarnessOutcomeAdapter:
-    return FoundationHarnessOutcomeAdapter(
+def _outcome_adapter(objects: ObjectStore) -> StoredHarnessOutcomeAdapter:
+    return StoredHarnessOutcomeAdapter(
         tenant_id=TENANT_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(objects),
@@ -346,7 +346,7 @@ async def _run(
     )
     control.bind_executor(driver, lambda: None)
     return await driver.run(
-        FoundationHarnessInvocation(
+        HarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(),
                 output_type=str,
@@ -355,7 +355,7 @@ async def _run(
                 model_recovery=model_recovery or ModelRecoveryPolicy(),
             ),
             input=ImmediateHarnessInput("accepted input"),
-            collaborators=FoundationHarnessCollaborators(instance=bindings.instance),
+            collaborators=HarnessCollaborators(instance=bindings.instance),
             deferred_resume=deferred_resume,
         ),
         preparation=_preparation(control.current_context),
@@ -369,7 +369,7 @@ async def _consume(
     state: StoredRunState,
     model: FunctionModel,
     projector: _RecordingEventProjector,
-    outcome_adapter: FoundationHarnessOutcomeAdapter,
+    outcome_adapter: StoredHarnessOutcomeAdapter,
     terminal_committer: _RecordingTerminalCommitter,
     capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
 ) -> tuple[HarnessRunResult[str], RunTerminalReceipt | AttemptMutationReceipt]:
@@ -534,7 +534,7 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     assert result.status == "cancelled"
     assert isinstance(mutation, AttemptMutationReceipt)
     assert calls == []
-    assert not coordinator.handoff_ready
+    assert coordinator.terminal_observation_allowed
     assert coordinator.current_state.envelope.input_disposition == "applied"
     assert terminal.states == []
     assert terminal.failures == []

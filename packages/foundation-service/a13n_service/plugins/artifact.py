@@ -145,7 +145,7 @@ def _inspect_distribution(
         )
         root_is_purelib, wheel_tags = _parse_wheel(_read_bounded(archive, wheel_name))
         if entries_name in by_name:
-            _reject_foundation_entry_points(_read_bounded(archive, entries_name))
+            _reject_reserved_entry_points(_read_bounded(archive, entries_name))
         _validate_record(archive, by_name, record_name)
         return InspectedDistributionWheel(
             distribution_name=distribution_name,
@@ -289,7 +289,7 @@ def _parse_entry_points(raw: bytes) -> tuple[str, str]:
     return plugin_key, target
 
 
-def _reject_foundation_entry_points(raw: bytes) -> None:
+def _reject_reserved_entry_points(raw: bytes) -> None:
     parser = configparser.ConfigParser(interpolation=None, strict=True)
     parser.optionxform = _identity_option
     try:

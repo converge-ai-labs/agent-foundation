@@ -12,10 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.adapters import IngressAdapter
+from a13n_service.connectivity.errors import NativeError
 
 from .admission_domain import BindingState
 from .admission_models import AgentThreadBindingRecord
-from .errors import IngressError
 from .mapping import CompiledMapping, MappingError, compile_mapping
 from .models import IngressRecord, RouteRecord
 from .provider import (
@@ -69,17 +69,17 @@ async def resolve_routing(
     ingress: IngressRecord,
     event: InboundEvent,
 ) -> RoutingResolution:
-    if ingress.status != "active":
+    if ingress.status != "active" or ingress.account.status != "active" or ingress.account.deleted_at is not None:
         return IrrelevantRouting(kind="irrelevant", reason_code="ingress_disabled")
     routes = tuple((await session.scalars(select(RouteRecord).where(RouteRecord.ingress_id == ingress.id))).all())
     try:
         matching = tuple(
             route
             for route in routes
-            if adapter.route_matches(event, route.match_json, config_version=ingress.provider_config_version)
+            if adapter.route_matches(event, route.match_json, config_version=ingress.account.provider_config_version)
         )
     except ValueError as error:
-        raise IngressError("invalid_provider_event", "Provider event could not be routed.", status_code=400) from error
+        raise NativeError("invalid_provider_event", "Provider event could not be routed.", status_code=400) from error
     if len(matching) > 1:
         return RejectedRouting(kind="rejected", reason_code="route_ambiguous")
     route = matching[0] if matching else None
@@ -114,7 +114,7 @@ async def resolve_routing(
     try:
         mapping = compile_mapping(mapping_value)
     except MappingError as error:
-        raise IngressError("invalid_input_mapping", "Frozen input mapping is invalid.", status_code=409) from error
+        raise NativeError("invalid_input_mapping", "Frozen input mapping is invalid.", status_code=409) from error
     min_interval_ms = route.min_interval_ms if route is not None else default.input_batching.min_interval_ms
     max_batch_events = route.max_batch_events if route is not None else default.input_batching.max_batch_events
     overlay = None
@@ -158,11 +158,11 @@ def _default_route(adapter: IngressAdapter, ingress: IngressRecord, event: Inbou
     try:
         return adapter.default_route(
             event,
-            ingress.provider_config_json,
-            config_version=ingress.provider_config_version,
+            ingress.account.provider_config_json,
+            config_version=ingress.account.provider_config_version,
         )
     except ValueError as error:
-        raise IngressError(
+        raise NativeError(
             "invalid_provider_event", "Provider event cannot use default routing.", status_code=400
         ) from error
 
@@ -177,11 +177,11 @@ def _classify(
         return adapter.classify(
             event,
             provider_policy,
-            ingress.provider_config_json,
-            config_version=ingress.provider_config_version,
+            ingress.account.provider_config_json,
+            config_version=ingress.account.provider_config_version,
         )
     except ValueError as error:
-        raise IngressError("invalid_provider_event", "Provider event cannot be classified.", status_code=400) from error
+        raise NativeError("invalid_provider_event", "Provider event cannot be classified.", status_code=400) from error
 
 
 def _digest(value: object) -> str:

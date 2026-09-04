@@ -78,12 +78,12 @@ async def test_expired_agent_evidence_allows_reusing_the_key(
     [
         (
             "connector_tools",
-            {"orders": {"connector_connection_id": "cconn_1234567890abcdef"}},
+            ({"connector_connection_id": "cconn_1234567890abcdef"},),
             "connector_tool_resolution_unavailable",
         ),
         (
             "mcp_tools",
-            {"docs": {"mcp_connection_id": "mcpc_1234567890abcdef"}},
+            ({"mcp_connection_id": "mcpc_1234567890abcdef"},),
             "mcp_tool_resolution_unavailable",
         ),
     ],

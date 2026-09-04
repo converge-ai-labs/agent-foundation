@@ -19,7 +19,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Create the domain schema."""
     op.create_table(
-        "ingresses",
+        "application_accounts",
+        sa.Column("identity_digest", sa.String(length=64), nullable=False),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
@@ -28,12 +30,84 @@ def upgrade() -> None:
         sa.Column("provider_key", sa.String(length=64), nullable=False),
         sa.Column("provider_config_version", sa.String(length=64), nullable=False),
         sa.Column("provider_config_json", sa.JSON(), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("version", sa.BigInteger(), nullable=False),
+        sa.Column("created_by_type", sa.String(length=32), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("credential_generation", sa.BigInteger(), nullable=False),
+        sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
+        sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
+        sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
+        sa.CheckConstraint(
+            "created_by_type IN ('user', 'service_account')", name=op.f("ck_application_accounts_created_by_type_valid")
+        ),
+        sa.CheckConstraint("status IN ('active', 'disabled')", name=op.f("ck_application_accounts_status_valid")),
+        sa.CheckConstraint(
+            "(deleted_at IS NULL AND ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL) OR (deleted_at IS NOT NULL AND ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL)",
+            name=op.f("ck_application_accounts_credential_material_consistent"),
+        ),
+        sa.CheckConstraint(
+            "credential_generation >= 1", name=op.f("ck_application_accounts_credential_generation_positive")
+        ),
+        sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_application_accounts_name_bounded")),
+        sa.CheckConstraint("version >= 1", name=op.f("ck_application_accounts_version_positive")),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "organization_id"],
+            ["workspaces.id", "workspaces.organization_id"],
+            name=op.f("fk_application_accounts_workspace_id_workspaces"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_application_accounts")),
+    )
+    op.create_index(
+        "ix_application_accounts_provider_status",
+        "application_accounts",
+        ["provider_key", "status", "id"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_application_accounts_workspace_updated",
+        "application_accounts",
+        ["workspace_id", "updated_at", "id"],
+        unique=False,
+    )
+    op.create_index(
+        "uq_application_accounts_id_tenant",
+        "application_accounts",
+        ["id", "organization_id", "workspace_id"],
+        unique=True,
+    )
+    op.create_index(
+        "uq_application_accounts_identity",
+        "application_accounts",
+        ["workspace_id", "provider_key", "identity_digest"],
+        unique=True,
+        postgresql_where=sa.text("deleted_at IS NULL"),
+        sqlite_where=sa.text("deleted_at IS NULL"),
+    )
+    op.create_index(
+        "uq_application_accounts_workspace_name",
+        "application_accounts",
+        ["workspace_id", "normalized_name"],
+        unique=True,
+        postgresql_where=sa.text("deleted_at IS NULL"),
+        sqlite_where=sa.text("deleted_at IS NULL"),
+    )
+    op.create_table(
+        "ingresses",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column("normalized_name", sa.String(length=128), nullable=False),
+        sa.Column("account_id", sa.String(length=72), nullable=False),
+        sa.Column("provider_config_json", sa.JSON(), nullable=False),
         sa.Column("execution_service_account_id", sa.String(length=72), nullable=False),
         sa.Column("default_agent_id", sa.String(length=72), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("credential_secret_id", sa.String(length=72), nullable=False),
-        sa.Column("credential_generation", sa.BigInteger(), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -42,13 +116,12 @@ def upgrade() -> None:
             "created_by_type IN ('user', 'service_account')", name=op.f("ck_ingresses_created_by_type_valid")
         ),
         sa.CheckConstraint("status IN ('active', 'disabled')", name=op.f("ck_ingresses_status_valid")),
-        sa.CheckConstraint("credential_generation >= 1", name=op.f("ck_ingresses_credential_generation_positive")),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_ingresses_name_bounded")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_ingresses_version_positive")),
         sa.ForeignKeyConstraint(
-            ["credential_secret_id"],
-            ["secrets.id"],
-            name=op.f("fk_ingresses_credential_secret_id_secrets"),
+            ["account_id", "organization_id", "workspace_id"],
+            ["application_accounts.id", "application_accounts.organization_id", "application_accounts.workspace_id"],
+            name=op.f("fk_ingresses_account_id_application_accounts"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
@@ -70,8 +143,8 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_ingresses")),
+        sa.UniqueConstraint("account_id", name="uq_ingresses_account"),
     )
-    op.create_index("ix_ingresses_provider_status", "ingresses", ["provider_key", "status", "id"], unique=False)
     op.create_index("ix_ingresses_workspace_updated", "ingresses", ["workspace_id", "updated_at", "id"], unique=False)
     op.create_index("uq_ingresses_id_tenant", "ingresses", ["id", "organization_id", "workspace_id"], unique=True)
     op.create_index("uq_ingresses_workspace_name", "ingresses", ["workspace_id", "normalized_name"], unique=True)
@@ -402,8 +475,13 @@ def downgrade() -> None:
     op.drop_index("uq_agent_thread_bindings_id_tenant", table_name="agent_thread_bindings")
     op.drop_index("ix_agent_thread_bindings_thread", table_name="agent_thread_bindings")
     op.drop_table("agent_thread_bindings")
-    op.drop_index("uq_ingresses_workspace_name", table_name="ingresses")
-    op.drop_index("uq_ingresses_id_tenant", table_name="ingresses")
     op.drop_index("ix_ingresses_workspace_updated", table_name="ingresses")
-    op.drop_index("ix_ingresses_provider_status", table_name="ingresses")
+    op.drop_index("uq_ingresses_id_tenant", table_name="ingresses")
+    op.drop_index("uq_ingresses_workspace_name", table_name="ingresses")
     op.drop_table("ingresses")
+    op.drop_index("ix_application_accounts_provider_status", table_name="application_accounts")
+    op.drop_index("ix_application_accounts_workspace_updated", table_name="application_accounts")
+    op.drop_index("uq_application_accounts_identity", table_name="application_accounts")
+    op.drop_index("uq_application_accounts_id_tenant", table_name="application_accounts")
+    op.drop_index("uq_application_accounts_workspace_name", table_name="application_accounts")
+    op.drop_table("application_accounts")

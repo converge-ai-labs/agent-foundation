@@ -9,7 +9,6 @@ TABLES = {
     "connector_connection_operations",
     "connector_connections",
     "connector_setup_attempts",
-    "connector_tool_catalogs",
     "connector_providers",
 }
 
@@ -21,21 +20,18 @@ def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
     engine = create_engine(sync_database_url(configuration))
     try:
         inspector = inspect(engine)
+        assert "connector_tool_catalogs" not in inspector.get_table_names()
         assert TABLES <= set(inspector.get_table_names())
         connection_columns = {column["name"] for column in inspector.get_columns("connector_connections")}
         assert {
             "external_ref",
             "setup_generation",
             "revoke_generation",
-            "catalog_generation",
-            "current_catalog_digest",
             "deleted_at",
         } <= connection_columns
         attempt_columns = {column["name"] for column in inspector.get_columns("connector_setup_attempts")}
         assert "external_user_correlation" in attempt_columns
         assert "redirect_url" not in attempt_columns
-        catalog_columns = {column["name"] for column in inspector.get_columns("connector_tool_catalogs")}
-        assert {"digest_sha256", "object_key", "connector_credential_generation"} <= catalog_columns
     finally:
         engine.dispose()
     migrator.downgrade("base")

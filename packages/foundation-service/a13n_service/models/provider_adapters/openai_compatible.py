@@ -102,6 +102,7 @@ INTEGRATION = ProviderIntegration(
     configuration_model=Config,
     supported_model_apis=("openai.responses", "openai.chat_completions"),
     build_provider=_build_provider,
+    default_model_api="openai.chat_completions",
     credential_required=False,
     endpoint=_endpoint,
     endpoint_configuration_field="base_url",

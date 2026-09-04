@@ -12,17 +12,17 @@ from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.plugins.runtime_commands import PluginRuntimeCommandCoordinator
 from a13n_service.plugins.runtime_resolver import (
-    FoundationPluginRuntimeCandidateResolver,
+    DurableRuntimeCandidateResolver,
     HttpRuntimeDependencyArtifactRetainer,
     UvRuntimeDependencyResolver,
 )
 from a13n_service.plugins.service import PluginService
 from a13n_service.plugins.staging import PluginStaging
 from a13n_service.process.background import BackgroundTask
-from a13n_service.process.components import ServiceComponents
+from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,8 +33,8 @@ class _PluginBundle:
 
 
 async def build_plugin_bundle(
-    settings: ServiceSettings,
-    components: ServiceComponents,
+    settings: Settings,
+    components: Components,
     shared: SharedRuntime,
     execution: ExecutionResources,
     local_runner: PluginRunnerSupervisor | None,
@@ -83,7 +83,7 @@ async def build_plugin_bundle(
             index_urls=(default_index_url, *index_urls),
             limiter=shared.storage.file_limiter,
         )
-        candidate_resolver = FoundationPluginRuntimeCandidateResolver(
+        candidate_resolver = DurableRuntimeCandidateResolver(
             shared.storage.sessions,
             agent_selection.runtime_locks,
             dependency_resolver,

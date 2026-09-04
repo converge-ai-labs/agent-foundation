@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,8 +32,7 @@ from a13n_service.ids import new_object_id
 from a13n_service.interactions import InterruptRequest, RunAcceptanceReceipt, RunStatus
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.public_errors import PublicError
-from a13n_service.secrets import InternalSecretService
-from a13n_service.secrets.domain import SecretOperation, SecretOwnerType, SecretUseContext
+from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, require_aware_utc, utc_now
 
@@ -78,7 +78,7 @@ class A2AService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         commands: NativeInteractionCommands,
-        secrets: InternalSecretService,
+        secret_protector: SecretProtector,
         endpoint_policy: EndpointPolicy,
         part_importer: A2APartImporter,
         *,
@@ -91,7 +91,7 @@ class A2AService:
             raise ValueError("A2A push drain timeout must be positive")
         self._sessions = sessions
         self._commands = commands
-        self._secrets = secrets
+        self._secret_protector = secret_protector
         self._endpoint_policy = endpoint_policy
         self._part_importer = part_importer
         self._poll_interval_seconds = poll_interval_seconds
@@ -603,34 +603,6 @@ class A2AService:
                 "The Task has reached its push configuration limit.",
                 status_code=409,
             )
-        token_version = None
-        authentication_version = None
-        if prepared.token is not None:
-            token_version = (
-                await self._secrets.create_in_transaction(
-                    database,
-                    _push_secret_context(
-                        task=task,
-                        config_id=prepared.id,
-                        key=_PUSH_TOKEN_KEY,
-                        operation=SecretOperation.management,
-                    ),
-                    prepared.token,
-                )
-            ).version
-        if prepared.credentials is not None:
-            authentication_version = (
-                await self._secrets.create_in_transaction(
-                    database,
-                    _push_secret_context(
-                        task=task,
-                        config_id=prepared.id,
-                        key=_PUSH_CREDENTIALS_KEY,
-                        operation=SecretOperation.management,
-                    ),
-                    prepared.credentials,
-                )
-            ).version
         record = A2APushConfigurationRecord(
             id=prepared.id,
             organization_id=task.organization_id,
@@ -640,8 +612,7 @@ class A2AService:
             creator_principal_id=actor.principal.principal_id,
             endpoint_url=prepared.endpoint_url,
             authentication_scheme=prepared.authentication_scheme,
-            token_secret_version=token_version,
-            authentication_secret_version=authentication_version,
+            credential_generation=0,
             state="active",
             protocol_version="1.0",
             delivery_generation=1,
@@ -649,6 +620,17 @@ class A2AService:
             updated_at=now,
             deleted_at=None,
         )
+        try:
+            record.replace_credential(
+                _credential_bundle(prepared.token, prepared.credentials),
+                self._secret_protector,
+            )
+        except SecretProtectionError as error:
+            raise A2AError(
+                "push_credential_invalid",
+                "The push credential bundle could not be protected.",
+                status_code=400,
+            ) from error
         database.add(record)
         await database.flush()
         return record
@@ -782,23 +764,7 @@ class A2AService:
                     action=WorkspaceAction.a2a_push_configuration_manage,
                 )
                 generation = record.delivery_generation
-                for key, version in (
-                    (_PUSH_TOKEN_KEY, record.token_secret_version),
-                    (_PUSH_CREDENTIALS_KEY, record.authentication_secret_version),
-                ):
-                    if version is not None:
-                        await self._secrets.tombstone_in_transaction(
-                            database,
-                            SecretUseContext(
-                                organization_id=record.organization_id,
-                                workspace_id=record.workspace_id,
-                                owner_type=SecretOwnerType.a2a_push_configuration,
-                                owner_id=record.id,
-                                key=key,
-                                operation=SecretOperation.management,
-                                credential_generation=version,
-                            ),
-                        )
+                record.replace_credential(None, self._secret_protector)
                 record.state = "disabled"
                 record.delivery_generation += 1
                 record.updated_at = now
@@ -1544,24 +1510,25 @@ def _validate_push_configuration(requested: a2a.TaskPushNotificationConfig, *, t
             "Push authentication credentials require a scheme.",
             status_code=400,
         )
+    _credential_bundle(requested.token or None, authentication.credentials or None)
 
 
-def _push_secret_context(
-    *,
-    task: A2ATaskBindingRecord,
-    config_id: str,
-    key: str,
-    operation: SecretOperation,
-) -> SecretUseContext:
-    return SecretUseContext(
-        organization_id=task.organization_id,
-        workspace_id=task.workspace_id,
-        owner_type=SecretOwnerType.a2a_push_configuration,
-        owner_id=config_id,
-        key=key,
-        operation=operation,
-        credential_generation=1,
-    )
+def _credential_bundle(token: str | None, credentials: str | None) -> str | None:
+    values = {
+        key: value
+        for key, value in ((_PUSH_TOKEN_KEY, token), (_PUSH_CREDENTIALS_KEY, credentials))
+        if value is not None
+    }
+    if not values:
+        return None
+    encoded = json.dumps(values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if len(encoded.encode("utf-8")) > 65_536:
+        raise A2AError(
+            "invalid_push_configuration",
+            "The push credential bundle is too large.",
+            status_code=400,
+        )
+    return encoded
 
 
 def _project_push_configuration(record: A2APushConfigurationRecord) -> a2a.TaskPushNotificationConfig:

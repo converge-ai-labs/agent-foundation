@@ -5,13 +5,13 @@ from __future__ import annotations
 from a13n_environment_provider import build_environment_provider_catalog
 
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
-from a13n_service.process.components import ServiceComponents
-from a13n_service.settings import ServiceSettings
+from a13n_service.process.components import Components
+from a13n_service.settings import Settings
 
 
 def build_environment_catalog(
-    settings: ServiceSettings,
-    components: ServiceComponents,
+    settings: Settings,
+    components: Components,
 ) -> FoundationEnvironmentProviderCatalog:
     """Construct the one immutable Environment catalog shared by owning roles."""
 

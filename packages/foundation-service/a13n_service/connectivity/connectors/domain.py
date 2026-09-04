@@ -68,7 +68,6 @@ class ConnectorConnection(StrictModel):
     status: ConnectorConnectionStatus
     status_reason: ConnectorConnectionStatusReason | None
     version: int = Field(ge=1)
-    catalog_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     created_by: PrincipalRef
     created_at: datetime
     updated_at: datetime

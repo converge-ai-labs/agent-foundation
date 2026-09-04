@@ -16,7 +16,7 @@ from a13n_service.lifecycle.retention import LifecycleRetentionReconciler
 from a13n_service.lifecycle.service import LifecycleEventService
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.runtime import SharedRuntime
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +29,7 @@ class _HookBundle:
 
 
 async def build_hook_bundle(
-    settings: ServiceSettings,
+    settings: Settings,
     shared: SharedRuntime,
     stack: AsyncExitStack,
 ) -> _HookBundle:

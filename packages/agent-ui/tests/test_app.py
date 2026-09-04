@@ -23,7 +23,7 @@ from a13n_harness import (
     HarnessBuilder,
 )
 from a13n_harness.capabilities import SkillsCapability, SubagentCancelResult, SubagentSteerResult, WebCapability
-from a13n_harness.environment import EnvironmentError
+from a13n_harness.environment import EnvironmentAction, EnvironmentError
 from a13n_harness.model_auth import GrokCredentials
 from a13n_ui.app import AgentUiIntegrations, AppState, open_agent_ui_app
 from a13n_ui.composition import (
@@ -636,12 +636,14 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
     assert finalization.state_publications[0].status == "unchanged"
 
 
-async def test_environment_run_service_mounts_captured_content_plugin_skills_read_only(tmp_path: Path) -> None:
+async def test_environment_run_service_mounts_captured_content_plugin_skills_read_write(tmp_path: Path) -> None:
     root = _write_configuration(tmp_path)
     agent = tmp_path / "agents" / "assistant.yaml"
     agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
     plugin_skills = tmp_path / "state" / "content-plugins" / "objects" / ("1" * 64) / "skills"
-    plugin_skills.mkdir(parents=True)
+    plugin_skill = plugin_skills / "review" / "SKILL.md"
+    plugin_skill.parent.mkdir(parents=True)
+    plugin_skill.write_text("---\nname: review\ndescription: Review a change.\n---\n\nReview carefully.\n")
     user_skills = tmp_path / "home" / ".agents" / "skills"
 
     async with open_agent_ui_app(
@@ -691,11 +693,27 @@ async def test_environment_run_service_mounts_captured_content_plugin_skills_rea
             user_skills.resolve().as_posix(),
         )
         plugin_mount = plan._mounts[1]
-        assert all("write" not in action.value for action in plugin_mount.permission_ceiling.operations)
-        assert all("remove" not in action.value for action in plugin_mount.permission_ceiling.operations)
+        assert plugin_mount.permission_ceiling.operations == frozenset(
+            action for action in EnvironmentAction if action.value.startswith("environment.file.")
+        )
+        async with plan.runtime.bind(
+            thread_id=stored.thread_id,
+            run_id="run-native-plugin-skills",
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="agent-ui"),
+                agent_instance_id="agent-native-plugin-skills",
+            ),
+            host_refs={},
+        ) as environment:
+            await environment.files.write_text(
+                plugin_skill.resolve().as_posix(),
+                "---\nname: review\ndescription: Review an updated change.\n---\n\nUpdated by the Agent.\n",
+                mode="replace",
+            )
         finalization = await plan.finalize(timeout_seconds=1)
 
     assert finalization.cleanup_errors == ()
+    assert "Updated by the Agent." in plugin_skill.read_text()
 
 
 async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(tmp_path: Path) -> None:

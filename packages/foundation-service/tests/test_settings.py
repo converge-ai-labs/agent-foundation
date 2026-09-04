@@ -5,9 +5,9 @@ import pytest
 from a13n_service.settings import (
     DatabaseBackend,
     ObjectBackend,
+    ProcessRole,
     RedisBackend,
-    ServiceRole,
-    ServiceSettings,
+    Settings,
 )
 from a13n_service.storage.config import (
     LocalObjectConfig,
@@ -19,9 +19,9 @@ from a13n_service.storage.config import (
 
 
 def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
-    settings = ServiceSettings(_env_file=None)
+    settings = Settings(_env_file=None)
 
-    assert settings.role is ServiceRole.all
+    assert settings.role is ProcessRole.all
     assert settings.port == 8000
     assert settings.database_backend is DatabaseBackend.postgresql
     assert settings.asset_max_size_bytes == 100 * 1024 * 1024
@@ -38,10 +38,6 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.plugin_runner_shutdown_timeout_seconds == 30
     assert settings.plugin_runner_max_processes == 8
     assert settings.observability_query_provider == "none"
-    assert settings.connectivity_catalog_max_pages == 128
-    assert settings.connectivity_catalog_max_tools == 2_048
-    assert settings.connectivity_catalog_max_bytes == 16 * 1024 * 1024
-    assert settings.connectivity_catalog_retention_seconds == 30 * 24 * 60 * 60
     assert settings.connectivity_object_cleanup_grace_seconds == 3600
     assert settings.connectivity_retention_batch_size == 25
     assert settings.connectivity_tool_result_max_bytes == 1024 * 1024
@@ -51,7 +47,7 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
 
 def test_asset_size_bound_must_be_positive_and_finite() -> None:
     with pytest.raises(ValueError):
-        ServiceSettings(_env_file=None, asset_max_size_bytes=0)
+        Settings(_env_file=None, asset_max_size_bytes=0)
 
 
 @pytest.mark.parametrize(
@@ -79,11 +75,11 @@ def test_asset_size_bound_must_be_positive_and_finite() -> None:
 )
 def test_plugin_runtime_command_timing_is_bounded(values: dict[str, object]) -> None:
     with pytest.raises(ValueError):
-        ServiceSettings(_env_file=None, **values)
+        Settings(_env_file=None, **values)
 
 
 def test_plugin_runtime_package_indexes_are_redacted() -> None:
-    settings = ServiceSettings(
+    settings = Settings(
         _env_file=None,
         plugin_runtime_default_index_url="https://user:default-secret@packages.example/simple",
         plugin_runtime_index_urls=["https://user:extra-secret@private.example/simple"],
@@ -95,7 +91,7 @@ def test_plugin_runtime_package_indexes_are_redacted() -> None:
 
 
 def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
-    settings = ServiceSettings(
+    settings = Settings(
         _env_file=None,
         database_backend="sqlite",
         database_sqlite_path=tmp_path / "database.sqlite3",
@@ -113,7 +109,7 @@ def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
 
 
 def test_network_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
-    settings = ServiceSettings(
+    settings = Settings(
         _env_file=None,
         database_backend="postgresql",
         database_url="postgresql://user:secret@database/foundation",
@@ -133,7 +129,7 @@ def test_network_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
 
 
 def test_langfuse_trace_query_configuration_is_complete_and_redacted() -> None:
-    settings = ServiceSettings(
+    settings = Settings(
         _env_file=None,
         observability_query_provider="langfuse",
         observability_query_langfuse_base_url="https://langfuse.example.com/",
@@ -148,7 +144,7 @@ def test_langfuse_trace_query_configuration_is_complete_and_redacted() -> None:
 
 
 def test_distribution_registered_trace_query_provider_is_accepted() -> None:
-    settings = ServiceSettings(_env_file=None, observability_query_provider="custom")
+    settings = Settings(_env_file=None, observability_query_provider="custom")
 
     settings.validate_trace_query_configuration(registered_provider_keys=("custom", "langfuse"))
 
@@ -180,7 +176,7 @@ def test_invalid_trace_query_configuration_fails_static_validation(
     values: dict[str, object],
     message: str,
 ) -> None:
-    settings = ServiceSettings(_env_file=None, **values)
+    settings = Settings(_env_file=None, **values)
 
     with pytest.raises(ValueError, match=message):
         settings.validate_trace_query_configuration()
@@ -195,14 +191,14 @@ def test_invalid_trace_query_configuration_fails_static_validation(
     ],
 )
 def test_selected_network_backend_requires_its_location(values: dict[str, object], message: str) -> None:
-    settings = ServiceSettings(_env_file=None, **values)
+    settings = Settings(_env_file=None, **values)
 
     with pytest.raises(ValueError, match=message):
         settings.storage_settings()
 
 
 def test_managed_secret_master_key_is_exact_and_redacted() -> None:
-    settings = ServiceSettings(
+    settings = Settings(
         _env_file=None,
         secret_master_key_base64=base64.b64encode(b"k" * 32).decode(),
         secret_encryption_key_id="master-2026-08",
@@ -211,7 +207,7 @@ def test_managed_secret_master_key_is_exact_and_redacted() -> None:
     assert settings.secret_protector().encryption_key_id == "master-2026-08"
     assert base64.b64encode(b"k" * 32).decode() not in repr(settings)
 
-    invalid = ServiceSettings(
+    invalid = Settings(
         _env_file=None,
         secret_master_key_base64=base64.b64encode(b"short").decode(),
         secret_encryption_key_id="master-2026-08",
@@ -222,34 +218,32 @@ def test_managed_secret_master_key_is_exact_and_redacted() -> None:
 
 def test_connectivity_bounds_and_public_origin_fail_closed() -> None:
     with pytest.raises(ValueError, match="Ingress pending count"):
-        ServiceSettings(
+        Settings(
             _env_file=None,
             connectivity_workspace_pending_max_count=10,
             connectivity_ingress_pending_max_count=11,
         )
     with pytest.raises(ValueError, match="lease"):
-        ServiceSettings(
+        Settings(
             _env_file=None,
             connectivity_admission_poll_interval_seconds=10,
             connectivity_admission_lease_seconds=10,
         )
-    with pytest.raises(ValueError, match="greater than or equal to 2592000"):
-        ServiceSettings(_env_file=None, connectivity_catalog_retention_seconds=3600)
     with pytest.raises(ValueError, match="cleanup grace"):
-        ServiceSettings(
+        Settings(
             _env_file=None,
             connectivity_retention_lease_seconds=120,
             connectivity_object_cleanup_grace_seconds=60,
         )
     with pytest.raises(ValueError, match="PUBLIC_ORIGIN is required"):
-        ServiceSettings(_env_file=None).validated_connectivity_public_origin()
+        Settings(_env_file=None).validated_connectivity_public_origin()
     with pytest.raises(ValueError, match="must be an exact origin"):
-        ServiceSettings(
+        Settings(
             _env_file=None,
             connectivity_public_origin="https://foundation.example.com/path",
         ).validated_connectivity_public_origin()
 
-    settings = ServiceSettings(
+    settings = Settings(
         _env_file=None,
         connectivity_public_origin="http://foundation.internal:8080",
         connectivity_http_origins=("http://foundation.internal:8080",),

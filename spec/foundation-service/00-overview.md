@@ -47,15 +47,16 @@ flowchart LR
         Reconstruct[Trusted reconstruction]
         EnvProvider[Environment Provider adapter construction]
         RetentionProvider[Environment Provider retention]
-        MCPClients[a13n and user Remote MCP clients]
+        MCPClients[Harness MCP capabilities and clients]
+        MCPGateway[In-process a13n MCP groups]
+        ToolAdapters[Native-action and Connector adapters]
         Observer[HarnessAguiObserver]
         Harness[agent-harness]
     end
 
     subgraph ConnectivityRole[Connectivity role]
-        MCPGateway[a13n MCP]
         ConnectivityOps[Connectivity application adapter]
-        Adapters[Ingress and Connector Provider adapters]
+        Adapters[Inbound Ingress adapters]
         EventIngress[Provider event ingress and polling]
     end
 
@@ -78,9 +79,9 @@ flowchart LR
     Executor --> EnvProvider --> Harness
     EnvProvider --> Envd
     Harness --> MCPClients
-    MCPClients --> MCPGateway --> Adapters --> External
+    MCPClients --> MCPGateway --> ToolAdapters --> External
     MCPClients --> External
-    ProviderEvent --> EventIngress --> ConnectivityOps
+    ProviderEvent --> EventIngress --> Adapters --> ConnectivityOps
     ConnectivityOps -->|same Foundation application operations| Database
     Harness --> Observer --> Executor
     Executor -. live AG-UI .-> LiveBus -. authorized subscription .-> API
@@ -164,7 +165,7 @@ flowchart TB
             Gate["private RunControlGate<br/>lock + local state only"]
             Driver["HarnessDriver<br/>runs in root task<br/>sole Harness API adapter"]
             Boundary["HarnessHookBoundary<br/>callback-scoped context wrapper"]
-            Hooks["FoundationRunControlCapability<br/>not a task"]
+            Hooks["RunControlCapability<br/>not a task"]
 
             subgraph Harness["Agent Harness"]
                 HarnessRuntime["Harness Runtime<br/>Build · Run · Environment · State"]
@@ -207,7 +208,7 @@ flowchart TB
 | Agents, immutable Revisions, stable managed Skill bindings, and Models  | Foundation control plane                                                                              | Selects exact Agent inputs and freezes current Model and Skill configuration per Run                               |
 | Immutable Workspace Assets                                              | [Asset Management](32-asset-management.md)                                                            | Publishes exact binary identity and supplies authorized Run input, output, and protocol references                 |
 | Managed Harness plugin artifacts and Runtime locks                      | Foundation control plane and Worker runtime                                                           | Preflights on demand or stages exact trusted Runner environments                                                   |
-| Native event ingress, a13n MCP, and ConnectorProvider dispatch          | [External Connectivity](40-connectivity/README.md)                                                    | Run in the `connectivity` role without moving durable management or Run authority                                  |
+| Inbound event admission and outbound external tools                     | [External Connectivity](40-connectivity/README.md)                                                    | Connectivity handles inbound events; Workers execute local MCP groups and remote clients under shared authority    |
 | Durable Thread resource                                                 | Foundation                                                                                            | Owns Session membership, origin, current Run, continuation head, and version                                       |
 | Run and RunAttempt                                                      | Foundation                                                                                            | Own durable scheduling, state, fencing, recovery, and outcome                                                      |
 | Queue-if-busy existing-Thread Run intent                                | [Queued Submissions](20-agent-control-queued-submissions.md)                                          | Accepts immediately when eligible or remains editable outside the Run DAG                                          |
@@ -233,8 +234,8 @@ One artifact supports three independently deployable roles and their all-in-one 
 
 - `all` owns control, worker, and Connectivity components in one process;
 - `control` owns product APIs, authorization, domain-owned control work including Connectivity management operations, deferred feedback, and outbox publication;
-- `worker` owns `WorkerExecutionLoop` scanning and claim plus one structured `RunAttemptExecutor` root task per successful claim, including two child monitors, one control facade, one root-task `HarnessDriver`, Agent and Environment reconstruction, sole observation consumption, and fenced publication; and
-- `connectivity` owns provider event ingress and polling, the a13n MCP, Ingress native action adapters, and ConnectorProvider runtime dispatch.
+- `worker` owns `WorkerExecutionLoop` scanning and claim plus one structured `RunAttemptExecutor` root task per successful claim, including two child monitors, one control facade, one root-task `HarnessDriver`, Agent and Environment reconstruction, sole observation consumption, outbound tool composition and dispatch, and fenced publication; and
+- `connectivity` owns provider event ingress, polling, and durable input admission through shared application operations.
 
 These names describe deployment roles, not product resources. Connectivity remains an internal Foundation Service module and process role, not a separate service or database. A `Run` remains the durable scheduled-work resource regardless of which role processes it. The [runtime contract](01-runtime-configuration-and-deployment.md) owns the complete component matrix, deployment profiles, readiness, and drain behavior. Worker- and Connectivity-only processes expose operational probes but no `/api/v1` product surface and never migrate the schema.
 
@@ -294,11 +295,11 @@ flowchart LR
     Applications --> EnvProvider[Construct exact-target attachment]
     Applications --> HostedHarness[Hosted Harness adapter]
     HostedHarness --> Harness[agent-harness]
-    HostedHarness --> MCPClients[a13n and user Remote MCP clients]
-    MCPClients --> A13nMCP[a13n MCP]
+    HostedHarness --> MCPClients[Harness MCP capabilities and clients]
+    MCPClients --> A13nMCP[In-process a13n MCP groups]
     MCPClients --> UserMCP[User Remote MCP]
-    Connectivity --> A13nMCP
-    A13nMCP --> ConnectivityAdapters[Ingress and Connector Provider adapters]
+    A13nMCP --> Connectivity
+    A13nMCP --> ConnectivityAdapters[Worker native-action and Connector adapters]
     EnvProvider --> EnvironmentAdapter[Process-local Environment adapter]
     EnvironmentAdapter --> Harness
     HostedHarness --> Observer[HarnessAguiObserver]

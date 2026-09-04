@@ -2,21 +2,26 @@
 
 from __future__ import annotations
 
-from pydantic import SecretStr
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord
-from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
-from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
+from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.management import (
     canonical_digest,
-    canonical_json,
-    clear_credentials,
     fingerprint,
     record_command,
+)
+from a13n_service.connectivity.native_management import (
+    audit,
+    authorize,
+    idempotency_key_digest,
+    replay_command,
+    require_limit,
+    require_version,
 )
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -26,32 +31,17 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.ids import new_object_id
-from a13n_service.secrets import InternalSecretError, InternalSecretService
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
-from ._management import (
-    audit,
-    authorize,
-    idempotency_key_digest,
-    ingress_agent_ids,
-    replay_command,
-    require_adapter,
-    require_ingress,
-    require_limit,
-    require_routes_fit_agents,
-    require_version,
-    secret_context,
-)
+from ._management import ingress_agent_ids, require_ingress, require_routes_fit_agents
 from .domain import (
     CreateIngressRequest,
     Ingress,
     IngressCollection,
     IngressStatus,
-    ReplaceIngressCredentialsRequest,
     UpdateIngressRequest,
 )
-from .errors import IngressError
 from .models import IngressAgentRecord, IngressRecord
 
 
@@ -59,14 +49,10 @@ class IngressService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: AdapterRegistry[IngressAdapter],
-        secrets: InternalSecretService,
         *,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
-        self._adapters = adapters
-        self._secrets = secrets
         self._clock = clock
 
     async def create_ingress(
@@ -83,10 +69,12 @@ class IngressService:
         try:
             async with transaction(self._sessions) as session:
                 workspace = await authorize(session, actor, workspace_id, WorkspaceAction.ingress_manage)
-                adapter = require_adapter(self._adapters, request.provider_key, request.provider_config_version)
-                config = _validate_config(adapter, request.provider_config, request.provider_config_version)
-                credentials = _validate_credentials(adapter, request.credentials, request.provider_config_version)
-                request_fingerprint = fingerprint(request, credentials=credentials)
+                account = await require_account(session, request.account_id, lock=True)
+                if account.workspace_id != workspace_id or account.organization_id != workspace.organization_id:
+                    raise NativeError("resource_not_found", "Account was not found.", status_code=404)
+                if account.status != "active":
+                    raise NativeError("account_unavailable", "Account is disabled.", status_code=409)
+                request_fingerprint = fingerprint(request)
                 replay = await replay_command(
                     session,
                     actor=actor,
@@ -105,31 +93,19 @@ class IngressService:
                     execution_service_account_id=request.execution_service_account_id,
                     agent_ids=request.agents,
                 )
-                secret_ref = await self._secrets.create_in_transaction(
-                    session,
-                    secret_context(
-                        organization_id=workspace.organization_id,
-                        workspace_id=workspace_id,
-                        ingress_id=ingress_id,
-                        generation=1,
-                    ),
-                    canonical_json(credentials),
-                )
+
                 record = IngressRecord(
                     id=ingress_id,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
                     name=request.name,
                     normalized_name=request.name.casefold(),
-                    provider_key=request.provider_key,
-                    provider_config_version=request.provider_config_version,
-                    provider_config_json=config,
+                    account_id=account.id,
+                    provider_config_json=request.provider_config.model_dump(mode="json"),
                     execution_service_account_id=request.execution_service_account_id,
                     default_agent_id=request.default_agent_id,
                     status=IngressStatus.active.value,
                     version=1,
-                    credential_secret_id=secret_ref.secret_id,
-                    credential_generation=secret_ref.version,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
                     created_at=now,
@@ -164,12 +140,8 @@ class IngressService:
                 await session.flush()
                 return record.to_resource(tuple(sorted(request.agents)))
         except IntegrityError as error:
-            raise IngressError(
+            raise NativeError(
                 "ingress_conflict", "Ingress identity or name already exists.", status_code=409
-            ) from error
-        except InternalSecretError as error:
-            raise IngressError(
-                "credential_conflict", "Ingress credentials could not be stored.", status_code=409
             ) from error
 
     async def list_ingresses(
@@ -185,7 +157,7 @@ class IngressService:
         try:
             position = decode_cursor(cursor, scope=scope, id_prefix="ing") if cursor is not None else None
         except CursorError as error:
-            raise IngressError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+            raise NativeError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
         async with transaction(self._sessions) as session:
             workspace = await authorize(session, actor, workspace_id, WorkspaceAction.ingress_read)
             query = select(IngressRecord).where(
@@ -231,25 +203,13 @@ class IngressService:
             record = await require_ingress(session, ingress_id, lock=True)
             await authorize(session, actor, record.workspace_id, WorkspaceAction.ingress_manage)
             require_version(record.version, request.expected_version)
-            adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
-            config = record.provider_config_json
-            if request.provider_config is not None:
-                config = _validate_config(adapter, request.provider_config, record.provider_config_version)
-                if _configuration_identity(adapter, config, record.provider_config_version) != _configuration_identity(
-                    adapter, record.provider_config_json, record.provider_config_version
-                ):
-                    raise IngressError(
-                        "immutable_ingress_identity",
-                        "Ingress installation identity cannot be changed.",
-                        status_code=409,
-                    )
             current_agents = await ingress_agent_ids(session, ingress_id)
             final_agents = request.agents if request.agents is not None else current_agents
             final_default = (
                 request.default_agent_id if "default_agent_id" in request.model_fields_set else record.default_agent_id
             )
             if final_default is None or final_default not in final_agents:
-                raise IngressError("invalid_agent_selection", "Default Agent must be allowed.", status_code=400)
+                raise NativeError("invalid_agent_selection", "Default Agent must be allowed.", status_code=400)
             await _validate_agents(
                 session,
                 organization_id=record.organization_id,
@@ -273,7 +233,8 @@ class IngressService:
             if request.name is not None:
                 record.name = request.name
                 record.normalized_name = request.name.casefold()
-            record.provider_config_json = config
+            if request.provider_config is not None:
+                record.provider_config_json = request.provider_config.model_dump(mode="json")
             record.default_agent_id = final_default
             record.version += 1
             record.updated_at = self._clock()
@@ -284,64 +245,6 @@ class IngressService:
             )
             await session.flush()
             return record.to_resource(tuple(sorted(final_agents)))
-
-    async def replace_credentials(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        ingress_id: str,
-        idempotency_key: str,
-        request: ReplaceIngressCredentialsRequest,
-    ) -> Ingress:
-        key_digest = idempotency_key_digest(idempotency_key)
-        request_fingerprint = fingerprint(request, credentials=clear_credentials(request.credentials))
-        async with transaction(self._sessions) as session:
-            record = await require_ingress(session, ingress_id, lock=True)
-            await authorize(session, actor, record.workspace_id, WorkspaceAction.ingress_manage)
-            replay = await replay_command(
-                session,
-                actor=actor,
-                workspace_id=record.workspace_id,
-                operation="ingress.credentials",
-                scope_id=ingress_id,
-                idempotency_key_digest=key_digest,
-                fingerprint=request_fingerprint,
-            )
-            if replay is not None:
-                if replay.resource_id != record.id:
-                    raise IngressError(
-                        "idempotency_conflict", "Idempotency key was used for another resource.", status_code=409
-                    )
-                return await _resource(session, ingress_id)
-            require_version(record.version, request.expected_version)
-            adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
-            credentials = _validate_credentials(adapter, request.credentials, record.provider_config_version)
-            secret_ref = await self._secrets.replace_in_transaction(
-                session,
-                secret_context(
-                    organization_id=record.organization_id,
-                    workspace_id=record.workspace_id,
-                    ingress_id=ingress_id,
-                    generation=record.credential_generation,
-                ),
-                canonical_json(credentials),
-            )
-            record.credential_generation = secret_ref.version
-            record.version += 1
-            record.updated_at = self._clock()
-            _record_ingress_command(session, actor, record, "ingress.credentials", key_digest, request_fingerprint)
-            session.add(
-                audit(
-                    actor,
-                    record.organization_id,
-                    record.workspace_id,
-                    "ingress.credentials",
-                    ingress_id,
-                    record.updated_at,
-                )
-            )
-            await session.flush()
-            return record.to_resource(await ingress_agent_ids(session, ingress_id))
 
     async def set_status(
         self,
@@ -382,26 +285,6 @@ class IngressService:
             return record.to_resource(await ingress_agent_ids(session, ingress_id))
 
 
-def _validate_config(adapter: IngressAdapter, value: object, version: str) -> JsonObject:
-    try:
-        return adapter.validate_config(value, config_version=version)
-    except ValueError as error:
-        raise IngressError(
-            "invalid_provider_config", "Ingress provider configuration is invalid.", status_code=400
-        ) from error
-
-
-def _validate_credentials(adapter: IngressAdapter, value: dict[str, SecretStr], version: str) -> JsonObject:
-    try:
-        return adapter.validate_credentials(clear_credentials(value), config_version=version)
-    except ValueError as error:
-        raise IngressError("invalid_credentials", "Ingress credentials are invalid.", status_code=400) from error
-
-
-def _configuration_identity(adapter: IngressAdapter, value: JsonObject, version: str) -> object:
-    return adapter.configuration_identity(value, config_version=version)
-
-
 async def _validate_agents(
     session: AsyncSession,
     *,
@@ -430,7 +313,7 @@ async def _validate_agents(
             )
         )
         if agent is None:
-            raise IngressError("invalid_agent_selection", "Ingress Agent is unavailable.", status_code=400)
+            raise NativeError("invalid_agent_selection", "Ingress Agent is unavailable.", status_code=400)
         try:
             await authorize_agent(
                 session,
@@ -440,7 +323,7 @@ async def _validate_agents(
                 action=WorkspaceAction.agent_invoke,
             )
         except AuthorizationError as error:
-            raise IngressError(
+            raise NativeError(
                 "invalid_execution_principal",
                 "Ingress execution Principal cannot invoke every selected Agent.",
                 status_code=400,

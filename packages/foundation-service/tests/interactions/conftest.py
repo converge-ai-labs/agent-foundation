@@ -86,7 +86,6 @@ def agent_config() -> AgentConfig:
         {
             "model": {
                 "model_key": MODEL_KEY,
-                "model_api": "openai.responses",
                 "settings": {"temperature": 0.2},
                 "characteristics": {"context_window": 128000},
             },

@@ -71,7 +71,6 @@ class ComposioProvider:
             api_key=self._credentials.api_key,
             path="/api/v3.1/toolkits",
             budget=budget,
-            pagination="next_cursor",
         )
         auth_configs = await directory_items(
             self._http,
@@ -79,7 +78,6 @@ class ComposioProvider:
             api_key=self._credentials.api_key,
             path="/api/v3.1/auth_configs",
             budget=budget,
-            pagination="next_cursor",
             page_size=50,
         )
         configured: dict[str, list[str]] = {}
@@ -178,6 +176,86 @@ class ComposioProvider:
             raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
 
 
+class ComposioToolCatalog:
+    """Read a toolkit's definitions without an external account binding."""
+
+    def __init__(
+        self,
+        http: ConnectorHttpClient,
+        configuration: ComposioConfiguration,
+        credentials: ApiKeyCredentials,
+        connector_key: str,
+    ) -> None:
+        if connector_key not in configuration.enabled_toolkits:
+            raise ConnectorProviderError("connector_not_enabled")
+        self._http = http
+        self._configuration = configuration
+        self._credentials = credentials
+        self._connector_key = connector_key
+        self._catalog_version: str | None = None
+
+    async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage:
+        if self._catalog_version is None:
+            toolkit = required_object(
+                await self._http.request(
+                    "GET",
+                    endpoint=self._configuration.endpoint,
+                    path=f"/api/v3.1/toolkits/{path_segment(self._connector_key)}",
+                    api_key=self._credentials.api_key,
+                )
+            )
+            if required_string(toolkit, "slug", max_length=128) != self._connector_key:
+                raise ConnectorProviderError("provider_mismatch")
+            version = required_string(required_object(toolkit.get("meta")), "version", max_length=128)
+            if _TOOLKIT_VERSION.fullmatch(version) is None:
+                raise ConnectorProviderError("incompatible_toolkit_version")
+            self._catalog_version = version
+        version = self._catalog_version
+        params = {
+            "toolkit_slug": self._connector_key,
+            f"toolkit_versions[{self._connector_key}]": version,
+            "limit": "100",
+        }
+        if cursor is not None:
+            params["cursor"] = cursor
+        value = required_object(
+            await self._http.request(
+                "GET",
+                endpoint=self._configuration.endpoint,
+                path="/api/v3.1/tools",
+                api_key=self._credentials.api_key,
+                params=params,
+            )
+        )
+        items = value.get("items")
+        if not isinstance(items, list) or len(items) > 100:
+            raise ConnectorProviderError("invalid_provider_response")
+        tools: list[ConnectorTool] = []
+        for item in items:
+            summary = required_object(item)
+            key = required_string(summary, "slug", max_length=128)
+            detail = required_object(
+                await self._http.request(
+                    "GET",
+                    endpoint=self._configuration.endpoint,
+                    path=f"/api/v3.1/tools/{path_segment(key)}",
+                    api_key=self._credentials.api_key,
+                    params={"version": version},
+                )
+            )
+            if (
+                required_string(detail, "slug", max_length=128) != key
+                or required_string(required_object(detail.get("toolkit")), "slug", max_length=128)
+                != self._connector_key
+                or required_string(detail, "version", max_length=128) != version
+            ):
+                raise ConnectorProviderError("incompatible_tool_version")
+            tools.append(_tool(detail))
+        return ConnectorToolPage(
+            items=tuple(tools), next_cursor=optional_string(value.get("next_cursor")), provider_version=version
+        )
+
+
 class ComposioConnection:
     def __init__(
         self,
@@ -190,7 +268,7 @@ class ComposioConnection:
         self._configuration = configuration
         self._credentials = credentials
         self._binding = binding
-        self._catalog_version: str | None = None
+        self._catalog = ComposioToolCatalog(http, configuration, credentials, binding.connector_key)
 
     async def aclose(self) -> None:
         # Closing a local binding neither closes a borrowed client nor revokes the account.
@@ -228,65 +306,7 @@ class ComposioConnection:
         )
 
     async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage:
-        if self._catalog_version is None:
-            toolkit = required_object(
-                await self._http.request(
-                    "GET",
-                    endpoint=self._configuration.endpoint,
-                    path=f"/api/v3.1/toolkits/{path_segment(self._binding.connector_key)}",
-                    api_key=self._credentials.api_key,
-                )
-            )
-            if required_string(toolkit, "slug", max_length=128) != self._binding.connector_key:
-                raise ConnectorProviderError("provider_mismatch")
-            version = required_string(required_object(toolkit.get("meta")), "version", max_length=128)
-            if _TOOLKIT_VERSION.fullmatch(version) is None:
-                raise ConnectorProviderError("incompatible_toolkit_version")
-            self._catalog_version = version
-        version = self._catalog_version
-        params = {
-            "toolkit_slug": self._binding.connector_key,
-            f"toolkit_versions[{self._binding.connector_key}]": version,
-            "limit": "100",
-        }
-        if cursor is not None:
-            params["cursor"] = cursor
-        value = required_object(
-            await self._http.request(
-                "GET",
-                endpoint=self._configuration.endpoint,
-                path="/api/v3.1/tools",
-                api_key=self._credentials.api_key,
-                params=params,
-            )
-        )
-        items = value.get("items")
-        if not isinstance(items, list) or len(items) > 100:
-            raise ConnectorProviderError("invalid_provider_response")
-        tools: list[ConnectorTool] = []
-        for item in items:
-            summary = required_object(item)
-            key = required_string(summary, "slug", max_length=128)
-            detail = required_object(
-                await self._http.request(
-                    "GET",
-                    endpoint=self._configuration.endpoint,
-                    path=f"/api/v3.1/tools/{path_segment(key)}",
-                    api_key=self._credentials.api_key,
-                    params={"version": version},
-                )
-            )
-            if (
-                required_string(detail, "slug", max_length=128) != key
-                or required_string(required_object(detail.get("toolkit")), "slug", max_length=128)
-                != self._binding.connector_key
-                or required_string(detail, "version", max_length=128) != version
-            ):
-                raise ConnectorProviderError("incompatible_tool_version")
-            tools.append(_tool(detail))
-        return ConnectorToolPage(
-            items=tuple(tools), next_cursor=optional_string(value.get("next_cursor")), provider_version=version
-        )
+        return await self._catalog.discover_tools(cursor=cursor)
 
     async def execute_tool(
         self,

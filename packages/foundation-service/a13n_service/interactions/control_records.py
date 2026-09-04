@@ -34,6 +34,7 @@ def thread_inbox_record(value: ThreadInboxEntry) -> ThreadInboxRecord:
         target_run_id=value.target_run_id,
         source_waiting_run_id=value.source_waiting_run_id,
         origin_run_id=value.origin_run_id,
+        async_subagent_relationship_id=value.async_subagent_relationship_id,
         payload_schema_version=value.payload_schema_version,
         payload_json=_inline_json(value.payload) if inline else None,
         payload_object_key=None if object_ref is None else object_ref.object_key,

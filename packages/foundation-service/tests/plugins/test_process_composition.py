@@ -2,10 +2,10 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from a13n_service.app import ServiceComponents, create_app
+from a13n_service.app import Components, create_app
 from a13n_service.plugins import BuiltinPluginArtifact, BuiltinPluginRegistration
 from a13n_service.plugins.models import PluginRecord, PluginVersionRecord
-from a13n_service.settings import ServiceRole, ServiceSettings
+from a13n_service.settings import ProcessRole, Settings
 from a13n_service.storage import short_session
 
 from .conftest import build_wheel, wheel_body
@@ -29,9 +29,9 @@ async def test_control_lifespan_registers_distribution_builtin_plugins(
         required=True,
     )
     app = create_app(
-        ServiceSettings(
+        Settings(
             _env_file=None,
-            role=ServiceRole.control,
+            role=ProcessRole.control,
             database_backend="sqlite",
             database_sqlite_path=service_sqlite_database,
             redis_backend="memory",
@@ -43,7 +43,7 @@ async def test_control_lifespan_registers_distribution_builtin_plugins(
             connectivity_public_origin="http://testserver",
             connectivity_http_origins=("http://testserver",),
         ),
-        components=ServiceComponents(
+        components=Components(
             builtin_plugin_artifacts=(
                 BuiltinPluginArtifact(
                     registration=registration,

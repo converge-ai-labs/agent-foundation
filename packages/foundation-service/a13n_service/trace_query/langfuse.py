@@ -134,7 +134,7 @@ class LangfuseTraceQueryProvider:
             observations.extend(page)
             if cursor is None:
                 break
-        roots = [item for item in observations if _is_foundation_root(item)]
+        roots = [item for item in observations if _is_run_attempt_root(item)]
         if not roots:
             return None
         if len(roots) != 1:
@@ -179,7 +179,7 @@ class LangfuseTraceQueryProvider:
         *,
         observation_count: int | None = None,
     ) -> ProviderTraceSummary:
-        if not _is_foundation_root(item):
+        if not _is_run_attempt_root(item):
             raise TraceQueryProviderError("malformed")
         trace_id = _required_text(item.get("traceId"), "traceId", max_bytes=512)
         started_at = _datetime(item.get("startTime"), "startTime")
@@ -294,7 +294,7 @@ def _page(payload: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], str | No
     return items, cast(str | None, cursor)
 
 
-def _is_foundation_root(item: Mapping[str, Any]) -> bool:
+def _is_run_attempt_root(item: Mapping[str, Any]) -> bool:
     return (
         item.get("name") == _ROOT_NAME
         and item.get("parentObservationId") is None

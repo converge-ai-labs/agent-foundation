@@ -60,7 +60,7 @@ async def test_provider_credential_is_encrypted_write_only_and_rotatable(
     async with transaction(model_sessions) as session:
         stored = await session.get(ModelProviderRecord, provider.id)
         assert stored is not None
-        assert stored.credential_version == 2
+        assert stored.credential_generation == 2
         assert bytes(stored.ciphertext or b"") != first_ciphertext
 
 
@@ -108,7 +108,7 @@ async def test_model_key_and_provider_are_immutable_while_content_is_mutable(
             provider_id=provider.id,
             name="Support",
             upstream_model="gpt-current",
-            model_apis=({"api": "openai.responses"},),
+            model_api="openai.responses",
         ),
     )
 
@@ -119,13 +119,13 @@ async def test_model_key_and_provider_are_immutable_while_content_is_mutable(
         if_match=resource_etag(model.id, model.updated_at),
         request=UpdateModelRequest(
             upstream_model="gpt-new",
-            model_apis=({"api": "openai.chat_completions"},),
+            model_api="openai.chat_completions",
         ),
     )
     assert updated.key == "support/main"
     assert updated.provider_id == provider.id
     assert updated.upstream_model == "gpt-new"
-    assert updated.model_apis[0].api == "openai.chat_completions"
+    assert updated.model_api == "openai.chat_completions"
 
     with pytest.raises(ModelError, match="key"):
         await model_service.create(
@@ -136,7 +136,7 @@ async def test_model_key_and_provider_are_immutable_while_content_is_mutable(
                 provider_id=provider.id,
                 name="Duplicate",
                 upstream_model="gpt-other",
-                model_apis=({"api": "openai.responses"},),
+                model_api="openai.responses",
             ),
         )
 
@@ -157,7 +157,46 @@ async def test_model_api_must_be_supported_by_provider_type(
                 provider_id=provider.id,
                 name="Bad",
                 upstream_model="claude",
-                model_apis=({"api": "anthropic.messages"},),
+                model_api="anthropic.messages",
             ),
         )
-    assert rejected.value.code == "invalid_model_apis"
+    assert rejected.value.code == "invalid_model_api"
+
+
+@pytest.mark.anyio
+async def test_model_patch_revalidates_all_settings_and_can_clear_defaults(provider_service, model_service):
+    provider = await provider_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelProviderRequest(type="openai", name="Settings", credential="secret"),
+    )
+    model = await model_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelRequest(
+            key="custom-deployment",
+            provider_id=provider.id,
+            name="Custom",
+            upstream_model="not-in-any-catalog",
+            model_api="openai.responses",
+            settings={"openai_text_verbosity": "low"},
+        ),
+    )
+    with pytest.raises(ModelError) as failure:
+        await model_service.update(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            model_id=model.id,
+            if_match=resource_etag(model.id, model.updated_at),
+            request=UpdateModelRequest(model_api="openai.chat_completions"),
+        )
+    assert failure.value.code == "invalid_model_settings"
+    changed = await model_service.update(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        model_id=model.id,
+        if_match=resource_etag(model.id, model.updated_at),
+        request=UpdateModelRequest(model_api="openai.chat_completions", settings={}),
+    )
+    assert changed.settings == {}
+    assert changed.model_api == "openai.chat_completions"
