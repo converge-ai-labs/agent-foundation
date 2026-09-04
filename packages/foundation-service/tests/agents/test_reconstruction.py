@@ -98,7 +98,6 @@ def _resolved_model(config: AgentConfig) -> ResolvedAgentModel:
     return ResolvedAgentModel(
         model_id=MODEL_ID,
         model_key=MODEL_KEY,
-        model_api="openai.responses",
         settings=config.model.settings,
         characteristics=config.model.characteristics,
     )

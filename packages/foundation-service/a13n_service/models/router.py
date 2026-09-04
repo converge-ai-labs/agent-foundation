@@ -18,12 +18,18 @@ from .domain import (
     ModelConnectionTestResult,
     ModelProvider,
     ModelProviderCollection,
-    TestModelRequest,
+    ModelTestRequest,
     UpdateModelProviderRequest,
     UpdateModelRequest,
 )
 from .provider_service import ModelProviderService
-from .providers import DiscoveredModelCollection, ModelProviderDefinitionCollection
+from .providers import (
+    DescribeModelRequest,
+    DiscoverModelsRequest,
+    ModelDescription,
+    ModelDescriptionCollection,
+    ModelProviderDefinitionCollection,
+)
 from .service import ModelService
 from .service_common import ModelError
 
@@ -134,15 +140,25 @@ async def update_model_provider(
 
 @router.post(
     "/workspaces/{workspace_id}/model-providers/{provider_id}/discover-models",
-    response_model=DiscoveredModelCollection,
+    response_model=ModelDescriptionCollection,
 )
 async def discover_provider_models(
-    request: Request, actor: Actor, workspace_id: str, provider_id: str
-) -> DiscoveredModelCollection:
+    request: Request, actor: Actor, workspace_id: str, provider_id: str, body: DiscoverModelsRequest
+) -> ModelDescriptionCollection:
     return await _provider_service(request).discover_models(
+        request=body,
         actor=actor,
         workspace_id=workspace_id,
         provider_id=provider_id,
+    )
+
+
+@router.post("/workspaces/{workspace_id}/model-providers/{provider_id}/describe-model", response_model=ModelDescription)
+async def describe_provider_model(
+    request: Request, actor: Actor, workspace_id: str, provider_id: str, body: DescribeModelRequest
+) -> ModelDescription:
+    return await _provider_service(request).describe_model(
+        actor=actor, workspace_id=workspace_id, provider_id=provider_id, request=body
     )
 
 
@@ -225,11 +241,10 @@ async def test_model(
     actor: Actor,
     workspace_id: str,
     model_id: str,
-    body: TestModelRequest,
+    body: ModelTestRequest | None = None,
 ) -> ModelConnectionTestResult:
     return await _model_service(request).test(
         actor=actor,
         workspace_id=workspace_id,
         model_id=model_id,
-        model_api=body.model_api,
     )

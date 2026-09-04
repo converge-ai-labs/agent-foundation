@@ -97,18 +97,9 @@ def merge_agent_run_override(
             inherited=base.model.model_key,
             path="model.model_key",
         )
-        model_api = _required_patch_value(
-            override.model.model_api,
-            present="model_api" in model_fields,
-            inherited=base.model.model_api,
-            path="model.model_api",
-        )
-        settings = _required_patch_value(
-            override.model.settings,
-            present="settings" in model_fields,
-            inherited=base.model.settings,
-            path="model.settings",
-        )
+        settings = base.model.settings
+        if "settings" in model_fields:
+            settings = {} if override.model.settings is None else {**settings, **override.model.settings}
         characteristics = _required_patch_value(
             override.model.characteristics,
             present="characteristics" in model_fields,
@@ -117,7 +108,6 @@ def merge_agent_run_override(
         )
         model = AgentModel(
             model_key=model_key,
-            model_api=model_api,
             settings=settings,
             characteristics=characteristics,
         )

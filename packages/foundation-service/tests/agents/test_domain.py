@@ -12,8 +12,6 @@ from a13n_service.agents.domain import (
 )
 from pydantic import ValidationError
 
-from .conftest import agent_config
-
 
 def test_agent_identifiers_are_kind_prefixed_and_unpredictable() -> None:
     agent_ids = {new_agent_id() for _ in range(100)}
@@ -38,19 +36,11 @@ def test_output_spec_requires_one_schema_or_multiple_variants() -> None:
         OutputSpec.model_validate({"variants": [{"name": "only", "schema": {"type": "object"}, "resources": {}}]})
 
 
-def test_model_settings_are_limited_to_native_pydantic_ai_fields() -> None:
-    config = agent_config()
-
-    assert config.model.settings == {"temperature": 0.2}
-    with pytest.raises(ValidationError, match="unsupported ModelSettings"):
-        AgentModel.model_validate(
-            {
-                "model_key": config.model.model_key,
-                "model_api": config.model.model_api,
-                "settings": {"made_up": True},
-                "characteristics": {},
-            }
-        )
+def test_agent_settings_preserve_provider_specific_values_until_selection_validation() -> None:
+    config = AgentModel(model_key="primary", settings={"openrouter_provider": {"only": ["Amazon Bedrock"]}})
+    assert config.settings["openrouter_provider"] == {"only": ["Amazon Bedrock"]}
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        AgentModel.model_validate({"model_key": "primary", "model_api": "openai.responses"})
 
 
 @pytest.mark.parametrize(

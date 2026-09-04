@@ -19,7 +19,16 @@ def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: b
             provider_columns = {item["name"] for item in inspector.get_columns("model_providers")}
             assert {"type", "configuration", "credential_version", "ciphertext", "enabled"} <= provider_columns
             model_columns = {item["name"] for item in inspector.get_columns("models")}
-            assert {"key", "provider_id", "upstream_model", "model_apis", "enabled"} <= model_columns
+            assert {
+                "key",
+                "provider_id",
+                "upstream_model",
+                "model_api",
+                "settings",
+                "profile",
+                "limits",
+                "enabled",
+            } <= model_columns
             assert {"version", "current_revision_id"}.isdisjoint(model_columns)
         else:
             assert MODEL_TABLES.isdisjoint(tables)

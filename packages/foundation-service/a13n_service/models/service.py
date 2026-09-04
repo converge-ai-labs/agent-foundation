@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable
 from time import monotonic
 from typing import Protocol
 
@@ -19,7 +19,6 @@ from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .domain import (
     CreateModelRequest,
     Model,
-    ModelApiConfig,
     ModelCollection,
     ModelConnectionTestResult,
     ModelExecutionSnapshot,
@@ -31,6 +30,7 @@ from .models import ModelRecord
 from .provider_service import require_provider
 from .providers import ProviderRegistry
 from .service_common import ModelError, audit_record, authorize_models, require_etag
+from .settings import JsonObject, validate_settings
 
 
 class ModelConnectionTester(Protocol):
@@ -38,6 +38,7 @@ class ModelConnectionTester(Protocol):
         self,
         *,
         snapshot: ModelExecutionSnapshot,
+        settings: JsonObject,
         organization_id: str,
         workspace_id: str,
     ) -> Awaitable[None]: ...
@@ -80,7 +81,8 @@ class ModelService:
                 )
                 if not provider.enabled:
                     raise ModelError("model_provider_disabled", "The Model Provider is disabled.", status_code=409)
-                self._validate_apis(provider.type, request.model_apis)
+                self._registry.validate_model_api(provider.type, request.model_api)
+                validate_settings(request.model_api, request.settings)
                 record = ModelRecord(
                     id=new_model_id(),
                     organization_id=workspace.organization_id,
@@ -91,7 +93,10 @@ class ModelService:
                     name=request.name,
                     description=request.description,
                     upstream_model=request.upstream_model,
-                    model_apis=[item.model_dump(mode="json") for item in request.model_apis],
+                    model_api=request.model_api,
+                    settings=request.settings,
+                    profile=request.profile.model_dump(mode="json"),
+                    limits=request.limits.model_dump(mode="json"),
                     enabled=request.enabled,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
@@ -231,8 +236,10 @@ class ModelService:
                 workspace_id=workspace.workspace_id,
                 provider_id=record.provider_id,
             )
-            model_apis = request.model_apis if request.model_apis is not None else record.to_resource().model_apis
-            self._validate_apis(provider.type, model_apis)
+            model_api = request.model_api if request.model_api is not None else record.model_api
+            settings = request.settings if request.settings is not None else record.settings
+            self._registry.validate_model_api(provider.type, model_api)
+            validate_settings(model_api, settings)
             if "name" in request.model_fields_set:
                 assert request.name is not None
                 record.name = request.name
@@ -241,9 +248,12 @@ class ModelService:
             if "upstream_model" in request.model_fields_set:
                 assert request.upstream_model is not None
                 record.upstream_model = request.upstream_model
-            if "model_apis" in request.model_fields_set:
-                assert request.model_apis is not None
-                record.model_apis = [item.model_dump(mode="json") for item in request.model_apis]
+            record.model_api = model_api
+            record.settings = settings
+            if request.profile is not None:
+                record.profile = request.profile.model_dump(mode="json")
+            if request.limits is not None:
+                record.limits = request.limits.model_dump(mode="json")
             if "enabled" in request.model_fields_set:
                 assert request.enabled is not None
                 record.enabled = request.enabled
@@ -270,7 +280,6 @@ class ModelService:
         actor: AuthenticatedActor,
         workspace_id: str,
         model_id: str,
-        model_api: str,
     ) -> ModelConnectionTestResult:
         if self._connection_tester is None:
             raise ModelError("model_connection_tester_unavailable", "Model testing is unavailable.", status_code=503)
@@ -286,16 +295,14 @@ class ModelService:
                     model_id=model_id,
                 )
             ).to_resource()
-        try:
-            snapshot = ModelExecutionSnapshot.freeze(model, model_api)
-        except ValueError as error:
-            raise ModelError("model_api_not_configured", "The Model API is not configured.", status_code=400) from error
+        snapshot = ModelExecutionSnapshot.freeze(model)
         started = monotonic()
         success, code, message = True, "connection_succeeded", "The Model API connection succeeded."
         try:
             with fail_after(self._connection_test_timeout_seconds):
                 await self._connection_tester(
                     snapshot=snapshot,
+                    settings=model.settings,
                     organization_id=model.organization_id,
                     workspace_id=model.workspace_id,
                 )
@@ -322,12 +329,6 @@ class ModelService:
             code=code,
             message=message,
         )
-
-    def _validate_apis(self, provider_type: str, model_apis: Sequence[ModelApiConfig]) -> None:
-        try:
-            self._registry.validate_model_apis(provider_type, model_apis)
-        except ValueError as error:
-            raise ModelError("invalid_model_apis", "The Model APIs are invalid.", status_code=400) from error
 
 
 async def require_model(

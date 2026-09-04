@@ -171,10 +171,8 @@ async def test_model_http_lifecycle_has_no_revision_or_default_api(api_client: h
             "provider_id": provider["id"],
             "name": "Support",
             "upstream_model": "gpt-current",
-            "model_apis": [
-                {"api": "openai.responses", "profile": {"supports_tools": True}},
-                {"api": "openai.chat_completions"},
-            ],
+            "model_api": "openai.responses",
+            "profile": {"supports_tools": True},
         },
     )
     assert created.status_code == 201
@@ -201,7 +199,7 @@ async def test_model_http_lifecycle_has_no_revision_or_default_api(api_client: h
     assert patched.json()["key"] == model["key"]
     assert patched.json()["provider_id"] == provider["id"]
 
-    tested = await api_client.post(f"{model_url}/test", json={"model_api": "openai.responses"})
+    tested = await api_client.post(f"{model_url}/test", json={})
     assert tested.status_code == 200
     assert tested.json()["success"]
     assert (await api_client.get(f"{model_url}/revisions")).status_code == 404
@@ -235,3 +233,39 @@ async def test_missing_authenticator_returns_401(
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "authentication_required"
+
+
+@pytest.mark.anyio
+async def test_description_accepts_manual_ids_and_rejects_foreign_provider_apis(api_client):
+    created = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
+        json={
+            "type": "aws_bedrock",
+            "name": "Bedrock",
+            "configuration": {"region": "us-east-1"},
+            "credential": '{"aws_access_key_id":"test","aws_secret_access_key":"test"}',
+        },
+    )
+    assert created.status_code == 201
+    provider_id = created.json()["id"]
+    url = f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers/{provider_id}"
+    described = await api_client.post(f"{url}/describe-model", json={"upstream_model": "new/unlisted-deployment"})
+    assert described.status_code == 200
+    assert described.json()["suggested_model_api"] == "bedrock.converse"
+    assert "bedrock_guardrail_config" in described.json()["settings_schema"]["properties"]
+    rejected = await api_client.post(
+        f"{url}/describe-model", json={"upstream_model": "new", "model_api": "anthropic.messages"}
+    )
+    assert rejected.status_code == 400
+    unsupported = await api_client.post(f"{url}/discover-models", json={})
+    assert unsupported.status_code == 409
+    assert "model_discovery_unsupported" in unsupported.text
+    assert (await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/models")).json()["items"] == []
+
+
+@pytest.mark.anyio
+async def test_model_test_rejects_removed_api_selector(api_client):
+    response = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/models/mdl_1234567890abcdef/test", json={"model_api": "openai.responses"}
+    )
+    assert response.status_code in {400, 422}

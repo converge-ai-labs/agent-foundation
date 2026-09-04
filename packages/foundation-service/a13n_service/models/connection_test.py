@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.settings import ModelSettings
 
 from .domain import ModelExecutionSnapshot
 from .model_factory import NativeModelFactory
 from .provider_runtime import LiveProviderResolver
+from .settings import JsonObject, validate_settings
 
 
 class NativeModelConnectionTester:
@@ -21,6 +25,7 @@ class NativeModelConnectionTester:
         self,
         *,
         snapshot: ModelExecutionSnapshot,
+        settings: JsonObject,
         organization_id: str,
         workspace_id: str,
     ) -> None:
@@ -33,7 +38,7 @@ class NativeModelConnectionTester:
         async with model:
             response = await model.request(
                 [ModelRequest(parts=[UserPromptPart("Reply with OK.")])],
-                {"max_tokens": 1},
+                cast(ModelSettings, validate_settings(snapshot.model_api, settings)),
                 ModelRequestParameters(),
             )
         del response

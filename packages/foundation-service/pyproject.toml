@@ -41,6 +41,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "starlette>=1.6,<2",
     "uvicorn>=0.35,<1",
+    "mypy-boto3-bedrock-runtime>=1.43,<2",
 ]
 
 [project.scripts]

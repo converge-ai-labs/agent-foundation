@@ -19,6 +19,8 @@ from a13n_service.temporal import Clock, utc_now
 
 from .credentials import ProviderCredentialError, replace_provider_credential, validate_provider_credential
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
+from .descriptions import describe_model
+from .discovery_paging import discovery_page
 from .domain import (
     CreateModelProviderRequest,
     ModelConnectionTestResult,
@@ -29,7 +31,10 @@ from .domain import (
 )
 from .models import ModelProviderRecord
 from .providers import (
-    DiscoveredModelCollection,
+    DescribeModelRequest,
+    DiscoverModelsRequest,
+    ModelDescription,
+    ModelDescriptionCollection,
     ModelProviderDefinitionCollection,
     ProviderRegistry,
     ValidatedProviderConfiguration,
@@ -42,7 +47,18 @@ class ProviderOperations(Protocol):
 
     def discover(
         self, *, provider_id: str, organization_id: str, workspace_id: str
-    ) -> Awaitable[DiscoveredModelCollection]: ...
+    ) -> Awaitable[ModelDescriptionCollection]: ...
+
+    def describe(
+        self,
+        *,
+        provider_id: str,
+        organization_id: str,
+        workspace_id: str,
+        provider_type: str,
+        upstream_model: str,
+        model_api: str | None,
+    ) -> Awaitable[ModelDescription]: ...
 
 
 class ModelProviderService:
@@ -292,14 +308,14 @@ class ModelProviderService:
             return record.to_resource()
 
     async def discover_models(
-        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str
-    ) -> DiscoveredModelCollection:
+        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str, request: DiscoverModelsRequest
+    ) -> ModelDescriptionCollection:
         provider = await self._prepare_command(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
         if not provider.enabled:
             raise ModelError("model_provider_disabled", "The Model Provider is disabled.", status_code=409)
         if not self._registry.definition(provider.type).supports_model_discovery:
             raise ModelError(
-                "provider_discovery_unsupported",
+                "model_discovery_unsupported",
                 "The Model Provider type does not support model discovery.",
                 status_code=409,
             )
@@ -308,7 +324,7 @@ class ModelProviderService:
                 "provider_discovery_unavailable", "Provider model discovery is unavailable.", status_code=503
             )
         failure: ModelError | None = None
-        result: DiscoveredModelCollection | None = None
+        result: ModelDescriptionCollection | None = None
         try:
             with fail_after(self._command_timeout_seconds):
                 result = await self._operations.discover(
@@ -316,6 +332,9 @@ class ModelProviderService:
                     organization_id=provider.organization_id,
                     workspace_id=provider.workspace_id,
                 )
+            result = discovery_page(result, request, provider=provider, actor=actor)
+        except ModelError as error:
+            failure = error
         except TimeoutError:
             failure = ModelError("provider_discovery_timeout", "Provider model discovery timed out.", status_code=504)
         except Exception:
@@ -336,6 +355,38 @@ class ModelProviderService:
         if failure is not None:
             raise failure
         assert result is not None
+        return result
+
+    async def describe_model(
+        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str, request: DescribeModelRequest
+    ) -> ModelDescription:
+        provider = await self.get(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
+        result = describe_model(self._registry, provider.type, request.upstream_model, model_api=request.model_api)
+        if self._operations is not None:
+            try:
+                with fail_after(self._command_timeout_seconds):
+                    result = await self._operations.describe(
+                        provider_id=provider.id,
+                        organization_id=provider.organization_id,
+                        workspace_id=provider.workspace_id,
+                        provider_type=provider.type,
+                        upstream_model=request.upstream_model,
+                        model_api=request.model_api,
+                    )
+            except TimeoutError:
+                pass
+        async with transaction(self._sessions) as session:
+            session.add(
+                audit_record(
+                    actor=actor,
+                    organization_id=provider.organization_id,
+                    workspace_id=provider.workspace_id,
+                    resource_type="model_provider",
+                    resource_id=provider.id,
+                    action="model_provider.describe_model",
+                    now=self._clock(),
+                )
+            )
         return result
 
     async def test(

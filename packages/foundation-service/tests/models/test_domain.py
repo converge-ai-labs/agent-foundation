@@ -5,19 +5,19 @@ from a13n_service.models.domain import CreateModelRequest, ModelExecutionSnapsho
 from pydantic import ValidationError
 
 
-def test_model_key_is_normalized_and_apis_are_explicit_and_unique() -> None:
+def test_model_key_is_normalized_and_one_api_is_required() -> None:
     request = CreateModelRequest.model_validate(
         {
             "key": " Team/GPT ",
             "provider_id": "mprov_1234567890abcdef",
             "name": "Team GPT",
             "upstream_model": "gpt-next",
-            "model_apis": [{"api": "openai.responses"}],
+            "model_api": "openai.responses",
         }
     )
 
     assert request.key == "team/gpt"
-    with pytest.raises(ValidationError, match="unique"):
+    with pytest.raises(ValidationError, match="Extra inputs"):
         CreateModelRequest.model_validate(
             request.model_dump(mode="python")
             | {"model_apis": [{"api": "openai.responses"}, {"api": "openai.responses"}]}

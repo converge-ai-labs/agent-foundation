@@ -33,7 +33,7 @@ from ..errors import (
     agent_revision_not_executable,
     current_revision_conflict,
     map_authorization_error,
-    model_error_reason,
+    map_model_error,
 )
 from ..invocation import merge_agent_run_override
 from ..plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError
@@ -215,10 +215,10 @@ class AgentInvocationPreparer:
                         if merged.config.model.model_key != revision.config.model.model_key
                         else None
                     ),
-                    model_api=merged.config.model.model_api,
+                    settings=merged.config.model.settings,
                 )
             except ModelError as error:
-                raise agent_revision_not_executable(model_error_reason(error)) from error
+                raise map_model_error(error) from error
             connectivity = await prepare_invocation_connectivity(
                 self._connectivity_resolver,
                 actor=actor,
