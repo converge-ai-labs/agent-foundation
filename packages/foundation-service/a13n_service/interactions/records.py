@@ -34,6 +34,7 @@ def thread_record(value: Thread) -> ThreadRecord:
         origin_run_id=value.origin_run_id,
         head_run_id=value.head_run_id,
         current_run_id=value.current_run_id,
+        default_environment_id=value.default_environment_id,
         created_at=value.created_at,
         updated_at=value.updated_at,
     )
@@ -66,6 +67,9 @@ def run_record(value: Run) -> RunRecord:
         agent_id=value.agent_id,
         agent_revision_id=value.agent_revision_id,
         effective_agent_config_digest=value.effective_agent_config_digest,
+        environment_id=value.environment_id,
+        environment_access=value.environment_access,
+        environment_use_started_at=value.environment_use_started_at,
         encrypted_config_object_key=encrypted.get("object_key"),
         encrypted_config_ciphertext_digest_sha256=encrypted.get("ciphertext_digest_sha256"),
         encrypted_config_protected_value_digest_sha256=encrypted.get("protected_value_digest_sha256"),

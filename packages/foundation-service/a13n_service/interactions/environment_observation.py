@@ -25,9 +25,9 @@ logger = logging.getLogger("a13n_service.interactions.environment_observation")
 _JSON_LIST = TypeAdapter(list[JsonValue])
 
 type EnvironmentHookName = Literal[
-    "environment.entry.started",
-    "environment.entry.ready",
-    "environment.entry.failed",
+    "environment.preparation.started",
+    "environment.preparation.ready",
+    "environment.preparation.failed",
     "environment.adapter.closed",
 ]
 
@@ -85,7 +85,7 @@ class ObservedEnvironment(Environment):
     def dump_state(self) -> EnvironmentState | None:
         return self._delegate.dump_state()
 
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -96,28 +96,34 @@ class ObservedEnvironment(Environment):
     ) -> None:
         self._correlation = (thread_id, run_id, mount_id)
         self._emit(
-            "environment.entry.started",
+            "environment.preparation.started",
             {
                 "access": self._access.value,
             },
         )
         try:
-            await self._delegate.enter(
-                thread_id=thread_id,
-                run_id=run_id,
-                agent_instance_id=agent_instance_id,
-                mount_id=mount_id,
-                host_refs=host_refs,
-            )
+            if not self._delegate.is_entered:
+                await self._delegate.enter(
+                    thread_id=thread_id,
+                    run_id=run_id,
+                    agent_instance_id=agent_instance_id,
+                    mount_id=mount_id,
+                    host_refs=host_refs,
+                )
+            await self._delegate.prepare()
         except BaseException as error:
             self._emit(
-                "environment.entry.failed",
+                "environment.preparation.failed",
                 {
-                    "failure": _safe_failure(error, phase="entry"),
+                    "failure": _safe_failure(error, phase="preparation"),
                 },
             )
             raise
         self._emit_ready()
+
+    def _bind_mount(self, mount_id: str) -> None:
+        if self._delegate.is_entered:
+            self._delegate.bind_mount(mount_id)
 
     def _emit_ready(self) -> None:
         try:
@@ -128,7 +134,7 @@ class ObservedEnvironment(Environment):
             permissions = _JSON_LIST.validate_python(sorted(item.value for item in effective_permissions), strict=True)
             ready_families = _JSON_LIST.validate_python(sorted(availability.ready_families), strict=True)
             self._emit(
-                "environment.entry.ready",
+                "environment.preparation.ready",
                 {
                     "operation_families": operation_families,
                     "permissions": permissions,
@@ -146,6 +152,7 @@ class ObservedEnvironment(Environment):
         await self._delegate.ensure_ready(operations)
 
     async def _close(self) -> None:
+        self._correlation = (self._scope.thread_id, self._scope.run_id, self._scope.mount_id)
         try:
             await self._delegate.close()
         except BaseException as error:
@@ -207,7 +214,7 @@ def observe_environment_entry(
     )
 
 
-def _safe_failure(error: BaseException, *, phase: Literal["entry", "close"]) -> dict[str, JsonValue]:
+def _safe_failure(error: BaseException, *, phase: Literal["preparation", "close"]) -> dict[str, JsonValue]:
     if isinstance(error, EnvironmentProviderError):
         safe = error.safe_projection()
         return {"code": safe.code, "message": safe.message}

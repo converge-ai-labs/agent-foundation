@@ -48,9 +48,9 @@ def test_direct_local_example_constructs_a_fresh_stateless_adapter_each_time(tmp
 def test_run_and_close_preserves_use_and_cleanup_failures(tmp_path: Path) -> None:
     environment = _CloseFailingEnvironment(
         DirectLocalProviderConfiguration(
-            environment_id="failure-test",
             root=DirectLocalRootConfiguration(path=tmp_path),
-        )
+        ),
+        environment_id="failure-test",
     )
 
     async def fail_use() -> None:

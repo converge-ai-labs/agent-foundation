@@ -120,10 +120,27 @@ class _MountRequest:
 @dataclass(frozen=True, slots=True)
 class _EnteredMount:
     mount_id: str
-    public: EnvironmentMountInfo
+    configured: EnvironmentMountInfo
     provider: BoundEnvironmentProvider
-    operations: EnvironmentProviderOperations
     environment_id: str
+
+    @property
+    def operations(self) -> EnvironmentProviderOperations:
+        return self.provider.operations
+
+    @property
+    def public(self) -> EnvironmentMountInfo:
+        descriptor = self.provider.descriptor
+        if not descriptor.permissions.operations <= self.configured.descriptor.permissions.operations:
+            raise EnvironmentError("Provider broadened configured permissions", code="environment_provider_failure")
+        return self.configured.model_copy(
+            update={
+                "descriptor": descriptor,
+                "permission_ceiling": EnvironmentPermissionSet(
+                    operations=self.configured.permission_ceiling.operations & descriptor.permissions.operations
+                ),
+            }
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +150,7 @@ class _ResolvedPath:
     mount_path: str
 
 
-type _MountKey = tuple[str, str]
+type _MountKey = str
 
 
 @dataclass(slots=True)
@@ -310,8 +327,6 @@ class _ShellFacade:
             selected = self._environment.require_action(entered.mount_id, action)
             if selected is not entered:
                 raise EnvironmentError("Shell mount changed before dispatch.", code="environment_stale_mount")
-        if entered.operations.outputs is None:
-            raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
         async with self._environment._operation_lease(
             entered,
             EnvironmentAction.SHELL_EXEC,
@@ -819,10 +834,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     @staticmethod
     def _mount_key(entered: _EnteredMount) -> _MountKey:
-        return (entered.mount_id, entered.public.descriptor.generation)
+        return entered.mount_id
 
     def _track_process_handle(self, handle: BoundProcessHandle, *, added: bool) -> None:
-        key = (handle.mount_id, handle.observed_generation)
+        key = handle.mount_id
         if added:
             self._active_process_handles.setdefault(key, set()).add(handle)
         else:
@@ -2094,13 +2109,13 @@ def _validate_entered(
         if getattr(operations, family) is not None
     }
     advertised_facets = set(descriptor.operation_families)
-    if facet_families != advertised_facets:
+    if availability.status != "preparing" and facet_families != advertised_facets:
         raise EnvironmentError(
             "Provider descriptor and operation facets disagree.",
             code="environment_provider_failure",
             details={"name": requested.name},
         )
-    for action in descriptor.permissions.operations:
+    for action in () if availability.status == "preparing" else descriptor.permissions.operations:
         dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
         method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
         if not callable(method):
@@ -2123,9 +2138,8 @@ def _validate_entered(
     )
     return _EnteredMount(
         mount_id=mount_id,
-        public=public,
+        configured=public,
         provider=provider,
-        operations=operations,
         environment_id=provider.environment_id,
     )
 

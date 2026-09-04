@@ -20,10 +20,10 @@ pytestmark = pytest.mark.anyio
 
 class _MockEnvironment(DirectLocalEnvironment):
     def __init__(self, configuration: DirectLocalProviderConfiguration, lifecycle: list[str]) -> None:
-        super().__init__(configuration)
+        super().__init__(configuration, environment_id="mock-environment")
         self._lifecycle_events = lifecycle
 
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -33,7 +33,7 @@ class _MockEnvironment(DirectLocalEnvironment):
         host_refs: Mapping[str, str],
     ) -> None:
         self._lifecycle_events.append("enter")
-        await super()._enter(
+        await super()._prepare(
             thread_id=thread_id,
             run_id=run_id,
             agent_instance_id=agent_instance_id,
@@ -53,7 +53,6 @@ class _MockEnvironmentFactory:
 
     def __init__(self, root: Path) -> None:
         self._configuration = DirectLocalProviderConfiguration(
-            environment_id="agent-app-test",
             root=DirectLocalRootConfiguration(path=root),
         )
         self.lifecycle: list[str] = []

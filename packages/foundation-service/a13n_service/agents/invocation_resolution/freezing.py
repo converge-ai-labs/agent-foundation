@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.connectivity.selection_resolution import (
     ConnectivitySelectionResolver,
 )
-from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import (
     AuthorizationError,
     WorkspaceAction,
@@ -26,7 +25,6 @@ from ..domain import (
     PluginRuntimeMode,
     canonical_digest,
 )
-from ..environment_resolution import AgentEnvironmentSelectionResolver
 from ..errors import (
     agent_revision_not_executable,
     current_revision_conflict,
@@ -41,7 +39,6 @@ from .contracts import (
     PreparedAgentRevisionGraph,
     RootAgentStatePolicy,
 )
-from .environment import require_writable_skill_environment
 from .graph import freeze_subagents, load_agent_record, load_revision_record, require_invocable_agent
 from .signatures import runtime_selection_unchanged
 from .skills import freeze_skills
@@ -55,12 +52,10 @@ class AgentInvocationFreezer:
         model_selector: AcceptedModelSelector,
         *,
         plugin_runtime_mode: PluginRuntimeMode,
-        environment_resolver: AgentEnvironmentSelectionResolver | None,
         plugin_resolver: AgentPluginSelectionResolver,
         connectivity_resolver: ConnectivitySelectionResolver | None,
     ) -> None:
         self._model_selector = model_selector
-        self._environment_resolver = environment_resolver
         self._plugin_runtime_mode = plugin_runtime_mode
         self._plugin_resolver = plugin_resolver
         self._connectivity_resolver = connectivity_resolver
@@ -141,18 +136,6 @@ class AgentInvocationFreezer:
                 raise map_model_error(error) from error
             skills = await freeze_skills(session, prepared)
             try:
-                environment = (
-                    await self._environment_resolver.freeze_in_transaction(
-                        session,
-                        prepared=prepared.environment,
-                    )
-                    if self._environment_resolver is not None and prepared.environment is not None
-                    else None
-                )
-            except EnvironmentManagementError as error:
-                raise agent_revision_not_executable(error.code) from error
-            require_writable_skill_environment(skills, environment)
-            try:
                 plugins = await self._plugin_resolver.freeze_in_transaction(
                     session,
                     actor=prepared.actor,
@@ -201,7 +184,6 @@ class AgentInvocationFreezer:
             "skills": skills,
             "connector_tools": prepared.merged.config.connector_tools,
             "mcp_tools": prepared.merged.config.mcp_tools,
-            "resolved_environment": environment,
             "resolved_subagents": resolved_subagents,
             "instructions": prepared.merged.config.instructions,
             "input_adapter": prepared.merged.config.input_adapter,

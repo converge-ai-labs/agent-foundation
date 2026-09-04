@@ -24,10 +24,10 @@ def test_agent_identifiers_are_kind_prefixed_and_unpredictable() -> None:
 
 def test_run_override_preserves_omitted_and_explicit_null() -> None:
     omitted = AgentRunOverride()
-    cleared = AgentRunOverride.model_validate({"environment": None, "output_spec": None})
+    cleared = AgentRunOverride.model_validate({"output_spec": None})
 
-    assert "environment" not in omitted.model_fields_set
-    assert {"environment", "output_spec"} <= cleared.model_fields_set
+    assert "output_spec" not in omitted.model_fields_set
+    assert "output_spec" in cleared.model_fields_set
 
 
 def test_output_spec_requires_one_schema_or_multiple_variants() -> None:

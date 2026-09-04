@@ -280,7 +280,6 @@ def _local_mount(
     return EnvironmentRuntimeMount(
         binding=DirectLocalEnvironmentProviderBinding(
             DirectLocalProviderConfiguration(
-                environment_id=environment_id,
                 root=DirectLocalRootConfiguration(path=root),
                 shell_profiles=(
                     (DirectLocalShellProfile(profile_id="default", executable=Path("/bin/sh")),)
@@ -288,7 +287,8 @@ def _local_mount(
                     else ()
                 ),
                 allowed_executables=(frozenset({_PROCESS_EXECUTABLE}) if process_output else frozenset()),
-            )
+            ),
+            environment_id=environment_id,
         ),
         permission_ceiling=EnvironmentPermissionSet(operations=operations),
         working_directory="/",
@@ -1445,6 +1445,9 @@ async def test_media_understanding_releases_mount_scope_before_model_execution()
     files = BindingVersionFiles()
 
     class Scopes:
+        async def resolve_files(self, path: str) -> FileScopeSelection:
+            return self.select_files(path)
+
         def select_files(self, path: str) -> FileScopeSelection:
             return FileScopeSelection(
                 logical_path=path,
@@ -2709,6 +2712,9 @@ async def test_file_toolset_pins_one_mount_incarnation_across_compound_write() -
     mounts = {"mount-1": MountFiles("mount-1"), "mount-2": MountFiles("mount-2")}
 
     class Scopes:
+        async def resolve_files(self, path: str) -> FileScopeSelection:
+            return self.select_files(path)
+
         def select_files(self, path: str) -> FileScopeSelection:
             return FileScopeSelection(
                 logical_path=path,

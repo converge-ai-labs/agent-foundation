@@ -6,21 +6,15 @@ from contextlib import AsyncExitStack
 from datetime import timedelta
 
 import httpx2
+from a13n_environment_provider import EnvironmentProviderCatalog
 
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
-from a13n_service.environments.domain import EnvironmentTargetRetentionBehavior
-from a13n_service.environments.keepalive import (
-    EnvironmentKeepaliveLoop,
-    EnvironmentKeepaliveSourceResolver,
-    EnvironmentKeepaliveStore,
-    KeepaliveSourceBinding,
-    PreparedEnvironmentKeepalive,
-)
+from a13n_service.environments.lifecycle import EnvironmentLifecycle
+from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.ids import new_object_id
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.on_demand import OnDemandPluginRuntime
@@ -39,18 +33,11 @@ from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
 
 
-class _NoEnvironmentKeepaliveSources:
-    async def prepare(self, source: KeepaliveSourceBinding) -> PreparedEnvironmentKeepalive | None:
-        del source
-        return None
-
-
 async def build_worker_runtime(
     settings: Settings,
     shared: SharedRuntime,
     execution: ExecutionResources,
-    environment_catalog: FoundationEnvironmentProviderCatalog,
-    keepalive_sources: EnvironmentKeepaliveSourceResolver | None,
+    environment_catalog: EnvironmentProviderCatalog,
     stack: AsyncExitStack,
     connector_providers: ConnectorProviderRegistry | None = None,
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
@@ -86,28 +73,17 @@ async def build_worker_runtime(
     else:
         plugin_runtime = OnDemandPluginRuntime(materializer)
 
-    retained_provider_keys = tuple(
-        entry.provider_key
-        for entry in environment_catalog.entries()
-        if entry.retention_behavior is EnvironmentTargetRetentionBehavior.while_execution_active
+    environments = EnvironmentLifecycle(
+        shared.storage.sessions,
+        environment_catalog,
+        shared.secret_protector,
+        shared.storage.files_root,
+        timeout_seconds=settings.environment_operation_timeout_seconds,
     )
-    if retained_provider_keys and keepalive_sources is None:
-        raise RuntimeError("retaining Environment Providers require a Worker keepalive source resolver")
-    environment_keepalive = EnvironmentKeepaliveLoop(
-        EnvironmentKeepaliveStore(
-            shared.storage.sessions,
-            compatible_provider_keys=retained_provider_keys,
-        ),
-        keepalive_sources or _NoEnvironmentKeepaliveSources(),
-        worker_generation=new_object_id("envkw"),
-        poll_interval_seconds=settings.environment_keepalive_poll_interval_seconds,
-        lease_seconds=settings.environment_keepalive_lease_seconds,
-        retention_window_seconds=settings.environment_keepalive_retention_window_seconds,
-        refresh_margin_seconds=settings.environment_keepalive_refresh_margin_seconds,
-        call_timeout_seconds=settings.environment_keepalive_call_timeout_seconds,
-        retry_backoff_seconds=settings.environment_keepalive_retry_backoff_seconds,
-        tombstone_retention_seconds=settings.environment_target_tombstone_retention_seconds,
-        max_concurrency=settings.environment_keepalive_max_concurrency,
+    environment_maintenance = EnvironmentMaintenanceLoop(
+        environments,
+        interval_seconds=settings.environment_maintenance_interval_seconds,
+        concurrency=settings.environment_maintenance_concurrency,
     )
 
     run_stream = RedisRunStream(
@@ -153,15 +129,16 @@ async def build_worker_runtime(
         plugin_runtime=plugin_runtime,
         native_model_factory=execution.native_model_factory,
         skill_runtime=SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store),
-        environment_keepalive=environment_keepalive,
+        environment_maintenance=environment_maintenance,
+        environments=environments,
         run_stream=run_stream,
         run_replay=run_replay,
     )
     return runtime, (
         BackgroundTask(
-            name="environment_keepalive",
-            run=environment_keepalive.run,
-            return_is_expected=environment_keepalive.is_draining,
+            name="environment_maintenance",
+            run=environment_maintenance.run,
+            return_is_expected=environment_maintenance.is_draining,
         ),
         BackgroundTask("lifecycle Run Stream projector", lifecycle_projector.run),
     )

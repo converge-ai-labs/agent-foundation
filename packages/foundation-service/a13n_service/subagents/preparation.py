@@ -9,7 +9,6 @@ from pydantic import JsonValue
 
 from a13n_service.agents.domain import (
     EffectiveAgentConfig,
-    EnvironmentExecutionConfig,
     ResolvedSubagentEdge,
     canonical_digest,
 )
@@ -101,11 +100,6 @@ def prepare_child_run(
     if (edge.child_agent_id, edge.child_agent_revision_id) != (child_agent_id, child_agent_revision_id):
         raise ValueError("prepared child Agent does not match the frozen subagent edge")
     _validate_child_definition_id(child_definition_id)
-    validate_child_environment_policy(
-        edge,
-        parent=parent_state.effective_agent_config,
-        child=child_effective_config,
-    )
     accepted_input = AcceptedAgentInput(
         schema_version="1",
         content=(TextContent(text=delegated_input),),
@@ -223,11 +217,6 @@ def prepare_child_resume(
     if (edge.child_agent_id, edge.child_agent_revision_id) != (child_agent_id, child_agent_revision_id):
         raise ValueError("prepared child Agent does not match the frozen subagent edge")
     _validate_child_definition_id(child_definition_id)
-    validate_child_environment_policy(
-        edge,
-        parent=parent_state.effective_agent_config,
-        child=child_effective_config,
-    )
     _validate_resume_source(
         parent_run=parent_run,
         subagent_name=subagent_name,
@@ -470,52 +459,10 @@ def require_frozen_subagent_edge(
     return edges[0]
 
 
-def validate_child_environment_policy(
-    edge: ResolvedSubagentEdge,
-    *,
-    parent: EffectiveAgentConfig,
-    child: EffectiveAgentConfig,
-) -> None:
-    parent_environment = parent.resolved_environment
-    child_environment = child.resolved_environment
-    if edge.environment.mode == "none":
-        if child_environment is not None:
-            raise ValueError("none child Environment policy forbids a child binding")
-        return
-    if child_environment is None:
-        raise ValueError("child Environment policy requires an exact child binding")
-    if edge.environment.mode == "shared_root":
-        if (
-            parent_environment is None
-            or _environment_target_identity(parent_environment) != _environment_target_identity(child_environment)
-            or _access_rank(child_environment.access) > _access_rank(parent_environment.access)
-        ):
-            raise ValueError("shared_root child Environment is not equal to or narrower than its parent")
-        return
-    if parent_environment is not None and _environment_target_identity(
-        parent_environment
-    ) == _environment_target_identity(child_environment):
-        raise ValueError("dedicated child Environment must use a different exact target")
-
-
-def _environment_target_identity(environment: EnvironmentExecutionConfig) -> tuple[object, ...]:
-    return (
-        environment.connection,
-        environment.provider_package_revision_id,
-        environment.provider_lock,
-        environment.target_key,
-    )
-
-
-def _access_rank(access: str) -> int:
-    return {"read_only": 0, "read_write": 1, "full": 2}[access]
-
-
 __all__ = [
     "PreparedChildRunAcceptance",
     "PreparedChildRunResume",
     "prepare_child_resume",
     "prepare_child_run",
     "require_frozen_subagent_edge",
-    "validate_child_environment_policy",
 ]

@@ -12,7 +12,6 @@ from .domain import (
     BoundedKey,
     ClientToolDefinition,
     ConnectorConnectionToolSelection,
-    EnvironmentOverride,
     InputAdapterConfig,
     MCPConnectionToolSelection,
     OutputSpec,
@@ -37,7 +36,6 @@ class MergedAgentRunConfig(StrictModel):
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = Field(default=(), max_length=128)
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = Field(default=(), max_length=128)
-    environment: EnvironmentOverride | None = None
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     output_spec: OutputSpec | None = None
@@ -147,10 +145,6 @@ def merge_agent_run_override(
         path="client_tools",
     )
 
-    environment: EnvironmentOverride | None = base.environment
-    if "environment" in fields:
-        environment = override.environment
-
     subagents = dict(base.subagents)
     if "subagents" in fields:
         if override.subagents is None:
@@ -235,7 +229,6 @@ def merge_agent_run_override(
             skills=skills,
             connector_tools=connector_tools,
             mcp_tools=mcp_tools,
-            environment=environment,
             subagents=subagents,
             client_tools=client_tools,
             output_spec=output_spec,

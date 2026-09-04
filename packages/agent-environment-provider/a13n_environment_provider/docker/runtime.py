@@ -92,6 +92,9 @@ class DockerContainerInspection:
 
 
 class DockerEngine(ABC):
+    async def close(self) -> None:
+        return None
+
     """Typed async boundary for the Docker lifecycle operations used by this provider."""
 
     @abstractmethod
@@ -178,6 +181,8 @@ class DockerBootstrapStore(ABC):
 class DockerProviderRuntime:
     engine: DockerEngine
     bootstrap_store: DockerBootstrapStore
+    managed: bool = True
+    owns_engine: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.engine, DockerEngine):
@@ -357,6 +362,9 @@ class DockerSDKEngine(DockerEngine):
 
     def __init__(self, client: Any) -> None:
         self._client = client
+
+    async def close(self) -> None:
+        await asyncio.to_thread(self._client.close)
 
     @classmethod
     def from_env(cls, *, timeout_seconds: int = 30) -> DockerSDKEngine:

@@ -61,7 +61,7 @@ def queued_submission_record(value: QueuedSubmission, *, tenant_id: str) -> Queu
         authority_principal_type=value.authority_principal.principal_type.value,
         authority_principal_id=value.authority_principal.principal_id,
         position=value.position,
-        submission_json=value.submission.model_dump(mode="json", by_alias=True, exclude_none=True),
+        submission_json=value.submission.retained_payload(),
         submission_digest_sha256=value.submission_digest_sha256,
         consumed_run_id=value.consumed_run_id,
         consumed_at=value.consumed_at,

@@ -63,7 +63,6 @@ class DirectLocalShellProfile(BaseModel):
 class DirectLocalProviderConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    environment_id: Annotated[str, Field(min_length=1, max_length=128)]
     root: DirectLocalRootConfiguration
     shell_profiles: tuple[DirectLocalShellProfile, ...] = ()
     allowed_executables: frozenset[Path] = frozenset()
@@ -76,7 +75,6 @@ class DirectLocalProviderConfiguration(BaseModel):
     max_buffer_bytes: Annotated[int, Field(gt=0)] = _MIB
     max_spool_bytes: Annotated[int, Field(gt=0)] = 64 * _GIB
 
-    @field_validator("environment_id")
     @classmethod
     def _trimmed_environment_id(cls, value: str) -> str:
         if value != value.strip():

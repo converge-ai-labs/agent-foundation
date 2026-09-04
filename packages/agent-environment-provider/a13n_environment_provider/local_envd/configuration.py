@@ -65,7 +65,6 @@ class LocalEnvdShellProfile(BaseModel):
 class LocalEnvdProviderConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    environment_id: Annotated[str, Field(min_length=1, max_length=128)]
     workspace: LocalEnvdWorkspaceConfiguration
     execution_network: LocalEnvdNetworkMode = LocalEnvdNetworkMode.HOST
     trusted_executable_roots: tuple[Path, ...] = ()
@@ -75,7 +74,6 @@ class LocalEnvdProviderConfiguration(BaseModel):
     max_output_bytes_per_stream: Annotated[int, Field(gt=0)] = _GIB
     max_spool_bytes: Annotated[int, Field(gt=0)] = 64 * _GIB
 
-    @field_validator("environment_id")
     @classmethod
     def _valid_environment_id(cls, value: str) -> str:
         if value != value.strip() or any(unicodedata.category(character) == "Cc" for character in value):

@@ -65,6 +65,8 @@ async def lock_and_route_async_result(
     )
     if thread is None:
         raise AsyncSubagentSuccessorError("parent Thread was not found")
+    if thread.current_run_id is None:
+        raise AsyncSubagentSuccessorError("Empty Thread has no child-result source")
     current = await _lock_run(database, tenant_id=tenant_id, run_id=thread.current_run_id)
     head = (
         None

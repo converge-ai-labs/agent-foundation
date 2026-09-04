@@ -18,12 +18,12 @@ def create_demo_environment(workspace: Path) -> DirectLocalEnvironment:
     configuration = provider.validate_configuration(
         schema_version="1",
         value=DirectLocalProviderConfiguration(
-            environment_id="agent-app-demo",
             root=DirectLocalRootConfiguration(path=workspace),
         ).model_dump(mode="json"),
     )
     environment = provider.create_environment(
         configuration=configuration,
+        environment_id="agent-app-demo",
         state=None,
     )
     if not isinstance(environment, DirectLocalEnvironment):

@@ -8,7 +8,6 @@ from pathlib import Path
 import httpx2
 import pytest
 from a13n_service.app import Components, create_app
-from a13n_service.environments.domain import EnvironmentRevision
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.settings import Settings
@@ -20,16 +19,6 @@ from .conftest import ORG_ID, USER_ID, WORKSPACE_ID
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 PROVIDER_KEY = "a13n.direct-local"
-
-
-async def attachment_test(
-    *,
-    actor: AuthenticatedActor,
-    organization_id: str,
-    workspace_id: str,
-    revision: EnvironmentRevision,
-) -> None:
-    del actor, organization_id, workspace_id, revision
 
 
 async def authenticate(request: Request) -> AuthenticatedActor:
@@ -135,94 +124,12 @@ async def environment_api_client(
         config,
         components=Components(
             request_authenticator=authenticate,
-            environment_attachment_tester=attachment_test,
         ),
     )
     async with app.router.lifespan_context(app):
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             yield client
-
-
-@pytest.mark.anyio
-async def test_environment_management_http_lifecycle(
-    environment_api_client: httpx2.AsyncClient,
-    tmp_path: Path,
-) -> None:
-    catalog = await environment_api_client.get("/api/v1/environment-providers")
-    assert catalog.status_code == 200
-    assert [item["provider_key"] for item in catalog.json()["items"]] == [PROVIDER_KEY]
-
-    selection_url = f"/api/v1/workspaces/{WORKSPACE_ID}/environment-providers/{PROVIDER_KEY}"
-    selected = await environment_api_client.put(selection_url, json={"enabled": True})
-    assert selected.status_code == 200
-    assert "etag" in selected.headers
-
-    create_body = {
-        "name": "Local",
-        "connection": {
-            "provider_key": PROVIDER_KEY,
-            "schema_version": "1",
-            "parameters": {
-                "environment_id": "router-local",
-                "root": {"path": str(tmp_path)},
-            },
-        },
-        "credential_bindings": [],
-        "access": "full",
-    }
-    collection_url = f"/api/v1/workspaces/{WORKSPACE_ID}/environments"
-    created = await environment_api_client.post(
-        collection_url,
-        headers={"Idempotency-Key": "create-router-environment"},
-        json=create_body,
-    )
-    assert created.status_code == 201
-    environment = created.json()
-    fetched = await environment_api_client.get(f"/api/v1/environments/{environment['id']}")
-    assert fetched.json() == environment
-
-    listed = await environment_api_client.get(collection_url)
-    assert [item["id"] for item in listed.json()["items"]] == [environment["id"]]
-
-    revisions_url = f"/api/v1/environments/{environment['id']}/revisions"
-    revisions = await environment_api_client.get(revisions_url)
-    assert revisions.status_code == 200
-    assert revisions.json()["items"][0]["id"] == environment["current_revision_id"]
-    assert "connection" not in revisions.json()["items"][0]
-
-    revision_url = f"/api/v1/environment-revisions/{environment['current_revision_id']}"
-    detail = await environment_api_client.get(revision_url)
-    assert detail.status_code == 200
-    assert detail.json()["connection"]["provider_key"] == PROVIDER_KEY
-    assert detail.json()["connection"]["parameters"]["environment_id"] == "router-local"
-    assert detail.json()["connection"]["parameters"]["root"]["path"] == str(tmp_path)
-    assert detail.headers["cache-control"] == "private, no-store"
-
-    tested = await environment_api_client.post(f"{revision_url}/test")
-    assert tested.status_code == 200
-    assert tested.json() == {"success": True, "code": "attachment_ready"}
-    assert tested.headers["cache-control"] == "private, no-store"
-
-    no_op = await environment_api_client.post(
-        revisions_url,
-        headers={"Idempotency-Key": "router-revision-noop"},
-        json={
-            "expected_version": 1,
-            "connection": create_body["connection"],
-            "credential_bindings": [],
-            "access": "full",
-        },
-    )
-    assert no_op.status_code == 200
-
-    archived = await environment_api_client.patch(
-        f"/api/v1/environments/{environment['id']}",
-        headers={"If-Match": fetched.headers["etag"]},
-        json={"archived": True},
-    )
-    assert archived.status_code == 200
-    assert archived.json()["archived_at"] is not None
 
 
 @pytest.mark.anyio
@@ -235,3 +142,40 @@ async def test_environment_create_requires_idempotency_key(
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_request"
+
+
+@pytest.mark.anyio
+async def test_template_and_empty_thread_http_contract(environment_api_client, tmp_path):
+    client = environment_api_client
+    types = await client.get("/api/v1/environment-provider-types")
+    assert types.status_code == 200
+    assert types.json()["items"][0]["type"] == PROVIDER_KEY
+    base = f"/api/v1/workspaces/{WORKSPACE_ID}"
+    response = await client.post(f"{base}/environment-providers", json={"type": PROVIDER_KEY, "name": "Local"})
+    assert response.status_code == 201, response.text
+    provider = response.json()
+    assert "credential" not in provider and not provider["credential_configured"]
+    response = await client.post(
+        f"{base}/environment-templates",
+        headers={"Idempotency-Key": "template"},
+        json={
+            "name": "Workspace",
+            "provider_id": provider["id"],
+            "configuration": {"root": {"path": str(tmp_path / "absent")}},
+            "retention": {"idle": {"stop_after": None, "delete_after": None}},
+            "preparation": "on_use",
+        },
+    )
+    assert response.status_code == 201, response.text
+    template = response.json()
+    response = await client.post(
+        f"{base}/threads", headers={"Idempotency-Key": "thread"}, json={"environment": {"template_id": template["id"]}}
+    )
+    assert response.status_code == 201, response.text
+    thread = response.json()
+    assert thread["current_run_id"] is None and thread["default_environment_id"]
+    environment = await client.get(f"/api/v1/environments/{thread['default_environment_id']}")
+    assert environment.status_code == 200 and environment.json()["status"] == "unprepared"
+    assert "state" not in environment.json()
+    assert not (tmp_path / "absent").exists()
+    assert (await client.post(f"/api/v1/environments/{thread['default_environment_id']}/test")).status_code == 404

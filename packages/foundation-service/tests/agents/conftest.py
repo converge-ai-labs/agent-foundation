@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from a13n_environment_provider import build_environment_provider_catalog
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     Agent,
@@ -13,11 +12,8 @@ from a13n_service.agents.domain import (
     AgentRevisionCreateResult,
     PluginRuntimeMode,
 )
-from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
-from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
@@ -58,7 +54,6 @@ def agent_config(
     connector_tools: tuple[dict[str, object], ...] | None = None,
     mcp_tools: tuple[dict[str, object], ...] | None = None,
     subagents: dict[str, object] | None = None,
-    environment: dict[str, object] | None = None,
 ) -> AgentConfig:
     return AgentConfig.model_validate(
         {
@@ -73,7 +68,6 @@ def agent_config(
             "skills": skills or [],
             "connector_tools": connector_tools or (),
             "mcp_tools": mcp_tools or (),
-            "environment": environment,
             "subagents": subagents or {},
             "client_tools": [],
             "output_spec": None,
@@ -243,21 +237,15 @@ async def agent_management(
         agent_sessions,
         built_in_provider_registry(),
     )
-    environment_resolver = AgentEnvironmentSelectionResolver(
-        agent_sessions,
-        _environment_catalog(),
-    )
     resolver = AgentResolver(
         agent_sessions,
         model_selector,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
-        environment_resolver=environment_resolver,
     )
     invocation_resolver = AgentInvocationResolver(
         agent_sessions,
         model_selector,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
-        environment_resolver=environment_resolver,
     )
     yield AgentManagement(
         agent_sessions,
@@ -275,30 +263,8 @@ async def agent_invocation_resolver(
         agent_sessions,
         built_in_provider_registry(),
     )
-    environment_resolver = AgentEnvironmentSelectionResolver(
-        agent_sessions,
-        _environment_catalog(),
-    )
     yield AgentInvocationResolver(
         agent_sessions,
         model_selector,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
-        environment_resolver=environment_resolver,
-    )
-
-
-@pytest.fixture
-def agent_environment_service(
-    agent_sessions: async_sessionmaker[AsyncSession],
-) -> EnvironmentManagementService:
-    return EnvironmentManagementService(
-        agent_sessions,
-        _environment_catalog(),
-        clock=lambda: NOW,
-    )
-
-
-def _environment_catalog() -> FoundationEnvironmentProviderCatalog:
-    return FoundationEnvironmentProviderCatalog.from_environment_provider_catalog(
-        build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
     )

@@ -52,7 +52,7 @@ class _Environment(Environment):
     def operations(self) -> EnvironmentOperations:
         return EnvironmentOperations()
 
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -88,6 +88,7 @@ async def test_context_entry_closes_without_destroying_backing_target() -> None:
     environment = _Environment()
 
     async with environment:
+        await environment.prepare()
         assert environment.is_entered
         assert environment.dump_state() is not None
 
@@ -108,6 +109,7 @@ async def test_entry_receives_ephemeral_correlation_and_is_single_use() -> None:
         mount_id="workspace",
         host_refs={"session_id": "session-1"},
     )
+    await environment.prepare()
     assert environment.events == ["enter:thread-1:run-1:agent-1:workspace:session-1"]
 
     with pytest.raises(RuntimeError, match="exactly once"):
@@ -117,6 +119,7 @@ async def test_entry_receives_ephemeral_correlation_and_is_single_use() -> None:
             agent_instance_id="agent-2",
             mount_id="workspace",
         )
+        await environment.prepare()
     await environment.close()
 
 
@@ -130,6 +133,7 @@ async def test_failed_entry_keeps_last_known_cached_state_for_host_publication()
             agent_instance_id="agent-1",
             mount_id="workspace",
         )
+        await environment.prepare()
 
     assert environment.dump_state() == EnvironmentState(
         provider_key="test.provider",

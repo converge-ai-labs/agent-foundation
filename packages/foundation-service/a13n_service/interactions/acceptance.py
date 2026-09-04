@@ -8,6 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import canonical_digest
+from a13n_service.environments.domain import EnvironmentSelection
+from a13n_service.environments.selection import Omitted, bind_environment_intent, queued_environment_choice
+from a13n_service.environments.usage import add_run_with_environment
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
@@ -33,7 +36,6 @@ from .domain import (
     ThreadOriginKind,
     ThreadRole,
 )
-from .environment_bindings import add_run_with_environment_binding, verify_environment_binding
 from .errors import RunAcceptanceError
 from .inbox_persistence import (
     abandon_waiting_entries,
@@ -74,7 +76,9 @@ class RunAcceptanceService:
         run: Run,
         state: RunStateEnvelope,
         hook_subscription: InlineHookSubscriptionInput | None = None,
+        environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
     ) -> RunAcceptanceReceipt:
+        run = bind_environment_intent(run, environment)
         validate_prepared_run(run, state)
         _validate_new_thread(thread, run, session)
         replay = await self._load_replay(run, state, accepted_thread_version=1)
@@ -101,11 +105,12 @@ class RunAcceptanceService:
                 if thread.origin_kind is not ThreadOriginKind.new:
                     await _require_origin(database, thread, run)
                 database.add(thread_record(thread))
-                run_record_value = await add_run_with_environment_binding(
+                run_record_value = await add_run_with_environment(
                     database,
                     run=run,
                     state=state,
                     workspace_id=workspace_id,
+                    choice=environment,
                 )
                 database.add(inbox_counter_record(thread))
                 hook_subscription_id = await self._inline_hooks.create(
@@ -126,11 +131,13 @@ class RunAcceptanceService:
         run: Run,
         state: RunStateEnvelope,
         expected_thread_version: int,
-        expected_current_run_id: str,
+        expected_current_run_id: str | None,
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
         hook_subscription: InlineHookSubscriptionInput | None = None,
+        environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
     ) -> RunAcceptanceReceipt:
+        run = bind_environment_intent(run, environment)
         validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
@@ -150,8 +157,10 @@ class RunAcceptanceService:
                     expected_current_run_id=expected_current_run_id,
                     expected_head_run_id=expected_head_run_id,
                 )
-                current = await _load_run(database, run.tenant_id, thread.current_run_id)
-                if current.status in {RunStatus.accepted.value, RunStatus.running.value}:
+                current = (
+                    await _load_run(database, run.tenant_id, thread.current_run_id) if thread.current_run_id else None
+                )
+                if current is not None and current.status in {RunStatus.accepted.value, RunStatus.running.value}:
                     raise RunAcceptanceError("thread_busy", "Thread already has active Run work")
                 await _validate_advancement(
                     database,
@@ -168,11 +177,12 @@ class RunAcceptanceService:
                     workspace_id=session_record_value.workspace_id,
                     subscription=hook_subscription,
                 )
-                run_record_value = await add_run_with_environment_binding(
+                run_record_value = await add_run_with_environment(
                     database,
                     run=run,
                     state=state,
                     workspace_id=session_record_value.workspace_id,
+                    choice=environment,
                 )
                 if run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
                     await database.flush()
@@ -235,7 +245,7 @@ class RunAcceptanceService:
         accepted_input: AcceptedAgentInput,
         expected_thread_version: int,
         expected_queue_version: int,
-        expected_current_run_id: str,
+        expected_current_run_id: str | None,
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
     ) -> QueuedSubmissionConsumptionReceipt:
@@ -288,11 +298,12 @@ class RunAcceptanceService:
                     next_head_run_id=next_head_run_id,
                 )
                 session_record_value = await _require_session(database, run)
-                run_record_value = await add_run_with_environment_binding(
+                run_record_value = await add_run_with_environment(
                     database,
                     run=run,
                     state=state,
                     workspace_id=session_record_value.workspace_id,
+                    choice=await queued_environment_choice(database, queued_submission_id),
                 )
                 await database.flush()
                 await bind_unbound_async_entries(
@@ -383,7 +394,7 @@ class RunAcceptanceService:
         failure: QueuedSubmissionFailure,
         expected_thread_version: int,
         expected_queue_version: int,
-        expected_current_run_id: str,
+        expected_current_run_id: str | None,
         expected_head_run_id: str | None,
     ) -> QueuedSubmissionConsumptionReceipt:
         """Record locked permanent invalidity without accepting a Run."""
@@ -443,7 +454,6 @@ class RunAcceptanceService:
             )
             if record is None:
                 return None
-            await verify_environment_binding(database, run=record.to_resource(), state=state)
             return await _validate_replay(database, record, run, accepted_thread_version=accepted_thread_version)
 
     async def _publish_initial(self, run: Run, state: RunStateEnvelope) -> None:
@@ -677,7 +687,7 @@ def _require_thread_precondition(
     thread: ThreadRecord,
     *,
     expected_version: int,
-    expected_current_run_id: str,
+    expected_current_run_id: str | None,
     expected_head_run_id: str | None,
 ) -> None:
     if (
@@ -691,12 +701,22 @@ def _require_thread_precondition(
 async def _validate_advancement(
     database: AsyncSession,
     thread: ThreadRecord,
-    current: RunRecord,
+    current: RunRecord | None,
     run: Run,
     *,
     candidate_payload: RunPayloadEnvelope | None,
     next_head_run_id: str | None,
 ) -> None:
+    if current is None:
+        if (
+            thread.current_run_id is not None
+            or thread.head_run_id is not None
+            or run.parent_run_id is not None
+            or run.retry_of_run_id is not None
+            or next_head_run_id is not None
+        ):
+            raise RunAcceptanceError("thread_head_invalid", "First Run must use empty root state")
+        return
     required_head = run.parent_run_id if run.lineage_kind is RunLineageKind.continue_ else thread.head_run_id
     if next_head_run_id != required_head:
         raise RunAcceptanceError("thread_head_invalid", "Thread advancement selected an unrelated continuation head")

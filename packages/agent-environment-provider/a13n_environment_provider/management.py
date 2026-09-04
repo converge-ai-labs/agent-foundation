@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from types import TracebackType
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from .models import (
     EnvironmentAvailability,
@@ -16,12 +21,24 @@ from .models import (
 from .operations import EnvironmentOperations
 
 
+@dataclass(frozen=True, slots=True)
+class EnvironmentScope:
+    thread_id: str = "thread-prepare"
+    run_id: str = "run-prepare"
+    agent_instance_id: str = "agent-prepare"
+    mount_id: str = "mount-prepare"
+
+
 class Environment(ABC):
     """Fresh single-use process-local adapter for one provider target."""
 
     def __init__(self, state: EnvironmentState | None) -> None:
         self._known_state = state.model_copy(deep=True) if state is not None else None
         self._lifecycle = "constructed"
+        self._prepared = False
+        self._prepare_lock = asyncio.Lock()
+        self._scope = EnvironmentScope()
+        self._host_refs: dict[str, str] = {}
 
     @property
     @abstractmethod
@@ -88,30 +105,44 @@ class Environment(ABC):
     ) -> None:
         if self._lifecycle != "constructed":
             raise RuntimeError("Environment adapters can be entered exactly once")
-        self._lifecycle = "entering"
-        try:
-            await self._enter(
-                thread_id=thread_id,
-                run_id=run_id,
-                agent_instance_id=agent_instance_id,
-                mount_id=mount_id,
-                host_refs=dict(host_refs or {}),
-            )
-        except BaseException:
-            self._lifecycle = "failed"
-            raise
+        self._scope = EnvironmentScope(thread_id, run_id, agent_instance_id, mount_id)
+        self._host_refs = dict(host_refs or {})
         self._lifecycle = "entered"
+        if self._prepared:
+            self._bind_mount(mount_id)
 
-    async def warmup(self) -> None:
-        if self._lifecycle != "constructed":
-            raise RuntimeError("Environment adapters can perform one lifecycle operation")
-        self._lifecycle = "warming"
-        try:
-            await self._warmup()
-        except BaseException:
-            self._lifecycle = "failed"
-            raise
-        self._lifecycle = "warmed"
+    async def prepare(self) -> None:
+        if self._lifecycle in {"closed", "closing", "destroyed"}:
+            raise RuntimeError("Environment is closed")
+        async with self._prepare_lock:
+            if self._prepared:
+                return
+            await self._prepare(
+                thread_id=self._scope.thread_id,
+                run_id=self._scope.run_id,
+                agent_instance_id=self._scope.agent_instance_id,
+                mount_id=self._scope.mount_id,
+                host_refs=self._host_refs,
+            )
+            self._prepared = True
+
+    def _bind_mount(self, mount_id: str) -> None:
+        """Bind already prepared local operations; implementations perform no target I/O."""
+        return None
+
+    def bind_mount(self, mount_id: str) -> None:
+        if self._lifecycle != "entered":
+            raise RuntimeError("Environment has no operation scope")
+        self._bind_mount(mount_id)
+
+    async def stop(self) -> None:
+        await self._stop()
+
+    async def _stop(self) -> None:
+        raise NotImplementedError("This Provider does not support resumable stop")
+
+    async def keepalive(self, *, deadline: datetime, operation_id: str) -> datetime | None:
+        return None
 
     def dump_state(self) -> EnvironmentState | None:
         """Return a detached copy of the last validated cached state without external I/O."""
@@ -120,6 +151,7 @@ class Environment(ABC):
     async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         if self._lifecycle != "entered":
             raise RuntimeError("Environment operations require an entered adapter")
+        await self.prepare()
         await self._ensure_ready(operations)
 
     async def close(self) -> None:
@@ -151,7 +183,7 @@ class Environment(ABC):
         self._known_state = state.model_copy(deep=True) if state is not None else None
 
     @abstractmethod
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -160,15 +192,6 @@ class Environment(ABC):
         mount_id: str,
         host_refs: Mapping[str, str],
     ) -> None: ...
-
-    async def _warmup(self) -> None:
-        await self._enter(
-            thread_id="thread-warmup",
-            run_id="run-warmup",
-            agent_instance_id="agent-warmup",
-            mount_id="mount-warmup",
-            host_refs={},
-        )
 
     @abstractmethod
     async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None: ...
@@ -180,8 +203,41 @@ class Environment(ABC):
     async def _destroy(self) -> None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderRuntimeContext:
+    environment_id: str
+    operation_id: str
+    storage_root: Path
+    managed: bool = True
+
+
+class EmptyProviderConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class EnvironmentProvider(ABC):
     """Inert trusted plugin that validates configuration and constructs Environments."""
+
+    provider_configuration_model: type[BaseModel] = EmptyProviderConfiguration
+    credential_model: type[BaseModel] | None = None
+    supports_stop: bool = False
+    supports_destroy: bool = False
+    requires_keepalive: bool = False
+
+    async def create_runtime(
+        self, *, configuration: BaseModel, credential: BaseModel | None, context: ProviderRuntimeContext
+    ) -> object | None:
+        return None
+
+    @abstractmethod
+    def describe_configuration(self, configuration: BaseModel) -> EnvironmentDescriptor: ...
+
+    def target_identity(self, *, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+        del configuration
+        if state is None:
+            return None
+        payload = state.model_dump(mode="json")
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     @property
     @abstractmethod
@@ -199,6 +255,7 @@ class EnvironmentProvider(ABC):
         self,
         *,
         configuration: BaseModel,
+        environment_id: str,
         state: EnvironmentState | None,
         runtime: object | None = None,
     ) -> Environment: ...

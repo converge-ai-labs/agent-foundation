@@ -65,6 +65,8 @@ class FileScopeSelection:
 class FileScopeProvider(Protocol):
     """Select and hold one mount-incarnation-pinned FileOperator for compound operations."""
 
+    async def resolve_files(self, path: str) -> FileScopeSelection: ...
+
     def select_files(self, path: str) -> FileScopeSelection: ...
 
     def open_files(self, selection: FileScopeSelection) -> AbstractAsyncContextManager[FileOperator]: ...
@@ -287,6 +289,12 @@ class BoundEnvironment(ABC):
     @abstractmethod
     def select_files(self, path: str, *, alias: str | None = None) -> FileScopeSelection:
         """Capture one exact mount incarnation for a logical file path."""
+
+    async def resolve_files(self, path: str, *, alias: str | None = None) -> FileScopeSelection:
+        """Prepare the selected files mount before capturing an authorization generation."""
+        selected = self.select_files(path, alias=alias)
+        async with self.open_files(selected):
+            return self.select_files(path, alias=alias)
 
     @abstractmethod
     def open_files(self, selection: FileScopeSelection) -> AbstractAsyncContextManager[FileOperator]:

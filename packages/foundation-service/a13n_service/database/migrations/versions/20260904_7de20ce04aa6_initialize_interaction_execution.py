@@ -42,6 +42,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "threads",
+        sa.Column("default_environment_id", sa.String(length=72), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("queue_version", sa.BigInteger(), nullable=False),
@@ -52,7 +53,7 @@ def upgrade() -> None:
         sa.Column("origin_thread_id", sa.String(length=72), nullable=True),
         sa.Column("origin_run_id", sa.String(length=72), nullable=True),
         sa.Column("head_run_id", sa.String(length=72), nullable=True),
-        sa.Column("current_run_id", sa.String(length=72), nullable=False),
+        sa.Column("current_run_id", sa.String(length=72), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
@@ -102,6 +103,17 @@ def upgrade() -> None:
             name=op.f("fk_threads_tenant_id_sessions"),
             ondelete="CASCADE",
         ),
+        *(
+            [
+                sa.ForeignKeyConstraint(
+                    ["default_environment_id"],
+                    ["environments.id"],
+                    name="fk_threads_default_environment_id_environments",
+                )
+            ]
+            if op.get_bind().dialect.name == "sqlite"
+            else []
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_threads")),
         sa.UniqueConstraint("tenant_id", "id", name="uq_threads_tenant_id"),
         sa.UniqueConstraint("tenant_id", "session_id", "id", name="uq_threads_session_id"),
@@ -124,6 +136,9 @@ def upgrade() -> None:
     )
     op.create_table(
         "runs",
+        sa.Column("environment_id", sa.String(length=72), nullable=True),
+        sa.Column("environment_access", sa.String(length=16), nullable=True),
+        sa.Column("environment_use_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("tenant_id", sa.String(length=72), nullable=False),
@@ -330,11 +345,25 @@ def upgrade() -> None:
             name="fk_runs_retry_same_thread",
             ondelete="RESTRICT",
         ),
+        *(
+            [
+                sa.ForeignKeyConstraint(
+                    ["environment_id"], ["environments.id"], name="fk_runs_environment_id_environments"
+                )
+            ]
+            if op.get_bind().dialect.name == "sqlite"
+            else []
+        ),
+        sa.CheckConstraint(
+            "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
+            name=op.f("ck_runs_environment_selection_valid"),
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_runs")),
         sa.UniqueConstraint("tenant_id", "id", name="uq_runs_tenant_id"),
         sa.UniqueConstraint("tenant_id", "session_id", "thread_id", "id", name="uq_runs_scope_identity"),
         sa.UniqueConstraint("tenant_id", "thread_id", "id", name="uq_runs_tenant_thread_id"),
     )
+    op.create_index("ix_runs_environment_id", "runs", ["environment_id"], unique=False)
     op.create_index("ix_runs_parent", "runs", ["tenant_id", "parent_run_id", "id"], unique=False)
     op.create_index("ix_runs_retry", "runs", ["tenant_id", "retry_of_run_id", "id"], unique=False)
     op.create_index("ix_runs_session_created", "runs", ["tenant_id", "session_id", "created_at", "id"], unique=False)

@@ -23,12 +23,6 @@ from pydantic import (
 )
 from pydantic_ai.usage import UsageLimits
 
-from a13n_service.environments.domain import (
-    EnvironmentConnectionSpec,
-    EnvironmentCredentialBinding,
-    EnvironmentProviderLock,
-    TargetKey,
-)
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
@@ -143,12 +137,15 @@ class MCPConnectionToolSelection(BaseModel):
     defer_loading: bool = False
 
 
-class EnvironmentSelection(StrictModel):
-    environment_revision_id: ObjectId
-
-
 class ChildEnvironmentPolicy(StrictModel):
-    mode: Literal["none", "shared_root", "dedicated"] = "none"
+    mode: Literal["none", "shared", "dedicated"] = "none"
+    template_revision_id: ObjectId | None = None
+
+    @model_validator(mode="after")
+    def validate_recipe(self) -> ChildEnvironmentPolicy:
+        if (self.mode == "dedicated") != (self.template_revision_id is not None):
+            raise ValueError("only dedicated children require a template revision")
+        return self
 
 
 class DelegationContextPolicy(StrictModel):
@@ -267,7 +264,6 @@ class AgentConfig(StrictModel):
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = Field(default=(), max_length=128)
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = Field(default=(), max_length=128)
-    environment: EnvironmentSelection | None = None
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     output_spec: OutputSpec | None = None
@@ -293,15 +289,6 @@ class AgentConfig(StrictModel):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
         return self
-
-
-class InlineEnvironmentSelection(StrictModel):
-    connection: EnvironmentConnectionSpec
-    credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
-    access: Literal["read_only", "read_write", "full"] = "full"
-
-
-EnvironmentOverride = EnvironmentSelection | InlineEnvironmentSelection
 
 
 class ModelOverride(StrictModel):
@@ -334,7 +321,6 @@ class AgentRunOverride(StrictModel):
         max_length=128,
     )
     mcp_tools: tuple[MCPConnectionToolSelection, ...] | None = Field(default=None, max_length=128)
-    environment: EnvironmentOverride | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
     output_spec: OutputSpec | None = None
@@ -372,21 +358,6 @@ class ResolvedSkillBinding(StrictModel):
     version: int | None = Field(default=None, ge=1)
 
 
-class EnvironmentExecutionConfig(StrictModel):
-    schema_version: Literal["1"] = "1"
-    source_environment_revision_id: ObjectId | None = None
-    # Optional only for decoding pre-EnvironmentTarget Run state during rolling upgrade.
-    # Every newly resolved and accepted configuration sets this value.
-    environment_target_id: ObjectId | None = None
-    connection: EnvironmentConnectionSpec
-    provider_package_revision_id: ObjectId | None = None
-    provider_lock: EnvironmentProviderLock
-    credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
-    access: Literal["read_only", "read_write", "full"]
-    target_key: TargetKey
-    logical_digest_sha256: Sha256Digest
-
-
 class ResolvedSubagentEdge(StrictModel):
     name: BoundedKey
     child_agent_id: ObjectId
@@ -403,7 +374,6 @@ class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
     runtime_lock_digest: Sha256Digest
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
-    resolved_environment: EnvironmentExecutionConfig | None = None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...] = ()
 
 
@@ -426,6 +396,7 @@ class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
 
 
 class Agent(StrictModel):
+    default_environment_template_id: ObjectId | None = None
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
@@ -459,7 +430,6 @@ class AgentRevision(StrictModel):
     resolved_skills: tuple[ResolvedSkillBinding, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
-    resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: Sha256Digest
     source_revision_id: ObjectId | None
@@ -488,6 +458,7 @@ class BuiltinAgentRegistration(StrictModel):
 
 
 class CreateAgentRequest(BaseModel):
+    default_environment_template_id: ObjectId | None = None
     model_config = ConfigDict(extra="forbid")
 
     name: AgentName
@@ -496,6 +467,7 @@ class CreateAgentRequest(BaseModel):
 
 
 class UpdateAgentRequest(BaseModel):
+    default_environment_template_id: ObjectId | None = None
     model_config = ConfigDict(extra="forbid")
 
     name: AgentName | None = None
@@ -503,7 +475,7 @@ class UpdateAgentRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateAgentRequest:
-        changed = self.model_fields_set.intersection({"name", "description"})
+        changed = self.model_fields_set.intersection({"name", "description", "default_environment_template_id"})
         if not changed:
             raise ValueError("at least one metadata field must be supplied")
         if "name" in self.model_fields_set and self.name is None:

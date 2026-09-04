@@ -10,6 +10,7 @@ import rfc8785
 from pydantic import Field, JsonValue, StringConstraints, field_validator, model_validator
 
 from a13n_service.agents.domain import AgentRunOverride
+from a13n_service.environments.domain import EnvironmentSelection
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
@@ -34,11 +35,18 @@ class ThreadRunSubmissionIntent(StrictModel):
     agent_id: ObjectId | None = None
     agent_revision_id: ObjectId | None = None
     expected_current_revision_id: ObjectId | None = None
+    environment: EnvironmentSelection | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
 
+    def retained_payload(self) -> dict[str, JsonValue]:
+        payload = self.model_dump(mode="json", by_alias=True, exclude_none=True)
+        if "environment" in self.model_fields_set:
+            payload["environment"] = self.environment.model_dump(mode="json") if self.environment else None
+        return payload
+
     def canonical_bytes(self) -> bytes:
-        return _canonical_bytes(self)
+        return rfc8785.dumps(self.retained_payload())
 
     def digest_sha256(self) -> str:
         return _sha256(self.canonical_bytes())
@@ -55,13 +63,16 @@ class ThreadRunSubmissionRequest(StrictModel):
     agent_id: ObjectId | None = None
     agent_revision_id: ObjectId | None = None
     expected_current_revision_id: ObjectId | None = None
+    environment: EnvironmentSelection | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
     waiting_resolution: WaitingResolutionDefaults | None = None
 
     def intent(self) -> ThreadRunSubmissionIntent:
         return ThreadRunSubmissionIntent.model_validate(
-            self.model_dump(mode="python", exclude={"expected_thread_version", "waiting_resolution"})
+            self.model_dump(
+                mode="python", exclude_unset=True, exclude={"expected_thread_version", "waiting_resolution"}
+            )
         )
 
 

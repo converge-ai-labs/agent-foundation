@@ -7,7 +7,6 @@ import pytest
 from a13n_harness import SafeFailure
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.environments.models import RunEnvironmentBindingRecord
 from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord
 from a13n_service.hooks.validation import EndpointValidator
@@ -58,7 +57,6 @@ from .conftest import (
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
-    environment_execution_config,
 )
 from .test_acceptance import _accepted_run
 from .test_attempt_execution import _accept_root, _authority, _completed_state, _worker
@@ -422,8 +420,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     await _fail_current_run(interaction_sessions, run_id=source.id, thread_id=source.thread_id)
     assert await queue.scan_drainable(tenant_id=TENANT_ID) == (source.thread_id,)
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="first"),))
-    environment = environment_execution_config()
-    config = effective_agent_config(environment=environment)
+    config = effective_agent_config()
     seed = RunStateSeed(
         run_id="run_6666666666666666",
         agent_id=AGENT_ID,
@@ -452,7 +449,6 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
                 RoleBindingRecord.resource_type == "workspace",
             )
         )
-        assert binding is not None
         binding.role_key = "runner"
 
     with pytest.raises(RunAcceptanceError) as unauthorized:
@@ -480,7 +476,6 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
                 RoleBindingRecord.resource_type == "workspace",
             )
         )
-        assert binding is not None
         binding.role_key = "builder"
 
     receipt = await service.consume_queued(
@@ -513,16 +508,12 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
     async with short_session(interaction_sessions) as database:
         thread = await database.get(ThreadRecord, source.thread_id)
         accepted = await database.get(RunRecord, run.id)
-        binding = await database.scalar(
-            select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == run.id)
-        )
         hook_head = await database.get(HookSubscriptionRecord, receipt.run.hook_subscription_id)
         delivery = await database.scalar(select(OutboxRecord))
         assert thread is not None and accepted is not None and binding is not None
         assert hook_head is not None and hook_head.inline_run_id == run.id
         assert delivery is not None and delivery.destination_ref == hook_head.current_revision_id
         assert (thread.version, thread.queue_version, thread.current_run_id) == (3, 4, run.id)
-        assert binding.target_key == environment.target_key
     assert endpoint.calls == [
         "https://hooks.example.com/queued",
         "https://hooks.example.com/updated",
@@ -683,8 +674,7 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         queued_submission_id="qsub_7171717171717171",
     )
     accepted_input = AcceptedAgentInput(schema_version="1", content=(TextContent(text="next"),))
-    environment = environment_execution_config()
-    successor_config = effective_agent_config(environment=environment)
+    successor_config = effective_agent_config()
     successor_seed = RunStateSeed(
         run_id="run_7171717171717171",
         agent_id=AGENT_ID,
@@ -735,9 +725,6 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         successor_row = await database.get(RunRecord, successor.id)
         attempt = await database.get(RunAttemptRecord, claimed.attempt.id)
         thread = await database.get(ThreadRecord, source.thread_id)
-        binding = await database.scalar(
-            select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == successor.id)
-        )
         hook_head = await database.get(HookSubscriptionRecord, receipt.successor.hook_subscription_id)
         delivery = await database.scalar(select(OutboxRecord))
         assert (
@@ -745,7 +732,6 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
             and successor_row is not None
             and attempt is not None
             and thread is not None
-            and binding is not None
             and hook_head is not None
             and delivery is not None
         )
@@ -758,7 +744,6 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
             source.id,
             successor.id,
         )
-        assert binding.target_key == environment.target_key
         assert hook_head.inline_run_id == successor.id
         assert delivery.destination_ref == hook_head.current_revision_id
     assert endpoint.calls == [

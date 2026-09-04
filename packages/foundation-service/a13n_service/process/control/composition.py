@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 
+from a13n_environment_provider import EnvironmentProviderCatalog
+
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import Components
@@ -16,7 +17,7 @@ from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
 from .agent import build_agent_management
 from .asset import build_asset_bundle
-from .environment import build_environment_bundle
+from .environment import build_environment_service
 from .hook import build_hook_bundle
 from .model import build_model_bundle
 from .plugin import build_plugin_bundle
@@ -30,7 +31,7 @@ async def build_control_runtime(
     shared: SharedRuntime,
     execution: ExecutionResources,
     worker: WorkerRuntime | None,
-    environment_catalog: FoundationEnvironmentProviderCatalog,
+    environment_catalog: EnvironmentProviderCatalog,
     connectivity_selection: ConnectivitySelectionResolver | None,
     trace_query_provider_registry: TraceQueryProviderRegistry,
     stack: AsyncExitStack,
@@ -43,7 +44,7 @@ async def build_control_runtime(
         trace_query_provider_registry,
         stack,
     )
-    environments = build_environment_bundle(components, shared, environment_catalog)
+    environments = build_environment_service(shared, environment_catalog)
     local_runner = (
         worker.plugin_runtime
         if worker is not None and isinstance(worker.plugin_runtime, PluginRunnerSupervisor)
@@ -64,7 +65,6 @@ async def build_control_runtime(
         components,
         shared,
         models.accepted,
-        environments.agent_selection,
         plugins.agent_selection,
         connectivity_selection,
     )
@@ -72,7 +72,7 @@ async def build_control_runtime(
     hooks = await build_hook_bundle(settings, shared, stack)
     runtime = ControlRuntime(
         trace_queries=trace_queries,
-        environments=environments.service,
+        environments=environments,
         plugins=plugins.service,
         skill_uploads=skills.uploads,
         skill_publication=skills.publication,

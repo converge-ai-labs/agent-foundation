@@ -22,6 +22,7 @@ from a13n_service.connectivity.mcp.router import router as mcp_router
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.router import router as environment_router
 from a13n_service.hooks.router import router as hook_router
+from a13n_service.interactions.threads import router as thread_router
 from a13n_service.lifecycle.router import router as lifecycle_router
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.router import router as model_router
@@ -160,6 +161,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
     if serves_control_plane:
         app.include_router(agent_router)
         app.include_router(environment_router)
+        app.include_router(thread_router)
         app.include_router(asset_router)
         app.include_router(model_router)
         app.include_router(plugin_router)

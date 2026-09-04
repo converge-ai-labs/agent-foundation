@@ -71,7 +71,7 @@ The distribution registers one no-argument Provider class:
 - a no-argument, side-effect-free `WorkspaceEnvironmentProvider`;
 - a fresh `WorkspaceEnvironment` adapter backed by Direct Local operations.
 
-Provider construction, configuration validation, and `create_environment()` perform no filesystem I/O. The workspace is checked only when Harness enters the fresh adapter. The Provider is stateless because its target is the deterministic Host-selected directory; `dump_state()` returns `None`, and neither `close()` nor explicit `destroy()` deletes that directory.
+Provider construction, configuration validation, and `create_environment()` perform no filesystem I/O. The workspace is checked when the Host explicitly prepares the adapter or its first operation requests readiness; scope entry performs no target I/O. The Provider is stateless because its target is the deterministic Host-selected directory; `dump_state()` returns `None`, and neither `close()` nor explicit `destroy()` deletes that directory.
 
 ### Installed entry-point mode
 

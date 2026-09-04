@@ -10,8 +10,9 @@ if TYPE_CHECKING:
     from a13n_service.assets.service import AssetService
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.runtime import ConnectivityRuntime
-    from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
-    from a13n_service.environments.service import EnvironmentManagementService
+    from a13n_service.environments.lifecycle import EnvironmentLifecycle
+    from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
+    from a13n_service.environments.service import EnvironmentService
     from a13n_service.hooks.management import HookSubscriptionService
     from a13n_service.iam import RequestAuthenticator
     from a13n_service.lifecycle.service import LifecycleEventService
@@ -47,7 +48,7 @@ class ControlRuntime:
     """Control-plane services exposed to request handlers."""
 
     trace_queries: TraceQueryService
-    environments: EnvironmentManagementService
+    environments: EnvironmentService
     plugins: PluginService
     skill_uploads: SkillUploadService
     skill_publication: SkillPublicationService
@@ -69,7 +70,8 @@ class WorkerRuntime:
     plugin_runtime: OnDemandPluginRuntime | PluginRunnerSupervisor
     native_model_factory: NativeModelFactory
     skill_runtime: SkillRuntimePreparer
-    environment_keepalive: EnvironmentKeepaliveLoop
+    environment_maintenance: EnvironmentMaintenanceLoop
+    environments: EnvironmentLifecycle
     run_stream: RedisRunStream
     run_replay: RunReplayStore
 

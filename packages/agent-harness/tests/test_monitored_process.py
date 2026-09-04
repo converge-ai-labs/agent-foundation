@@ -82,7 +82,6 @@ async def _bound_process_environment(root: Path) -> AsyncIterator[BoundEnvironme
             "local": EnvironmentRuntimeMount(
                 binding=DirectLocalEnvironmentProviderBinding(
                     DirectLocalProviderConfiguration(
-                        environment_id="run-process-test",
                         root=DirectLocalRootConfiguration(path=root),
                         shell_profiles=(
                             DirectLocalShellProfile(
@@ -92,7 +91,8 @@ async def _bound_process_environment(root: Path) -> AsyncIterator[BoundEnvironme
                         ),
                         allowed_executables=frozenset({Path(sys.executable).resolve()}),
                         terminate_grace_seconds=0.2,
-                    )
+                    ),
+                    environment_id="run-process-test",
                 ),
                 permission_ceiling=EnvironmentPermissionSet(
                     operations=frozenset(EnvironmentAction),

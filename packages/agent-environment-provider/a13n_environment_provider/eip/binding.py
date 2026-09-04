@@ -98,6 +98,12 @@ class EIPEnvironmentSession:
         self._environment_id = environment_id
         self._generation = str(session.descriptor.generation)
         self._descriptor = _convert_descriptor(session.descriptor)
+        self.bind_mount(mount_id)
+
+    def bind_mount(self, mount_id: str) -> None:
+        session = self._session
+        provider_key = self._provider_key
+        environment_id = self._environment_id
         methods = set(session.descriptor.available_methods)
         files = EIPFileOperator(
             session=session,
@@ -218,4 +224,30 @@ def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDes
             )
             for mount in descriptor.mounts
         ),
+    )
+
+
+def configured_descriptor(*, read_only: bool = False, shell: bool = True) -> EnvironmentDescriptor:
+    actions = {action for values in _METHOD_ACTIONS.values() for action in values}
+    actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
+    if not shell:
+        actions = {action for action in actions if action.value.startswith("environment.file.")}
+    if read_only:
+        actions -= {
+            EnvironmentAction.FILE_WRITE_TEXT,
+            EnvironmentAction.FILE_PATCH_TEXT,
+            EnvironmentAction.FILE_WRITE_BYTES,
+            EnvironmentAction.FILE_MKDIR,
+            EnvironmentAction.FILE_MOVE,
+            EnvironmentAction.FILE_REMOVE,
+            EnvironmentAction.FILE_COPY_DESTINATION,
+        }
+    from ..models import ENVIRONMENT_ACTION_DISPATCH
+
+    return EnvironmentDescriptor(
+        generation="unprepared",
+        operation_families=frozenset(ENVIRONMENT_ACTION_DISPATCH[action].family for action in actions),
+        permissions=EnvironmentPermissionSet(operations=frozenset(actions)),
+        limits={},
+        mounts=(),
     )

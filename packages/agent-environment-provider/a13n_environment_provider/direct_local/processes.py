@@ -207,6 +207,9 @@ class LocalProcessManager:
         self._lock = asyncio.Lock()
         self._closed = False
 
+    def bind_mount(self, mount_id: str) -> None:
+        self._mount_id = mount_id
+
     async def exec(self, request: CommandRequest) -> ShellExecResult:
         started = await self.start(request)
         handle = started.process.handle

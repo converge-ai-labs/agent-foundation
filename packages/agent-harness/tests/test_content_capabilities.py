@@ -159,9 +159,9 @@ class _ScrapeProvider:
 def _binding(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
         DirectLocalProviderConfiguration(
-            environment_id="content-capabilities-test",
             root=DirectLocalRootConfiguration(path=root),
-        )
+        ),
+        environment_id="content-capabilities-test",
     )
     return create_environment_runtime(
         mounts={
@@ -178,9 +178,9 @@ def _binding(root: Path):
 def _replacement_mount(root: Path) -> EnvironmentRuntimeMount:
     provider = DirectLocalEnvironmentProviderBinding(
         DirectLocalProviderConfiguration(
-            environment_id="content-capabilities-test",
             root=DirectLocalRootConfiguration(path=root),
-        )
+        ),
+        environment_id="content-capabilities-test",
     )
     return EnvironmentRuntimeMount(
         binding=provider,

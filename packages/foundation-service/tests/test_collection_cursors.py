@@ -21,17 +21,6 @@ from a13n_service.assets.cursors import AssetCursorError, decode_asset_cursor, e
 from a13n_service.connectivity.cursors import CursorError as ConnectivityCursorError
 from a13n_service.connectivity.cursors import decode_cursor as decode_connectivity_cursor
 from a13n_service.connectivity.cursors import encode_cursor as encode_connectivity_cursor
-from a13n_service.environments.cursors import (
-    EnvironmentCursorError,
-    decode_environment_cursor,
-    encode_environment_cursor,
-)
-from a13n_service.environments.cursors import (
-    decode_revision_cursor as decode_environment_revision_cursor,
-)
-from a13n_service.environments.cursors import (
-    encode_revision_cursor as encode_environment_revision_cursor,
-)
 from a13n_service.models.cursors import CursorError as ModelCursorError
 from a13n_service.models.cursors import decode_model_cursor, encode_model_cursor
 from a13n_service.plugins.cursors import (
@@ -108,37 +97,6 @@ def test_agent_cursors_preserve_legacy_wire() -> None:
         decode_agent_cursor(_replace_payload_field(agent, "id", "wrong"), scope=_SCOPE)
     with pytest.raises(AgentCursorError, match=_INVALID_CURSOR):
         decode_agent_revision_cursor(_replace_payload_field(revision, "number", 0), scope=_SCOPE)
-
-
-def test_environment_cursors_preserve_legacy_wire() -> None:
-    environment = (
-        "eyJpZCI6ImVudl8xMjM0NTY3ODkwYWJjZGVmIiwia2luZCI6ImVudmlyb25tZW50Iiwic2NvcGUiOiJkN2Y1NjkyYTUz"
-        "MTY3ZDdmMGE1NDFlZjQ4NDk3ZmMxOWFmNWY4ODU1Y2RiZDc3ZmY2ZmJiZDQ1OWUwOWY4NjQ4IiwidGltZSI6IjIwMjQtMDEt"
-        "MDFUMjE6MzQ6MDUuMTIzNDU2WiIsInYiOiIxIn0"
-    )
-    revision = (
-        "eyJpZCI6ImVudnJfMTIzNDU2Nzg5MGFiY2RlZiIsImtpbmQiOiJlbnZpcm9ubWVudF9yZXZpc2lvbiIsIm51bWJlciI6"
-        "Nywic2NvcGUiOiJkN2Y1NjkyYTUzMTY3ZDdmMGE1NDFlZjQ4NDk3ZmMxOWFmNWY4ODU1Y2RiZDc3ZmY2ZmJiZDQ1OWUwOWY4"
-        "NjQ4IiwidiI6IjEifQ"
-    )
-
-    assert (
-        encode_environment_cursor(updated_at=_STAMP, environment_id="env_1234567890abcdef", scope=_SCOPE) == environment
-    )
-    assert decode_environment_cursor(environment, scope=_SCOPE) == (_UTC_STAMP, "env_1234567890abcdef")
-    assert encode_environment_revision_cursor(version=7, revision_id="envr_1234567890abcdef", scope=_SCOPE) == revision
-    assert decode_environment_revision_cursor(revision, scope=_SCOPE) == (7, "envr_1234567890abcdef")
-    _assert_public_errors(
-        EnvironmentCursorError,
-        lambda value, scope: decode_environment_cursor(value, scope=scope),
-        environment,
-    )
-    with pytest.raises(EnvironmentCursorError, match=_MISMATCHED_CURSOR):
-        decode_environment_cursor(_replace_payload_field(environment, "kind", "environment_revision"), scope=_SCOPE)
-    with pytest.raises(EnvironmentCursorError, match=_INVALID_CURSOR):
-        decode_environment_cursor(_replace_payload_field(environment, "id", "wrong"), scope=_SCOPE)
-    with pytest.raises(EnvironmentCursorError, match=_INVALID_CURSOR):
-        decode_environment_revision_cursor(_replace_payload_field(revision, "number", 0), scope=_SCOPE)
 
 
 def test_plugin_cursors_preserve_legacy_wire() -> None:

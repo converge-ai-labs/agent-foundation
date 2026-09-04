@@ -28,11 +28,11 @@ def _environment(root: Path, *, read_only: bool = False) -> DirectLocalEnvironme
     configuration = provider.validate_configuration(
         schema_version="1",
         value={
-            "environment_id": "local-test",
             "root": {"path": str(root), "read_only": read_only},
         },
     )
     environment = provider.create_environment(
+        environment_id="local-test",
         configuration=configuration,
         state=None,
         runtime=DirectLocalProviderRuntime(),
@@ -53,6 +53,7 @@ async def test_direct_local_entry_exposes_provider_owned_file_operations(tmp_pat
         mount_id="workspace",
         host_refs={"session_id": "session-1"},
     )
+    await environment.prepare()
     await environment.operations.files.write_text("/created.txt", "created", mode="create")  # type: ignore[union-attr]
 
     assert environment.environment_id == "local-test"
@@ -74,44 +75,12 @@ async def test_direct_local_read_only_configuration_denies_writes(tmp_path: Path
         agent_instance_id="agent-1",
         mount_id="workspace",
     )
+    await environment.prepare()
 
     assert EnvironmentAction.FILE_WRITE_TEXT not in environment.descriptor.permissions.operations
     with pytest.raises(Exception) as captured:
         await environment.operations.files.write_text("/denied.txt", "denied", mode="create")  # type: ignore[union-attr]
     assert getattr(captured.value, "code", None) == "environment_denied"
-    await environment.close()
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="symbolic-link identity test requires POSIX")
-async def test_foundation_direct_local_attachment_rejects_retargetable_symlink(tmp_path: Path) -> None:
-    target = tmp_path / "target"
-    target.mkdir()
-    link = tmp_path / "workspace-link"
-    link.symlink_to(target, target_is_directory=True)
-    provider = DirectLocalEnvironmentProvider()
-    connection = provider.validate_connection(
-        schema_version="1",
-        parameters={
-            "environment_id": "attached-local",
-            "root": {"path": str(link)},
-        },
-    )
-    assert provider.target_key(connection=connection) == str(link)
-    environment = provider.create_attachment_environment(
-        connection=connection,
-        runtime=DirectLocalProviderRuntime(),
-    )
-
-    with pytest.raises(EnvironmentProviderError) as captured:
-        await environment.enter(
-            thread_id="thread-1",
-            run_id="run-1",
-            agent_instance_id="agent-1",
-            mount_id="workspace",
-        )
-
-    assert captured.value.code == "provider_target_conflict"
-    assert environment.dump_state() is None
     await environment.close()
 
 
@@ -157,13 +126,14 @@ def test_direct_local_provider_is_inert_and_rejects_state(tmp_path: Path) -> Non
     provider = DirectLocalEnvironmentProvider()
     configuration = provider.validate_configuration(
         schema_version="1",
-        value={"environment_id": "local-test", "root": {"path": str(tmp_path)}},
+        value={"root": {"path": str(tmp_path)}},
     )
     assert isinstance(configuration, DirectLocalProviderConfiguration)
     assert configuration.root == DirectLocalRootConfiguration(path=tmp_path)
 
     with pytest.raises(EnvironmentProviderError) as captured:
         provider.create_environment(
+            environment_id="local-test",
             configuration=configuration,
             state=EnvironmentState(
                 provider_key="a13n.direct-local",
@@ -176,7 +146,6 @@ def test_direct_local_provider_is_inert_and_rejects_state(tmp_path: Path) -> Non
 
 def test_direct_local_configuration_does_not_require_root_existence(tmp_path: Path) -> None:
     configuration = DirectLocalProviderConfiguration(
-        environment_id="local-test",
         root=DirectLocalRootConfiguration(path=tmp_path / "missing"),
     )
     assert configuration.root.path == tmp_path / "missing"

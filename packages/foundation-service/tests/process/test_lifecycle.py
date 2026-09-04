@@ -1,15 +1,12 @@
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
 
 import httpx2
 import pytest
 from a13n_service.app import Components, create_app
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
-from a13n_service.environments.domain import EnvironmentTargetRetentionBehavior
-from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
+from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.lifecycle.service import LifecycleEventService
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
@@ -41,28 +38,6 @@ async def test_critical_component_can_return_after_its_expected_drain() -> None:
         return None
 
     await run_critical_component("drained component", returns, lambda: True)
-
-
-@pytest.mark.anyio
-async def test_worker_requires_a_source_resolver_for_retaining_environment_providers(tmp_path: Path) -> None:
-    class Entry:
-        provider_key = "acme.retaining"
-        retention_behavior = EnvironmentTargetRetentionBehavior.while_execution_active
-
-    class Catalog:
-        def entries(self) -> tuple[Entry, ...]:
-            return (Entry(),)
-
-    app = create_app(
-        local_settings(tmp_path, role=ProcessRole.worker),
-        components=Components(
-            environment_provider_catalog=cast(FoundationEnvironmentProviderCatalog, Catalog()),
-        ),
-    )
-
-    with pytest.raises(RuntimeError, match="require a Worker keepalive source resolver"):
-        async with app.router.lifespan_context(app):
-            pytest.fail("lifespan unexpectedly started")
 
 
 def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
@@ -132,7 +107,7 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         assert runtime.control.plugins is not None
         assert isinstance(runtime.worker.plugin_materializer, PluginRuntimeMaterializer)
         assert isinstance(runtime.worker.plugin_runtime, OnDemandPluginRuntime)
-        assert isinstance(runtime.worker.environment_keepalive, EnvironmentKeepaliveLoop)
+        assert isinstance(runtime.worker.environment_maintenance, EnvironmentMaintenanceLoop)
         assert runtime.control.trace_queries is not None
 
         transport = httpx2.ASGITransport(app=app)

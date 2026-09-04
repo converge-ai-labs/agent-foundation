@@ -174,9 +174,9 @@ def _runtime_mount(root: Path, *, environment_id: str = "skills-test") -> Enviro
     return EnvironmentRuntimeMount(
         binding=DirectLocalEnvironmentProviderBinding(
             DirectLocalProviderConfiguration(
-                environment_id=environment_id,
                 root=DirectLocalRootConfiguration(path=root),
-            )
+            ),
+            environment_id=environment_id,
         ),
         permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
         working_directory="/",

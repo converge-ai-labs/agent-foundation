@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver, PreparedRevisionConnectivity
-from a13n_service.environments.errors import EnvironmentManagementError
+from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
@@ -19,8 +18,6 @@ from a13n_service.storage import short_session
 from .connectivity_resolution import freeze_revision_connectivity, prepare_revision_connectivity
 from .domain import (
     AgentConfig,
-    ChildEnvironmentPolicy,
-    EnvironmentExecutionConfig,
     PluginRuntimeMode,
     ResolvedAgentModel,
     ResolvedRevisionContent,
@@ -28,7 +25,6 @@ from .domain import (
     ResolvedSubagentEdge,
     SubagentSelection,
 )
-from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedEnvironmentSelection
 from .errors import AgentError, agent_revision_create_failed
 from .models import AgentRecord, AgentRevisionRecord
 from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
@@ -61,7 +57,6 @@ class PreparedRevisionResolution:
     agent_id: str
     config: AgentConfig
     model: PreparedModelExecution
-    environment: PreparedEnvironmentSelection | None
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
@@ -77,14 +72,12 @@ class AgentResolver:
         model_selector: AcceptedModelSelector,
         *,
         plugin_runtime_mode: PluginRuntimeMode,
-        environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
-        self._environment_resolver = environment_resolver
         self._plugin_resolver = plugin_resolver or AgentPluginSelectionResolver(
             sessions,
             runtime_mode=plugin_runtime_mode,
@@ -142,20 +135,6 @@ class AgentResolver:
                 agent_id=agent_id,
                 config=config,
             )
-        environment = None
-        if config.environment is not None:
-            if self._environment_resolver is None:
-                raise agent_revision_create_failed("environment_resolution_unavailable", path="environment")
-            try:
-                environment = await self._environment_resolver.prepare_revision_creation(
-                    actor=actor,
-                    organization_id=organization_id,
-                    workspace_id=workspace_id,
-                    selection=config.environment,
-                )
-            except EnvironmentManagementError as error:
-                raise agent_revision_create_failed(error.code, path="environment") from error
-        _require_writable_skill_environment(config.skills, environment)
         connectivity = await prepare_revision_connectivity(
             self._connectivity_resolver,
             actor=actor,
@@ -170,7 +149,6 @@ class AgentResolver:
             agent_id=agent_id,
             config=config,
             model=model,
-            environment=environment,
             plugins=plugins,
             skills=skills,
             subagents=subagents,
@@ -201,15 +179,6 @@ class AgentResolver:
         except PluginSelectionError as error:
             raise agent_revision_create_failed(error.reason, path=error.path) from error
         skills = await self._freeze_skills(session, prepared)
-        try:
-            environment = (
-                await self._environment_resolver.freeze_in_transaction(session, prepared=prepared.environment)
-                if self._environment_resolver is not None and prepared.environment is not None
-                else None
-            )
-        except EnvironmentManagementError as error:
-            raise agent_revision_create_failed(error.code, path="environment") from error
-        _require_writable_skill_environment(skills, environment)
         subagents = await self._freeze_subagents(session, prepared)
         await freeze_revision_connectivity(self._connectivity_resolver, session, prepared.connectivity)
         try:
@@ -233,17 +202,12 @@ class AgentResolver:
             resolved_skills=skills,
             connector_tools=prepared.config.connector_tools,
             mcp_tools=prepared.config.mcp_tools,
-            resolved_environment=environment,
             resolved_subagents=subagents,
         )
 
     def _validate_local_config(self, config: AgentConfig) -> None:
         if config.input_adapter.adapter_key != "native" or config.input_adapter.config:
             raise agent_revision_create_failed("input_adapter_unsupported", path="input_adapter")
-        if config.environment is not None and self._environment_resolver is None:
-            raise agent_revision_create_failed("environment_resolution_unavailable", path="environment")
-        if config.skills and config.environment is None:
-            raise agent_revision_create_failed("skill_environment_required", path="environment")
         if config.connector_tools and self._connectivity_resolver is None:
             raise agent_revision_create_failed("connector_tool_resolution_unavailable", path="connector_tools")
         if config.mcp_tools and self._connectivity_resolver is None:
@@ -296,6 +260,9 @@ class AgentResolver:
     ) -> tuple[PreparedSubagent, ...]:
         result: list[PreparedSubagent] = []
         for name, selection in config.subagents.items():
+            await authorize_template(
+                session, actor=actor, workspace_id=workspace_id, revision_id=selection.environment.template_revision_id
+            )
             await authorize_agent(
                 session,
                 actor=actor,
@@ -330,7 +297,6 @@ class AgentResolver:
                 first_revision=revision,
                 path=f"subagents.{name}",
             )
-            _validate_child_environment(config, revision, selection.environment, path=f"subagents.{name}.environment")
             result.append(
                 PreparedSubagent(
                     name=name,
@@ -438,42 +404,6 @@ class AgentResolver:
                 )
             )
         return tuple(result)
-
-
-def _validate_child_environment(
-    root_config: AgentConfig,
-    child_revision: AgentRevisionRecord,
-    policy: ChildEnvironmentPolicy,
-    *,
-    path: str,
-) -> None:
-    child_environment = child_revision.resolved_environment
-    if policy.mode == "none" and child_environment is not None:
-        raise agent_revision_create_failed("subagent_environment_required", path=path)
-    if policy.mode == "shared_root":
-        root_environment_id = (
-            root_config.environment.environment_revision_id if root_config.environment is not None else None
-        )
-        child_source_id = (
-            str(child_environment.get("source_environment_revision_id")) if child_environment is not None else None
-        )
-        if root_environment_id is None or child_source_id != root_environment_id:
-            raise agent_revision_create_failed("subagent_environment_incompatible", path=path)
-    if policy.mode == "dedicated" and child_environment is None:
-        raise agent_revision_create_failed("subagent_environment_required", path=path)
-
-
-def _require_writable_skill_environment(
-    skills: Sequence[object],
-    environment: PreparedEnvironmentSelection | EnvironmentExecutionConfig | None,
-) -> None:
-    if not skills:
-        return
-    resolved = environment.resolved if isinstance(environment, PreparedEnvironmentSelection) else environment
-    if resolved is None:
-        raise agent_revision_create_failed("skill_environment_required", path="environment")
-    if resolved.access == "read_only":
-        raise agent_revision_create_failed("skill_environment_not_writable", path="environment")
 
 
 def resolution_error(error: Exception) -> AgentError:

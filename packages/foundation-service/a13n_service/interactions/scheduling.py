@@ -13,13 +13,13 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.environments.usage import schedule_environment_maintenance
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
-from .environment_bindings import deactivate_run_environment
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .lifecycle import append_run_attempt_lifecycle, append_run_lifecycle, append_run_with_attempt_lifecycle
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
@@ -199,7 +199,7 @@ class AttemptScheduler:
 
             budget_failure = _claim_budget_failure(run, classification, now)
             if budget_failure is not None:
-                await deactivate_run_environment(database, run=run, now=now)
+                await schedule_environment_maintenance(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, budget_failure, now)
                 if classification == "lease_expired":

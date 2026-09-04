@@ -151,7 +151,6 @@ _DEFAULT_SHELL_PROFILES = (
 class DockerProviderConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    environment_id: Annotated[str, Field(min_length=1, max_length=128)]
     image: Annotated[str, Field(min_length=1, max_length=1024)] = DEFAULT_DOCKER_IMAGE
     pull_policy: DockerImagePullPolicy = DockerImagePullPolicy.IF_MISSING
     root_mount_id: Annotated[str, Field(min_length=1, max_length=128)] = "workspace"
@@ -167,7 +166,6 @@ class DockerProviderConfiguration(BaseModel):
     max_output_bytes_per_stream: Annotated[int, Field(gt=0)] = _GIB
     max_spool_bytes: Annotated[int, Field(gt=0)] = 64 * _GIB
 
-    @field_validator("environment_id")
     @classmethod
     def _valid_environment_id(cls, value: str) -> str:
         if value != value.strip() or _has_control(value):
@@ -215,27 +213,10 @@ class DockerProviderConfiguration(BaseModel):
         return self
 
 
-class DockerAttachmentConnection(BaseModel):
-    """Exact existing Docker target accepted by an attach-only Host."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
+class DockerTargetConfiguration(DockerProviderConfiguration):
+    """Validated recipe combined with Host runtime identity; never a template payload."""
 
     environment_id: Annotated[str, Field(min_length=1, max_length=128)]
-    container_id: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
-
-    @field_validator("environment_id")
-    @classmethod
-    def _valid_environment_id(cls, value: str) -> str:
-        if value != value.strip() or _has_control(value):
-            raise ValueError("environment_id must be trimmed and contain no control characters")
-        return value
-
-    @field_validator("container_id", mode="before")
-    @classmethod
-    def _normalized_container_id(cls, value: object) -> object:
-        if isinstance(value, str) and not value.startswith("sha256:"):
-            return f"sha256:{value}"
-        return value
 
 
 class DockerProviderStateData(BaseModel):

@@ -41,9 +41,10 @@ def test_environment_entrypoint_loading_is_explicit_and_construction_is_inert(tm
     root = tmp_path / "not-created-by-the-provider"
     configuration = provider.validate_configuration(
         schema_version="1",
-        value={"root": str(root), "environment_id": "workspace-inert"},
+        value={"root": str(root)},
     )
     environment = provider.create_environment(
+        environment_id="workspace-inert",
         configuration=configuration,
         state=None,
     )
@@ -68,9 +69,9 @@ def test_environment_explicit_provider_needs_no_metadata_scan(
     root = tmp_path / "still-inert"
     configuration = provider.validate_configuration(
         schema_version="1",
-        value={"root": str(root), "environment_id": "workspace-code"},
+        value={"root": str(root)},
     )
-    provider.create_environment(configuration=configuration, state=None)
+    provider.create_environment(configuration=configuration, environment_id="workspace-code", state=None)
 
     assert tuple(catalog) == (PROVIDER_KEY,)
     assert not root.exists()

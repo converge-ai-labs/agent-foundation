@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from a13n_service.agents.application import AgentManagement
-from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.agents.resolution import AgentResolver
@@ -19,7 +18,6 @@ def build_agent_management(
     components: Components,
     shared: SharedRuntime,
     accepted_models: AcceptedModelSelector,
-    environment_selection: AgentEnvironmentSelectionResolver,
     plugin_selection: AgentPluginSelectionResolver,
     connectivity_selection: ConnectivitySelectionResolver | None,
 ) -> AgentManagement:
@@ -29,7 +27,6 @@ def build_agent_management(
         shared.storage.sessions,
         accepted_models,
         plugin_runtime_mode=settings.plugin_runtime_mode,
-        environment_resolver=environment_selection,
         plugin_resolver=plugin_selection,
         connectivity_resolver=connectivity_selection,
     )
@@ -37,7 +34,6 @@ def build_agent_management(
         shared.storage.sessions,
         accepted_models,
         plugin_runtime_mode=settings.plugin_runtime_mode,
-        environment_resolver=environment_selection,
         plugin_resolver=plugin_selection,
         connectivity_resolver=connectivity_selection,
     )

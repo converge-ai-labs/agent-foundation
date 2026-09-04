@@ -37,7 +37,10 @@ class _Provider(EnvironmentProvider):
             raise ValueError("unsupported")
         return _Configuration.model_validate(value)
 
-    def create_environment(self, *, configuration: BaseModel, state, runtime=None):
+    def describe_configuration(self, configuration):
+        raise NotImplementedError
+
+    def create_environment(self, *, configuration: BaseModel, environment_id: str, state, runtime=None):
         del configuration, state, runtime
         raise NotImplementedError
 

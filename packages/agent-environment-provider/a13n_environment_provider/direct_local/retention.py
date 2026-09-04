@@ -155,6 +155,9 @@ class LocalRetentionStore:
         self._operations = itertools.count(1)
         self._closed = False
 
+    def bind_mount(self, mount_id: str) -> None:
+        self._mount_id = mount_id
+
     async def reserve(self, *, max_bytes: int) -> LocalRetentionWriter:
         """Open a candidate without reserving its worst-case byte count."""
         if max_bytes <= 0:

@@ -448,6 +448,8 @@ class EnvironmentRunService:
                             mount_path=(path_layout.user_skills if canonical_host_paths else None)
                         )
                     )
+            for mount in mounts:
+                await mount.environment.prepare()
             extensions = await self._reconstructor.create_extensions(composition)
             runtime = create_environment_runtime(
                 mounts={
@@ -490,7 +492,6 @@ class EnvironmentRunService:
             configuration = provider.validate_configuration(
                 schema_version="1",
                 value={
-                    "environment_id": f"content-plugin-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                     "root": {"path": os.fspath(normalized), "read_only": False},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -499,6 +500,7 @@ class EnvironmentRunService:
                 },
             )
             environment = provider.create_environment(
+                environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                 configuration=configuration,
                 state=None,
                 runtime=DirectLocalProviderRuntime(),
@@ -528,7 +530,6 @@ class EnvironmentRunService:
             configuration = provider.validate_configuration(
                 schema_version="1",
                 value={
-                    "environment_id": f"user-skills-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                     "root": {"path": os.fspath(normalized), "read_only": False},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -537,6 +538,7 @@ class EnvironmentRunService:
                 },
             )
             environment = provider.create_environment(
+                environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                 configuration=configuration,
                 state=None,
                 runtime=DirectLocalProviderRuntime(),

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from a13n_environment_provider import build_environment_provider_catalog
-from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
-from a13n_service.environments.service import EnvironmentManagementService
+from a13n_service.environments.service import EnvironmentService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
+from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import transaction
 from a13n_service.storage.config import SQLiteConfig
@@ -120,23 +120,15 @@ async def environment_sessions(
 
 
 @pytest.fixture
-def provider_catalog() -> FoundationEnvironmentProviderCatalog:
-    return FoundationEnvironmentProviderCatalog.from_environment_provider_catalog(
-        build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
-    )
+def provider_catalog():
+    return build_environment_provider_catalog(builtin_keys=("a13n.direct-local", "a13n.docker"))
 
 
 @pytest.fixture
-def environment_service(
-    environment_sessions: async_sessionmaker[AsyncSession],
-    provider_catalog: FoundationEnvironmentProviderCatalog,
-) -> EnvironmentManagementService:
-    return EnvironmentManagementService(environment_sessions, provider_catalog, clock=lambda: NOW)
+def protector():
+    return SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
 
 
 @pytest.fixture
-def environment_resolver(
-    environment_sessions: async_sessionmaker[AsyncSession],
-    provider_catalog: FoundationEnvironmentProviderCatalog,
-) -> AgentEnvironmentSelectionResolver:
-    return AgentEnvironmentSelectionResolver(environment_sessions, provider_catalog)
+def environment_service(environment_sessions, provider_catalog, protector):
+    return EnvironmentService(environment_sessions, provider_catalog, protector)

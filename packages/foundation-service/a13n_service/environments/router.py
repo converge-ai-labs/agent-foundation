@@ -1,236 +1,201 @@
-"""Foundation Environment Management routes under `/api/v1`."""
-
-from __future__ import annotations
+"""Workspace Provider, template, and actual Environment management routes."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
+    Collection,
     CreateEnvironmentRequest,
-    CreateEnvironmentRevisionRequest,
+    CreateProviderRequest,
+    CreateTemplateRequest,
+    CreateTemplateRevisionRequest,
     Environment,
-    EnvironmentCollection,
-    EnvironmentProviderCatalogEntry,
-    EnvironmentProviderCatalogEntryCollection,
-    EnvironmentProviderSelection,
-    EnvironmentRevision,
-    EnvironmentRevisionCollection,
-    EnvironmentRevisionTestResult,
-    PutEnvironmentProviderSelectionRequest,
-    UpdateEnvironmentRequest,
+    EnvironmentCommand,
+    EnvironmentCommandRequest,
+    EnvironmentProvider,
+    EnvironmentTemplate,
+    EnvironmentTemplateRevision,
+    ReplaceCredentialRequest,
+    UpdateProviderRequest,
+    UpdateTemplateRequest,
 )
 from .errors import EnvironmentManagementError
-from .service import EnvironmentManagementService
+from .service import EnvironmentService
 
-router = APIRouter(prefix="/api/v1", tags=["environment-management"])
+router = APIRouter(prefix="/api/v1", tags=["environments"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
+IfMatch = Annotated[str, Header(alias="If-Match", max_length=256)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
-IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
+Limit = Annotated[int, Query(ge=1, le=100)]
 
 
-def _service(request: Request) -> EnvironmentManagementService:
+def _service(request: Request) -> EnvironmentService:
     control = get_control_runtime(request)
     if control is None:
         raise EnvironmentManagementError(
-            "environment_management_unavailable",
-            "Environment Management is unavailable.",
-            status_code=503,
+            "environment_unavailable", "Environment control is unavailable", status_code=503
         )
     return control.environments
 
 
-@router.get("/environment-providers", response_model=EnvironmentProviderCatalogEntryCollection)
-async def list_environment_providers(request: Request, actor: Actor) -> EnvironmentProviderCatalogEntryCollection:
-    return await _service(request).list_provider_catalog(actor=actor)
+@router.get("/environment-provider-types")
+async def provider_types(request: Request, actor: Actor) -> Collection[dict]:
+    return await _service(request).provider_types(actor)
 
 
-@router.get("/environment-providers/{provider_key}", response_model=EnvironmentProviderCatalogEntry)
-async def get_environment_provider(
-    request: Request,
-    actor: Actor,
-    provider_key: str,
-) -> EnvironmentProviderCatalogEntry:
-    return await _service(request).get_provider_catalog_entry(actor=actor, provider_key=provider_key)
-
-
-@router.get(
-    "/workspaces/{workspace_id}/environment-providers/{provider_key}",
-    response_model=EnvironmentProviderSelection,
-)
-async def get_environment_provider_selection(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    workspace_id: str,
-    provider_key: str,
-) -> EnvironmentProviderSelection:
-    selection = await _service(request).get_provider_selection(
-        actor=actor,
-        workspace_id=workspace_id,
-        provider_key=provider_key,
+@router.get("/environment-provider-types/{provider_type}")
+async def get_provider_type(request: Request, actor: Actor, provider_type: str) -> dict:
+    catalog = await _service(request).provider_types(actor)
+    for item in catalog.items:
+        if item["type"] == provider_type:
+            return item
+    raise EnvironmentManagementError(
+        "environment_provider_type_not_found", "Provider type was not found", status_code=404
     )
-    response.headers["ETag"] = resource_etag(f"{workspace_id}:{provider_key}", selection.updated_at)
-    return selection
 
 
-@router.put(
-    "/workspaces/{workspace_id}/environment-providers/{provider_key}",
-    response_model=EnvironmentProviderSelection,
-)
-async def put_environment_provider_selection(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    workspace_id: str,
-    provider_key: str,
-    body: PutEnvironmentProviderSelectionRequest,
-    if_match: Annotated[str | None, Header(alias="If-Match", max_length=256)] = None,
-) -> EnvironmentProviderSelection:
-    selection = await _service(request).put_provider_selection(
-        actor=actor,
-        workspace_id=workspace_id,
-        provider_key=provider_key,
-        if_match=if_match,
-        request=body,
+@router.post("/workspaces/{workspace_id}/environment-providers", status_code=201)
+async def create_provider(
+    request: Request, actor: Actor, workspace_id: str, body: CreateProviderRequest
+) -> EnvironmentProvider:
+    return await _service(request).create_provider(actor=actor, workspace_id=workspace_id, request=body)
+
+
+@router.patch("/environment-providers/{provider_id}")
+async def update_provider(
+    request: Request, actor: Actor, provider_id: str, body: UpdateProviderRequest, if_match: IfMatch
+) -> EnvironmentProvider:
+    return await _service(request).update_provider(
+        actor=actor, provider_id=provider_id, request=body, if_match=if_match
     )
-    response.headers["ETag"] = resource_etag(f"{workspace_id}:{provider_key}", selection.updated_at)
-    return selection
 
 
-@router.post(
-    "/workspaces/{workspace_id}/environments",
-    response_model=Environment,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.put("/environment-providers/{provider_id}/credential")
+async def replace_credential(
+    request: Request, actor: Actor, provider_id: str, body: ReplaceCredentialRequest, if_match: IfMatch
+) -> EnvironmentProvider:
+    return await _service(request).replace_credential(
+        actor=actor, provider_id=provider_id, request=body, if_match=if_match
+    )
+
+
+@router.post("/workspaces/{workspace_id}/environment-templates", status_code=201)
+async def create_template(
+    request: Request, actor: Actor, workspace_id: str, body: CreateTemplateRequest, idempotency_key: IdempotencyKey
+) -> EnvironmentTemplate:
+    return await _service(request).create_template(
+        actor=actor, workspace_id=workspace_id, request=body, idempotency_key=idempotency_key
+    )
+
+
+@router.patch("/environment-templates/{template_id}")
+async def update_template(
+    request: Request, actor: Actor, template_id: str, body: UpdateTemplateRequest, if_match: IfMatch
+) -> EnvironmentTemplate:
+    return await _service(request).update_template(
+        actor=actor, template_id=template_id, request=body, if_match=if_match
+    )
+
+
+@router.post("/environment-templates/{template_id}/revisions", status_code=201)
+async def create_revision(
+    request: Request, actor: Actor, template_id: str, body: CreateTemplateRevisionRequest
+) -> EnvironmentTemplateRevision:
+    return await _service(request).create_revision(actor=actor, template_id=template_id, request=body)
+
+
+@router.get("/environment-templates/{template_id}/revisions")
+async def list_revisions(
+    request: Request, actor: Actor, template_id: str, limit: Limit = 50, cursor: str | None = None
+) -> Collection[EnvironmentTemplateRevision]:
+    return await _service(request).list_revisions(actor=actor, template_id=template_id, limit=limit, cursor=cursor)
+
+
+@router.get("/environment-template-revisions/{revision_id}")
+async def get_revision(request: Request, actor: Actor, revision_id: str) -> EnvironmentTemplateRevision:
+    return await _service(request).get_revision(actor=actor, revision_id=revision_id)
+
+
+@router.post("/workspaces/{workspace_id}/environments", status_code=201)
 async def create_environment(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    workspace_id: str,
-    body: CreateEnvironmentRequest,
-    idempotency_key: IdempotencyKey,
+    request: Request, actor: Actor, workspace_id: str, body: CreateEnvironmentRequest, idempotency_key: IdempotencyKey
 ) -> Environment:
-    environment = await _service(request).create(
-        actor=actor,
-        workspace_id=workspace_id,
-        idempotency_key=idempotency_key,
-        request=body,
+    return await _service(request).create_environment(
+        actor=actor, workspace_id=workspace_id, request=body, idempotency_key=idempotency_key
     )
-    response.headers["ETag"] = resource_etag(environment.id, environment.updated_at)
-    return environment
 
 
-@router.get("/workspaces/{workspace_id}/environments", response_model=EnvironmentCollection)
+@router.get("/workspaces/{workspace_id}/environment-providers")
+async def list_providers(
+    request: Request, actor: Actor, workspace_id: str, limit: Limit = 50, cursor: str | None = None
+) -> Collection[EnvironmentProvider]:
+    return await _service(request).list_providers(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
+
+
+@router.get("/environment-providers/{resource_id}")
+async def get_provider(request: Request, response: Response, actor: Actor, resource_id: str) -> EnvironmentProvider:
+    resource = await _service(request).get_provider(actor=actor, resource_id=resource_id)
+    response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
+    return resource
+
+
+@router.get("/workspaces/{workspace_id}/environment-templates")
+async def list_templates(
+    request: Request, actor: Actor, workspace_id: str, limit: Limit = 50, cursor: str | None = None
+) -> Collection[EnvironmentTemplate]:
+    return await _service(request).list_templates(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
+
+
+@router.get("/environment-templates/{resource_id}")
+async def get_template(request: Request, response: Response, actor: Actor, resource_id: str) -> EnvironmentTemplate:
+    resource = await _service(request).get_template(actor=actor, resource_id=resource_id)
+    response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
+    return resource
+
+
+@router.get("/workspaces/{workspace_id}/environments")
 async def list_environments(
-    request: Request,
-    actor: Actor,
-    workspace_id: str,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    cursor: Annotated[str | None, Query(max_length=2048)] = None,
-    include_archived: bool = False,
-) -> EnvironmentCollection:
-    return await _service(request).list(
-        actor=actor,
-        workspace_id=workspace_id,
-        limit=limit,
-        cursor=cursor,
-        include_archived=include_archived,
-    )
+    request: Request, actor: Actor, workspace_id: str, limit: Limit = 50, cursor: str | None = None
+) -> Collection[Environment]:
+    return await _service(request).list_environments(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
 
 
-@router.get("/environments/{environment_id}", response_model=Environment)
-async def get_environment(request: Request, response: Response, actor: Actor, environment_id: str) -> Environment:
-    environment = await _service(request).get(actor=actor, environment_id=environment_id)
-    response.headers["ETag"] = resource_etag(environment.id, environment.updated_at)
-    return environment
+@router.get("/environments/{resource_id}")
+async def get_environment(request: Request, response: Response, actor: Actor, resource_id: str) -> Environment:
+    resource = await _service(request).get_environment(actor=actor, resource_id=resource_id)
+    response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
+    return resource
 
 
-@router.patch("/environments/{environment_id}", response_model=Environment)
-async def patch_environment(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    environment_id: str,
-    body: UpdateEnvironmentRequest,
-    if_match: IfMatch,
-) -> Environment:
-    environment = await _service(request).patch(
-        actor=actor, environment_id=environment_id, if_match=if_match, request=body
-    )
-    response.headers["ETag"] = resource_etag(environment.id, environment.updated_at)
-    return environment
-
-
-@router.post(
-    "/environments/{environment_id}/revisions",
-    response_model=EnvironmentRevision,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_environment_revision(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    environment_id: str,
-    body: CreateEnvironmentRevisionRequest,
-    idempotency_key: IdempotencyKey,
-) -> EnvironmentRevision:
-    result = await _service(request).create_revision(
+@router.post("/environments/{environment_id}/stop", status_code=202)
+async def stop_environment(
+    request: Request, actor: Actor, environment_id: str, idempotency_key: IdempotencyKey
+) -> EnvironmentCommand:
+    return await _service(request).request_command(
         actor=actor,
         environment_id=environment_id,
+        request=EnvironmentCommandRequest(action="stop"),
         idempotency_key=idempotency_key,
-        request=body,
     )
-    response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
-    response.headers["Cache-Control"] = "private, no-store"
-    return result.revision
 
 
-@router.get(
-    "/environments/{environment_id}/revisions",
-    response_model=EnvironmentRevisionCollection,
-)
-async def list_environment_revisions(
-    request: Request,
-    actor: Actor,
-    environment_id: str,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    cursor: Annotated[str | None, Query(max_length=2048)] = None,
-) -> EnvironmentRevisionCollection:
-    return await _service(request).list_revisions(
+@router.post("/environments/{environment_id}/delete", status_code=202)
+async def delete_environment(
+    request: Request, actor: Actor, environment_id: str, idempotency_key: IdempotencyKey
+) -> EnvironmentCommand:
+    return await _service(request).request_command(
         actor=actor,
         environment_id=environment_id,
-        limit=limit,
-        cursor=cursor,
+        request=EnvironmentCommandRequest(action="delete"),
+        idempotency_key=idempotency_key,
     )
 
 
-@router.get("/environment-revisions/{environment_revision_id}", response_model=EnvironmentRevision)
-async def get_environment_revision(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    environment_revision_id: str,
-) -> EnvironmentRevision:
-    revision = await _service(request).get_revision(actor=actor, revision_id=environment_revision_id)
-    response.headers["Cache-Control"] = "private, no-store"
-    return revision
-
-
-@router.post(
-    "/environment-revisions/{environment_revision_id}/test",
-    response_model=EnvironmentRevisionTestResult,
-)
-async def test_environment_revision(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    environment_revision_id: str,
-) -> EnvironmentRevisionTestResult:
-    result = await _service(request).test_revision(actor=actor, revision_id=environment_revision_id)
-    response.headers["Cache-Control"] = "private, no-store"
-    return result
+@router.get("/environment-commands/{command_id}")
+async def get_command(request: Request, actor: Actor, command_id: str) -> EnvironmentCommand:
+    return await _service(request).get_command(actor=actor, command_id=command_id)

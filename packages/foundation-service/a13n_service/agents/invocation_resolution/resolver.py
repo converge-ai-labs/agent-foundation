@@ -8,7 +8,6 @@ from a13n_service.connectivity.selection_resolution import ConnectivitySelection
 from a13n_service.models.runtime import AcceptedModelSelector
 
 from ..domain import PluginRuntimeMode
-from ..environment_resolution import AgentEnvironmentSelectionResolver
 from ..plugin_resolution import AgentPluginSelectionResolver
 from ..validation import AgentProtocolPolicy
 from .freezing import AgentInvocationFreezer
@@ -26,7 +25,6 @@ class AgentInvocationResolver:
         model_selector: AcceptedModelSelector,
         *,
         plugin_runtime_mode: PluginRuntimeMode,
-        environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
@@ -40,7 +38,6 @@ class AgentInvocationResolver:
             sessions,
             model_selector,
             plugin_runtime_mode=plugin_runtime_mode,
-            environment_resolver=environment_resolver,
             plugin_resolver=plugins,
             connectivity_resolver=connectivity_resolver,
             protocol_policy=policy,
@@ -48,7 +45,6 @@ class AgentInvocationResolver:
         self.freezing = AgentInvocationFreezer(
             model_selector,
             plugin_runtime_mode=plugin_runtime_mode,
-            environment_resolver=environment_resolver,
             plugin_resolver=plugins,
             connectivity_resolver=connectivity_resolver,
         )

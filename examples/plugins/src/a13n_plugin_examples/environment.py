@@ -7,6 +7,7 @@ from pathlib import Path
 
 from a13n_environment_provider import (
     DirectLocalEnvironment,
+    DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
     Environment,
@@ -18,7 +19,7 @@ from a13n_environment_provider import (
     EnvironmentProviderRecoveryHint,
     EnvironmentState,
 )
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError, field_validator
 
 PROVIDER_KEY = "example.workspace"
 _CONFIGURATION_VERSION = "1"
@@ -30,7 +31,6 @@ class WorkspaceEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     root: Path
-    environment_id: str = Field(min_length=1, max_length=128)
     read_only: bool = True
 
     @field_validator("root")
@@ -77,10 +77,16 @@ class WorkspaceEnvironmentProvider(EnvironmentProvider):
                 schema_version=schema_version,
             ) from error
 
+    def describe_configuration(self, configuration: BaseModel):
+        if not isinstance(configuration, WorkspaceEnvironmentConfiguration):
+            raise TypeError("Unexpected workspace recipe")
+        return DirectLocalEnvironmentProvider().describe_configuration(_direct_configuration(configuration))
+
     def create_environment(
         self,
         *,
         configuration: BaseModel,
+        environment_id: str,
         state: EnvironmentState | None,
         runtime: object | None = None,
     ) -> Environment:
@@ -93,14 +99,13 @@ class WorkspaceEnvironmentProvider(EnvironmentProvider):
             )
         if runtime is not None and not isinstance(runtime, WorkspaceEnvironmentRuntime):
             raise TypeError("example.workspace runtime must be WorkspaceEnvironmentRuntime or None")
-        direct_configuration = DirectLocalProviderConfiguration(
-            environment_id=configuration.environment_id,
-            root=DirectLocalRootConfiguration(
-                path=configuration.root,
-                read_only=configuration.read_only,
-            ),
-        )
-        return WorkspaceEnvironment(direct_configuration)
+        return WorkspaceEnvironment(_direct_configuration(configuration), environment_id=environment_id)
+
+
+def _direct_configuration(configuration: WorkspaceEnvironmentConfiguration) -> DirectLocalProviderConfiguration:
+    return DirectLocalProviderConfiguration(
+        root=DirectLocalRootConfiguration(path=configuration.root, read_only=configuration.read_only)
+    )
 
 
 class WorkspaceEnvironment(DirectLocalEnvironment):

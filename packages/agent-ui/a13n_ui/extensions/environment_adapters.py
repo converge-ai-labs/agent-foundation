@@ -124,7 +124,6 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         shell = _host_shell()
         environment_keys = [cast(JsonValue, key) for key in sorted(_NATIVE_ENVIRONMENT_KEYS) if key in os.environ]
         value: dict[str, JsonValue] = {
-            "environment_id": _environment_id("native", root),
             "root": {"path": str(root), "read_only": False},
             "shell_profiles": (
                 [] if shell is None else [{"profile_id": "default", "executable": str(shell), "allow_login": True}]
@@ -135,7 +134,9 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
             schema_version=profile.provider_schema_version,
             value=value,
         )
-        return provider.create_environment(configuration=configuration, state=state, runtime=runtime)
+        return provider.create_environment(
+            configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime
+        )
 
 
 class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
@@ -167,7 +168,6 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         _require_provider(provider, LocalEnvdEnvironmentProvider, profile.provider_schema_version)
         shell = _host_shell()
         value: dict[str, JsonValue] = {
-            "environment_id": _environment_id("local-envd", root),
             "workspace": {"path": str(root), "read_only": False},
             "execution_network": "deny",
             "trusted_executable_roots": [] if shell is None else [str(shell.parent)],
@@ -188,7 +188,9 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
             schema_version=profile.provider_schema_version,
             value=value,
         )
-        return provider.create_environment(configuration=configuration, state=state, runtime=runtime)
+        return provider.create_environment(
+            configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime
+        )
 
 
 def _require_provider(

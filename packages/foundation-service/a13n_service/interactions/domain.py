@@ -239,7 +239,8 @@ class Thread(StrictModel):
     origin_thread_id: ThreadId | None = None
     origin_run_id: ObjectId | None = None
     head_run_id: ObjectId | None = None
-    current_run_id: ObjectId
+    current_run_id: ObjectId | None = None
+    default_environment_id: ObjectId | None = None
     created_at: UtcDateTime
     updated_at: UtcDateTime
 
@@ -273,6 +274,9 @@ class Run(StrictModel):
     parent_tool_call_id: BoundedName | None = None
     agent_id: ObjectId
     agent_revision_id: ObjectId
+    environment_id: ObjectId | None = None
+    environment_access: Literal["read_only", "read_write", "full"] | None = None
+    environment_use_started_at: UtcDateTime | None = None
     effective_agent_config_digest: Sha256Digest
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None
     runtime_lock_digest: Sha256Digest

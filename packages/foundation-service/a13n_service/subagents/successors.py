@@ -12,12 +12,12 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.environments.usage import add_run_with_environment
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import validate_prepared_run
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, ThreadInboxEntry
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import Run
-from a13n_service.interactions.environment_bindings import add_run_with_environment_binding
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
 from a13n_service.interactions.models import RunRecord, SessionRecord
 from a13n_service.interactions.objects import (
@@ -250,7 +250,7 @@ class AsyncSubagentSuccessorReconciler:
                     selected,
                     child_run_id=child_run_id,
                 )
-                await add_run_with_environment_binding(
+                await add_run_with_environment(
                     database,
                     run=prepared.run,
                     state=prepared.state,

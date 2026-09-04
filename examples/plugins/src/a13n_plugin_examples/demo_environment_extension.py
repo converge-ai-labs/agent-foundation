@@ -116,11 +116,11 @@ async def _run_extension_demo(
         schema_version="1",
         value={
             "root": str(workspace_root),
-            "environment_id": "extension-workspace",
             "read_only": False,
         },
     )
     environment = provider.create_environment(
+        environment_id="extension-workspace",
         configuration=configuration,
         state=None,
     )

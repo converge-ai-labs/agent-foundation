@@ -22,6 +22,7 @@ configuration = provider.validate_configuration(
 )
 environment = provider.create_environment(
     configuration=configuration,
+    environment_id="workspace",
     state=current_state,
     runtime=fresh_runtime,
 )
@@ -40,7 +41,7 @@ Direct Local exposes an existing Host directory and never deletes, tags, locks, 
 
 ## Docker development
 
-The default Docker configuration needs only an Environment ID. It uses `ghcr.io/converge-ai-labs/agent-foundation-sandbox:latest`, pulls when the image is missing, exposes the container-backed `/workspace` virtual mount, and enables Bash. Hosts supply a local Engine adapter and a bootstrap store rooted at a Host-selected directory:
+The default Docker recipe is empty; the Host passes its instance ID separately to `create_environment()`. It uses `ghcr.io/converge-ai-labs/agent-foundation-sandbox:latest`, pulls when the image is missing, exposes the container-backed `/workspace` virtual mount, and enables Bash. Hosts supply a local Engine adapter and a bootstrap store rooted at a Host-selected directory:
 
 ```python
 from pathlib import Path

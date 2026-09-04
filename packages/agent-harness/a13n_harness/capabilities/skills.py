@@ -609,7 +609,7 @@ class SkillManager:
         selections: list[tuple[str, FileScopeSelection]] = []
         for root in self._roots:
             try:
-                selections.append((root, environment.select_files(root)))
+                selections.append((root, await environment.resolve_files(root)))
             except EnvironmentError as exc:
                 unavailable[root] = exc.code
                 initially_unresolved[root] = exc.code

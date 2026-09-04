@@ -46,7 +46,7 @@ class ScopedFileAccess:
                     f"File resource argument {argument_name!r} is invalid.",
                     code="environment_request_invalid",
                 )
-            selection = scopes.select_files(path)
+            selection = await scopes.resolve_files(path)
             self._selection.set(selection)
             selected = selection.resolved_path
             return (

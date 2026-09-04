@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from a13n_environment_provider import EnvironmentProviderCatalog
+
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.agents.resolution import AgentResolver
@@ -12,9 +14,6 @@ from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.ingress.admission_domain import InputAcceptor
 from a13n_service.connectivity.providers import built_in_ingress_adapter_registry
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
-from a13n_service.environments.keepalive import EnvironmentKeepaliveSourceResolver
-from a13n_service.environments.testing import EnvironmentAttachmentTester
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.models.service import ModelConnectionTester
 from a13n_service.plugins.builtins import BuiltinPluginArtifact
@@ -43,9 +42,7 @@ class Components:
     plugin_runtime_candidate_resolver: PluginRuntimeCandidateResolver | None = None
     plugin_runtime_staging_authority: PluginRuntimeStagingAuthority | None = None
     model_connection_tester: ModelConnectionTester | None = None
-    environment_provider_catalog: FoundationEnvironmentProviderCatalog | None = None
-    environment_attachment_tester: EnvironmentAttachmentTester | None = None
-    environment_keepalive_source_resolver: EnvironmentKeepaliveSourceResolver | None = None
+    environment_provider_catalog: EnvironmentProviderCatalog | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None
