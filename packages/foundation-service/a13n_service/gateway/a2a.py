@@ -12,7 +12,7 @@ import anyio
 from a2a.types import a2a_pb2 as a2a
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Value
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentConfig, canonical_digest
@@ -23,6 +23,7 @@ from a13n_service.collection_cursors import (
     decode_collection_cursor,
     encode_collection_cursor,
 )
+from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
@@ -523,12 +524,13 @@ class A2AService:
                     A2APushConfigurationRecord.id == config_id,
                     A2APushConfigurationRecord.workspace_id == actor.boundary_workspace_id,
                     A2APushConfigurationRecord.task_id == task_id,
-                    A2APushConfigurationRecord.state == "active",
                 )
                 .with_for_update()
             )
             if record is None:
                 raise _not_found()
+            if record.state == "disabled":
+                return
             await self._authorize_agent_in_transaction(
                 database,
                 actor=actor,
@@ -556,6 +558,12 @@ class A2AService:
             record.delivery_generation += 1
             record.updated_at = now
             record.deleted_at = now
+            await database.execute(
+                delete(OutboxRecord).where(
+                    OutboxRecord.destination_kind == "a2a_push",
+                    OutboxRecord.destination_ref.like(f"{record.id}:%"),
+                )
+            )
 
     async def _authorize_task_action(
         self,

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 
+import httpx2
+
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.gateway import GatewayRuntime
 from a13n_service.gateway.a2a import A2AService
+from a13n_service.gateway.a2a_push import A2APushPublisher
 from a13n_service.gateway.commands import NativeInteractionCommands
 from a13n_service.gateway.hosted_agui import HostedAguiService
 from a13n_service.gateway.native_streaming import NativeRunStreamService
@@ -105,6 +108,39 @@ async def build_control_runtime(
     gateway_states = RunStateStore(shared.storage.objects)
     gateway_payloads = RunPayloadStore(shared.storage.objects)
     gateway_control_signals = RedisThreadControlSignals(shared.storage.redis)
+    a2a_secrets = InternalSecretService(shared.storage.sessions, shared.secret_protector)
+    a2a_endpoint_policy = EndpointPolicy.from_operator_allowlist(
+        private_domains=settings.webhook_private_endpoint_domains,
+        private_cidrs=settings.webhook_private_endpoint_cidrs,
+        require_https=True,
+    )
+
+    async def validate_a2a_push_request(request: httpx2.Request) -> None:
+        await a2a_endpoint_policy.validate(str(request.url), resolve_dns=True)
+
+    a2a_publisher = None
+    if settings.a2a_enabled:
+        a2a_http_client = await stack.enter_async_context(
+            httpx2.AsyncClient(
+                follow_redirects=False,
+                timeout=settings.webhook_request_timeout_seconds,
+                event_hooks={"request": [validate_a2a_push_request]},
+            )
+        )
+        a2a_publisher = A2APushPublisher(
+            shared.storage.sessions,
+            a2a_http_client,
+            a2a_endpoint_policy,
+            a2a_secrets,
+            poll_interval_seconds=settings.webhook_poll_interval_seconds,
+            lease_seconds=settings.webhook_claim_lease_seconds,
+            claim_limit=settings.webhook_claim_limit,
+            max_attempts=settings.webhook_max_attempts,
+            retry_base_seconds=settings.webhook_retry_base_seconds,
+            retry_max_seconds=settings.webhook_retry_max_seconds,
+            delivery_timeout_seconds=settings.webhook_request_timeout_seconds,
+            max_response_bytes=settings.webhook_max_response_bytes,
+        )
     gateway_commands = NativeInteractionCommands(
         shared.storage.sessions,
         agents.invocations,
@@ -166,8 +202,8 @@ async def build_control_runtime(
             A2AService(
                 shared.storage.sessions,
                 gateway_commands,
-                InternalSecretService(shared.storage.sessions, shared.secret_protector),
-                EndpointPolicy(require_https=True),
+                a2a_secrets,
+                a2a_endpoint_policy,
                 poll_interval_seconds=settings.a2a_poll_interval_seconds,
                 maximum_wait_seconds=settings.a2a_maximum_wait_seconds,
             )
@@ -191,6 +227,8 @@ async def build_control_runtime(
         gateway=gateway,
     )
     background_tasks = [assets.cleanup_task, hooks.delivery_task, hooks.retention_task]
+    if a2a_publisher is not None:
+        background_tasks.append(BackgroundTask("A2A push publisher", a2a_publisher.run))
     if plugins.background_task is not None:
         background_tasks.append(plugins.background_task)
     return runtime, tuple(background_tasks)

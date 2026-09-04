@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
+from datetime import timedelta
+
+import httpx2
 import pytest
 from a2a.types import a2a_pb2 as a2a
 from a13n_service.agents.models import AgentRevisionRecord
+from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
+from a13n_service.gateway.a2a_push import A2APushPublisher
 from a13n_service.gateway.models import (
     A2AContextBindingRecord,
     A2AMessageBindingRecord,
@@ -177,7 +183,7 @@ async def test_push_configuration_secrets_are_write_only_and_delete_is_fenced(
     tmp_path,
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
-    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    service, objects = await _service(lifecycle_interaction_sessions, tmp_path)
     task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
 
     created = await service.create_push_configuration(
@@ -220,7 +226,22 @@ async def test_push_configuration_secrets_are_write_only_and_delete_is_fenced(
     assert stored.authentication_secret_version == 1
     assert len(secrets) == 2
     assert all(secret.ciphertext for secret in secrets)
+    async with short_session(lifecycle_interaction_sessions) as database:
+        binding = await database.get(A2ATaskBindingRecord, task.id)
+    assert binding is not None
+    await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id)
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assert (
+            await database.scalar(select(OutboxRecord.id).where(OutboxRecord.destination_kind == "a2a_push"))
+            is not None
+        )
 
+    await service.delete_push_configuration(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        config_id=created.id,
+    )
     await service.delete_push_configuration(
         actor=_actor(),
         agent_id=AGENT_ID,
@@ -238,7 +259,79 @@ async def test_push_configuration_secrets_are_write_only_and_delete_is_fenced(
     async with short_session(lifecycle_interaction_sessions) as database:
         stored = await database.get(A2APushConfigurationRecord, created.id)
         secrets = tuple((await database.scalars(select(SecretRecord))).all())
+        outbox = await database.scalar(select(OutboxRecord.id).where(OutboxRecord.destination_kind == "a2a_push"))
     assert stored is not None
     assert stored.state == "disabled"
     assert stored.delivery_generation == 2
     assert all(secret.deleted_at is not None and secret.ciphertext is None for secret in secrets)
+    assert outbox is None
+
+
+async def test_push_publisher_delivers_committed_terminal_task_through_outbox(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
+    created = await service.create_push_configuration(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        requested=a2a.TaskPushNotificationConfig(
+            url="https://8.8.8.8/a2a-events",
+            token="opaque-client-token",
+            authentication=a2a.AuthenticationInfo(scheme="Bearer", credentials="secret-credential"),
+        ),
+    )
+    async with short_session(lifecycle_interaction_sessions) as database:
+        binding = await database.get(A2ATaskBindingRecord, task.id)
+    assert binding is not None
+    await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id)
+    async with short_session(lifecycle_interaction_sessions) as database:
+        delivery = await database.scalar(select(OutboxRecord).where(OutboxRecord.destination_kind == "a2a_push"))
+    assert delivery is not None
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(204)
+
+    protector = SecretProtector(key=b"a" * 32, encryption_key_id="test-key")
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        publisher = A2APushPublisher(
+            lifecycle_interaction_sessions,
+            client,
+            EndpointPolicy(require_https=True),
+            InternalSecretService(lifecycle_interaction_sessions, protector),
+            poll_interval_seconds=1,
+            lease_seconds=30,
+            claim_limit=10,
+            max_attempts=3,
+            retry_base_seconds=1,
+            retry_max_seconds=5,
+            delivery_timeout_seconds=10,
+            max_response_bytes=1024,
+            clock=lambda: NOW + timedelta(seconds=4),
+        )
+        assert await publisher.publish_once() == 1
+        assert await publisher.publish_once() == 1
+
+    assert len(requests) == 2
+    first_payload = json.loads(requests[0].content)
+    assert first_payload["statusUpdate"]["taskId"] == task.id
+    assert first_payload["statusUpdate"]["status"]["state"] == "TASK_STATE_WORKING"
+    request = requests[1]
+    assert request.headers["A2A-Version"] == "1.0"
+    assert request.headers["X-A2A-Notification-Token"] == "opaque-client-token"
+    assert request.headers["Authorization"] == "Bearer secret-credential"
+    assert request.headers["Content-Type"] == "application/a2a+json"
+    payload = json.loads(request.content)
+    assert payload["task"]["id"] == task.id
+    assert payload["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert payload["task"]["artifacts"][0]["parts"][0]["data"] == {"answer": 42}
+    async with short_session(lifecycle_interaction_sessions) as database:
+        stored = await database.get(OutboxRecord, delivery.id)
+    assert stored is not None
+    assert stored.status == "published"
+    assert created.id in stored.destination_ref

@@ -10,6 +10,7 @@ import rfc8785
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks.persistence import append_matching_webhook_outbox
 from a13n_service.lifecycle import (
     LifecycleEntityType,
@@ -174,6 +175,7 @@ async def _append_lifecycle_with_hooks(
 ) -> LifecycleEventRecord:
     record = await append_lifecycle_event(database, draft)
     await append_matching_webhook_outbox(database, record)
+    await append_matching_a2a_push_outbox(database, record)
     return record
 
 
