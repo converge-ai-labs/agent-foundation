@@ -1,6 +1,6 @@
 """Foundation-owned Environment management and Agent selection resolution."""
 
-from .catalog import AttachmentProviderCatalog, AttachmentProviderRegistration
+from .catalog import FoundationEnvironmentProviderCatalog, FoundationEnvironmentProviderRegistration
 from .domain import (
     Environment,
     EnvironmentAccess,
@@ -17,7 +17,7 @@ from .domain import (
     RunEnvironmentBinding,
 )
 from .errors import EnvironmentManagementError
-from .providers import AttachmentProvider
+from .providers import FoundationEnvironmentAttachProvider
 from .testing import (
     EnvironmentAttachmentTester,
     EnvironmentRuntimeBuilder,
@@ -26,9 +26,6 @@ from .testing import (
 )
 
 __all__ = [
-    "AttachmentProvider",
-    "AttachmentProviderCatalog",
-    "AttachmentProviderRegistration",
     "Environment",
     "EnvironmentAccess",
     "EnvironmentAttachmentTester",
@@ -45,6 +42,9 @@ __all__ = [
     "EnvironmentRevisionSummary",
     "EnvironmentRuntimeBuilder",
     "EnvironmentSecretValueResolver",
+    "FoundationEnvironmentAttachProvider",
+    "FoundationEnvironmentProviderCatalog",
+    "FoundationEnvironmentProviderRegistration",
     "NativeEnvironmentAttachmentTester",
     "RunEnvironmentBinding",
 ]

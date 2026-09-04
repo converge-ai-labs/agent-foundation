@@ -12,7 +12,7 @@ from a13n_service.connectivity.connectors.providers import built_in_connector_pr
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.environments.catalog import AttachmentProviderCatalog
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.domain import EnvironmentTargetRetentionBehavior
 from a13n_service.environments.keepalive import (
     EnvironmentKeepaliveLoop,
@@ -50,7 +50,7 @@ async def build_worker_runtime(
     settings: Settings,
     shared: SharedRuntime,
     execution: ExecutionResources,
-    environment_catalog: AttachmentProviderCatalog,
+    environment_catalog: FoundationEnvironmentProviderCatalog,
     keepalive_sources: EnvironmentKeepaliveSourceResolver | None,
     stack: AsyncExitStack,
     connector_providers: ConnectorProviderRegistry | None = None,

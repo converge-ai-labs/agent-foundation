@@ -29,7 +29,7 @@ from .access import (
 from .access import (
     require_provider_selection as _require_selection,
 )
-from .catalog import AttachmentProviderCatalog
+from .catalog import FoundationEnvironmentProviderCatalog
 from .cursors import (
     EnvironmentCursorError,
     decode_environment_cursor,
@@ -96,7 +96,7 @@ class EnvironmentManagementService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        catalog: AttachmentProviderCatalog,
+        catalog: FoundationEnvironmentProviderCatalog,
         *,
         clock=None,
         attachment_tester: EnvironmentAttachmentTester | None = None,

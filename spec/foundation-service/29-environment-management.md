@@ -64,7 +64,7 @@ capability:
 ```python
 # Conceptual Foundation integration protocol; not part of
 # a13n-environment-provider.
-class AttachmentProvider(Protocol):
+class FoundationEnvironmentAttachProvider(Protocol):
     provider_key: str
     connection_versions: frozenset[str]
     identity_schema_version: str
@@ -81,7 +81,7 @@ class AttachmentProvider(Protocol):
         self,
         *,
         connection: BaseModel,
-    ) -> EnvironmentTargetIdentity: ...
+    ) -> FoundationEnvironmentTargetIdentity: ...
 
     def create_attachment_environment(
         self,
@@ -91,12 +91,12 @@ class AttachmentProvider(Protocol):
     ) -> Environment: ...
 
 
-class EnvironmentTargetIdentity(BaseModel):
+class FoundationEnvironmentTargetIdentity(BaseModel):
     namespace: JsonObject
     target_key: str
 
 
-class RetentionProvider(Protocol):
+class FoundationEnvironmentRetentionProvider(Protocol):
     async def ensure_retained_until(
         self,
         *,
@@ -150,7 +150,7 @@ package remains unchanged and owns none of these Foundation metadata declaration
 that integration. `while_execution_active` means Foundation automatically retains
 the target while at least one associated Run is `accepted` or `running`; this is
 Foundation integration policy and has no per-Run or per-Workspace override. Such an
-integration must expose `RetentionProvider`, or registration
+integration must expose `FoundationEnvironmentRetentionProvider`, or registration
 and selection fail closed.
 
 `ensure_retained_until()` performs external I/O and has these constraints:
@@ -348,7 +348,7 @@ It has stable identity for naming, authorization, archival, and current-revision
 selection. An `EnvironmentRevision` is an immutable connection revision.
 
 ```python
-class Environment:
+class FoundationEnvironment:
     id: EnvironmentId
     organization_id: OrganizationId
     workspace_id: WorkspaceId

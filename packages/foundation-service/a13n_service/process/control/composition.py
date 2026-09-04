@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
-from a13n_service.environments.catalog import AttachmentProviderCatalog
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import Components
@@ -30,7 +30,7 @@ async def build_control_runtime(
     shared: SharedRuntime,
     execution: ExecutionResources,
     worker: WorkerRuntime | None,
-    environment_catalog: AttachmentProviderCatalog,
+    environment_catalog: FoundationEnvironmentProviderCatalog,
     connectivity_selection: ConnectivitySelectionResolver | None,
     trace_query_provider_registry: TraceQueryProviderRegistry,
     stack: AsyncExitStack,

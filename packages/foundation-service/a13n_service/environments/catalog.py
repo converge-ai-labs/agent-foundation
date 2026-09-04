@@ -28,9 +28,9 @@ from .domain import (
 )
 from .errors import EnvironmentManagementError, environment_provider_not_found
 from .providers import (
-    AttachmentProvider,
-    BuiltinAttachmentProvider,
-    RetentionProvider,
+    FoundationBuiltinEnvironmentProviderAdapter,
+    FoundationEnvironmentAttachProvider,
+    FoundationEnvironmentRetentionProvider,
 )
 
 
@@ -44,8 +44,8 @@ class ValidatedEnvironmentConnection:
 
 
 @dataclass(frozen=True, slots=True)
-class AttachmentProviderRegistration:
-    provider: AttachmentProvider
+class FoundationEnvironmentProviderRegistration:
+    provider: FoundationEnvironmentAttachProvider
     provider_lock: EnvironmentProviderLock
 
     def __post_init__(self) -> None:
@@ -56,18 +56,18 @@ class AttachmentProviderRegistration:
         TypeAdapter(SchemaVersion).validate_python(self.provider.identity_schema_version)
         behavior = EnvironmentTargetRetentionBehavior(self.provider.retention_behavior)
         if behavior is EnvironmentTargetRetentionBehavior.while_execution_active and not isinstance(
-            self.provider, RetentionProvider
+            self.provider, FoundationEnvironmentRetentionProvider
         ):
             raise ValueError("Foundation Environment Provider requiring retention must expose ensure_retained_until")
 
 
-class AttachmentProviderCatalog:
-    def __init__(self, registrations: Iterable[AttachmentProviderRegistration]) -> None:
-        attachments: dict[str, AttachmentProvider] = {}
+class FoundationEnvironmentProviderCatalog:
+    def __init__(self, registrations: Iterable[FoundationEnvironmentProviderRegistration]) -> None:
+        attachments: dict[str, FoundationEnvironmentAttachProvider] = {}
         entries: dict[str, EnvironmentProviderCatalogEntry] = {}
         for registration in registrations:
             provider = registration.provider
-            if not isinstance(provider, AttachmentProvider):
+            if not isinstance(provider, FoundationEnvironmentAttachProvider):
                 raise ValueError("Environment Provider has no Foundation attachment capability")
             key = provider.provider_key
             if key in attachments:
@@ -86,7 +86,7 @@ class AttachmentProviderCatalog:
     def from_environment_provider_catalog(
         cls,
         providers: EnvironmentProviderCatalog,
-    ) -> AttachmentProviderCatalog:
+    ) -> FoundationEnvironmentProviderCatalog:
         generic_registrations = {item.provider_key: item for item in providers.registrations}
         if set(generic_registrations) != set(providers):
             raise ValueError("Environment Provider catalog registrations are incomplete")
@@ -94,16 +94,16 @@ class AttachmentProviderCatalog:
         for key in providers:
             generic_provider = providers[key]
             generic_registration = generic_registrations[key]
-            if isinstance(generic_provider, AttachmentProvider):
-                provider: AttachmentProvider = generic_provider
+            if isinstance(generic_provider, FoundationEnvironmentAttachProvider):
+                provider: FoundationEnvironmentAttachProvider = generic_provider
             elif generic_registration.builtin:
-                provider = BuiltinAttachmentProvider.from_provider(generic_provider)
+                provider = FoundationBuiltinEnvironmentProviderAdapter.from_provider(generic_provider)
             else:
                 raise ValueError(f"Environment Provider {key!r} has no Foundation attachment capability")
             if provider.provider_key != key:
                 raise ValueError(f"Environment Provider {key!r} has no Foundation attachment capability")
             registrations.append(
-                AttachmentProviderRegistration(
+                FoundationEnvironmentProviderRegistration(
                     provider=provider,
                     provider_lock=_provider_lock(generic_registration),
                 )
@@ -119,7 +119,7 @@ class AttachmentProviderCatalog:
             raise environment_provider_not_found()
         return entry
 
-    def attachment(self, provider_key: str) -> AttachmentProvider:
+    def attachment(self, provider_key: str) -> FoundationEnvironmentAttachProvider:
         self.entry(provider_key)
         return self._attachments[provider_key]
 

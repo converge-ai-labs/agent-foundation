@@ -7,7 +7,7 @@ import pytest
 from a13n_service.app import Components, create_app
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
-from a13n_service.environments.catalog import AttachmentProviderCatalog
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.domain import EnvironmentTargetRetentionBehavior
 from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
 from a13n_service.hooks.management import HookSubscriptionService
@@ -56,7 +56,7 @@ async def test_worker_requires_a_source_resolver_for_retaining_environment_provi
     app = create_app(
         local_settings(tmp_path, role=ProcessRole.worker),
         components=Components(
-            environment_provider_catalog=cast(AttachmentProviderCatalog, Catalog()),
+            environment_provider_catalog=cast(FoundationEnvironmentProviderCatalog, Catalog()),
         ),
     )
 

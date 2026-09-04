@@ -12,7 +12,7 @@ from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.ingress.admission_domain import InputAcceptor
 from a13n_service.connectivity.ingress.providers import built_in_ingress_adapter_registry
-from a13n_service.environments.catalog import AttachmentProviderCatalog
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.keepalive import EnvironmentKeepaliveSourceResolver
 from a13n_service.environments.testing import EnvironmentAttachmentTester
 from a13n_service.iam import RequestAuthenticator
@@ -43,7 +43,7 @@ class Components:
     plugin_runtime_candidate_resolver: PluginRuntimeCandidateResolver | None = None
     plugin_runtime_staging_authority: PluginRuntimeStagingAuthority | None = None
     model_connection_tester: ModelConnectionTester | None = None
-    environment_provider_catalog: AttachmentProviderCatalog | None = None
+    environment_provider_catalog: FoundationEnvironmentProviderCatalog | None = None
     environment_attachment_tester: EnvironmentAttachmentTester | None = None
     environment_keepalive_source_resolver: EnvironmentKeepaliveSourceResolver | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None

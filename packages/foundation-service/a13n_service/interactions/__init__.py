@@ -108,9 +108,9 @@ from .harness_results import (
     StoredHarnessOutcomeAdapter,
 )
 from .harness_runtime import (
+    FoundationHarnessEnvironment,
     HarnessCollaborators,
     HarnessDriver,
-    HarnessEnvironment,
     HarnessEventProjector,
     HarnessInput,
     HarnessInvocation,
@@ -252,11 +252,11 @@ __all__ = [
     "EnvironmentHookObservation",
     "EnvironmentHookProjector",
     "EnvironmentInputWriter",
+    "FoundationHarnessEnvironment",
     "HarnessCollaborators",
     "HarnessContextBinding",
     "HarnessControlDriver",
     "HarnessDriver",
-    "HarnessEnvironment",
     "HarnessEventProjector",
     "HarnessHookBoundary",
     "HarnessInput",

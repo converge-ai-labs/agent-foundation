@@ -16,7 +16,7 @@ from a13n_service.agents.domain import (
 from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
-from a13n_service.environments.catalog import AttachmentProviderCatalog
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
@@ -298,7 +298,7 @@ def agent_environment_service(
     )
 
 
-def _environment_catalog() -> AttachmentProviderCatalog:
-    return AttachmentProviderCatalog.from_environment_provider_catalog(
+def _environment_catalog() -> FoundationEnvironmentProviderCatalog:
+    return FoundationEnvironmentProviderCatalog.from_environment_provider_catalog(
         build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
     )

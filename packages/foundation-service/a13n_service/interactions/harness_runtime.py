@@ -115,7 +115,7 @@ class MountedHarnessEnvironments:
         object.__setattr__(self, "entries", MappingProxyType(entries))
 
 
-type HarnessEnvironment = NoHarnessEnvironment | SingleHarnessEnvironment | MountedHarnessEnvironments
+type FoundationHarnessEnvironment = NoHarnessEnvironment | SingleHarnessEnvironment | MountedHarnessEnvironments
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,7 +155,7 @@ class HarnessInvocation[OutputT]:
     definition: AgentDefinition[OutputT]
     input: HarnessInput
     collaborators: HarnessCollaborators
-    environment: HarnessEnvironment = field(default_factory=NoHarnessEnvironment)
+    environment: FoundationHarnessEnvironment = field(default_factory=NoHarnessEnvironment)
     deferred_resume: DeferredToolResume | None = None
     usage: RunUsage | None = None
     usage_limits: UsageLimits | None = None
@@ -543,7 +543,7 @@ def _create_stream[OutputT](
     *,
     input_source: HarnessInput,
     bindings: RunBindings,
-    environment: HarnessEnvironment,
+    environment: FoundationHarnessEnvironment,
     previous_state: RunStateEnvelope,
     deferred_resume: DeferredToolResume | None,
     usage: RunUsage | None,
@@ -590,9 +590,9 @@ def _create_stream[OutputT](
 
 
 def _observe_environment(
-    environment: HarnessEnvironment,
+    environment: FoundationHarnessEnvironment,
     projector: HarnessEventProjector,
-) -> HarnessEnvironment:
+) -> FoundationHarnessEnvironment:
     if isinstance(environment, SingleHarnessEnvironment):
         return SingleHarnessEnvironment(observe_environment_entry(environment.entry, projector))
     if isinstance(environment, MountedHarnessEnvironments):
@@ -609,9 +609,9 @@ def _require_environment_entry(entry: object) -> None:
 
 
 __all__ = [
+    "FoundationHarnessEnvironment",
     "HarnessCollaborators",
     "HarnessDriver",
-    "HarnessEnvironment",
     "HarnessEventProjector",
     "HarnessInput",
     "HarnessInvocation",

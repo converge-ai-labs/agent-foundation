@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from a13n_environment_provider import build_environment_provider_catalog
 from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
-from a13n_service.environments.catalog import AttachmentProviderCatalog
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
@@ -120,8 +120,8 @@ async def environment_sessions(
 
 
 @pytest.fixture
-def provider_catalog() -> AttachmentProviderCatalog:
-    return AttachmentProviderCatalog.from_environment_provider_catalog(
+def provider_catalog() -> FoundationEnvironmentProviderCatalog:
+    return FoundationEnvironmentProviderCatalog.from_environment_provider_catalog(
         build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
     )
 
@@ -129,7 +129,7 @@ def provider_catalog() -> AttachmentProviderCatalog:
 @pytest.fixture
 def environment_service(
     environment_sessions: async_sessionmaker[AsyncSession],
-    provider_catalog: AttachmentProviderCatalog,
+    provider_catalog: FoundationEnvironmentProviderCatalog,
 ) -> EnvironmentManagementService:
     return EnvironmentManagementService(environment_sessions, provider_catalog, clock=lambda: NOW)
 
@@ -137,6 +137,6 @@ def environment_service(
 @pytest.fixture
 def environment_resolver(
     environment_sessions: async_sessionmaker[AsyncSession],
-    provider_catalog: AttachmentProviderCatalog,
+    provider_catalog: FoundationEnvironmentProviderCatalog,
 ) -> AgentEnvironmentSelectionResolver:
     return AgentEnvironmentSelectionResolver(environment_sessions, provider_catalog)
