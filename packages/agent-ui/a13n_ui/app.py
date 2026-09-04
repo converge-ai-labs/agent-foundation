@@ -39,6 +39,7 @@ from a13n_ui.configuration import (
     mutate_configuration_source,
     preview_external_subagent_import,
 )
+from a13n_ui.content_plugins import ContentPluginStore
 from a13n_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
 from a13n_ui.environment_runtime import (
     EnvironmentRunService,
@@ -165,6 +166,7 @@ class AgentUiApp:
         self._settings = settings
         self._store = store
         self._configuration_path = configuration_path
+        self._content_plugin_root = store.layout.content_plugins
         self._catalog = catalog
         self._configurations = configurations
         self._threads = threads
@@ -231,7 +233,10 @@ class AgentUiApp:
         self._configuration_seen = True
         generation_changed = False
         try:
-            candidate = await load_agent_ui_configuration(path)
+            candidate = await load_agent_ui_configuration(
+                path,
+                content_plugin_root=self._content_plugin_root,
+            )
             current = await self._store.configurations.current_digest()
             if candidate.source_digest != current:
                 await self._configurations.accept(
@@ -255,7 +260,10 @@ class AgentUiApp:
                 return
             path = self._require_configuration_path()
             try:
-                fingerprint = await configuration_tree_fingerprint(path)
+                fingerprint = await configuration_tree_fingerprint(
+                    path,
+                    content_plugin_root=self._content_plugin_root,
+                )
             except AgentUiError as exc:
                 diagnostic_changed = self._replace_candidate_error(exc)
                 self._configuration_fingerprint = None
@@ -280,6 +288,7 @@ class AgentUiApp:
                 relative_path,
                 request,
                 validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
             )
             await self._accept_mutation(result)
             return result
@@ -297,6 +306,7 @@ class AgentUiApp:
                 relative_path,
                 expected_source_digest=expected_source_digest,
                 validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
             )
             await self._accept_mutation(result)
             return result
@@ -316,6 +326,7 @@ class AgentUiApp:
                 scope=scope,
                 project_root=project_root,
                 user_home=user_home,
+                content_plugin_root=self._content_plugin_root,
             )
 
     async def apply_subagent_import(
@@ -327,6 +338,7 @@ class AgentUiApp:
                 self._require_configuration_path(),
                 candidate,
                 validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
             )
             await self._accept_mutation(result)
             return result
@@ -818,7 +830,10 @@ async def open_agent_ui_app(
             candidate: LoadedAgentUiConfiguration | None = None
             if configuration_path is not None and configuration_path.exists():
                 try:
-                    candidate = await load_agent_ui_configuration(configuration_path)
+                    candidate = await load_agent_ui_configuration(
+                        configuration_path,
+                        content_plugin_root=store.layout.content_plugins,
+                    )
                     candidate_error = None
                 except AgentUiError as exc:
                     candidate_error = exc
@@ -834,7 +849,8 @@ async def open_agent_ui_app(
                         raise
                     candidate_error = exc
             elif current_digest is None and candidate_error is None:
-                empty = empty_agent_ui_configuration()
+                content_plugins = await ContentPluginStore(store.layout.content_plugins).list()
+                empty = empty_agent_ui_configuration(content_plugins)
                 await configurations.accept(empty, expected_current_digest=None)
 
             environment_reconstructor = EnvironmentSnapshotReconstructor(

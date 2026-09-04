@@ -85,6 +85,7 @@ from .domain import (
     new_run_attempt_id,
     new_run_id,
     new_session_id,
+    new_thread_id,
 )
 from .environment_observation import EnvironmentHookObservation, EnvironmentHookProjector
 from .feedback import WaitingFeedbackMappingError, map_waiting_feedback
@@ -377,6 +378,7 @@ __all__ = [
     "new_run_attempt_id",
     "new_run_id",
     "new_session_id",
+    "new_thread_id",
     "new_thread_inbox_entry_id",
     "normalize_feedback",
     "normalize_waiting_continue",

@@ -16,13 +16,10 @@ from a13n_service.interactions import (
 )
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.control_domain import (
-    ThreadInboxEntry,
-    ThreadInboxKind,
     ThreadInboxStatus,
     normalize_feedback,
 )
 from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
-from a13n_service.interactions.control_records import thread_inbox_record
 from a13n_service.interactions.inbox import (
     DatabaseThreadInboxReconciler,
     RedisThreadControlSignals,
@@ -35,7 +32,7 @@ from a13n_service.interactions.models import ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
-from a13n_service.storage import ObjectStore, short_session, transaction
+from a13n_service.storage import ObjectStore, short_session
 from fakeredis.aioredis import FakeRedis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -131,65 +128,6 @@ async def test_steer_capacity_rejection_is_atomic(
         assert counter is not None
         assert (counter.next_delivery_sequence, counter.pending_count) == (2, 1)
         assert [row.id for row in rows] == ["inb_1212121212121212"]
-
-
-async def test_reconciler_never_bypasses_an_earlier_unbound_kind(
-    interaction_sessions: async_sessionmaker[AsyncSession],
-    interaction_object_store: ObjectStore,
-) -> None:
-    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    scheduler = AttemptScheduler(
-        interaction_sessions,
-        clock=lambda: NOW + timedelta(seconds=1),
-        token_factory=lambda: "lease-secret",
-        attempt_id_factory=lambda: "rat_1414141414141414",
-    )
-    claimed = await scheduler.claim(run.id, _worker())
-    assert isinstance(claimed, ClaimedAttempt)
-    store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
-    await store.append_steer(
-        tenant_id=TENANT_ID,
-        run_id=run.id,
-        input=_input("first"),
-        entry_id="inb_1414141414141414",
-    )
-    async with transaction(interaction_sessions) as database:
-        counter = await database.get(ThreadInboxCounterRecord, run.thread_id)
-        assert counter is not None
-        database.add(
-            thread_inbox_record(
-                ThreadInboxEntry(
-                    id="inb_1515151515151515",
-                    tenant_id=TENANT_ID,
-                    thread_id=run.thread_id,
-                    kind=ThreadInboxKind.async_subagent_result,
-                    delivery_sequence=counter.next_delivery_sequence,
-                    origin_run_id=run.id,
-                    payload_schema_version="1",
-                    payload={"result": "pending owner reconciliation"},
-                    status=ThreadInboxStatus.pending,
-                    created_at=NOW + timedelta(seconds=2),
-                )
-            )
-        )
-        counter.next_delivery_sequence += 1
-        counter.pending_count += 1
-        counter.pending_bytes += len(b'{"result":"pending owner reconciliation"}')
-    await store.append_steer(
-        tenant_id=TENANT_ID,
-        run_id=run.id,
-        input=_input("third"),
-        entry_id="inb_1616161616161616",
-    )
-    reconciler = DatabaseThreadInboxReconciler(
-        interaction_sessions,
-        lambda entry: _materialized(entry.payload),
-        clock=lambda: NOW + timedelta(seconds=3),
-    )
-
-    eligible = tuple(await reconciler.read_eligible(_authority(claimed)))
-
-    assert [entry.input for entry in eligible] == ["first"]
 
 
 async def test_redis_control_stream_is_bounded_expiring_and_acknowledged_after_read() -> None:

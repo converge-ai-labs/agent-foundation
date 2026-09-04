@@ -75,7 +75,7 @@ class RunAcceptanceService:
         state: RunStateEnvelope,
         hook_subscription: InlineHookSubscriptionInput | None = None,
     ) -> RunAcceptanceReceipt:
-        _validate_prepared_run(run, state)
+        validate_prepared_run(run, state)
         _validate_new_thread(thread, run, session)
         replay = await self._load_replay(run, state, accepted_thread_version=1)
         if replay is not None:
@@ -131,7 +131,7 @@ class RunAcceptanceService:
         next_head_run_id: str | None,
         hook_subscription: InlineHookSubscriptionInput | None = None,
     ) -> RunAcceptanceReceipt:
-        _validate_prepared_run(run, state)
+        validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
@@ -241,7 +241,7 @@ class RunAcceptanceService:
     ) -> QueuedSubmissionConsumptionReceipt:
         """Atomically consume the first queue row and accept its prepared Run."""
 
-        _validate_prepared_run(run, state)
+        validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
@@ -547,25 +547,31 @@ class RunAcceptanceService:
             return queued
 
 
-def _validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
+def validate_prepared_run(run: Run, state: RunStateEnvelope) -> None:
     if run.status is not RunStatus.accepted or run.version != 1:
         raise ValueError("prepared acceptance requires a version-one accepted Run")
-    if (state.run_id, state.thread_id) != (run.id, run.thread_id):
-        raise ValueError("prepared Run and initial state identities do not match")
     if state.checkpoint_kind != "initial" or state.checkpoint_seq != 0:
         raise ValueError("prepared acceptance requires initial Run state")
+    validate_run_state_selection(run, state)
+
+
+def validate_run_state_selection(run: Run, state: RunStateEnvelope) -> None:
+    """Validate immutable Run selection facts against any retained checkpoint."""
+
+    if (state.run_id, state.thread_id) != (run.id, run.thread_id):
+        raise ValueError("Run and state identities do not match")
     if (state.agent_id, state.agent_revision_id) != (run.agent_id, run.agent_revision_id):
-        raise ValueError("prepared Run and state Agent selection do not match")
+        raise ValueError("Run and state Agent selection do not match")
     effective = state.effective_agent_config
     effective_payload = effective.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
     if canonical_digest(effective_payload) != effective.content_digest:
-        raise ValueError("prepared Run effective configuration digest is invalid")
+        raise ValueError("Run effective configuration digest is invalid")
     if effective.content_digest != run.effective_agent_config_digest:
-        raise ValueError("prepared Run effective configuration digest does not match state")
+        raise ValueError("Run effective configuration digest does not match state")
     if effective.resolved_model.execution.observation() != run.model_execution_observation:
-        raise ValueError("prepared Run model observation does not match state")
+        raise ValueError("Run model observation does not match state")
     if state.runtime_lock_digest != run.runtime_lock_digest:
-        raise ValueError("prepared Run Runtime lock does not match state")
+        raise ValueError("Run Runtime lock does not match state")
 
 
 def _validate_new_thread(thread: Thread, run: Run, session: Session | None) -> None:
@@ -913,4 +919,6 @@ __all__ = [
     "RunAcceptanceError",
     "RunAcceptanceReceipt",
     "RunAcceptanceService",
+    "validate_prepared_run",
+    "validate_run_state_selection",
 ]

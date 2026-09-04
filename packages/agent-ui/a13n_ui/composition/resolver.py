@@ -41,6 +41,7 @@ from .models import (
     DependencyProvenance,
     ResolvedAgentNode,
     ResolvedCapabilityRecipe,
+    ResolvedContentPlugin,
     ResolvedEnvironmentProfile,
     ResolvedMcpRecipe,
     ResolvedModelRecipe,
@@ -187,6 +188,17 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=project.id,
             project_roots=tuple(item.path for item in project.roots),
+            content_plugins=tuple(
+                ResolvedContentPlugin(
+                    plugin_id=item.plugin_id,
+                    version=item.version,
+                    commit=item.commit,
+                    content_digest=item.content_digest,
+                    path=item.path,
+                    skills_path=item.skills_path,
+                )
+                for item in sorted(source.content_plugins, key=lambda plugin: plugin.plugin_id)
+            ),
             root=root,
             environment_profile=environment,
             environment_run_extensions=run_extensions,

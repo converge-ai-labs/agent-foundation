@@ -41,6 +41,7 @@ def service_metadata() -> MetaData:
     from a13n_service.plugins import models as plugin_models
     from a13n_service.secrets import models as secret_models
     from a13n_service.skills import models as skill_models
+    from a13n_service.subagents import models as subagent_models
 
     del (
         agent_models,
@@ -61,5 +62,6 @@ def service_metadata() -> MetaData:
         plugin_models,
         secret_models,
         skill_models,
+        subagent_models,
     )
     return Base.metadata

@@ -96,6 +96,12 @@ class ThreadInboxRecord(Base):
             ondelete="CASCADE",
         ),
         *_run_references(),
+        ForeignKeyConstraint(
+            ("tenant_id", "async_subagent_relationship_id"),
+            ("child_run_relationships.tenant_id", "child_run_relationships.id"),
+            name="fk_thread_inbox_async_subagent_relationship",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint("kind IN ('steer', 'async_subagent_result')", name="kind_valid"),
         CheckConstraint(
             "status IN ('pending', 'consumed', 'superseded', 'suppressed', 'expired', 'discarded')",
@@ -114,8 +120,10 @@ class ThreadInboxRecord(Base):
         CheckConstraint("(payload_json IS NOT NULL) <> (payload_object_key IS NOT NULL)", name="payload_valid"),
         CheckConstraint(
             "(kind = 'steer' AND accepted_against_run_id IS NOT NULL AND origin_run_id IS NULL "
+            "AND async_subagent_relationship_id IS NULL "
             "AND expires_at IS NULL AND status IN ('pending', 'consumed', 'superseded')) OR "
-            "(kind = 'async_subagent_result' AND accepted_against_run_id IS NULL AND origin_run_id IS NOT NULL)",
+            "(kind = 'async_subagent_result' AND accepted_against_run_id IS NULL AND origin_run_id IS NOT NULL "
+            "AND async_subagent_relationship_id IS NOT NULL)",
             name="kind_provenance_valid",
         ),
         CheckConstraint(
@@ -151,6 +159,11 @@ class ThreadInboxRecord(Base):
         ),
         UniqueConstraint("tenant_id", "id", name="uq_thread_inbox_tenant_id"),
         UniqueConstraint("tenant_id", "thread_id", "delivery_sequence", name="uq_thread_inbox_sequence"),
+        UniqueConstraint(
+            "tenant_id",
+            "async_subagent_relationship_id",
+            name="uq_thread_inbox_async_subagent_relationship",
+        ),
         Index("ix_thread_inbox_fifo", "tenant_id", "thread_id", "status", "delivery_sequence"),
         Index("ix_thread_inbox_target", "tenant_id", "target_run_id", "status", "delivery_sequence"),
         Index(
@@ -173,6 +186,7 @@ class ThreadInboxRecord(Base):
     target_run_id: Mapped[str | None] = mapped_column(String(72))
     source_waiting_run_id: Mapped[str | None] = mapped_column(String(72))
     origin_run_id: Mapped[str | None] = mapped_column(String(72))
+    async_subagent_relationship_id: Mapped[str | None] = mapped_column(String(72))
     payload_schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
     payload_json: Mapped[Any | None] = mapped_column(JSON(none_as_null=True))
     payload_object_key: Mapped[str | None] = mapped_column(String(1024))
@@ -210,6 +224,7 @@ class ThreadInboxRecord(Base):
             target_run_id=self.target_run_id,
             source_waiting_run_id=self.source_waiting_run_id,
             origin_run_id=self.origin_run_id,
+            async_subagent_relationship_id=self.async_subagent_relationship_id,
             payload_schema_version=self.payload_schema_version,
             status=ThreadInboxStatus(self.status),
             consumed_by_run_id=self.consumed_by_run_id,

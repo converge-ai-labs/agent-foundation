@@ -13,6 +13,7 @@ import yaml
 from anyio import to_thread
 from pydantic import TypeAdapter, ValidationError
 
+from a13n_ui.content_plugins import ContentPluginStore, InstalledContentPlugin
 from a13n_ui.errors import ConfigurationError
 
 from .models import (
@@ -51,23 +52,36 @@ _EXTENSION_ADAPTER = TypeAdapter(ExtensionResource)
 type ConfigurationTreeFingerprint = tuple[tuple[str, tuple[int, int, int, int]], ...]
 
 
-async def configuration_tree_fingerprint(path: Path) -> ConfigurationTreeFingerprint:
+async def configuration_tree_fingerprint(
+    path: Path,
+    *,
+    content_plugin_root: Path | None = None,
+) -> ConfigurationTreeFingerprint:
     """Return a bounded metadata-only fingerprint for change observation."""
 
     selected = path.expanduser().resolve(strict=False)
     if selected.suffix != ".yaml":
         raise _error("settings_path_invalid", "Agent UI configuration must use lower-case .yaml.", selected)
     scanned = await to_thread.run_sync(_scan_tree, selected)
-    return tuple((relative_path, fingerprint) for relative_path, _source_path, fingerprint in scanned)
+    values = [(relative_path, fingerprint) for relative_path, _source_path, fingerprint in scanned]
+    if content_plugin_root is not None:
+        registrations = await ContentPluginStore(content_plugin_root).fingerprint()
+        values.extend((f"content-plugins/{name}", fingerprint) for name, fingerprint in registrations)
+    return tuple(values)
 
 
-async def load_agent_ui_configuration(path: Path) -> LoadedAgentUiConfiguration:
-    """Read and validate one coherent complete source-tree generation."""
+async def load_agent_ui_configuration(
+    path: Path,
+    *,
+    content_plugin_root: Path | None = None,
+) -> LoadedAgentUiConfiguration:
+    """Read and validate one coherent complete source-tree and Content Plugin generation."""
 
     selected = path.expanduser().resolve(strict=False)
     if selected.suffix != ".yaml":
         raise _error("settings_path_invalid", "Agent UI configuration must use lower-case .yaml.", selected)
 
+    content_plugins = () if content_plugin_root is None else await ContentPluginStore(content_plugin_root).list()
     for _attempt in range(_STABLE_READ_ATTEMPTS):
         before = await to_thread.run_sync(_scan_tree, selected)
         captured: list[tuple[str, bytes, tuple[int, int, int, int]]] = []
@@ -95,7 +109,7 @@ async def load_agent_ui_configuration(path: Path) -> LoadedAgentUiConfiguration:
         after = await to_thread.run_sync(_scan_tree, selected)
         if before != after:
             continue
-        return _parse_complete_tree(selected, captured)
+        return _parse_complete_tree(selected, captured, content_plugins)
 
     raise _error(
         "settings_source_unstable",
@@ -104,7 +118,9 @@ async def load_agent_ui_configuration(path: Path) -> LoadedAgentUiConfiguration:
     )
 
 
-def empty_agent_ui_configuration() -> LoadedAgentUiConfiguration:
+def empty_agent_ui_configuration(
+    content_plugins: tuple[InstalledContentPlugin, ...] = (),
+) -> LoadedAgentUiConfiguration:
     """Return an empty onboarding generation when the default root is absent."""
 
     content = 'schema_version: "2"\n'
@@ -118,8 +134,17 @@ def empty_agent_ui_configuration() -> LoadedAgentUiConfiguration:
     return LoadedAgentUiConfiguration(
         document=AgentUiDocument(),
         root_digest=root_digest,
-        source_digest=canonical_digest(((source.relative_path, source.source_digest),)),
+        source_digest=canonical_digest(
+            (
+                (source.relative_path, source.source_digest),
+                *tuple(
+                    (f"content-plugins/{item.plugin_id}/registration.json", canonical_digest(item))
+                    for item in content_plugins
+                ),
+            )
+        ),
         sources=(source,),
+        content_plugins=content_plugins,
     )
 
 
@@ -192,6 +217,7 @@ def _scan_directory(
 def _parse_complete_tree(
     root_path: Path,
     captured: list[tuple[str, bytes, tuple[int, int, int, int]]],
+    content_plugins: tuple[InstalledContentPlugin, ...],
 ) -> LoadedAgentUiConfiguration:
     if not captured or captured[0][0] != root_path.name:
         raise RuntimeError("configuration capture omitted its root")
@@ -227,7 +253,7 @@ def _parse_complete_tree(
             continue
         directory = relative_path.split("/", 1)[0]
         if directory == "subagents":
-            resource = _parse_canonical_markdown(source_path, content)
+            resource = parse_canonical_markdown(source_path, content)
             _insert_unique(subagents, resource.id, resource, source_path)
             kind = "subagent"
             resource_id = resource.id
@@ -280,12 +306,19 @@ def _parse_complete_tree(
             )
         )
 
+    _merge_content_plugin_subagents(
+        content_plugins,
+        local_subagents=subagents,
+        sources=sources,
+    )
+
     try:
         return LoadedAgentUiConfiguration(
             document=document,
             root_digest=sources[0].source_digest,
             source_digest=canonical_digest(tuple((item.relative_path, item.source_digest) for item in sources)),
             sources=tuple(sources),
+            content_plugins=content_plugins,
             models=models,
             harness_plugins=plugins,
             environment_profiles=profiles,
@@ -302,6 +335,62 @@ def _parse_complete_tree(
             root_path,
             exc,
         ) from exc
+
+
+def _merge_content_plugin_subagents(
+    content_plugins: tuple[InstalledContentPlugin, ...],
+    *,
+    local_subagents: dict[str, CanonicalSubagent],
+    sources: list[SourceDocument],
+) -> None:
+    plugin_subagents: dict[str, tuple[CanonicalSubagent, Path, bytes, str]] = {}
+    total_bytes = 0
+    total_files = 0
+    for plugin in sorted(content_plugins, key=lambda item: item.plugin_id):
+        registration_content = plugin.model_dump_json(exclude={"subagent_paths"}, indent=2)
+        registration_digest = hashlib.sha256(registration_content.encode()).hexdigest()
+        sources.append(
+            SourceDocument(
+                relative_path=f"content-plugins/{plugin.plugin_id}/registration.json",
+                source_digest=registration_digest,
+                resource_kind="content_plugin",
+                content=registration_content,
+            )
+        )
+        for source_value in plugin.subagent_paths:
+            source_path = Path(source_value)
+            content, _fingerprint_value = _read_bounded_stable(source_path, _MAX_SOURCE_BYTES)
+            total_files += 1
+            total_bytes += len(content)
+            if total_files > _MAX_FILES or total_bytes > _MAX_TOTAL_BYTES:
+                raise _error(
+                    "configuration_source_limit",
+                    "Installed Content Plugin subagents exceed configuration source limits.",
+                    source_path,
+                )
+            resource = parse_canonical_markdown(source_path, content)
+            if resource.id in plugin_subagents:
+                raise _error(
+                    "configuration_duplicate_resource",
+                    f"Installed Content Plugins contribute duplicate subagent ID: {resource.id}",
+                    source_path,
+                )
+            relative_path = f"content-plugins/{plugin.plugin_id}/subagents/{source_path.name}"
+            plugin_subagents[resource.id] = (resource, source_path, content, relative_path)
+
+    for resource_id, (resource, _path, content, relative_path) in sorted(plugin_subagents.items()):
+        overridden = resource_id in local_subagents
+        if not overridden:
+            local_subagents[resource_id] = resource
+        sources.append(
+            SourceDocument(
+                relative_path=relative_path,
+                source_digest=hashlib.sha256(content).hexdigest(),
+                resource_kind="content_plugin_subagent" if overridden else "subagent",
+                resource_id=None if overridden else resource_id,
+                content=_decode_source(Path(relative_path), content, code="configuration_markdown_invalid"),
+            )
+        )
 
 
 def _validate_extension(raw: dict[str, Any], path: Path) -> ExtensionResource:
@@ -329,7 +418,7 @@ def _validate_model(model_type: type[Any], raw: dict[str, Any], path: Path, *, c
         raise _error(code, "A configuration document is invalid.", path) from exc
 
 
-def _parse_canonical_markdown(path: Path, content: bytes) -> CanonicalSubagent:
+def parse_canonical_markdown(path: Path, content: bytes) -> CanonicalSubagent:
     text = _decode_source(path, content, code="configuration_markdown_invalid")
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.split("\n")
@@ -503,4 +592,4 @@ def _error(code: str, message: str, path: Path) -> ConfigurationError:
     return ConfigurationError(message, code=code, details={"path": str(path)[-4096:]})
 
 
-__all__ = ["empty_agent_ui_configuration", "load_agent_ui_configuration"]
+__all__ = ["empty_agent_ui_configuration", "load_agent_ui_configuration", "parse_canonical_markdown"]

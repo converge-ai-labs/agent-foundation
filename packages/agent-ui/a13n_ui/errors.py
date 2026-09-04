@@ -26,6 +26,10 @@ class SkillManagementError(ConfigurationError):
     """A local Skill scan, copy, validation, or import could not complete safely."""
 
 
+class ContentPluginError(ConfigurationError):
+    """A declarative Content Plugin operation could not complete safely."""
+
+
 class CompositionError(ConfigurationError):
     """An Agent or Environment snapshot could not be resolved or reconstructed."""
 
@@ -71,6 +75,7 @@ __all__ = [
     "AppStateError",
     "CompositionError",
     "ConfigurationError",
+    "ContentPluginError",
     "EnvironmentLifecycleError",
     "LivePresentationError",
     "ObjectIntegrityError",

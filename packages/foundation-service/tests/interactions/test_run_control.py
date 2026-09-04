@@ -534,7 +534,7 @@ async def test_planned_handoff_checkpoints_and_cancels_before_model_io(
     assert result.status == "cancelled"
     assert isinstance(mutation, AttemptMutationReceipt)
     assert calls == []
-    assert not coordinator.handoff_ready
+    assert coordinator.terminal_observation_allowed
     assert coordinator.current_state.envelope.input_disposition == "applied"
     assert terminal.states == []
     assert terminal.failures == []

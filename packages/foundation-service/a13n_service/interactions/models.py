@@ -695,6 +695,14 @@ class RunAttemptRecord(Base):
         ),
         Index("uq_run_attempts_tenant_id", "tenant_id", "id", unique=True),
         UniqueConstraint("tenant_id", "run_id", "id", name="uq_run_attempts_run_id"),
+        Index(
+            "uq_run_attempts_generation_identity",
+            "tenant_id",
+            "run_id",
+            "id",
+            "fence",
+            unique=True,
+        ),
         Index("uq_run_attempts_number", "tenant_id", "run_id", "attempt_number", unique=True),
         Index("uq_run_attempts_fence", "tenant_id", "run_id", "fence", unique=True),
         Index(

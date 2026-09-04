@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from a13n_harness.execution import DelegationContextPolicy
 
 SUBAGENT_CAPABILITY_ID = "a13n.subagents"
+MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS = 32 * 1024
 _INLINE_SUBAGENT_STATE_VERSION = "1"
 _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-9a-f]{4})$")
 _MAX_PROMPT_LENGTH = 1024 * 1024
@@ -86,7 +87,7 @@ class SubagentActivitySnapshot(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
     sequence: int = Field(ge=0)
-    output_preview: str = Field(default="", max_length=32 * 1024)
+    output_preview: str = Field(default="", max_length=MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS)
     output_truncated: bool = False
     active_tool_calls: tuple[SubagentToolCallSnapshot, ...] = Field(default=(), max_length=20)
     recent_tool_calls: tuple[SubagentToolCallSnapshot, ...] = Field(default=(), max_length=20)
@@ -232,6 +233,19 @@ class SubagentOperatorContext:
 
 
 @dataclass(frozen=True, slots=True)
+class SubagentToolCallContext:
+    """Non-authoritative correlation from the originating model tool call."""
+
+    tool_call_id: str | None
+    tool_name: str | None
+
+    def __post_init__(self) -> None:
+        values = (self.tool_call_id, self.tool_name)
+        if any(value is not None and (not isinstance(value, str) or not value.strip()) for value in values):
+            raise ValueError("subagent tool-call correlation must be non-blank when present")
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedDelegationContext:
     """Detached child input produced after applying one authored context policy."""
 
@@ -275,6 +289,8 @@ class SubagentOperator(ABC):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncDelegateRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView: ...
 
     @abstractmethod
@@ -282,6 +298,8 @@ class SubagentOperator(ABC):
         self,
         context: SubagentOperatorContext,
         request: SubagentInfoRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentInfoResult: ...
 
     @abstractmethod
@@ -289,6 +307,8 @@ class SubagentOperator(ABC):
         self,
         context: SubagentOperatorContext,
         request: SubagentWaitRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentWaitResult: ...
 
     @abstractmethod
@@ -296,6 +316,8 @@ class SubagentOperator(ABC):
         self,
         context: SubagentOperatorContext,
         request: SubagentSteerRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentSteerResult: ...
 
     @abstractmethod
@@ -303,6 +325,8 @@ class SubagentOperator(ABC):
         self,
         context: SubagentOperatorContext,
         request: SubagentCancelRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentCancelResult: ...
 
     @abstractmethod
@@ -310,6 +334,8 @@ class SubagentOperator(ABC):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView: ...
 
 
@@ -490,6 +516,7 @@ def _validate_inline_thread_identities(
 
 
 __all__ = [
+    "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",
     "SUBAGENT_CAPABILITY_ID",
     "AsyncDelegateRequest",
     "AsyncExecutionView",
@@ -510,6 +537,7 @@ __all__ = [
     "SubagentStatus",
     "SubagentSteerRequest",
     "SubagentSteerResult",
+    "SubagentToolCallContext",
     "SubagentToolCallSnapshot",
     "SubagentToolCallStatus",
     "SubagentWaitRequest",

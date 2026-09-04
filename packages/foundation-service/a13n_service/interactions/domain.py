@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -446,6 +447,10 @@ def new_session_id() -> str:
     return new_object_id("sess")
 
 
+def new_thread_id() -> str:
+    return f"thread-{secrets.token_hex(16)}"
+
+
 def new_run_id() -> str:
     return new_object_id("run")
 
@@ -487,4 +492,5 @@ __all__ = [
     "new_run_attempt_id",
     "new_run_id",
     "new_session_id",
+    "new_thread_id",
 ]

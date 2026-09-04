@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import os
+import stat
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -388,10 +389,14 @@ class EnvironmentRunService:
         reconstructed = self._reconstructor.reconstruct(profile)
         roots = await normalize_project_roots(composition.project_roots)
         canonical_host_paths = reconstructed.adapter.preserves_host_paths
+        content_plugin_skills = tuple(
+            (item.plugin_id, item.skills_path) for item in composition.content_plugins if item.skills_path is not None
+        )
         path_layout = EnvironmentPathLayout.resolve(
             canonical_host_paths=canonical_host_paths,
             project_roots=roots,
             user_skills_root=self._user_skills_root,
+            content_plugin_skills=content_plugin_skills,
         )
         mounts: list[_PreparedMount] = []
         try:
@@ -422,14 +427,27 @@ class EnvironmentRunService:
                         mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
                     )
                 )
-            if _root_selects_skills(composition) and not (
-                canonical_host_paths and Path(path_layout.user_skills) in roots
-            ):
-                mounts.append(
-                    await self._prepare_user_skills_mount(
-                        mount_path=(path_layout.user_skills if canonical_host_paths else None)
+            if _root_selects_skills(composition):
+                for index, ((plugin_id, root), (_layout_id, mount_path)) in enumerate(
+                    zip(content_plugin_skills, path_layout.content_plugin_skills, strict=True),
+                    start=1,
+                ):
+                    if canonical_host_paths and Path(root) in roots:
+                        continue
+                    mounts.append(
+                        await self._prepare_content_plugin_skills_mount(
+                            plugin_id=plugin_id,
+                            root=Path(root),
+                            alias=f"content-plugin-{index}",
+                            mount_path=mount_path if canonical_host_paths else None,
+                        )
                     )
-                )
+                if not (canonical_host_paths and Path(path_layout.user_skills) in roots):
+                    mounts.append(
+                        await self._prepare_user_skills_mount(
+                            mount_path=(path_layout.user_skills if canonical_host_paths else None)
+                        )
+                    )
             extensions = await self._reconstructor.create_extensions(composition)
             runtime = create_environment_runtime(
                 mounts={
@@ -456,6 +474,60 @@ class EnvironmentRunService:
             profile=profile,
             mounts=mounts,
             runtime=runtime,
+        )
+
+    async def _prepare_content_plugin_skills_mount(
+        self,
+        *,
+        plugin_id: str,
+        root: Path,
+        alias: str,
+        mount_path: str | None,
+    ) -> _PreparedMount:
+        try:
+            normalized = await to_thread.run_sync(_validate_content_plugin_skills_root, root)
+            provider = DirectLocalEnvironmentProvider()
+            configuration = provider.validate_configuration(
+                schema_version="1",
+                value={
+                    "environment_id": f"content-plugin-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
+                    "root": {"path": os.fspath(normalized), "read_only": True},
+                    "shell_profiles": [],
+                    "allowed_executables": [],
+                    "allowed_ports": [],
+                    "allowed_environment_keys": [],
+                },
+            )
+            environment = provider.create_environment(
+                configuration=configuration,
+                state=None,
+                runtime=DirectLocalProviderRuntime(),
+            )
+        except Exception as exc:
+            raise EnvironmentLifecycleError(
+                "A captured Content Plugin Skill directory could not be prepared.",
+                code="content_plugin_skills_mount_failed",
+                details={"plugin_id": plugin_id, "root": os.fspath(root)},
+            ) from exc
+        read_actions = frozenset(
+            {
+                EnvironmentAction.FILE_STAT,
+                EnvironmentAction.FILE_READ_TEXT,
+                EnvironmentAction.FILE_READ_BYTES,
+                EnvironmentAction.FILE_LIST,
+                EnvironmentAction.FILE_QUERY,
+                EnvironmentAction.FILE_SEARCH_TEXT,
+                EnvironmentAction.FILE_COPY_SOURCE,
+            }
+        )
+        return _PreparedMount(
+            alias=alias,
+            key=None,
+            expected_state_ref=None,
+            supplied_state=None,
+            environment=environment,
+            permission_ceiling=EnvironmentPermissionSet(operations=read_actions),
+            mount_path=mount_path,
         )
 
     async def _prepare_user_skills_mount(self, *, mount_path: str | None) -> _PreparedMount:
@@ -549,6 +621,18 @@ async def normalize_project_roots(roots: Sequence[Path | str]) -> tuple[Path, ..
         seen.add(path)
         normalized.append(path)
     return tuple(normalized)
+
+
+def _validate_content_plugin_skills_root(value: Path) -> Path:
+    if "\x00" in os.fspath(value):
+        raise ValueError("root contains NUL")
+    metadata = value.lstat()
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError("root must be a non-symlink directory")
+    resolved = value.resolve(strict=True)
+    if not os.access(resolved, os.R_OK | os.X_OK):
+        raise ValueError("root must be readable")
+    return resolved
 
 
 def _prepare_user_skills_root(value: Path) -> Path:

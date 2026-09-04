@@ -293,6 +293,7 @@ class ThreadInboxEntry(StrictModel):
     target_run_id: ObjectId | None = None
     source_waiting_run_id: ObjectId | None = None
     origin_run_id: ObjectId | None = None
+    async_subagent_relationship_id: ObjectId | None = None
     payload_schema_version: Annotated[str, StringConstraints(min_length=1, max_length=32)]
     payload: JsonValue | None = None
     payload_object: InboxPayloadObjectRef | None = None
@@ -321,7 +322,12 @@ def _validate_inbox_payload(entry: ThreadInboxEntry) -> None:
 
 def _validate_inbox_provenance(entry: ThreadInboxEntry) -> None:
     if entry.kind is ThreadInboxKind.steer:
-        if entry.accepted_against_run_id is None or entry.origin_run_id is not None or entry.expires_at is not None:
+        if (
+            entry.accepted_against_run_id is None
+            or entry.origin_run_id is not None
+            or entry.async_subagent_relationship_id is not None
+            or entry.expires_at is not None
+        ):
             raise ValueError("steer inbox provenance is invalid")
         if entry.status not in {
             ThreadInboxStatus.pending,
@@ -329,7 +335,11 @@ def _validate_inbox_provenance(entry: ThreadInboxEntry) -> None:
             ThreadInboxStatus.superseded,
         }:
             raise ValueError("steer inbox status is invalid")
-    elif entry.accepted_against_run_id is not None or entry.origin_run_id is None:
+    elif (
+        entry.accepted_against_run_id is not None
+        or entry.origin_run_id is None
+        or entry.async_subagent_relationship_id is None
+    ):
         raise ValueError("async-result inbox provenance is invalid")
 
 

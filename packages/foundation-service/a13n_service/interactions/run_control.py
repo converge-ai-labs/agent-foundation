@@ -447,10 +447,6 @@ class RunAttemptControl:
     def current_state(self) -> StoredRunState:
         return self._state
 
-    @property
-    def handoff_ready(self) -> bool:
-        return self._gate.phase is _CoordinatorPhase.handoff_ready
-
     async def _prepare_boundary(self) -> None:
         await self._validate_authority()
         await self._confirm_state()

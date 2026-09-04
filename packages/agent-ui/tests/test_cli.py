@@ -250,6 +250,9 @@ def test_parses_management_commands_and_data_root() -> None:
         ]
     )
     environment = parser.parse_args(["environment", "list", "--format", "json"])
+    plugin = parser.parse_args(
+        ["plugin", "install", "https://example.com/plugins.git", "--plugin", "plugin-reviewer", "--ref", "v1"]
+    )
     thread = parser.parse_args(["thread", "archive", "thread-1", "--expected-version", "3", "--restore"])
 
     assert validate.data_root.as_posix() == "/tmp/a13n-data"
@@ -260,6 +263,9 @@ def test_parses_management_commands_and_data_root() -> None:
     assert import_subagents.apply is True
     assert environment.environment_command == "list"
     assert environment.format == "json"
+    assert plugin.plugin_command == "install"
+    assert plugin.plugin_id == "plugin-reviewer"
+    assert plugin.ref == "v1"
     assert thread.thread_id == "thread-1"
     assert thread.restore is True
     assert thread.expected_version == 3
