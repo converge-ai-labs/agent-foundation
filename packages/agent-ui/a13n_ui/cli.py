@@ -39,7 +39,13 @@ from a13n_ui.model_accounts import (
     Provider,
 )
 from a13n_ui.settings_loader import ensure_default_directories, load_agent_ui_settings
-from a13n_ui.surfaces import RootOperationStatus, RootOperationView, ThreadMetadataMutation, ThreadMetadataPatch
+from a13n_ui.surfaces import (
+    NewThreadDefaults,
+    RootOperationStatus,
+    RootOperationView,
+    ThreadMetadataMutation,
+    ThreadMetadataPatch,
+)
 from a13n_ui.terminal import TuiLaunchOptions
 from a13n_ui.terminal import run as run_tui
 from a13n_ui.thread_service import RootThreadDefaults
@@ -332,7 +338,7 @@ def _tui_launch_options(args: argparse.Namespace) -> TuiLaunchOptions:
     environment_mode = getattr(args, "environment_mode", None)
     if environment_mode is not None:
         environment_profile_id = environment_profile_id_for_mode(environment_mode)
-    defaults = RootThreadDefaults(
+    defaults = NewThreadDefaults(
         project_id=getattr(args, "project", None),
         agent_id=getattr(args, "agent", None),
         environment_profile_id=environment_profile_id,

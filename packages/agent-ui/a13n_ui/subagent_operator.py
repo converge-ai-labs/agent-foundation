@@ -506,6 +506,12 @@ class AgentUiSubagentOperator(SubagentOperator):
             next_offset=next_offset if next_offset < total else None,
         )
 
+    async def active_execution_ids(self) -> frozenset[str]:
+        """Return a detached snapshot of locally owned active child executions."""
+
+        async with self._lock:
+            return frozenset(self._active)
+
     async def query_child_executions(
         self,
         *,

@@ -77,24 +77,47 @@ from a13n_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSourc
 from a13n_ui.root_execution import RootRunExecutor
 from a13n_ui.root_run import RootRunCoordinator
 from a13n_ui.settings import AgentUiSettings
-from a13n_ui.storage import LocalStore, ThreadConfigurationMutation, open_local_store
+from a13n_ui.storage import (
+    AgentResourceSource,
+    LocalStore,
+    ThreadConfigurationMutation,
+    open_local_store,
+)
+from a13n_ui.storage import (
+    ThreadConfigurationPatch as StoredThreadConfigurationPatch,
+)
 from a13n_ui.subagent_operator import AgentUiSubagentOperator
 from a13n_ui.surfaces import (
     ChildControlResult,
     ChildExecutionPage,
+    DecisionBatchView,
+    DecisionResponseBatch,
     EnvironmentProfileSummary,
+    ExternalToolResult,
+    LaunchProjectResolution,
+    NewThreadDefaults,
+    ProjectPathCompletionPage,
     ProjectSummary,
+    QuestionResponse,
+    ReviewView,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
+    SkillCatalogView,
+    SkillReference,
+    TaskPage,
+    ThreadConfigurationMutationInput,
     ThreadDeferredResponse,
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadMetadataMutation,
     ThreadPage,
+    ThreadSelectorCatalog,
     ThreadSummary,
     TranscriptPage,
+    WorkbenchPage,
 )
+from a13n_ui.terminal_projection import TerminalProjectionService
 from a13n_ui.thread_capability import AgentUiThreadCapability, ThreadToolController
 from a13n_ui.thread_projection import ThreadProjectionService
 from a13n_ui.thread_service import RootThreadDefaults, ThreadService
@@ -153,6 +176,7 @@ class AgentUiApp:
         configurations: CompositionAcceptanceService,
         threads: ThreadService,
         projections: ThreadProjectionService,
+        terminal_projections: TerminalProjectionService,
         root_runs: RootRunCoordinator,
         subagent_operator: AgentUiSubagentOperator,
         live_hub: AgentUiLiveHub,
@@ -172,6 +196,7 @@ class AgentUiApp:
         self._configurations = configurations
         self._threads = threads
         self._projections = projections
+        self._terminal_projections = terminal_projections
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -402,14 +427,174 @@ class AgentUiApp:
                 )
             return tuple(result)
 
+    async def resolve_launch_project(
+        self,
+        directory: Path,
+        *,
+        project_id: str | None = None,
+    ) -> LaunchProjectResolution:
+        async with self._operation():
+            return await self._terminal_projections.resolve_launch_project(
+                directory,
+                project_id=project_id,
+            )
+
+    async def workbench(
+        self,
+        *,
+        project_id: str | None,
+        query: str | None = None,
+        include_archived: bool = False,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> WorkbenchPage:
+        async with self._operation():
+            return await self._terminal_projections.workbench(
+                project_id=project_id,
+                query=query,
+                include_archived=include_archived,
+                cursor=cursor,
+                limit=limit,
+            )
+
+    async def thread_tasks(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+        limit: int = 100,
+    ) -> TaskPage:
+        async with self._operation():
+            return await self._terminal_projections.task_page(
+                thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
+                limit=limit,
+            )
+
+    async def thread_decisions(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+    ) -> DecisionBatchView | None:
+        async with self._operation():
+            return await self._terminal_projections.decisions(
+                thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
+            )
+
+    async def thread_selectors(self) -> ThreadSelectorCatalog:
+        environments = await self.environment_profiles()
+        async with self._operation():
+            return await self._terminal_projections.selectors(environments)
+
+    async def complete_project_paths(
+        self,
+        *,
+        project_id: str,
+        query: str = "",
+        limit: int = 50,
+    ) -> ProjectPathCompletionPage:
+        async with self._operation():
+            return await self._terminal_projections.complete_project_paths(
+                project_id=project_id,
+                query=query,
+                limit=limit,
+            )
+
+    async def skill_catalog(
+        self,
+        *,
+        thread_id: str | None = None,
+        defaults: NewThreadDefaults | None = None,
+    ) -> SkillCatalogView:
+        async with self._operation():
+            return await self._terminal_projections.skill_catalog(
+                thread_id=thread_id,
+                defaults=defaults,
+            )
+
+    async def validate_skill_references(
+        self,
+        references: tuple[SkillReference, ...],
+        *,
+        thread_id: str | None = None,
+        defaults: NewThreadDefaults | None = None,
+    ) -> tuple[str, ...]:
+        async with self._operation():
+            return await self._terminal_projections.validate_skill_references(
+                references,
+                thread_id=thread_id,
+                defaults=defaults,
+            )
+
+    async def retained_review(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str,
+        position: int,
+        tool_call_id: str,
+    ) -> ReviewView:
+        async with self._operation():
+            return await self._terminal_projections.retained_review(
+                thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
+                position=position,
+                tool_call_id=tool_call_id,
+            )
+
+    async def deferred_review(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str,
+        request_id: str,
+    ) -> ReviewView:
+        async with self._operation():
+            return await self._terminal_projections.deferred_review(
+                thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
+                request_id=request_id,
+            )
+
+    async def task_review(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str,
+        task_id: str,
+    ) -> ReviewView:
+        async with self._operation():
+            return await self._terminal_projections.task_review(
+                thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
+                task_id=task_id,
+            )
+
+    async def child_review(
+        self,
+        *,
+        parent_thread_id: str,
+        execution_id: str,
+    ) -> ReviewView:
+        async with self._operation():
+            return await self._terminal_projections.child_review(
+                parent_thread_id=parent_thread_id,
+                execution_id=execution_id,
+            )
+
     async def create_thread(
         self,
         *,
-        defaults: RootThreadDefaults | None = None,
+        defaults: NewThreadDefaults | RootThreadDefaults | None = None,
         title: str | None = None,
     ) -> ThreadSummary:
         async with self._operation():
-            thread = await self._threads.create(defaults=defaults, title=title)
+            selected = (
+                RootThreadDefaults(**defaults.model_dump()) if isinstance(defaults, NewThreadDefaults) else defaults
+            )
+            thread = await self._threads.create(defaults=selected, title=title)
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
@@ -421,6 +606,7 @@ class AgentUiApp:
         self,
         *,
         query: str | None = None,
+        project_id: str | None = None,
         include_archived: bool = False,
         cursor: str | None = None,
         limit: int = 20,
@@ -428,6 +614,7 @@ class AgentUiApp:
         async with self._operation():
             return await self._projections.list_threads(
                 query=query,
+                project_id=project_id,
                 include_archived=include_archived,
                 cursor=cursor,
                 limit=limit,
@@ -437,12 +624,14 @@ class AgentUiApp:
         self,
         *,
         thread_id: str,
+        expected_continuation_id: str | None = None,
         cursor: str | None = None,
         limit: int = 50,
     ) -> TranscriptPage:
         async with self._operation():
             return await self._projections.transcript(
                 thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
                 cursor=cursor,
                 limit=limit,
             )
@@ -460,6 +649,34 @@ class AgentUiApp:
             )
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
+
+    async def patch_thread_configuration(
+        self,
+        *,
+        thread_id: str,
+        mutation: ThreadConfigurationMutationInput,
+    ) -> ThreadSummary:
+        patch = mutation.patch
+        values: dict[str, object] = {}
+        if "agent_id" in patch.model_fields_set:
+            assert patch.agent_id is not None
+            values["agent_source"] = AgentResourceSource(id=patch.agent_id)
+        for surface_name, stored_name in (
+            ("environment_profile_id", "environment_profile_id"),
+            ("harness_plugin_ids", "harness_plugin_ids"),
+            ("environment_run_extension_ids", "environment_run_extension_ids"),
+            ("mcp_server_ids", "mcp_server_ids"),
+        ):
+            if surface_name in patch.model_fields_set:
+                values[stored_name] = getattr(patch, surface_name)
+        stored = StoredThreadConfigurationPatch.model_validate(values, strict=True)
+        return await self.update_thread_configuration(
+            thread_id=thread_id,
+            mutation=ThreadConfigurationMutation(
+                expected_version=mutation.expected_version,
+                patch=stored,
+            ),
+        )
 
     async def update_thread_metadata(
         self,
@@ -482,13 +699,25 @@ class AgentUiApp:
         thread_id: str,
         prompt: str,
         mutation: ThreadConfigurationMutation | None = None,
+        skill_references: tuple[SkillReference, ...] = (),
     ) -> RootRunReceipt:
         async with self._operation():
-            return await self._root_runs.submit_prompt(
+            catalog = await self._terminal_projections.skill_catalog(thread_id=thread_id)
+            self._terminal_projections.validate_references_against(
+                catalog,
+                skill_references,
+            )
+            receipt = await self._root_runs.submit_prompt(
                 thread_id=thread_id,
                 prompt=prompt,
                 mutation=mutation,
             )
+            self._terminal_projections.pin_active_skill_catalog(
+                receipt_id=receipt.receipt_id,
+                thread_id=thread_id,
+                catalog=catalog,
+            )
+            return receipt
 
     async def respond_thread(
         self,
@@ -503,6 +732,63 @@ class AgentUiApp:
                 response=response,
                 mutation=mutation,
             )
+
+    async def respond_decisions(
+        self,
+        *,
+        thread_id: str,
+        response: DecisionResponseBatch,
+        mutation: ThreadConfigurationMutation | None = None,
+    ) -> RootRunReceipt:
+        projected = await self.thread_decisions(
+            thread_id=thread_id,
+            expected_continuation_id=response.expected_continuation_id,
+        )
+        if projected is None:
+            raise AppStateError("The selected Thread has no pending decisions.", code="thread_deferred_not_pending")
+        kinds = {item.request_id: item.kind for item in projected.requests}
+        supplied = {item.request_id for item in response.responses}
+        if supplied != set(kinds):
+            raise AppStateError(
+                "The decision response must answer the complete selected request set.",
+                code="thread_deferred_response_incomplete",
+            )
+        converted = []
+        for item in response.responses:
+            expected_kind = kinds[item.request_id]
+            if isinstance(item, QuestionResponse):
+                if expected_kind != "question":
+                    raise AppStateError(
+                        "A decision response kind does not match its request.",
+                        code="thread_deferred_response_kind_mismatch",
+                    )
+                converted.append(
+                    ExternalToolResult(
+                        request_id=item.request_id,
+                        result={
+                            "answers": {
+                                key: list(value) if isinstance(value, tuple) else value
+                                for key, value in item.answers.items()
+                            },
+                            **({} if item.response is None else {"response": item.response}),
+                        },
+                    )
+                )
+            else:
+                if item.kind != expected_kind:
+                    raise AppStateError(
+                        "A decision response kind does not match its request.",
+                        code="thread_deferred_response_kind_mismatch",
+                    )
+                converted.append(item)
+        return await self.respond_thread(
+            thread_id=thread_id,
+            response=ThreadDeferredResponse(
+                expected_continuation_id=response.expected_continuation_id,
+                responses=tuple(converted),
+            ),
+            mutation=mutation,
+        )
 
     async def get_root_operation(self, receipt_id: str) -> RootOperationView:
         async with self._operation():
@@ -521,8 +807,19 @@ class AgentUiApp:
         async with self._operation():
             return await self._root_runs.wait(receipt_id, timeout_seconds=timeout_seconds)
 
-    async def steer_root_operation(self, *, receipt_id: str, message: str) -> RootControlResult:
+    async def steer_root_operation(
+        self,
+        *,
+        receipt_id: str,
+        message: str,
+        skill_references: tuple[SkillReference, ...] = (),
+    ) -> RootControlResult:
         async with self._operation():
+            operation = await self._root_runs.get(receipt_id)
+            await self._terminal_projections.validate_skill_references(
+                skill_references,
+                thread_id=operation.receipt.thread_id,
+            )
             return await self._root_runs.steer(receipt_id=receipt_id, message=message)
 
     async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
@@ -666,13 +963,20 @@ class AgentUiApp:
                     parent_thread_id=root_thread_id,
                     limit=child_limit,
                 )
+                root_operation = await self._root_runs.active(root_thread_id)
+                tasks = await self._terminal_projections.task_page(
+                    thread_id=root_thread_id,
+                    expected_continuation_id=thread.continuation_id,
+                )
             cursor = subscription.cursor
             yield ThreadWatch(
                 snapshot=ThreadFocusSnapshot(
                     epoch=cursor.epoch,
                     cutover_sequence=cursor.sequence,
                     thread=thread,
+                    root_operation=root_operation,
                     children=children,
+                    tasks=tasks,
                 ),
                 events=subscription,
             )
@@ -923,6 +1227,15 @@ async def open_agent_ui_app(
                 store=store,
                 configurations=configurations,
                 root_activity=root_runs.activity,
+                root_activities=root_runs.activities,
+            )
+            terminal_projections = TerminalProjectionService(
+                store=store,
+                configurations=configurations,
+                threads=projections,
+                root_runs=root_runs,
+                children=operator,
+                configuration_path=configuration_path,
             )
             thread_tools = ThreadToolController(projections=projections, root_runs=root_runs)
             root_executor.set_root_capability_factory(
@@ -939,6 +1252,7 @@ async def open_agent_ui_app(
                 configurations=configurations,
                 threads=threads,
                 projections=projections,
+                terminal_projections=terminal_projections,
                 root_runs=root_runs,
                 subagent_operator=operator,
                 live_hub=live_hub,

@@ -72,6 +72,10 @@ async def test_root_coordinator_cancels_preparation_and_stale_receipt_cannot_con
         assert (await coordinator.cancel(first.receipt_id)).accepted
         cancelled = await coordinator.wait(first.receipt_id)
         assert cancelled.status is RootOperationStatus.cancelled
+        latest = await coordinator.latest("thread-1")
+        assert latest is not None
+        assert latest.receipt.receipt_id == first.receipt_id
+        assert (await coordinator.activities(("thread-1", "thread-2")))["thread-2"].state is RootActivityState.inactive
 
         executor.started = Event()
         second = await coordinator.submit_prompt(thread_id="thread-1", prompt="second")

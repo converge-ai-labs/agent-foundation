@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from a13n_ui.app import AgentUiApp
-from a13n_ui.thread_service import RootThreadDefaults
+from a13n_ui.surfaces import NewThreadDefaults
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,7 +14,7 @@ class TuiLaunchOptions:
     """Terminal-local initial selection that never mutates file defaults."""
 
     thread_id: str | None = None
-    defaults: RootThreadDefaults = field(default_factory=RootThreadDefaults)
+    defaults: NewThreadDefaults = field(default_factory=NewThreadDefaults)
 
 
 async def run(app: AgentUiApp, *, launch: TuiLaunchOptions | None = None) -> None:
