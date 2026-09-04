@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, select
+from sqlalchemy import and_, exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -32,9 +32,15 @@ from a13n_service.interactions import (
     QueuedSubmissionState,
     QueuedSubmissionStore,
     ReorderQueuedSubmissionsRequest,
+    Run,
+    Thread,
     ThreadQueueMutationReceipt,
     ThreadRunSubmissionIntent,
+    ThreadRunSubmissionReceipt,
+    ThreadRunSubmissionRequest,
+    ThreadSubmissionAdmission,
     UpdateQueuedSubmissionRequest,
+    classify_thread_submission,
 )
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.domain import StrictModel
@@ -42,7 +48,7 @@ from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRec
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
-from .commands import GatewayCommandError
+from .commands import ContinueRunRequest, GatewayCommandError, NativeInteractionCommands, WaitingContinueRunRequest
 from .models import GatewayCommandReceiptRecord
 
 
@@ -65,12 +71,166 @@ class NativeQueuedSubmissionService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         store: QueuedSubmissionStore,
+        commands: NativeInteractionCommands,
         *,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._store = store
+        self._commands = commands
         self._clock = clock
+
+    async def submit(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        request: ThreadRunSubmissionRequest,
+        idempotency_key: str,
+    ) -> ThreadRunSubmissionReceipt:
+        operation = "thread.submit"
+        replayed = await self._pre_replay(
+            actor=actor,
+            operation=operation,
+            scope_id=thread_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=ThreadRunSubmissionReceipt,
+        )
+        if replayed is not None:
+            return replayed
+        scope, thread, current, head, admission = await self._submission_admission(
+            actor=actor,
+            thread_id=thread_id,
+            request=request,
+        )
+        identity = _identity(idempotency_key, request)
+        evidence_scope = _evidence_scope(actor, operation=operation, scope_id=thread_id)
+
+        async def commit_run(database: AsyncSession, receipt) -> None:
+            if admission in {ThreadSubmissionAdmission.continuation, ThreadSubmissionAdmission.root}:
+                live_queue = await database.scalar(
+                    select(QueuedSubmissionRecord.id)
+                    .where(
+                        QueuedSubmissionRecord.tenant_id == scope.organization_id,
+                        QueuedSubmissionRecord.thread_id == thread.id,
+                        QueuedSubmissionRecord.position.is_not(None),
+                    )
+                    .order_by(QueuedSubmissionRecord.position, QueuedSubmissionRecord.id)
+                    .limit(1)
+                    .with_for_update()
+                )
+                if live_queue is not None:
+                    raise GatewayCommandError(
+                        "thread_queue_precedence_changed",
+                        "Queued intent gained precedence before Run acceptance.",
+                        status_code=409,
+                    )
+            selected_thread = await database.get(ThreadRecord, thread.id)
+            if selected_thread is None:
+                raise _not_found()
+            wrapped = ThreadRunSubmissionReceipt(
+                outcome="run_accepted",
+                run=receipt,
+                queue_version=selected_thread.queue_version,
+            )
+            await self._record_receipt(
+                database,
+                scope=scope,
+                evidence_scope=evidence_scope,
+                identity=identity,
+                receipt=wrapped,
+            )
+
+        continuation = ContinueRunRequest(
+            expected_thread_version=request.expected_thread_version,
+            input=request.input,
+            agent_id=request.agent_id,
+            agent_revision_id=request.agent_revision_id,
+            expected_current_revision_id=request.expected_current_revision_id,
+            config_override=request.config_override,
+            hook_subscription=request.hook_subscription,
+        )
+        try:
+            if admission is ThreadSubmissionAdmission.continuation:
+                assert head is not None
+                receipt = await self._commands.continue_from(
+                    actor=actor,
+                    source_run_id=head.id,
+                    idempotency_key=idempotency_key,
+                    request=continuation,
+                    transaction_hook=commit_run,
+                )
+                return ThreadRunSubmissionReceipt(
+                    outcome="run_accepted",
+                    run=receipt,
+                    queue_version=thread.queue_version,
+                )
+            if admission is ThreadSubmissionAdmission.root:
+                receipt = await self._commands.continue_empty_thread(
+                    actor=actor,
+                    thread_id=thread_id,
+                    idempotency_key=idempotency_key,
+                    request=continuation,
+                    transaction_hook=commit_run,
+                )
+                return ThreadRunSubmissionReceipt(
+                    outcome="run_accepted",
+                    run=receipt,
+                    queue_version=thread.queue_version,
+                )
+            if admission is ThreadSubmissionAdmission.waiting_continue:
+                if current.sealed_state is None or request.waiting_resolution is None:
+                    raise GatewayCommandError(
+                        "run_waiting_state_invalid",
+                        "The current waiting Run has no complete sealed state.",
+                        status_code=409,
+                    )
+                receipt = await self._commands.continue_waiting(
+                    actor=actor,
+                    run_id=current.id,
+                    idempotency_key=idempotency_key,
+                    request=WaitingContinueRunRequest(
+                        expected_thread_version=request.expected_thread_version,
+                        sealed_state_digest_sha256=request.waiting_resolution.sealed_state_digest_sha256,
+                        input=request.input,
+                        hook_subscription=request.hook_subscription,
+                    ),
+                    transaction_hook=commit_run,
+                )
+                return ThreadRunSubmissionReceipt(
+                    outcome="run_accepted",
+                    run=receipt,
+                    queue_version=thread.queue_version,
+                )
+            if admission is ThreadSubmissionAdmission.queued:
+                return await self._enqueue_thread_submission(
+                    actor=actor,
+                    scope=scope,
+                    thread=thread,
+                    request=request,
+                    identity=identity,
+                    evidence_scope=evidence_scope,
+                )
+        except IntegrityError as error:
+            if not is_evidence_unique_race(error):
+                raise
+            async with short_session(self._sessions) as database:
+                replayed = await _load_receipt(
+                    database,
+                    evidence_scope=evidence_scope,
+                    identity=identity,
+                    response_type=ThreadRunSubmissionReceipt,
+                    now=self._clock(),
+                )
+            if replayed is not None:
+                return replayed
+            raise
+        raise GatewayCommandError(
+            "thread_submission_rejected",
+            "The Thread cannot accept or queue this submission.",
+            status_code=409,
+        )
 
     async def list(
         self,
@@ -285,6 +445,184 @@ class NativeQueuedSubmissionService:
             ),
         )
 
+    async def _enqueue_thread_submission(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        scope: _QueueScope,
+        thread: Thread,
+        request: ThreadRunSubmissionRequest,
+        identity: IdempotencyIdentity,
+        evidence_scope: EvidenceScope,
+    ) -> ThreadRunSubmissionReceipt:
+        target_agent_id = request.agent_id or scope.agent_id
+        await self._authorize(
+            actor=actor,
+            scope=scope,
+            agent_id=target_agent_id,
+            action=WorkspaceAction.queued_submission_create,
+        )
+        await self._authorize(
+            actor=actor,
+            scope=scope,
+            agent_id=target_agent_id,
+            action=WorkspaceAction.agent_invoke,
+        )
+
+        async def replay(database: AsyncSession) -> QueuedSubmissionMutationReceipt | None:
+            wrapped = await _load_receipt(
+                database,
+                evidence_scope=evidence_scope,
+                identity=identity,
+                response_type=ThreadRunSubmissionReceipt,
+                now=self._clock(),
+            )
+            if wrapped is None:
+                return None
+            if wrapped.queued_submission is None:
+                raise IdempotencyConflict
+            return QueuedSubmissionMutationReceipt(
+                queued_submission=wrapped.queued_submission,
+                queue_version=wrapped.queue_version,
+            )
+
+        async def commit(database: AsyncSession, receipt: QueuedSubmissionMutationReceipt) -> None:
+            try:
+                for action in (WorkspaceAction.queued_submission_create, WorkspaceAction.agent_invoke):
+                    await authorize_agent(
+                        database,
+                        actor=actor,
+                        workspace_id=scope.workspace_id,
+                        agent_id=target_agent_id,
+                        action=action,
+                    )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            wrapped = ThreadRunSubmissionReceipt(
+                outcome="queued",
+                queued_submission=receipt.queued_submission,
+                queue_version=receipt.queue_version,
+            )
+            await self._record_receipt(
+                database,
+                scope=scope,
+                evidence_scope=evidence_scope,
+                identity=identity,
+                receipt=wrapped,
+            )
+
+        try:
+            queued = await self._store.enqueue(
+                tenant_id=scope.organization_id,
+                thread_id=thread.id,
+                expected_thread_version=request.expected_thread_version,
+                authority_principal=actor.principal,
+                submission=request.intent(),
+                replay=replay,
+                transaction_hook=commit,
+            )
+        except IdempotencyConflict as error:
+            raise _idempotency_conflict() from error
+        except QueuedSubmissionConflict as error:
+            raise _queue_error(error) from error
+        return ThreadRunSubmissionReceipt(
+            outcome="queued",
+            queued_submission=queued.queued_submission,
+            queue_version=queued.queue_version,
+        )
+
+    async def _submission_admission(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        request: ThreadRunSubmissionRequest,
+    ) -> tuple[_QueueScope, Thread, Run, Run | None, ThreadSubmissionAdmission]:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(SessionRecord, ThreadRecord, RunRecord)
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.session_id == SessionRecord.id,
+                        ),
+                    )
+                    .join(
+                        RunRecord,
+                        and_(
+                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.id == ThreadRecord.current_run_id,
+                        ),
+                    )
+                    .where(
+                        ThreadRecord.id == thread_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            session_record, thread_record, current_record = row
+            head_record = (
+                None
+                if thread_record.head_run_id is None
+                else await database.scalar(
+                    select(RunRecord).where(
+                        RunRecord.tenant_id == thread_record.tenant_id,
+                        RunRecord.id == thread_record.head_run_id,
+                    )
+                )
+            )
+            has_queue = bool(
+                await database.scalar(
+                    select(
+                        exists().where(
+                            QueuedSubmissionRecord.tenant_id == thread_record.tenant_id,
+                            QueuedSubmissionRecord.thread_id == thread_record.id,
+                            QueuedSubmissionRecord.position.is_not(None),
+                        )
+                    )
+                )
+            )
+            thread = thread_record.to_resource()
+            current = current_record.to_resource()
+            head = None if head_record is None else head_record.to_resource()
+            try:
+                admission = classify_thread_submission(
+                    thread=thread,
+                    current=current,
+                    head=head,
+                    has_queued_submission=has_queue,
+                    waiting_resolution_requested=request.waiting_resolution is not None,
+                )
+            except QueuedSubmissionConflict as error:
+                raise _queue_error(error) from error
+            action = (
+                WorkspaceAction.queued_submission_create
+                if admission is ThreadSubmissionAdmission.queued
+                else WorkspaceAction.run_continue
+            )
+            target_agent_id = request.agent_id or current.agent_id
+            scope = _QueueScope(
+                session_record.tenant_id,
+                session_record.workspace_id,
+                thread.id,
+                current.agent_id,
+            )
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=scope.workspace_id,
+                    agent_id=target_agent_id,
+                    action=action,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            return scope, thread, current, head, admission
+
     async def _mutate[ReceiptT: BaseModel](
         self,
         *,
@@ -334,28 +672,12 @@ class NativeQueuedSubmissionService:
                     )
             except AuthorizationError as error:
                 raise _not_found() from error
-            now = self._clock()
-            receipt_id = new_object_id("gwrcpt")
-            database.add(
-                GatewayCommandReceiptRecord(
-                    id=receipt_id,
-                    organization_id=scope.organization_id,
-                    workspace_id=scope.workspace_id,
-                    response_kind=response_type.__name__,
-                    request_digest_sha256=identity.request_digest,
-                    response_json=receipt.model_dump(mode="json", by_alias=True),
-                    created_at=now,
-                )
-            )
-            database.add(
-                new_evidence(
-                    organization_id=scope.organization_id,
-                    scope=evidence_scope,
-                    identity=identity,
-                    result_kind="gateway_receipt",
-                    result_ref=receipt_id,
-                    now=now,
-                )
+            await self._record_receipt(
+                database,
+                scope=scope,
+                evidence_scope=evidence_scope,
+                identity=identity,
+                receipt=receipt,
             )
 
         try:
@@ -376,6 +698,39 @@ class NativeQueuedSubmissionService:
                     status_code=503,
                 ) from error
             return replayed
+
+    async def _record_receipt(
+        self,
+        database: AsyncSession,
+        *,
+        scope: _QueueScope,
+        evidence_scope: EvidenceScope,
+        identity: IdempotencyIdentity,
+        receipt: BaseModel,
+    ) -> None:
+        now = self._clock()
+        receipt_id = new_object_id("gwrcpt")
+        database.add(
+            GatewayCommandReceiptRecord(
+                id=receipt_id,
+                organization_id=scope.organization_id,
+                workspace_id=scope.workspace_id,
+                response_kind=type(receipt).__name__,
+                request_digest_sha256=identity.request_digest,
+                response_json=receipt.model_dump(mode="json", by_alias=True),
+                created_at=now,
+            )
+        )
+        database.add(
+            new_evidence(
+                organization_id=scope.organization_id,
+                scope=evidence_scope,
+                identity=identity,
+                result_kind="gateway_receipt",
+                result_ref=receipt_id,
+                now=now,
+            )
+        )
 
     async def _pre_replay[ReceiptT: BaseModel](
         self,
@@ -585,6 +940,16 @@ def _identity(key: str, request: StrictModel) -> IdempotencyIdentity:
             status_code=400,
         ) from error
     return IdempotencyIdentity(key_digest=key_digest, request_digest=canonical_digest(request))
+
+
+def _evidence_scope(actor: AuthenticatedActor, *, operation: str, scope_id: str) -> EvidenceScope:
+    return EvidenceScope(
+        workspace_id=actor.boundary_workspace_id,
+        actor_type=actor.principal.principal_type.value,
+        actor_id=actor.principal.principal_id,
+        operation=operation,
+        scope_id=scope_id,
+    )
 
 
 def _not_found() -> GatewayCommandError:

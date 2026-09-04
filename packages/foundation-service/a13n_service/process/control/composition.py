@@ -158,6 +158,7 @@ async def build_control_runtime(
         queued_submissions=NativeQueuedSubmissionService(
             shared.storage.sessions,
             QueuedSubmissionStore(shared.storage.sessions, hooks.inline_validator),
+            gateway_commands,
         ),
     )
     runtime = ControlRuntime(

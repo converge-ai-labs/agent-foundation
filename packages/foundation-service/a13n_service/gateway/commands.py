@@ -68,6 +68,7 @@ from a13n_service.interactions import (
     ThreadRole,
     WaitingRunFeedbackRequest,
     initialize_completed_continuation_state,
+    initialize_empty_thread_state,
     initialize_fork_state,
     initialize_retry_state,
     initialize_start_state,
@@ -477,6 +478,149 @@ class NativeInteractionCommands:
                 expected_current_run_id=thread.current_run_id,
                 expected_head_run_id=thread.head_run_id,
                 next_head_run_id=source.id,
+                hook_subscription=request.hook_subscription,
+                final_validator=validate_final,
+                transaction_hook=transaction_hook,
+            )
+        except RunAcceptanceError as error:
+            raise _map_acceptance_error(error) from error
+
+    async def continue_empty_thread(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        idempotency_key: str,
+        request: ContinueRunRequest,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+    ) -> RunAcceptanceReceipt:
+        _require_idempotency_key(idempotency_key)
+        stored_key = _scoped_idempotency_key(
+            actor=actor,
+            operation="run.continue_empty",
+            scope_id=thread_id,
+            supplied=idempotency_key,
+        )
+        request_fingerprint = canonical_digest(request)
+        replay = await self._start_replay(
+            actor=actor,
+            workspace_id=actor.boundary_workspace_id,
+            stored_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            accepted_thread_version=request.expected_thread_version + 1,
+        )
+        if replay is not None:
+            return replay
+
+        source, thread = await self._load_empty_thread_source(actor=actor, thread_id=thread_id)
+        run_id = new_run_id()
+        prepared = await self._invocations.preparation.prepare(
+            actor=actor,
+            agent_id=request.agent_id or source.agent_id,
+            agent_revision_id=request.agent_revision_id,
+            expected_current_revision_id=request.expected_current_revision_id,
+            config_override=request.config_override,
+            run_id=run_id,
+        )
+        async with transaction(self._sessions) as database:
+            frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
+        if frozen.mcp_tool_snapshot is None:
+            raise GatewayCommandError(
+                "run_connectivity_unavailable",
+                "The Run tool snapshot could not be frozen.",
+                status_code=409,
+            )
+        accepted_input = await self._accept_input_value(
+            actor=actor,
+            workspace_id=actor.boundary_workspace_id,
+            submitted=request.input,
+            frozen=frozen,
+        )
+        state = initialize_empty_thread_state(
+            RunStateSeed(
+                run_id=run_id,
+                agent_id=frozen.agent_id,
+                agent_revision_id=frozen.agent_revision_id,
+                effective_agent_config=frozen.effective_config,
+            ),
+            thread_id=thread.id,
+        )
+        now = self._clock()
+        run = Run(
+            id=run_id,
+            version=1,
+            tenant_id=source.tenant_id,
+            authority_principal=actor.principal,
+            session_id=source.session_id,
+            thread_id=source.thread_id,
+            parent_run_id=None,
+            retry_of_run_id=None,
+            lineage_kind=RunLineageKind.root,
+            trigger_type="user_input",
+            agent_id=frozen.agent_id,
+            agent_revision_id=frozen.agent_revision_id,
+            effective_agent_config_digest=frozen.effective_config.content_digest,
+            encrypted_config_payload=None,
+            runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
+            model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
+            connector_connection_selections=tuple(
+                item.model_dump(mode="json") for item in frozen.connector_connection_selections
+            ),
+            mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
+            ingress_context=None,
+            mcp_tool_snapshot=frozen.mcp_tool_snapshot,
+            priority=self._priority,
+            queue_name=self._queue_name,
+            available_at=now,
+            current_run_attempt_id=None,
+            next_attempt_fence=1,
+            recovery_budget=RecoveryBudget(
+                policy_version="1",
+                max_recovery_attempts=self._recovery_max_attempts,
+                max_handoffs=self._max_handoffs,
+            ),
+            attempts_started=0,
+            recovery_attempts_started=0,
+            handoffs_completed=0,
+            usage_charged=RecoveryUsage(),
+            idempotency_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            status=RunStatus.accepted,
+            wait_reason=None,
+            input_kind=RunInputKind.agent_input,
+            input=accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True),
+            input_text=_input_text(accepted_input),
+            created_at=now,
+            updated_at=now,
+        )
+
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_continue,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
+            if final != frozen:
+                raise GatewayCommandError(
+                    "run_invocation_changed",
+                    "The selected Agent invocation changed before Run acceptance.",
+                    status_code=409,
+                )
+
+        try:
+            return await self._acceptance.advance_thread(
+                run=run,
+                state=state,
+                expected_thread_version=request.expected_thread_version,
+                expected_current_run_id=source.id,
+                expected_head_run_id=None,
+                next_head_run_id=None,
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
                 transaction_hook=transaction_hook,
@@ -1736,6 +1880,60 @@ class NativeInteractionCommands:
                 raise GatewayCommandError(
                     "run_not_retryable",
                     "The selected Run is not the Thread's current failed or cancelled Run.",
+                    status_code=409,
+                )
+            return source_record.to_resource(), thread_record.to_resource()
+
+    async def _load_empty_thread_source(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+    ) -> tuple[Run, Thread]:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, ThreadRecord)
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.current_run_id == RunRecord.id,
+                        ),
+                    )
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == ThreadRecord.tenant_id,
+                            SessionRecord.id == ThreadRecord.session_id,
+                        ),
+                    )
+                    .where(
+                        ThreadRecord.id == thread_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            source_record, thread_record = row
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source_record.agent_id,
+                    action=WorkspaceAction.run_continue,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            if thread_record.head_run_id is not None or source_record.status not in {
+                RunStatus.failed.value,
+                RunStatus.cancelled.value,
+            }:
+                raise GatewayCommandError(
+                    "thread_not_root_continuable",
+                    "The Thread does not have an empty continuation head.",
                     status_code=409,
                 )
             return source_record.to_resource(), thread_record.to_resource()

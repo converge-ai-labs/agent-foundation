@@ -28,6 +28,8 @@ from a13n_service.interactions import (
     SteerReceipt,
     SteerStatus,
     ThreadQueueMutationReceipt,
+    ThreadRunSubmissionReceipt,
+    ThreadRunSubmissionRequest,
     UpdateQueuedSubmissionRequest,
     WaitingRunFeedbackRequest,
 )
@@ -316,6 +318,26 @@ async def list_queued_submissions(
         thread_id=thread_id,
         state=state,
         limit=limit,
+    )
+
+
+@router.post(
+    "/api/v1/threads/{thread_id}/runs",
+    response_model=ThreadRunSubmissionReceipt,
+    status_code=202,
+)
+async def submit_thread_run(
+    request: Request,
+    actor: Actor,
+    thread_id: str,
+    body: ThreadRunSubmissionRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> ThreadRunSubmissionReceipt:
+    return await _queued_submissions(request).submit(
+        actor=actor,
+        thread_id=thread_id,
+        request=body,
+        idempotency_key=idempotency_key,
     )
 
 
