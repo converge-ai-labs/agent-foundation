@@ -230,6 +230,9 @@ async def build_control_runtime(
                 ),
                 poll_interval_seconds=settings.a2a_poll_interval_seconds,
                 maximum_wait_seconds=settings.a2a_maximum_wait_seconds,
+                push_drain_timeout_seconds=(
+                    settings.webhook_claim_lease_seconds + settings.webhook_request_timeout_seconds
+                ),
             )
             if settings.a2a_enabled
             else None

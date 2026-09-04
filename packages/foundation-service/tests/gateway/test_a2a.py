@@ -99,6 +99,7 @@ async def _service(
             ),
             poll_interval_seconds=0.001,
             maximum_wait_seconds=maximum_wait_seconds,
+            push_drain_timeout_seconds=0.1,
             clock=lambda: NOW,
         ),
         objects,
@@ -726,6 +727,66 @@ async def test_push_publisher_delivers_committed_terminal_task_through_outbox(
     assert stored is not None
     assert stored.status == "published"
     assert created.id in stored.destination_ref
+
+
+async def test_push_configuration_delete_waits_for_claimed_delivery(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
+    created = await service.create_push_configuration(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        requested=a2a.TaskPushNotificationConfig(url="https://8.8.8.8/a2a-events"),
+    )
+    async with short_session(lifecycle_interaction_sessions) as database:
+        binding = await database.get(A2ATaskBindingRecord, task.id)
+    assert binding is not None
+    await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id)
+    async with transaction(lifecycle_interaction_sessions) as database:
+        delivery = await database.scalar(select(OutboxRecord).where(OutboxRecord.destination_kind == "a2a_push"))
+        assert delivery is not None
+        delivery.status = "publishing"
+        delivery.claim_generation = 1
+        delivery.attempt_count = 1
+        delivery.lease_expires_at = NOW + timedelta(seconds=30)
+        delivery.updated_at = NOW
+
+    deleted = anyio.Event()
+
+    async def delete_configuration() -> None:
+        await service.delete_push_configuration(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            task_id=task.id,
+            config_id=created.id,
+        )
+        deleted.set()
+
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(delete_configuration)
+        await anyio.sleep(0.01)
+        assert not deleted.is_set()
+        async with short_session(lifecycle_interaction_sessions) as database:
+            configuration = await database.get(A2APushConfigurationRecord, created.id)
+            claimed = await database.get(OutboxRecord, delivery.id)
+        assert configuration is not None
+        assert configuration.state == "disabled"
+        assert claimed is not None
+        async with transaction(lifecycle_interaction_sessions) as database:
+            claimed = await database.get(OutboxRecord, delivery.id)
+            assert claimed is not None
+            claimed.status = "published"
+            claimed.lease_expires_at = None
+            claimed.published_at = NOW + timedelta(seconds=1)
+            claimed.updated_at = NOW + timedelta(seconds=1)
+        await deleted.wait()
+
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assert await database.get(OutboxRecord, delivery.id) is None
 
 
 async def test_push_publisher_follows_redirects_and_fences_credentials_by_origin(

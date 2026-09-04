@@ -13,7 +13,7 @@ import anyio
 from a2a.types import a2a_pb2 as a2a
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Value
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentConfig, canonical_digest
@@ -84,8 +84,11 @@ class A2AService:
         *,
         poll_interval_seconds: float,
         maximum_wait_seconds: float,
+        push_drain_timeout_seconds: float,
         clock: Clock = utc_now,
     ) -> None:
+        if push_drain_timeout_seconds <= 0:
+            raise ValueError("A2A push drain timeout must be positive")
         self._sessions = sessions
         self._commands = commands
         self._secrets = secrets
@@ -93,6 +96,7 @@ class A2AService:
         self._part_importer = part_importer
         self._poll_interval_seconds = poll_interval_seconds
         self._maximum_wait_seconds = maximum_wait_seconds
+        self._push_drain_timeout_seconds = push_drain_timeout_seconds
         self._clock = clock
 
     async def public_agent_card(self, *, agent_id: str, base_url: str) -> a2a.AgentCard:
@@ -683,6 +687,7 @@ class A2AService:
             action=WorkspaceAction.a2a_push_configuration_manage,
         )
         now = assume_utc(self._clock())
+        destination_ref: str
         async with transaction(self._sessions) as database:
             record = await database.scalar(
                 select(A2APushConfigurationRecord)
@@ -695,41 +700,72 @@ class A2AService:
             )
             if record is None:
                 raise _not_found()
-            if record.state == "disabled":
-                return
-            await self._authorize_agent_in_transaction(
-                database,
-                actor=actor,
-                agent_id=agent_id,
-                action=WorkspaceAction.a2a_push_configuration_manage,
-            )
-            for key, version in (
-                (_PUSH_TOKEN_KEY, record.token_secret_version),
-                (_PUSH_CREDENTIALS_KEY, record.authentication_secret_version),
-            ):
-                if version is not None:
-                    await self._secrets.tombstone_in_transaction(
-                        database,
-                        SecretUseContext(
-                            organization_id=record.organization_id,
-                            workspace_id=record.workspace_id,
-                            owner_type=SecretOwnerType.a2a_push_configuration,
-                            owner_id=record.id,
-                            key=key,
-                            operation=SecretOperation.management,
-                            credential_generation=version,
-                        ),
-                    )
-            record.state = "disabled"
-            record.delivery_generation += 1
-            record.updated_at = now
-            record.deleted_at = now
+            if record.state == "active":
+                await self._authorize_agent_in_transaction(
+                    database,
+                    actor=actor,
+                    agent_id=agent_id,
+                    action=WorkspaceAction.a2a_push_configuration_manage,
+                )
+                generation = record.delivery_generation
+                for key, version in (
+                    (_PUSH_TOKEN_KEY, record.token_secret_version),
+                    (_PUSH_CREDENTIALS_KEY, record.authentication_secret_version),
+                ):
+                    if version is not None:
+                        await self._secrets.tombstone_in_transaction(
+                            database,
+                            SecretUseContext(
+                                organization_id=record.organization_id,
+                                workspace_id=record.workspace_id,
+                                owner_type=SecretOwnerType.a2a_push_configuration,
+                                owner_id=record.id,
+                                key=key,
+                                operation=SecretOperation.management,
+                                credential_generation=version,
+                            ),
+                        )
+                record.state = "disabled"
+                record.delivery_generation += 1
+                record.updated_at = now
+                record.deleted_at = now
+            else:
+                generation = record.delivery_generation - 1
+            destination_ref = f"{record.id}:{generation}"
+
+        await self._drain_push_destination(destination_ref)
+        async with transaction(self._sessions) as database:
             await database.execute(
                 delete(OutboxRecord).where(
                     OutboxRecord.destination_kind == "a2a_push",
-                    OutboxRecord.destination_ref.like(f"{record.id}:%"),
+                    OutboxRecord.destination_ref == destination_ref,
                 )
             )
+
+    async def _drain_push_destination(self, destination_ref: str) -> None:
+        started = monotonic()
+        while True:
+            async with short_session(self._sessions) as database:
+                publishing = bool(
+                    await database.scalar(
+                        select(
+                            exists().where(
+                                OutboxRecord.destination_kind == "a2a_push",
+                                OutboxRecord.destination_ref == destination_ref,
+                                OutboxRecord.status == "publishing",
+                            )
+                        )
+                    )
+                )
+            if not publishing:
+                return
+            if monotonic() - started >= self._push_drain_timeout_seconds:
+                raise A2AError(
+                    "push_configuration_drain_timeout",
+                    "The push configuration is disabled but an earlier delivery is still draining.",
+                    status_code=503,
+                )
+            await anyio.sleep(self._poll_interval_seconds)
 
     async def _authorize_task_action(
         self,
