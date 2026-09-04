@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -8,6 +9,7 @@ from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.commands import (
+    ForkRunRequest,
     GatewayCommandError,
     NativeInteractionCommands,
     RetryRunRequest,
@@ -15,6 +17,11 @@ from a13n_service.gateway.commands import (
 )
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.interactions import (
+    AttemptExecutionService,
+    AttemptPreparationAccepted,
+    AttemptScheduler,
+    ClaimedAttempt,
+    CompletedOutcomeCandidate,
     InterruptRequest,
     MCPToolSnapshotRef,
     RunAcceptanceService,
@@ -41,6 +48,7 @@ from tests.interactions.conftest import (
     effective_agent_config,
 )
 from tests.interactions.test_acceptance import _inline_hooks
+from tests.interactions.test_attempt_execution import _authority, _completed_state, _worker
 
 pytestmark = pytest.mark.anyio
 
@@ -131,6 +139,48 @@ def _commands(
         payloads=payloads,
         clock=lambda: NOW,
     )
+
+
+async def _complete_run(
+    sessions: async_sessionmaker[AsyncSession],
+    objects: LocalObjectStore,
+    *,
+    run_id: str,
+) -> None:
+    states = RunStateStore(objects)
+    claim = await AttemptScheduler(
+        sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "gateway-lease-secret",
+    ).claim(run_id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=2))
+    authority = _authority(claim)
+    preparation = await execution.commit_preparation_success(authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(
+        authority,
+        preparation=preparation,
+        harness_run_id=f"harness-{run_id}",
+    )
+    authority = _authority(
+        claim,
+        run_version=entered.run_version,
+        attempt_version=entered.attempt_version,
+    )
+    current = await states.read(TENANT_ID, run_id)
+    candidate = _completed_state(
+        current.envelope,
+        claim.attempt.id,
+        claim.attempt.fence,
+        outcome=CompletedOutcomeCandidate(output={"answer": 42}),
+    )
+    stored = await execution.publish_checkpoint(authority, states, current, candidate)
+    await RunOutcomeService(
+        sessions,
+        RunPayloadStore(objects),
+        clock=lambda: NOW + timedelta(seconds=3),
+    ).commit_state_outcome(authority, stored, expected_thread_version=1)
 
 
 async def test_start_accepts_root_run_and_replays_before_resolution(
@@ -396,6 +446,100 @@ async def test_retry_rejects_terminal_run_after_thread_advances(
         )
 
     assert captured.value.code == "run_not_retryable"
+
+
+async def test_fork_creates_child_thread_and_replays(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    source = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="fork-source",
+        request=_request("source"),
+    )
+    await _complete_run(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        run_id=source.run_id,
+    )
+    request = ForkRunRequest(input=_request("fork input").input)
+
+    first = await commands.fork(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="fork-one",
+        request=request,
+    )
+    repeated = await commands.fork(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="fork-one",
+        request=request,
+    )
+
+    assert repeated == first
+    assert first.session_id == source.session_id
+    assert first.thread_id != source.thread_id
+    async with short_session(lifecycle_interaction_sessions) as database:
+        forked_run = await database.scalar(select(RunRecord).where(RunRecord.id == first.run_id))
+        forked_thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == first.thread_id))
+    assert forked_run is not None and forked_thread is not None
+    assert forked_run.parent_run_id == source.run_id
+    assert forked_run.lineage_kind == "fork"
+    assert forked_thread.role == "child"
+    assert forked_thread.origin_kind == "fork"
+    assert forked_thread.origin_thread_id == source.thread_id
+    assert forked_thread.origin_run_id == source.run_id
+
+
+async def test_fork_idempotency_rejects_changed_input(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    source = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="fork-conflict-source",
+        request=_request(),
+    )
+    await _complete_run(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        run_id=source.run_id,
+    )
+    await commands.fork(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="fork-conflict",
+        request=ForkRunRequest(input=_request("first").input),
+    )
+
+    with pytest.raises(GatewayCommandError) as captured:
+        await commands.fork(
+            actor=_actor(),
+            run_id=source.run_id,
+            idempotency_key="fork-conflict",
+            request=ForkRunRequest(input=_request("different").input),
+        )
+
+    assert captured.value.code == "idempotency_conflict"
 
 
 async def test_steer_is_atomic_replayable_and_does_not_advance_thread(

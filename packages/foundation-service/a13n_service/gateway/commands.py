@@ -67,6 +67,7 @@ from a13n_service.interactions import (
     ThreadOriginKind,
     ThreadRole,
     initialize_completed_continuation_state,
+    initialize_fork_state,
     initialize_retry_state,
     initialize_start_state,
     new_run_id,
@@ -106,6 +107,15 @@ class ContinueRunRequest(StrictModel):
 
 class RetryRunRequest(StrictModel):
     expected_thread_version: int = Field(ge=1)
+
+
+class ForkRunRequest(StrictModel):
+    input: AgentInput
+    agent_id: str | None = None
+    agent_revision_id: str | None = None
+    expected_current_revision_id: str | None = None
+    config_override: AgentRunOverride | None = None
+    hook_subscription: InlineHookSubscriptionInput | None = None
 
 
 class InterruptReceipt(StrictModel):
@@ -459,6 +469,183 @@ class NativeInteractionCommands:
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
                 transaction_hook=transaction_hook,
+            )
+        except RunAcceptanceError as error:
+            raise _map_acceptance_error(error) from error
+
+    async def fork(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        idempotency_key: str,
+        request: ForkRunRequest,
+    ) -> RunAcceptanceReceipt:
+        _require_idempotency_key(idempotency_key)
+        stored_key = _scoped_idempotency_key(
+            actor=actor,
+            operation="run.fork",
+            scope_id=run_id,
+            supplied=idempotency_key,
+        )
+        request_fingerprint = canonical_digest(request)
+        replay = await self._start_replay(
+            actor=actor,
+            workspace_id=actor.boundary_workspace_id,
+            stored_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            accepted_thread_version=1,
+        )
+        if replay is not None:
+            return replay
+
+        source = await self._load_fork_source(actor=actor, run_id=run_id)
+        source_state = await self._states.read(
+            source.tenant_id,
+            source.id,
+            expected_thread_id=source.thread_id,
+        )
+        new_run_id_value = new_run_id()
+        new_thread_id_value = new_thread_id()
+        reuse_exact_source = (
+            request.agent_id is None
+            and request.agent_revision_id is None
+            and request.expected_current_revision_id is None
+            and request.config_override is None
+        )
+        prepared = await self._invocations.preparation.prepare(
+            actor=actor,
+            agent_id=request.agent_id or source.agent_id,
+            agent_revision_id=(
+                source.agent_revision_id
+                if request.agent_id is None and request.agent_revision_id is None
+                else request.agent_revision_id
+            ),
+            expected_current_revision_id=request.expected_current_revision_id,
+            config_override=request.config_override,
+            run_id=new_run_id_value,
+        )
+        async with transaction(self._sessions) as database:
+            frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
+        if frozen.mcp_tool_snapshot is None:
+            raise GatewayCommandError(
+                "run_connectivity_unavailable",
+                "The Run tool snapshot could not be frozen.",
+                status_code=409,
+            )
+        if reuse_exact_source and frozen.effective_config != source_state.envelope.effective_agent_config:
+            raise GatewayCommandError(
+                "run_fork_source_changed",
+                "The source Run's exact executable configuration is no longer available.",
+                status_code=409,
+            )
+        accepted_input = await self._accept_input_value(
+            actor=actor,
+            workspace_id=actor.boundary_workspace_id,
+            submitted=request.input,
+            frozen=frozen,
+        )
+        state = initialize_fork_state(
+            RunStateSeed(
+                run_id=new_run_id_value,
+                agent_id=frozen.agent_id,
+                agent_revision_id=frozen.agent_revision_id,
+                effective_agent_config=frozen.effective_config,
+            ),
+            source_state.envelope,
+            thread_id=new_thread_id_value,
+        )
+        now = self._clock()
+        forked_run = Run(
+            id=new_run_id_value,
+            version=1,
+            tenant_id=source.tenant_id,
+            authority_principal=actor.principal,
+            session_id=source.session_id,
+            thread_id=new_thread_id_value,
+            parent_run_id=source.id,
+            retry_of_run_id=None,
+            lineage_kind=RunLineageKind.fork,
+            trigger_type="user_input",
+            agent_id=frozen.agent_id,
+            agent_revision_id=frozen.agent_revision_id,
+            effective_agent_config_digest=frozen.effective_config.content_digest,
+            encrypted_config_payload=None,
+            runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
+            model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
+            connector_connection_selections=tuple(
+                item.model_dump(mode="json") for item in frozen.connector_connection_selections
+            ),
+            mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
+            ingress_context=None,
+            mcp_tool_snapshot=frozen.mcp_tool_snapshot,
+            priority=self._priority,
+            queue_name=self._queue_name,
+            available_at=now,
+            current_run_attempt_id=None,
+            next_attempt_fence=1,
+            recovery_budget=RecoveryBudget(
+                policy_version="1",
+                max_recovery_attempts=self._recovery_max_attempts,
+                max_handoffs=self._max_handoffs,
+            ),
+            attempts_started=0,
+            recovery_attempts_started=0,
+            handoffs_completed=0,
+            usage_charged=RecoveryUsage(),
+            idempotency_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            status=RunStatus.accepted,
+            wait_reason=None,
+            input_kind=RunInputKind.agent_input,
+            input=accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True),
+            input_text=_input_text(accepted_input),
+            created_at=now,
+            updated_at=now,
+        )
+        thread = Thread(
+            id=new_thread_id_value,
+            version=1,
+            queue_version=0,
+            tenant_id=source.tenant_id,
+            session_id=source.session_id,
+            role=ThreadRole.child,
+            origin_kind=ThreadOriginKind.fork,
+            origin_thread_id=source.thread_id,
+            origin_run_id=source.id,
+            head_run_id=None,
+            current_run_id=new_run_id_value,
+            created_at=now,
+            updated_at=now,
+        )
+
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_fork,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
+            if final != frozen:
+                raise GatewayCommandError(
+                    "run_invocation_changed",
+                    "The selected Agent invocation changed before Run acceptance.",
+                    status_code=409,
+                )
+
+        try:
+            return await self._acceptance.accept_new_thread(
+                session=None,
+                thread=thread,
+                run=forked_run,
+                state=state,
+                hook_subscription=request.hook_subscription,
+                final_validator=validate_final,
             )
         except RunAcceptanceError as error:
             raise _map_acceptance_error(error) from error
@@ -1214,6 +1401,45 @@ class NativeInteractionCommands:
                 )
             return source_record.to_resource(), thread_record.to_resource()
 
+    async def _load_fork_source(self, *, actor: AuthenticatedActor, run_id: str) -> Run:
+        async with short_session(self._sessions) as database:
+            source_record = (
+                await database.execute(
+                    select(RunRecord)
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.id == RunRecord.session_id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.id == run_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if source_record is None:
+                raise _not_found()
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source_record.agent_id,
+                    action=WorkspaceAction.run_fork,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            source = source_record.to_resource()
+            if source.status is not RunStatus.completed:
+                raise GatewayCommandError(
+                    "run_not_forkable",
+                    "The selected Run is not a completed fork source.",
+                    status_code=409,
+                )
+            return source
+
     async def _require_session(self, *, tenant_id: str, workspace_id: str, session_id: str) -> None:
         async with short_session(self._sessions) as database:
             record = await database.scalar(
@@ -1345,6 +1571,7 @@ def _idempotency_conflict() -> GatewayCommandError:
 
 __all__ = [
     "ContinueRunRequest",
+    "ForkRunRequest",
     "GatewayCommandError",
     "InterruptReceipt",
     "NativeInteractionCommands",

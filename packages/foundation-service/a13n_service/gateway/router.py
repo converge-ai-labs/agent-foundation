@@ -23,6 +23,7 @@ from a13n_service.request_runtime import get_control_runtime
 
 from .commands import (
     ContinueRunRequest,
+    ForkRunRequest,
     InterruptReceipt,
     NativeInteractionCommands,
     RetryRunRequest,
@@ -208,6 +209,26 @@ async def continue_from_run(
     return await _commands(request).continue_from(
         actor=actor,
         source_run_id=source_run_id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+
+
+@router.post(
+    "/api/v1/runs/{run_id}/fork",
+    response_model=RunAcceptanceReceipt,
+    status_code=202,
+)
+async def fork_run(
+    request: Request,
+    actor: Actor,
+    run_id: str,
+    body: ForkRunRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> RunAcceptanceReceipt:
+    return await _commands(request).fork(
+        actor=actor,
+        run_id=run_id,
         idempotency_key=idempotency_key,
         request=body,
     )

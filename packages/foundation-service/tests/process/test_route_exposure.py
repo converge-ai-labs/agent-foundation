@@ -83,6 +83,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/ag-ui/v1/agents/{agent_id}/runs" in document["paths"]
     assert "/ag-ui/v1/agents/{agent_id}/cancel" in document["paths"]
     assert "/api/v1/runs/{run_id}/interrupt" in document["paths"]
+    assert "/api/v1/runs/{run_id}/fork" in document["paths"]
     assert "/api/v1/runs/{run_id}/retry" in document["paths"]
     assert "/api/v1/runs/{run_id}/steer" in document["paths"]
     assert "/api/v1/runs/{run_id}/steers/{steer_id}" in document["paths"]
