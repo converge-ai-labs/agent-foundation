@@ -491,6 +491,7 @@ class NativeInteractionCommands:
         run_id: str,
         idempotency_key: str,
         request: ForkRunRequest,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -657,6 +658,7 @@ class NativeInteractionCommands:
                 state=state,
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
+                transaction_hook=transaction_hook,
             )
         except RunAcceptanceError as error:
             raise _map_acceptance_error(error) from error

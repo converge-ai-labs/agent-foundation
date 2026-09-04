@@ -33,7 +33,13 @@ from a13n_service.run_stream import RedisRunStream, RunReplayStore, RunStreamEnt
 from a13n_service.storage import ObjectNotFound, short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest, WaitingContinueRunRequest
+from .commands import (
+    ContinueRunRequest,
+    ForkRunRequest,
+    NativeInteractionCommands,
+    StartRunRequest,
+    WaitingContinueRunRequest,
+)
 from .models import AguiRunBindingRecord, AguiThreadBindingRecord
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
@@ -157,7 +163,22 @@ class HostedAguiService:
             agent_id=agent_id,
             external_thread_id=request.thread_id,
         )
-        input_value = await self._validate_and_map_input(request, thread=thread)
+        latest: AguiRunBindingRecord | None = None
+        selected_parent: AguiRunBindingRecord | None = None
+        if thread is not None:
+            latest = await self._load_latest_run(thread.id)
+            selected_parent = (
+                latest
+                if request.parent_run_id is None
+                else await self._load_thread_run_binding(thread.id, request.parent_run_id)
+            )
+            if latest is None or selected_parent is None:
+                raise HostedAguiError(
+                    "agui_parent_not_found",
+                    "The selected AG-UI parent Run is unavailable.",
+                    status_code=409,
+                )
+        input_value = await self._validate_and_map_input(request, thread=thread, history=selected_parent)
         thread_binding_id = new_object_id("aguitb") if thread is None else thread.id
         run_binding_id = new_object_id("aguirb")
         now = assume_utc(self._clock())
@@ -198,7 +219,7 @@ class HostedAguiService:
                 if (
                     selected is None
                     or selected.version != thread.version
-                    or selected.active_thread_id != receipt.thread_id
+                    or selected.active_thread_id != thread.active_thread_id
                 ):
                     raise HostedAguiError(
                         "agui_thread_changed",
@@ -206,6 +227,7 @@ class HostedAguiService:
                         status_code=409,
                     )
                 selected.version += 1
+                selected.active_thread_id = receipt.thread_id
                 selected.updated_at = now
             database.add(
                 AguiRunBindingRecord(
@@ -217,7 +239,7 @@ class HostedAguiService:
                     agent_revision_id=run.agent_revision_id,
                     external_thread_id=request.thread_id,
                     external_run_id=request.run_id,
-                    parent_external_run_id=request.parent_run_id,
+                    parent_external_run_id=None if selected_parent is None else selected_parent.external_run_id,
                     request_digest_sha256=request_digest,
                     request_json=request_json,
                     run_id=receipt.run_id,
@@ -241,17 +263,27 @@ class HostedAguiService:
                 transaction_hook=bind,
             )
         else:
-            latest = await self._load_latest_run(thread.id)
-            if latest is None or (
-                request.parent_run_id is not None and request.parent_run_id != latest.external_run_id
-            ):
-                raise HostedAguiError(
-                    "agui_parent_not_active",
-                    "Historical parentRunId requires an explicit authorized fork.",
-                    status_code=409,
+            assert latest is not None and selected_parent is not None
+            historical_parent = selected_parent.id != latest.id
+            source, foundation_thread = await self._load_continuation_source(
+                selected_parent.run_id,
+                None if historical_parent else thread.active_thread_id,
+            )
+            if historical_parent:
+                if source.status != RunStatus.completed.value:
+                    raise HostedAguiError(
+                        "agui_parent_not_forkable",
+                        "The selected historical AG-UI parent Run is not completed.",
+                        status_code=409,
+                    )
+                await self._commands.fork(
+                    actor=actor,
+                    run_id=source.id,
+                    idempotency_key=idempotency_key,
+                    request=ForkRunRequest(input=input_value, agent_id=agent_id),
+                    transaction_hook=bind,
                 )
-            source, foundation_thread = await self._load_continuation_source(latest.run_id, thread.active_thread_id)
-            if source.status == RunStatus.waiting.value:
+            elif source.status == RunStatus.waiting.value:
                 if source.sealed_state_digest_sha256 is None:
                     raise HostedAguiError(
                         "agui_waiting_state_invalid",
@@ -419,6 +451,7 @@ class HostedAguiService:
         request: RunAgentInput,
         *,
         thread: AguiThreadBindingRecord | None,
+        history: AguiRunBindingRecord | None,
     ) -> AgentInput:
         if not _empty(request.state) or request.context or request.tools or not _empty(request.forwarded_props):
             raise HostedAguiError(
@@ -446,10 +479,9 @@ class HostedAguiService:
                     status_code=400,
                 )
         else:
-            latest = await self._load_latest_run(thread.id)
-            if latest is None:
+            if history is None:
                 raise HostedAguiError("agui_binding_invalid", "The AG-UI binding has no Run.", status_code=409)
-            expected = await self._expected_messages(latest)
+            expected = await self._expected_messages(history)
             supplied = tuple(_message_json(item) for item in request.messages[:-1])
             if supplied != expected:
                 raise HostedAguiError(
@@ -545,13 +577,42 @@ class HostedAguiService:
         async with short_session(self._sessions) as database:
             return await database.scalar(
                 select(AguiRunBindingRecord)
+                .join(
+                    AguiThreadBindingRecord,
+                    AguiThreadBindingRecord.id == AguiRunBindingRecord.thread_binding_id,
+                )
+                .join(
+                    ThreadRecord,
+                    and_(
+                        ThreadRecord.id == AguiThreadBindingRecord.active_thread_id,
+                        ThreadRecord.current_run_id == AguiRunBindingRecord.run_id,
+                    ),
+                )
                 .where(AguiRunBindingRecord.thread_binding_id == thread_binding_id)
-                .order_by(AguiRunBindingRecord.created_at.desc(), AguiRunBindingRecord.id.desc())
-                .limit(1)
             )
 
-    async def _load_continuation_source(self, run_id: str, thread_id: str) -> tuple[RunRecord, ThreadRecord]:
+    async def _load_thread_run_binding(
+        self,
+        thread_binding_id: str,
+        external_run_id: str,
+    ) -> AguiRunBindingRecord | None:
         async with short_session(self._sessions) as database:
+            return await database.scalar(
+                select(AguiRunBindingRecord).where(
+                    AguiRunBindingRecord.thread_binding_id == thread_binding_id,
+                    AguiRunBindingRecord.external_run_id == external_run_id,
+                )
+            )
+
+    async def _load_continuation_source(
+        self,
+        run_id: str,
+        thread_id: str | None,
+    ) -> tuple[RunRecord, ThreadRecord]:
+        async with short_session(self._sessions) as database:
+            predicates = [RunRecord.id == run_id]
+            if thread_id is not None:
+                predicates.append(RunRecord.thread_id == thread_id)
             row = (
                 await database.execute(
                     select(RunRecord, ThreadRecord)
@@ -562,7 +623,7 @@ class HostedAguiService:
                             ThreadRecord.id == RunRecord.thread_id,
                         ),
                     )
-                    .where(RunRecord.id == run_id, RunRecord.thread_id == thread_id)
+                    .where(*predicates)
                 )
             ).one_or_none()
         if row is None or row[0].status not in {RunStatus.completed.value, RunStatus.waiting.value}:

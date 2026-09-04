@@ -148,6 +148,7 @@ async def _complete_run(
     objects: LocalObjectStore,
     *,
     run_id: str,
+    expected_thread_version: int = 1,
 ) -> None:
     states = RunStateStore(objects)
     claim = await AttemptScheduler(
@@ -182,7 +183,7 @@ async def _complete_run(
         sessions,
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=3),
-    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    ).commit_state_outcome(authority, stored, expected_thread_version=expected_thread_version)
 
 
 async def _wait_run(

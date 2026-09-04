@@ -21,7 +21,7 @@ from ag_ui.core import RunAgentInput
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.gateway.test_commands import _commands, _frozen, _Preparation, _wait_run
+from tests.gateway.test_commands import _commands, _complete_run, _frozen, _Preparation, _wait_run
 from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import AGENT_ID, NOW
 
@@ -172,6 +172,85 @@ async def test_new_user_tail_defaults_active_waiting_run(
     assert successor.input_kind == "waiting_continue"
     assert successor.input_json["resolutions"][0]["outcome"] == "reject"
     assert successor.input_json["input"]["content"] == [{"type": "text", "text": "handle this instead"}]
+
+
+async def test_historical_parent_forks_and_selects_new_active_thread(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    async with AsyncExitStack() as stack:
+        service, _stream, objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        first = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=_request(),
+            last_event_id=None,
+        )
+        await _complete_run(
+            lifecycle_interaction_sessions,
+            objects,
+            run_id=first.binding.run_id,
+        )
+        second_request = RunAgentInput.model_validate(
+            {
+                "threadId": "external-thread-1",
+                "runId": "external-run-2",
+                "parentRunId": "external-run-1",
+                "state": {},
+                "messages": [
+                    {"id": "message-external-run-1", "role": "user", "content": "hello"},
+                    {"id": "message-external-run-2", "role": "user", "content": "second"},
+                ],
+                "tools": [],
+                "context": [],
+                "forwardedProps": {},
+            }
+        )
+        second = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=second_request,
+            last_event_id=None,
+        )
+        await _complete_run(
+            lifecycle_interaction_sessions,
+            objects,
+            run_id=second.binding.run_id,
+            expected_thread_version=3,
+        )
+        fork_request = RunAgentInput.model_validate(
+            {
+                "threadId": "external-thread-1",
+                "runId": "external-run-fork",
+                "parentRunId": "external-run-1",
+                "state": {},
+                "messages": [
+                    {"id": "message-external-run-1", "role": "user", "content": "hello"},
+                    {"id": "message-external-run-fork", "role": "user", "content": "alternate"},
+                ],
+                "tools": [],
+                "context": [],
+                "forwardedProps": {},
+            }
+        )
+
+        forked = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=fork_request,
+            last_event_id=None,
+        )
+
+    async with short_session(lifecycle_interaction_sessions) as database:
+        forked_run = await database.scalar(select(RunRecord).where(RunRecord.id == forked.binding.run_id))
+        second_run = await database.scalar(select(RunRecord).where(RunRecord.id == second.binding.run_id))
+        thread_binding = await database.scalar(select(AguiThreadBindingRecord))
+    assert forked_run is not None and second_run is not None and thread_binding is not None
+    assert forked_run.parent_run_id == first.binding.run_id
+    assert forked_run.lineage_kind == "fork"
+    assert forked_run.thread_id != second_run.thread_id
+    assert thread_binding.active_thread_id == forked_run.thread_id
 
 
 async def test_hosted_stream_projects_standard_events_and_resumes_with_hosted_cursor(
