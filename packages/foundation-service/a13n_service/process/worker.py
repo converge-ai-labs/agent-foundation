@@ -15,6 +15,8 @@ from a13n_service.environments.keepalive import (
     KeepaliveSourceBinding,
     PreparedEnvironmentKeepalive,
 )
+from a13n_service.gateway.agui_replay import HostedAguiReplayStore
+from a13n_service.gateway.hosted_agui import HostedAguiTerminalProjector
 from a13n_service.ids import new_object_id
 from a13n_service.plugins.materialization import PluginRuntimeMaterializer
 from a13n_service.plugins.on_demand import OnDemandPluginRuntime
@@ -125,6 +127,14 @@ async def build_worker_runtime(
         max_attempts=settings.lifecycle_projection_max_attempts,
         poll_interval_seconds=settings.lifecycle_projection_poll_interval_seconds,
         claim_limit=settings.lifecycle_projection_claim_limit,
+        terminal_projection=HostedAguiTerminalProjector(
+            shared.storage.sessions,
+            HostedAguiReplayStore(
+                shared.storage.objects,
+                max_events=settings.run_replay_max_events + 2,
+                max_bytes=settings.run_replay_max_bytes,
+            ),
+        ).project,
     )
     runtime = WorkerRuntime(
         plugin_materializer=materializer,

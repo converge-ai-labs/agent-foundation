@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from time import monotonic
@@ -37,11 +38,26 @@ from a13n_service.interactions import (
     WaitingRunFeedbackRequest,
 )
 from a13n_service.interactions.models import RunRecord, ThreadRecord
+from a13n_service.lifecycle import LifecycleEvent
 from a13n_service.public_errors import PublicError
-from a13n_service.run_stream import RedisRunStream, RunReplayStore, RunStreamEntry, RunStreamReplayGap
+from a13n_service.run_stream import (
+    CompleteRunStream,
+    RedisRunStream,
+    RunReplayStore,
+    RunStreamEntry,
+    RunStreamError,
+    RunStreamReplayGap,
+)
 from a13n_service.storage import ObjectNotFound, short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
+from .agui_replay import (
+    HostedAguiDeliveryEvent,
+    HostedAguiReplayError,
+    HostedAguiReplaySnapshot,
+    HostedAguiReplayStore,
+    HostedAguiReplayUnavailable,
+)
 from .commands import (
     ContinueRunRequest,
     ForkRunRequest,
@@ -51,6 +67,7 @@ from .commands import (
 )
 from .models import AguiRunBindingRecord, AguiThreadBindingRecord
 
+logger = logging.getLogger("a13n_service.gateway.hosted_agui")
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _JSON_VALUE = TypeAdapter(JsonValue)
 _EVENT = TypeAdapter(Event)
@@ -93,6 +110,7 @@ class HostedAguiBinding:
     organization_id: str
     workspace_id: str
     thread_binding_id: str
+    run_binding_id: str
     agent_id: str
     agent_revision_id: str
     external_thread_id: str
@@ -129,6 +147,53 @@ class _HostedForwardedProps(BaseModel):
     a13n: _A13nForwardedProps
 
 
+class HostedAguiTerminalProjector:
+    """Persist Hosted AG-UI terminal delivery from one complete Native source."""
+
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        replay: HostedAguiReplayStore,
+    ) -> None:
+        self._sessions = sessions
+        self._replay = replay
+
+    async def project(self, event: LifecycleEvent, source: CompleteRunStream) -> None:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(AguiRunBindingRecord, AguiThreadBindingRecord, RunRecord)
+                    .join(
+                        AguiThreadBindingRecord,
+                        AguiThreadBindingRecord.id == AguiRunBindingRecord.thread_binding_id,
+                    )
+                    .join(
+                        RunRecord,
+                        and_(
+                            RunRecord.tenant_id == AguiRunBindingRecord.organization_id,
+                            RunRecord.id == AguiRunBindingRecord.run_id,
+                        ),
+                    )
+                    .where(
+                        AguiRunBindingRecord.organization_id == event.tenant_id,
+                        AguiRunBindingRecord.run_id == event.run_id,
+                    )
+                )
+            ).one_or_none()
+        if row is None:
+            return
+        run_binding, thread_binding, run = row
+        binding = _binding(run_binding, thread_binding)
+        try:
+            snapshot = _build_replay_snapshot(binding, run, source.entries)
+            await self._replay.publish(binding.organization_id, snapshot)
+        except HostedAguiReplayUnavailable:
+            logger.info(
+                "Hosted AG-UI Run closed without retained replay",
+                extra={"run_id": event.run_id, "lifecycle_event_id": event.id},
+            )
+
+
 class HostedAguiService:
     """Map standard AG-UI calls to canonical Foundation interaction commands."""
 
@@ -138,6 +203,7 @@ class HostedAguiService:
         commands: NativeInteractionCommands,
         stream: RedisRunStream,
         replay: RunReplayStore,
+        hosted_replay: HostedAguiReplayStore,
         *,
         page_size: int,
         poll_interval_seconds: float,
@@ -150,6 +216,7 @@ class HostedAguiService:
         self._commands = commands
         self._stream = stream
         self._replay = replay
+        self._hosted_replay = hosted_replay
         self._page_size = page_size
         self._poll_interval_seconds = poll_interval_seconds
         self._heartbeat_interval_seconds = heartbeat_interval_seconds
@@ -188,7 +255,7 @@ class HostedAguiService:
                     status_code=409,
                 )
             await self._authorize_read(actor=actor, binding=existing)
-            return HostedAguiAttachment(actor, existing, _resume_ordinal(existing, last_event_id))
+            return await self._attachment(actor=actor, binding=existing, cursor=last_event_id)
 
         thread = await self._load_thread_binding(
             actor=actor,
@@ -439,7 +506,7 @@ class HostedAguiService:
                 "The AG-UI runId was already used with different input.",
                 status_code=409,
             )
-        return HostedAguiAttachment(actor, bound, _resume_ordinal(bound, last_event_id))
+        return await self._attachment(actor=actor, binding=bound, cursor=last_event_id)
 
     async def cancel(
         self,
@@ -486,6 +553,24 @@ class HostedAguiService:
 
     async def events(self, attachment: HostedAguiAttachment) -> AsyncIterator[bytes]:
         binding = attachment.binding
+        try:
+            retained = await self._sealed_replay(binding)
+        except HostedAguiReplayUnavailable:
+            retained = None
+        except HostedAguiReplayError:
+            gap = {
+                "type": "CUSTOM",
+                "name": "a13n.foundation.replay_gap",
+                "value": {"schema_version": "1", "run_id": binding.external_run_id},
+            }
+            if attachment.after_ordinal < 0:
+                yield _sse(binding, 0, gap)
+            return
+        if retained is not None:
+            for item in retained.events:
+                if item.ordinal > attachment.after_ordinal:
+                    yield _sse(binding, item.ordinal, item.event)
+            return
         ordinal = 0
         native_cursor: str | None = None
         started = monotonic()
@@ -542,7 +627,16 @@ class HostedAguiService:
                 ordinal += 1
             run = await self._run_record(binding)
             status = RunStatus(run.status)
-            if closed or status in {RunStatus.waiting, RunStatus.completed, RunStatus.failed, RunStatus.cancelled}:
+            sealed = status in {RunStatus.waiting, RunStatus.completed, RunStatus.failed, RunStatus.cancelled}
+            if sealed and status is not RunStatus.waiting and not closed:
+                await anyio.sleep(self._poll_interval_seconds)
+                continue
+            if closed or sealed:
+                if sealed:
+                    try:
+                        await self._sealed_replay(binding)
+                    except HostedAguiReplayError:
+                        pass
                 terminal = _terminal_event(binding, run)
                 if terminal is not None and ordinal > attachment.after_ordinal:
                     yield _sse(binding, ordinal, terminal)
@@ -552,6 +646,85 @@ class HostedAguiService:
                 yield b": heartbeat\n\n"
                 last_heartbeat = now
             await anyio.sleep(self._poll_interval_seconds)
+
+    async def _attachment(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        binding: HostedAguiBinding,
+        cursor: str | None,
+    ) -> HostedAguiAttachment:
+        after_ordinal = _resume_ordinal(binding, cursor)
+        try:
+            retained = await self._sealed_replay(binding)
+        except HostedAguiReplayUnavailable as error:
+            if cursor is not None:
+                raise HostedAguiError(
+                    "agui_replay_gap",
+                    "The requested Hosted AG-UI delivery history is unavailable.",
+                    status_code=409,
+                ) from error
+            retained = None
+        except HostedAguiReplayError as error:
+            raise HostedAguiError(
+                "agui_replay_unavailable",
+                "Hosted AG-UI delivery history is temporarily unavailable.",
+                status_code=503,
+            ) from error
+        if retained is not None and after_ordinal >= len(retained.events):
+            raise HostedAguiError(
+                "agui_cursor_invalid",
+                "The Hosted AG-UI cursor is outside the retained delivery history.",
+                status_code=409,
+            )
+        return HostedAguiAttachment(actor, binding, after_ordinal)
+
+    async def _sealed_replay(self, binding: HostedAguiBinding) -> HostedAguiReplaySnapshot | None:
+        try:
+            retained = await self._hosted_replay.read(binding.organization_id, binding.run_binding_id)
+        except ObjectNotFound:
+            pass
+        else:
+            _validate_replay_binding(binding, retained)
+            return retained
+        run = await self._run_record(binding)
+        if run.status not in {
+            RunStatus.waiting.value,
+            RunStatus.completed.value,
+            RunStatus.failed.value,
+            RunStatus.cancelled.value,
+        }:
+            return None
+        entries = await self._complete_projection_source(
+            binding,
+            waiting=run.status == RunStatus.waiting.value,
+        )
+        snapshot = _build_replay_snapshot(binding, run, entries)
+        retained = await self._hosted_replay.publish(binding.organization_id, snapshot)
+        _validate_replay_binding(binding, retained)
+        return retained
+
+    async def _complete_projection_source(
+        self,
+        binding: HostedAguiBinding,
+        *,
+        waiting: bool,
+    ) -> tuple[RunStreamEntry, ...]:
+        try:
+            retained = await self._replay.read(binding.organization_id, binding.run_id)
+            entries = tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
+        except (ObjectNotFound, RunStreamError):
+            try:
+                if waiting:
+                    entries = await self._stream.untrimmed_entries(binding.organization_id, binding.run_id)
+                else:
+                    source = await self._stream.complete_source(binding.organization_id, binding.run_id)
+                    entries = source.entries
+            except RunStreamError as error:
+                raise HostedAguiReplayUnavailable("The complete Native presentation source is unavailable") from error
+        if not entries:
+            raise HostedAguiReplayUnavailable("The complete Native presentation source is unavailable")
+        return entries
 
     async def _validate_and_map_input(
         self,
@@ -920,12 +1093,54 @@ def _binding(run: AguiRunBindingRecord, thread: AguiThreadBindingRecord) -> Host
         organization_id=run.organization_id,
         workspace_id=run.workspace_id,
         thread_binding_id=thread.id,
+        run_binding_id=run.id,
         agent_id=run.agent_id,
         agent_revision_id=run.agent_revision_id,
         external_thread_id=run.external_thread_id,
         external_run_id=run.external_run_id,
         run_id=run.run_id,
         request_digest_sha256=run.request_digest_sha256,
+    )
+
+
+def _validate_replay_binding(binding: HostedAguiBinding, replay: HostedAguiReplaySnapshot) -> None:
+    if (
+        replay.binding_id != binding.run_binding_id
+        or replay.foundation_run_id != binding.run_id
+        or replay.external_thread_id != binding.external_thread_id
+        or replay.external_run_id != binding.external_run_id
+        or replay.agent_revision_id != binding.agent_revision_id
+    ):
+        raise HostedAguiReplayError("Hosted AG-UI replay correlation does not match its binding")
+
+
+def _build_replay_snapshot(
+    binding: HostedAguiBinding,
+    run: RunRecord,
+    entries: Sequence[RunStreamEntry],
+) -> HostedAguiReplaySnapshot:
+    events: list[dict[str, Any]] = [
+        _standard_event(
+            {
+                "type": "RUN_STARTED",
+                "threadId": binding.external_thread_id,
+                "runId": binding.external_run_id,
+            }
+        )
+    ]
+    events.extend(projected for entry in entries if (projected := _project_event(entry)) is not None)
+    terminal = _terminal_event(binding, run)
+    if terminal is None:
+        raise HostedAguiReplayUnavailable("The Hosted AG-UI Run has no sealed delivery boundary")
+    events.append(terminal)
+    return HostedAguiReplaySnapshot(
+        binding_id=binding.run_binding_id,
+        foundation_run_id=binding.run_id,
+        external_thread_id=binding.external_thread_id,
+        external_run_id=binding.external_run_id,
+        agent_revision_id=binding.agent_revision_id,
+        sealed_at=assume_utc(run.sealed_at or run.updated_at),
+        events=tuple(HostedAguiDeliveryEvent(ordinal=ordinal, event=event) for ordinal, event in enumerate(events)),
     )
 
 
@@ -1273,4 +1488,5 @@ __all__ = [
     "HostedAguiCancelRequest",
     "HostedAguiError",
     "HostedAguiService",
+    "HostedAguiTerminalProjector",
 ]

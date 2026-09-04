@@ -6,16 +6,23 @@ from typing import Any
 
 import pytest
 from a13n_service.agents.models import AgentRevisionRecord
-from a13n_service.gateway.hosted_agui import HostedAguiCancelRequest, HostedAguiError, HostedAguiService
+from a13n_service.gateway.agui_replay import HostedAguiReplayStore, hosted_agui_replay_key
+from a13n_service.gateway.hosted_agui import (
+    HostedAguiCancelRequest,
+    HostedAguiError,
+    HostedAguiService,
+    HostedAguiTerminalProjector,
+)
 from a13n_service.gateway.models import AguiRunBindingRecord, AguiThreadBindingRecord
 from a13n_service.interactions.models import RunRecord
+from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.run_stream import (
     RedisRunStream,
     RunReplayStore,
     RunStreamEvent,
     deterministic_run_stream_event_id,
 )
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import ObjectNotFound, short_session, transaction
 from a13n_service.storage.config import RedisMemoryConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.redis import open_redis
@@ -58,6 +65,7 @@ async def _service(
             _commands(sessions, objects, _Preparation(), _frozen_resolver()),
             stream,
             RunReplayStore(objects),
+            HostedAguiReplayStore(objects, max_events=1024, max_bytes=16 * 1024 * 1024),
             page_size=100,
             poll_interval_seconds=0.001,
             heartbeat_interval_seconds=1,
@@ -570,6 +578,108 @@ async def test_hosted_stream_projects_standard_events_and_resumes_with_hosted_cu
     assert b'"type":"TEXT_MESSAGE_END"' in frames[3]
     assert all(b"rat_1234567890abcdef" not in frame for frame in frames)
     assert resumed_frames == frames[2:]
+
+
+async def test_sealed_hosted_replay_survives_native_stream_loss_and_bounds_cursor(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    async with AsyncExitStack() as stack:
+        service, stream, objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        attachment = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=_request(),
+            last_event_id=None,
+        )
+        for sequence, (event_type, payload) in enumerate(
+            (
+                (
+                    "agui.text_message_start",
+                    {"messageId": "message-output", "role": "assistant", "item_kind": "text_message"},
+                ),
+                ("agui.text_message_content", {"messageId": "message-output", "delta": "hello"}),
+                ("agui.text_message_end", {"messageId": "message-output"}),
+            ),
+            start=1,
+        ):
+            await stream.append(
+                attachment.binding.organization_id,
+                RunStreamEvent(
+                    event_id=deterministic_run_stream_event_id("hosted-retained-test", str(sequence)),
+                    event_type=event_type,
+                    run_id=attachment.binding.run_id,
+                    thread_id="thread_1234567890abcdef",
+                    run_attempt_id="rat_1234567890abcdef",
+                    harness_run_id="hrun_1234567890abcdef",
+                    occurred_at=NOW + timedelta(seconds=sequence),
+                    payload=payload,
+                ),
+            )
+        await _complete_run(lifecycle_interaction_sessions, objects, run_id=attachment.binding.run_id)
+        await stream.close(
+            attachment.binding.organization_id,
+            attachment.binding.run_id,
+            closed_at=NOW + timedelta(seconds=10),
+        )
+
+        async with short_session(lifecycle_interaction_sessions) as database:
+            terminal = await database.scalar(
+                select(LifecycleEventRecord).where(
+                    LifecycleEventRecord.run_id == attachment.binding.run_id,
+                    LifecycleEventRecord.event_type == "run.completed",
+                )
+            )
+        assert terminal is not None
+        source = await stream.complete_source(attachment.binding.organization_id, attachment.binding.run_id)
+        await HostedAguiTerminalProjector(
+            lifecycle_interaction_sessions,
+            HostedAguiReplayStore(objects, max_events=1, max_bytes=16 * 1024 * 1024),
+        ).project(terminal.to_resource(), source)
+        with pytest.raises(ObjectNotFound):
+            await objects.stat(
+                hosted_agui_replay_key(
+                    attachment.binding.organization_id,
+                    attachment.binding.run_binding_id,
+                )
+            )
+        await HostedAguiTerminalProjector(
+            lifecycle_interaction_sessions,
+            HostedAguiReplayStore(objects, max_events=1024, max_bytes=16 * 1024 * 1024),
+        ).project(terminal.to_resource(), source)
+        replay_info = await objects.stat(
+            hosted_agui_replay_key(
+                attachment.binding.organization_id,
+                attachment.binding.run_binding_id,
+            )
+        )
+        await stream._redis.flushall()  # type: ignore[attr-defined]
+        frames = [frame async for frame in service.events(attachment)]
+        cursor = frames[1].split(b"\n", maxsplit=1)[0].removeprefix(b"id: ").decode()
+        resumed = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=_request(),
+            last_event_id=cursor,
+        )
+        resumed_frames = [frame async for frame in service.events(resumed)]
+        last_cursor = frames[-1].split(b"\n", maxsplit=1)[0].removeprefix(b"id: ").decode()
+        invalid_cursor = last_cursor.rsplit("_", maxsplit=1)[0] + "_999"
+        with pytest.raises(HostedAguiError) as captured:
+            await service.accept(
+                actor=_actor(),
+                agent_id=AGENT_ID,
+                request=_request(),
+                last_event_id=invalid_cursor,
+            )
+
+    assert replay_info.content_type == "application/vnd.a13n.hosted-agui-replay+json"
+    assert len(frames) == 5
+    assert b'"type":"RUN_FINISHED"' in frames[-1]
+    assert resumed_frames == frames[2:]
+    assert captured.value.code == "agui_cursor_invalid"
+    assert captured.value.status_code == 409
 
 
 async def test_hosted_cancel_resolves_binding_and_interrupts_foundation_run(

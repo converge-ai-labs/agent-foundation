@@ -12,6 +12,7 @@ from a13n_service.environments.catalog import FoundationEnvironmentProviderCatal
 from a13n_service.gateway import GatewayRuntime
 from a13n_service.gateway.a2a import A2AService
 from a13n_service.gateway.a2a_push import A2APushPublisher
+from a13n_service.gateway.agui_replay import HostedAguiReplayStore
 from a13n_service.gateway.commands import NativeInteractionCommands
 from a13n_service.gateway.hosted_agui import HostedAguiService
 from a13n_service.gateway.native_streaming import NativeRunStreamService
@@ -175,6 +176,11 @@ async def build_control_runtime(
             gateway_commands,
             gateway_stream,
             gateway_replay,
+            HostedAguiReplayStore(
+                shared.storage.objects,
+                max_events=settings.run_replay_max_events + 2,
+                max_bytes=settings.run_replay_max_bytes,
+            ),
             page_size=settings.gateway_stream_page_size,
             poll_interval_seconds=settings.gateway_stream_poll_interval_seconds,
             heartbeat_interval_seconds=settings.gateway_stream_heartbeat_interval_seconds,
