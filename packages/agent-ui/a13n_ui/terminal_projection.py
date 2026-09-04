@@ -362,7 +362,12 @@ class TerminalProjectionService:
         }
         return ThreadSelectorCatalog(
             agents=tuple(
-                AgentSummary(agent_id=item.id, name=item.name, source_path=paths.get(item.id, "a13n-ui.yaml"))
+                AgentSummary(
+                    agent_id=item.id,
+                    name=item.name,
+                    model_id=item.model,
+                    source_path=paths.get(item.id, "a13n-ui.yaml"),
+                )
                 for item in sorted(source.agents.values(), key=lambda item: (item.name.casefold(), item.id))
             ),
             environments=environments,

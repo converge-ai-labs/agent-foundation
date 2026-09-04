@@ -45,6 +45,13 @@ class ReviewPane(Container):
         self.query_one("#review-child-steer", Button).display = "steer" in review.available_actions
         self.query_one("#review-child-cancel", Button).display = "cancel" in review.available_actions
 
+    def focus_initial(self) -> None:
+        message = self.query_one("#review-child-message", Input)
+        if message.display:
+            message.focus()
+        else:
+            self.query_one("#review-close", Button).focus()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "review-close":
             event.stop()

@@ -10,12 +10,16 @@ from a13n_ui.surfaces import (
     DecisionBatchView,
     LaunchProjectResolution,
     NewThreadDefaults,
+    ProjectPathCompletionPage,
+    ProjectSummary,
     ReviewView,
     RootOperationView,
+    SkillCatalogView,
     SkillReference,
     TaskPage,
     ThreadDetail,
     ThreadFocusSnapshot,
+    ThreadSelectorCatalog,
     WorkbenchPage,
     WorkbenchThreadView,
 )
@@ -24,6 +28,14 @@ MAX_DRAFTS = 16
 MAX_NOTICES = 32
 MAX_TIMELINE_BLOCKS = 500
 MAX_BLOCK_TEXT = 256 * 1024
+
+type ConfigurationResourceKind = Literal[
+    "agent",
+    "environment",
+    "harness_plugin",
+    "environment_run_extension",
+    "mcp_server",
+]
 
 
 class TerminalLifecycle(StrEnum):
@@ -150,10 +162,33 @@ class OverlayState:
         "status",
         "help",
         "configuration",
+        "projects",
         "review",
         "inspector",
     ]
     key: str | None = None
+    context_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CompletionState:
+    request_version: int
+    key: str
+    kind: Literal["path", "skill"]
+    query: str
+    token_start: int
+    token_end: int
+    paths: ProjectPathCompletionPage | None = None
+    skills: SkillCatalogView | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigurationConflictState:
+    thread_id: str
+    kind: ConfigurationResourceKind
+    resource_id: str
+    intended_selected: bool
+    message: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +253,14 @@ class TerminalState:
     thread_views: tuple[ThreadViewState, ...] = ()
     overlays: tuple[OverlayState, ...] = ()
     review: ReviewState | None = None
+    projects: tuple[ProjectSummary, ...] = ()
+    selectors: ThreadSelectorCatalog | None = None
+    skill_catalog: SkillCatalogView | None = None
+    thread_picker: WorkbenchPage | None = None
+    thread_picker_query: str = ""
+    overlay_request_version: int = 0
+    completion: CompletionState | None = None
+    configuration_conflict: ConfigurationConflictState | None = None
     notices: tuple[TerminalNotice, ...] = ()
     show_reasoning: bool = False
     show_tool_details: bool = False
@@ -250,6 +293,9 @@ __all__ = [
     "MAX_TIMELINE_BLOCKS",
     "BlockKind",
     "BlockStatus",
+    "CompletionState",
+    "ConfigurationConflictState",
+    "ConfigurationResourceKind",
     "ControlMode",
     "DecisionAnswerDraft",
     "DecisionSessionState",

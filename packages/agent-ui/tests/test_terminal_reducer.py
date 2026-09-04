@@ -186,6 +186,8 @@ def _workbench_row(
     operation: RootOperationView | None = None,
     pending: bool = False,
     active_children: int = 0,
+    failed_children: int = 0,
+    lost_children: int = 0,
 ) -> WorkbenchThreadView:
     from a13n_ui.surfaces import PendingDecisionSummary
 
@@ -200,6 +202,8 @@ def _workbench_row(
             running=active_children,
             active=active_children,
             unavailable=0,
+            failed=failed_children,
+            lost=lost_children,
         ),
     )
 
@@ -473,8 +477,9 @@ def test_workbench_attention_and_completion_acknowledgement_are_local() -> None:
         _workbench_row("thread-completed", updated_at=NOW - timedelta(seconds=1), operation=completed),
         _workbench_row("thread-running", updated_at=NOW - timedelta(seconds=2), active_children=1),
         _workbench_row("thread-decision", updated_at=NOW - timedelta(seconds=3), pending=True),
+        _workbench_row("thread-failed-child", updated_at=NOW - timedelta(seconds=4), failed_children=1),
     )
-    page = WorkbenchPage(project_id=None, rows=rows, total=4)
+    page = WorkbenchPage(project_id=None, rows=rows, total=5)
     state = TerminalState(
         lifecycle=TerminalLifecycle.READY,
         mode=TerminalMode.WORKBENCH,
@@ -483,6 +488,7 @@ def test_workbench_attention_and_completion_acknowledgement_are_local() -> None:
     state = reduce_terminal(state, WorkbenchLoaded(request_version=1, page=page)).state
     assert [row.thread.thread_id for row in ranked_workbench_rows(state.workbench)] == [
         "thread-decision",
+        "thread-failed-child",
         "thread-completed",
         "thread-running",
         "thread-idle",
@@ -490,6 +496,7 @@ def test_workbench_attention_and_completion_acknowledgement_are_local() -> None:
     state = reduce_terminal(state, CompletionAcknowledged(receipt_id="receipt-completed")).state
     assert [row.thread.thread_id for row in ranked_workbench_rows(state.workbench)] == [
         "thread-decision",
+        "thread-failed-child",
         "thread-running",
         "thread-idle",
         "thread-completed",

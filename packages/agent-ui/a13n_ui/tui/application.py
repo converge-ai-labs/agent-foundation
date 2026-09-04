@@ -10,14 +10,18 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.message import Message
+from textual.widget import Widget
 from textual.widgets import Static
 
 from a13n_ui.surfaces import NewThreadDefaults
 from a13n_ui.tui.controller import AppContextFactory, TerminalController
+from a13n_ui.tui.editor import edit_text, resolve_editor_command
 from a13n_ui.tui.intents import (
     CancelFocusedOperation,
+    CloseCompletions,
     CloseOverlay,
     ExitTerminal,
+    OpenOverlay,
     RetryStartup,
     StartNewDraft,
     TerminalIntent,
@@ -25,13 +29,17 @@ from a13n_ui.tui.intents import (
 )
 from a13n_ui.tui.models import (
     ControlMode,
+    DraftState,
     ProjectionHints,
     TerminalLifecycle,
     TerminalMode,
     TerminalState,
 )
 from a13n_ui.tui.screens.focus import FocusScreen
+from a13n_ui.tui.screens.overlays import OverlayPane
 from a13n_ui.tui.screens.review import ReviewPane
+from a13n_ui.tui.screens.workbench import WorkbenchScreen
+from a13n_ui.tui.widgets.completions import CompletionPopup
 from a13n_ui.tui.widgets.messages import IntentRequested
 
 
@@ -50,7 +58,7 @@ class AgentUiTerminalApp(App[None]):
     CSS_PATH = "styles/terminal.tcss"
     TITLE = "Agent UI"
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("ctrl+p", "noop", "Commands", show=True),
+        Binding("ctrl+p", "command_palette", "Commands", show=True),
         Binding("ctrl+o", "toggle_mode", "Workbench", show=True),
         Binding("ctrl+n", "new_draft", "New", show=True),
         Binding("ctrl+r", "retry", "Retry", show=False),
@@ -70,6 +78,8 @@ class AgentUiTerminalApp(App[None]):
         super().__init__()
         self.terminal_state = TerminalState(draft_defaults=launch_defaults or NewThreadDefaults())
         self._intent_lock = asyncio.Lock()
+        self._modal_key: tuple[object, ...] | None = None
+        self._focus_restore: Widget | None = None
         self.controller = TerminalController(
             app_factory=app_factory,
             render=self._render_state,
@@ -77,20 +87,25 @@ class AgentUiTerminalApp(App[None]):
             launch_thread_id=launch_thread_id,
             launch_defaults=launch_defaults,
             open_workbench=open_workbench,
+            editor_callback=self._edit_external,
             exit_callback=self._request_exit,
         )
 
     def compose(self) -> ComposeResult:
         yield Static("Starting Agent UI...", id="terminal-status")
         yield FocusScreen()
-        yield Static("Workbench", id="workbench-screen")
+        yield WorkbenchScreen()
         yield ReviewPane()
+        yield OverlayPane()
+        yield CompletionPopup()
 
     def on_mount(self) -> None:
         self._apply_width_class(self.size.width)
         self.query_one(FocusScreen).display = False
-        self.query_one("#workbench-screen", Static).display = False
+        self.query_one(WorkbenchScreen).display = False
         self.query_one(ReviewPane).display = False
+        self.query_one(OverlayPane).display = False
+        self.query_one(CompletionPopup).display = False
         self.call_after_refresh(self._start_controller)
 
     def on_resize(self, event: events.Resize) -> None:
@@ -111,10 +126,17 @@ class AgentUiTerminalApp(App[None]):
         self._submit_intent(ToggleTopLevelMode())
 
     def action_new_draft(self) -> None:
-        if self.terminal_state.launch_project_id is not None:
-            self._submit_intent(StartNewDraft())
+        project_id = self.terminal_state.launch_project_id or self.terminal_state.draft_defaults.project_id
+        if project_id is not None:
+            defaults = NewThreadDefaults.model_validate(
+                {**self.terminal_state.draft_defaults.model_dump(), "project_id": project_id}
+            )
+            self._submit_intent(StartNewDraft(defaults))
 
     def action_cancel_or_exit(self) -> None:
+        if self.terminal_state.completion is not None:
+            self._submit_intent(CloseCompletions())
+            return
         if self.terminal_state.overlays:
             self._submit_intent(CloseOverlay())
             return
@@ -129,11 +151,13 @@ class AgentUiTerminalApp(App[None]):
             self._submit_intent(ExitTerminal())
 
     async def action_back(self) -> None:
-        if self.terminal_state.overlays:
+        if self.terminal_state.completion is not None:
+            self._submit_intent(CloseCompletions())
+        elif self.terminal_state.overlays:
             self._submit_intent(CloseOverlay())
 
-    def action_noop(self) -> None:
-        pass
+    def action_command_palette(self) -> None:
+        self._submit_intent(OpenOverlay("commands"))
 
     def action_retry(self) -> None:
         self._submit_intent(RetryStartup(), group="terminal-startup")
@@ -157,6 +181,12 @@ class AgentUiTerminalApp(App[None]):
         async with self._intent_lock:
             await self.controller.handle(intent)
 
+    async def _edit_external(self, key: str, draft: DraftState) -> str:
+        del key
+        command = resolve_editor_command()
+        with self.suspend():
+            return await edit_text(command, draft.text)
+
     async def _request_exit(self) -> None:
         self.exit()
 
@@ -166,8 +196,10 @@ class AgentUiTerminalApp(App[None]):
     async def _apply_projection(self, state: TerminalState, hints: ProjectionHints) -> None:
         status = self.query_one("#terminal-status", Static)
         focus = self.query_one(FocusScreen)
-        workbench = self.query_one("#workbench-screen", Static)
+        workbench = self.query_one(WorkbenchScreen)
         review = self.query_one(ReviewPane)
+        overlay = self.query_one(OverlayPane)
+        completions = self.query_one(CompletionPopup)
         if state.lifecycle is not TerminalLifecycle.READY:
             status.display = True
             status.update(_status_text(state))
@@ -180,12 +212,58 @@ class AgentUiTerminalApp(App[None]):
             if focus.display:
                 await focus.project(state, hints)
             elif workbench.display:
-                workbench.update(_workbench_placeholder(state))
+                await workbench.project(state)
 
-        review_open = bool(state.overlays and state.overlays[-1].kind == "review" and state.review is not None)
+        review_open = bool(
+            state.lifecycle is TerminalLifecycle.READY
+            and state.overlays
+            and state.overlays[-1].kind == "review"
+            and state.review is not None
+        )
         review.display = review_open
         if review_open and state.review is not None:
             review.project(state.review, wide=self.size.width >= 120)
+        overlay_open = bool(
+            state.lifecycle is TerminalLifecycle.READY and state.overlays and state.overlays[-1].kind != "review"
+        )
+        overlay.display = overlay_open
+        if overlay_open:
+            await overlay.project(state)
+        completions.display = (
+            state.lifecycle is TerminalLifecycle.READY and state.completion is not None and not state.overlays
+        )
+        if completions.display and state.completion is not None:
+            await completions.project(state.completion)
+
+        if review_open and state.review is not None:
+            modal_key: tuple[object, ...] | None = ("review", state.review.key)
+        elif overlay_open:
+            modal_key = ("overlay", state.overlays[-1])
+        elif completions.display and state.completion is not None:
+            modal_key = (
+                "completion",
+                state.completion.request_version,
+                state.completion.key,
+            )
+        else:
+            modal_key = None
+        if modal_key != self._modal_key:
+            if self._modal_key is None and modal_key is not None:
+                self._focus_restore = self.focused
+            focus.disabled = modal_key is not None
+            workbench.disabled = modal_key is not None
+            if review_open:
+                review.focus_initial()
+            elif overlay_open:
+                overlay.focus_initial()
+            elif completions.display:
+                completions.focus_initial()
+            else:
+                restore = self._focus_restore
+                self._focus_restore = None
+                if restore is not None and restore.is_attached and not restore.disabled:
+                    restore.focus()
+            self._modal_key = modal_key
 
     def _apply_width_class(self, width: int) -> None:
         self.remove_class("width-wide", "width-medium", "width-narrow")
@@ -206,12 +284,6 @@ def _status_text(state: TerminalState) -> str:
     if state.lifecycle is TerminalLifecycle.CLOSING:
         return "Closing Agent UI..."
     return "Agent UI"
-
-
-def _workbench_placeholder(state: TerminalState) -> str:
-    count = len(state.workbench.rows)
-    project = state.project_filter_id or "All Projects"
-    return f"Workbench - {project}\n\n{count} Thread(s)"
 
 
 __all__ = ["AgentUiTerminalApp", "StateProjected"]

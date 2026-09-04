@@ -11,7 +11,7 @@ from a13n_ui.surfaces import (
     SkillReference,
     ThreadConfigurationMutationInput,
 )
-from a13n_ui.tui.models import DecisionAnswerDraft
+from a13n_ui.tui.models import ConfigurationResourceKind, DecisionAnswerDraft
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +27,13 @@ class ExitTerminal:
 @dataclass(frozen=True, slots=True)
 class ToggleTopLevelMode:
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class ExecuteCommand:
+    name: str
+    draft_key: str | None = None
+    context_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +64,27 @@ class SetWorkbenchFilter:
 @dataclass(frozen=True, slots=True)
 class SearchWorkbench:
     query: str
+
+
+@dataclass(frozen=True, slots=True)
+class LoadMoreWorkbench:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SearchThreadPicker:
+    query: str
+
+
+@dataclass(frozen=True, slots=True)
+class SubmitThreadDraft:
+    thread_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class CancelThreadOperation:
+    thread_id: str
+    receipt_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,14 +192,52 @@ class OpenOverlay:
         "status",
         "help",
         "configuration",
+        "projects",
         "review",
         "inspector",
     ]
     key: str | None = None
+    context_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class CloseOverlay:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SelectConfigurationResource:
+    kind: ConfigurationResourceKind
+    resource_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RequestCompletions:
+    key: str
+    kind: Literal["path", "skill"]
+    query: str
+    token_start: int
+    token_end: int
+
+
+@dataclass(frozen=True, slots=True)
+class ApplyCompletion:
+    key: str
+    token_start: int
+    token_end: int
+    replacement: str
+    skill_reference: SkillReference | None = None
+    project_path: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InsertSkillReference:
+    key: str
+    reference: SkillReference
+
+
+@dataclass(frozen=True, slots=True)
+class CloseCompletions:
     pass
 
 
@@ -208,12 +274,17 @@ type TerminalIntent = (
     RetryStartup
     | ExitTerminal
     | ToggleTopLevelMode
+    | ExecuteCommand
     | OpenWorkbench
     | OpenFocus
     | StartNewDraft
     | SelectWorkbenchThread
     | SetWorkbenchFilter
     | SearchWorkbench
+    | LoadMoreWorkbench
+    | SearchThreadPicker
+    | SubmitThreadDraft
+    | CancelThreadOperation
     | LoadOlderTranscript
     | EditDraft
     | SubmitComposer
@@ -231,6 +302,11 @@ type TerminalIntent = (
     | ArchiveThread
     | OpenOverlay
     | CloseOverlay
+    | SelectConfigurationResource
+    | RequestCompletions
+    | ApplyCompletion
+    | InsertSkillReference
+    | CloseCompletions
     | SelectTimelineBlock
     | SetFollowLatest
     | SetReadingAnchor
@@ -241,12 +317,18 @@ type TerminalIntent = (
 
 __all__ = [
     "AcknowledgeWorkbenchCompletion",
+    "ApplyCompletion",
     "ArchiveThread",
     "CancelChildExecution",
     "CancelFocusedOperation",
+    "CancelThreadOperation",
+    "CloseCompletions",
     "CloseOverlay",
     "EditDraft",
+    "ExecuteCommand",
     "ExitTerminal",
+    "InsertSkillReference",
+    "LoadMoreWorkbench",
     "LoadOlderTranscript",
     "NavigateDecision",
     "OpenExternalEditor",
@@ -255,8 +337,11 @@ __all__ = [
     "OpenReview",
     "OpenWorkbench",
     "PatchThreadConfiguration",
+    "RequestCompletions",
     "RetryStartup",
+    "SearchThreadPicker",
     "SearchWorkbench",
+    "SelectConfigurationResource",
     "SelectTimelineBlock",
     "SelectWorkbenchThread",
     "SetFollowLatest",
@@ -267,6 +352,7 @@ __all__ = [
     "SubmitComposer",
     "SubmitDecisionSession",
     "SubmitDecisions",
+    "SubmitThreadDraft",
     "TerminalIntent",
     "ToggleReasoning",
     "ToggleToolDetails",

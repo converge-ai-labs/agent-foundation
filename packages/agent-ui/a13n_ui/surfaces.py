@@ -512,6 +512,7 @@ class WorkbenchPage(SurfaceModel):
 class AgentSummary(SurfaceModel):
     agent_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
+    model_id: str = Field(min_length=1, max_length=128)
     source_path: str = Field(min_length=1, max_length=4096)
 
 

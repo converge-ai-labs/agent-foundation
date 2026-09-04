@@ -8,7 +8,8 @@ from textual.containers import Container, Horizontal
 from textual.message import Message
 from textual.widgets import Button, Static, TextArea
 
-from a13n_ui.tui.intents import EditDraft, SubmitComposer
+from a13n_ui.tui.commands import match_slash_command
+from a13n_ui.tui.intents import EditDraft, ExecuteCommand, RequestCompletions, SubmitComposer
 from a13n_ui.tui.models import ControlMode, DraftState, TerminalLifecycle
 from a13n_ui.tui.widgets.messages import IntentRequested
 
@@ -79,7 +80,11 @@ class Composer(Container):
 
     def on_prompt_text_area_submit(self, event: PromptTextArea.Submit) -> None:
         event.stop()
-        self.post_message(IntentRequested(SubmitComposer(self._key)))
+        command = match_slash_command(self._draft.text)
+        if command is not None:
+            self.post_message(IntentRequested(ExecuteCommand(command.name, draft_key=self._key)))
+        else:
+            self.post_message(IntentRequested(SubmitComposer(self._key)))
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if self._projecting or event.text_area.id != "composer-editor":
@@ -106,6 +111,9 @@ class Composer(Container):
                 )
             )
         )
+        completion = completion_request(text, cursor=cursor, key=self._key)
+        if completion is not None:
+            self.post_message(IntentRequested(completion))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "composer-submit":
@@ -141,4 +149,24 @@ def _location_for_offset(text: str, offset: int) -> tuple[int, int]:
     return len(lines) - 1, len(lines[-1])
 
 
-__all__ = ["Composer", "PromptTextArea"]
+def completion_request(text: str, *, cursor: int, key: str) -> RequestCompletions | None:
+    cursor = max(0, min(cursor, len(text)))
+    start = cursor
+    while start > 0 and not text[start - 1].isspace():
+        start -= 1
+    end = cursor
+    while end < len(text) and not text[end].isspace():
+        end += 1
+    token = text[start:cursor]
+    if not token or token[0] not in {"@", "$"} or len(token) > 513:
+        return None
+    return RequestCompletions(
+        key=key,
+        kind="path" if token[0] == "@" else "skill",
+        query=token[1:],
+        token_start=start,
+        token_end=end,
+    )
+
+
+__all__ = ["Composer", "PromptTextArea", "completion_request"]

@@ -12,6 +12,7 @@ import pytest
 from a13n_ui.errors import AgentUiError, LivePresentationError
 from a13n_ui.surfaces import (
     AgentSourceView,
+    AgentSummary,
     ApprovalDecision,
     ApprovalRequestView,
     ChildActivityView,
@@ -20,9 +21,12 @@ from a13n_ui.surfaces import (
     ChildExecutionView,
     DecisionBatchView,
     DecisionResponseBatch,
+    EnvironmentProfileSummary,
     ExternalRequestView,
     ExternalToolResult,
     LaunchProjectSelected,
+    ProjectPathCompletion,
+    ProjectPathCompletionPage,
     ProjectSummary,
     QuestionOptionView,
     QuestionResponse,
@@ -30,31 +34,53 @@ from a13n_ui.surfaces import (
     ReviewView,
     RootActivityState,
     RootActivityView,
+    RootOperationStatus,
+    RootOperationView,
     RootRunReceipt,
+    SelectableResourceSummary,
+    SkillCatalogItemView,
+    SkillCatalogView,
+    SkillReference,
     StructuredQuestionRequestView,
+    ThreadConfigurationMutationInput,
     ThreadConfigurationView,
     ThreadDetail,
     ThreadFocusSnapshot,
+    ThreadSelectorCatalog,
     ThreadSummary,
     TranscriptPage,
     WorkbenchPage,
+    WorkbenchThreadView,
 )
 from a13n_ui.tui.controller import TerminalController
 from a13n_ui.tui.intents import (
+    ApplyCompletion,
+    ArchiveThread,
     CancelChildExecution,
+    CloseCompletions,
     EditDraft,
+    ExecuteCommand,
+    OpenExternalEditor,
     OpenFocus,
+    OpenOverlay,
     OpenReview,
+    OpenWorkbench,
+    RequestCompletions,
     RetryStartup,
+    SearchThreadPicker,
+    SelectConfigurationResource,
+    SetWorkbenchFilter,
     SteerChildExecution,
     SubmitComposer,
     SubmitDecisionSession,
+    SubmitThreadDraft,
     UpdateDecisionDraft,
 )
 from a13n_ui.tui.models import (
     DecisionAnswerDraft,
     ProjectionHints,
     TerminalLifecycle,
+    TerminalMode,
     TerminalState,
 )
 
@@ -83,6 +109,8 @@ class _FakeApp:
         self.focus_active = 0
         self.max_focus_active = 0
         self.workbench_calls = 0
+        self.workbench_requests: list[dict[str, object]] = []
+        self.workbench_page = WorkbenchPage(project_id="project-main", rows=(), total=0)
         self.decisions: DecisionBatchView | None = None
         self.children: tuple[ChildExecutionView, ...] = ()
         self.continuation_id = "a" * 64
@@ -91,6 +119,11 @@ class _FakeApp:
         self.responses: list[DecisionResponseBatch] = []
         self.child_steers: list[tuple[str, str]] = []
         self.child_cancels: list[str] = []
+        self.configuration_mutations: list[ThreadConfigurationMutationInput] = []
+        self.metadata_mutations: list[object] = []
+        self.configuration_error: AgentUiError | None = None
+        self.configuration_version = 1
+        self.agent_id = "agent-main"
         self.submit_error: AgentUiError | None = None
         self.response_error: AgentUiError | None = None
         self.next_decisions: DecisionBatchView | None = None
@@ -109,9 +142,56 @@ class _FakeApp:
         )
 
     async def workbench(self, **kwargs: object) -> WorkbenchPage:
-        del kwargs
         self.workbench_calls += 1
-        return WorkbenchPage(project_id="project-main", rows=(), total=0)
+        self.workbench_requests.append(kwargs)
+        project_id = kwargs.get("project_id")
+        assert project_id is None or isinstance(project_id, str)
+        return self.workbench_page.model_copy(update={"project_id": project_id})
+
+    async def projects(self) -> tuple[ProjectSummary, ...]:
+        return (
+            ProjectSummary(
+                project_id="project-main",
+                name="Main",
+                position=0,
+                roots=("/workspace",),
+            ),
+        )
+
+    async def thread_selectors(self) -> ThreadSelectorCatalog:
+        return _selectors()
+
+    async def complete_project_paths(self, **kwargs: object) -> ProjectPathCompletionPage:
+        del kwargs
+        return ProjectPathCompletionPage(
+            project_id="project-main",
+            query="src",
+            items=(
+                ProjectPathCompletion(
+                    project_id="project-main",
+                    mount="root",
+                    relative_path="src/main.py",
+                    kind="file",
+                    display="root:src/main.py",
+                ),
+            ),
+        )
+
+    async def skill_catalog(self, **kwargs: object) -> SkillCatalogView:
+        del kwargs
+        return SkillCatalogView(
+            catalog_id="c" * 64,
+            context_kind="draft",
+            items=(
+                SkillCatalogItemView(
+                    item_id="d" * 64,
+                    name="review",
+                    description="Review code",
+                    source_id="project-main",
+                    logical_path="skills/review/SKILL.md",
+                ),
+            ),
+        )
 
     @asynccontextmanager
     async def summary_events(self, **kwargs: object) -> AsyncIterator[_EventStream]:
@@ -137,6 +217,8 @@ class _FakeApp:
                     root_thread_id,
                     continuation_id=self.continuation_id,
                     children=self.children,
+                    configuration_version=self.configuration_version,
+                    agent_id=self.agent_id,
                 ),
                 events=stream,
             )
@@ -184,6 +266,26 @@ class _FakeApp:
             raise self.response_error
         return RootRunReceipt(receipt_id="receipt-decision", thread_id=thread_id, submitted_at=NOW)
 
+    async def patch_thread_configuration(self, **kwargs: object) -> ThreadSummary:
+        mutation = kwargs["mutation"]
+        assert isinstance(mutation, ThreadConfigurationMutationInput)
+        self.configuration_mutations.append(mutation)
+        if self.configuration_error is not None:
+            raise self.configuration_error
+        if "agent_id" in mutation.patch.model_fields_set:
+            assert mutation.patch.agent_id is not None
+            self.agent_id = mutation.patch.agent_id
+        self.configuration_version += 1
+        return _snapshot(
+            str(kwargs["thread_id"]),
+            configuration_version=self.configuration_version,
+            agent_id=self.agent_id,
+        ).thread.thread
+
+    async def update_thread_metadata(self, **kwargs: object) -> ThreadSummary:
+        self.metadata_mutations.append(kwargs["mutation"])
+        return _snapshot(str(kwargs["thread_id"])).thread.thread
+
     async def wait_root_operation(self, receipt_id: str, **kwargs: object) -> Any:
         del receipt_id, kwargs
         await self.wait_forever.wait()
@@ -212,11 +314,53 @@ class _FakeApp:
         return ChildControlResult(execution_id=execution_id, accepted=True, persisted_status="running")
 
 
+def _selectors() -> ThreadSelectorCatalog:
+    return ThreadSelectorCatalog(
+        agents=(
+            AgentSummary(
+                agent_id="agent-main",
+                name="Main Agent",
+                model_id="model-main",
+                source_path="agents/main.yaml",
+            ),
+            AgentSummary(
+                agent_id="agent-alt",
+                name="Alternate Agent",
+                model_id="model-alt",
+                source_path="agents/alt.yaml",
+            ),
+        ),
+        environments=(
+            EnvironmentProfileSummary(
+                profile_id="environment-native",
+                name="Full Control",
+                mode="full-control",
+                description="Native host access",
+                provider_key="native",
+                release_owned=True,
+                canonical_host_paths=True,
+            ),
+        ),
+        harness_plugins=(
+            SelectableResourceSummary(
+                resource_id="plugin-review",
+                name="Review Plugin",
+                kind="harness_plugin",
+                source_path="plugins/review.yaml",
+            ),
+        ),
+        environment_run_extensions=(),
+        mcp_servers=(),
+    )
+
+
 def _snapshot(
     thread_id: str,
     *,
     continuation_id: str = "a" * 64,
     children: tuple[ChildExecutionView, ...] = (),
+    configuration_version: int = 1,
+    agent_id: str = "agent-main",
 ) -> ThreadFocusSnapshot:
     summary = ThreadSummary(
         thread_id=thread_id,
@@ -225,9 +369,9 @@ def _snapshot(
         metadata_version=1,
         archived=False,
         configuration=ThreadConfigurationView(
-            version=1,
+            version=configuration_version,
             project_id="project-main",
-            agent_source=AgentSourceView(kind="agent", id="agent-main"),
+            agent_source=AgentSourceView(kind="agent", id=agent_id),
             environment_profile_id="environment-native",
         ),
         continuation_state="selected",
@@ -643,5 +787,431 @@ async def test_child_review_exposes_only_advertised_controls_and_refreshes_focus
     await controller.handle(CancelChildExecution(parent_thread_id="thread-1", execution_id="missing"))
     assert app.child_cancels == []
     assert controller.state.notices[-1].code == "child_control_unavailable"
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_controller_loads_selectors_and_applies_new_thread_configuration(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+    )
+    await controller.start()
+
+    await controller.handle(OpenOverlay("configuration", key="agent"))
+    assert controller.state.selectors == _selectors()
+    await controller.handle(SelectConfigurationResource("agent", "agent-alt"))
+
+    assert controller.state.draft_defaults.agent_id == "agent-alt"
+    assert controller.state.draft_defaults.project_id == "project-main"
+    assert not controller.state.overlays
+
+    await controller.handle(OpenOverlay("projects"))
+    assert controller.state.projects[0].project_id == "project-main"
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_controller_debounces_and_applies_exact_skill_completion(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+    )
+    await controller.start()
+    await controller.handle(EditDraft(key="new", text="use $rev", cursor=8))
+    await controller.handle(
+        RequestCompletions(
+            key="new",
+            kind="skill",
+            query="rev",
+            token_start=4,
+            token_end=8,
+        )
+    )
+    await _wait_until(lambda: controller.state.completion is not None)
+    completion = controller.state.completion
+    assert completion is not None
+    assert completion.skills is not None
+    item = completion.skills.items[0]
+    reference = SkillReference(
+        catalog_id=completion.skills.catalog_id,
+        item_id=item.item_id,
+        name=item.name,
+    )
+
+    await controller.handle(
+        ApplyCompletion(
+            key="new",
+            token_start=4,
+            token_end=8,
+            replacement="$review",
+            skill_reference=reference,
+        )
+    )
+
+    draft = controller.state.draft("new")
+    assert draft is not None
+    assert draft.text == "use $review"
+    assert draft.skill_references == (reference,)
+    assert controller.state.completion is None
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_configuration_conflict_refreshes_state_and_preserves_retry_intent(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+    )
+    await controller.start()
+    await controller.handle(OpenFocus("thread-1"))
+
+    def focus_loaded() -> bool:
+        view = controller.state.thread_view("thread-1")
+        return view is not None and view.detail is not None
+
+    await _wait_until(focus_loaded)
+    await controller.handle(OpenOverlay("configuration", key="agent"))
+    app.configuration_version = 2
+    app.configuration_error = AgentUiError(
+        "Expected configuration version 1, found 2.",
+        code="thread_configuration_conflict",
+    )
+
+    await controller.handle(SelectConfigurationResource("agent", "agent-alt"))
+
+    conflict = controller.state.configuration_conflict
+    assert conflict is not None
+    assert conflict.resource_id == "agent-alt"
+    assert conflict.intended_selected
+    assert controller.state.overlays[-1].kind == "configuration"
+
+    def conflict_refresh_loaded() -> bool:
+        view = controller.state.thread_view("thread-1")
+        return view is not None and view.detail is not None and view.detail.thread.configuration.version == 2
+
+    await _wait_until(conflict_refresh_loaded)
+    view = controller.state.thread_view("thread-1")
+    assert view is not None and view.detail is not None
+    assert view.detail.thread.configuration.version == 2
+    assert view.detail.thread.configuration.agent_source.id == "agent-main"
+
+    app.configuration_error = None
+    await controller.handle(SelectConfigurationResource("agent", "agent-alt"))
+
+    def retry_loaded() -> bool:
+        view = controller.state.thread_view("thread-1")
+        return view is not None and view.detail is not None and view.detail.thread.configuration.version == 3
+
+    await _wait_until(retry_loaded)
+
+    assert controller.state.configuration_conflict is None
+    assert not controller.state.overlays
+    view = controller.state.thread_view("thread-1")
+    assert view is not None and view.detail is not None
+    assert view.detail.thread.configuration.version == 3
+    assert view.detail.thread.configuration.agent_source.id == "agent-alt"
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_external_editor_failure_preserves_complete_draft(tmp_path: Path) -> None:
+    app = _FakeApp()
+
+    async def failing_editor(_key: str, _draft: object) -> str:
+        raise AgentUiError("Editor exited with status 2.", code="editor_failed")
+
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+        editor_callback=failing_editor,
+    )
+    await controller.start()
+    reference = SkillReference(catalog_id="c" * 64, item_id="d" * 64, name="review")
+    await controller.handle(
+        EditDraft(
+            key="new",
+            text="@root:src/main.py inspect $review",
+            cursor=33,
+            project_paths=("root:src/main.py",),
+            skill_references=(reference,),
+        )
+    )
+
+    await controller.handle(OpenExternalEditor("new"))
+
+    draft = controller.state.draft("new")
+    assert draft is not None
+    assert draft.text == "@root:src/main.py inspect $review"
+    assert draft.project_paths == ("root:src/main.py",)
+    assert draft.skill_references == (reference,)
+    assert controller.state.notices[-1].code == "editor_failed"
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_archiving_focused_thread_returns_to_workbench(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+    )
+    await controller.start()
+    await controller.handle(OpenFocus("thread-1"))
+
+    await controller.handle(ArchiveThread(thread_id="thread-1", expected_version=1))
+
+    assert len(app.metadata_mutations) == 1
+    assert controller.state.mode is TerminalMode.WORKBENCH
+    assert controller.state.focused_thread_id is None
+    assert controller.state.previous_focused_thread_id is None
+    assert app.focus_active == 0
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_external_editor_discards_result_when_draft_revision_changes(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller: TerminalController
+
+    async def racing_editor(_key: str, draft: object) -> str:
+        assert draft is not None
+        await controller.handle(EditDraft(key="new", text="newer local draft", cursor=17))
+        return "stale editor result"
+
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+        editor_callback=racing_editor,
+    )
+    await controller.start()
+    await controller.handle(EditDraft(key="new", text="original draft", cursor=14))
+    initial_workbench_calls = app.workbench_calls
+
+    await controller.handle(OpenExternalEditor("new"))
+
+    draft = controller.state.draft("new")
+    assert draft is not None
+    assert draft.text == "newer local draft"
+    assert controller.state.notices[-1].code == "editor_draft_changed"
+    assert app.workbench_calls == initial_workbench_calls + 1
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_workbench_does_not_queue_prompt_behind_preparing_operation(tmp_path: Path) -> None:
+    app = _FakeApp()
+    thread = _snapshot("thread-1").thread.thread
+    receipt = RootRunReceipt(receipt_id="receipt-preparing", thread_id="thread-1", submitted_at=NOW)
+    row = WorkbenchThreadView(
+        thread=thread,
+        project_name="Main",
+        agent_name="Main Agent",
+        environment_name="Full Control",
+        latest_operation=RootOperationView(
+            receipt=receipt,
+            status=RootOperationStatus.preparing,
+            available_actions=("wait", "cancel"),
+        ),
+        available_actions=("open", "wait", "cancel"),
+    )
+    app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+    )
+    await controller.start()
+    await controller.handle(EditDraft(key="thread-1", text="queue this", cursor=10))
+
+    await controller.handle(SubmitThreadDraft("thread-1"))
+
+    assert app.submitted == []
+    draft = controller.state.draft("thread-1")
+    assert draft is not None
+    assert draft.text == "queue this"
+    assert controller.state.notices[-1].code == "thread_input_unavailable"
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_thread_picker_preserves_query_across_project_scope_change(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+    )
+    await controller.start()
+    await controller.handle(OpenOverlay("threads"))
+    await controller.handle(SearchThreadPicker("failure"))
+    await controller.handle(OpenOverlay("projects"))
+
+    await controller.handle(SetWorkbenchFilter(None))
+
+    assert controller.state.overlays[-1].kind == "threads"
+    assert controller.state.thread_picker_query == "failure"
+    assert app.workbench_requests[-1]["project_id"] is None
+    assert app.workbench_requests[-1]["query"] == "failure"
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_closing_pending_completion_prevents_it_from_reopening(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+    )
+    await controller.start()
+    await controller.handle(EditDraft(key="new", text="use $rev", cursor=8))
+    await controller.handle(
+        RequestCompletions(
+            key="new",
+            kind="skill",
+            query="rev",
+            token_start=4,
+            token_end=8,
+        )
+    )
+
+    await controller.handle(CloseCompletions())
+    await asyncio.sleep(0.2)
+
+    assert controller.state.completion is None
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_workbench_path_completion_uses_selected_row_project_without_focus(tmp_path: Path) -> None:
+    app = _FakeApp()
+    thread = _snapshot("thread-1").thread.thread
+    row = WorkbenchThreadView(
+        thread=thread,
+        project_name="Main",
+        agent_name="Main Agent",
+        environment_name="Full Control",
+    )
+    app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+        open_workbench=True,
+    )
+    await controller.start()
+    assert controller.state.thread_view("thread-1") is None
+    await controller.handle(EditDraft(key="thread-1", text="inspect @src", cursor=12))
+
+    await controller.handle(
+        RequestCompletions(
+            key="thread-1",
+            kind="path",
+            query="src",
+            token_start=8,
+            token_end=12,
+        )
+    )
+    await _wait_until(lambda: controller.state.completion is not None)
+
+    completion = controller.state.completion
+    assert completion is not None
+    assert completion.paths is not None
+    assert completion.paths.project_id == "project-main"
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_workbench_slash_command_uses_selected_thread_context(tmp_path: Path) -> None:
+    app = _FakeApp()
+    selected = _snapshot("thread-selected").thread.thread
+    row = WorkbenchThreadView(
+        thread=selected,
+        project_name="Main",
+        agent_name="Main Agent",
+        environment_name="Full Control",
+    )
+    app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)
+    edited_keys: list[str] = []
+
+    async def editor(key: str, _draft: object) -> str:
+        edited_keys.append(key)
+        return "selected draft"
+
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+        open_workbench=True,
+        editor_callback=editor,
+    )
+    await controller.start()
+    await controller.handle(OpenFocus("thread-previous"))
+    await _wait_until(lambda: controller.state.thread_view("thread-previous") is not None)
+    await controller.handle(OpenWorkbench())
+    await controller.handle(EditDraft(key="thread-selected", text="/editor", cursor=7))
+
+    await controller.handle(ExecuteCommand("editor", draft_key="thread-selected"))
+
+    assert edited_keys == ["thread-selected"]
+    assert controller.state.mode is TerminalMode.WORKBENCH
+    assert controller.state.previous_focused_thread_id == "thread-previous"
+    draft = controller.state.draft("thread-selected")
+    assert draft is not None
+    assert draft.text == "selected draft"
+
+    await controller.close()
+
+
+@pytest.mark.anyio
+async def test_workbench_configuration_command_mutates_selected_thread(tmp_path: Path) -> None:
+    app = _FakeApp()
+    selected = _snapshot("thread-selected").thread.thread
+    row = WorkbenchThreadView(
+        thread=selected,
+        project_name="Main",
+        agent_name="Main Agent",
+        environment_name="Full Control",
+    )
+    app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+        open_workbench=True,
+    )
+    await controller.start()
+
+    await controller.handle(ExecuteCommand("agent", context_key="thread-selected"))
+    assert controller.state.overlays[-1].context_key == "thread-selected"
+    await controller.handle(SelectConfigurationResource("agent", "agent-alt"))
+
+    assert len(app.configuration_mutations) == 1
+    mutation = app.configuration_mutations[0]
+    assert mutation.expected_version == 1
+    assert mutation.patch.agent_id == "agent-alt"
+    assert controller.state.mode is TerminalMode.WORKBENCH
+    assert not controller.state.overlays
 
     await controller.close()

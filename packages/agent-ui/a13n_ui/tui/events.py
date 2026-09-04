@@ -14,16 +14,25 @@ from a13n_ui.surfaces import (
     FailureView,
     LaunchProjectResolution,
     NewThreadDefaults,
+    ProjectSummary,
     ReviewView,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
+    SkillCatalogView,
     SkillReference,
     ThreadFocusSnapshot,
+    ThreadSelectorCatalog,
     TranscriptPage,
     WorkbenchPage,
 )
-from a13n_ui.tui.models import DecisionAnswerDraft, OverlayState, ReadingAnchor
+from a13n_ui.tui.models import (
+    CompletionState,
+    ConfigurationConflictState,
+    DecisionAnswerDraft,
+    OverlayState,
+    ReadingAnchor,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +114,52 @@ class WorkbenchLoaded:
     request_version: int
     page: WorkbenchPage
     query: str = ""
+    append: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectsLoaded:
+    request_version: int
+    projects: tuple[ProjectSummary, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SelectorsLoaded:
+    request_version: int
+    selectors: ThreadSelectorCatalog
+
+
+@dataclass(frozen=True, slots=True)
+class SkillCatalogLoaded:
+    request_version: int
+    catalog: SkillCatalogView
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadPickerLoaded:
+    request_version: int
+    page: WorkbenchPage
+    query: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class CompletionLoaded:
+    completion: CompletionState
+
+
+@dataclass(frozen=True, slots=True)
+class CompletionClosed:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class CompletionApplied:
+    key: str
+    token_start: int
+    token_end: int
+    replacement: str
+    skill_reference: SkillReference | None = None
+    project_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,8 +274,16 @@ class DraftChanged:
 class DraftRestored:
     key: str
     text: str
+    expected_revision: int
     message: str
     code: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EditorDraftApplied:
+    key: str
+    text: str
+    expected_revision: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,10 +293,16 @@ class DraftRekeyed:
 
 
 @dataclass(frozen=True, slots=True)
+class DraftSubmitted:
+    key: str
+
+
+@dataclass(frozen=True, slots=True)
 class RouteChanged:
     mode: Literal["focus", "workbench"]
     thread_id: str | None = None
     new_draft: bool = False
+    clear_focus: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +317,16 @@ class OverlayOpened:
 
 @dataclass(frozen=True, slots=True)
 class OverlayClosed:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigurationConflictRecorded:
+    conflict: ConfigurationConflictState
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigurationConflictCleared:
     pass
 
 
@@ -289,6 +368,13 @@ type TerminalEvent = (
     | StartupFailed
     | ClosingStarted
     | WorkbenchLoaded
+    | ProjectsLoaded
+    | SelectorsLoaded
+    | SkillCatalogLoaded
+    | ThreadPickerLoaded
+    | CompletionLoaded
+    | CompletionClosed
+    | CompletionApplied
     | FocusLoaded
     | TranscriptLoaded
     | LiveReceived
@@ -306,11 +392,15 @@ type TerminalEvent = (
     | DraftDefaultsChanged
     | DraftChanged
     | DraftRestored
+    | EditorDraftApplied
     | DraftRekeyed
+    | DraftSubmitted
     | RouteChanged
     | WorkbenchSelectionChanged
     | OverlayOpened
     | OverlayClosed
+    | ConfigurationConflictRecorded
+    | ConfigurationConflictCleared
     | FollowLatestChanged
     | ReadingAnchorChanged
     | TimelineSelectionChanged
@@ -417,6 +507,11 @@ __all__ = [
     "ChildControlCompleted",
     "ClosingStarted",
     "CompletionAcknowledged",
+    "CompletionApplied",
+    "CompletionClosed",
+    "CompletionLoaded",
+    "ConfigurationConflictCleared",
+    "ConfigurationConflictRecorded",
     "DecisionDraftUpdated",
     "DecisionPositionChanged",
     "DecisionSubmitted",
@@ -426,6 +521,8 @@ __all__ = [
     "DraftDefaultsChanged",
     "DraftRekeyed",
     "DraftRestored",
+    "DraftSubmitted",
+    "EditorDraftApplied",
     "FocusLoaded",
     "FollowLatestChanged",
     "LiveReceived",
@@ -434,6 +531,7 @@ __all__ = [
     "OperationFailed",
     "OverlayClosed",
     "OverlayOpened",
+    "ProjectsLoaded",
     "ReadingAnchorChanged",
     "ReviewLoaded",
     "RootControlCompleted",
@@ -441,11 +539,14 @@ __all__ = [
     "RootReceiptAccepted",
     "RouteChanged",
     "RunHintEvent",
+    "SelectorsLoaded",
+    "SkillCatalogLoaded",
     "StartupFailed",
     "StartupReady",
     "StartupStarted",
     "StreamPartEvent",
     "TerminalEvent",
+    "ThreadPickerLoaded",
     "TimelineSelectionChanged",
     "ToolEvent",
     "TranscriptLoaded",

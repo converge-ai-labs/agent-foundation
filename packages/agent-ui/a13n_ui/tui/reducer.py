@@ -22,6 +22,11 @@ from a13n_ui.tui.events import (
     ChildControlCompleted,
     ClosingStarted,
     CompletionAcknowledged,
+    CompletionApplied,
+    CompletionClosed,
+    CompletionLoaded,
+    ConfigurationConflictCleared,
+    ConfigurationConflictRecorded,
     DecisionDraftUpdated,
     DecisionPositionChanged,
     DecisionSubmitted,
@@ -31,6 +36,8 @@ from a13n_ui.tui.events import (
     DraftDefaultsChanged,
     DraftRekeyed,
     DraftRestored,
+    DraftSubmitted,
+    EditorDraftApplied,
     FocusLoaded,
     FollowLatestChanged,
     LiveReceived,
@@ -38,6 +45,7 @@ from a13n_ui.tui.events import (
     OperationFailed,
     OverlayClosed,
     OverlayOpened,
+    ProjectsLoaded,
     ReadingAnchorChanged,
     ReviewLoaded,
     RootControlCompleted,
@@ -45,11 +53,14 @@ from a13n_ui.tui.events import (
     RootReceiptAccepted,
     RouteChanged,
     RunHintEvent,
+    SelectorsLoaded,
+    SkillCatalogLoaded,
     StartupFailed,
     StartupReady,
     StartupStarted,
     StreamPartEvent,
     TerminalEvent,
+    ThreadPickerLoaded,
     TimelineSelectionChanged,
     ToolEvent,
     TranscriptLoaded,
@@ -146,7 +157,23 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
     if isinstance(event, WorkbenchLoaded):
         if event.request_version < state.workbench.projection_version:
             return Reduction(state, _EMPTY_HINTS)
-        ranked = _ranked_page(event.page, state.workbench.acknowledged_receipts)
+        page = event.page
+        if (
+            event.append
+            and state.workbench.page is not None
+            and state.workbench.page.project_id == event.page.project_id
+            and state.workbench.query == event.query
+        ):
+            rows = tuple(
+                {item.thread.thread_id: item for item in (*state.workbench.page.rows, *event.page.rows)}.values()
+            )
+            page = WorkbenchPage(
+                project_id=event.page.project_id,
+                rows=rows,
+                total=event.page.total,
+                next_cursor=event.page.next_cursor,
+            )
+        ranked = _ranked_page(page, state.workbench.acknowledged_receipts)
         selected = state.workbench.selected_thread_id
         visible = {row.thread.thread_id for row in ranked.rows}
         if selected not in visible:
@@ -159,6 +186,109 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             projection_version=event.request_version,
         )
         return _result(replace(state, workbench=workbench, project_filter_id=event.page.project_id), "workbench")
+
+    if isinstance(event, ProjectsLoaded):
+        if event.request_version < state.overlay_request_version:
+            return Reduction(state, _EMPTY_HINTS)
+        return _result(
+            replace(
+                state,
+                projects=event.projects[:256],
+                overlay_request_version=event.request_version,
+            ),
+            "overlay",
+        )
+
+    if isinstance(event, SelectorsLoaded):
+        if event.request_version < state.overlay_request_version:
+            return Reduction(state, _EMPTY_HINTS)
+        return _result(
+            replace(
+                state,
+                selectors=event.selectors,
+                overlay_request_version=event.request_version,
+            ),
+            "overlay",
+        )
+
+    if isinstance(event, SkillCatalogLoaded):
+        if event.request_version < state.overlay_request_version:
+            return Reduction(state, _EMPTY_HINTS)
+        return _result(
+            replace(
+                state,
+                skill_catalog=event.catalog,
+                overlay_request_version=event.request_version,
+            ),
+            "overlay",
+        )
+
+    if isinstance(event, ThreadPickerLoaded):
+        if event.request_version < state.overlay_request_version:
+            return Reduction(state, _EMPTY_HINTS)
+        return _result(
+            replace(
+                state,
+                thread_picker=_ranked_page(event.page, state.workbench.acknowledged_receipts),
+                thread_picker_query=event.query,
+                overlay_request_version=event.request_version,
+            ),
+            "overlay",
+        )
+
+    if isinstance(event, CompletionLoaded):
+        current = state.completion
+        if current is not None and event.completion.request_version < current.request_version:
+            return Reduction(state, _EMPTY_HINTS)
+        draft = state.draft(event.completion.key)
+        prefix = "@" if event.completion.kind == "path" else "$"
+        if (
+            draft is None
+            or draft.text[event.completion.token_start : event.completion.token_end] != prefix + event.completion.query
+        ):
+            return Reduction(state, _EMPTY_HINTS)
+        return _result(replace(state, completion=event.completion), "composer", "overlay")
+
+    if isinstance(event, CompletionClosed):
+        if state.completion is None:
+            return Reduction(state, _EMPTY_HINTS)
+        return _result(replace(state, completion=None), "composer", "overlay")
+
+    if isinstance(event, CompletionApplied):
+        completion = state.completion
+        draft = state.draft(event.key)
+        if (
+            completion is None
+            or draft is None
+            or completion.key != event.key
+            or completion.token_start != event.token_start
+            or completion.token_end != event.token_end
+        ):
+            return Reduction(state, _EMPTY_HINTS)
+        start = max(0, min(event.token_start, len(draft.text)))
+        end = max(start, min(event.token_end, len(draft.text)))
+        text = (draft.text[:start] + event.replacement + draft.text[end:])[:MAX_BLOCK_TEXT]
+        skill_references = draft.skill_references
+        if event.skill_reference is not None:
+            skill_references = (
+                *(item for item in skill_references if item.name != event.skill_reference.name),
+                event.skill_reference,
+            )
+        project_paths = draft.project_paths
+        if event.project_path is not None and event.project_path not in project_paths:
+            project_paths = (*project_paths, event.project_path)[-100:]
+        next_state = _touch_draft(
+            replace(state, completion=None),
+            replace(
+                draft,
+                text=text,
+                cursor=min(len(text), start + len(event.replacement)),
+                skill_references=skill_references[-64:],
+                editor_revision=draft.editor_revision + 1,
+                project_paths=project_paths,
+            ),
+        )
+        return _result(next_state, "composer", "overlay")
 
     if isinstance(event, FocusLoaded):
         thread_id = event.snapshot.thread.thread.thread_id
@@ -295,7 +425,7 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         )
         next_state = _with_view(state, view)
         if event.clear_draft:
-            next_state = _set_draft(next_state, event.draft_key, text="", cursor=0)
+            next_state = _clear_draft(next_state, event.draft_key)
         return _result(next_state, "focus", "composer", scroll_to_latest=view.follow_latest)
 
     if isinstance(event, RootOperationUpdated):
@@ -321,7 +451,7 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
                 cancelling_receipt_id=event.result.receipt_id,
             )
         elif event.action == "steer" and event.result.accepted and event.draft_key is not None:
-            next_state = _set_draft(next_state, event.draft_key, text="", cursor=0)
+            next_state = _clear_draft(next_state, event.draft_key)
         next_state = _with_view(next_state, view)
         return _result(next_state, "focus", "composer")
 
@@ -417,22 +547,71 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
 
     if isinstance(event, DraftChanged):
         references = tuple(item for item in event.skill_references if isinstance(item, SkillReference))
+        previous = state.draft(event.key) or DraftState(key=event.key)
+        text = event.text[:MAX_BLOCK_TEXT]
+        paths = tuple(
+            path for path in event.project_paths[:100] if _has_exact_marker(text, f"@{path}", allow_trailing_slash=True)
+        )
+        references = tuple(reference for reference in references[:64] if _has_exact_marker(text, f"${reference.name}"))
+        content_changed = (
+            text != previous.text or paths != previous.project_paths or references != previous.skill_references
+        )
         next_state = _touch_draft(
-            state,
+            replace(
+                state,
+                completion=None
+                if state.completion is not None and state.completion.key == event.key
+                else state.completion,
+            ),
             DraftState(
                 key=event.key,
-                text=event.text[:MAX_BLOCK_TEXT],
-                cursor=max(0, min(event.cursor, len(event.text[:MAX_BLOCK_TEXT]))),
-                project_paths=event.project_paths[:100],
-                skill_references=references[:64],
+                text=text,
+                cursor=max(0, min(event.cursor, len(text))),
+                project_paths=paths,
+                skill_references=references,
+                editor_revision=previous.editor_revision + int(content_changed),
             ),
         )
         return _result(next_state, "composer")
 
     if isinstance(event, DraftRestored):
-        next_state = _set_draft(state, event.key, text=event.text, cursor=len(event.text))
+        draft = state.draft(event.key)
+        next_state = state
+        if draft is not None and draft.editor_revision == event.expected_revision:
+            next_state = _set_draft(state, event.key, text=event.text, cursor=len(event.text))
         next_state = _notice(next_state, severity="warning", message=event.message, code=event.code)
         return _result(next_state, "composer", "notice")
+
+    if isinstance(event, EditorDraftApplied):
+        draft = state.draft(event.key)
+        if draft is None or draft.editor_revision != event.expected_revision:
+            next_state = _notice(
+                state,
+                severity="warning",
+                message="The draft changed while the external editor was open; its result was not applied.",
+                code="editor_draft_changed",
+            )
+            return _result(next_state, "composer", "notice")
+        text = event.text[:MAX_BLOCK_TEXT]
+        paths = tuple(
+            path for path in draft.project_paths if _has_exact_marker(text, f"@{path}", allow_trailing_slash=True)
+        )
+        references = tuple(
+            reference for reference in draft.skill_references if _has_exact_marker(text, f"${reference.name}")
+        )
+        changed = text != draft.text or paths != draft.project_paths or references != draft.skill_references
+        next_state = _touch_draft(
+            state,
+            replace(
+                draft,
+                text=text,
+                cursor=len(text),
+                project_paths=paths,
+                skill_references=references,
+                editor_revision=draft.editor_revision + int(changed),
+            ),
+        )
+        return _result(next_state, "composer")
 
     if isinstance(event, DraftRekeyed):
         draft = state.draft(event.old_key)
@@ -443,11 +622,20 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         next_state = _touch_draft(next_state, replace(draft, key=event.new_key))
         return _result(next_state, "composer")
 
+    if isinstance(event, DraftSubmitted):
+        if state.draft(event.key) is None:
+            return Reduction(state, _EMPTY_HINTS)
+        next_state = _clear_draft(state, event.key)
+        return _result(replace(next_state, completion=None), "composer", "overlay")
+
     if isinstance(event, RouteChanged):
         mode = TerminalMode(event.mode)
         focused = state.focused_thread_id
         previous = state.previous_focused_thread_id
-        if event.new_draft:
+        if event.clear_focus:
+            focused = None
+            previous = None
+        elif event.new_draft:
             focused = None
         elif mode is TerminalMode.FOCUS and event.thread_id is not None:
             focused = event.thread_id
@@ -464,6 +652,8 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         )
 
     if isinstance(event, WorkbenchSelectionChanged):
+        if state.workbench.selected_thread_id == event.thread_id:
+            return Reduction(state, _EMPTY_HINTS)
         return _result(
             replace(
                 state,
@@ -474,18 +664,39 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
 
     if isinstance(event, OverlayOpened):
         overlays = (*state.overlays, event.overlay)[-8:]
-        return _result(replace(state, overlays=overlays), "overlay")
+        conflict = None if event.overlay.kind == "configuration" else state.configuration_conflict
+        return _result(
+            replace(state, overlays=overlays, configuration_conflict=conflict),
+            "overlay",
+        )
 
     if isinstance(event, OverlayClosed):
         closing_review = bool(state.overlays and state.overlays[-1].kind == "review")
+        closing_configuration = bool(state.overlays and state.overlays[-1].kind == "configuration")
         return _result(
             replace(
                 state,
                 overlays=state.overlays[:-1],
                 review=None if closing_review else state.review,
+                configuration_conflict=(None if closing_configuration else state.configuration_conflict),
             ),
             "overlay",
         )
+
+    if isinstance(event, ConfigurationConflictRecorded):
+        next_state = _notice(
+            replace(state, configuration_conflict=event.conflict),
+            severity="warning",
+            message=event.conflict.message,
+            code="thread_configuration_conflict",
+            thread_id=event.conflict.thread_id,
+        )
+        return _result(next_state, "overlay", "notice")
+
+    if isinstance(event, ConfigurationConflictCleared):
+        if state.configuration_conflict is None:
+            return Reduction(state, _EMPTY_HINTS)
+        return _result(replace(state, configuration_conflict=None), "overlay")
 
     if isinstance(event, FollowLatestChanged):
         view = state.thread_view(event.thread_id)
@@ -1001,23 +1212,39 @@ def _live_tool_id(event: ToolEvent) -> str:
 
 def _touch_draft(state: TerminalState, draft: DraftState) -> TerminalState:
     clock = state.logical_clock + 1
-    previous = state.draft(draft.key)
-    revision = previous.editor_revision if previous is not None else draft.editor_revision
-    touched = replace(draft, editor_revision=revision, touched=clock)
+    touched = replace(draft, touched=clock)
     drafts = [item for item in state.drafts if item.key != draft.key]
     drafts.append(touched)
     drafts.sort(key=lambda item: item.touched, reverse=True)
     return replace(state, drafts=tuple(drafts[:MAX_DRAFTS]), logical_clock=clock)
 
 
-def _set_draft(state: TerminalState, key: str, *, text: str, cursor: int) -> TerminalState:
+def _clear_draft(state: TerminalState, key: str) -> TerminalState:
     previous = state.draft(key) or DraftState(key=key)
+    changed = bool(previous.text or previous.project_paths or previous.skill_references)
     return _touch_draft(
         state,
         replace(
             previous,
-            text=text[:MAX_BLOCK_TEXT],
-            cursor=max(0, min(cursor, len(text[:MAX_BLOCK_TEXT]))),
+            text="",
+            cursor=0,
+            project_paths=(),
+            skill_references=(),
+            editor_revision=previous.editor_revision + int(changed),
+        ),
+    )
+
+
+def _set_draft(state: TerminalState, key: str, *, text: str, cursor: int) -> TerminalState:
+    previous = state.draft(key) or DraftState(key=key)
+    bounded = text[:MAX_BLOCK_TEXT]
+    return _touch_draft(
+        state,
+        replace(
+            previous,
+            text=bounded,
+            cursor=max(0, min(cursor, len(bounded))),
+            editor_revision=previous.editor_revision + int(bounded != previous.text),
         ),
     )
 
@@ -1060,6 +1287,20 @@ def _ranked_page(page: WorkbenchPage, acknowledged: frozenset[str]) -> Workbench
     return page.model_copy(update={"rows": _rank_rows(page.rows, acknowledged)})
 
 
+def _has_exact_marker(text: str, marker: str, *, allow_trailing_slash: bool = False) -> bool:
+    start = text.find(marker)
+    while start >= 0:
+        end = start + len(marker)
+        if allow_trailing_slash and end < len(text) and text[end] == "/":
+            end += 1
+        before_boundary = start == 0 or text[start - 1].isspace()
+        after_boundary = end == len(text) or text[end].isspace()
+        if before_boundary and after_boundary:
+            return True
+        start = text.find(marker, start + 1)
+    return False
+
+
 def _rank_rows(
     rows: tuple[WorkbenchThreadView, ...],
     acknowledged: frozenset[str],
@@ -1068,19 +1309,31 @@ def _rank_rows(
 
 
 def _attention_key(row: WorkbenchThreadView, acknowledged: frozenset[str]) -> tuple[int, float, str]:
+    operation = row.latest_operation
     if row.pending_decision is not None:
         rank = 0
     elif (
-        row.latest_operation is not None
-        and row.latest_operation.receipt.receipt_id not in acknowledged
-        and row.latest_operation.status in _TERMINAL_OPERATION_STATUSES
+        (operation is not None and operation.status in {RootOperationStatus.failed, RootOperationStatus.cancelled})
+        or row.children.failed > 0
+        or row.children.lost > 0
     ):
         rank = 1
-    elif row.thread.root_activity.state.value != "inactive" or row.children.active:
+    elif (
+        operation is not None
+        and operation.status is RootOperationStatus.completed
+        and operation.receipt.receipt_id not in acknowledged
+    ):
         rank = 2
-    else:
+    elif row.thread.root_activity.state.value != "inactive" or row.children.active:
         rank = 3
-    return rank, -_timestamp(row.thread.updated_at), row.thread.thread_id
+    else:
+        rank = 4
+    occurred_at = row.thread.updated_at
+    if operation is not None and rank < 4:
+        occurred_at = operation.completed_at or operation.started_at or operation.receipt.submitted_at
+    elif row.latest_activity is not None and row.latest_activity.occurred_at is not None:
+        occurred_at = row.latest_activity.occurred_at
+    return rank, -_timestamp(occurred_at), row.thread.thread_id
 
 
 def _timestamp(value: datetime) -> float:

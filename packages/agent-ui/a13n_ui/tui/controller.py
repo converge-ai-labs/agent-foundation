@@ -23,24 +23,36 @@ from a13n_ui.surfaces import (
     FailureView,
     LaunchProjectResolution,
     NewThreadDefaults,
+    ProjectPathCompletionPage,
+    ProjectSummary,
     QuestionResponse,
     ReviewView,
     RootControlResult,
+    RootOperationStatus,
     RootOperationView,
     RootRunReceipt,
+    SkillCatalogView,
     SkillReference,
     ThreadConfigurationMutationInput,
+    ThreadConfigurationPatch,
     ThreadFocusSnapshot,
     ThreadMetadataMutation,
     ThreadMetadataPatch,
+    ThreadSelectorCatalog,
     ThreadSummary,
     TranscriptPage,
     WorkbenchPage,
 )
+from a13n_ui.tui.commands import command_intent
 from a13n_ui.tui.events import (
     ChildControlCompleted,
     ClosingStarted,
     CompletionAcknowledged,
+    CompletionApplied,
+    CompletionClosed,
+    CompletionLoaded,
+    ConfigurationConflictCleared,
+    ConfigurationConflictRecorded,
     DecisionDraftUpdated,
     DecisionPositionChanged,
     DecisionSubmitted,
@@ -49,6 +61,9 @@ from a13n_ui.tui.events import (
     DraftChanged,
     DraftDefaultsChanged,
     DraftRekeyed,
+    DraftRestored,
+    DraftSubmitted,
+    EditorDraftApplied,
     FocusLoaded,
     FollowLatestChanged,
     LiveReceived,
@@ -56,16 +71,20 @@ from a13n_ui.tui.events import (
     OperationFailed,
     OverlayClosed,
     OverlayOpened,
+    ProjectsLoaded,
     ReadingAnchorChanged,
     ReviewLoaded,
     RootControlCompleted,
     RootOperationUpdated,
     RootReceiptAccepted,
     RouteChanged,
+    SelectorsLoaded,
+    SkillCatalogLoaded,
     StartupFailed,
     StartupReady,
     StartupStarted,
     TerminalEvent,
+    ThreadPickerLoaded,
     TimelineSelectionChanged,
     TranscriptLoaded,
     WorkbenchLoaded,
@@ -74,12 +93,18 @@ from a13n_ui.tui.events import (
 )
 from a13n_ui.tui.intents import (
     AcknowledgeWorkbenchCompletion,
+    ApplyCompletion,
     ArchiveThread,
     CancelChildExecution,
     CancelFocusedOperation,
+    CancelThreadOperation,
+    CloseCompletions,
     CloseOverlay,
     EditDraft,
+    ExecuteCommand,
     ExitTerminal,
+    InsertSkillReference,
+    LoadMoreWorkbench,
     LoadOlderTranscript,
     NavigateDecision,
     OpenExternalEditor,
@@ -88,8 +113,11 @@ from a13n_ui.tui.intents import (
     OpenReview,
     OpenWorkbench,
     PatchThreadConfiguration,
+    RequestCompletions,
     RetryStartup,
+    SearchThreadPicker,
     SearchWorkbench,
+    SelectConfigurationResource,
     SelectTimelineBlock,
     SelectWorkbenchThread,
     SetFollowLatest,
@@ -100,6 +128,7 @@ from a13n_ui.tui.intents import (
     SubmitComposer,
     SubmitDecisions,
     SubmitDecisionSession,
+    SubmitThreadDraft,
     TerminalIntent,
     ToggleReasoning,
     ToggleToolDetails,
@@ -107,8 +136,11 @@ from a13n_ui.tui.intents import (
     UpdateDecisionDraft,
 )
 from a13n_ui.tui.models import (
+    CompletionState,
+    ConfigurationConflictState,
     ControlMode,
     DecisionSessionState,
+    DraftState,
     OverlayState,
     ReadingAnchor,
     TerminalLifecycle,
@@ -144,6 +176,25 @@ class TerminalAppProtocol(Protocol):
         cursor: str | None = None,
         limit: int = 20,
     ) -> WorkbenchPage: ...
+
+    async def projects(self) -> tuple[ProjectSummary, ...]: ...
+
+    async def thread_selectors(self) -> ThreadSelectorCatalog: ...
+
+    async def complete_project_paths(
+        self,
+        *,
+        project_id: str,
+        query: str = "",
+        limit: int = 50,
+    ) -> ProjectPathCompletionPage: ...
+
+    async def skill_catalog(
+        self,
+        *,
+        thread_id: str | None = None,
+        defaults: NewThreadDefaults | None = None,
+    ) -> SkillCatalogView: ...
 
     def summary_events(
         self,
@@ -278,6 +329,7 @@ class TerminalAppProtocol(Protocol):
 
 
 type AppContextFactory = Callable[[], AbstractAsyncContextManager[TerminalAppProtocol]]
+type EditorCallback = Callable[[str, DraftState], Awaitable[str]]
 type ExitCallback = Callable[[], Awaitable[None]]
 
 
@@ -293,6 +345,7 @@ class TerminalController:
         launch_thread_id: str | None = None,
         launch_defaults: NewThreadDefaults | None = None,
         open_workbench: bool = False,
+        editor_callback: EditorCallback | None = None,
         exit_callback: ExitCallback | None = None,
     ) -> None:
         self._app_factory = app_factory
@@ -300,6 +353,7 @@ class TerminalController:
         self._launch_thread_id = launch_thread_id
         self._launch_defaults = launch_defaults or NewThreadDefaults()
         self._open_workbench = open_workbench
+        self._editor_callback = editor_callback
         self._exit_callback = exit_callback
         self._state = TerminalState(draft_defaults=self._launch_defaults)
         self._scheduler = ProjectionScheduler(render)
@@ -313,6 +367,7 @@ class TerminalController:
         self._shutdown_event: asyncio.Event | None = None
         self._summary_task: asyncio.Task[None] | None = None
         self._focus_task: asyncio.Task[None] | None = None
+        self._completion_task: asyncio.Task[None] | None = None
         self._request_version = 0
         self._closed = False
 
@@ -416,14 +471,44 @@ class TerminalController:
                 await self._exit_callback()
         elif isinstance(intent, ToggleTopLevelMode):
             if self._state.mode is TerminalMode.FOCUS:
+                self._cancel_completion()
+                await self._dispatch(CompletionClosed())
                 await self._dispatch(RouteChanged(mode="workbench"), immediate=True)
             elif self._state.previous_focused_thread_id is not None:
                 await self._replace_focus(self._state.previous_focused_thread_id)
+        elif isinstance(intent, ExecuteCommand):
+            if intent.draft_key is not None:
+                await self._dispatch(DraftSubmitted(intent.draft_key))
+            if self._state.overlays and self._state.overlays[-1].kind == "commands":
+                await self._dispatch(OverlayClosed())
+            translated = command_intent(
+                intent.name,
+                self._state,
+                context_key=intent.context_key or intent.draft_key,
+            )
+            if translated is None:
+                await self._dispatch(
+                    OperationFailed(
+                        action="command",
+                        failure=FailureView(
+                            code="command_unavailable",
+                            message=f"/{intent.name} is not available in the current state.",
+                        ),
+                    )
+                )
+            else:
+                await self.handle(translated)
         elif isinstance(intent, OpenWorkbench):
+            self._cancel_completion()
+            await self._dispatch(CompletionClosed())
             await self._dispatch(RouteChanged(mode="workbench"), immediate=True)
         elif isinstance(intent, OpenFocus):
+            if self._state.overlays and self._state.overlays[-1].kind == "threads":
+                await self._dispatch(OverlayClosed())
             await self._replace_focus(intent.thread_id)
         elif isinstance(intent, StartNewDraft):
+            self._cancel_completion()
+            await self._dispatch(CompletionClosed())
             if intent.defaults is not None:
                 self._launch_defaults = intent.defaults
                 await self._dispatch(DraftDefaultsChanged(intent.defaults), immediate=True)
@@ -437,11 +522,28 @@ class TerminalController:
                 replace_project=True,
                 query=self._state.workbench.query,
             )
+            return_to_threads = bool(
+                len(self._state.overlays) > 1
+                and self._state.overlays[-1].kind == "projects"
+                and self._state.overlays[-2].kind == "threads"
+            )
+            if self._state.overlays and self._state.overlays[-1].kind == "projects":
+                await self._dispatch(OverlayClosed())
+            if return_to_threads:
+                await self._load_thread_picker(self._state.thread_picker_query)
         elif isinstance(intent, SearchWorkbench):
             await self._refresh_workbench(
                 project_id=self._state.project_filter_id,
                 query=intent.query,
             )
+        elif isinstance(intent, LoadMoreWorkbench):
+            await self._load_more_workbench()
+        elif isinstance(intent, SearchThreadPicker):
+            await self._load_thread_picker(intent.query)
+        elif isinstance(intent, SubmitThreadDraft):
+            await self._submit_thread_draft(intent.thread_id)
+        elif isinstance(intent, CancelThreadOperation):
+            await self._cancel_thread_operation(intent.thread_id, intent.receipt_id)
         elif isinstance(intent, LoadOlderTranscript):
             await self._load_older(intent.thread_id)
         elif isinstance(intent, EditDraft):
@@ -496,9 +598,30 @@ class TerminalController:
         elif isinstance(intent, ArchiveThread):
             await self._archive(intent)
         elif isinstance(intent, OpenOverlay):
-            await self._dispatch(OverlayOpened(OverlayState(kind=intent.kind, key=intent.key)), immediate=True)
+            await self._open_overlay(intent)
         elif isinstance(intent, CloseOverlay):
             await self._dispatch(OverlayClosed(), immediate=True)
+        elif isinstance(intent, SelectConfigurationResource):
+            await self._select_configuration_resource(intent)
+        elif isinstance(intent, RequestCompletions):
+            self._schedule_completion(intent)
+        elif isinstance(intent, ApplyCompletion):
+            await self._dispatch(
+                CompletionApplied(
+                    key=intent.key,
+                    token_start=intent.token_start,
+                    token_end=intent.token_end,
+                    replacement=intent.replacement,
+                    skill_reference=intent.skill_reference,
+                    project_path=intent.project_path,
+                ),
+                immediate=True,
+            )
+        elif isinstance(intent, InsertSkillReference):
+            await self._insert_skill_reference(intent)
+        elif isinstance(intent, CloseCompletions):
+            self._cancel_completion()
+            await self._dispatch(CompletionClosed())
         elif isinstance(intent, SelectTimelineBlock):
             await self._dispatch(TimelineSelectionChanged(intent.thread_id, intent.block_id))
         elif isinstance(intent, SetFollowLatest):
@@ -513,16 +636,7 @@ class TerminalController:
         elif isinstance(intent, AcknowledgeWorkbenchCompletion):
             await self._dispatch(CompletionAcknowledged(intent.receipt_id))
         elif isinstance(intent, OpenExternalEditor):
-            await self._dispatch(
-                OperationFailed(
-                    action="editor",
-                    failure=FailureView(
-                        code="editor_not_ready",
-                        message="External editor integration is not available yet.",
-                    ),
-                    draft_key=intent.key,
-                )
-            )
+            await self._open_external_editor(intent.key)
         else:
             raise TypeError(f"Unsupported terminal intent: {type(intent).__name__}")
 
@@ -635,7 +749,174 @@ class TerminalController:
             )
         )
 
+    async def _load_more_workbench(self) -> None:
+        app = self._app
+        page = self._state.workbench.page
+        if app is None or page is None or page.next_cursor is None:
+            return
+        version = self._next_version()
+        try:
+            next_page = await app.workbench(
+                project_id=self._state.project_filter_id,
+                query=self._state.workbench.query or None,
+                cursor=page.next_cursor,
+            )
+        except Exception as exc:
+            await self._dispatch(OperationFailed(action="workbench", failure=_failure(exc)))
+            return
+        await self._dispatch(
+            WorkbenchLoaded(
+                request_version=version,
+                page=next_page,
+                query=self._state.workbench.query,
+                append=True,
+            )
+        )
+
+    async def _open_overlay(self, intent: OpenOverlay) -> None:
+        self._cancel_completion()
+        await self._dispatch(CompletionClosed())
+        context_key = intent.context_key
+        if context_key is None and intent.kind in {"commands", "skills", "status", "configuration"}:
+            context_key = self._interaction_key()
+        await self._dispatch(
+            OverlayOpened(
+                OverlayState(
+                    kind=intent.kind,
+                    key=intent.key,
+                    context_key=context_key,
+                )
+            ),
+            immediate=True,
+        )
+        app = self._app
+        if app is None:
+            return
+        version = self._next_version()
+        try:
+            if intent.kind == "projects":
+                await self._dispatch(ProjectsLoaded(version, await app.projects()))
+            elif intent.kind in {"configuration", "status"}:
+                await self._dispatch(SelectorsLoaded(version, await app.thread_selectors()))
+            elif intent.kind == "skills":
+                thread_id = None if context_key in {None, "new"} else context_key
+                catalog = await app.skill_catalog(
+                    thread_id=thread_id,
+                    defaults=self._state.draft_defaults if thread_id is None else None,
+                )
+                await self._dispatch(SkillCatalogLoaded(version, catalog))
+            elif intent.kind == "threads":
+                await self._load_thread_picker("")
+        except Exception as exc:
+            await self._dispatch(
+                OperationFailed(action="overlay", failure=_failure(exc)),
+                immediate=True,
+            )
+
+    async def _load_thread_picker(self, query: str) -> None:
+        app = self._app
+        if app is None:
+            return
+        version = self._next_version()
+        try:
+            page = await app.workbench(
+                project_id=self._state.project_filter_id,
+                query=query or None,
+                limit=50,
+            )
+        except Exception as exc:
+            await self._dispatch(OperationFailed(action="threads", failure=_failure(exc)))
+            return
+        await self._dispatch(ThreadPickerLoaded(version, page, query=query))
+
+    def _schedule_completion(self, intent: RequestCompletions) -> None:
+        self._cancel_completion()
+        version = self._next_version()
+        task = self._spawn(
+            self._load_completions(intent, version),
+            name=f"terminal-completion-{intent.key}",
+        )
+        self._completion_task = task
+
+    def _cancel_completion(self) -> None:
+        task = self._completion_task
+        self._completion_task = None
+        if task is not None:
+            task.cancel()
+
+    async def _load_completions(self, intent: RequestCompletions, version: int) -> None:
+        try:
+            await asyncio.sleep(0.15)
+            app = self._app
+            draft = self._state.draft(intent.key)
+            if app is None or draft is None:
+                return
+            token = draft.text[intent.token_start : intent.token_end]
+            prefix = "@" if intent.kind == "path" else "$"
+            if token != prefix + intent.query:
+                return
+            if intent.kind == "path":
+                project_id = self._draft_project_id(intent.key)
+                if project_id is None:
+                    await self._dispatch(CompletionClosed())
+                    return
+                paths = await app.complete_project_paths(
+                    project_id=project_id,
+                    query=intent.query,
+                    limit=50,
+                )
+                completion = CompletionState(
+                    request_version=version,
+                    key=intent.key,
+                    kind="path",
+                    query=intent.query,
+                    token_start=intent.token_start,
+                    token_end=intent.token_end,
+                    paths=paths,
+                )
+            else:
+                skills = await app.skill_catalog(
+                    thread_id=None if intent.key == "new" else intent.key,
+                    defaults=self._state.draft_defaults if intent.key == "new" else None,
+                )
+                completion = CompletionState(
+                    request_version=version,
+                    key=intent.key,
+                    kind="skill",
+                    query=intent.query,
+                    token_start=intent.token_start,
+                    token_end=intent.token_end,
+                    skills=skills,
+                )
+            latest = self._state.draft(intent.key)
+            if latest is None or latest.text[intent.token_start : intent.token_end] != prefix + intent.query:
+                return
+            await self._dispatch(CompletionLoaded(completion))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._dispatch(OperationFailed(action="completion", failure=_failure(exc)))
+
+    def _draft_project_id(self, key: str) -> str | None:
+        if key == "new":
+            return self._state.draft_defaults.project_id or self._state.launch_project_id
+        view = self._state.thread_view(key)
+        if view is not None and view.detail is not None:
+            return view.detail.thread.configuration.project_id
+        row = next(
+            (item for item in self._state.workbench.rows if item.thread.thread_id == key),
+            None,
+        )
+        return None if row is None else row.thread.configuration.project_id
+
+    def _interaction_key(self) -> str:
+        if self._state.mode is TerminalMode.WORKBENCH:
+            return self._state.workbench.selected_thread_id or "new"
+        return self._state.focused_thread_id or "new"
+
     async def _replace_focus(self, thread_id: str) -> None:
+        self._cancel_completion()
+        await self._dispatch(CompletionClosed())
         async with self._focus_lock:
             await self._stop_focus_locked()
             await self._dispatch(RouteChanged(mode="focus", thread_id=thread_id), immediate=True)
@@ -817,6 +1098,244 @@ class TerminalController:
                 immediate=True,
             )
 
+    async def _submit_thread_draft(self, thread_id: str) -> None:
+        app = self._app
+        draft = self._state.draft(thread_id)
+        row = next(
+            (item for item in self._state.workbench.rows if item.thread.thread_id == thread_id),
+            None,
+        )
+        if app is None or draft is None or row is None or not draft.text.strip():
+            return
+        text = draft.text
+        try:
+            operation = row.latest_operation
+            if operation is not None and "steer" in row.available_actions:
+                result = await app.steer_root_operation(
+                    receipt_id=operation.receipt.receipt_id,
+                    message=text,
+                    skill_references=draft.skill_references,
+                )
+                if not result.accepted:
+                    raise AgentUiError(
+                        "The active Run completed before steering was accepted.",
+                        code="steering_not_accepted",
+                    )
+                await self._dispatch(DraftSubmitted(thread_id))
+            elif "respond" in row.available_actions:
+                raise AgentUiError(
+                    "Answer the pending decision before sending another prompt.",
+                    code="thread_decision_pending",
+                )
+            elif operation is not None and operation.status not in {
+                RootOperationStatus.completed,
+                RootOperationStatus.failed,
+                RootOperationStatus.cancelled,
+            }:
+                raise AgentUiError(
+                    "This Thread cannot accept input until its current operation changes state.",
+                    code="thread_input_unavailable",
+                )
+            else:
+                receipt = await app.submit_thread(
+                    thread_id=thread_id,
+                    prompt=text,
+                    skill_references=draft.skill_references,
+                )
+                await self._dispatch(DraftSubmitted(thread_id))
+                self._spawn(
+                    self._wait_receipt(receipt),
+                    name=f"terminal-receipt-{receipt.receipt_id}",
+                )
+            await self._refresh_workbench()
+        except Exception as exc:
+            await self._dispatch(
+                OperationFailed(
+                    action="workbench_submit",
+                    failure=_failure(exc),
+                    draft_key=thread_id,
+                    draft_text=text,
+                    thread_id=thread_id,
+                ),
+                immediate=True,
+            )
+
+    async def _cancel_thread_operation(self, thread_id: str, receipt_id: str) -> None:
+        app = self._app
+        if app is None:
+            return
+        try:
+            result = await app.cancel_root_operation(receipt_id)
+            if not result.accepted:
+                raise AgentUiError(
+                    "The root operation settled before cancellation was accepted.",
+                    code="cancellation_not_accepted",
+                )
+        except Exception as exc:
+            await self._dispatch(
+                OperationFailed(action="workbench_cancel", failure=_failure(exc), thread_id=thread_id),
+                immediate=True,
+            )
+            return
+        await self._refresh_workbench()
+
+    async def _select_configuration_resource(self, intent: SelectConfigurationResource) -> None:
+        overlay = self._state.overlays[-1] if self._state.overlays else None
+        context_key = (
+            overlay.context_key if overlay is not None and overlay.kind == "configuration" else self._interaction_key()
+        )
+        if context_key is None or context_key == "new":
+            defaults = self._updated_draft_defaults(intent)
+            self._launch_defaults = defaults
+            await self._dispatch(DraftDefaultsChanged(defaults), immediate=True)
+            if intent.kind in {"agent", "environment"}:
+                await self._dispatch(OverlayClosed())
+            return
+        thread_id = context_key
+        view = self._state.thread_view(thread_id)
+        if view is not None and view.detail is not None:
+            configuration = view.detail.thread.configuration
+        else:
+            row = next(
+                (item for item in self._state.workbench.rows if item.thread.thread_id == thread_id),
+                None,
+            )
+            if row is None:
+                return
+            configuration = row.thread.configuration
+        if intent.kind == "agent":
+            patch = ThreadConfigurationPatch(agent_id=intent.resource_id)
+        elif intent.kind == "environment":
+            patch = ThreadConfigurationPatch(environment_profile_id=intent.resource_id)
+        elif intent.kind == "harness_plugin":
+            patch = ThreadConfigurationPatch(
+                harness_plugin_ids=_toggle_resource(configuration.harness_plugin_ids, intent.resource_id)
+            )
+        elif intent.kind == "environment_run_extension":
+            patch = ThreadConfigurationPatch(
+                environment_run_extension_ids=_toggle_resource(
+                    configuration.environment_run_extension_ids,
+                    intent.resource_id,
+                )
+            )
+        else:
+            patch = ThreadConfigurationPatch(
+                mcp_server_ids=_toggle_resource(configuration.mcp_server_ids, intent.resource_id)
+            )
+        if intent.kind in {"agent", "environment"}:
+            intended_selected = True
+        elif intent.kind == "harness_plugin":
+            intended_selected = intent.resource_id not in configuration.harness_plugin_ids
+        elif intent.kind == "environment_run_extension":
+            intended_selected = intent.resource_id not in configuration.environment_run_extension_ids
+        else:
+            intended_selected = intent.resource_id not in configuration.mcp_server_ids
+        changed = await self._patch_configuration(
+            PatchThreadConfiguration(
+                thread_id=thread_id,
+                mutation=ThreadConfigurationMutationInput(
+                    expected_version=configuration.version,
+                    patch=patch,
+                ),
+            ),
+            intended_selection=(intent, intended_selected),
+        )
+        if changed and intent.kind in {"agent", "environment"}:
+            await self._dispatch(OverlayClosed())
+
+    def _updated_draft_defaults(self, intent: SelectConfigurationResource) -> NewThreadDefaults:
+        defaults = self._state.draft_defaults
+        values = defaults.model_dump()
+        if intent.kind == "agent":
+            values["agent_id"] = intent.resource_id
+        elif intent.kind == "environment":
+            values["environment_profile_id"] = intent.resource_id
+        elif intent.kind == "harness_plugin":
+            values["harness_plugin_ids"] = _toggle_resource(
+                defaults.harness_plugin_ids or (),
+                intent.resource_id,
+            )
+        elif intent.kind == "environment_run_extension":
+            values["environment_run_extension_ids"] = _toggle_resource(
+                defaults.environment_run_extension_ids or (),
+                intent.resource_id,
+            )
+        else:
+            values["mcp_server_ids"] = _toggle_resource(
+                defaults.mcp_server_ids or (),
+                intent.resource_id,
+            )
+        return NewThreadDefaults.model_validate(values)
+
+    async def _insert_skill_reference(self, intent: InsertSkillReference) -> None:
+        draft = self._state.draft(intent.key)
+        if draft is None:
+            return
+        prefix = "" if draft.cursor == 0 or draft.text[draft.cursor - 1].isspace() else " "
+        insertion = f"{prefix}${intent.reference.name} "
+        text = draft.text[: draft.cursor] + insertion + draft.text[draft.cursor :]
+        references = tuple(item for item in draft.skill_references if item.name != intent.reference.name)
+        await self._dispatch(
+            DraftChanged(
+                key=intent.key,
+                text=text,
+                cursor=draft.cursor + len(insertion),
+                project_paths=draft.project_paths,
+                skill_references=(*references, intent.reference),
+            ),
+            immediate=True,
+        )
+        await self._dispatch(OverlayClosed())
+
+    async def _open_external_editor(self, key: str) -> None:
+        draft = self._state.draft(key)
+        callback = self._editor_callback
+        if draft is None:
+            await self._dispatch(DraftChanged(key=key, text="", cursor=0))
+            draft = self._state.draft(key)
+        if draft is None or callback is None:
+            await self._dispatch(
+                OperationFailed(
+                    action="editor",
+                    failure=FailureView(
+                        code="editor_unavailable",
+                        message="No external editor is configured for this terminal.",
+                    ),
+                    draft_key=key,
+                )
+            )
+            return
+        try:
+            text = await callback(key, draft)
+        except Exception as exc:
+            await self._reconcile_after_editor()
+            await self._dispatch(
+                DraftRestored(
+                    key=key,
+                    text=draft.text,
+                    expected_revision=draft.editor_revision,
+                    message=str(exc) or "The external editor failed.",
+                    code=exc.code if isinstance(exc, AgentUiError) else "editor_failed",
+                ),
+                immediate=True,
+            )
+            return
+        await self._reconcile_after_editor()
+        await self._dispatch(
+            EditorDraftApplied(
+                key=key,
+                text=text,
+                expected_revision=draft.editor_revision,
+            ),
+            immediate=True,
+        )
+
+    async def _reconcile_after_editor(self) -> None:
+        await self._refresh_workbench()
+        thread_id = self._state.focused_thread_id
+        if self._state.mode is TerminalMode.FOCUS and thread_id is not None:
+            await self._replace_focus(thread_id)
+
     async def _wait_receipt(self, receipt: RootRunReceipt) -> None:
         app = self._app
         if app is None:
@@ -835,6 +1354,7 @@ class TerminalController:
             )
             return
         await self._dispatch(RootOperationUpdated(operation), immediate=True)
+        await self._refresh_workbench()
         if self._state.focused_thread_id == receipt.thread_id:
             await self._replace_focus(receipt.thread_id)
 
@@ -1024,19 +1544,55 @@ class TerminalController:
             immediate=True,
         )
 
-    async def _patch_configuration(self, intent: PatchThreadConfiguration) -> None:
+    async def _patch_configuration(
+        self,
+        intent: PatchThreadConfiguration,
+        *,
+        intended_selection: tuple[SelectConfigurationResource, bool] | None = None,
+    ) -> bool:
         app = self._app
         if app is None:
-            return
+            return False
         try:
             await app.patch_thread_configuration(thread_id=intent.thread_id, mutation=intent.mutation)
         except Exception as exc:
-            await self._dispatch(
-                OperationFailed(action="configuration", failure=_failure(exc), thread_id=intent.thread_id),
-                immediate=True,
-            )
-            return
-        await self._replace_focus(intent.thread_id)
+            failure = _failure(exc)
+            if failure.code == "thread_configuration_conflict" and intended_selection is not None:
+                selection, intended_selected = intended_selection
+                await self._dispatch(
+                    ConfigurationConflictRecorded(
+                        ConfigurationConflictState(
+                            thread_id=intent.thread_id,
+                            kind=selection.kind,
+                            resource_id=selection.resource_id,
+                            intended_selected=intended_selected,
+                            message=(
+                                "Thread configuration changed elsewhere. The newer state is shown; "
+                                "review it, then select the intended value again to retry."
+                            ),
+                        )
+                    ),
+                    immediate=True,
+                )
+            else:
+                await self._dispatch(
+                    OperationFailed(
+                        action="configuration",
+                        failure=failure,
+                        thread_id=intent.thread_id,
+                    ),
+                    immediate=True,
+                )
+            await self._refresh_configuration_context(intent.thread_id)
+            return False
+        await self._dispatch(ConfigurationConflictCleared())
+        await self._refresh_configuration_context(intent.thread_id)
+        return True
+
+    async def _refresh_configuration_context(self, thread_id: str) -> None:
+        await self._refresh_workbench()
+        if self._state.mode is TerminalMode.FOCUS and self._state.focused_thread_id == thread_id:
+            await self._replace_focus(thread_id)
 
     async def _archive(self, intent: ArchiveThread) -> None:
         app = self._app
@@ -1051,9 +1607,18 @@ class TerminalController:
                 ),
             )
         except Exception as exc:
-            await self._dispatch(OperationFailed(action="archive", failure=_failure(exc)))
+            await self._dispatch(OperationFailed(action="archive", failure=_failure(exc), thread_id=intent.thread_id))
+            await self._refresh_workbench()
+            if self._state.mode is TerminalMode.FOCUS and self._state.focused_thread_id == intent.thread_id:
+                await self._replace_focus(intent.thread_id)
             return
         await self._refresh_workbench()
+        if intent.archived and self._state.focused_thread_id == intent.thread_id:
+            await self._stop_focus()
+            await self._dispatch(
+                RouteChanged(mode="workbench", clear_focus=True),
+                immediate=True,
+            )
 
     async def _dispatch(self, event: TerminalEvent, *, immediate: bool = False) -> None:
         async with self._state_lock:
@@ -1070,6 +1635,12 @@ class TerminalController:
     def _next_version(self) -> int:
         self._request_version += 1
         return self._request_version
+
+
+def _toggle_resource(values: tuple[str, ...], resource_id: str) -> tuple[str, ...]:
+    if resource_id in values:
+        return tuple(item for item in values if item != resource_id)
+    return (*values, resource_id)
 
 
 def _decision_response(
@@ -1175,4 +1746,4 @@ def _failure(exc: BaseException) -> FailureView:
     return FailureView(code="terminal_operation_failed", message=str(exc) or type(exc).__name__)
 
 
-__all__ = ["AppContextFactory", "TerminalAppProtocol", "TerminalController"]
+__all__ = ["AppContextFactory", "EditorCallback", "TerminalAppProtocol", "TerminalController"]
