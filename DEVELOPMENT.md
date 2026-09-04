@@ -35,15 +35,13 @@ Use the package and module hierarchy as a namespace instead of repeating it in e
 
 Formatters and general-purpose naming rules can enforce syntax and casing, but they cannot decide whether a qualifier carries domain meaning. Semantic naming clarity remains a design and review responsibility.
 
-## HTTP Namespace and Browser Applications
+## HTTP Namespace
 
 Product-facing HTTP APIs use the `/api` namespace. Keep OpenAPI schemas and interactive API documentation under the same prefix. Individual resource layouts remain owned by their API contracts; the prefix is not permission to introduce an unversioned compatibility promise for every implementation route. Protocol daemons such as `agent-envd` retain their owning transport contracts rather than inheriting this product-API convention.
 
-Operational liveness and readiness probes use explicit paths such as `/healthz` and `/readyz` outside `/api`. They expose only bounded process and dependency state and are not product resources. Browser history fallback must never turn an unknown `/api` request or an operational probe into an HTML application response.
+Operational liveness and readiness probes use explicit paths such as `/healthz` and `/readyz` outside `/api`. They expose only bounded process and dependency state and are not product resources. Unknown product API paths return API errors rather than an HTML application response.
 
-A browser application deployed with a service lives under `apps/`, remains private rather than becoming a language package, and builds reproducibly from its own lock file. Production images build immutable browser assets in a dedicated stage, copy only the output into the non-root runtime image, and require no Node.js runtime. The service can serve those assets from `/` for roles that own product ingress. Worker- and connectivity-only roles do not expose the browser application or product APIs.
-
-During local development, the browser dev server uses relative `/api` URLs and proxies that namespace unchanged to the backend. Repository commands start and stop the frontend and backend as one development stack while preserving each process's native diagnostics and shutdown behavior. Production remains same-origin and does not add CORS merely to accommodate local tooling.
+Foundation Service exposes APIs and operational probes without hosting browser assets. Worker- and connectivity-only roles do not expose product APIs. Browser clients follow the shared ingress Origin, cookie, and CSRF contract; local tooling does not justify permissive CORS.
 
 ## Generated Code and Static Analysis
 

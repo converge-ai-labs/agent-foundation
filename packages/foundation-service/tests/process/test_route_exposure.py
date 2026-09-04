@@ -1,10 +1,8 @@
-from pathlib import Path
-
 import pytest
 from a13n_service.app import create_app
 from a13n_service.settings import ServiceRole, ServiceSettings
 
-from .support import create_web_dist, request
+from .support import request
 
 
 def test_app_exposes_settings_before_lifespan() -> None:
@@ -89,23 +87,18 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "credentials" not in document["components"]["schemas"]["Ingress"]["properties"]
 
 
-def test_web_application_serves_assets_and_browser_history(tmp_path: Path) -> None:
-    web_dist = create_web_dist(tmp_path / "web")
-    app = create_app(ServiceSettings(_env_file=None, role=ServiceRole.all, web_dist_dir=web_dist))
+@pytest.mark.parametrize("role", [ServiceRole.control, ServiceRole.all])
+def test_control_roles_do_not_serve_browser_routes(role: ServiceRole) -> None:
+    app = create_app(ServiceSettings(_env_file=None, role=role))
 
-    assert "Foundation Web" in request(app, "/").text
-    assert "Foundation Web" in request(app, "/executions/example").text
-    assert request(app, "/assets/app.js").text == 'document.title = "Foundation Web";'
-    assert request(app, "/assets/missing.js").status_code == 404
-    assert request(app, "/assets/missing").status_code == 404
-    assert request(app, "/healthz/").status_code == 404
-    assert request(app, "/readyz/").status_code == 404
-    assert request(app, "/executions/example", method="POST").status_code == 405
+    for path in ("/", "/executions/example", "/assets/app.js"):
+        response = request(app, path)
+        assert response.status_code == 404
+        assert response.headers["content-type"].startswith("application/json")
 
 
-def test_web_fallback_never_handles_api_paths(tmp_path: Path) -> None:
-    web_dist = create_web_dist(tmp_path / "web")
-    app = create_app(ServiceSettings(_env_file=None, role=ServiceRole.all, web_dist_dir=web_dist))
+def test_unknown_api_paths_return_json_errors() -> None:
+    app = create_app(ServiceSettings(_env_file=None, role=ServiceRole.all))
 
     for path in ("/api", "/api/unknown"):
         response = request(app, path)
@@ -114,9 +107,8 @@ def test_web_fallback_never_handles_api_paths(tmp_path: Path) -> None:
         assert response.json() == {"detail": "API route not found"}
 
 
-def test_worker_role_serves_only_operational_endpoints(tmp_path: Path) -> None:
-    web_dist = create_web_dist(tmp_path / "web")
-    app = create_app(ServiceSettings(_env_file=None, role=ServiceRole.worker, web_dist_dir=web_dist))
+def test_worker_role_serves_only_operational_endpoints() -> None:
+    app = create_app(ServiceSettings(_env_file=None, role=ServiceRole.worker))
 
     assert request(app, "/healthz").status_code == 200
     assert request(app, "/api/openapi.json").status_code == 404
@@ -136,8 +128,3 @@ def test_non_connectivity_roles_do_not_expose_provider_data_plane() -> None:
     for role in (ServiceRole.control, ServiceRole.worker):
         app = create_app(ServiceSettings(_env_file=None, role=role))
         assert request(app, "/connectivity/v1/ingresses/ing_test/events", method="POST").status_code == 404
-
-
-def test_configured_web_build_requires_an_index(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="Foundation Web index is missing"):
-        create_app(ServiceSettings(_env_file=None, role=ServiceRole.control, web_dist_dir=tmp_path))

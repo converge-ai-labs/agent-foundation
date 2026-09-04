@@ -18,7 +18,7 @@ The query boundary and the [OTel producer and exporter](38-observability.md) are
 | Backend query and response mapping               | Selected `TraceQueryProvider`                          | Uses documented provider APIs behind the normalized boundary              |
 | Resource visibility and content authorization    | [Foundation IAM](33-identity-and-access-management.md) | Reauthorizes every returned RunAttempt under current policy               |
 | Shared JSON, pagination, and errors              | [Platform API Conventions](../api-conventions.md)      | Applies the common bounded `/api/v1` contract                             |
-| Browser Trace Dashboard                          | Foundation Web or another client                       | Consumes the public API; layout and interaction are outside this contract |
+| Browser Trace Dashboard                          | API client                                             | Consumes the public API; layout and interaction are outside this contract |
 | Archive, data-lake export, and rehydration       | Deployment operator                                    | Remain outside Foundation                                                 |
 
 A trace query result is an ephemeral read model over backend telemetry. It is not a Foundation resource, lifecycle fact, audit record, usage ledger, retained interaction, or authorization source. Foundation persists no provider cursor, response, trace ID, observation ID, or search index.

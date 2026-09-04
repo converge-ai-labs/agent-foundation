@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation Service exposes one HTTP ingress for Native product APIs, Hosted AG-UI, A2A, the optional browser application, streaming delivery, provider events, and operational probes. This contract owns process-role exposure, request context, proxy and browser trust, authentication boundaries, protocol-aware error enforcement, streaming resource safety, and drain behavior.
+Foundation Service exposes one HTTP ingress for Native product APIs, Hosted AG-UI, A2A, streaming delivery, provider events, and operational probes. This contract owns process-role exposure, request context, proxy and browser trust, authentication boundaries, protocol-aware error enforcement, streaming resource safety, and drain behavior.
 
 Resource routes, fields, commands, and authorization actions remain owned by their domains. Shared JSON, status, pagination, error-envelope, version, and idempotency wire semantics remain owned by [Platform API Conventions](../api-conventions.md). HTTP middleware carries transport context; it does not become a database transaction, resource authorizer, or business workflow engine.
 
@@ -14,15 +14,14 @@ Resource routes, fields, commands, and authorization actions remain owned by the
 | `/ag-ui/v1` Hosted AG-UI routes                        |       Yes |       No |             No |   Yes |
 | A2A routes and well-known discovery when enabled       |       Yes |       No |             No |   Yes |
 | OpenAPI and interactive API documentation              |       Yes |       No |             No |   Yes |
-| Browser application and static assets                  |       Yes |       No |             No |   Yes |
 | Authorized SSE or WebSocket delivery                   |       Yes |       No |             No |   Yes |
 | Provider-specific event ingress                        |        No |       No |            Yes |   Yes |
 | `/internal/v1` control operator routes when configured |       Yes |       No |             No |   Yes |
 | `/healthz` and `/readyz`                               |       Yes |      Yes |            Yes |   Yes |
 
-A Worker-only process returns no product route, product OpenAPI document, browser fallback, static application, authenticated product stream, provider-event route, or network MCP listener. Its in-process a13n MCP tool groups belong to Run execution and expose no HTTP route. A Connectivity-only process exposes only provider event ingress and operational surfaces; it exposes no `/api/v1`, AG-UI, A2A, browser, or product stream route. Unknown `/api`, `/ag-ui`, `/a2a`, and well-known protocol paths are never rewritten to browser HTML. Operational paths are outside the product namespaces, unversioned, bounded, and excluded from product OpenAPI.
+A Worker-only process returns no product route, product OpenAPI document, authenticated product stream, provider-event route, or network MCP listener. Its in-process a13n MCP tool groups belong to Run execution and expose no HTTP route. A Connectivity-only process exposes only provider event ingress and operational surfaces; it exposes no `/api/v1`, AG-UI, A2A, or product stream route. The service does not host a browser application or provide HTML history fallback. Operational paths are outside the product namespaces, unversioned, bounded, and excluded from product OpenAPI.
 
-The internal operator surface is excluded from the public product OpenAPI, SDKs, browser application, and tenant IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
+The internal operator surface is excluded from the public product OpenAPI, SDKs, and tenant IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
 
 ## Request Boundary
 
@@ -49,8 +48,6 @@ Forwarded client address, host, and scheme values are ignored unless the direct 
 Production browser traffic is same-origin by default. The service does not enable permissive CORS to support local development; a development frontend proxies relative `/api` requests instead. A distribution that intentionally exposes cross-origin API access declares an exact origin and credential policy rather than reflecting request origins.
 
 Cookie-authenticated state-changing requests require both an accepted Origin and the IAM-owned anti-CSRF proof. Safe reads still authenticate and authorize normally. Bearer API keys are not cookie credentials and do not bypass Host, body, authorization, or rate/admission checks.
-
-Static browser assets use immutable cache policy where their content identity permits it. The browser entry point is not cached in a way that prevents deployment updates, and browser history fallback never captures `/api`, probe, or known static-asset failures.
 
 ## Authentication and Authorization Boundary
 
@@ -107,7 +104,7 @@ A new common ingress check can be added when it rejects only requests outside th
 
 ## Invariants
 
-01. Only `control` and `all` expose `/api/v1`, browser assets, and product streams; only `connectivity` and `all` expose provider event data-plane surfaces. In-process a13n MCP adds no HTTP surface.
+01. Only `control` and `all` expose `/api/v1` and product streams; only `connectivity` and `all` expose provider event data-plane surfaces. In-process a13n MCP adds no HTTP surface.
 02. Every product request receives one service-owned request ID.
 03. Untrusted forwarded headers never change client, host, or scheme identity.
 04. Production browser access is same-origin unless an exact cross-origin policy is selected.

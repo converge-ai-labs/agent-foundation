@@ -10,7 +10,6 @@ CHECK_TARGETS := \
 	lint \
 	typecheck \
 	examples-check \
-	foundation-web-check \
 	harness-ui-check \
 	rust-check \
 	sdk-python-check \
@@ -29,8 +28,6 @@ install: ## Install locked dependencies and Git hooks
 	@uv sync --locked --all-packages
 	@echo "Synchronizing the standalone Python SDK"
 	@uv sync --project sdk/python --locked
-	@echo "Installing Foundation Web dependencies"
-	@npm --prefix apps/foundation-web ci
 	@echo "Installing Harness UI dependencies"
 	@npm --prefix apps/harness-ui ci
 	@echo "Installing TypeScript SDK dependencies"
@@ -94,7 +91,7 @@ setup: sync ## Start local PostgreSQL and Redis
 	@docker compose -f dev/compose.yaml up -d --wait
 
 .PHONY: dev
-dev: setup foundation-web-sync ## Upgrade the schema and run Foundation Service with Foundation Web
+dev: setup ## Upgrade the schema and run Foundation Service
 	@uv run --locked foundation-service db upgrade
 	@bash scripts/dev.sh
 
@@ -161,7 +158,7 @@ agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a dis
 	@uv run --locked python -m a13n_ui.storage.migrations.generate "$(msg)"
 
 .PHONY: format
-format: sync foundation-web-sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
+format: sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
 	@run_formatters() { \
 		formatter_status=0; \
 		for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
@@ -175,7 +172,6 @@ format: sync foundation-web-sync harness-ui-sync sdk-python-sync sdk-typescript-
 	@cargo fmt --all
 	@(cd sdk/rust && cargo fmt)
 	@(cd sdk/rust/agent-foundation-cli && cargo fmt)
-	@npm --prefix apps/foundation-web run format
 	@npm --prefix apps/harness-ui run format
 	@npm --prefix sdk/typescript run format
 
@@ -467,28 +463,6 @@ harness-ui-check-all: harness-ui-sync ## Run the complete Harness UI gate
 agent-ui-assets: sync harness-ui-build ## Prepare generated Harness UI files for Python packaging
 	@uv run --locked python scripts/prepare-agent-ui-assets.py
 
-apps/foundation-web/node_modules/.package-lock.json: apps/foundation-web/package.json apps/foundation-web/package-lock.json
-	@npm --prefix apps/foundation-web ci
-
-.PHONY: foundation-web-sync
-foundation-web-sync: apps/foundation-web/node_modules/.package-lock.json ## Install locked Foundation Web dependencies
-
-.PHONY: foundation-web-format
-foundation-web-format: foundation-web-sync ## Format Foundation Web sources
-	@npm --prefix apps/foundation-web run format
-
-.PHONY: foundation-web-build
-foundation-web-build: foundation-web-sync ## Build Foundation Web production assets
-	@npm --prefix apps/foundation-web run build
-
-.PHONY: foundation-web-check
-foundation-web-check: foundation-web-sync ## Run Foundation Web formatting and type checks
-	@npm --prefix apps/foundation-web run check
-
-.PHONY: foundation-web-check-all
-foundation-web-check-all: foundation-web-sync ## Run the complete Foundation Web gate
-	@npm --prefix apps/foundation-web run check:all
-
 sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/typescript/package-lock.json
 	@npm --prefix sdk/typescript ci
 
@@ -517,7 +491,7 @@ sdk-check: sdk-python-check sdk-go-check sdk-rust-check sdk-typescript-check ## 
 sdk-check-all: sdk-python-check-all sdk-go-check-all sdk-rust-check-all sdk-typescript-check-all ## Run all complete standalone SDK gates
 
 .PHONY: build
-build: python-build rust-build foundation-web-build sdk-build foundation-cli-build ## Build all workspace, application, SDK, and CLI artifacts
+build: python-build rust-build sdk-build foundation-cli-build ## Build all workspace, application, SDK, and CLI artifacts
 
 .PHONY: db-migrate
 db-migrate: sync ## Generate a migration (usage: make db-migrate msg="description")
@@ -563,8 +537,7 @@ images: image-foundation-service image-sandbox ## Build all local container imag
 .PHONY: image-check-foundation-service
 image-check-foundation-service: ## Smoke-check the existing foundation-service container image
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(FOUNDATION_SERVICE_IMAGE)")" = "app"
-	@docker run --rm --entrypoint sh "$(FOUNDATION_SERVICE_IMAGE)" -c 'test -r /app/web/index.html && ! command -v node'
-	@docker run --rm --entrypoint python "$(FOUNDATION_SERVICE_IMAGE)" -c 'from a13n_service.asgi import app; assert str(app.state.settings.web_dist_dir) == "/app/web"'
+	@docker run --rm --entrypoint sh "$(FOUNDATION_SERVICE_IMAGE)" -c '! command -v node'
 
 .PHONY: image-check-sandbox
 image-check-sandbox: ## Smoke-check the existing sandbox container image
@@ -593,12 +566,11 @@ check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)
 	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
-check-all: eip-check examples-check-all foundation-web-check-all harness-ui-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate
+check-all: eip-check examples-check-all harness-ui-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate
 
 .PHONY: clean
 clean: ## Remove generated local artifacts
 	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/agent-foundation-cli/target packages/agent-ui/a13n_ui/static
-	@npm --prefix apps/foundation-web run clean
 	@npm --prefix apps/harness-ui run clean
 	@npm --prefix sdk/typescript run clean
 

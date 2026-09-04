@@ -11,7 +11,6 @@ on:
       - "deploy/containers/foundation-service/Dockerfile"
       - "deploy/containers/sandbox/Dockerfile"
       - "LICENSE"
-      - "apps/foundation-web/**"
       - "crates/agent-envd/**"
       - "packages/agent-envd-client/pyproject.toml"
       - "packages/agent-environment-provider/pyproject.toml"
@@ -59,7 +58,6 @@ jobs:
               - '.dockerignore'
               - '.github/workflows/ci-containers.yml'
               - 'deploy/containers/foundation-service/Dockerfile'
-              - 'apps/foundation-web/**'
               - 'packages/agent-envd-client/pyproject.toml'
               - 'packages/agent-environment-provider/pyproject.toml'
               - 'packages/agent-harness/pyproject.toml'

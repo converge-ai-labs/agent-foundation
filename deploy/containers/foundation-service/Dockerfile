@@ -1,13 +1,5 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-bookworm-slim AS web-builder
-
-WORKDIR /web
-COPY apps/foundation-web/package.json apps/foundation-web/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
-COPY apps/foundation-web ./
-RUN npm run build
-
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
@@ -61,7 +53,6 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
-COPY --from=web-builder --chown=app:app /web/dist /app/web
 COPY --chown=app:app scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
     && mkdir -p /app/var/files /app/var/objects \
@@ -81,8 +72,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     FOUNDATION_FILESYSTEM_ROOT=/app/var/files \
     FOUNDATION_AUTO_MIGRATE=true \
     FOUNDATION_LOG_FORMAT=json \
-    FOUNDATION_BUILD_VERSION="${BUILD_VERSION}" \
-    FOUNDATION_WEB_DIST_DIR=/app/web
+    FOUNDATION_BUILD_VERSION="${BUILD_VERSION}"
 
 USER app
 EXPOSE 8000

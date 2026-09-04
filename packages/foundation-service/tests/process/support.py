@@ -19,14 +19,6 @@ def request(app: FastAPI, path: str, *, method: str = "GET") -> httpx2.Response:
     return asyncio.run(send_request())
 
 
-def create_web_dist(directory: Path) -> Path:
-    assets = directory / "assets"
-    assets.mkdir(parents=True)
-    (directory / "index.html").write_text("<!doctype html><title>Foundation Web</title>", encoding="utf-8")
-    (assets / "app.js").write_text('document.title = "Foundation Web";', encoding="utf-8")
-    return directory
-
-
 def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
     values: dict[str, object] = {
         "_env_file": None,
@@ -47,4 +39,4 @@ def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
     return settings
 
 
-__all__ = ["create_web_dist", "local_settings", "request"]
+__all__ = ["local_settings", "request"]
