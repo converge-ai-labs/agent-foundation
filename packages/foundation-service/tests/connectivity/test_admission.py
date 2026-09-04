@@ -29,7 +29,7 @@ from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconci
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
 from a13n_service.secrets import InternalSecretService, SecretProtector
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.storage.object_store import LocalObjectStore
 from fastapi import FastAPI
 from sqlalchemy import func, select
@@ -169,13 +169,13 @@ async def test_postgresql_concurrent_duplicate_delivery_creates_one_admission(
 async def test_data_plane_streams_into_provider_adapter_with_bounded_failures(
     ingress_service: IngressService,
     ingress_event_service: IngressEventService,
-    service_runtime_factory,
+    process_runtime_factory,
 ) -> None:
     ingress_id = await _create_ingress(ingress_service)
     app = FastAPI()
     install_api_conventions(app)
-    app.state.runtime = service_runtime_factory(
-        settings=ServiceSettings(_env_file=None, connectivity_provider_request_max_bytes=1024),
+    app.state.runtime = process_runtime_factory(
+        settings=Settings(_env_file=None, connectivity_provider_request_max_bytes=1024),
         ingress_events=ingress_event_service,
     )
     app.include_router(ingress_data_router)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx2
 from a13n_service.database import DatabaseMigrator
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from fastapi import FastAPI
 
 
@@ -19,7 +19,7 @@ def request(app: FastAPI, path: str, *, method: str = "GET") -> httpx2.Response:
     return asyncio.run(send_request())
 
 
-def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
+def local_settings(tmp_path: Path, **updates: object) -> Settings:
     values: dict[str, object] = {
         "_env_file": None,
         "database_backend": "sqlite",
@@ -34,7 +34,7 @@ def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
         "connectivity_http_origins": ("http://testserver",),
     }
     values.update(updates)
-    settings = ServiceSettings(**values)
+    settings = Settings(**values)
     DatabaseMigrator(settings.database_config()).upgrade()
     return settings
 

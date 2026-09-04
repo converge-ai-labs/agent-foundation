@@ -15,10 +15,10 @@ from a13n_harness import (
 )
 from a13n_harness.errors import DefinitionError
 from a13n_service.interactions.harness_control import (
-    FOUNDATION_RUN_CONTROL_CAPABILITY_ID,
-    FoundationRunControlCapability,
+    RUN_CONTROL_CAPABILITY_ID,
     HarnessContextBinding,
     HarnessHookBoundary,
+    RunControlCapability,
     compose_run_control,
 )
 from pydantic_ai import RunContext
@@ -152,8 +152,8 @@ async def test_control_capability_is_outermost_and_preserves_harness_values() ->
     definition = compose_run_control(_definition(ordinary_outer), coordinator, driver)
 
     control = definition.capabilities[0]
-    assert isinstance(control, FoundationRunControlCapability)
-    assert control.id == FOUNDATION_RUN_CONTROL_CAPABILITY_ID
+    assert isinstance(control, RunControlCapability)
+    assert control.id == RUN_CONTROL_CAPABILITY_ID
     assert control.get_ordering().position == "outermost"
 
     result = (
@@ -195,7 +195,7 @@ async def test_control_capability_binds_fresh_logical_run_contexts() -> None:
 async def test_harness_rejects_a_duplicate_reserved_control_id() -> None:
     coordinator = _RecordingCoordinator()
     driver = _RecordingDriver()
-    duplicate = _OuterRecordingCapability(id=FOUNDATION_RUN_CONTROL_CAPABILITY_ID)
+    duplicate = _OuterRecordingCapability(id=RUN_CONTROL_CAPABILITY_ID)
 
     with pytest.raises(DefinitionError) as error:
         HarnessBuilder(instrumentation=None).build(compose_run_control(_definition(duplicate), coordinator, driver))

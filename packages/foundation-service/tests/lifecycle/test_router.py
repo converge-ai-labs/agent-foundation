@@ -20,7 +20,7 @@ from tests.interactions.conftest import NOW, USER_ID, WORKSPACE_ID
 @pytest.fixture
 async def lifecycle_api_client(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
-    service_runtime_factory,
+    process_runtime_factory,
 ) -> AsyncIterator[httpx2.AsyncClient]:
     await seed_run_and_secret(lifecycle_interaction_sessions)
     await seed_hook_actor_access(lifecycle_interaction_sessions)
@@ -45,7 +45,7 @@ async def lifecycle_api_client(
     async def authenticate(_request: Request):
         return hook_actor()
 
-    app.state.runtime = service_runtime_factory(
+    app.state.runtime = process_runtime_factory(
         request_authenticator=authenticate,
         lifecycle_events=lifecycle_events,
     )

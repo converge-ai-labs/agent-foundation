@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import httpx2
 
-from a13n_service.process.components import ServiceComponents
+from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.skills.catalog import SkillCatalogService
@@ -26,7 +26,7 @@ class _SkillBundle:
 
 
 async def build_skill_bundle(
-    components: ServiceComponents,
+    components: Components,
     shared: SharedRuntime,
     execution: ExecutionResources,
     stack: AsyncExitStack,

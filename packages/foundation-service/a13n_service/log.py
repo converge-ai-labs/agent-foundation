@@ -7,7 +7,7 @@ from typing import Any
 from a13n_logging import build_logging_config
 from a13n_logging import configure_logging as configure_process_logging
 
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 
 _LOGGER_NAMES = (
     "alembic",
@@ -18,7 +18,7 @@ _LOGGER_NAMES = (
 )
 
 
-def _context(settings: ServiceSettings) -> dict[str, str]:
+def _context(settings: Settings) -> dict[str, str]:
     return {
         "service": settings.service_name,
         "role": settings.role.value,
@@ -26,7 +26,7 @@ def _context(settings: ServiceSettings) -> dict[str, str]:
     }
 
 
-def build_log_config(settings: ServiceSettings) -> dict[str, Any]:
+def build_log_config(settings: Settings) -> dict[str, Any]:
     """Build one shared logging configuration for the app and Uvicorn."""
 
     return build_logging_config(
@@ -37,7 +37,7 @@ def build_log_config(settings: ServiceSettings) -> dict[str, Any]:
     )
 
 
-def configure_logging(settings: ServiceSettings) -> None:
+def configure_logging(settings: Settings) -> None:
     """Configure process logging exactly once at the executable boundary."""
 
     configure_process_logging(

@@ -12,7 +12,7 @@ from a13n_service.connectivity.connectors.providers import built_in_connector_pr
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
+from a13n_service.environments.catalog import AttachmentProviderCatalog
 from a13n_service.environments.domain import EnvironmentTargetRetentionBehavior
 from a13n_service.environments.keepalive import (
     EnvironmentKeepaliveLoop,
@@ -36,7 +36,7 @@ from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
 from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
 from a13n_service.secrets import InternalSecretService
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
 
 
@@ -47,10 +47,10 @@ class _NoEnvironmentKeepaliveSources:
 
 
 async def build_worker_runtime(
-    settings: ServiceSettings,
+    settings: Settings,
     shared: SharedRuntime,
     execution: ExecutionResources,
-    environment_catalog: FoundationEnvironmentProviderCatalog,
+    environment_catalog: AttachmentProviderCatalog,
     keepalive_sources: EnvironmentKeepaliveSourceResolver | None,
     stack: AsyncExitStack,
     connector_providers: ConnectorProviderRegistry | None = None,

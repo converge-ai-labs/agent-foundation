@@ -30,11 +30,11 @@ from a13n_service.interactions import (
     ConsumedThreadInboxEntry,
     ControlWatcher,
     EnvironmentHookObservation,
-    FoundationHarnessCollaborators,
-    FoundationHarnessInvocation,
+    HarnessCollaborators,
     HarnessContextBinding,
     HarnessDriver,
     HarnessHookBoundary,
+    HarnessInvocation,
     HarnessOutcomeProjection,
     HarnessRunIdentity,
     ImmediateHarnessInput,
@@ -197,12 +197,12 @@ class _Projector:
 @dataclass
 class _Preparer:
     context: AttemptContext
-    invocation: FoundationHarnessInvocation[str]
+    invocation: HarnessInvocation[str]
     wakeups: _Wakeups
     heartbeat_seen: Event
     trace: list[str]
 
-    async def prepare(self, context: AttemptContext) -> FoundationHarnessInvocation[str]:
+    async def prepare(self, context: AttemptContext) -> HarnessInvocation[str]:
         assert context is self.context
         await self.wakeups.receiving.wait()
         await self.heartbeat_seen.wait()
@@ -384,14 +384,14 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     )
     wakeups = _Wakeups(trace)
     capacity = _CapacitySlot(trace)
-    invocation = FoundationHarnessInvocation(
+    invocation = HarnessInvocation(
         definition=AgentDefinition(
             agent=AgentSpec(),
             output_type=str,
             model=FunctionModel(stream_function=_model),
         ),
         input=ImmediateHarnessInput("hello"),
-        collaborators=FoundationHarnessCollaborators(
+        collaborators=HarnessCollaborators(
             instance=AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="foundation", subject="test-user"),
                 agent_instance_id="instance-1",

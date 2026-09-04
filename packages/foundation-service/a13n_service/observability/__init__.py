@@ -1,7 +1,7 @@
 """Foundation Service OpenTelemetry runtime and RunAttempt tracing."""
 
 from .runtime import (
-    FOUNDATION_INSTRUMENTATION_SCOPE,
+    INSTRUMENTATION_SCOPE,
     ObservabilityRuntime,
     RunAttemptCorrelation,
     RunAttemptOutcome,
@@ -12,7 +12,7 @@ from .runtime import (
 )
 
 __all__ = [
-    "FOUNDATION_INSTRUMENTATION_SCOPE",
+    "INSTRUMENTATION_SCOPE",
     "ObservabilityRuntime",
     "RunAttemptCorrelation",
     "RunAttemptOutcome",

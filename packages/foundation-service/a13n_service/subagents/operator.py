@@ -38,9 +38,9 @@ from a13n_service.temporal import Clock, utc_now
 from .acceptance import ChildRunAcceptanceReceipt, ChildRunAcceptanceService
 from .execution_store import (
     AttemptAuthoritySource,
-    FoundationSubagentOperatorError,
     RetainedChildExecution,
     SubagentExecutionStore,
+    SubagentOperatorError,
     compact_execution_view,
     execution_input,
     full_execution_view,
@@ -74,7 +74,7 @@ class ChildRunAdmissionPreparer(Protocol):
     ) -> PreparedChildRunResume: ...
 
 
-class FoundationSubagentOperator(SubagentOperator):
+class DurableSubagentOperator(SubagentOperator):
     """Implement standard Harness async tools over durable Foundation authority."""
 
     def __init__(
@@ -212,7 +212,7 @@ class FoundationSubagentOperator(SubagentOperator):
             current = await self._executions.read_exact(context, request.execution_id, WorkspaceAction.run_steer)
             if current.run.status not in _STEERABLE_STATUSES or current.thread.current_run_id != current.run.id:
                 return SubagentSteerResult(execution_id=request.execution_id, accepted=False)
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_steer_conflict",
                 "Subagent steering lost a concurrent Thread mutation",
             ) from error
@@ -256,7 +256,7 @@ class FoundationSubagentOperator(SubagentOperator):
                     accepted=False,
                     status=compact_execution_view(current).status,
                 )
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_cancel_conflict",
                 "Subagent cancellation lost a concurrent Run mutation",
             ) from error
@@ -282,7 +282,7 @@ class FoundationSubagentOperator(SubagentOperator):
             WorkspaceAction.run_continue,
         )
         if not is_resumable(source):
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_not_resumable",
                 "The retained subagent execution is not a selected completed child head",
             )
@@ -310,7 +310,7 @@ class FoundationSubagentOperator(SubagentOperator):
     def _require_plan(self, plan: SubagentDelegationPlan, subagent_name: str) -> AttemptContext:
         authority = self._executions.require_context(plan.parent)
         if plan.child.declaration.name != subagent_name:
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_plan_invalid",
                 "Harness child plan identity is inconsistent",
             )
@@ -330,7 +330,7 @@ def _validate_delegate_candidate(
         or execution_input(prepared.run) != delegated_input
         or prepared.child_definition_id != plan.child.definition.definition_id
     ):
-        raise FoundationSubagentOperatorError(
+        raise SubagentOperatorError(
             "subagent_admission_candidate_invalid",
             "Prepared child admission does not match the Harness plan",
         )
@@ -352,7 +352,7 @@ def _validate_resume_candidate(
         or execution_input(prepared.run) != delegated_input
         or prepared.child_definition_id != plan.child.definition.definition_id
     ):
-        raise FoundationSubagentOperatorError(
+        raise SubagentOperatorError(
             "subagent_resume_candidate_invalid",
             "Prepared child continuation does not match the Harness plan",
         )
@@ -381,7 +381,7 @@ def _accepted_view(
 def _delegated_input(plan: SubagentDelegationPlan) -> str:
     value = plan.context.input
     if not isinstance(value, str) or not value:
-        raise FoundationSubagentOperatorError(
+        raise SubagentOperatorError(
             "subagent_input_invalid",
             "Foundation asynchronous delegation requires the Harness JSON context projection",
         )
@@ -390,5 +390,5 @@ def _delegated_input(plan: SubagentDelegationPlan) -> str:
 
 __all__ = [
     "ChildRunAdmissionPreparer",
-    "FoundationSubagentOperator",
+    "DurableSubagentOperator",
 ]

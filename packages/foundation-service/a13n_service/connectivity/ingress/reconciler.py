@@ -22,8 +22,8 @@ from a13n_service.temporal import Clock, utc_now
 
 from .admission_domain import (
     BindingState,
-    FoundationInputAcceptor,
     InputAcceptanceOutcome,
+    InputAcceptor,
     PreparedIngressBatch,
     RejectedInputOutcome,
     RetryableInputOutcome,
@@ -52,7 +52,7 @@ class IngressAdmissionReconciler:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        acceptor: FoundationInputAcceptor,
+        acceptor: InputAcceptor,
         *,
         instance_id: str,
         poll_interval_seconds: float,

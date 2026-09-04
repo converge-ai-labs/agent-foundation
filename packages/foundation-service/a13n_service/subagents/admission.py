@@ -35,7 +35,7 @@ from .domain import (
     ChildResultVisibility,
     new_child_run_relationship_id,
 )
-from .execution_store import FoundationSubagentOperatorError, RetainedChildExecution
+from .execution_store import RetainedChildExecution, SubagentOperatorError
 from .preparation import (
     PreparedChildRunAcceptance,
     PreparedChildRunResume,
@@ -60,7 +60,7 @@ class ChildRunAdmissionProfile:
     result_visibility: ChildResultVisibility = ChildResultVisibility.parent_thread
 
 
-class FoundationChildRunAdmissionPreparer:
+class ProfileChildRunAdmissionPreparer:
     """Build immutable child candidates from an Attempt-scoped frozen catalog."""
 
     def __init__(
@@ -94,7 +94,7 @@ class FoundationChildRunAdmissionPreparer:
         delegated_input: str,
     ) -> PreparedChildRunAcceptance:
         if request.subagent_name != plan.child.declaration.name:
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_plan_invalid",
                 "Delegation request does not match the frozen child plan",
             )
@@ -133,7 +133,7 @@ class FoundationChildRunAdmissionPreparer:
         delegated_input: str,
     ) -> PreparedChildRunResume:
         if request.execution_id != source.relationship.id:
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_plan_invalid",
                 "Resume request does not match its retained child source",
             )
@@ -176,12 +176,12 @@ class FoundationChildRunAdmissionPreparer:
         name = plan.child.declaration.name
         profile = self._profiles.get(name)
         if profile is None:
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_admission_profile_missing",
                 "The parent Attempt has no frozen admission profile for this child",
             )
         if profile.definition_id != plan.child.definition.definition_id:
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_definition_conflict",
                 "Harness child identity no longer matches its frozen admission profile",
             )
@@ -201,5 +201,5 @@ class FoundationChildRunAdmissionPreparer:
 
 __all__ = [
     "ChildRunAdmissionProfile",
-    "FoundationChildRunAdmissionPreparer",
+    "ProfileChildRunAdmissionPreparer",
 ]

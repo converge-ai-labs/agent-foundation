@@ -33,9 +33,9 @@ from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     ChildRunAcceptanceService,
     ChildRunAdmissionProfile,
-    FoundationChildRunAdmissionPreparer,
-    FoundationSubagentOperator,
-    FoundationSubagentOperatorError,
+    DurableSubagentOperator,
+    ProfileChildRunAdmissionPreparer,
+    SubagentOperatorError,
 )
 from a13n_service.subagents.models import ChildRunRelationshipRecord
 from sqlalchemy import select
@@ -188,7 +188,7 @@ async def test_retained_child_read_reauthorizes_current_parent_principal(
         assert binding is not None
         await database.delete(binding)
 
-    with pytest.raises(FoundationSubagentOperatorError) as denied:
+    with pytest.raises(SubagentOperatorError) as denied:
         await operator.info(context, SubagentInfoRequest(execution_id=delegated.execution_id))
 
     assert denied.value.code == "subagent_authorization_denied"
@@ -283,7 +283,7 @@ async def _continue_parent(
     parent_config: EffectiveAgentConfig | None = None,
     child_revision_id: str = CHILD_REVISION_ID,
     child_definition_id: str = CHILD_DEFINITION_ID,
-) -> tuple[FoundationSubagentOperator, SubagentOperatorContext]:
+) -> tuple[DurableSubagentOperator, SubagentOperatorContext]:
     parent = await _run(sessions, prior_context.parent_run_id)
     completed = await _complete_run(sessions, objects, states, parent, prior_authority.current_context)
     completed_state = await states.read(completed.tenant_id, completed.id, expected_thread_id=completed.thread_id)
@@ -354,7 +354,7 @@ async def _additional_parent_thread(
     states: RunStateStore,
     source_context: SubagentOperatorContext,
     source_authority: AuthorityBox,
-) -> tuple[FoundationSubagentOperator, SubagentOperatorContext]:
+) -> tuple[DurableSubagentOperator, SubagentOperatorContext]:
     thread_id = "thread-72727272727272727272727272727272"
     run_id = "run_7272727272727272"
     source = await _complete_run(
@@ -441,8 +441,8 @@ def _operator_for_parent(
     *,
     child_revision_id: str = CHILD_REVISION_ID,
     child_definition_id: str = CHILD_DEFINITION_ID,
-) -> tuple[FoundationSubagentOperator, SubagentOperatorContext]:
-    admission = FoundationChildRunAdmissionPreparer(
+) -> tuple[DurableSubagentOperator, SubagentOperatorContext]:
+    admission = ProfileChildRunAdmissionPreparer(
         sessions,
         states,
         {
@@ -462,7 +462,7 @@ def _operator_for_parent(
         clock=lambda: NOW + timedelta(seconds=8),
     )
     return (
-        FoundationSubagentOperator(
+        DurableSubagentOperator(
             sessions,
             authority,
             admission,

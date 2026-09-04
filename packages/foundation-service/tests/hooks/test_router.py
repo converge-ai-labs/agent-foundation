@@ -19,7 +19,7 @@ from .support import RUN_ID, SECRET_ID, hook_actor, seed_hook_actor_access, seed
 @pytest.fixture
 async def hook_api_client(
     hook_interaction_sessions: async_sessionmaker[AsyncSession],
-    service_runtime_factory,
+    process_runtime_factory,
 ) -> AsyncIterator[httpx2.AsyncClient]:
     await seed_run_and_secret(hook_interaction_sessions)
     await seed_hook_actor_access(hook_interaction_sessions)
@@ -34,7 +34,7 @@ async def hook_api_client(
     async def authenticate(_request: Request):
         return hook_actor()
 
-    app.state.runtime = service_runtime_factory(
+    app.state.runtime = process_runtime_factory(
         request_authenticator=authenticate,
         hook_subscriptions=hook_subscriptions,
     )

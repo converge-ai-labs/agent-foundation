@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, Response
 from pydantic import ValidationError
 
-from a13n_service.request_runtime import get_connectivity_data_runtime, get_service_runtime
+from a13n_service.request_runtime import get_connectivity_data_runtime, get_process_runtime
 
 from .admission import IngressEventService
 from .errors import IngressError
@@ -23,7 +23,7 @@ def _service(request: Request) -> IngressEventService:
 
 @router.post("/ingresses/{ingress_id}/events", include_in_schema=False)
 async def receive_ingress_event(request: Request, ingress_id: str) -> Response:
-    runtime = get_service_runtime(request)
+    runtime = get_process_runtime(request)
     if runtime is None:
         raise IngressError("ingress_unavailable", "Ingress is unavailable.", status_code=503)
     body = await _read_body(request, runtime.settings.connectivity_provider_request_max_bytes)

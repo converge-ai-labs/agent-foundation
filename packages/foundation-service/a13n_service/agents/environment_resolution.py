@@ -18,7 +18,7 @@ from a13n_service.environments.access import (
 from a13n_service.environments.access import (
     require_provider_selection as _require_selection,
 )
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
+from a13n_service.environments.catalog import AttachmentProviderCatalog
 from a13n_service.environments.domain import EnvironmentAccess, environment_logical_digest
 from a13n_service.environments.errors import (
     EnvironmentManagementError,
@@ -68,7 +68,7 @@ class AgentEnvironmentSelectionResolver:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        catalog: FoundationEnvironmentProviderCatalog,
+        catalog: AttachmentProviderCatalog,
     ) -> None:
         self._sessions = sessions
         self._catalog = catalog

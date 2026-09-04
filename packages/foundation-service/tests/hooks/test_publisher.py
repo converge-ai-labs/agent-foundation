@@ -19,7 +19,7 @@ from a13n_service.interactions.lifecycle import append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.secrets import SecretProtector
 from a13n_service.secrets.models import SecretRecord
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
 from anyio import sleep
 from sqlalchemy import select
@@ -56,13 +56,13 @@ class _SlowEndpoint:
 
 def test_settings_require_lease_and_retry_bounds_to_cover_delivery() -> None:
     with pytest.raises(ValueError, match="claim lease must exceed"):
-        ServiceSettings(
+        Settings(
             _env_file=None,
             webhook_claim_lease_seconds=10,
             webhook_request_timeout_seconds=10,
         )
     with pytest.raises(ValueError, match="maximum retry delay"):
-        ServiceSettings(
+        Settings(
             _env_file=None,
             webhook_retry_base_seconds=10,
             webhook_retry_max_seconds=9,

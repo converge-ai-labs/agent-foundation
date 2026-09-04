@@ -86,11 +86,11 @@ class LostRaceInputOutcome(_StrictModel):
 type InputAcceptanceOutcome = AcceptedInputOutcome | RetryableInputOutcome | RejectedInputOutcome | LostRaceInputOutcome
 
 
-class FoundationInputAcceptor(Protocol):
+class InputAcceptor(Protocol):
     async def accept_ingress_batch(self, batch: PreparedIngressBatch) -> InputAcceptanceOutcome: ...
 
 
-class UnavailableFoundationInputAcceptor:
+class UnavailableInputAcceptor:
     def __init__(
         self,
         *,

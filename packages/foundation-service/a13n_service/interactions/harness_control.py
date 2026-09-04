@@ -21,7 +21,7 @@ from pydantic_ai.models import ModelRequestContext
 from .attempts import AttemptContext, AttemptPreparationAccepted
 from .objects import StoredRunState
 
-FOUNDATION_RUN_CONTROL_CAPABILITY_ID = "a13n.foundation.run-control"
+RUN_CONTROL_CAPABILITY_ID = "a13n.foundation.run-control"
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,10 +124,10 @@ class RunControlPort(Protocol):
 
 
 @dataclass(init=False)
-class FoundationRunControlCapability(AbstractCapability[AgentContext]):
+class RunControlCapability(AbstractCapability[AgentContext]):
     """Direct, model-inert rendezvous with the current Foundation RunAttempt."""
 
-    id = FOUNDATION_RUN_CONTROL_CAPABILITY_ID
+    id = RUN_CONTROL_CAPABILITY_ID
 
     def __init__(
         self,
@@ -149,7 +149,7 @@ class FoundationRunControlCapability(AbstractCapability[AgentContext]):
     ) -> AbstractCapability[AgentContext]:
         binding = self._driver.bind_model_attempt(ctx)
         await self._control.bind_model_attempt(binding)
-        return FoundationRunControlCapability(
+        return RunControlCapability(
             self._control,
             self._driver,
             binding=binding,
@@ -198,19 +198,19 @@ def compose_run_control[OutputT](
 
     return definition.with_updates(
         capabilities=(
-            FoundationRunControlCapability(control, driver),
+            RunControlCapability(control, driver),
             *definition.capabilities,
         )
     )
 
 
 __all__ = [
-    "FOUNDATION_RUN_CONTROL_CAPABILITY_ID",
-    "FoundationRunControlCapability",
+    "RUN_CONTROL_CAPABILITY_ID",
     "HarnessContextBinding",
     "HarnessControlDriver",
     "HarnessHookBoundary",
     "HarnessRunIdentity",
+    "RunControlCapability",
     "RunControlPort",
     "compose_run_control",
 ]

@@ -7,11 +7,11 @@ import rfc8785
 from a13n_harness import HarnessRunResult
 from a13n_service.interactions import (
     CompletedOutcomeCandidate,
-    FoundationHarnessOutcomeAdapter,
     HarnessOutcomeProjectionError,
     PendingCallKind,
     RunPayloadStore,
     RunWaitReason,
+    StoredHarnessOutcomeAdapter,
     WaitingOutcomeCandidate,
 )
 from a13n_service.storage import ObjectStore
@@ -29,7 +29,7 @@ async def test_completed_output_uses_inline_and_object_representations(
     interaction_object_store: ObjectStore,
 ) -> None:
     payloads = RunPayloadStore(interaction_object_store)
-    inline = FoundationHarnessOutcomeAdapter(
+    inline = StoredHarnessOutcomeAdapter(
         tenant_id=TENANT_ID,
         run_id=RUN_ID,
         payloads=payloads,
@@ -44,7 +44,7 @@ async def test_completed_output_uses_inline_and_object_representations(
     assert inline_projection.candidate.output_object is None
     assert inline_projection.deferred is None
 
-    object_backed = FoundationHarnessOutcomeAdapter(
+    object_backed = StoredHarnessOutcomeAdapter(
         tenant_id=TENANT_ID,
         run_id=RUN_ID,
         payloads=payloads,
@@ -66,7 +66,7 @@ async def test_completed_output_uses_inline_and_object_representations(
 async def test_completed_output_rejects_values_beyond_accepted_limit(
     interaction_object_store: ObjectStore,
 ) -> None:
-    adapter = FoundationHarnessOutcomeAdapter(
+    adapter = StoredHarnessOutcomeAdapter(
         tenant_id=TENANT_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(interaction_object_store),
@@ -83,7 +83,7 @@ async def test_completed_output_rejects_non_finite_numbers(
     interaction_object_store: ObjectStore,
     value: float,
 ) -> None:
-    adapter = FoundationHarnessOutcomeAdapter(
+    adapter = StoredHarnessOutcomeAdapter(
         tenant_id=TENANT_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(interaction_object_store),
@@ -120,7 +120,7 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
             )
         ],
     )
-    adapter = FoundationHarnessOutcomeAdapter(
+    adapter = StoredHarnessOutcomeAdapter(
         tenant_id=TENANT_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(interaction_object_store),
@@ -153,7 +153,7 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
 async def test_client_tool_suspension_requires_frozen_effective_surface(
     interaction_object_store: ObjectStore,
 ) -> None:
-    adapter = FoundationHarnessOutcomeAdapter(
+    adapter = StoredHarnessOutcomeAdapter(
         tenant_id=TENANT_ID,
         run_id=RUN_ID,
         payloads=RunPayloadStore(interaction_object_store),

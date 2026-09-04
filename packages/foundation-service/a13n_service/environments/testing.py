@@ -12,7 +12,7 @@ from anyio import CancelScope, fail_after
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.secrets.domain import SecretCredentialSource
 
-from .catalog import FoundationEnvironmentProviderCatalog
+from .catalog import AttachmentProviderCatalog
 from .domain import EnvironmentRevision
 from .errors import EnvironmentManagementError
 
@@ -53,7 +53,7 @@ class NativeEnvironmentAttachmentTester:
 
     def __init__(
         self,
-        catalog: FoundationEnvironmentProviderCatalog,
+        catalog: AttachmentProviderCatalog,
         *,
         secret_resolver: EnvironmentSecretValueResolver,
         runtime_builder: EnvironmentRuntimeBuilder,

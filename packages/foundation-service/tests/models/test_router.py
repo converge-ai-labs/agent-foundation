@@ -5,10 +5,10 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_service.app import ServiceComponents, create_app
+from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from fastapi import Request
@@ -33,8 +33,8 @@ async def successful_model_test(**_: object) -> None:
     return None
 
 
-def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
-    return ServiceSettings(
+def settings(tmp_path: Path, database_path: Path) -> Settings:
+    return Settings(
         _env_file=None,
         database_backend="sqlite",
         database_sqlite_path=database_path,
@@ -50,7 +50,7 @@ def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
     )
 
 
-async def seed_database(configuration: ServiceSettings) -> None:
+async def seed_database(configuration: Settings) -> None:
     engine = create_sql_engine(configuration.database_config())
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
@@ -123,7 +123,7 @@ async def api_client(
     await seed_database(configuration)
     app = create_app(
         configuration,
-        components=ServiceComponents(
+        components=Components(
             request_authenticator=authenticate,
             model_connection_tester=successful_model_test,
         ),

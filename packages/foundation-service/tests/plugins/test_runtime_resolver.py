@@ -21,7 +21,7 @@ from a13n_service.plugins.runtime import (
     default_runtime_target,
 )
 from a13n_service.plugins.runtime_resolver import (
-    FoundationPluginRuntimeCandidateResolver,
+    DurableRuntimeCandidateResolver,
     HttpRuntimeDependencyArtifactRetainer,
     ResolvedDependencyWheel,
     UvRuntimeDependencyResolver,
@@ -257,7 +257,7 @@ async def test_candidate_resolver_persists_exact_resolution_and_replays_after_ac
     )
     dependencies = _DependencyResolver((wheel,))
     artifacts = _ArtifactRetainer()
-    resolver = FoundationPluginRuntimeCandidateResolver(
+    resolver = DurableRuntimeCandidateResolver(
         plugin_sessions,
         _runtime_locks(),
         dependencies,

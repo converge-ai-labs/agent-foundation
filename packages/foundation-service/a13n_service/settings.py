@@ -35,7 +35,7 @@ from a13n_service.storage.config import (
 )
 
 
-class ServiceRole(StrEnum):
+class ProcessRole(StrEnum):
     """Process roles supported by the shared service artifact."""
 
     all = "all"
@@ -59,7 +59,7 @@ class ObjectBackend(StrEnum):
     local = "local"
 
 
-class ServiceSettings(BaseSettings):
+class Settings(BaseSettings):
     """Load executable configuration from ``FOUNDATION_*`` variables."""
 
     model_config = SettingsConfigDict(
@@ -70,7 +70,7 @@ class ServiceSettings(BaseSettings):
     )
 
     service_name: str = "foundation-service"
-    role: ServiceRole = ServiceRole.all
+    role: ProcessRole = ProcessRole.all
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     build_version: str = "unknown"
@@ -427,7 +427,7 @@ class ServiceSettings(BaseSettings):
 
 
 @lru_cache(maxsize=1)
-def get_settings() -> ServiceSettings:
+def get_settings() -> Settings:
     """Return the process settings singleton without creating resources."""
 
-    return ServiceSettings()
+    return Settings()

@@ -165,7 +165,7 @@ flowchart TB
             Gate["private RunControlGate<br/>lock + local state only"]
             Driver["HarnessDriver<br/>runs in root task<br/>sole Harness API adapter"]
             Boundary["HarnessHookBoundary<br/>callback-scoped context wrapper"]
-            Hooks["FoundationRunControlCapability<br/>not a task"]
+            Hooks["RunControlCapability<br/>not a task"]
 
             subgraph Harness["Agent Harness"]
                 HarnessRuntime["Harness Runtime<br/>Build · Run · Environment · State"]

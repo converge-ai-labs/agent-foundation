@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator, Sequence
 import pytest
 from a13n_harness import HarnessBuilder, RunBindings
 from a13n_service.observability import (
-    FOUNDATION_INSTRUMENTATION_SCOPE,
+    INSTRUMENTATION_SCOPE,
     RunAttemptCorrelation,
     TraceContent,
     build_observability_runtime,
@@ -199,8 +199,8 @@ async def test_service_phases_ignore_an_unrelated_current_span_for_parentage() -
     assert provider is not None
 
     with observation.run_attempt(correlation()) as attempt:
-        foundation_tracer = provider.get_tracer(FOUNDATION_INSTRUMENTATION_SCOPE)
-        with foundation_tracer.start_as_current_span("foundation.unregistered"):
+        tracer = provider.get_tracer(INSTRUMENTATION_SCOPE)
+        with tracer.start_as_current_span("foundation.unregistered"):
             with attempt.phase("foundation.reconstruct"):
                 pass
             with attempt.phase("foundation.persist"):
@@ -373,7 +373,7 @@ def test_export_batch_cannot_exceed_queue(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_registered_foundation_scope_name_is_stable() -> None:
-    assert FOUNDATION_INSTRUMENTATION_SCOPE == "a13n-foundation-service"
+    assert INSTRUMENTATION_SCOPE == "a13n-foundation-service"
 
 
 @pytest.mark.anyio

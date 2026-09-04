@@ -39,8 +39,8 @@ from a13n_service.storage import ObjectStore, short_session
 from a13n_service.subagents import (
     ChildRunAcceptanceService,
     ChildRunAdmissionProfile,
-    FoundationChildRunAdmissionPreparer,
-    FoundationSubagentOperator,
+    DurableSubagentOperator,
+    ProfileChildRunAdmissionPreparer,
 )
 from a13n_service.subagents.execution_store import ACTIVITY_OUTPUT_PREVIEW_LIMIT
 from pydantic_ai.agent.spec import AgentSpec
@@ -229,7 +229,7 @@ async def _operator(
     sessions: async_sessionmaker[AsyncSession],
     objects: ObjectStore,
 ) -> tuple[
-    FoundationSubagentOperator,
+    DurableSubagentOperator,
     SubagentOperatorContext,
     SubagentDelegationPlan,
     RunStateStore,
@@ -254,7 +254,7 @@ async def _operator(
         host_refs={"session_id": running_parent.session_id},
     )
     run_ids = IdSequence(("run_ffffffffffffffff", "run_5656565656565656"))
-    admission = FoundationChildRunAdmissionPreparer(
+    admission = ProfileChildRunAdmissionPreparer(
         sessions,
         states,
         {
@@ -285,7 +285,7 @@ async def _operator(
         clock=lambda: NOW + timedelta(seconds=2),
     )
     authority_box = AuthorityBox(authority)
-    operator = FoundationSubagentOperator(
+    operator = DurableSubagentOperator(
         sessions,
         authority_box,
         admission,

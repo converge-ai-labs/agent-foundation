@@ -11,10 +11,10 @@ from uuid import uuid4
 import anyio
 import httpx2
 import pytest
-from a13n_service.app import ServiceComponents, create_app
+from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.observability import RunAttemptCorrelation, TraceContent, build_observability_runtime
-from a13n_service.settings import ServiceRole, ServiceSettings
+from a13n_service.settings import ProcessRole, Settings
 from a13n_service.trace_query import (
     AuthorizedRunAttempt,
     LangfuseTraceQueryProvider,
@@ -164,9 +164,9 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
                 if item.run_attempt_id == run_attempt_id
             }
 
-    settings = ServiceSettings(
+    settings = Settings(
         _env_file=None,
-        role=ServiceRole.control,
+        role=ProcessRole.control,
         database_backend="sqlite",
         database_sqlite_path=tmp_path / "database.sqlite3",
         redis_backend="memory",
@@ -183,7 +183,7 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
     )
     app = create_app(
         settings,
-        components=ServiceComponents(
+        components=Components(
             request_authenticator=authenticate,
             trace_access_authorizer=Authorizer(),
         ),

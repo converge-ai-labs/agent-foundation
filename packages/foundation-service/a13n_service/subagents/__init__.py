@@ -5,7 +5,7 @@ from .acceptance import (
     ChildRunAcceptanceReceipt,
     ChildRunAcceptanceService,
 )
-from .admission import ChildRunAdmissionProfile, FoundationChildRunAdmissionPreparer
+from .admission import ChildRunAdmissionProfile, ProfileChildRunAdmissionPreparer
 from .cancellation import (
     ChildCancellationBatch,
     ChildCancellationError,
@@ -21,10 +21,10 @@ from .domain import (
 )
 from .execution_store import (
     AttemptAuthoritySource,
-    FoundationSubagentOperatorError,
     RetainedChildExecution,
+    SubagentOperatorError,
 )
-from .operator import ChildRunAdmissionPreparer, FoundationSubagentOperator
+from .operator import ChildRunAdmissionPreparer, DurableSubagentOperator
 from .preparation import (
     PreparedChildRunAcceptance,
     PreparedChildRunResume,
@@ -71,13 +71,13 @@ __all__ = [
     "ChildRunAdmissionPreparer",
     "ChildRunAdmissionProfile",
     "ChildRunRelationship",
-    "FoundationChildRunAdmissionPreparer",
-    "FoundationSubagentOperator",
-    "FoundationSubagentOperatorError",
+    "DurableSubagentOperator",
     "PreparedAsyncResultSuccessor",
     "PreparedChildRunAcceptance",
     "PreparedChildRunResume",
+    "ProfileChildRunAdmissionPreparer",
     "RetainedChildExecution",
+    "SubagentOperatorError",
     "new_child_run_relationship_id",
     "parse_async_subagent_result_entry",
     "prepare_async_result_successor",

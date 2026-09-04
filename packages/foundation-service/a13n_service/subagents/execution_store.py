@@ -34,7 +34,7 @@ from .models import ChildRunRelationshipRecord
 ACTIVITY_OUTPUT_PREVIEW_LIMIT = 32 * 1024
 
 
-class FoundationSubagentOperatorError(RuntimeError):
+class SubagentOperatorError(RuntimeError):
     """A bounded failure at the Host-owned asynchronous subagent boundary."""
 
     def __init__(self, code: str, message: str) -> None:
@@ -102,7 +102,7 @@ class SubagentExecutionStore:
             or context.parent_agent_instance_id != self._parent_agent_instance_id
             or dict(context.host_refs) != self._host_refs
         ):
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_parent_context_mismatch",
                 "Subagent operation crossed its parent logical Run boundary",
             )
@@ -122,7 +122,7 @@ class SubagentExecutionStore:
             action=action,
         )
         if not page.items:
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_execution_not_found",
                 "Subagent execution was not found in the visible parent scope",
             )
@@ -189,7 +189,7 @@ class SubagentExecutionStore:
                     action=action,
                 )
             except ChildRunAuthorizationError as error:
-                raise FoundationSubagentOperatorError(
+                raise SubagentOperatorError(
                     "subagent_authorization_denied",
                     "Persisted parent Principal is no longer authorized for this subagent operation",
                 ) from error
@@ -264,7 +264,7 @@ async def _load_executions(
         thread = threads_by_id.get(relationship_record.child_thread_id)
         revision = None if child is None else revisions_by_id.get(child.agent_revision_id)
         if parent is None or child is None or thread is None or revision is None:
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_execution_corrupt",
                 "Subagent relationship lost its parent Run, child Run, or Thread",
             )
@@ -272,7 +272,7 @@ async def _load_executions(
         resumed_from = relationships_by_child.get(child.parent_run_id) if child.parent_run_id is not None else None
         segment_index = segment_by_child.get(child.id)
         if segment_index is None:
-            raise FoundationSubagentOperatorError(
+            raise SubagentOperatorError(
                 "subagent_execution_corrupt",
                 "Subagent relationship is missing its continuation position",
             )
@@ -342,7 +342,7 @@ async def _require_session(database: AsyncSession, parent: RunRecord) -> Session
         )
     )
     if session is None:
-        raise FoundationSubagentOperatorError(
+        raise SubagentOperatorError(
             "subagent_session_missing",
             "Parent Session was not found",
         )
@@ -353,12 +353,12 @@ def execution_input(run: Run) -> str:
     try:
         accepted = AcceptedAgentInput.model_validate(run.input)
     except ValidationError as error:
-        raise FoundationSubagentOperatorError(
+        raise SubagentOperatorError(
             "subagent_execution_corrupt",
             "Subagent Run has invalid accepted input",
         ) from error
     if len(accepted.content) != 1 or not isinstance(accepted.content[0], TextContent):
-        raise FoundationSubagentOperatorError(
+        raise SubagentOperatorError(
             "subagent_execution_corrupt",
             "Subagent Run does not retain one delegated text context",
         )
@@ -415,7 +415,7 @@ def _activity(run: Run) -> SubagentActivitySnapshot | None:
         return None
     sealed_state = run.sealed_state
     if sealed_state is None:
-        raise FoundationSubagentOperatorError(
+        raise SubagentOperatorError(
             "subagent_execution_corrupt",
             "Completed subagent Run is missing its sealed checkpoint",
         )
@@ -431,9 +431,9 @@ __all__ = [
     "ACTIVITY_OUTPUT_PREVIEW_LIMIT",
     "AttemptAuthoritySource",
     "ExecutionPage",
-    "FoundationSubagentOperatorError",
     "RetainedChildExecution",
     "SubagentExecutionStore",
+    "SubagentOperatorError",
     "compact_execution_view",
     "execution_input",
     "full_execution_view",

@@ -31,10 +31,10 @@ from opentelemetry.trace import Span as APISpan
 
 logger = logging.getLogger("a13n_service.observability")
 
-FOUNDATION_INSTRUMENTATION_SCOPE = "a13n-foundation-service"
+INSTRUMENTATION_SCOPE = "a13n-foundation-service"
 _ALLOWED_INSTRUMENTATION_SCOPES = frozenset(
     {
-        FOUNDATION_INSTRUMENTATION_SCOPE,
+        INSTRUMENTATION_SCOPE,
         "a13n-harness",
         "pydantic-ai",
     }
@@ -47,7 +47,7 @@ _PHASE_NAMES = frozenset(
         "foundation.persist",
     }
 )
-_FOUNDATION_SPAN_NAMES = _PHASE_NAMES | {_RUN_ATTEMPT_ROOT}
+_REGISTERED_SPAN_NAMES = _PHASE_NAMES | {_RUN_ATTEMPT_ROOT}
 _MAX_CORRELATION_BYTES = 1024
 _MAX_FAILURE_CODE_BYTES = 256
 _DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 30.0
@@ -187,7 +187,7 @@ class _RunAttemptSpanProcessor(SpanProcessor):
             self._delegate is not None
             and scope is not None
             and scope.name in _ALLOWED_INSTRUMENTATION_SCOPES
-            and (scope.name != FOUNDATION_INSTRUMENTATION_SCOPE or span.name in _FOUNDATION_SPAN_NAMES)
+            and (scope.name != INSTRUMENTATION_SCOPE or span.name in _REGISTERED_SPAN_NAMES)
             and span.attributes is not None
             and "a13n.run_attempt.id" in span.attributes
         ):
@@ -260,7 +260,7 @@ class ObservabilityRuntime:
             return
 
         _validate_links(links)
-        tracer = self.tracer_provider.get_tracer(FOUNDATION_INSTRUMENTATION_SCOPE)
+        tracer = self.tracer_provider.get_tracer(INSTRUMENTATION_SCOPE)
         run_token = _current_run_attempt.set(correlation)
         try:
             span = tracer.start_span(
@@ -620,7 +620,7 @@ def _safe_warning(event: str) -> None:
 
 
 __all__ = [
-    "FOUNDATION_INSTRUMENTATION_SCOPE",
+    "INSTRUMENTATION_SCOPE",
     "ObservabilityRuntime",
     "RunAttemptCorrelation",
     "RunAttemptOutcome",

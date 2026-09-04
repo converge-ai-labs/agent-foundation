@@ -17,8 +17,8 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.admission_domain import (
-    FoundationInputAcceptor,
-    UnavailableFoundationInputAcceptor,
+    InputAcceptor,
+    UnavailableInputAcceptor,
 )
 from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
@@ -41,7 +41,7 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 from a13n_service.process.background import BackgroundTask
 from a13n_service.secrets import InternalSecretService, SecretProtector
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.storage import StorageResources
 
 logger = logging.getLogger("a13n_service.process.connectivity")
@@ -64,14 +64,14 @@ class _MCPControl:
 
 
 async def build_connectivity_runtime(
-    settings: ServiceSettings,
+    settings: Settings,
     storage: StorageResources,
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
     *,
     ingress_adapters: AdapterRegistry[IngressAdapter] | None,
     connector_providers: ConnectorProviderRegistry | None,
-    input_acceptor: FoundationInputAcceptor | None,
+    input_acceptor: InputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
 ) -> tuple[ConnectivityRuntime | None, ConnectivitySelectionResolver | None, tuple[BackgroundTask, ...]]:
@@ -110,7 +110,7 @@ async def build_connectivity_runtime(
 
 
 async def _build_control_runtime(
-    settings: ServiceSettings,
+    settings: Settings,
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
     connector_providers: ConnectorProviderRegistry | None,
@@ -175,7 +175,7 @@ async def _build_control_runtime(
 
 
 def _build_connector_control(
-    settings: ServiceSettings,
+    settings: Settings,
     storage: StorageResources,
     connector_providers: ConnectorProviderRegistry,
     internal_secrets: InternalSecretService,
@@ -205,7 +205,7 @@ def _build_connector_control(
 
 
 def _build_mcp_control(
-    settings: ServiceSettings,
+    settings: Settings,
     storage: StorageResources,
     endpoint_policy: EndpointPolicy,
     internal_secrets: InternalSecretService,
@@ -255,8 +255,8 @@ def _build_mcp_control(
 
 
 def _build_data_runtime(
-    settings: ServiceSettings,
-    input_acceptor: FoundationInputAcceptor | None,
+    settings: Settings,
+    input_acceptor: InputAcceptor | None,
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
     internal_secrets: InternalSecretService,
@@ -283,9 +283,7 @@ def _build_data_runtime(
                 "role": settings.role.value,
             },
         )
-        input_acceptor = UnavailableFoundationInputAcceptor(
-            retry_seconds=settings.connectivity_admission_poll_interval_seconds
-        )
+        input_acceptor = UnavailableInputAcceptor(retry_seconds=settings.connectivity_admission_poll_interval_seconds)
     admission = IngressAdmissionReconciler(
         storage.sessions,
         input_acceptor,

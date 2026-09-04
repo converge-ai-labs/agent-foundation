@@ -76,7 +76,7 @@ class MaterializedHarnessInput:
             raise TypeError("materialized Harness input factory must be callable")
 
 
-type FoundationHarnessInput = ImmediateHarnessInput | MaterializedHarnessInput
+type HarnessInput = ImmediateHarnessInput | MaterializedHarnessInput
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,11 +115,11 @@ class MountedHarnessEnvironments:
         object.__setattr__(self, "entries", MappingProxyType(entries))
 
 
-type FoundationHarnessEnvironment = NoHarnessEnvironment | SingleHarnessEnvironment | MountedHarnessEnvironments
+type HarnessEnvironment = NoHarnessEnvironment | SingleHarnessEnvironment | MountedHarnessEnvironments
 
 
 @dataclass(frozen=True, slots=True)
-class FoundationHarnessCollaborators:
+class HarnessCollaborators:
     """Fresh typed collaborators supplied to one logical Harness Run."""
 
     instance: AgentInstanceContext
@@ -149,13 +149,13 @@ class FoundationHarnessCollaborators:
 
 
 @dataclass(frozen=True, slots=True)
-class FoundationHarnessInvocation[OutputT]:
+class HarnessInvocation[OutputT]:
     """Complete non-authoritative inputs for one entered Harness stream."""
 
     definition: AgentDefinition[OutputT]
-    input: FoundationHarnessInput
-    collaborators: FoundationHarnessCollaborators
-    environment: FoundationHarnessEnvironment = field(default_factory=NoHarnessEnvironment)
+    input: HarnessInput
+    collaborators: HarnessCollaborators
+    environment: HarnessEnvironment = field(default_factory=NoHarnessEnvironment)
     deferred_resume: DeferredToolResume | None = None
     usage: RunUsage | None = None
     usage_limits: UsageLimits | None = None
@@ -165,7 +165,7 @@ class FoundationHarnessInvocation[OutputT]:
             raise TypeError("Foundation Harness definition must be an AgentDefinition")
         if not isinstance(self.input, ImmediateHarnessInput | MaterializedHarnessInput):
             raise TypeError("Foundation Harness input source is invalid")
-        if not isinstance(self.collaborators, FoundationHarnessCollaborators):
+        if not isinstance(self.collaborators, HarnessCollaborators):
             raise TypeError("Foundation Harness collaborators are invalid")
         if not isinstance(
             self.environment,
@@ -217,7 +217,7 @@ class HarnessDriver:
 
     async def run[OutputT](
         self,
-        invocation: FoundationHarnessInvocation[OutputT],
+        invocation: HarnessInvocation[OutputT],
         *,
         preparation: AttemptPreparationAccepted,
     ) -> HarnessRunResult[OutputT]:
@@ -249,7 +249,7 @@ class HarnessDriver:
             await self._close_live_projection()
 
     async def _run[OutputT](
-        self, invocation: FoundationHarnessInvocation[OutputT], *, preparation: AttemptPreparationAccepted
+        self, invocation: HarnessInvocation[OutputT], *, preparation: AttemptPreparationAccepted
     ) -> HarnessRunResult[OutputT]:
         state = self._control.current_state.envelope
         input_source, deferred_resume = _select_attempt_input(invocation, state)
@@ -498,9 +498,9 @@ class _DriverHookBoundary:
 
 
 def _select_attempt_input[OutputT](
-    invocation: FoundationHarnessInvocation[OutputT],
+    invocation: HarnessInvocation[OutputT],
     state: RunStateEnvelope,
-) -> tuple[FoundationHarnessInput, DeferredToolResume | None]:
+) -> tuple[HarnessInput, DeferredToolResume | None]:
     if state.input_disposition == "applied":
         if state.host.deferred is not None:
             raise RunError(
@@ -541,9 +541,9 @@ def _select_attempt_input[OutputT](
 def _create_stream[OutputT](
     executable: ExecutableAgent[OutputT],
     *,
-    input_source: FoundationHarnessInput,
+    input_source: HarnessInput,
     bindings: RunBindings,
-    environment: FoundationHarnessEnvironment,
+    environment: HarnessEnvironment,
     previous_state: RunStateEnvelope,
     deferred_resume: DeferredToolResume | None,
     usage: RunUsage | None,
@@ -590,9 +590,9 @@ def _create_stream[OutputT](
 
 
 def _observe_environment(
-    environment: FoundationHarnessEnvironment,
+    environment: HarnessEnvironment,
     projector: HarnessEventProjector,
-) -> FoundationHarnessEnvironment:
+) -> HarnessEnvironment:
     if isinstance(environment, SingleHarnessEnvironment):
         return SingleHarnessEnvironment(observe_environment_entry(environment.entry, projector))
     if isinstance(environment, MountedHarnessEnvironments):
@@ -609,12 +609,12 @@ def _require_environment_entry(entry: object) -> None:
 
 
 __all__ = [
-    "FoundationHarnessCollaborators",
-    "FoundationHarnessEnvironment",
-    "FoundationHarnessInput",
-    "FoundationHarnessInvocation",
+    "HarnessCollaborators",
     "HarnessDriver",
+    "HarnessEnvironment",
     "HarnessEventProjector",
+    "HarnessInput",
+    "HarnessInvocation",
     "ImmediateHarnessInput",
     "MaterializedHarnessInput",
     "MountedHarnessEnvironments",

@@ -13,8 +13,8 @@ from a13n_environment_provider import (
 )
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.environments.catalog import (
-    FoundationEnvironmentProviderCatalog,
-    FoundationEnvironmentProviderRegistration,
+    AttachmentProviderCatalog,
+    AttachmentProviderRegistration,
 )
 from a13n_service.environments.domain import (
     CreateEnvironmentRequest,
@@ -29,7 +29,7 @@ from a13n_service.environments.models import (
     EnvironmentRevisionRecord,
     EnvironmentTargetRecord,
 )
-from a13n_service.environments.providers import FoundationBuiltinEnvironmentProviderAdapter
+from a13n_service.environments.providers import BuiltinAttachmentProvider
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.environments.testing import NativeEnvironmentAttachmentTester
 from a13n_service.etags import resource_etag
@@ -127,10 +127,10 @@ def test_foundation_owns_builtin_target_identity_and_retention_metadata(tmp_path
     assert not hasattr(shared_provider, "target_identity")
     assert not hasattr(shared_provider, "retention_behavior")
 
-    foundation_catalog = FoundationEnvironmentProviderCatalog.from_environment_provider_catalog(shared_catalog)
-    adapter = foundation_catalog.attachment(PROVIDER_KEY)
+    attachment_catalog = AttachmentProviderCatalog.from_environment_provider_catalog(shared_catalog)
+    adapter = attachment_catalog.attachment(PROVIDER_KEY)
 
-    assert isinstance(adapter, FoundationBuiltinEnvironmentProviderAdapter)
+    assert isinstance(adapter, BuiltinAttachmentProvider)
     assert adapter.identity_schema_version == "1"
     assert adapter.retention_behavior == "none"
     assert adapter.target_identity(connection=connection) == {
@@ -262,7 +262,7 @@ async def test_provider_selection_environment_and_revision_lifecycle(
 @pytest.mark.anyio
 async def test_revision_attachment_test_uses_fresh_attach_only_adapter(
     environment_sessions: async_sessionmaker[AsyncSession],
-    provider_catalog: FoundationEnvironmentProviderCatalog,
+    provider_catalog: AttachmentProviderCatalog,
     tmp_path: Path,
 ) -> None:
     tester = NativeEnvironmentAttachmentTester(
@@ -427,9 +427,9 @@ async def test_expired_environment_evidence_allows_reusing_the_key(
 async def test_third_party_provider_attachment_capability_is_registered(
     environment_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    catalog = FoundationEnvironmentProviderCatalog(
+    catalog = AttachmentProviderCatalog(
         (
-            FoundationEnvironmentProviderRegistration(
+            AttachmentProviderRegistration(
                 provider=_ThirdPartyProvider(),
                 provider_lock=EnvironmentProviderLock(
                     provider_key="acme.remote-workspace",
@@ -474,9 +474,9 @@ async def test_third_party_provider_attachment_capability_is_registered(
 
 def test_retaining_provider_requires_the_bounded_retention_capability() -> None:
     with pytest.raises(ValueError, match="ensure_retained_until"):
-        FoundationEnvironmentProviderCatalog(
+        AttachmentProviderCatalog(
             (
-                FoundationEnvironmentProviderRegistration(
+                AttachmentProviderRegistration(
                     provider=_BrokenRetainingProvider(),
                     provider_lock=EnvironmentProviderLock(
                         provider_key="acme.remote-workspace",

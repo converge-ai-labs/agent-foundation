@@ -12,15 +12,15 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.observability import build_observability_runtime
 from a13n_service.process.background import BackgroundTask, run_critical_component
-from a13n_service.process.components import ServiceComponents
+from a13n_service.process.components import Components
 from a13n_service.process.connectivity import build_connectivity_runtime
 from a13n_service.process.control import build_control_runtime
 from a13n_service.process.environment import build_environment_catalog
 from a13n_service.process.resources import build_execution_resources
 from a13n_service.process.roles import owns_connectivity_data, owns_control, owns_worker
-from a13n_service.process.runtime import ProcessStatus, ServiceRuntime, SharedRuntime
+from a13n_service.process.runtime import ProcessRuntime, ProcessStatus, SharedRuntime
 from a13n_service.process.worker import build_worker_runtime
-from a13n_service.settings import ServiceSettings
+from a13n_service.settings import Settings
 from a13n_service.storage import open_storage
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
@@ -28,15 +28,15 @@ logger = logging.getLogger("a13n_service.process.lifecycle")
 
 
 @asynccontextmanager
-async def open_service_runtime(
-    settings: ServiceSettings,
-    components: ServiceComponents,
+async def open_process_runtime(
+    settings: Settings,
+    components: Components,
     status: ProcessStatus,
     *,
     trace_query_provider_registry: TraceQueryProviderRegistry,
     model_provider_registry: ProviderRegistry,
     model_endpoint_policy: EndpointPolicy,
-) -> AsyncIterator[ServiceRuntime]:
+) -> AsyncIterator[ProcessRuntime]:
     """Open one supervised runtime for the configured process role."""
 
     observability = build_observability_runtime(
@@ -61,7 +61,7 @@ async def open_service_runtime(
                 stack,
                 ingress_adapters=components.ingress_adapter_registry,
                 connector_providers=components.connector_provider_registry,
-                input_acceptor=components.foundation_input_acceptor,
+                input_acceptor=components.input_acceptor,
                 control_plane=owns_control(settings.role),
                 data_plane=owns_connectivity_data(settings.role),
             )
@@ -110,7 +110,7 @@ async def open_service_runtime(
                     trace_query_provider_registry,
                     stack,
                 )
-            runtime = ServiceRuntime(
+            runtime = ProcessRuntime(
                 settings=settings,
                 status=status,
                 request_authenticator=components.request_authenticator,
@@ -162,4 +162,4 @@ async def open_service_runtime(
         await observability.aclose()
 
 
-__all__ = ["open_service_runtime"]
+__all__ = ["open_process_runtime"]

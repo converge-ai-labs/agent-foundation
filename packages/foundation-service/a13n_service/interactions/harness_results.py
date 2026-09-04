@@ -97,7 +97,7 @@ class RunTerminalCommitter(Protocol):
     ) -> RunTerminalReceipt: ...
 
 
-class FoundationHarnessOutcomeAdapter:
+class StoredHarnessOutcomeAdapter:
     """Build bounded completed or waiting projections from public Harness values."""
 
     def __init__(
@@ -238,11 +238,11 @@ def _serialize_deferred(requests: DeferredToolRequests) -> JsonObject:
 
 
 __all__ = [
-    "FoundationHarnessOutcomeAdapter",
     "HarnessOutcomeAdapter",
     "HarnessOutcomeProjection",
     "HarnessOutcomeProjectionError",
     "RunTerminalCommitter",
     "RunTerminalDisposition",
     "RunTerminalReceipt",
+    "StoredHarnessOutcomeAdapter",
 ]

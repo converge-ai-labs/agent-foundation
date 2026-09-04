@@ -13,7 +13,7 @@ from .domain import JsonObject
 
 
 @runtime_checkable
-class FoundationEnvironmentAttachProvider(Protocol):
+class AttachmentProvider(Protocol):
     """Trusted provider capability that can only attach to an exact target."""
 
     @property
@@ -46,7 +46,7 @@ class FoundationEnvironmentAttachProvider(Protocol):
 
 
 @runtime_checkable
-class FoundationEnvironmentRetentionProvider(Protocol):
+class RetentionProvider(Protocol):
     """Optional capability that can only extend an existing target's lifetime."""
 
     async def ensure_retained_until(
@@ -87,13 +87,13 @@ class _LegacyNonRetainingAttachProvider(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class FoundationBuiltinEnvironmentProviderAdapter:
+class BuiltinAttachmentProvider:
     """Foundation-owned target metadata for one non-retaining shared built-in."""
 
     provider: _LegacyNonRetainingAttachProvider
 
     @classmethod
-    def from_provider(cls, provider: object) -> FoundationBuiltinEnvironmentProviderAdapter:
+    def from_provider(cls, provider: object) -> BuiltinAttachmentProvider:
         if not isinstance(provider, _LegacyNonRetainingAttachProvider):
             raise ValueError("Built-in Environment Provider has no Foundation attachment capability")
         return cls(provider)
@@ -138,7 +138,7 @@ class FoundationBuiltinEnvironmentProviderAdapter:
 
 
 __all__ = [
-    "FoundationBuiltinEnvironmentProviderAdapter",
-    "FoundationEnvironmentAttachProvider",
-    "FoundationEnvironmentRetentionProvider",
+    "AttachmentProvider",
+    "BuiltinAttachmentProvider",
+    "RetentionProvider",
 ]

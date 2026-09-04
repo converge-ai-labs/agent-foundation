@@ -41,11 +41,11 @@ from a13n_service.interactions import (
     AttemptPreparationAccepted,
     DeferredContinuationState,
     EnvironmentHookObservation,
-    FoundationHarnessCollaborators,
-    FoundationHarnessInvocation,
+    HarnessCollaborators,
     HarnessContextBinding,
     HarnessDriver,
     HarnessHookBoundary,
+    HarnessInvocation,
     HarnessRunIdentity,
     HostContinuationState,
     ImmediateHarnessInput,
@@ -262,13 +262,13 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
     coordinator = _RuntimeCoordinator(state, instance, trace)
     projector = _EventProjector()
     result = await _driver(coordinator, projector).run(
-        FoundationHarnessInvocation(
+        HarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(model="logical:accepted"),
                 output_type=str,
             ),
             input=MaterializedHarnessInput(materialize),
-            collaborators=FoundationHarnessCollaborators(
+            collaborators=HarnessCollaborators(
                 instance=instance,
                 model_resolver=resolve_model,
                 metadata={"run_class": "interactive"},
@@ -367,14 +367,14 @@ async def test_recovery_omits_already_applied_input_factory(
 
     coordinator = _RuntimeCoordinator(state, instance, trace)
     result = await _driver(coordinator).run(
-        FoundationHarnessInvocation(
+        HarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(),
                 output_type=str,
                 model=FunctionModel(stream_function=model_stream),
             ),
             input=MaterializedHarnessInput(must_not_replay),
-            collaborators=FoundationHarnessCollaborators(instance=instance),
+            collaborators=HarnessCollaborators(instance=instance),
         ),
         preparation=_preparation(),
     )
@@ -411,14 +411,14 @@ async def test_pending_deferred_state_requires_native_resume(
     with pytest.raises(RunError) as exc_info:
         coordinator = _RuntimeCoordinator(state, instance, [])
         await _driver(coordinator).run(
-            FoundationHarnessInvocation(
+            HarnessInvocation(
                 definition=AgentDefinition(
                     agent=AgentSpec(),
                     output_type=str,
                     model=FunctionModel(lambda messages, info: "unused"),
                 ),
                 input=ImmediateHarnessInput(),
-                collaborators=FoundationHarnessCollaborators(instance=instance),
+                collaborators=HarnessCollaborators(instance=instance),
             ),
             preparation=_preparation(),
         )
@@ -489,10 +489,10 @@ async def test_runtime_passes_exact_native_deferred_resume(
     instance = _instance()
     coordinator = _RuntimeCoordinator(state, instance, [])
     result = await _driver(coordinator).run(
-        FoundationHarnessInvocation(
+        HarnessInvocation(
             definition=definition(),
             input=ImmediateHarnessInput(),
-            collaborators=FoundationHarnessCollaborators(instance=instance),
+            collaborators=HarnessCollaborators(instance=instance),
             deferred_resume=DeferredToolResume(
                 prior.deferred,
                 DeferredToolResults(
@@ -526,14 +526,14 @@ async def test_planned_handoff_yields_only_after_environment_close(
     )
     projector = _EventProjector()
     result = await _driver(coordinator, projector).run(
-        FoundationHarnessInvocation(
+        HarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(),
                 output_type=str,
                 model=FunctionModel(lambda messages, info: "must not run"),
             ),
             input=ImmediateHarnessInput("accepted input"),
-            collaborators=FoundationHarnessCollaborators(instance=instance),
+            collaborators=HarnessCollaborators(instance=instance),
             environment=SingleHarnessEnvironment(environment),
         ),
         preparation=_preparation(),
@@ -569,14 +569,14 @@ async def test_environment_entry_failure_emits_only_safe_live_projection(
 
     with pytest.raises(EnvironmentError, match="provider-private-body"):
         await _driver(coordinator, projector).run(
-            FoundationHarnessInvocation(
+            HarnessInvocation(
                 definition=AgentDefinition(
                     agent=AgentSpec(),
                     output_type=str,
                     model=FunctionModel(lambda messages, info: "must not run"),
                 ),
                 input=ImmediateHarnessInput("accepted input"),
-                collaborators=FoundationHarnessCollaborators(instance=instance),
+                collaborators=HarnessCollaborators(instance=instance),
                 environment=SingleHarnessEnvironment(environment),
             ),
             preparation=_preparation(),
@@ -609,14 +609,14 @@ async def test_live_projection_failure_does_not_change_harness_outcome(
     coordinator = _RuntimeCoordinator(state, instance, trace)
 
     result = await _driver(coordinator, _EventProjector(fail=True)).run(
-        FoundationHarnessInvocation(
+        HarnessInvocation(
             definition=AgentDefinition(
                 agent=AgentSpec(),
                 output_type=str,
                 model=FunctionModel(stream_function=complete),
             ),
             input=ImmediateHarnessInput("accepted input"),
-            collaborators=FoundationHarnessCollaborators(instance=instance),
+            collaborators=HarnessCollaborators(instance=instance),
             environment=SingleHarnessEnvironment(_environment(tmp_path / "projection-failure", "workspace")),
         ),
         preparation=_preparation(),
