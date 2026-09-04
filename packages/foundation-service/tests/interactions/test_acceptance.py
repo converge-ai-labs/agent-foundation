@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.agents.domain import EffectiveAgentConfig
-from a13n_service.environments.models import RunEnvironmentBindingRecord
+from a13n_service.environments.models import EnvironmentTargetRecord, RunEnvironmentBindingRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
     MCPToolSnapshotRef,
@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
+    ENVIRONMENT_TARGET_ID,
     NOW,
     SESSION_ID,
     TENANT_ID,
@@ -256,10 +257,18 @@ async def test_acceptance_atomically_binds_exact_environment_and_replay_verifies
         assert binding.id.startswith("envb_")
         assert binding.mount_name == "workspace"
         assert binding.provider_key == environment.connection.provider_key
+        assert binding.environment_target_id == ENVIRONMENT_TARGET_ID
         assert binding.target_key == environment.target_key
         assert binding.environment_execution_config_digest_sha256 == environment.logical_digest_sha256
+        target = await database.get(EnvironmentTargetRecord, ENVIRONMENT_TARGET_ID)
+        assert target is not None
+        assert (target.status, target.active_run_count) == ("active", 1)
 
     assert await service.accept_new_thread(session=session, thread=thread, run=run, state=state) == receipt
+
+    async with short_session(interaction_sessions) as database:
+        target = await database.get(EnvironmentTargetRecord, ENVIRONMENT_TARGET_ID)
+        assert target is not None and target.active_run_count == 1
 
     async with transaction(interaction_sessions) as database:
         binding = await database.scalar(

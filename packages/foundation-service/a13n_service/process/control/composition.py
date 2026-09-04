@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import ServiceComponents
@@ -28,6 +29,7 @@ async def build_control_runtime(
     shared: SharedRuntime,
     execution: ExecutionResources,
     worker: WorkerRuntime | None,
+    environment_catalog: FoundationEnvironmentProviderCatalog,
     connectivity_selection: ConnectivitySelectionResolver | None,
     trace_query_provider_registry: TraceQueryProviderRegistry,
     stack: AsyncExitStack,
@@ -40,7 +42,7 @@ async def build_control_runtime(
         trace_query_provider_registry,
         stack,
     )
-    environments = build_environment_bundle(settings, components, shared)
+    environments = build_environment_bundle(components, shared, environment_catalog)
     local_runner = (
         worker.plugin_runtime
         if worker is not None and isinstance(worker.plugin_runtime, PluginRunnerSupervisor)

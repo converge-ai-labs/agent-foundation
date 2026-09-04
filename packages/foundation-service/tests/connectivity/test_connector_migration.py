@@ -12,6 +12,7 @@ TABLES = {
     "connector_tool_catalogs",
     "connectors",
 }
+CONNECTIVITY_PARENT_REVISION = "93f7e255236d"
 
 
 def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
@@ -38,7 +39,7 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         assert {"digest_sha256", "object_key", "connector_credential_generation"} <= catalog_columns
     finally:
         engine.dispose()
-    migrator.downgrade("-1")
+    migrator.downgrade(CONNECTIVITY_PARENT_REVISION)
     engine = create_engine(sync_database_url(config))
     try:
         assert TABLES.isdisjoint(inspect(engine).get_table_names())

@@ -15,22 +15,31 @@ from a13n_environment_provider import (
 from a13n_environment_provider import (
     __version__ as environment_provider_version,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from .domain import (
     EnvironmentConnectionSpec,
     EnvironmentProviderCatalogEntry,
     EnvironmentProviderLock,
-    validated_target_key,
+    EnvironmentTargetIdentity,
+    EnvironmentTargetRetentionBehavior,
+    SchemaVersion,
+    environment_target_identity_digest,
 )
 from .errors import EnvironmentManagementError, environment_provider_not_found
-from .providers import FoundationEnvironmentAttachProvider
+from .providers import (
+    FoundationBuiltinEnvironmentProviderAdapter,
+    FoundationEnvironmentAttachProvider,
+    FoundationEnvironmentRetentionProvider,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class ValidatedEnvironmentConnection:
     spec: EnvironmentConnectionSpec
     value: BaseModel
+    identity: EnvironmentTargetIdentity
+    target_identity_digest_sha256: str
     target_key: str
 
 
@@ -44,6 +53,12 @@ class FoundationEnvironmentProviderRegistration:
             raise ValueError("Foundation Environment Provider registration key does not match its lock")
         if not self.provider.connection_versions:
             raise ValueError("Foundation Environment Provider must expose at least one connection version")
+        TypeAdapter(SchemaVersion).validate_python(self.provider.identity_schema_version)
+        behavior = EnvironmentTargetRetentionBehavior(self.provider.retention_behavior)
+        if behavior is EnvironmentTargetRetentionBehavior.while_execution_active and not isinstance(
+            self.provider, FoundationEnvironmentRetentionProvider
+        ):
+            raise ValueError("Foundation Environment Provider requiring retention must expose ensure_retained_until")
 
 
 class FoundationEnvironmentProviderCatalog:
@@ -58,7 +73,12 @@ class FoundationEnvironmentProviderCatalog:
             if key in attachments:
                 raise ValueError(f"Foundation Environment Provider {key!r} is registered more than once")
             attachments[key] = provider
-            entries[key] = _entry(registration.provider_lock, provider.connection_versions)
+            entries[key] = _entry(
+                registration.provider_lock,
+                provider.connection_versions,
+                identity_schema_version=provider.identity_schema_version,
+                retention_behavior=EnvironmentTargetRetentionBehavior(provider.retention_behavior),
+            )
         self._attachments = attachments
         self._entries = entries
 
@@ -72,13 +92,20 @@ class FoundationEnvironmentProviderCatalog:
             raise ValueError("Environment Provider catalog registrations are incomplete")
         registrations = []
         for key in providers:
-            provider = providers[key]
-            if not isinstance(provider, FoundationEnvironmentAttachProvider) or provider.provider_key != key:
+            generic_provider = providers[key]
+            generic_registration = generic_registrations[key]
+            if isinstance(generic_provider, FoundationEnvironmentAttachProvider):
+                provider: FoundationEnvironmentAttachProvider = generic_provider
+            elif generic_registration.builtin:
+                provider = FoundationBuiltinEnvironmentProviderAdapter.from_provider(generic_provider)
+            else:
+                raise ValueError(f"Environment Provider {key!r} has no Foundation attachment capability")
+            if provider.provider_key != key:
                 raise ValueError(f"Environment Provider {key!r} has no Foundation attachment capability")
             registrations.append(
                 FoundationEnvironmentProviderRegistration(
                     provider=provider,
-                    provider_lock=_provider_lock(generic_registrations[key]),
+                    provider_lock=_provider_lock(generic_registration),
                 )
             )
         return cls(registrations)
@@ -115,7 +142,14 @@ class FoundationEnvironmentProviderCatalog:
                 schema_version=spec.schema_version,
                 parameters=value.model_dump(mode="json"),
             )
-            target_key = validated_target_key(provider.target_key(connection=value))
+            identity = TypeAdapter(EnvironmentTargetIdentity).validate_python(
+                provider.target_identity(connection=value)
+            )
+            target_digest = environment_target_identity_digest(
+                provider_key=entry.provider_key,
+                identity_schema_version=entry.identity_schema_version,
+                identity=identity,
+            )
         except EnvironmentProviderError as error:
             safe = error.safe_projection()
             raise EnvironmentManagementError(safe.code, safe.message, status_code=400) from error
@@ -125,16 +159,27 @@ class FoundationEnvironmentProviderCatalog:
                 "The Environment Provider connection is invalid.",
                 status_code=400,
             ) from error
-        return ValidatedEnvironmentConnection(spec=normalized, value=value, target_key=target_key)
+        return ValidatedEnvironmentConnection(
+            spec=normalized,
+            value=value,
+            identity=identity,
+            target_identity_digest_sha256=target_digest,
+            target_key=identity.target_key,
+        )
 
 
 def _entry(
     provider_lock: EnvironmentProviderLock,
     connection_versions: frozenset[str],
+    *,
+    identity_schema_version: str,
+    retention_behavior: EnvironmentTargetRetentionBehavior,
 ) -> EnvironmentProviderCatalogEntry:
     return EnvironmentProviderCatalogEntry(
         provider_key=provider_lock.provider_key,
         connection_versions=tuple(sorted(connection_versions)),
+        identity_schema_version=identity_schema_version,
+        retention_behavior=retention_behavior,
         provider_lock=provider_lock,
     )
 

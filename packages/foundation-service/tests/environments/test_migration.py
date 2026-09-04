@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, inspect
 
 ENVIRONMENT_TABLES = {
     "environment_provider_selections",
+    "environment_targets",
     "environments",
     "environment_revisions",
     "run_environment_bindings",
@@ -20,7 +21,7 @@ def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         if present:
             assert ENVIRONMENT_TABLES <= tables
             revision_columns = {column["name"] for column in inspect(engine).get_columns("environment_revisions")}
-            assert {"connection", "target_key"} <= revision_columns
+            assert {"connection", "environment_target_id", "target_key"} <= revision_columns
             assert "provider" not in revision_columns
         else:
             assert ENVIRONMENT_TABLES.isdisjoint(tables)

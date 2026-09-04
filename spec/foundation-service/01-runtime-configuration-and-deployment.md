@@ -105,7 +105,7 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 
 ## Process Roles
 
-`control`, `worker`, and `connectivity` are independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs `WorkerExecutionLoop` and its claimed `RunAttemptExecutor` tasks in the Worker process. The loop owns scan, compatibility preflight, bounded capacity admission, claim, and takeover; each successful claim starts one executor async task that owns lease renewal, control watching, plugin and Agent reconstruction, and Harness execution. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; each lock-scoped Runner child owns its loop and executor tasks. Neither profile creates one OS thread per Attempt.
+`control`, `worker`, and `connectivity` are independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs `WorkerExecutionLoop`, its claimed `RunAttemptExecutor` tasks, and a separately capacity-bounded `EnvironmentKeepaliveLoop` in the Worker process. The execution loop owns Run scan, compatibility preflight, bounded capacity admission, claim, and takeover; each successful Run claim starts one executor async task that owns lease renewal, control watching, plugin and Agent reconstruction, and Harness execution. The keepalive loop independently scans and claims due global Environment targets and never consumes an Agent execution slot. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; each lock-scoped Runner child owns its execution loop, executor tasks, and compatible target-keepalive loop. Neither profile creates one OS thread per Attempt or target.
 
 The `connectivity` role owns provider event webhooks and long connections, the a13n MCP, Ingress native action adapters, Connector runtime dispatch, and durable external-event admission processing. Control owns Ingress, Route, Connector, ConnectorConnection, and MCPConnection management, loads explicitly registered Connector client adapters for their setup, discovery, revocation, and reconciliation operations, handles MCP OAuth setup callbacks, and owns durable Run acceptance. Control and Connectivity use the same durable resource facts and never call a private cross-pod Foundation API. Worker is the MCP client for the a13n MCP and selected user Remote MCP servers; it never loads or calls Ingress or Connector adapter code. The complete boundary is defined by [External Connectivity](40-connectivity/README.md).
 
@@ -125,6 +125,7 @@ The `connectivity` role owns provider event webhooks and long connections, the a
 | Run scan, capacity, claim, and takeover   |        No |     Loop |             No |     Loop |
 | Attempt lease and control watcher         |        No | Executor |             No | Executor |
 | Harness and Environment invocation        |        No | Executor |             No | Executor |
+| Environment target keepalive and lease    |        No |     Loop |             No |     Loop |
 | Operational liveness and readiness probes |       Yes |      Yes |            Yes |      Yes |
 | Automatic migration when enabled          |       Yes |    Never |          Never |      Yes |
 
@@ -168,7 +169,7 @@ Startup performs these ordered gates:
 05. construct required storage and external clients;
 06. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
 07. start the selected role components under one supervised lifespan;
-08. for a Worker role, start the on-demand execution loop or the runner Supervisor and active-lock Runner selected by the persisted deployment mode;
+08. for a Worker role, start the on-demand execution and Environment-keepalive loops or the runner Supervisor and active-lock Runners selected by the persisted deployment mode;
 09. for a Connectivity role, load the distribution's explicit Ingress and Connector adapter registries and start the a13n MCP and event data-plane components; and
 10. report readiness only after every preceding gate succeeds.
 
@@ -188,7 +189,7 @@ Readiness succeeds only when:
 - required Redis operations are reachable;
 - the selected object store and required filesystem roots passed their bounded capability checks;
 - every selected critical role component started successfully;
-- a selected Worker can scan work through a healthy on-demand loop or the healthy Runner required by its configured profile; and
+- a selected Worker can scan Run work and Environment keepalive candidates through healthy on-demand loops or the healthy Runners required by its configured profile; and
 - a selected Connectivity process loaded every registered Ingress and Connector adapter and can serve its required authenticated a13n MCP and event boundaries.
 
 An enabled A2A surface contributes its required push and delivery components to readiness. A disabled A2A surface contributes no route, component, or readiness dependency.
@@ -203,7 +204,9 @@ Probe responses expose only bounded status, role, build identity, and safe depen
 
 Drain makes readiness fail before the process stops accepting new work.
 
-A control process rejects new product mutations and streaming connections, then stops ingress, domain-owned reconcilers, and publishers in an order that preserves committed state. An on-demand Worker stops its `WorkerExecutionLoop`; a runner Supervisor gates every Runner loop, including takeover scans. Runtime calls `RunAttemptControl.request_handoff(...)` on every active executor; the facade records that process-local request in its private gate without persisting it or changing lease authority. Each `RunAttemptExecutor` continues ordinary execution while its `LeaseMonitor` keeps heartbeat and lease renewal active and its `ControlWatcher` remains supervised. It waits for a safe boundary, publishes or reconciles complete state, quiesces its local Run, and prepares the planned-yield transaction.
+A control process rejects new product mutations and streaming connections, then stops ingress, domain-owned reconcilers, and publishers in an order that preserves committed state. An on-demand Worker stops new claims in both its `WorkerExecutionLoop` and `EnvironmentKeepaliveLoop`; a runner Supervisor gates every Runner loop, including Run takeover and target-keepalive scans. Runtime calls `RunAttemptControl.request_handoff(...)` on every active executor; the facade records that process-local request in its private gate without persisting it or changing lease authority. Each `RunAttemptExecutor` continues ordinary execution while its `LeaseMonitor` keeps heartbeat and lease renewal active and its `ControlWatcher` remains supervised. It waits for a safe boundary, publishes or reconciles complete state, quiesces its local Run, and prepares the planned-yield transaction.
+
+An in-flight Environment keepalive may finish and commit while the process remains inside its drain deadline. The loop does not start another external operation, and it does not extend target-claim ownership beyond that deadline. If the call cannot finish safely, the Worker stops lease renewal and exits; another compatible Worker or lock-scoped Runner may take over only after the recorded target lease expires. Target keepalive never invokes Provider stop, pause, destroy, or rollback during drain.
 
 An Attempt stops renewal only after `yielded`, an ordinary outcome, cancellation, or failure commits, or when the configured drain deadline arrives. Readiness failure and one failed yield CAS never release the lease. If the deadline arrives first, the process fences local execution, stops renewal, and exits; another Worker remains forbidden from takeover until the recorded lease actually expires. Shutdown never extends a lease indefinitely, reports unfinished work as successful, or lets two Workers hold valid authority for one Run.
 
@@ -223,6 +226,7 @@ Resources close in reverse ownership order after role components stop. Cancellat
 | Required dependency is unavailable at startup | Process does not become ready                   | Restore the configured dependency                            |
 | Required dependency disconnects after startup | Readiness fails and new dependent work stops    | Bounded reconnect restores readiness when safe               |
 | Critical component exits unexpectedly         | Process becomes unready and terminates          | Deployment replaces the process                              |
+| One Environment target keepalive fails        | Worker remains ready; target records safe error | The target-specific bounded retry and lease contract applies |
 | Drain deadline expires                        | Process stops without inventing successful work | Durable lease expiry and Worker takeover determine recovery  |
 | Production Worker build identity is invalid   | Worker-capable process remains unready          | Correct the immutable build metadata and replace the process |
 
@@ -257,3 +261,5 @@ The effective configuration is deployment input, not a durable product resource 
 15. Drain gates new claims immediately but active Attempts continue heartbeat and lease renewal until a terminal commit or the drain deadline.
 16. Same-build planned-handoff deferral is finite, applies only after `yield_reason="service_drain"`, and never weakens compatibility, lease, or fence checks. Runner rotation has no build-preference delay.
 17. Control and Worker paths apply one compatible finite Asset size bound; no protocol or Capability bypasses it.
+18. Every Worker profile supervises target keepalive independently from RunAttempt execution and reserves separate bounded capacity for it.
+19. Worker drain gates new target claims immediately; an unfinished target operation hands off only through recorded lease expiry and generation fencing.

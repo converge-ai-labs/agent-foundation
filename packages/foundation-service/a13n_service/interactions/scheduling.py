@@ -18,6 +18,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
+from .environment_bindings import deactivate_run_environment
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .records import run_attempt_record
@@ -194,6 +195,7 @@ class AttemptScheduler:
 
             budget_failure = _claim_budget_failure(run, classification, now)
             if budget_failure is not None:
+                await deactivate_run_environment(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, budget_failure, now)
                 return SealedClaim(budget_failure)

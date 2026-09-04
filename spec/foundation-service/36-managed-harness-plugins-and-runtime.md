@@ -261,14 +261,14 @@ In `runner`, one Worker container contains a stable Supervisor and one or more l
 ```text
 Worker container
 └── Worker Supervisor
-    ├── Runner(active lock): WorkerExecutionLoop + RunAttemptExecutor tasks
-    ├── Runner(draining old lock): existing RunAttemptExecutor tasks only
-    └── Runner(candidate lock during staging): claim-gated WorkerExecutionLoop
+    ├── Runner(active lock): execution loop + keepalive loop + executor tasks
+    ├── Runner(draining old lock): existing executor and keepalive calls only
+    └── Runner(candidate lock during staging): claim-gated loops
 ```
 
 The Supervisor imports no Harness Plugin, Plugin dependency, or candidate Runtime path. It owns bounded process startup, liveness observation, claim gating, drain, shutdown, and exit handling. The Supervisor-to-Runner protocol carries lifecycle control only; Harness execution does not become a remote Plugin or Agent RPC contract.
 
-Each Runner starts in a clean Python interpreter from exactly one materialized lock. It owns one ordinary `WorkerExecutionLoop` for compatible work: periodic scan, exact-lock preflight, bounded local executor-capacity reservation, claim, and takeover. Each successful claim starts exactly one `RunAttemptExecutor` async task in that Runner, not another OS thread. The executor owns lease renewal, control watching, fenced persistence, Agent reconstruction, Harness execution, and event production, and creates fresh Plugin instances for every reconstructed Agent definition. It never shares a concrete Plugin instance between definitions or executors.
+Each Runner starts in a clean Python interpreter from exactly one materialized lock. It owns one ordinary `WorkerExecutionLoop` for compatible Run work: periodic scan, exact-lock preflight, bounded local executor-capacity reservation, claim, and takeover. It also owns the separately bounded `EnvironmentKeepaliveLoop` for target operations whose selected active source binding requires that exact lock. Each successful Run claim starts exactly one `RunAttemptExecutor` async task in that Runner, not another OS thread. A target claim starts no executor and consumes no Agent execution slot. The executor owns lease renewal, control watching, fenced persistence, Agent reconstruction, Harness execution, and event production, and creates fresh Plugin instances for every reconstructed Agent definition. It never shares a concrete Plugin instance between definitions or executors.
 
 The Runner derives imports only from verified lock entry points. It verifies every artifact digest before publishing the immutable directory to the child process. It never unloads, reloads, or replaces modules in a live interpreter and never renames arbitrary Wheel modules or installs a custom multi-version importer.
 
@@ -309,9 +309,9 @@ A captured Worker that disappears before commit fails the command. A Worker that
 
 If any serviceable Worker fails staging, the command fails, candidate Runners exit, and the old selection remains active. After commit, future runner key resolution uses the new catalog. Existing Revisions, Runs that inherit them, and exact historical-Revision Runs retain their frozen locks. The receipt becomes `succeeded` only after every still-serviceable staged Supervisor observes the commit and enables its candidate Runner.
 
-An old Runner remains eligible for accepted and newly accepted work whose frozen Revision requires its exact lock; Activate alone does not put it into drain. The Supervisor may retire it later when no eligible work needs the lock, and can reconstruct the same lock on demand if historical work appears again.
+An old Runner remains eligible for accepted and newly accepted work whose frozen Revision requires its exact lock and for Environment keepalive whose selected active source binding pins that lock; Activate alone does not put it into drain. The Supervisor may retire it later when neither eligible Run work nor a due or currently leased target operation needs the lock, and can reconstruct the same lock on demand if either need appears again.
 
-If capacity policy retires a Runner while it still owns Attempts, it gates the loop and requests graceful handoff on each active executor's process-local control gate under the common contract. Each executor continues heartbeat and lease renewal while it reaches a complete Harness safe boundary, persists ordinary `state.json`, closes local Runtime resources, and commits `yield_reason="runner_rotation"`. A successor reconstructs the exact Run-pinned historical lock; the current active lock is never substituted. Insufficient local capacity fails a later runtime command without terminating existing Attempts.
+If capacity policy retires a Runner while it still owns Attempts or target leases, it gates both claim loops and requests graceful handoff on each active executor's process-local control gate under the common contract. Each executor continues heartbeat and lease renewal while it reaches a complete Harness safe boundary, persists ordinary `state.json`, closes local Runtime resources, and commits `yield_reason="runner_rotation"`. An in-flight keepalive may finish within the drain deadline; otherwise its renewal stops and takeover waits for target-lease expiry. A successor reconstructs the exact Run- or source-binding-pinned historical lock; the current active lock is never substituted. Insufficient local capacity fails a later runtime command without terminating existing Attempts or keepalive calls.
 
 A staged Worker that loses its liveness lease after commit leaves the serviceable set and cannot reverse cutover. On rejoin it reconstructs the committed active lock before claim. An active Runner crash causes the Supervisor to reconstruct the same lock and never silently roll back.
 
@@ -319,7 +319,7 @@ A staged Worker that loses its liveness lease after commit leaves the serviceabl
 
 In both profiles, the selected AgentRevision already owns an immutable Runtime lock digest. A runner Plugin override is resolved and frozen before Run acceptance commits. The Run copies the resulting exact digest, and a RunAttempt never replaces it with another lock.
 
-An on-demand Worker preflights the lock against its registry before claim. A Runner scans and claims only work whose digest equals its own. The runner Supervisor can observe an eligible historical lock and start a compatible Runner on demand; waiting Runs do not keep a process resident. An on-demand waiting Run similarly keeps no process or cache entry resident and waits for a compatible Worker when it becomes eligible.
+An on-demand Worker preflights the lock against its registry before either Run or Environment-target claim. A Runner scans and claims only work whose digest equals its own, including a target whose selected active source binding pins that digest. The runner Supervisor can observe an eligible historical Run lock or due Environment keepalive source lock and start a compatible Runner on demand. Waiting Runs alone do not keep a process resident, but a due or currently leased keepalive does until its bounded call or handoff completes. An on-demand waiting Run similarly keeps no process or cache entry resident and waits for a compatible Worker when it becomes eligible.
 
 Claim-time code performs no package-index access or dependency solving. Missing artifacts, digest mismatch, target mismatch, dependency mismatch, import failure, or factory validation failure prevents claim or Harness entry without substituting another PluginVersion. A retained on-demand Run can become unserviceable after an incompatible Worker image upgrade; the deployment must retain or restore a Worker release compatible with the Run lock.
 
@@ -417,5 +417,6 @@ Stable Plugin identity, immutable PluginVersion identity, full-byte digest, one-
 17. Runner rotation uses the common graceful-yield boundary while preserving lease renewal until commit or deadline and preserving the exact Run-pinned Runtime lock on its successor.
 18. `Plugin` and `PluginVersion` are the only managed Harness Plugin resources; Versions are immutable, and neither resource exposes hard delete or Version overwrite.
 19. Plugin selection is explicit: on-demand authoring selects exact authorized PluginVersions, runner authoring selects active keys, and Revision creation freezes exact PluginVersions in both modes.
-20. Activate changes only future runner key resolution and never rewrites an AgentRevision or accepted Run; adopting another active Version requires another Revision or Run override acceptance.
-21. Runtime commands succeed only in `runner`; `on_demand` returns `plugin_runtime_mode_unsupported` before dispatch and creates no task receipt.
+20. A due Environment keepalive can materialize or retain the exact source-binding-compatible Runner, but target work remains separately capacity-bounded and never consumes a Run executor slot.
+21. Activate changes only future runner key resolution and never rewrites an AgentRevision or accepted Run; adopting another active Version requires another Revision or Run override acceptance.
+22. Runtime commands succeed only in `runner`; `on_demand` returns `plugin_runtime_mode_unsupported` before dispatch and creates no task receipt.

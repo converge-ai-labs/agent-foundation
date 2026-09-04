@@ -407,6 +407,9 @@ class ResolvedSkillBinding(StrictModel):
 class EnvironmentExecutionConfig(StrictModel):
     schema_version: Literal["1"] = "1"
     source_environment_revision_id: ObjectId | None = None
+    # Optional only for decoding pre-EnvironmentTarget Run state during rolling upgrade.
+    # Every newly resolved and accepted configuration sets this value.
+    environment_target_id: ObjectId | None = None
     connection: EnvironmentConnectionSpec
     provider_package_revision_id: ObjectId | None = None
     provider_lock: EnvironmentProviderLock

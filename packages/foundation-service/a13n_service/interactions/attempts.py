@@ -16,6 +16,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
+from .environment_bindings import deactivate_run_environment
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .objects import RunStateStore, StoredRunState
@@ -186,6 +187,7 @@ class AttemptExecutionService:
                 )
             terminalize_attempt(attempt, RunAttemptStatus.failed, now, failure=failure)
             charge_attempt_usage(run, attempt)
+            await deactivate_run_environment(database, run=run, now=now)
             await apply_run_outcome(database, run=run, outcome="failed", now=now)
             seal_failed_run(run, thread, failure, now)
             return AttemptPreparationRejected(
@@ -266,6 +268,7 @@ class AttemptExecutionService:
                 run.updated_at = now
                 run.version += 1
             else:
+                await deactivate_run_environment(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, failure, now)
             return _receipt(run, attempt)

@@ -867,11 +867,17 @@ def _validate_child_environment(
 
 
 def _environment_target_identity(environment: EnvironmentExecutionConfig) -> tuple[object, ...]:
+    if environment.environment_target_id is None:
+        return (
+            environment.connection,
+            environment.provider_package_revision_id,
+            environment.provider_lock,
+            environment.target_key,
+        )
     return (
-        environment.connection,
+        environment.environment_target_id,
         environment.provider_package_revision_id,
         environment.provider_lock,
-        environment.target_key,
     )
 
 
