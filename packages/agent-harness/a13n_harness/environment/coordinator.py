@@ -39,7 +39,6 @@ from .commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from .entry_observation import notify_entry_rejected, notify_entry_validated
 from .extensions import EnvironmentRunExtension, EnvironmentRunExtensionContext
 from .files import FileOperator
 from .models import (
@@ -1022,7 +1021,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
         try:
             entered = _validate_entered(request, mount_id, candidate, provider)
         except BaseException as primary:
-            notify_entry_rejected(provider, mount_id=mount_id, error=primary)
             try:
                 await _await_cleanup_shielded(_close_provider_scopes([scope]))
             except BaseException as cleanup:
@@ -1031,12 +1029,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     [primary, cleanup],
                 ) from None
             raise
-        notify_entry_validated(
-            provider,
-            mount_id=entered.mount_id,
-            descriptor=entered.public.descriptor,
-            provider_type=entered.public.provider_type,
-        )
         return _OwnedProviderScope(entered=entered, scope=scope)
 
     def _assert_mutable(self) -> None:
@@ -1911,18 +1903,7 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
                     provider = await scope.__aenter__()
                 scopes.append(scope)
                 successfully_entered.add(id(candidate))
-                try:
-                    validated = _validate_entered(requested, mount_id, candidate, provider)
-                except BaseException as error:
-                    notify_entry_rejected(provider, mount_id=mount_id, error=error)
-                    raise
-                notify_entry_validated(
-                    provider,
-                    mount_id=validated.mount_id,
-                    descriptor=validated.public.descriptor,
-                    provider_type=validated.public.provider_type,
-                )
-                entered[requested.name] = validated
+                entered[requested.name] = _validate_entered(requested, mount_id, candidate, provider)
 
             snapshot = EnvironmentSnapshot(
                 mounts=tuple(item.public for item in entered.values()),

@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
 
 import pytest
 from a13n_environment_provider import (
@@ -15,7 +14,6 @@ from a13n_environment_provider import (
     DirectLocalRootConfiguration,
     Environment,
     EnvironmentError,
-    EnvironmentOperations,
 )
 from a13n_harness import (
     AgentContext,
@@ -595,52 +593,6 @@ async def test_environment_entry_failure_emits_only_safe_live_projection(
         "message": "The Environment entry operation failed.",
     }
     assert "provider-private-body" not in str(projector.environment_events)
-
-
-async def test_environment_compatibility_failure_replaces_ready_with_safe_failure(
-    interaction_object_store,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    trace: list[str] = []
-    instance = _instance()
-    state = await _stored_state(interaction_object_store, initial_state())
-    environment = _environment(tmp_path / "incompatible", "incompatible-workspace")
-    enter = environment._enter
-
-    async def enter_with_incompatible_operations(**kwargs: Any) -> None:
-        await enter(**kwargs)
-        environment._operations = EnvironmentOperations()
-
-    monkeypatch.setattr(environment, "_enter", enter_with_incompatible_operations)
-    coordinator = _RuntimeCoordinator(state, instance, trace)
-    projector = _EventProjector()
-
-    with pytest.raises(EnvironmentError) as failure:
-        await _driver(coordinator, projector).run(
-            FoundationHarnessInvocation(
-                definition=AgentDefinition(
-                    agent=AgentSpec(),
-                    output_type=str,
-                    model=FunctionModel(lambda messages, info: "must not run"),
-                ),
-                input=ImmediateHarnessInput("accepted input"),
-                collaborators=FoundationHarnessCollaborators(instance=instance),
-                environment=SingleHarnessEnvironment(environment),
-            ),
-            preparation=_preparation(),
-        )
-
-    assert failure.value.code == "environment_provider_failure"
-    assert tuple(event.event_type for event in projector.environment_events) == (
-        "environment.entry.started",
-        "environment.entry.failed",
-        "environment.adapter.closed",
-    )
-    assert projector.environment_events[1].payload["failure"] == {
-        "code": "environment_provider_failure",
-        "message": "The Environment entry operation failed.",
-    }
 
 
 async def test_live_projection_failure_does_not_change_harness_outcome(

@@ -1,4 +1,4 @@
-"""Exact live observations around fresh Harness Environment adapters."""
+"""Live observations around fresh Harness Environment adapters."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from a13n_environment_provider import (
     EnvironmentState,
 )
 from a13n_harness import EnvironmentAccess, EnvironmentEntry, EnvironmentMount
-from a13n_harness.environment.entry_observation import EnvironmentEntryValidationObserver
 from pydantic import JsonValue, TypeAdapter
 
 logger = logging.getLogger("a13n_service.interactions.environment_observation")
@@ -47,7 +46,7 @@ class EnvironmentHookProjector(Protocol):
     def project_environment(self, observation: EnvironmentHookObservation) -> None: ...
 
 
-class ObservedEnvironment(Environment, EnvironmentEntryValidationObserver):
+class ObservedEnvironment(Environment):
     """Preserve one adapter exactly while observing its owned lifecycle calls."""
 
     def __init__(
@@ -118,37 +117,30 @@ class ObservedEnvironment(Environment, EnvironmentEntryValidationObserver):
                 },
             )
             raise
+        self._emit_ready()
 
-    def environment_entry_validated(
-        self,
-        *,
-        mount_id: str,
-        descriptor: EnvironmentDescriptor,
-        availability: EnvironmentAvailability,
-    ) -> None:
-        self._require_mount_id(mount_id)
-        operation_families = _JSON_LIST.validate_python(sorted(descriptor.operation_families), strict=True)
-        effective_permissions = descriptor.permissions.operations & self._access.permission_set().operations
-        permissions = _JSON_LIST.validate_python(sorted(item.value for item in effective_permissions), strict=True)
-        ready_families = _JSON_LIST.validate_python(sorted(availability.ready_families), strict=True)
-        self._emit(
-            "environment.entry.ready",
-            {
-                "operation_families": operation_families,
-                "permissions": permissions,
-                "availability": availability.status,
-                "ready_families": ready_families,
-            },
-        )
-
-    def environment_entry_rejected(self, *, mount_id: str, error: BaseException) -> None:
-        self._require_mount_id(mount_id)
-        self._emit(
-            "environment.entry.failed",
-            {
-                "failure": _safe_failure(error, phase="entry"),
-            },
-        )
+    def _emit_ready(self) -> None:
+        try:
+            descriptor = self.descriptor
+            availability = self.availability
+            operation_families = _JSON_LIST.validate_python(sorted(descriptor.operation_families), strict=True)
+            effective_permissions = descriptor.permissions.operations & self._access.permission_set().operations
+            permissions = _JSON_LIST.validate_python(sorted(item.value for item in effective_permissions), strict=True)
+            ready_families = _JSON_LIST.validate_python(sorted(availability.ready_families), strict=True)
+            self._emit(
+                "environment.entry.ready",
+                {
+                    "operation_families": operation_families,
+                    "permissions": permissions,
+                    "availability": availability.status,
+                    "ready_families": ready_families,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "Environment ready observation failed",
+                extra={"event": "environment_ready_observation_failed"},
+            )
 
     async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         await self._delegate.ensure_ready(operations)
@@ -201,11 +193,6 @@ class ObservedEnvironment(Environment, EnvironmentEntryValidationObserver):
                     "hook_name": event_type,
                 },
             )
-
-    def _require_mount_id(self, mount_id: str) -> None:
-        correlation = self._correlation
-        if correlation is None or correlation[2] != mount_id:
-            raise RuntimeError("Environment validation observation does not match its entry")
 
 
 def observe_environment_entry(
