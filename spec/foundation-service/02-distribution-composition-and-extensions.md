@@ -79,7 +79,7 @@ The OSS capability set also includes [Asset Management](32-asset-management.md):
 
 The common package contains the OSS composition and common capability implementations. It contains no empty EE or Cloud package tree, placeholder feature, license branch, or generic plugin administration surface.
 
-The OSS composition includes the [Connectivity subsystem](40-connectivity/README.md) and its `connectivity` role contribution. The distribution explicitly registers the supported Ingress and Connector adapters by stable adapter key. It performs no package scanning, runtime import-path loading, or entry-point auto-trust; installing another package does not add a router, role component, action, schema, or adapter trust grant.
+The OSS composition includes the [Connectivity subsystem](40-connectivity/README.md) and its `connectivity` role contribution. The distribution explicitly registers supported Ingress adapters by their owning keys and Connector Provider implementations by `type`. Each Provider implementation owns its strongly typed configuration and safe schema description. It performs no package scanning, runtime import-path loading, or entry-point auto-trust; installing another package does not add a router, role component, action, schema, or adapter trust grant. Domain registries remain independent rather than becoming a universal Provider registry.
 
 ## EE and Cloud Composition
 

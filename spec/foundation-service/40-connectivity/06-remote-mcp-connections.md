@@ -6,7 +6,7 @@
 
 Foundation Service acts as the MCP client and supports only the Streamable HTTP transport at protocol revision `2025-11-25`. Local `stdio` MCP configuration remains a direct Harness or Agent UI concern and never causes a hosted Worker to launch a user-supplied process. A server that cannot negotiate that exact revision is incompatible; Foundation does not silently select another revision.
 
-Foundation implements the standard MCP OAuth client flow once. It does not implement provider-specific Slack, GitHub, Google, or other OAuth branches. Connector-managed SaaS OAuth remains owned by the [Connector service](03-connectors-and-connections.md#credential-custody-and-setup), not this contract.
+Foundation implements the standard MCP OAuth client flow once. It does not implement provider-specific Slack, GitHub, Google, or other OAuth branches. Externally managed SaaS OAuth remains owned by the [external integration service](03-connectors-and-connections.md#credential-custody-and-setup), not this contract.
 
 ## MCPConnection
 
