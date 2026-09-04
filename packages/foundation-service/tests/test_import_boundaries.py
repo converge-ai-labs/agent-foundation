@@ -19,7 +19,8 @@ def test_agents_and_connectivity_import_in_either_order(modules: tuple[str, str]
 
 
 def test_agents_package_preserves_runtime_exports() -> None:
-    from a13n_service.agents import AgentInvocationResolver, AgentReconstructor
+    from a13n_service.agents import AgentInvocationResolver, AgentManagement, AgentReconstructor
 
     assert AgentInvocationResolver is not None
+    assert AgentManagement is not None
     assert AgentReconstructor is not None

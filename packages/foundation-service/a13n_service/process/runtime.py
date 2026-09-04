@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from a13n_service.agents.service import AgentService
+    from a13n_service.agents.application import AgentManagement
     from a13n_service.assets.service import AssetService
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.service import EnvironmentManagementService
@@ -47,7 +47,7 @@ class ControlRuntime:
     skill_uploads: SkillUploadService
     skill_publication: SkillPublicationService
     skill_catalog: SkillCatalogService
-    agents: AgentService
+    agents: AgentManagement
     models: ModelService
     model_providers: ModelProviderService
     assets: AssetService

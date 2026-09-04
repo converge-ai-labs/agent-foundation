@@ -1,5 +1,6 @@
 """Workspace Agent authoring and immutable Revision management."""
 
+from .application import AgentManagement
 from .domain import (
     Agent,
     AgentConfig,
@@ -31,6 +32,7 @@ __all__ = [
     "AgentDefinitionReconstructionError",
     "AgentError",
     "AgentInvocationResolver",
+    "AgentManagement",
     "AgentReconstructor",
     "AgentRevision",
     "AgentRunOverride",

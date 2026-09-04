@@ -13,7 +13,7 @@ from a13n_service.process.runtime import ControlRuntime, SharedRuntime, WorkerRu
 from a13n_service.settings import ServiceSettings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
-from .agent import build_agent_service
+from .agent import build_agent_management
 from .asset import build_asset_bundle
 from .environment import build_environment_bundle
 from .model import build_model_bundle
@@ -56,7 +56,7 @@ async def build_control_runtime(
     )
     skills = await build_skill_bundle(components, shared, execution, stack)
     models = build_model_bundle(settings, components, shared, execution)
-    agents = build_agent_service(
+    agents = build_agent_management(
         settings,
         components,
         shared,

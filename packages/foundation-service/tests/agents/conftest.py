@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from a13n_environment_provider import build_environment_provider_catalog
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     Agent,
     AgentConfig,
@@ -15,7 +16,6 @@ from a13n_service.agents.domain import (
 from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
-from a13n_service.agents.service import AgentService
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
@@ -96,7 +96,7 @@ def agent_config(
 
 
 async def create_current_revision(
-    service: AgentService,
+    service: AgentManagement,
     *,
     agent_id: str,
     expected_version: int,
@@ -105,8 +105,8 @@ async def create_current_revision(
     """Return the current immutable Revision created atomically with the Agent."""
 
     del expected_version, key
-    selected = await service.get(actor=actor(), agent_id=agent_id)
-    revision = await service.get_revision(actor=actor(), revision_id=selected.current_revision_id)
+    selected = await service.queries.get(actor=actor(), agent_id=agent_id)
+    revision = await service.queries.get_revision(actor=actor(), revision_id=selected.current_revision_id)
     return AgentRevisionCreateResult(agent=selected, revision=revision), selected
 
 
@@ -240,9 +240,9 @@ async def agent_sessions(
 
 
 @pytest.fixture
-async def agent_service(
+async def agent_management(
     agent_sessions: async_sessionmaker[AsyncSession],
-) -> AsyncIterator[AgentService]:
+) -> AsyncIterator[AgentManagement]:
     model_selector = AcceptedModelSelector(
         agent_sessions,
         built_in_provider_registry(),
@@ -263,7 +263,7 @@ async def agent_service(
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
         environment_resolver=environment_resolver,
     )
-    yield AgentService(
+    yield AgentManagement(
         agent_sessions,
         resolver,
         invocation_resolver,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     CreateAgentRequest,
     CreateAgentRevisionRequest,
@@ -12,7 +13,6 @@ from a13n_service.agents.domain import (
     canonical_digest,
 )
 from a13n_service.agents.errors import AgentError
-from a13n_service.agents.service import AgentService
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
 from a13n_service.storage import transaction
@@ -23,13 +23,13 @@ from .conftest import NOW, WORKSPACE_ID, actor, agent_config
 
 
 @pytest.mark.anyio
-async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_service: AgentService) -> None:
+async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_management: AgentManagement) -> None:
     request = CreateAgentRequest(name="Support", config=agent_config())
 
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="create-support", request=request
     )
-    replay = await agent_service.create(
+    replay = await agent_management.commands.create(
         actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="create-support", request=request
     )
 
@@ -45,10 +45,10 @@ async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_service: Agent
 
 @pytest.mark.anyio
 async def test_expired_agent_evidence_allows_reusing_the_key(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    first = await agent_service.create(
+    first = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="expired-agent-key",
@@ -62,7 +62,7 @@ async def test_expired_agent_evidence_allows_reusing_the_key(
         evidence.created_at = NOW - timedelta(hours=24)
         evidence.expires_at = NOW
 
-    second = await agent_service.create(
+    second = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="expired-agent-key",
@@ -89,7 +89,7 @@ async def test_expired_agent_evidence_allows_reusing_the_key(
     ],
 )
 async def test_agent_creation_fails_closed_until_connectivity_resolution_is_available(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     config_field: str,
     selection: dict[str, object],
     reason: str,
@@ -97,7 +97,7 @@ async def test_agent_creation_fails_closed_until_connectivity_resolution_is_avai
     config = agent_config(**{config_field: selection})
 
     with pytest.raises(AgentError) as rejected:
-        await agent_service.create(
+        await agent_management.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key=f"create-{config_field}",
@@ -110,22 +110,22 @@ async def test_agent_creation_fails_closed_until_connectivity_resolution_is_avai
 
 @pytest.mark.anyio
 async def test_revision_noop_new_revision_and_restore_follow_one_lineage(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
 ) -> None:
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-lineage",
         request=CreateAgentRequest(name="Lineage", config=agent_config()),
     )
 
-    noop = await agent_service.create_revision(
+    noop = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="noop-lineage",
         request=CreateAgentRevisionRequest(expected_version=1, config=agent_config()),
     )
-    second = await agent_service.create_revision(
+    second = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="second-lineage",
@@ -134,7 +134,7 @@ async def test_revision_noop_new_revision_and_restore_follow_one_lineage(
             config=agent_config(instructions="Analyze carefully."),
         ),
     )
-    restored = await agent_service.restore_revision(
+    restored = await agent_management.revisions.restore_revision(
         actor=actor(),
         agent_id=created.agent.id,
         revision_id=created.revision.id,
@@ -148,19 +148,21 @@ async def test_revision_noop_new_revision_and_restore_follow_one_lineage(
     assert restored.agent.version == restored.revision.version == 3
     assert restored.revision.source_revision_id == created.revision.id
     assert restored.revision.config == created.revision.config
-    revisions = await agent_service.list_revisions(actor=actor(), agent_id=created.agent.id, limit=10, cursor=None)
+    revisions = await agent_management.queries.list_revisions(
+        actor=actor(), agent_id=created.agent.id, limit=10, cursor=None
+    )
     assert [item.version for item in revisions.items] == [3, 2, 1]
 
 
 @pytest.mark.anyio
-async def test_revision_create_rejects_stale_head_version(agent_service: AgentService) -> None:
-    created = await agent_service.create(
+async def test_revision_create_rejects_stale_head_version(agent_management: AgentManagement) -> None:
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-conflict",
         request=CreateAgentRequest(name="Conflict", config=agent_config()),
     )
-    await agent_service.create_revision(
+    await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="advance-conflict",
@@ -171,7 +173,7 @@ async def test_revision_create_rejects_stale_head_version(agent_service: AgentSe
     )
 
     with pytest.raises(AgentError) as stale:
-        await agent_service.create_revision(
+        await agent_management.revisions.create_revision(
             actor=actor(),
             agent_id=created.agent.id,
             idempotency_key="stale-conflict",
@@ -186,9 +188,9 @@ async def test_revision_create_rejects_stale_head_version(agent_service: AgentSe
 
 @pytest.mark.anyio
 async def test_metadata_and_lifecycle_use_etag_without_incrementing_version(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
 ) -> None:
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-metadata",
@@ -196,28 +198,28 @@ async def test_metadata_and_lifecycle_use_etag_without_incrementing_version(
     )
     etag = resource_etag(created.agent.id, created.agent.updated_at)
 
-    updated = await agent_service.patch_metadata(
+    updated = await agent_management.commands.patch_metadata(
         actor=actor(),
         agent_id=created.agent.id,
         if_match=etag,
         request=UpdateAgentRequest(name="Renamed"),
     )
     with pytest.raises(AgentError) as stale:
-        await agent_service.patch_metadata(
+        await agent_management.commands.patch_metadata(
             actor=actor(),
             agent_id=created.agent.id,
             if_match='"stale"',
             request=UpdateAgentRequest(name="Rejected"),
         )
     assert stale.value.status_code == 412
-    disabled = await agent_service.change_lifecycle(
+    disabled = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=created.agent.id,
         action="disable",
         idempotency_key="disable-metadata",
         if_match=resource_etag(updated.id, updated.updated_at),
     )
-    archived = await agent_service.change_lifecycle(
+    archived = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=created.agent.id,
         action="archive",
@@ -232,14 +234,14 @@ async def test_metadata_and_lifecycle_use_etag_without_incrementing_version(
 
 
 @pytest.mark.anyio
-async def test_duplicate_copies_exact_current_revision_as_new_v1(agent_service: AgentService) -> None:
-    created = await agent_service.create(
+async def test_duplicate_copies_exact_current_revision_as_new_v1(agent_management: AgentManagement) -> None:
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-duplicate",
         request=CreateAgentRequest(name="Original", config=agent_config()),
     )
-    second = await agent_service.create_revision(
+    second = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="advance-duplicate",
@@ -249,13 +251,15 @@ async def test_duplicate_copies_exact_current_revision_as_new_v1(agent_service: 
         ),
     )
 
-    duplicate = await agent_service.duplicate(
+    duplicate = await agent_management.duplication.duplicate(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="duplicate",
         request=DuplicateAgentRequest(expected_version=2, name="Copy"),
     )
-    duplicate_revision = await agent_service.get_revision(actor=actor(), revision_id=duplicate.current_revision_id)
+    duplicate_revision = await agent_management.queries.get_revision(
+        actor=actor(), revision_id=duplicate.current_revision_id
+    )
 
     assert duplicate.version == duplicate_revision.version == 1
     assert duplicate.duplicated_from_revision_id == second.revision.id
@@ -264,14 +268,14 @@ async def test_duplicate_copies_exact_current_revision_as_new_v1(agent_service: 
 
 
 @pytest.mark.anyio
-async def test_list_filters_enabled_and_archived_axes(agent_service: AgentService) -> None:
-    created = await agent_service.create(
+async def test_list_filters_enabled_and_archived_axes(agent_management: AgentManagement) -> None:
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-list",
         request=CreateAgentRequest(name="Listed", config=agent_config()),
     )
-    disabled = await agent_service.change_lifecycle(
+    disabled = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=created.agent.id,
         action="disable",
@@ -279,7 +283,7 @@ async def test_list_filters_enabled_and_archived_axes(agent_service: AgentServic
         if_match=resource_etag(created.agent.id, created.agent.updated_at),
     )
 
-    page = await agent_service.list(
+    page = await agent_management.queries.list(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         limit=10,

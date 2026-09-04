@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     AgentRunOverride,
     CreateAgentRequest,
@@ -13,9 +14,8 @@ from a13n_service.agents.invocation import merge_agent_run_override
 from a13n_service.agents.invocation_resolution import (
     AgentInvocationResolver,
     AgentSelectorKind,
-    _validate_child_environment,
 )
-from a13n_service.agents.service import AgentService
+from a13n_service.agents.invocation_resolution.environment import validate_child_environment
 from a13n_service.environments.domain import EnvironmentConnectionSpec, EnvironmentProviderLock
 from a13n_service.models.models import ModelRecord
 from a13n_service.storage import transaction
@@ -156,10 +156,10 @@ def test_shared_root_child_accepts_narrower_access_to_the_exact_target() -> None
         environment={"mode": "shared_root"},
     )
 
-    _validate_child_environment(root, child, selection)
+    validate_child_environment(root, child, selection)
 
     with pytest.raises(AgentError) as incompatible:
-        _validate_child_environment(root, child.model_copy(update={"target_key": "/tmp/other"}), selection)
+        validate_child_environment(root, child.model_copy(update={"target_key": "/tmp/other"}), selection)
     assert incompatible.value.details == {"reason": "subagent_environment_incompatible"}
 
 
@@ -242,24 +242,24 @@ def test_invalid_null_or_incomplete_overrides_are_bounded(payload: dict[str, obj
 
 @pytest.mark.anyio
 async def test_current_invocation_freezes_complete_effective_config(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-current-invocation",
         request=CreateAgentRequest(name="Current Invocation", config=agent_config()),
     )
 
-    prepared = await agent_invocation_resolver.prepare(
+    prepared = await agent_invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=created.agent.id,
         config_override=AgentRunOverride(instructions="One Run only.", retries={"tools": 0}),
     )
     async with transaction(agent_sessions) as session:
-        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert frozen.selector_kind is AgentSelectorKind.current
     assert frozen.agent_revision_id == created.revision.id
@@ -273,11 +273,11 @@ async def test_current_invocation_freezes_complete_effective_config(
 
 @pytest.mark.anyio
 async def test_run_acceptance_uses_latest_model_without_revising_agent(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-live-model-selection",
@@ -288,9 +288,9 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
         assert model is not None
         model.upstream_model = "gpt-new"
 
-    prepared = await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     async with transaction(agent_sessions) as session:
-        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert frozen.agent_revision_id == created.revision.id
     assert frozen.effective_config.resolved_model.execution.upstream_model == "gpt-new"
@@ -311,12 +311,12 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
     ],
 )
 async def test_invocation_fails_closed_until_connectivity_resolution_is_available(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     override: dict[str, object],
     reason: str,
 ) -> None:
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key=f"create-invocation-{reason}",
@@ -324,7 +324,7 @@ async def test_invocation_fails_closed_until_connectivity_resolution_is_availabl
     )
 
     with pytest.raises(AgentError) as rejected:
-        await agent_invocation_resolver.prepare(
+        await agent_invocation_resolver.preparation.prepare(
             actor=actor(),
             agent_id=created.agent.id,
             agent_revision_id=created.revision.id,
@@ -337,17 +337,17 @@ async def test_invocation_fails_closed_until_connectivity_resolution_is_availabl
 
 @pytest.mark.anyio
 async def test_exact_historical_revision_never_follows_current(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-exact-invocation",
         request=CreateAgentRequest(name="Exact Invocation", config=agent_config(instructions="v1")),
     )
-    second = await agent_service.create_revision(
+    second = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="create-exact-v2",
@@ -357,13 +357,13 @@ async def test_exact_historical_revision_never_follows_current(
         ),
     )
 
-    prepared = await agent_invocation_resolver.prepare(
+    prepared = await agent_invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=created.agent.id,
         agent_revision_id=created.revision.id,
     )
     async with transaction(agent_sessions) as session:
-        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert frozen.selector_kind is AgentSelectorKind.exact
     assert frozen.agent_revision_id == created.revision.id
@@ -373,18 +373,18 @@ async def test_exact_historical_revision_never_follows_current(
 
 @pytest.mark.anyio
 async def test_current_selector_detects_revision_change_between_prepare_and_commit(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-current-race",
         request=CreateAgentRequest(name="Current Race", config=agent_config()),
     )
-    prepared = await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
-    await agent_service.create_revision(
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
+    await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="advance-current-race",
@@ -396,5 +396,5 @@ async def test_current_selector_detects_revision_change_between_prepare_and_comm
 
     with pytest.raises(AgentError) as conflict:
         async with transaction(agent_sessions) as session:
-            await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+            await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     assert conflict.value.code == "current_revision_conflict"

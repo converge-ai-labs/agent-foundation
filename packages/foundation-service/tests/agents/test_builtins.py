@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     BuiltinAgentRegistration,
     CreateAgentRequest,
@@ -10,7 +11,6 @@ from a13n_service.agents.domain import (
 )
 from a13n_service.agents.errors import AgentError
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
-from a13n_service.agents.service import AgentService
 from a13n_service.etags import resource_etag
 from a13n_service.models.models import ModelRecord
 from a13n_service.storage import transaction
@@ -35,10 +35,10 @@ def registration(*, instructions: str = "Be helpful.", name: str = "Foundation A
 
 @pytest.mark.anyio
 async def test_builtin_registration_is_executable_idempotent_and_upgradable(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    first = await agent_service.register_builtin(
+    first = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(),
@@ -51,14 +51,14 @@ async def test_builtin_registration_is_executable_idempotent_and_upgradable(
     assert first.agent.version == first.revision.version == 1
     assert first.revision.created_by.principal_id == SYSTEM_ACTOR_ID
 
-    replay = await agent_service.register_builtin(
+    replay = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(),
     )
     assert replay == first
 
-    upgraded = await agent_service.register_builtin(
+    upgraded = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(instructions="Use the upgraded behavior."),
@@ -67,7 +67,7 @@ async def test_builtin_registration_is_executable_idempotent_and_upgradable(
     assert upgraded.agent.current_revision_id == upgraded.revision.id
     assert upgraded.revision.config.instructions == "Use the upgraded behavior."
 
-    revisions = await agent_service.list_revisions(
+    revisions = await agent_management.queries.list_revisions(
         actor=actor(),
         agent_id=BUILTIN_AGENT_ID,
         limit=10,
@@ -90,13 +90,13 @@ async def test_builtin_registration_is_executable_idempotent_and_upgradable(
 
 
 @pytest.mark.anyio
-async def test_builtin_metadata_update_does_not_create_a_revision(agent_service: AgentService) -> None:
-    first = await agent_service.register_builtin(
+async def test_builtin_metadata_update_does_not_create_a_revision(agent_management: AgentManagement) -> None:
+    first = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(),
     )
-    renamed = await agent_service.register_builtin(
+    renamed = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(name="Foundation Helper"),
@@ -105,7 +105,7 @@ async def test_builtin_metadata_update_does_not_create_a_revision(agent_service:
     assert renamed.agent.name == "Foundation Helper"
     assert renamed.agent.version == 1
     assert renamed.revision == first.revision
-    revisions = await agent_service.list_revisions(
+    revisions = await agent_management.queries.list_revisions(
         actor=actor(),
         agent_id=BUILTIN_AGENT_ID,
         limit=10,
@@ -116,15 +116,15 @@ async def test_builtin_metadata_update_does_not_create_a_revision(agent_service:
 
 @pytest.mark.anyio
 async def test_builtin_registration_race_replay_requires_exact_committed_result(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
 ) -> None:
-    registered = await agent_service.register_builtin(
+    registered = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(),
     )
 
-    replay = await agent_service._builtin_registration_replay(
+    replay = await agent_management.builtins._builtin_registration_replay(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(),
@@ -132,7 +132,7 @@ async def test_builtin_registration_race_replay_requires_exact_committed_result(
     )
     assert replay == registered
     assert (
-        await agent_service._builtin_registration_replay(
+        await agent_management.builtins._builtin_registration_replay(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             registration=registration(name="Different metadata"),
@@ -141,7 +141,7 @@ async def test_builtin_registration_race_replay_requires_exact_committed_result(
         is None
     )
     assert (
-        await agent_service._builtin_registration_replay(
+        await agent_management.builtins._builtin_registration_replay(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             registration=registration(),
@@ -153,10 +153,10 @@ async def test_builtin_registration_race_replay_requires_exact_committed_result(
 
 @pytest.mark.anyio
 async def test_builtin_registration_does_not_revision_for_mutable_model_content(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    first = await agent_service.register_builtin(
+    first = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(),
@@ -166,7 +166,7 @@ async def test_builtin_registration_does_not_revision_for_mutable_model_content(
         assert model is not None
         model.upstream_model = "gpt-5.1"
 
-    upgraded = await agent_service.register_builtin(
+    upgraded = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(),
@@ -180,15 +180,15 @@ async def test_builtin_registration_does_not_revision_for_mutable_model_content(
 
 
 @pytest.mark.anyio
-async def test_builtin_is_user_read_only_but_can_be_duplicated(agent_service: AgentService) -> None:
-    registered = await agent_service.register_builtin(
+async def test_builtin_is_user_read_only_but_can_be_duplicated(agent_management: AgentManagement) -> None:
+    registered = await agent_management.builtins.register_builtin(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         registration=registration(),
     )
 
     with pytest.raises(AgentError) as metadata_rejected:
-        await agent_service.patch_metadata(
+        await agent_management.commands.patch_metadata(
             actor=actor(),
             agent_id=BUILTIN_AGENT_ID,
             if_match=resource_etag(registered.agent.id, registered.agent.updated_at),
@@ -197,7 +197,7 @@ async def test_builtin_is_user_read_only_but_can_be_duplicated(agent_service: Ag
     assert metadata_rejected.value.code == "agent_state_conflict"
 
     with pytest.raises(AgentError) as revision_rejected:
-        await agent_service.create_revision(
+        await agent_management.revisions.create_revision(
             actor=actor(),
             agent_id=BUILTIN_AGENT_ID,
             idempotency_key="builtin-user-revision",
@@ -208,7 +208,7 @@ async def test_builtin_is_user_read_only_but_can_be_duplicated(agent_service: Ag
         )
     assert revision_rejected.value.code == "agent_state_conflict"
 
-    duplicate = await agent_service.duplicate(
+    duplicate = await agent_management.duplication.duplicate(
         actor=actor(),
         agent_id=BUILTIN_AGENT_ID,
         idempotency_key="duplicate-builtin",
@@ -225,7 +225,7 @@ async def test_builtin_is_user_read_only_but_can_be_duplicated(agent_service: Ag
 
 @pytest.mark.anyio
 async def test_failed_builtin_registration_creates_no_partial_agent(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     invalid = registration().model_copy(
@@ -237,7 +237,7 @@ async def test_failed_builtin_registration_creates_no_partial_agent(
     )
 
     with pytest.raises(AgentError) as rejected:
-        await agent_service.register_builtin(
+        await agent_management.builtins.register_builtin(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             registration=invalid,
@@ -250,10 +250,10 @@ async def test_failed_builtin_registration_creates_no_partial_agent(
 
 @pytest.mark.anyio
 async def test_builtin_name_conflict_creates_no_partial_agent(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    await agent_service.create(
+    await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="custom-name-conflict",
@@ -261,7 +261,7 @@ async def test_builtin_name_conflict_creates_no_partial_agent(
     )
 
     with pytest.raises(AgentError) as rejected:
-        await agent_service.register_builtin(
+        await agent_management.builtins.register_builtin(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             registration=registration(),
