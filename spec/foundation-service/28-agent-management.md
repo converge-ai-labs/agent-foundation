@@ -74,22 +74,20 @@ class Agent:
 ```python
 class AgentModel:
     model_key: str
-    model_api: str
-    settings: ModelSettings
+    settings: JsonObject
     characteristics: HarnessModelCharacteristics
 
 
 class ResolvedAgentModel:
     model_id: ModelId
     model_key: str
-    model_api: str
-    settings: ModelSettings
+    settings: JsonObject
     characteristics: HarnessModelCharacteristics
 
 
 class EffectiveAgentModel:
     execution: ModelExecutionSnapshot
-    settings: ModelSettings
+    settings: JsonObject
     characteristics: HarnessModelCharacteristics
 
 
@@ -184,7 +182,9 @@ class AgentConfig:
     protocol: ProtocolConfig
 ```
 
-The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key and one explicit calling API, and the primary Environment selects at most one exact EnvironmentRevision. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
+The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key, and the primary Environment selects at most one exact EnvironmentRevision. The selected Model owns its one calling API and default request settings. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
+
+`AgentModel.settings` defaults to an empty object and stores only Agent-authored overrides. Its JSON representation is validated against the selected Model's serializable native settings contract, including provider-specific fields, under [Model Management](30-model-management.md#parameter-schemas-and-validation). The same owner defines parameter descriptions, reserved fields, and [settings precedence](30-model-management.md#settings-precedence). `ResolvedAgentModel` retains these overrides, while `EffectiveAgentModel.settings` contains the final merged values used for execution.
 
 `OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
@@ -242,8 +242,7 @@ type EnvironmentOverride = EnvironmentSelection | InlineEnvironmentSelection
 
 class ModelOverride:
     model_key: str | None
-    model_api: str | None
-    settings: ModelSettings | None
+    settings: JsonObject | None
     characteristics: HarnessModelCharacteristics | None
 
 
@@ -288,6 +287,8 @@ class AgentRunOverride:
 ```
 
 The wire schema preserves absent fields separately from explicit nulls. Top-level absence inherits the selected Revision. Scalar and string fields replace; list fields replace as a whole and an empty list clears them. `output_spec` and `environment` can be explicitly cleared. `retries` patches only explicitly present children.
+
+Within `model`, an absent `model_key` inherits the Agent selection; a supplied key selects another managed Model and cannot be null. There is no API override independent of that Model. `settings` follows the Model Management precedence contract, including explicit clearing of Agent overrides and validation against the final selected Model.
 
 `connector_tools`, `mcp_tools`, and `subagents` are name-keyed patches. An absent map inherits, explicit null clears all entries, and an empty object changes nothing. A mapped null deletes one entry. Tool changes can replace only a managed ConnectorConnection, exposure, or exact allowlist; they cannot supply endpoints, credentials, external integration services, or arbitrary headers. Subagent entries select managed Agents only.
 
@@ -357,7 +358,7 @@ class AgentRevision:
 
 Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, stable managed-resource binding and selection policy, Runtime lock, and subagent Revision. For an unpinned Skill, it covers `skill_id`, `skill_key`, and the absence of a version, not whichever current SkillRevision a later Run resolves. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
 
-`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The resolved Model field retains only stable Model identity, explicit calling API, settings, and characteristics; Run acceptance resolves its latest Model execution snapshot. Resolved Skill bindings freeze stable `skill_id` identity and pinned-or-current policy; only a pinned binding identifies versioned content before Run acceptance. The other resolved fields freeze ConnectorConnection and MCPConnection selections, optional primary Environment lock, and the complete child Revision graph. Secret values, current authorization, current Model and Provider configuration/lifecycle, an unpinned Skill's current Revision, live ConnectorProvider availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
+`plugin_runtime_mode`, `resolved_plugin_versions`, and `runtime_lock_digest` embed the exact result of the [managed Plugin contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). The resolved Model field retains only stable Model identity, Agent-authored setting overrides, and characteristics; Run acceptance resolves the latest Model execution selection and effective settings under Model Management. Resolved Skill bindings freeze stable `skill_id` identity and pinned-or-current policy; only a pinned binding identifies versioned content before Run acceptance. The other resolved fields freeze ConnectorConnection and MCPConnection selections, optional primary Environment lock, and the complete child Revision graph. Secret values, current authorization, current Model and Provider configuration/lifecycle, an unpinned Skill's current Revision, live ConnectorProvider availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
 
 ## Creation, Revision, and Restore
 
@@ -416,7 +417,7 @@ Durable acceptance:
 
 Historical AgentRevisions remain invocable under the stable Agent's current lifecycle gate. Their pinned Skill selections remain exact; their unpinned selections resolve current Revisions within the `skill_id` bindings frozen in that historical AgentRevision. Ingress and Schedule definitions store the stable Agent identity and resolve the current AgentRevision for each occurrence. Retry, waiting feedback, and other successor operations preserve source Skill locks where required but still pass current Skill lifecycle gates before a new Run is accepted. Recovery and Worker replacement of an already accepted Run use its exact Revision and effective configuration.
 
-For each outbound model request, the Worker or Runner rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes mutable authorities required by their owning contracts, constructs fresh Models, Plugins, `RunBindings`, and an attach-only Environment adapter, and enters the Harness only after the current attempt fence authorizes effects. An accepted Run's exact Skill package locks remain internally readable even if the Skill is later deleted. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, model profile/limits, Plugin code, dependencies, other managed-resource Revisions, child graph, tool surface, output contract, Environment connection, provider target, or retry budgets.
+For each outbound model request, the Worker or Runner rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes mutable authorities required by their owning contracts, constructs fresh Models, Plugins, `RunBindings`, and an attach-only Environment adapter, and enters the Harness only after the current attempt fence authorizes effects. An accepted Run's exact Skill package locks remain internally readable even if the Skill is later deleted. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, effective model settings, Plugin code, dependencies, other managed-resource Revisions, child graph, tool surface, output contract, Environment connection, Environment provider target, or retry budgets. Model catalog profile and limits remain descriptive metadata under Model Management rather than frozen execution settings.
 
 ## Managed Harness Plugin Reference
 

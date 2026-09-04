@@ -36,6 +36,8 @@ nav:
       - agent-envd: agent-envd/index.md
   - Streaming:
       - Agent Stream Protocol: agent-stream-protocol/index.md
+  - Foundation Service:
+      - Configure Models: foundation-service/models.md
 
 theme:
   name: material

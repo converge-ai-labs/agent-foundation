@@ -29,7 +29,7 @@ def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: b
                 "limits",
                 "enabled",
             } <= model_columns
-            assert {"version", "current_revision_id"}.isdisjoint(model_columns)
+            assert {"version", "current_revision_id", "model_apis"}.isdisjoint(model_columns)
         else:
             assert MODEL_TABLES.isdisjoint(tables)
     finally:
@@ -38,6 +38,8 @@ def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: b
 
 def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
     migrator = DatabaseMigrator(configuration)
+    migrator.upgrade("6fd6194d64ec")
+    _assert_schema(configuration, present=True)
     migrator.upgrade()
     migrator.current(check_heads=True, verbose=False)
     _assert_schema(configuration, present=True)
