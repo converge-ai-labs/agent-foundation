@@ -69,8 +69,12 @@ class ResourceCredential:
             encryption_key_id=self.encryption_key_id,
         )
 
-    def replace_credential(self, value: str, protector: SecretProtector) -> None:
+    def replace_credential(self, value: str | None, protector: SecretProtector) -> None:
         generation = self.credential_generation + 1
+        if value is None:
+            self.clear_credential()
+            self.credential_generation = generation
+            return
         encrypted = protector.encrypt(
             value,
             secret_id=self.id,

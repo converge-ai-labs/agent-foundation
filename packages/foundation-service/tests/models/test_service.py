@@ -60,7 +60,7 @@ async def test_provider_credential_is_encrypted_write_only_and_rotatable(
     async with transaction(model_sessions) as session:
         stored = await session.get(ModelProviderRecord, provider.id)
         assert stored is not None
-        assert stored.credential_version == 2
+        assert stored.credential_generation == 2
         assert bytes(stored.ciphertext or b"") != first_ciphertext
 
 

@@ -102,7 +102,7 @@ async def _seed_model(sessions: async_sessionmaker[AsyncSession]) -> None:
                 name="Selection Provider",
                 normalized_name="selection provider",
                 configuration={},
-                credential_version=1,
+                credential_generation=1,
                 ciphertext=b"encrypted",
                 nonce=b"123456789012",
                 encryption_key_id="test-key",

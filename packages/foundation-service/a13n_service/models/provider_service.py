@@ -13,11 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
-from a13n_service.secrets.crypto import SecretProtector
+from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .credentials import ProviderCredentialError, replace_provider_credential, validate_provider_credential
+from .credentials import ProviderCredentialError, validate_provider_credential
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .descriptions import describe_model
 from .discovery_paging import discovery_page
@@ -119,7 +119,7 @@ class ModelProviderService:
                     name=request.name,
                     normalized_name=request.name.casefold(),
                     configuration=validated.configuration,
-                    credential_version=0,
+                    credential_generation=0,
                     ciphertext=None,
                     nonce=None,
                     encryption_key_id=None,
@@ -131,7 +131,7 @@ class ModelProviderService:
                     created_at=now,
                     updated_at=now,
                 )
-                replace_provider_credential(record, credential, self._protector)
+                record.replace_credential(credential, self._protector)
                 session.add(record)
                 session.add(
                     audit_record(
@@ -152,7 +152,7 @@ class ModelProviderService:
                 "A Model Provider with this name already exists in the Workspace.",
                 status_code=409,
             ) from error
-        except ProviderCredentialError as error:
+        except SecretProtectionError as error:
             raise ModelError("invalid_provider_credential", str(error), status_code=400) from error
 
     async def get(self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str) -> ModelProvider:
@@ -277,8 +277,8 @@ class ModelProviderService:
             record.configuration = validated.configuration
             if "credential" in request.model_fields_set:
                 try:
-                    replace_provider_credential(record, credential, self._protector)
-                except ProviderCredentialError as error:
+                    record.replace_credential(credential, self._protector)
+                except SecretProtectionError as error:
                     raise ModelError("invalid_provider_credential", str(error), status_code=400) from error
             if "enabled" in request.model_fields_set:
                 assert request.enabled is not None

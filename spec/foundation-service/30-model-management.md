@@ -98,7 +98,7 @@ class ModelProvider:
 
 Provider create and update accept a provider-schema-specific write-only `credential` field. Reads return only `credential_configured`; they never return plaintext, ciphertext, credential shape, masked suffixes, or a reusable Secret identifier. Omitting `credential` on update retains the current value. Supplying null removes it only when the Provider type permits an unauthenticated connection. Supplying another value atomically replaces it.
 
-Foundation protects Provider credentials with the shared managed-secret encryption primitive and deployment key, but a Provider credential is not a public `Secret` resource. Model Provider and Environment Provider implementations can reuse that internal cryptographic storage boundary without exposing generic Secret selection in either resource API.
+Model Providers use the same [resource-owned credential protection contract](27-secret-management.md#protection-boundary) as Connectivity resources. Each Provider stores its own ciphertext, nonce, encryption-key identifier, and credential generation. Every accepted credential replacement or explicit removal advances that generation exactly once; omitting the credential on update leaves it unchanged. Runtime captures the shared encrypted snapshot and decrypts it after closing the database session. Provider-specific credential parsing and optional-authentication rules remain in Model Management. The credential has no independent Secret identity or generic Secret selector.
 
 Provider `configuration`, credential, name, and enabled state are mutable. Provider `type` is immutable. Every update is atomic, audited, and requires the current strong ETag. Provider configuration has no revision number, compatibility snapshot, or historical read API.
 

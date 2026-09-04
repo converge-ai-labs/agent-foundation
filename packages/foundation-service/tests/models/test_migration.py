@@ -17,7 +17,7 @@ def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: b
             assert MODEL_TABLES <= tables
             assert "model_revisions" not in tables
             provider_columns = {item["name"] for item in inspector.get_columns("model_providers")}
-            assert {"type", "configuration", "credential_version", "ciphertext", "enabled"} <= provider_columns
+            assert {"type", "configuration", "credential_generation", "ciphertext", "enabled"} <= provider_columns
             model_columns = {item["name"] for item in inspector.get_columns("models")}
             assert {
                 "key",

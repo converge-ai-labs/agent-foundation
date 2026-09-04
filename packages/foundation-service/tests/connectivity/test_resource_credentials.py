@@ -7,6 +7,7 @@ from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.ingress.models import IngressRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord, MCPOAuthSessionRecord
 from a13n_service.credentials import ResourceCredential
+from a13n_service.models.models import ModelProviderRecord
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import transaction
@@ -17,7 +18,8 @@ from .test_ingress_service import ingress_request
 
 
 @pytest.mark.parametrize(
-    "record_type", [ConnectorProviderRecord, IngressRecord, MCPConnectionRecord, MCPOAuthSessionRecord]
+    "record_type",
+    [ModelProviderRecord, ConnectorProviderRecord, IngressRecord, MCPConnectionRecord, MCPOAuthSessionRecord],
 )
 def test_resource_material_authenticates_owner_tenant_generation_and_key(record_type: type[ResourceCredential]) -> None:
     protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")

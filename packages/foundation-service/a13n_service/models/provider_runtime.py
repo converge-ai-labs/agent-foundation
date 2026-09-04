@@ -10,10 +10,10 @@ from a13n_harness.errors import ModelResolutionError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.credentials import CredentialSnapshot
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import short_session
 
-from .credentials import EncryptedProviderCredential, decrypt_provider_credential
 from .domain import ModelExecutionSnapshot
 from .models import ModelProviderRecord, ModelRecord
 from .provider_adapters.types import RuntimeProvider
@@ -26,7 +26,7 @@ class _StoredProvider:
     type: str
     configuration: dict[str, object]
     enabled: bool
-    credential: EncryptedProviderCredential | None
+    credential: CredentialSnapshot | None
 
 
 class EndpointValidator(Protocol):
@@ -108,7 +108,7 @@ class LiveProviderResolver:
             )
             if validated.endpoint is not None:
                 await self._endpoint_policy.validate(validated.endpoint, resolve_dns=True)
-            credential = decrypt_provider_credential(provider.credential, self._protector)
+            credential = provider.credential.decrypt(self._protector) if provider.credential is not None else None
         except Exception as error:
             raise ModelResolutionError(
                 "The current Model Provider configuration is unavailable.",
@@ -129,5 +129,5 @@ def _stored_provider(provider: ModelProviderRecord) -> _StoredProvider:
         type=provider.type,
         configuration=dict(provider.configuration),
         enabled=provider.enabled,
-        credential=EncryptedProviderCredential.from_record(provider),
+        credential=provider.credential_snapshot() if provider.ciphertext is not None else None,
     )

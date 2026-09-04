@@ -7,17 +7,16 @@ from datetime import datetime
 from pydantic import JsonValue
 from sqlalchemy import (
     JSON,
-    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
     Index,
-    LargeBinary,
     String,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
@@ -25,7 +24,8 @@ from a13n_service.temporal import assume_utc
 from .domain import Model, ModelLimits, ModelProfile, ModelProvider
 
 
-class ModelProviderRecord(Base):
+class ModelProviderRecord(ResourceCredential, Base):
+    credential_owner_type = "model_provider"
     __tablename__ = "model_providers"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -34,7 +34,7 @@ class ModelProviderRecord(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
-        CheckConstraint("credential_version >= 0", name="credential_version_nonnegative"),
+        CheckConstraint("credential_generation >= 0", name="credential_generation_nonnegative"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
         CheckConstraint(
@@ -54,10 +54,6 @@ class ModelProviderRecord(Base):
     name: Mapped[str] = mapped_column(String(128))
     normalized_name: Mapped[str] = mapped_column(String(128))
     configuration: Mapped[dict[str, object]] = mapped_column(JSON)
-    credential_version: Mapped[int] = mapped_column(BigInteger)
-    ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
-    nonce: Mapped[bytes | None] = mapped_column(LargeBinary(12))
-    encryption_key_id: Mapped[str | None] = mapped_column(String(128))
     enabled: Mapped[bool] = mapped_column(Boolean)
     created_by_type: Mapped[str] = mapped_column(String(32))
     created_by_id: Mapped[str] = mapped_column(String(72))

@@ -15,10 +15,12 @@ from a13n_service.models.domain import (
     UpdateModelRequest,
 )
 from a13n_service.models.model_factory import NativeModelFactory
+from a13n_service.models.models import ModelProviderRecord
 from a13n_service.models.provider_runtime import LiveProviderResolver, RuntimeProvider
 from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service import ModelService
+from a13n_service.storage import short_session
 from google.auth.credentials import AnonymousCredentials
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.bedrock import BedrockConverseModel
@@ -262,3 +264,58 @@ def _runtime_providers() -> dict[str, RuntimeProvider]:
             "secret",
         ),
     }
+
+
+@pytest.mark.anyio
+async def test_switch_to_unauthenticated_provider_clears_material_and_advances_generation(
+    provider_service: ModelProviderService,
+    model_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    provider = await provider_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelProviderRequest(
+            type="openai_compatible",
+            name="Optional credential",
+            configuration={"base_url": "https://models.example/v1"},
+            credential="private-token",
+        ),
+    )
+    resolver = LiveProviderResolver(model_sessions, built_in_provider_registry(), _AllowEndpoints(), protector())
+    resolved = await resolver.resolve_provider(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        provider_id=provider.id,
+    )
+    assert resolved.credential == "private-token"
+    renamed = await provider_service.update(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=provider.id,
+        if_match=resource_etag(provider.id, provider.updated_at),
+        request=UpdateModelProviderRequest(name="Renamed"),
+    )
+    async with short_session(model_sessions) as session:
+        stored = await session.get(ModelProviderRecord, provider.id)
+        assert stored is not None and stored.credential_generation == 1
+    cleared = await provider_service.update(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=provider.id,
+        if_match=resource_etag(renamed.id, renamed.updated_at),
+        request=UpdateModelProviderRequest(
+            credential=None,
+            configuration={"base_url": "https://models.example/v1", "auth_mode": "none"},
+        ),
+    )
+    assert not cleared.credential_configured
+    async with short_session(model_sessions) as session:
+        stored = await session.get(ModelProviderRecord, provider.id)
+        assert stored is not None and stored.credential_generation == 2
+        assert stored.ciphertext is stored.nonce is stored.encryption_key_id is None
+    resolved = await resolver.resolve_provider(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        provider_id=provider.id,
+    )
+    assert resolved.credential is None
