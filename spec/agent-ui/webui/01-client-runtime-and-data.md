@@ -39,17 +39,19 @@ An explicit sign-out action clears `sessionStorage`, cancels requests and stream
 
 ## Client State Ownership
 
-| State                                                                        | Owner                      | Lifetime                                     | Update path                                             |
-| ---------------------------------------------------------------------------- | -------------------------- | -------------------------------------------- | ------------------------------------------------------- |
-| API key                                                                      | Access bootstrap           | Browser tab                                  | Fragment or manual entry; cleared on `401` or sign-out  |
-| App, Project, Thread, resource, catalog, account, and diagnostic projections | TanStack Query             | In-memory page runtime                       | Query response and explicit invalidation/refetch        |
-| Current route, filters, stable selections, and linkable Debug detail         | TanStack Router            | Browser history                              | Typed navigation                                        |
-| Focus snapshot and detailed live projection                                  | Focused Thread controller  | One mounted Focus or Debug root-Thread route | High-water-bound snapshot then ordered stream reduction |
-| Composer, decision, dialog, and source drafts                                | Owning feature component   | Mounted feature or explicit discard          | Local user input                                        |
-| Theme preference                                                             | Design-system bootstrap    | Browser profile                              | Explicit light, dark, or system selection               |
-| Server receipt, version, digest, continuation, and cursor values             | Owning returned projection | No independent lifetime                      | Replaced only by a later App response or stream frame   |
+| State                                                                               | Owner                      | Lifetime                            | Update path                                             |
+| ----------------------------------------------------------------------------------- | -------------------------- | ----------------------------------- | ------------------------------------------------------- |
+| API key                                                                             | Access bootstrap           | Browser tab                         | Fragment or manual entry; cleared on `401` or sign-out  |
+| App, Project, Thread, resource, catalog, account, and diagnostic projections        | TanStack Query             | In-memory page runtime              | Query response and explicit invalidation/refetch        |
+| Current route, Settings filters, stable activity selections, and context-panel mode | TanStack Router            | Browser history                     | Typed navigation                                        |
+| Sidebar search, archive selection, Project expansion, and pagination                | Sidebar feature            | Mounted shell                       | Local navigation and bounded queries                    |
+| Focus snapshot and detailed live projection                                         | Focused Thread controller  | One mounted root-Thread route       | High-water-bound snapshot then ordered stream reduction |
+| Current composer or new-Thread draft                                                | Conversation shell         | Browser page or explicit discard    | Local user input; retained only across Settings return  |
+| Decision, dialog, and source drafts                                                 | Owning feature component   | Mounted feature or explicit discard | Local user input                                        |
+| Theme preference                                                                    | Design-system bootstrap    | Browser profile                     | Explicit light, dark, or system selection               |
+| Server receipt, version, digest, continuation, and cursor values                    | Owning returned projection | No independent lifetime             | Replaced only by a later App response or stream frame   |
 
-The query cache is not persisted to `localStorage`, IndexedDB, or a service worker. Resource drafts, message drafts, API projections, operation receipts, stream cursors, and account status likewise receive no browser persistence. Browser reload reconstructs them from the App; it never replays an unacknowledged command.
+The query cache is not persisted to `localStorage`, IndexedDB, or a service worker. Resource drafts, message drafts, API projections, operation receipts, stream cursors, and account status likewise receive no browser persistence. The shell can retain only the current composer or new-Thread draft in page memory while Settings is open; reload, sign-out, or explicit discard removes it. Browser reload reconstructs App projections from the App and never replays an unacknowledged command.
 
 ## Query Model
 
@@ -60,7 +62,7 @@ app status
 accepted configuration and source diagnostics
 catalog references
 Projects
-root Workbench pages by optional Project ID, normalized filter, and cursor
+recent, Project-scoped, and unresolved-Project root-Thread pages by normalized filter and cursor
 root Thread detail by Thread ID
 transcript pages by Thread ID, exact selected continuation, direction, and cursor
 child execution pages by root or parent scope and cursor
@@ -68,7 +70,7 @@ resource source by kind and ID
 compatible account status by provider
 ```
 
-List pagination preserves the App's opaque keyset cursor. The browser neither decodes cursors nor synthesizes offsets. A Workbench key includes the exact Project ID or its omission for All Projects. Infinite-query pages are discarded and restarted from the first page when a relevant summary invalidation can change ordering or membership. A detail invalidation can refetch one identity without flushing unrelated families.
+List pagination preserves the App's opaque keyset cursor. The browser neither decodes cursors nor synthesizes offsets. A Project-scoped key includes the exact Project ID; Recent and unresolved-Project keys name their independent derived query families. Infinite-query pages are discarded and restarted from the first page when a relevant summary invalidation can change ordering or membership. A detail invalidation can refetch one identity without flushing unrelated families.
 
 A transcript request starts only when the focused snapshot names a selected continuation and carries that exact continuation ID as an expected precondition. Its query key includes Thread ID, selected continuation ID, direction, and normalized page shape. When the focused snapshot or authoritative detail reports a different continuation, the browser removes the complete prior transcript pagination and starts a new latest-page query; it never appends or reuses pages across continuations.
 
@@ -109,7 +111,7 @@ The summary stream reconnects with its last accepted epoch and sequence while th
 
 ## Focused Thread Stream
 
-Exactly one selected root Thread route in Focus or Debug owns a focused stream. Workbench and collection routes own none. Opening the selected route starts one authenticated fetch-based SSE request and consumes the frame union owned by the [HTTP Adapter Contract](../05-runtime-subagents-and-surfaces.md#http-adapter-contract). Moving between Focus and Debug closes the prior focused stream before the destination establishes its fresh watch; the App-owned Run continues independently.
+Exactly one selected root Thread route owns a focused stream. Sidebar collections and Settings routes own none. Opening the selected route starts one authenticated fetch-based SSE request and consumes the frame union owned by the [HTTP Adapter Contract](../05-runtime-subagents-and-surfaces.md#http-adapter-contract). Conversation, activity, and contextual detail reuse that mounted controller; changing only those selections never opens a competing watch. Moving to another Thread aborts the prior focused stream before the destination establishes its fresh watch, while the App-owned Run continues independently.
 
 The first frame of a fresh focused watch is exactly one snapshot. Its epoch and `cutover_sequence` initialize the focused controller. Later event frames must use that epoch and a strictly increasing global sequence greater than the cutover. Because unrelated root lineages share that global sequence, numerical gaps are expected and do not indicate loss. Duplicate frames at or below the accepted sequence are ignored. An explicit reset, changed epoch, malformed payload, or sequence regression discards the complete provisional layer and opens a new focused watch; the browser never guesses missed events from a number gap.
 
@@ -140,17 +142,17 @@ A summary event observed in one tab does not prove another tab received it. A st
 
 ## Failure Semantics
 
-| Failure                                               | Browser outcome                                                                                    |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| API key rejected                                      | Clear key, cancel client activity, and return to access without classifying the App as unavailable |
-| App unavailable or restarting                         | Preserve access material and intended route; show reconnect state without replaying commands       |
-| Finite query transport failure                        | Show stale or empty error state and permit explicit retry                                          |
-| Mutating request has unknown outcome                  | Refetch authoritative state before another user-confirmed attempt                                  |
-| Compare-and-select conflict                           | Preserve the draft and enter the owning explicit rebase flow                                       |
-| Summary cursor reset                                  | Invalidate summary query families and reconnect from a new epoch                                   |
-| Focus cursor reset, epoch change, or invalid sequence | Discard provisional live state and establish another high-water-bound focused snapshot             |
-| Runtime schema mismatch                               | Reject the body or frame and show protocol incompatibility; never partially render it              |
-| Route changes during a request or stream              | Abort old work and prevent late completion from updating the new route                             |
+| Failure                                                 | Browser outcome                                                                                    |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| API key rejected                                        | Clear key, cancel client activity, and return to access without classifying the App as unavailable |
+| App unavailable or restarting                           | Preserve access material and intended route; show reconnect state without replaying commands       |
+| Finite query transport failure                          | Show stale or empty error state and permit explicit retry                                          |
+| Mutating request has unknown outcome                    | Refetch authoritative state before another user-confirmed attempt                                  |
+| Compare-and-select conflict                             | Preserve the draft and enter the owning explicit rebase flow                                       |
+| Summary cursor reset                                    | Invalidate summary query families and reconnect from a new epoch                                   |
+| Focused cursor reset, epoch change, or invalid sequence | Discard provisional live state and establish another high-water-bound focused snapshot             |
+| Runtime schema mismatch                                 | Reject the body or frame and show protocol incompatibility; never partially render it              |
+| Route changes during a request or stream                | Abort old work and prevent late completion from updating the new route                             |
 
 ## Invariants
 
@@ -163,5 +165,5 @@ A summary event observed in one tab does not prove another tab received it. A st
 07. Summary frames invalidate; they do not patch domain values.
 08. Focused frames reduce only after one high-water-bound snapshot and one verified sequence cutover.
 09. Sparse global sequence values are valid after lineage filtering; only explicit reset or invalid cursor/epoch semantics discard provisional state.
-10. Focus and Debug never maintain competing detailed subscriptions in one browser route tree.
+10. Conversation, activity, and contextual detail for one root Thread share one focused controller and never maintain competing detailed subscriptions.
 11. Live terminal presentation is reconciled against retained App projections before it is treated as closed truth.

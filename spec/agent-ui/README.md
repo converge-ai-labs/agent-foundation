@@ -22,7 +22,7 @@ Agent UI depends on the [Harness](../agent-harness/README.md), [Environment Prov
 | [04-projects-threads-and-environments.md](04-projects-threads-and-environments.md)               | Project roots, Full Control and Sandbox modes, path layouts, Thread configuration, Environment binding, and state publication  |
 | [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)                     | `AgentUiApp`, detached projections, root operations, async children, Web listener access, tools, and live presentation         |
 | [tui/](tui/README.md)                                                                            | Textual terminal workstation, Focus and Workbench interaction, semantic presentation, and terminal runtime                     |
-| [webui/](webui/README.md)                                                                        | React browser workstation, client data and live state, Thread interaction, configuration management, and design system         |
+| [webui/](webui/README.md)                                                                        | React conversation browser, client data and live state, contextual activity, guided Settings management, and design system     |
 
 ## Reading Paths
 
@@ -54,7 +54,7 @@ Read `05`. A surface calls `AgentUiApp` commands and queries and consumes detach
 08. Every independent root or async child Run receives fresh Model, Harness Plugin, MCP, Provider-runtime, Environment-adapter, and Environment Run Extension collaborators. Run-owned shell processes never survive their Harness Run.
 09. Root and child continuation checkpoints are independent authorities. Compact AG-UI child display is inspection history and never reconstructs `HarnessState`.
 10. Saved root and child facts never imply current-process liveness. Root receipts and all control availability are process-local; Agent UI does not infer liveness or silently replay work.
-11. CLI, TUI, and WebUI are peers over one `AgentUiApp` and receive detached bounded surface values. The CLI reads desired configuration and exposes explicit imports but no generic resource mutation; the WebUI manages Project and other desired-resource files through expected source digests; the TUI derives a launch Project filter from the current directory, inspects accepted resources and catalogs, and patches supported non-Project sticky selections.
+11. CLI, TUI, and WebUI are peers over one `AgentUiApp` and receive detached bounded surface values. The CLI reads desired configuration and exposes explicit imports but no generic resource mutation; the WebUI manages Project and other desired resources through guided Settings and expected source digests; the TUI derives a launch Project filter from the current directory, inspects accepted resources and catalogs, and patches supported non-Project sticky selections.
 12. Focused live delivery follows complete root lineage and uses an epoch/sequence snapshot cutover. App-wide summary invalidations are best-effort refetch hints, not durable truth.
 13. Multiple local processes can open one data root through ordinary SQLite and immutable-file behavior. Mutable SQLite heads use expected-version or expected-reference compare-and-select without process lock files, PID inspection, heartbeats, leases, fencing, or distributed scheduling.
 

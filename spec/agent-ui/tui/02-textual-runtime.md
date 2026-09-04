@@ -95,14 +95,14 @@ Non-interactive CLI commands do not import or initialize Textual. Non-TTY input 
 Workbench uses one App-wide summary subscription plus bounded queries:
 
 1. establish the summary subscription and record its epoch and cutover;
-2. query the first root-Thread Workbench page under the current Project filter or through All Projects;
+2. query the first root-Thread summary page under the current Project filter or through All Projects;
 3. apply buffered invalidations after the cutover;
 4. refetch only affected rows or the page when ordering may change;
 5. refresh the complete page after a cursor gap or epoch change.
 
 Summary invalidations are refetch hints, not row patches. The reducer never manufactures row truth from an invalidation alone.
 
-A Workbench page supplies enough bounded information to rank and render rows without one detail query per Thread:
+A root-Thread summary page supplies enough bounded information to rank and render rows without one detail query per Thread:
 
 - root activity and exact current-process control availability;
 - pending-decision kind and count;
@@ -267,17 +267,17 @@ Mouse interaction mirrors keyboard actions and is never the only path. Disabling
 
 ## Failure and Recovery
 
-| Failure                          | Runtime response                                                                                     |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| App startup failure              | Keep terminal shell mounted; render safe diagnostics and exit/retry actions                          |
-| Summary stream gap               | Refetch the bounded Workbench page under its exact current Project filter and establish a new cursor |
-| Focus live gap                   | Disable provisional claims, establish a fresh focused snapshot, then resume                          |
-| Focus snapshot continuation race | Retry or reset; never combine transcript and requests from different continuations                   |
-| Stale query or completion result | Discard by version and correlation                                                                   |
-| Widget rendering failure         | Replace only that block with a safe rendering failure; App work continues                            |
-| Controller App call failure      | Restore relevant draft or selection and show the safe App error                                      |
-| Terminal output failure          | Stop accepting intents, close Textual, and let the App perform bounded shutdown                      |
-| Unexpected controller failure    | Log once at the executable boundary, enter failed presentation, and do not invent operation outcomes |
+| Failure                          | Runtime response                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| App startup failure              | Keep terminal shell mounted; render safe diagnostics and exit/retry actions                                    |
+| Summary stream gap               | Refetch the bounded root-Thread summary page under its exact current Project filter and establish a new cursor |
+| Focus live gap                   | Disable provisional claims, establish a fresh focused snapshot, then resume                                    |
+| Focus snapshot continuation race | Retry or reset; never combine transcript and requests from different continuations                             |
+| Stale query or completion result | Discard by version and correlation                                                                             |
+| Widget rendering failure         | Replace only that block with a safe rendering failure; App work continues                                      |
+| Controller App call failure      | Restore relevant draft or selection and show the safe App error                                                |
+| Terminal output failure          | Stop accepting intents, close Textual, and let the App perform bounded shutdown                                |
+| Unexpected controller failure    | Log once at the executable boundary, enter failed presentation, and do not invent operation outcomes           |
 
 Live recovery always uses retained and current-process App projections. The TUI has no event journal or replay store of its own.
 
