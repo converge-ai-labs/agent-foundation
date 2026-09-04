@@ -164,15 +164,14 @@ def merge_agent_run_override(
             for item in base.protocol.client_tools
             if item.required and item.name not in selected_client_tool_names
         )
-        if missing_required:
-            raise invalid_run_override("client_tools", "required_protocol_tool_missing")
-        protocol = base.protocol.model_copy(
-            update={
-                "client_tools": tuple(
-                    item for item in base.protocol.client_tools if item.name in selected_client_tool_names
-                )
-            }
-        )
+        if not missing_required:
+            protocol = base.protocol.model_copy(
+                update={
+                    "client_tools": tuple(
+                        item for item in base.protocol.client_tools if item.name in selected_client_tool_names
+                    )
+                }
+            )
 
     environment: EnvironmentOverride | None = base.environment
     if "environment" in fields:
