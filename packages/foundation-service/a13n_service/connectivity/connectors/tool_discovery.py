@@ -1,4 +1,6 @@
-"""Bounded live tool discovery for one verified Connector account."""
+"""Shared bounded validation for provider tool previews and connection discovery."""
+
+from typing import Protocol
 
 from anyio import fail_after, to_thread
 from mcp.types import Tool, ToolAnnotations
@@ -6,7 +8,7 @@ from mcp.types import Tool, ToolAnnotations
 from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
 from a13n_service.connectivity.tool_validation import validate_tools
 
-from .contracts import ConnectorConnectionRuntime, ConnectorTool
+from .contracts import ConnectorTool, ConnectorToolPage
 from .errors import ConnectorError
 
 
@@ -20,7 +22,11 @@ def mcp_tool(tool: ConnectorTool) -> Tool:
     )
 
 
-async def discover_tools(runtime: ConnectorConnectionRuntime) -> tuple[tuple[ConnectorTool, ...], str]:
+class ToolCatalog(Protocol):
+    async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage: ...
+
+
+async def discover_tools(runtime: ToolCatalog) -> tuple[tuple[ConnectorTool, ...], str]:
     cursor: str | None = None
     tools: list[ConnectorTool] = []
     provider_version: str | None = None

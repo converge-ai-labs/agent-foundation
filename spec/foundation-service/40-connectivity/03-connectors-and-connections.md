@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Connector Providers provide general outbound SaaS capabilities. Foundation can configure several accounts or endpoints of the same Provider type, discover the Connectors each one offers, and establish independently authorized Connector Connections. OpenConnector, Composio, and other integrations remain optional Connectivity components rather than Foundation core dependencies.
+Connector Providers provide general outbound SaaS capabilities. Foundation can configure several accounts or endpoints of the same Provider type, discover the Connectors each one offers, and establish independently authorized Connector Connections. Composio and other registered adapters remain optional Connectivity components rather than Foundation core dependencies. OOMOL OpenConnector personal/self-hosted runtime access has a [separate authority boundary](08-built-in-connector-adapters.md#oomol-openconnector-runtime-v1) and does not establish a ConnectorConnection.
 
 The external integration service owns third-party account authorization, OAuth callback processing, access and refresh tokens, token rotation, and provider API invocation. Foundation owns its configured Connector Provider, safe discovered Connector values, Connector Connection projection, assignment and authorization, exact Run selection, and Agent-facing a13n MCP boundary.
 
@@ -66,7 +66,7 @@ class Connector:
 
 `discover_connectors` executes against one exact enabled Connector Provider using its current configuration and credential. Results can differ between two Providers of the same type. They are bounded safe values used to choose and prefill setup; they are not Foundation resources, authorization grants, tool catalogs, or proof that setup will succeed. A Connector key is scoped to its Provider and is not assumed equivalent to the same key returned by another Provider.
 
-Installed implementation discovery, Connector discovery, existing Connector Connection reads, and per-Connection tool discovery are four separate operations. An implementation without an upstream enumeration API can return a bounded implementation-owned catalog through `discover_connectors`; it never turns arbitrary caller input into a trusted implementation or Connector.
+Installed implementation discovery, Connector discovery, [tool preview before account authorization](08-built-in-connector-adapters.md#tool-discovery-contract), existing Connector Connection reads, and per-Connection execution discovery are separate operations. An implementation without an upstream enumeration API can return a bounded implementation-owned catalog through `discover_connectors`; it never turns arbitrary caller input into a trusted implementation or Connector.
 
 The selected implementation validates and safely projects upstream catalog metadata. `setup_schema` describes only non-secret setup options, such as a supported authentication configuration selector. It never solicits third-party passwords, API keys, cookies, or OAuth tokens. Authentication-method keys retain Provider-specific semantics, and a method is advertised as usable only when the external service offers the required hosted authorization or credential form. Generic JSON Schema form rendering does not replace the authorization ceremony.
 
@@ -128,14 +128,15 @@ Revocation first makes the Foundation ConnectorConnection unusable, then request
 
 The domain distinguishes side-effecting setup from pure runtime construction:
 
-| Operation                                                 | Owner and effect                                                                                                                           |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Validate Provider configuration                           | Selected Provider implementation; deterministic parsing with no external I/O                                                               |
-| Discover Connectors                                       | Configured Provider runtime; safe Provider-scoped catalog observation                                                                      |
-| Begin or complete connection setup                        | Provider runtime; explicit external authorization/setup effects under one Foundation setup attempt                                         |
-| Build a connection runtime                                | Provider implementation; binds one existing verified reference and fresh collaborators without creating or authorizing an external account |
-| Inspect, discover tools, execute, or revoke               | Runtime interface bound to that exact connection; explicit external I/O                                                                    |
-| Commit status, enforce ownership, select tools, and audit | Foundation application authority, not the adapter or database entity                                                                       |
+| Operation                                                 | Owner and effect                                                                                                                                                      |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Validate Provider configuration                           | Selected Provider implementation; deterministic parsing with no external I/O                                                                                          |
+| Discover Connectors                                       | Configured Provider runtime; safe Provider-scoped catalog observation                                                                                                 |
+| Preview tool definitions before account authorization     | Provider credential and selected Connector; read-only advisory catalog under the [tool discovery contract](08-built-in-connector-adapters.md#tool-discovery-contract) |
+| Begin or complete connection setup                        | Provider runtime; explicit external authorization/setup effects under one Foundation setup attempt                                                                    |
+| Build a connection runtime                                | Provider implementation; binds one existing verified reference and fresh collaborators without creating or authorizing an external account                            |
+| Inspect, discover tools, execute, or revoke               | Runtime interface bound to that exact connection; explicit external I/O                                                                                               |
+| Commit status, enforce ownership, select tools, and audit | Foundation application authority, not the adapter or database entity                                                                                                  |
 
 Runtime connection construction is not account setup and does not prove that the external connection is usable. Closing a runtime connection releases local clients only and never revokes an account. Revocation is explicit. The database resource remains a serializable fact; a connection-bound runtime interface introduces no additional durable resource or universal connection framework. Every operation revalidates its current authority rather than inheriting trust from a previously constructed client.
 
