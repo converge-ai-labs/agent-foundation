@@ -149,6 +149,7 @@ async def build_control_runtime(
             retry_max_seconds=settings.webhook_retry_max_seconds,
             delivery_timeout_seconds=settings.webhook_request_timeout_seconds,
             max_response_bytes=settings.webhook_max_response_bytes,
+            max_redirects=settings.connectivity_max_redirects,
         )
     gateway_commands = NativeInteractionCommands(
         shared.storage.sessions,

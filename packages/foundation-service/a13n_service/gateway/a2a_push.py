@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
+from urllib.parse import urljoin
 
 import anyio
 import httpx2
@@ -209,6 +210,7 @@ class A2APushPublisher:
         retry_max_seconds: float,
         delivery_timeout_seconds: float,
         max_response_bytes: int,
+        max_redirects: int,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         if poll_interval_seconds <= 0 or lease_seconds <= delivery_timeout_seconds:
@@ -217,7 +219,7 @@ class A2APushPublisher:
             raise ValueError("A2A push claim and attempt bounds are invalid")
         if retry_base_seconds <= 0 or retry_max_seconds < retry_base_seconds:
             raise ValueError("A2A push retry backoff is invalid")
-        if delivery_timeout_seconds <= 0 or max_response_bytes < 1:
+        if delivery_timeout_seconds <= 0 or max_response_bytes < 1 or max_redirects < 0:
             raise ValueError("A2A push delivery bounds are invalid")
         self._sessions = sessions
         self._http_client = http_client
@@ -231,6 +233,7 @@ class A2APushPublisher:
         self._retry_max_seconds = retry_max_seconds
         self._delivery_timeout_seconds = delivery_timeout_seconds
         self._max_response_bytes = max_response_bytes
+        self._max_redirects = max_redirects
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def run(self) -> None:
@@ -344,26 +347,45 @@ class A2APushPublisher:
     async def _deliver(self, material: A2APushMaterial) -> A2APushFailure | None:
         try:
             with anyio.fail_after(self._delivery_timeout_seconds):
-                endpoint_url = await self._endpoint_policy.validate(material.endpoint_url, resolve_dns=True)
+                current = await self._endpoint_policy.validate(material.endpoint_url, resolve_dns=True)
                 headers = {"Content-Type": "application/a2a+json", "A2A-Version": "1.0"}
                 if material.token is not None:
                     headers["X-A2A-Notification-Token"] = material.token
                 if material.authentication_scheme is not None:
                     credentials = material.authentication_credentials or ""
                     headers["Authorization"] = f"{material.authentication_scheme} {credentials}".rstrip()
-                async with self._http_client.stream(
-                    "POST",
-                    endpoint_url,
-                    headers=headers,
-                    content=material.payload,
-                    follow_redirects=False,
-                ) as response:
-                    if not await self._response_is_bounded(response):
-                        return A2APushFailure("a2a_push_response_too_large", retryable=False)
-                    if 200 <= response.status_code < 300:
-                        return None
-                    retryable = response.status_code in {408, 425, 429} or response.status_code >= 500
-                    return A2APushFailure(f"a2a_push_http_{response.status_code}", retryable=retryable)
+                for redirect_count in range(self._max_redirects + 1):
+                    async with self._http_client.stream(
+                        "POST",
+                        current,
+                        headers=headers,
+                        content=material.payload,
+                        follow_redirects=False,
+                    ) as response:
+                        if not await self._response_is_bounded(response):
+                            return A2APushFailure("a2a_push_response_too_large", retryable=False)
+                        if response.status_code not in {301, 302, 303, 307, 308}:
+                            if 200 <= response.status_code < 300:
+                                return None
+                            retryable = response.status_code in {408, 425, 429} or response.status_code >= 500
+                            return A2APushFailure(f"a2a_push_http_{response.status_code}", retryable=retryable)
+                        if redirect_count == self._max_redirects:
+                            return A2APushFailure("a2a_push_redirect_limit", retryable=False)
+                        location = response.headers.get("location")
+                        if location is None:
+                            return A2APushFailure("a2a_push_redirect_invalid", retryable=False)
+                        try:
+                            current, same_origin = await self._endpoint_policy.validate_redirect(
+                                current,
+                                urljoin(current, location),
+                                resolve_dns=True,
+                            )
+                        except EndpointPolicyError:
+                            return A2APushFailure("a2a_push_redirect_unsafe", retryable=False)
+                        if not same_origin:
+                            headers.pop("Authorization", None)
+                            headers.pop("X-A2A-Notification-Token", None)
+                return A2APushFailure("a2a_push_redirect_limit", retryable=False)
         except TimeoutError:
             return A2APushFailure("a2a_push_timed_out", retryable=True)
         except (EndpointPolicyError, httpx2.HTTPError):

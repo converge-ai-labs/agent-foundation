@@ -18,7 +18,7 @@ from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
 from a13n_service.gateway.a2a_import import A2APartImporter
-from a13n_service.gateway.a2a_push import A2APushPublisher
+from a13n_service.gateway.a2a_push import A2APushMaterial, A2APushPublisher
 from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.models import (
     A2AContextBindingRecord,
@@ -702,6 +702,7 @@ async def test_push_publisher_delivers_committed_terminal_task_through_outbox(
             retry_max_seconds=5,
             delivery_timeout_seconds=10,
             max_response_bytes=1024,
+            max_redirects=2,
             clock=lambda: NOW + timedelta(seconds=4),
         )
         assert await publisher.publish_once() == 1
@@ -725,3 +726,91 @@ async def test_push_publisher_delivers_committed_terminal_task_through_outbox(
     assert stored is not None
     assert stored.status == "published"
     assert created.id in stored.destination_ref
+
+
+async def test_push_publisher_follows_redirects_and_fences_credentials_by_origin(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if str(request.url) == "https://8.8.8.8/start":
+            return httpx2.Response(307, headers={"Location": "/same-origin"})
+        if str(request.url) == "https://8.8.8.8/same-origin":
+            return httpx2.Response(308, headers={"Location": "https://1.1.1.1/final"})
+        return httpx2.Response(204)
+
+    protector = SecretProtector(key=b"a" * 32, encryption_key_id="test-key")
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        publisher = A2APushPublisher(
+            lifecycle_interaction_sessions,
+            client,
+            EndpointPolicy(require_https=True),
+            InternalSecretService(lifecycle_interaction_sessions, protector),
+            poll_interval_seconds=1,
+            lease_seconds=30,
+            claim_limit=10,
+            max_attempts=3,
+            retry_base_seconds=1,
+            retry_max_seconds=5,
+            delivery_timeout_seconds=10,
+            max_response_bytes=1024,
+            max_redirects=2,
+        )
+        failure = await publisher._deliver(
+            A2APushMaterial(
+                endpoint_url="https://8.8.8.8/start",
+                token="opaque-client-token",
+                authentication_scheme="Bearer",
+                authentication_credentials="secret-credential",
+                payload=b"{}",
+            )
+        )
+
+    assert failure is None
+    assert len(requests) == 3
+    assert requests[1].headers["Authorization"] == "Bearer secret-credential"
+    assert requests[1].headers["X-A2A-Notification-Token"] == "opaque-client-token"
+    assert "Authorization" not in requests[2].headers
+    assert "X-A2A-Notification-Token" not in requests[2].headers
+    assert requests[2].method == "POST"
+    assert requests[2].content == b"{}"
+
+
+async def test_push_publisher_rejects_redirects_beyond_bound(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(307, headers={"Location": "/again"})
+
+    protector = SecretProtector(key=b"a" * 32, encryption_key_id="test-key")
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        publisher = A2APushPublisher(
+            lifecycle_interaction_sessions,
+            client,
+            EndpointPolicy(require_https=True),
+            InternalSecretService(lifecycle_interaction_sessions, protector),
+            poll_interval_seconds=1,
+            lease_seconds=30,
+            claim_limit=10,
+            max_attempts=3,
+            retry_base_seconds=1,
+            retry_max_seconds=5,
+            delivery_timeout_seconds=10,
+            max_response_bytes=1024,
+            max_redirects=1,
+        )
+        failure = await publisher._deliver(
+            A2APushMaterial(
+                endpoint_url="https://8.8.8.8/start",
+                token=None,
+                authentication_scheme=None,
+                authentication_credentials=None,
+                payload=b"{}",
+            )
+        )
+
+    assert failure is not None
+    assert failure.error_code == "a2a_push_redirect_limit"
+    assert failure.retryable is False
