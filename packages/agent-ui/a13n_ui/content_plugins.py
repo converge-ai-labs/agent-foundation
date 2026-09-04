@@ -306,12 +306,25 @@ class ContentPluginStore:
     def _uninstall(self, plugin_id: str) -> UninstalledContentPlugin:
         selected_id = _validate_plugin_id(plugin_id)
         filename = f"{selected_id}.json"
+        path = self._registration_path(selected_id)
         retained_path: str | None = None
         directory_descriptor = -1
+        directory_fd: int | None = None
         file_descriptor = -1
         try:
-            directory_descriptor = _open_store_subdirectory(self.root, "installed")
-            metadata = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
+            if os.name == "nt":
+                if not _store_directory_exists(self.root) or not _store_directory_exists(self.installed):
+                    raise FileNotFoundError(path)
+                selected_path: str | Path = path
+            else:
+                directory_descriptor = _open_store_subdirectory(self.root, "installed")
+                directory_fd = directory_descriptor
+                selected_path = filename
+            metadata = (
+                Path(selected_path).stat(follow_symlinks=False)
+                if os.name == "nt"
+                else os.stat(selected_path, dir_fd=directory_fd, follow_symlinks=False)
+            )
             if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
                 raise _error(
                     "content_plugin_store_invalid",
@@ -319,7 +332,9 @@ class ContentPluginStore:
                     plugin_id=selected_id,
                 )
             flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-            file_descriptor = os.open(filename, flags, dir_fd=directory_descriptor)
+            file_descriptor = (
+                os.open(selected_path, flags) if os.name == "nt" else os.open(selected_path, flags, dir_fd=directory_fd)
+            )
             before = os.fstat(file_descriptor)
             raw = os.read(file_descriptor, _MAX_REGISTRATION_BYTES + 1)
             after = os.fstat(file_descriptor)
@@ -340,8 +355,12 @@ class ContentPluginStore:
                     retained_path = os.fspath(self.objects / registration.content_digest)
             except (ValueError, ValidationError):
                 pass
-            os.unlink(filename, dir_fd=directory_descriptor)
-            os.fsync(directory_descriptor)
+            if os.name == "nt":
+                Path(selected_path).unlink()
+            else:
+                os.unlink(selected_path, dir_fd=directory_fd)
+            if directory_descriptor >= 0:
+                os.fsync(directory_descriptor)
         except FileNotFoundError as exc:
             raise _error(
                 "content_plugin_not_installed",
@@ -555,27 +574,45 @@ def _publish_tree(source: Path, destination: Path, staging: Path) -> None:
 def _publish_registration(path: Path, registration: ContentPluginRegistration) -> None:
     content = registration.model_dump_json(indent=2).encode() + b"\n"
     directory_descriptor = -1
+    directory_fd: int | None = None
     file_descriptor = -1
     temporary_name = f".{path.name}.{uuid4().hex}.tmp"
     published = False
-    try:
+    if os.name == "nt":
+        _store_directory_exists(path.parent.parent)
+        _store_directory_exists(path.parent)
+        temporary_path: str | Path = path.parent / temporary_name
+        registration_path: str | Path = path
+    else:
         directory_descriptor = _open_store_subdirectory(path.parent.parent, path.parent.name)
+        directory_fd = directory_descriptor
+        temporary_path = temporary_name
+        registration_path = path.name
+    try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        file_descriptor = os.open(temporary_name, flags, 0o600, dir_fd=directory_descriptor)
+        file_descriptor = (
+            os.open(temporary_path, flags, 0o600)
+            if os.name == "nt"
+            else os.open(temporary_path, flags, 0o600, dir_fd=directory_fd)
+        )
         with os.fdopen(file_descriptor, "wb", closefd=True) as output:
             file_descriptor = -1
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
-        os.link(
-            temporary_name,
-            path.name,
-            src_dir_fd=directory_descriptor,
-            dst_dir_fd=directory_descriptor,
-            follow_symlinks=False,
-        )
+        if os.name == "nt":
+            os.link(temporary_path, registration_path)
+        else:
+            os.link(
+                temporary_path,
+                registration_path,
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
         published = True
-        os.fsync(directory_descriptor)
+        if directory_descriptor >= 0:
+            os.fsync(directory_descriptor)
     except FileExistsError as exc:
         raise _error(
             "content_plugin_already_installed",
@@ -583,9 +620,12 @@ def _publish_registration(path: Path, registration: ContentPluginRegistration) -
             plugin_id=registration.plugin_id,
         ) from exc
     except OSError as exc:
-        if published and directory_descriptor >= 0:
+        if published:
             try:
-                os.unlink(path.name, dir_fd=directory_descriptor)
+                if os.name == "nt":
+                    Path(registration_path).unlink()
+                else:
+                    os.unlink(registration_path, dir_fd=directory_fd)
             except OSError:
                 pass
         raise _error(
@@ -594,13 +634,15 @@ def _publish_registration(path: Path, registration: ContentPluginRegistration) -
     finally:
         if file_descriptor >= 0:
             os.close(file_descriptor)
+        try:
+            if os.name == "nt":
+                Path(temporary_path).unlink()
+            else:
+                os.unlink(temporary_path, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
         if directory_descriptor >= 0:
-            try:
-                os.unlink(temporary_name, dir_fd=directory_descriptor)
-            except FileNotFoundError:
-                pass
-            finally:
-                os.close(directory_descriptor)
+            os.close(directory_descriptor)
 
 
 def _load_yaml_model[T: BaseModel](path: Path, model_type: type[T]) -> T:
