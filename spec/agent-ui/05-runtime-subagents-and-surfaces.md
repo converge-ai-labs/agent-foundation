@@ -47,7 +47,7 @@ The App owns:
 
 - stable multi-file loading, accepted-generation selection, diagnostics, and expected-digest mutations;
 - Capability and three-plane extension catalog projection;
-- Project and configured-resource queries;
+- Project, configured-resource, and Environment-profile queries, including the two release-owned execution modes;
 - Thread creation, metadata and configuration mutation, Project-filtered keyset queries, and transcript projection;
 - process-local root admission, receipt correlation, execution, deferred response, waiting, cancellation, and steering;
 - immutable Run composition and continuation publication;
@@ -181,6 +181,21 @@ A Workbench page computes its bounded summaries without requiring the surface to
 
 A current-directory Project query accepts one absolute local directory and applies the [first-root matching contract](04-projects-threads-and-environments.md#current-directory-resolution). It returns a discriminated selected, unmatched, or ambiguous projection; a selected result contains the detached Project summary used for new-Thread creation. It does not create a Project, return filesystem authority, or reorder the configured roots.
 
+The Environment-profile query returns the two release-owned modes first, followed by accepted custom profiles. Each item is a detached value:
+
+```python
+class EnvironmentProfileSummary:
+    profile_id: str
+    name: str
+    mode: Literal["full-control", "sandbox", "custom"]
+    description: str
+    provider_key: str
+    release_owned: bool
+    canonical_host_paths: bool
+```
+
+The release-owned descriptions state their material authority difference: Full Control commands have ambient Host-user filesystem and network access, while Sandbox commands require Local Envd filesystem/process containment and denied networking. `canonical_host_paths` describes aggregate path presentation only and never implies Full Control. Surfaces select and persist `profile_id`; display names and mode labels do not become Thread identity.
+
 Configuration-source queries expose one bounded detached view for the root YAML or an approved immediate resource source:
 
 ```python
@@ -249,20 +264,23 @@ Retained transcript comes from selected continuations and child compact checkpoi
 The CLI supports direct execution and focused inspection or management without a generic desired-resource CRUD surface:
 
 ```text
-a13n-ui
+a13n-ui [tui] [--thread <id> | --project <id> --agent <id> --environment-mode <full-control|sandbox>]
   run ...
   config path
   config validate
   config show
   import subagents ...
   project ...
+  environment list
   thread ...
   doctor
   auth status [codex|grok]
   auth login <codex|grok> [--allow-account-switch] [--device-code]
   auth logout <codex|grok>
-  web [--host <ip>] [--api-key <key>] [--dangerously-bypass-permission]
+  webui [--host <ip>] [--api-key <key>] [--dangerously-bypass-permission]
 ```
+
+Bare `a13n-ui` and `a13n-ui tui` are equivalent terminal-workstation entries. Their `--project`, `--agent`, `--environment-mode`, and advanced `--environment-profile` options initialize only that invocation's new-Thread draft; they do not mutate accepted file defaults. `--thread` opens an existing root Thread and is mutually exclusive with those new-draft overrides. `environment list` returns the App-owned Full Control, Sandbox, and accepted custom profile projections.
 
 `config path` reports the resolved configuration root and bootstrap data root; `config validate` reports candidate validity and the retained accepted generation; `config show` emits the accepted credential-free configuration. These commands are read-only. Editing the root YAML, resource YAML, or canonical Markdown directly is the complete CLI-adjacent desired-resource management path; the WebUI provides expected-digest source mutation.
 
@@ -274,7 +292,7 @@ Auth commands use [Model Authentication and Compatible Account Stores](02a-model
 
 The bundled [Textual TUI](tui/README.md) runs in the App process and uses detached commands, queries, receipts, focused root-lineage watches, and summary invalidations. Focus mounts one root Thread in detail; Workbench uses bounded attention-ready summaries and selected previews without attaching one detailed stream or widget tree per Thread. Switching focus does not cancel App-owned work. Exiting the owning App follows bounded shutdown and never promises detached execution.
 
-The TUI resolves one launch Project from the current working directory and defaults its Workbench to that Project filter, with an explicit all-projects fallback. It can query accepted configured resources, catalog availability, source locations, and diagnostics; it presents each existing Thread's Project as read-only context and patches only supported non-Project sticky selections with exact versions. It does not invoke desired-resource source mutations, import resources or Skills, select or mutate Projects, or install, remove, or upgrade Python extension packages. Project and resource authoring remain WebUI or direct-file behavior; Skill authoring remains direct-file or external-tool behavior, and package management remains outside `AgentUiApp`.
+The TUI uses an explicit accepted Project launch override when supplied, otherwise resolves one launch Project from the current working directory, and defaults its Workbench to that Project filter with an explicit all-projects fallback. It can query accepted configured resources, catalog availability, source locations, and diagnostics; it presents each existing Thread's Project as read-only context and patches only supported non-Project sticky selections with exact versions. It does not invoke desired-resource source mutations, import resources or Skills, mutate Projects, or install, remove, or upgrade Python extension packages. Project and resource authoring remain WebUI or direct-file behavior; Skill authoring remains direct-file or external-tool behavior, and package management remains outside `AgentUiApp`.
 
 Textual Messages, workers, widgets, drafts, scroll position, expansion state, and attention acknowledgements remain presentation-local. The TUI owns no durable prompt queue, filesystem execution shortcut, continuation codec, or alternate Thread configuration. Active ordinary input is exact receipt-scoped steering rather than a queued later prompt.
 
@@ -284,7 +302,7 @@ The bundled WebUI uses one HTTP/SSE adapter over detached App commands and queri
 
 ### HTTP Startup and Access
 
-`a13n-ui web` binds to the IPv4 loopback address `127.0.0.1` by default. `--host <ip>` explicitly selects another IPv4 or IPv6 bind address; choosing a non-loopback address does not implicitly weaken authentication.
+`a13n-ui webui` binds to the IPv4 loopback address `127.0.0.1` by default. Bare `a13n-ui` and `a13n-ui tui` select the terminal workstation and never start an HTTP listener. `--host <ip>` explicitly selects another IPv4 or IPv6 bind address for `webui`; choosing a non-loopback address does not implicitly weaken authentication.
 
 Unless the user supplies `--api-key <key>`, the executable generates a new unpredictable high-entropy API key for that App process. Before accepting requests, dedicated terminal startup output shows the ordinary browser URL, the generated key, and a convenience URL carrying the generated key only in a percent-encoded `#api_key=...` fragment. URL fragments never enter an HTTP request. A supplied key must be non-empty, is not echoed, and receives no terminal URL containing it. Generated and supplied keys remain process-local: they do not enter the accepted configuration tree, SQLite, immutable objects, application diagnostics, ordinary logs, browser HTML, or static assets. Restarting without an explicit key therefore rotates the key.
 

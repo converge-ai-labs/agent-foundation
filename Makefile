@@ -152,7 +152,7 @@ langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
 .PHONY: a13n-ui
-a13n-ui: sync ## Run the Agent UI interactive CLI
+a13n-ui: sync ## Run the Agent UI interactive TUI
 	@uv run --locked a13n-ui
 
 .PHONY: agent-ui-db-migrate

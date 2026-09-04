@@ -17,13 +17,13 @@ class EnvironmentPathLayout:
     def resolve(
         cls,
         *,
-        native: bool,
+        canonical_host_paths: bool,
         project_roots: tuple[str | Path, ...],
         user_skills_root: Path | None = None,
     ) -> EnvironmentPathLayout:
         if not project_roots:
             raise ValueError("project_roots must not be empty")
-        if native:
+        if canonical_host_paths:
             project_mounts = tuple(Path(root).as_posix() for root in project_roots)
             skills_root = (user_skills_root or Path.home() / ".agents" / "skills").expanduser().resolve(strict=False)
             return cls(

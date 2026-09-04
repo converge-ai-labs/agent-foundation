@@ -35,7 +35,7 @@ class Project(BaseModel):
     position: int
 ```
 
-Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and receives mount alias `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are Run-local mount names, not opaque Harness mount IDs or Workspace resources. The selected Environment profile determines whether those mounts expose the Project paths directly or use virtual aggregate routes. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
+Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and receives mount alias `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are Run-local mount names, not opaque Harness mount IDs or Workspace resources. The selected profile's approved Host adapter determines whether those mounts preserve canonical Host paths or use virtual aggregate routes. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
 
 Changing Project roots affects later Runs of every Thread selecting the Project. A Run already admitted retains its captured roots. Removing a Project file removes it from the next accepted generation. Existing Threads retain the unresolved ID and reject later Runs until explicitly reassigned; no global fallback silently changes their local authority.
 
@@ -148,7 +148,16 @@ Project recency is the maximum `updated_at` over every associated non-archived T
 
 ## Environment Profile and Binding
 
-A Thread selects exactly one Environment profile defined by [Extension Discovery and Management](01a-extension-discovery-and-management.md#environment-provider-discovery-and-profile-resources). A profile chooses one installed Provider plus Agent UI Host adapter configuration; it does not represent the runtime `Environment.environment_id`. Native is the omission fallback only while creating a root Thread; a later missing or failed explicit profile never falls back.
+A Thread selects exactly one Environment profile defined by [Extension Discovery and Management](01a-extension-discovery-and-management.md#environment-provider-discovery-and-profile-resources). A profile chooses one installed Provider plus Agent UI Host adapter configuration; it does not represent the runtime `Environment.environment_id`.
+
+Agent UI owns two built-in modes:
+
+| Mode             | Stable profile ID     | Project Provider    | Execution semantics                                                                                                    |
+| ---------------- | --------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Full Control** | `environment-native`  | Direct Local        | Commands run directly as the Host user with ambient filesystem and Host networking                                     |
+| **Sandbox**      | `environment-sandbox` | Local Envd over EIP | Commands require native filesystem/process isolation and denied networking; setup failure is terminal with no fallback |
+
+Full Control is the omission fallback only while creating a root Thread for compatibility. A later missing or failed selected profile never falls back. Both built-in modes are fixed release-owned recipes and cannot be shadowed by configured profile resources.
 
 For each captured Project root, the App:
 
@@ -157,22 +166,26 @@ For each captured Project root, the App:
 3. asks the adapter to materialize root-specific validated Provider configuration;
 4. creates a fresh pre-entry-inert `Environment` adapter;
 5. constructs the deterministic Harness Project mount set;
-6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Native Project mount already owns that root; and
+6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Host-path-preserving Project mount already owns that root; and
 7. creates fresh selected Environment Run Extensions around that aggregate.
 
-The Provider configuration and adapter do not own the Project root list. The adapter receives one root at a time and can reject roots it cannot represent. The user Skill root follows [Environment Skill Sources](02b-environment-skill-sources.md). It ordinarily uses a separate Host-owned Direct Local route, but reuses an equal Native Project mount rather than creating a route conflict; neither form changes Project roots or adds separate Project Environment-state publication.
+The Provider configuration and adapter do not own the Project root list. The adapter receives one root at a time, can reject roots it cannot represent, and explicitly declares whether aggregate paths preserve Host spelling. The user Skill root follows [Environment Skill Sources](02b-environment-skill-sources.md). It ordinarily uses a separate Host-owned Direct Local file-only route, but reuses an equal Host-path-preserving Project mount rather than creating a route conflict; neither form changes Project roots or adds separate Project Environment-state publication.
 
 ### Aggregate Path Layout
 
-For the release-owned Native profile, Agent UI assigns every Project mount an explicit Harness `mount_path` equal to that captured root's canonical Host path. The first and later roots are therefore addressed as their real paths in model context, file tools, returned file results, explicit shell working directories, File Context, and Skill sources. Relative file paths and omitted or relative shell working directories still select the default `workspace` alias internally and resolve from the Provider's root. Native does not also publish `/workspace` or `/environment/workspace-N` routes.
+The Full Control and Sandbox adapters preserve Host paths. Agent UI assigns each Project mount an explicit Harness `mount_path` equal to the captured root's canonical Host path. The first and later roots are therefore addressed by their real paths in model context, file tools, returned file results, explicit shell working directories, File Context, and Skill sources. They do not also publish `/workspace` or `/environment/workspace-N` routes.
 
-For Local EIP and every other non-Native profile, Agent UI omits `mount_path`. Harness compatibility routing then presents the first root at `/workspace` and later roots at `/environment/workspace-N`. This change does not expand Local EIP behavior or claim that a Host path exists in an isolated Provider namespace.
+This shared spelling does not merge execution authority. Full Control translates the aggregate suffix to a Project-root-confined Direct Local file operation or initial command working directory; after a Host command starts, the ordinary Host shell and descendants remain unrestricted and can use `cd ..`, absolute paths, Host networking, and other ambient Host-user authority. Sandbox translates the same aggregate suffix to a Provider-local EIP path; Local Envd resolves it back to the exact Host workspace path only inside required native containment, so `pwd` reports the canonical Host path while parent or absolute traversal cannot escape the sandbox's granted paths and networking remains denied.
 
-The same layout decision applies to the dedicated Direct Local user Skill mount: Native exposes its canonical resolved `~/.agents/skills` path, while non-Native Project profiles route it as `/environment/user-skills`. When a Native Project mount already has that exact path, Agent UI omits the duplicate dedicated mount and routes the user Skill source through the Project mount. Otherwise internal mount aliases, opaque mount incarnations, permission ceilings, Environment-state keys, and source precedence are unchanged by presentation layout.
+An explicit shell `cwd` is an aggregate mount selector in both modes. It must resolve within an available route and cannot contain `..` traversal segments. Relative or omitted `cwd` starts from the selected mount's default Project root. This selector rule does not claim to confine a Full Control command after launch: a script such as `cd .. && pwd` runs with ordinary Host semantics. In Sandbox the same script remains subject to `agent-envd` isolation.
+
+An approved custom adapter that explicitly preserves Host paths receives the same aggregate layout. Other adapters omit `mount_path`, so Harness compatibility routing presents the first root at `/workspace` and later roots at `/environment/workspace-N`. A canonical-looking aggregate route is presentation and routing metadata, never proof of Provider authority.
+
+The same adapter decision applies to the dedicated Direct Local user Skill mount. A Host-path-preserving profile exposes its canonical resolved `~/.agents/skills` path; a virtual-layout profile routes it as `/environment/user-skills`. When a Host-path-preserving Project mount already has that exact path, Agent UI omits the duplicate dedicated mount and routes the user Skill source through the Project mount. Otherwise internal mount aliases, opaque mount incarnations, permission ceilings, Environment-state keys, and source precedence are unchanged by presentation layout.
 
 ## Host-authoritative Environment State
 
-Native and Local EIP bind Project roots directly as Provider configuration and ordinarily retain no portable re-entry state. Only Native also presents those Host paths directly in the Harness aggregate namespace; Local EIP retains virtual routes. A stateful Provider can return `EnvironmentState` for one root.
+Full Control and Sandbox bind Project roots directly as Provider configuration, preserve their Host paths in the Harness aggregate namespace, and ordinarily retain no portable re-entry state. Their identical path presentation does not change their distinct Direct Local and isolated EIP execution authority. A stateful Provider can return `EnvironmentState` for one root.
 
 Agent UI uses one private binding identity:
 
@@ -219,7 +232,9 @@ Each segment receives fresh Provider runtime collaborators, adapters, and Enviro
 
 ## Local EIP Runtime
 
-Agent UI releases select one exact `agent-envd` release manifest and target hashes. Local EIP resolves only that managed executable or one explicit validated local override. It does not search ambient `PATH` or download a binary for Native execution.
+Agent UI releases select one exact `agent-envd` release manifest and target hashes. Sandbox resolves only that managed executable or one explicit validated local override. It does not search ambient `PATH` or download a binary for Full Control execution.
+
+Every Sandbox Project root uses a fresh Local Envd adapter and private EIP daemon generation. Agent UI configures denied execution networking, and Local Envd requires the native isolation probe to prove filesystem containment, process containment, and network isolation before admitting the EIP session. Unsupported Hosts or failed prerequisites make Sandbox unavailable for that Run; Agent UI neither weakens the policy nor substitutes Full Control.
 
 The executable cache carries no Thread, Project, root, or Environment authority. Daemons, transports, process handles, and output cursors remain process-local to fresh adapters and never enter `EnvironmentState` or Thread storage.
 
@@ -231,18 +246,18 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 
 ## Failure Semantics
 
-| Failure                                  | Outcome                                                                     |
-| ---------------------------------------- | --------------------------------------------------------------------------- |
-| Invalid or inaccessible Project root     | Candidate generation or Run capture fails before native execution           |
-| Current directory matches no first root  | A launch surface receives an unmatched result without creating a Project    |
-| Current directory is equally ambiguous   | A launch surface receives an ambiguous result without choosing arbitrarily  |
-| Project removed from accepted generation | Existing Thread remains inspectable; next Run requires reassignment         |
-| Stale Thread configuration version       | Patch and admission are rejected without partial changes                    |
-| Provider or Host adapter missing         | Run capture fails; Native is not substituted                                |
-| Current Environment state invalid        | Admission fails explicitly                                                  |
-| Adapter entry or extension entry fails   | Harness reports Run failure; known changed cached state is still considered |
-| Cleanup or state publication fails       | Failure is reported independently from continuation selection               |
-| Continuation publication conflicts       | Prior or concurrent continuation remains current                            |
+| Failure                                                           | Outcome                                                                     |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Invalid or inaccessible Project root                              | Candidate generation or Run capture fails before native execution           |
+| Current directory matches no first root                           | A launch surface receives an unmatched result without creating a Project    |
+| Current directory is equally ambiguous                            | A launch surface receives an ambiguous result without choosing arbitrarily  |
+| Project removed from accepted generation                          | Existing Thread remains inspectable; next Run requires reassignment         |
+| Stale Thread configuration version                                | Patch and admission are rejected without partial changes                    |
+| Provider, Host adapter, or required Sandbox isolation unavailable | Run capture or preparation fails; Full Control is not substituted           |
+| Current Environment state invalid                                 | Admission fails explicitly                                                  |
+| Adapter entry or extension entry fails                            | Harness reports Run failure; known changed cached state is still considered |
+| Cleanup or state publication fails                                | Failure is reported independently from continuation selection               |
+| Continuation publication conflicts                                | Prior or concurrent continuation remains current                            |
 
 ## Invariants
 
@@ -259,4 +274,6 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 11. Environment state is isolated by Thread, Environment profile behavior, adapter, and root path.
 12. Steering never changes an active Run's captured composition.
 13. Destructive Provider lifecycle remains outside ordinary Run cleanup.
-14. A selected Skills Capability adds only Environment-routed Skill sources and, unless an exact Native Project mount already covers it, the dedicated user Skill mount; it does not broaden a Project Provider's Host paths.
+14. A selected Skills Capability adds only Environment-routed Skill sources and, unless an exact Host-path-preserving Project mount already covers it, the dedicated user Skill mount; it does not broaden a Project Provider's Host paths.
+15. Full Control and Sandbox preserve the same canonical Host path spelling while retaining Direct Local versus required-isolation EIP execution authority.
+16. Sandbox failure never falls back to Full Control or disabled isolation.

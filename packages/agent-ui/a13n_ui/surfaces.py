@@ -167,6 +167,16 @@ class TranscriptPage(SurfaceModel):
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
 
 
+class EnvironmentProfileSummary(SurfaceModel):
+    profile_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=256)
+    mode: Literal["full-control", "sandbox", "custom"]
+    description: str = Field(min_length=1, max_length=1024)
+    provider_key: str = Field(min_length=1, max_length=200)
+    release_owned: bool
+    canonical_host_paths: bool
+
+
 class ProjectSummary(SurfaceModel):
     project_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
@@ -398,6 +408,7 @@ __all__ = [
     "DeferredRequestView",
     "DeferredResponseItem",
     "EnvironmentOutcomeView",
+    "EnvironmentProfileSummary",
     "ExternalToolResult",
     "FailureView",
     "ProjectSummary",

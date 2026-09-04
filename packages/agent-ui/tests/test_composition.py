@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
+from a13n_environment_provider import LocalEnvdEnvironmentProvider
 from a13n_harness.capabilities import SubagentOperator
 from a13n_harness.capabilities.skills import SkillsCapability
 from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
@@ -19,8 +21,10 @@ from a13n_ui.composition import (
 )
 from a13n_ui.configuration import load_agent_ui_configuration
 from a13n_ui.environment_paths import EnvironmentPathLayout
+from a13n_ui.environment_profiles import SANDBOX_PROFILE_ID
+from a13n_ui.environment_runtime import EnvironmentSnapshotReconstructor
 from a13n_ui.errors import CompositionError
-from a13n_ui.extensions import AgentUiExtensionCatalog
+from a13n_ui.extensions import LOCAL_ENVD_ADAPTER_KEY, LOCAL_ENVD_PROVIDER_KEY, AgentUiExtensionCatalog
 from a13n_ui.settings import StorageSettings
 from a13n_ui.storage import ObjectKind, open_local_store
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -223,6 +227,20 @@ async def test_resolves_complete_credential_free_run_composition(tmp_path: Path)
     }
 
 
+async def test_resolves_release_owned_sandbox_profile_without_configuration_resource(tmp_path: Path) -> None:
+    source = await load_agent_ui_configuration(_write_source(tmp_path))
+    selection = replace(_selection(), environment_profile_id=SANDBOX_PROFILE_ID)
+
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, selection)
+    reconstructed = EnvironmentSnapshotReconstructor(catalog=_catalog()).reconstruct(composition.environment_profile)
+
+    assert composition.environment_profile.profile_id == SANDBOX_PROFILE_ID
+    assert composition.environment_profile.provider_key == LOCAL_ENVD_PROVIDER_KEY
+    assert composition.environment_profile.adapter_key == LOCAL_ENVD_ADAPTER_KEY
+    assert isinstance(reconstructed.provider, LocalEnvdEnvironmentProvider)
+    assert reconstructed.adapter.preserves_host_paths
+
+
 async def test_generation_validation_rejects_selected_unknown_capability(tmp_path: Path) -> None:
     path = _write_source(tmp_path)
     agent = tmp_path / "agents/assistant.yaml"
@@ -329,9 +347,9 @@ async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: 
     )
 
 
-def test_environment_path_layout_keeps_non_native_mount_aliases() -> None:
+def test_environment_path_layout_keeps_virtual_mount_aliases() -> None:
     layout = EnvironmentPathLayout.resolve(
-        native=False,
+        canonical_host_paths=False,
         project_roots=("/project", "/shared"),
         user_skills_root=Path("/home/example/.agents/skills"),
     )

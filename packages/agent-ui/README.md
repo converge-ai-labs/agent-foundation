@@ -1,12 +1,20 @@
 # Agent UI
 
-`a13n-ui` is a local single-user workstation for Agent Foundation Harness. CLI and Web adapters share one process-local `AgentUiApp`; Harness execution, mutable continuation-backed Threads, async subagents, and live presentation run in that process. Agent UI does not start or supervise a replaceable Runner process and does not hot-reload imported Python extension code.
+`a13n-ui` is a local single-user workstation for Agent Foundation Harness. CLI, TUI, and WebUI adapters share one process-local `AgentUiApp`; Harness execution, mutable continuation-backed Threads, async subagents, and live presentation run in that process. Agent UI does not start or supervise a replaceable Runner process and does not hot-reload imported Python extension code.
 
-The CLI starts with either command:
+Bare invocation and the canonical `tui` subcommand start the same terminal workstation. The browser surface is always explicit:
 
 ```console
 a13n-ui
-a13n-ui cli
+a13n-ui tui
+a13n-ui webui
+```
+
+TUI launch options override only the new-Thread draft for that invocation; they do not edit file defaults:
+
+```console
+a13n-ui --project project-main --agent agent-assistant --environment-mode sandbox
+a13n-ui tui --thread thread-existing
 ```
 
 A one-shot Run can use the same human-editable configuration tree:
@@ -17,7 +25,7 @@ a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect the Agent behavior"
 
 Projects are the only local-root grouping concept. Every root or child Thread owns sticky mutable selections, while each admitted Run captures an immutable resolved composition. CLI, WebUI, and model-visible Thread tools call the same application boundary. The exact accepted behavior and migration target are owned by the [Agent UI specification](../../spec/agent-ui/README.md).
 
-The repository Make alias starts the interactive CLI:
+The repository Make alias starts the interactive TUI:
 
 ```console
 make a13n-ui
@@ -27,7 +35,7 @@ After publication, the distribution and console entrypoint share the same name:
 
 ```console
 uvx a13n-ui
-uvx a13n-ui cli
+uvx a13n-ui tui
 ```
 
 The repository directory is `packages/agent-ui`, the Python distribution is `a13n-ui`, and the import package is `a13n_ui`. The private browser source lives in [`apps/harness-ui`](../../apps/harness-ui/README.md).
@@ -37,6 +45,8 @@ The repository directory is `packages/agent-ui`, the Python distribution is `a13
 Agent UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-ui/a13n-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain one YAML resource per Model, extension, MCP server, Agent, or Project, plus one canonical Markdown file per `subagents/` definition. Direct editing remains a complete configuration path; valid changes reload without restarting imported Python code.
 
 CLI and WebUI file mutations require expected source digests and reject stale writes. SQLite stores accepted-generation indexes and mutable Thread/runtime heads, but files remain desired-configuration authority. The data root is resolved before root-YAML parsing from `--data-root`, `A13N_UI_DATA_ROOT`, or the config directory's `data/` default.
+
+Agent UI includes two fixed Environment modes. **Full Control** uses Direct Local Host execution. **Sandbox** shows the same canonical Host Project paths to the Agent but executes Project commands through Local Envd over EIP with required native isolation and denied networking.
 
 ## Local Store Development
 

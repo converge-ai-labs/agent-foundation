@@ -29,6 +29,10 @@ from a13n_ui.configuration import (
     ModelResource,
     canonical_digest,
 )
+from a13n_ui.environment_profiles import (
+    FULL_CONTROL_PROFILE_ID,
+    built_in_environment_profile,
+)
 from a13n_ui.errors import CompositionError
 from a13n_ui.extensions import AgentUiExtensionCatalog, SelectedCapability
 from a13n_ui.model_adapters import PydanticAiModelAdapter
@@ -48,9 +52,7 @@ from .models import (
 
 PACKAGE_SYSTEM_PROMPT = "You are an AI assistant running in Agent UI."
 PACKAGE_PROMPT_REVISION = "agent-ui/1"
-IMPLICIT_NATIVE_PROFILE = "environment-native"
-NATIVE_PROVIDER_KEY = "a13n.direct-local"
-NATIVE_ADAPTER_KEY = "a13n.native-project-root"
+IMPLICIT_NATIVE_PROFILE = FULL_CONTROL_PROFILE_ID
 _MAX_RESOLVED_NODES = 1024
 _MAX_RESOLVED_DEPTH = 128
 
@@ -201,8 +203,9 @@ class AgentCompositionResolver:
         sources = source.agents if selection.agent_source_kind == "agent" else source.subagents
         if selection.agent_source_id not in sources:
             raise CompositionError("The Thread Agent source is unavailable.", code="agent_source_missing")
-        if selection.environment_profile_id != IMPLICIT_NATIVE_PROFILE and (
-            selection.environment_profile_id not in source.environment_profiles
+        if (
+            built_in_environment_profile(selection.environment_profile_id) is None
+            and selection.environment_profile_id not in source.environment_profiles
         ):
             raise CompositionError("The Thread Environment profile is unavailable.", code="environment_profile_missing")
         _require_ids(selection.harness_plugin_ids, source.harness_plugins, "Harness Plugin")
@@ -367,21 +370,22 @@ class AgentCompositionResolver:
         source: LoadedAgentUiConfiguration,
         profile_id: str,
     ) -> ResolvedEnvironmentProfile:
-        if profile_id == IMPLICIT_NATIVE_PROFILE:
+        built_in = built_in_environment_profile(profile_id)
+        if built_in is not None:
             behavior = {
-                "provider_key": NATIVE_PROVIDER_KEY,
-                "provider_schema_version": "1",
+                "provider_key": built_in.provider_key,
+                "provider_schema_version": built_in.provider_schema_version,
                 "provider_configuration": {},
-                "adapter_key": NATIVE_ADAPTER_KEY,
+                "adapter_key": built_in.adapter_key,
                 "adapter_configuration": {},
             }
             return ResolvedEnvironmentProfile(
                 profile_id=profile_id,
                 behavior_digest=canonical_digest(behavior),
-                provider_key=NATIVE_PROVIDER_KEY,
-                provider_schema_version="1",
+                provider_key=built_in.provider_key,
+                provider_schema_version=built_in.provider_schema_version,
                 provider_configuration={},
-                adapter_key=NATIVE_ADAPTER_KEY,
+                adapter_key=built_in.adapter_key,
                 adapter_configuration={},
             )
         item = source.environment_profiles[profile_id]

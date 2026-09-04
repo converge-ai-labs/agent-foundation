@@ -1,7 +1,7 @@
 [project]
 name = "a13n-ui"
 version = "0.0.0"
-description = "Local WebUI and CLI application for Agent Foundation Harness"
+description = "Local TUI, WebUI, and CLI application for Agent Foundation Harness"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]

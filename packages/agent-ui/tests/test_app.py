@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from a13n_environment_provider import (
+    CommandRequest,
+    EnvironmentOutputPolicy,
+    LocalEnvdEnvironment,
+    LocalEnvdProviderRuntime,
+    ShellCommand,
+    TemporaryLocalEnvdRuntimeAllocator,
+)
 from a13n_harness import (
     AgentDefinition,
     AgentIdentityRef,
@@ -19,6 +28,7 @@ from a13n_harness.model_auth import GrokCredentials
 from a13n_ui.app import AgentUiIntegrations, AppState, open_agent_ui_app
 from a13n_ui.composition import AgentReconstructor, ReconstructedAgent, ThreadCompositionSelection
 from a13n_ui.configuration import load_agent_ui_configuration
+from a13n_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_ui.environment_runtime import EnvironmentRunService
 from a13n_ui.errors import AppStateError, StoreConflictError
 from a13n_ui.model_accounts import (
@@ -450,6 +460,90 @@ async def test_application_thread_queries_are_detached_keyset_views_with_metadat
         assert (await app.get_thread(first.thread_id)).available_actions == ()
 
 
+async def test_application_lists_release_owned_environment_modes(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        profiles = await app.environment_profiles()
+
+    assert tuple((item.profile_id, item.name, item.mode) for item in profiles) == (
+        ("environment-native", "Full Control", "full-control"),
+        ("environment-sandbox", "Sandbox", "sandbox"),
+    )
+    assert all(item.release_owned for item in profiles)
+    assert all(item.canonical_host_paths for item in profiles)
+    assert "outside Project roots" in profiles[0].description
+    assert "denied networking" in profiles[1].description
+
+
+async def test_environment_run_service_prepares_sandbox_with_canonical_host_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _write_configuration(tmp_path)
+    root.write_text(f"{root.read_text()}  environment_profile: {SANDBOX_PROFILE_ID}\n")
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
+    user_skills = tmp_path / "home" / ".agents" / "skills"
+
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        created = await app.create_thread()
+        assert created.configuration.environment_profile_id == SANDBOX_PROFILE_ID
+        stored = await app._threads.get(created.thread_id)
+        source = await app.current_configuration()
+        assert source is not None
+        executor = app._root_runs._executor
+        assert isinstance(executor._environments, EnvironmentRunService)
+        executor._environments._user_skills_root = user_skills
+        reconstructor = executor._environments._reconstructor
+
+        async def local_envd_runtime(_provider: object) -> LocalEnvdProviderRuntime:
+            return LocalEnvdProviderRuntime(
+                executable=(tmp_path / "agent-envd").resolve(),
+                allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+            )
+
+        monkeypatch.setattr(reconstructor, "_runtime_collaborator", local_envd_runtime)
+        selection = ThreadCompositionSelection(
+            thread_id=stored.thread_id,
+            version=stored.configuration.version,
+            project_id=stored.configuration.project_id,
+            agent_source_kind=stored.configuration.agent_source.kind,
+            agent_source_id=stored.configuration.agent_source.id,
+            environment_profile_id=stored.configuration.environment_profile_id,
+            harness_plugin_ids=stored.configuration.harness_plugin_ids,
+            environment_run_extension_ids=stored.configuration.environment_run_extension_ids,
+            mcp_server_ids=stored.configuration.mcp_server_ids,
+        )
+        published = await executor._compositions.publish(source, selection)
+        plan = await executor._environments.prepare(published.value)
+        project_root = Path(published.value.project_roots[0]).as_posix()
+
+        assert tuple(plan.environments) == ("workspace", "user-skills")
+        assert isinstance(plan.environments["workspace"], LocalEnvdEnvironment)
+        assert tuple(item.mount_path for item in plan._mounts) == (
+            project_root,
+            user_skills.resolve().as_posix(),
+        )
+        local_envd = plan.environments["workspace"]
+        assert isinstance(local_envd, LocalEnvdEnvironment)
+        assert local_envd._configuration.workspace.path.as_posix() == project_root
+        assert local_envd._configuration.execution_network.value == "deny"
+        if os.name == "posix":
+            assert local_envd._configuration.shell_profiles[0].fixed_arguments == ("-c",)
+        finalization = await plan.finalize(timeout_seconds=1)
+
+    assert finalization.cleanup_errors == ()
+    assert len(finalization.state_publications) == 1
+    assert finalization.state_publications[0].status == "unchanged"
+
+
 async def test_environment_run_service_directly_prepares_and_finalizes_native_project_roots(tmp_path: Path) -> None:
     root = _write_configuration(tmp_path)
     async with open_agent_ui_app(
@@ -490,6 +584,46 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
             with pytest.raises(EnvironmentError) as legacy:
                 environment.resolve_path("/workspace/readme.md")
             assert legacy.value.code == "environment_selection_invalid"
+            if os.name == "posix":
+                pwd = await environment.shell.exec_captured(
+                    CommandRequest(
+                        command=ShellCommand(profile_id="default", script="pwd"),
+                        cwd=project_root,
+                        output_policy=EnvironmentOutputPolicy(
+                            max_inline_bytes=4096,
+                            max_output_bytes=4096,
+                            overflow="truncate",
+                        ),
+                    )
+                )
+                assert pwd.output.stdout.inline is not None
+                assert pwd.output.stdout.inline.decode().strip() == project_root
+                parent = await environment.shell.exec_captured(
+                    CommandRequest(
+                        command=ShellCommand(profile_id="default", script="cd .. && pwd"),
+                        cwd=project_root,
+                        output_policy=EnvironmentOutputPolicy(
+                            max_inline_bytes=4096,
+                            max_output_bytes=4096,
+                            overflow="truncate",
+                        ),
+                    )
+                )
+                assert parent.output.stdout.inline is not None
+                assert parent.output.stdout.inline.decode().strip() == Path(project_root).parent.as_posix()
+                with pytest.raises(EnvironmentError) as traversal:
+                    await environment.shell.exec_captured(
+                        CommandRequest(
+                            command=ShellCommand(profile_id="default", script="pwd"),
+                            cwd=f"{project_root}/../",
+                            output_policy=EnvironmentOutputPolicy(
+                                max_inline_bytes=4096,
+                                max_output_bytes=4096,
+                                overflow="truncate",
+                            ),
+                        )
+                    )
+                assert traversal.value.code == "environment_request_invalid"
         finalization = await plan.finalize(timeout_seconds=1)
 
     assert finalization.cleanup_errors == ()

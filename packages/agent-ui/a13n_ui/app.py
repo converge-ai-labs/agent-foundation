@@ -39,6 +39,7 @@ from a13n_ui.configuration import (
     mutate_configuration_source,
     preview_external_subagent_import,
 )
+from a13n_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
 from a13n_ui.environment_runtime import (
     EnvironmentRunService,
     EnvironmentSnapshotReconstructor,
@@ -80,6 +81,7 @@ from a13n_ui.subagent_operator import AgentUiSubagentOperator
 from a13n_ui.surfaces import (
     ChildControlResult,
     ChildExecutionPage,
+    EnvironmentProfileSummary,
     ProjectSummary,
     RootControlResult,
     RootOperationView,
@@ -342,6 +344,48 @@ class AgentUiApp:
     async def projects(self) -> tuple[ProjectSummary, ...]:
         async with self._operation():
             return await self._projections.projects()
+
+    async def environment_profiles(self) -> tuple[EnvironmentProfileSummary, ...]:
+        """Return release-owned modes plus accepted custom Environment profiles."""
+
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None:
+                raise ConfigurationError(
+                    "No accepted Agent UI configuration is selected.",
+                    code="configuration_not_accepted",
+                )
+            result = [
+                EnvironmentProfileSummary(
+                    profile_id=profile.profile_id,
+                    name=profile.name,
+                    mode=profile.mode.value,
+                    description=profile.description,
+                    provider_key=profile.provider_key,
+                    release_owned=True,
+                    canonical_host_paths=self._catalog.environment_adapter(
+                        profile.adapter_key,
+                        profile.provider_key,
+                    ).preserves_host_paths,
+                )
+                for profile in BUILT_IN_ENVIRONMENT_PROFILES
+            ]
+            for profile in sorted(
+                source.environment_profiles.values(), key=lambda item: (item.name.casefold(), item.id)
+            ):
+                adapter = self._catalog.environment_adapter(profile.adapter_key, profile.provider_key)
+                result.append(
+                    EnvironmentProfileSummary(
+                        profile_id=profile.id,
+                        name=profile.name,
+                        mode="custom",
+                        description=f"Custom Environment profile using {profile.provider_key}.",
+                        provider_key=profile.provider_key,
+                        release_owned=False,
+                        canonical_host_paths=adapter.preserves_host_paths,
+                    )
+                )
+            return tuple(result)
 
     async def create_thread(
         self,

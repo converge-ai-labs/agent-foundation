@@ -12,7 +12,7 @@ root.innerHTML = `
     <h1 id="page-title">Local agent interaction, one shared stream.</h1>
     <p class="summary">
       This private WebUI is bundled into the <code>a13n-ui</code>
-      Python distribution. WebUI and CLI share one stable AgentUiApp
+      Python distribution. WebUI, TUI, and CLI share one stable AgentUiApp
       and Agent Stream Protocol projection.
     </p>
   </section>
