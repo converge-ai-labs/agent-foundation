@@ -21,7 +21,13 @@ from a13n_service.process.runtime import ServiceRuntime
 from a13n_service.public_errors import PublicError
 from a13n_service.request_runtime import get_control_runtime
 
-from .commands import ContinueRunRequest, InterruptReceipt, NativeInteractionCommands, StartRunRequest
+from .commands import (
+    ContinueRunRequest,
+    InterruptReceipt,
+    NativeInteractionCommands,
+    RetryRunRequest,
+    StartRunRequest,
+)
 from .hosted_agui import HostedAguiCancelReceipt, HostedAguiCancelRequest, HostedAguiService
 from .native_streaming import NativeRunStreamService
 from .notifications import (
@@ -202,6 +208,26 @@ async def continue_from_run(
     return await _commands(request).continue_from(
         actor=actor,
         source_run_id=source_run_id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+
+
+@router.post(
+    "/api/v1/runs/{run_id}/retry",
+    response_model=RunAcceptanceReceipt,
+    status_code=202,
+)
+async def retry_run(
+    request: Request,
+    actor: Actor,
+    run_id: str,
+    body: RetryRunRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> RunAcceptanceReceipt:
+    return await _commands(request).retry(
+        actor=actor,
+        run_id=run_id,
         idempotency_key=idempotency_key,
         request=body,
     )

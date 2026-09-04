@@ -7,7 +7,12 @@ import pytest
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.gateway.commands import GatewayCommandError, NativeInteractionCommands, StartRunRequest
+from a13n_service.gateway.commands import (
+    GatewayCommandError,
+    NativeInteractionCommands,
+    RetryRunRequest,
+    StartRunRequest,
+)
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.interactions import (
     InterruptRequest,
@@ -106,10 +111,11 @@ def _commands(
     freezing: _Freezing,
 ) -> NativeInteractionCommands:
     resolver = SimpleNamespace(preparation=preparation, freezing=freezing)
+    payloads = RunPayloadStore(objects)
     acceptance = RunAcceptanceService(
         sessions,
         RunStateStore(objects),
-        RunPayloadStore(objects),
+        payloads,
         _inline_hooks(),
         clock=lambda: NOW,
     )
@@ -120,8 +126,9 @@ def _commands(
         RunStateStore(objects),
         AsyncMock(),
         EndpointPolicy(),
-        outcomes=RunOutcomeService(sessions, RunPayloadStore(objects), clock=lambda: NOW),
+        outcomes=RunOutcomeService(sessions, payloads, clock=lambda: NOW),
         inbox=ThreadInboxStore(sessions, clock=lambda: NOW),
+        payloads=payloads,
         clock=lambda: NOW,
     )
 
@@ -293,6 +300,102 @@ async def test_interrupt_idempotency_conflicts_before_terminal_precondition_chec
         )
 
     assert captured.value.code == "idempotency_conflict"
+
+
+async def test_retry_copies_cancelled_root_intent_and_replays(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    source_receipt = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="retry-source",
+        request=_request("same intent"),
+    )
+    await commands.interrupt(
+        actor=_actor(),
+        run_id=source_receipt.run_id,
+        idempotency_key="retry-source-cancel",
+        request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
+    )
+
+    request = RetryRunRequest(expected_thread_version=2)
+    first = await commands.retry(
+        actor=_actor(),
+        run_id=source_receipt.run_id,
+        idempotency_key="retry-one",
+        request=request,
+    )
+    repeated = await commands.retry(
+        actor=_actor(),
+        run_id=source_receipt.run_id,
+        idempotency_key="retry-one",
+        request=request,
+    )
+
+    assert repeated == first
+    assert first.thread_id == source_receipt.thread_id
+    assert first.thread_version == 3
+    async with short_session(lifecycle_interaction_sessions) as database:
+        source = await database.scalar(select(RunRecord).where(RunRecord.id == source_receipt.run_id))
+        retried = await database.scalar(select(RunRecord).where(RunRecord.id == first.run_id))
+        thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == first.thread_id))
+    assert source is not None and retried is not None and thread is not None
+    assert retried.retry_of_run_id == source.id
+    assert retried.parent_run_id is None
+    assert retried.input_json == source.input_json
+    assert retried.authority_principal_id == source.authority_principal_id
+    assert thread.current_run_id == retried.id
+
+
+async def test_retry_rejects_terminal_run_after_thread_advances(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    source = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="stale-retry-source",
+        request=_request(),
+    )
+    await commands.interrupt(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="stale-retry-cancel",
+        request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
+    )
+    await commands.retry(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="stale-retry-first",
+        request=RetryRunRequest(expected_thread_version=2),
+    )
+
+    with pytest.raises(GatewayCommandError) as captured:
+        await commands.retry(
+            actor=_actor(),
+            run_id=source.run_id,
+            idempotency_key="stale-retry-second",
+            request=RetryRunRequest(expected_thread_version=3),
+        )
+
+    assert captured.value.code == "run_not_retryable"
 
 
 async def test_steer_is_atomic_replayable_and_does_not_advance_thread(

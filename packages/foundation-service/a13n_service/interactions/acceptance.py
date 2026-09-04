@@ -711,7 +711,7 @@ async def _validate_advancement(
         raise RunAcceptanceError("thread_head_invalid", "Thread advancement selected an unrelated continuation head")
     if run.retry_of_run_id is not None:
         _validate_retry_advancement(current, run)
-    if run.parent_run_id is None:
+    elif run.parent_run_id is None:
         _validate_root_advancement(thread, current, run)
     else:
         await _validate_parent_advancement(database, thread, run, candidate_payload)

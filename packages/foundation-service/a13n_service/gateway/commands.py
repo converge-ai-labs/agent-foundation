@@ -29,7 +29,13 @@ from a13n_service.durable_operations.idempotency import (
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
-from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam import (
+    AuthenticatedActor,
+    AuthorizationError,
+    WorkspaceAction,
+    authorize_agent,
+    authorize_persisted_agent_principal_actions,
+)
 from a13n_service.interactions import (
     AgentInput,
     AgentInputAcceptance,
@@ -47,6 +53,8 @@ from a13n_service.interactions import (
     RunObjectError,
     RunOutcomeError,
     RunOutcomeService,
+    RunPayloadEnvelope,
+    RunPayloadStore,
     RunStateSeed,
     RunStateStore,
     RunStatus,
@@ -59,6 +67,7 @@ from a13n_service.interactions import (
     ThreadOriginKind,
     ThreadRole,
     initialize_completed_continuation_state,
+    initialize_retry_state,
     initialize_start_state,
     new_run_id,
     new_session_id,
@@ -95,6 +104,10 @@ class ContinueRunRequest(StrictModel):
     hook_subscription: InlineHookSubscriptionInput | None = None
 
 
+class RetryRunRequest(StrictModel):
+    expected_thread_version: int = Field(ge=1)
+
+
 class InterruptReceipt(StrictModel):
     schema_version: Literal["1"] = "1"
     run_id: str
@@ -116,6 +129,7 @@ class NativeInteractionCommands:
         *,
         outcomes: RunOutcomeService | None = None,
         inbox: ThreadInboxStore | None = None,
+        payloads: RunPayloadStore | None = None,
         recovery_max_attempts: int = 3,
         max_handoffs: int = 2,
         queue_name: str = "default",
@@ -130,6 +144,7 @@ class NativeInteractionCommands:
         self._endpoint_policy = endpoint_policy
         self._outcomes = outcomes
         self._inbox = inbox
+        self._payloads = payloads
         self._recovery_max_attempts = recovery_max_attempts
         self._max_handoffs = max_handoffs
         self._queue_name = queue_name
@@ -444,6 +459,159 @@ class NativeInteractionCommands:
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
                 transaction_hook=transaction_hook,
+            )
+        except RunAcceptanceError as error:
+            raise _map_acceptance_error(error) from error
+
+    async def retry(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        idempotency_key: str,
+        request: RetryRunRequest,
+    ) -> RunAcceptanceReceipt:
+        if self._payloads is None:
+            raise GatewayCommandError(
+                "gateway_command_unavailable",
+                "Run retry is unavailable.",
+                status_code=503,
+            )
+        _require_idempotency_key(idempotency_key)
+        stored_key = _scoped_idempotency_key(
+            actor=actor,
+            operation="run.retry",
+            scope_id=run_id,
+            supplied=idempotency_key,
+        )
+        request_fingerprint = canonical_digest(request)
+        replay = await self._start_replay(
+            actor=actor,
+            workspace_id=actor.boundary_workspace_id,
+            stored_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            accepted_thread_version=request.expected_thread_version + 1,
+        )
+        if replay is not None:
+            return replay
+
+        source, thread = await self._load_retry_source(actor=actor, run_id=run_id)
+        source_state = await self._states.read(
+            source.tenant_id,
+            source.id,
+            expected_thread_id=source.thread_id,
+        )
+        parent_state = None
+        if source.parent_run_id is not None:
+            parent_state = (
+                await self._states.read(
+                    source.tenant_id,
+                    source.parent_run_id,
+                )
+            ).envelope
+        new_run_id_value = new_run_id()
+        input_fields: dict[str, object]
+        if source.input_object is None:
+            input_fields = {"input": source.input}
+        else:
+            source_payload = await self._payloads.verify_reference(
+                source.tenant_id,
+                source.id,
+                "input",
+                source.input_object,
+            )
+            input_fields = {
+                "input_object": await self._payloads.create(
+                    source.tenant_id,
+                    RunPayloadEnvelope(
+                        run_id=new_run_id_value,
+                        payload_kind="input",
+                        payload_schema_version=source_payload.payload_schema_version,
+                        payload=source_payload.payload,
+                    ),
+                )
+            }
+        state = initialize_retry_state(
+            RunStateSeed(
+                run_id=new_run_id_value,
+                agent_id=source.agent_id,
+                agent_revision_id=source.agent_revision_id,
+                effective_agent_config=source_state.envelope.effective_agent_config,
+            ),
+            thread_id=source.thread_id,
+            source_lineage_kind=source.lineage_kind,
+            source_input_kind=source.input_kind,
+            parent=parent_state,
+        )
+        now = self._clock()
+        retry_values = source.model_dump(mode="python", exclude_unset=True)
+        for field in (
+            "input",
+            "input_object",
+            "output",
+            "output_object",
+            "output_text",
+            "failure",
+            "pending",
+            "sealed_state",
+            "started_at",
+            "waiting_at",
+            "completed_at",
+            "sealed_at",
+        ):
+            retry_values.pop(field, None)
+        retry_values.update(
+            {
+                "id": new_run_id_value,
+                "version": 1,
+                "retry_of_run_id": source.id,
+                "available_at": now,
+                "current_run_attempt_id": None,
+                "next_attempt_fence": 1,
+                "attempts_started": 0,
+                "recovery_attempts_started": 0,
+                "handoffs_completed": 0,
+                "usage_charged": RecoveryUsage(),
+                "idempotency_key": stored_key,
+                "request_fingerprint": request_fingerprint,
+                "status": RunStatus.accepted,
+                "wait_reason": None,
+                "created_at": now,
+                "updated_at": now,
+                **input_fields,
+            }
+        )
+        retry_run = Run.model_validate(retry_values)
+
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_retry,
+                )
+                await authorize_persisted_agent_principal_actions(
+                    database,
+                    principal=source.authority_principal,
+                    organization_id=source.tenant_id,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    actions=frozenset({WorkspaceAction.agent_invoke}),
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+
+        try:
+            return await self._acceptance.advance_thread(
+                run=retry_run,
+                state=state,
+                expected_thread_version=request.expected_thread_version,
+                expected_current_run_id=source.id,
+                expected_head_run_id=thread.head_run_id,
+                next_head_run_id=thread.head_run_id,
+                final_validator=validate_final,
             )
         except RunAcceptanceError as error:
             raise _map_acceptance_error(error) from error
@@ -997,6 +1165,55 @@ class NativeInteractionCommands:
                 )
             return source, thread_record.to_resource()
 
+    async def _load_retry_source(self, *, actor: AuthenticatedActor, run_id: str):
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, ThreadRecord)
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.id == RunRecord.session_id,
+                        ),
+                    )
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.id == RunRecord.thread_id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.id == run_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            source_record, thread_record = row
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source_record.agent_id,
+                    action=WorkspaceAction.run_retry,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            if thread_record.current_run_id != source_record.id or source_record.status not in {
+                RunStatus.failed.value,
+                RunStatus.cancelled.value,
+            }:
+                raise GatewayCommandError(
+                    "run_not_retryable",
+                    "The selected Run is not the Thread's current failed or cancelled Run.",
+                    status_code=409,
+                )
+            return source_record.to_resource(), thread_record.to_resource()
+
     async def _require_session(self, *, tenant_id: str, workspace_id: str, session_id: str) -> None:
         async with short_session(self._sessions) as database:
             record = await database.scalar(
@@ -1131,5 +1348,6 @@ __all__ = [
     "GatewayCommandError",
     "InterruptReceipt",
     "NativeInteractionCommands",
+    "RetryRunRequest",
     "StartRunRequest",
 ]

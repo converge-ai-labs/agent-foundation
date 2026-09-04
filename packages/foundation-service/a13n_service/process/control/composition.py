@@ -122,6 +122,7 @@ async def build_control_runtime(
             shared.storage.sessions,
             signals=gateway_control_signals,
         ),
+        payloads=gateway_payloads,
         recovery_max_attempts=settings.gateway_run_recovery_max_attempts,
         max_handoffs=settings.gateway_run_max_handoffs,
         queue_name=settings.gateway_run_queue_name,
