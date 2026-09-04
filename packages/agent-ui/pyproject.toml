@@ -10,6 +10,7 @@ dependencies = [
     "aiosqlite>=0.21,<1",
     "alembic>=1.17.1,<2",
     "anyio>=4,<5",
+    "click>=8.2,<9",
     "a13n-environment-provider",
     "a13n-harness",
     "a13n-stream-protocol",

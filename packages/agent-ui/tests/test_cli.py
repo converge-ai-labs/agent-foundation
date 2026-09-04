@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import argparse
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import a13n_ui.cli as cli_module
 import pytest
 from a13n_harness.model_auth import CodexCredentials, GrokCredentials
-from a13n_ui.cli import main
+from a13n_ui.cli import CliRequest, OutputFormat, cli, main
 from a13n_ui.errors import ConfigurationError
 from a13n_ui.model_accounts import DEFAULT_GROK_OAUTH_SCOPE, GrokLoginRequest
 from a13n_ui.surfaces import (
@@ -22,52 +22,55 @@ from a13n_ui.surfaces import (
     RootRunOutcomeView,
     RootRunReceipt,
 )
+from click.testing import CliRunner
 
 
 def test_defaults_to_interactive_cli(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[argparse.Namespace] = []
+    calls: list[CliRequest] = []
 
-    async def run(args: argparse.Namespace) -> None:
-        calls.append(args)
+    async def run(request: CliRequest) -> int:
+        calls.append(request)
+        return 0
 
     monkeypatch.setattr(cli_module, "_run", run)
-    main([])
+    result = CliRunner().invoke(cli, [])
 
+    assert result.exit_code == 0, result.output
     assert len(calls) == 1
     assert calls[0].command is None
 
 
-def test_tui_is_the_default_and_canonical_interactive_command() -> None:
-    parser = cli_module._parser()
+def test_tui_is_the_default_and_canonical_interactive_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[CliRequest] = []
 
-    bare = parser.parse_args(
-        [
-            "--project",
-            "project-main",
-            "--agent",
-            "agent-reviewer",
-            "--environment-mode",
-            "sandbox",
-        ]
-    )
-    explicit = parser.parse_args(
-        [
-            "tui",
-            "--project",
-            "project-main",
-            "--agent",
-            "agent-reviewer",
-            "--environment-mode",
-            "sandbox",
-        ]
-    )
-    webui = parser.parse_args(["webui"])
+    async def run(request: CliRequest) -> int:
+        calls.append(request)
+        return 0
 
-    assert bare.command is None
-    assert explicit.command == "tui"
-    assert webui.command == "webui"
-    assert cli_module._tui_launch_options(bare) == cli_module._tui_launch_options(explicit)
-    launch = cli_module._tui_launch_options(bare)
+    monkeypatch.setattr(cli_module, "_run", run)
+    runner = CliRunner()
+    arguments = [
+        "--project",
+        "project-main",
+        "--agent",
+        "agent-reviewer",
+        "--environment-mode",
+        "sandbox",
+    ]
+
+    bare = runner.invoke(cli, arguments)
+    explicit = runner.invoke(cli, ["tui", *arguments])
+    split = runner.invoke(cli, [*arguments, "tui"])
+    webui = runner.invoke(cli, ["webui"])
+
+    assert bare.exit_code == explicit.exit_code == split.exit_code == webui.exit_code == 0
+    assert calls[0].command is None
+    assert calls[1].command == "tui"
+    assert calls[2].command == "tui"
+    assert calls[3].command == "webui"
+    launches = [cli_module._tui_launch_options(request) for request in calls[:3]]
+    assert launches[0] == launches[1] == launches[2]
+    launch = launches[0]
     assert launch.thread_id is None
     assert launch.defaults.project_id == "project-main"
     assert launch.defaults.agent_id == "agent-reviewer"
@@ -75,39 +78,200 @@ def test_tui_is_the_default_and_canonical_interactive_command() -> None:
 
 
 def test_tui_rejects_new_thread_overrides_when_opening_existing_thread() -> None:
-    args = cli_module._parser().parse_args(["tui", "--thread", "thread-1", "--agent", "agent-reviewer"])
+    request = CliRequest(command="tui", thread_id="thread-1", agent_id="agent-reviewer")
 
     with pytest.raises(ConfigurationError) as conflict:
-        cli_module._tui_launch_options(args)
+        cli_module._tui_launch_options(request)
 
     assert conflict.value.code == "tui_arguments_conflict"
 
 
-def test_auth_login_interruption_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def run(args: argparse.Namespace) -> None:
-        del args
+def test_click_help_lists_complete_command_tree_without_running_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def unexpected_run(request: CliRequest) -> int:
+        del request
+        raise AssertionError("help must not start the application")
+
+    monkeypatch.setattr(cli_module, "_run", unexpected_run)
+    runner = CliRunner()
+
+    root = runner.invoke(cli, ["--help"])
+    thread = runner.invoke(cli, ["thread", "--help"])
+    auth = runner.invoke(cli, ["auth", "login", "--help"])
+
+    assert root.exit_code == thread.exit_code == auth.exit_code == 0
+    for command in ("tui", "webui", "run", "config", "import", "plugin", "thread", "doctor", "auth"):
+        assert command in root.output
+    assert "list" in thread.output
+    assert "show" in thread.output
+    assert "archive" in thread.output
+    assert "--allow-account-switch" in auth.output
+    assert "--device-code" in auth.output
+
+
+def test_click_reports_invalid_and_conflicting_options_as_usage_errors() -> None:
+    runner = CliRunner()
+
+    invalid_provider = runner.invoke(cli, ["auth", "login", "unsupported"])
+    conflicting_environment = runner.invoke(
+        cli,
+        ["run", "inspect", "--environment-mode", "sandbox", "--environment-profile", "custom"],
+    )
+    invalid_limit = runner.invoke(cli, ["thread", "list", "--limit", "0"])
+
+    assert invalid_provider.exit_code == 2
+    assert "Invalid value" in invalid_provider.output
+    assert "unsupported" in invalid_provider.output
+    assert conflicting_environment.exit_code == 2
+    assert "cannot be combined" in conflicting_environment.output
+    assert invalid_limit.exit_code == 2
+    assert "0 is not in the range x>=1" in invalid_limit.output
+
+
+def test_agent_ui_errors_have_stable_text_and_json_envelopes(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fail(request: CliRequest) -> int:
+        del request
+        raise ConfigurationError("Configuration is unavailable.", code="configuration_unavailable")
+
+    monkeypatch.setattr(cli_module, "_run", fail)
+    runner = CliRunner()
+
+    text = runner.invoke(cli, ["run", "inspect"])
+    structured = runner.invoke(cli, ["run", "inspect", "--format", "json"])
+
+    assert text.exit_code == structured.exit_code == 1
+    assert text.stdout == ""
+    assert text.stderr == "Error [configuration_unavailable]: Configuration is unavailable.\n"
+    assert json.loads(structured.stdout) == {
+        "error": {"code": "configuration_unavailable", "message": "Configuration is unavailable."}
+    }
+    assert structured.stderr == ""
+
+
+def test_auth_login_interruption_exits_130(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run(request: CliRequest) -> int:
+        del request
         raise KeyboardInterrupt
 
     monkeypatch.setattr(cli_module, "_run", run)
 
-    with pytest.raises(SystemExit) as interrupted:
-        main(["auth", "login", "grok"])
+    result = CliRunner().invoke(cli, ["auth", "login", "grok"])
 
-    assert interrupted.value.code == 130
+    assert result.exit_code == 130
+    assert result.output == ""
 
 
-def test_auth_parser_exposes_codex_and_grok_native_flows() -> None:
-    parser = cli_module._parser()
+def test_click_builds_typed_management_requests(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[CliRequest] = []
 
-    codex = parser.parse_args(["auth", "login", "codex"])
-    grok = parser.parse_args(["auth", "login", "grok", "--device-code"])
-    status = parser.parse_args(["auth", "status"])
+    async def run(request: CliRequest) -> int:
+        calls.append(request)
+        return 0
 
-    assert codex.provider == "codex"
-    assert codex.device_code is False
-    assert grok.provider == "grok"
-    assert grok.device_code is True
-    assert status.provider is None
+    monkeypatch.setattr(cli_module, "_run", run)
+    runner = CliRunner()
+    data_root = tmp_path / "data"
+
+    results = [
+        runner.invoke(cli, ["--data-root", str(data_root), "config", "validate", "--format", "json"]),
+        runner.invoke(
+            cli,
+            [
+                "import",
+                "subagents",
+                "--product",
+                "codex",
+                "--scope",
+                "project",
+                "--project-root",
+                str(tmp_path),
+                "--apply",
+            ],
+        ),
+        runner.invoke(
+            cli,
+            [
+                "plugin",
+                "install",
+                "https://example.com/plugins.git",
+                "--plugin",
+                "plugin-reviewer",
+                "--ref",
+                "v1",
+            ],
+        ),
+        runner.invoke(cli, ["thread", "archive", "thread-1", "--expected-version", "3", "--restore"]),
+    ]
+
+    assert all(result.exit_code == 0 for result in results)
+    validate, import_subagents, plugin, thread = calls
+    assert validate == CliRequest(
+        command="config",
+        action="validate",
+        data_root=data_root,
+        output_format=OutputFormat.json,
+    )
+    assert import_subagents.command == "import"
+    assert import_subagents.action == "subagents"
+    assert import_subagents.product == "codex"
+    assert import_subagents.scope == "project"
+    assert import_subagents.project_root == tmp_path
+    assert import_subagents.apply is True
+    assert plugin.repository == "https://example.com/plugins.git"
+    assert plugin.plugin_id == "plugin-reviewer"
+    assert plugin.ref == "v1"
+    assert thread.thread_id == "thread-1"
+    assert thread.restore is True
+    assert thread.expected_version == 3
+
+
+def test_click_builds_typed_headless_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[CliRequest] = []
+
+    async def run(request: CliRequest) -> int:
+        calls.append(request)
+        return 0
+
+    monkeypatch.setattr(cli_module, "_run", run)
+    result = CliRunner().invoke(
+        cli,
+        [
+            "run",
+            "inspect plugin",
+            "--project",
+            "project-main",
+            "--agent",
+            "agent-assistant",
+            "--environment-profile",
+            "environment-native",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        CliRequest(
+            command="run",
+            prompt="inspect plugin",
+            project_id="project-main",
+            agent_id="agent-assistant",
+            environment_profile_id="environment-native",
+            output_format=OutputFormat.json,
+        )
+    ]
+
+
+def test_main_wrapper_returns_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[CliRequest] = []
+
+    async def run(request: CliRequest) -> int:
+        calls.append(request)
+        return 0
+
+    monkeypatch.setattr(cli_module, "_run", run)
+
+    assert main(["webui"]) is None
+    assert calls[0].command == "webui"
 
 
 @pytest.mark.anyio
@@ -232,102 +396,26 @@ async def test_grok_cli_login_uses_device_authorization_when_requested(
     assert captured.out == ""
 
 
-def test_parses_management_commands_and_data_root() -> None:
-    parser = cli_module._parser()
-
-    validate = parser.parse_args(["--data-root", "/tmp/a13n-data", "config", "validate", "--format", "json"])
-    import_subagents = parser.parse_args(
-        [
-            "import",
-            "subagents",
-            "--product",
-            "codex",
-            "--scope",
-            "project",
-            "--project-root",
-            "/tmp/project",
-            "--apply",
-        ]
-    )
-    environment = parser.parse_args(["environment", "list", "--format", "json"])
-    plugin = parser.parse_args(
-        ["plugin", "install", "https://example.com/plugins.git", "--plugin", "plugin-reviewer", "--ref", "v1"]
-    )
-    thread = parser.parse_args(["thread", "archive", "thread-1", "--expected-version", "3", "--restore"])
-
-    assert validate.data_root.as_posix() == "/tmp/a13n-data"
-    assert validate.config_command == "validate"
-    assert validate.format == "json"
-    assert import_subagents.product == "codex"
-    assert import_subagents.scope == "project"
-    assert import_subagents.apply is True
-    assert environment.environment_command == "list"
-    assert environment.format == "json"
-    assert plugin.plugin_command == "install"
-    assert plugin.plugin_id == "plugin-reviewer"
-    assert plugin.ref == "v1"
-    assert thread.thread_id == "thread-1"
-    assert thread.restore is True
-    assert thread.expected_version == 3
-
-
 def test_builtin_environment_mode_resolves_to_stable_profile_id() -> None:
-    args = cli_module._parser().parse_args(
-        [
-            "run",
-            "inspect plugin",
-            "--project",
-            "project-main",
-            "--agent",
-            "agent-assistant",
-            "--environment-mode",
-            "sandbox",
-        ]
+    request = CliRequest(
+        command="run",
+        prompt="inspect plugin",
+        project_id="project-main",
+        agent_id="agent-assistant",
+        environment_mode="sandbox",
     )
 
-    defaults = cli_module._new_thread_defaults(_configuration(), args)
+    defaults = cli_module._new_thread_defaults(_configuration(), request)
 
-    assert args.environment_mode == "sandbox"
     assert defaults.environment_profile_id == "environment-sandbox"
-
-
-def test_parses_headless_thread_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[argparse.Namespace] = []
-
-    async def run(args: argparse.Namespace) -> None:
-        calls.append(args)
-
-    monkeypatch.setattr(cli_module, "_run", run)
-    main(
-        [
-            "run",
-            "inspect plugin",
-            "--project",
-            "project-main",
-            "--agent",
-            "agent-assistant",
-            "--environment-profile",
-            "environment-native",
-            "--format",
-            "json",
-        ]
-    )
-
-    args = calls[0]
-    assert args.command == "run"
-    assert args.prompt == "inspect plugin"
-    assert args.project == "project-main"
-    assert args.agent == "agent-assistant"
-    assert args.environment_profile == "environment-native"
-    assert args.format == "json"
 
 
 @pytest.mark.anyio
 async def test_headless_run_creates_thread_from_defaults_and_prints_text(capsys: pytest.CaptureFixture[str]) -> None:
     app: Any = _FakeApp(_completed_outcome("plugin checked"))
-    args = cli_module._parser().parse_args(["run", "check plugin"])
+    request = CliRequest(command="run", prompt="check plugin")
 
-    exit_code = await cli_module._run_one_shot(app, _configuration(), args)
+    exit_code = await cli_module._run_one_shot(app, _configuration(), request)
 
     assert exit_code == 0
     assert app.created == [("project-main", "agent-assistant", None, None)]
@@ -341,9 +429,14 @@ async def test_headless_run_continues_thread_and_emits_structured_failure(
 ) -> None:
     failure = SimpleNamespace(code="model_failed", message="provider unavailable", retry_hint="safe")
     app: Any = _FakeApp(_failed_outcome(failure))
-    args = cli_module._parser().parse_args(["run", "retry", "--thread", "thread-existing", "--format", "json"])
+    request = CliRequest(
+        command="run",
+        prompt="retry",
+        thread_id="thread-existing",
+        output_format=OutputFormat.json,
+    )
 
-    exit_code = await cli_module._run_one_shot(app, _configuration(), args)
+    exit_code = await cli_module._run_one_shot(app, _configuration(), request)
 
     assert exit_code == 1
     assert app.created == []
@@ -366,10 +459,10 @@ async def test_headless_run_continues_thread_and_emits_structured_failure(
 @pytest.mark.anyio
 async def test_headless_run_requires_project_and_agent_defaults() -> None:
     app: Any = _FakeApp(_completed_outcome("unused"))
-    args = cli_module._parser().parse_args(["run", "check"])
+    request = CliRequest(command="run", prompt="check")
 
     with pytest.raises(ConfigurationError) as missing:
-        await cli_module._run_one_shot(app, _configuration(project=None), args)
+        await cli_module._run_one_shot(app, _configuration(project=None), request)
 
     assert missing.value.code == "run_project_required"
     assert app.runs == []
@@ -378,15 +471,52 @@ async def test_headless_run_requires_project_and_agent_defaults() -> None:
 @pytest.mark.anyio
 async def test_headless_run_rejects_creation_arguments_for_existing_thread() -> None:
     app: Any = _FakeApp(_completed_outcome("unused"))
-    args = cli_module._parser().parse_args(
-        ["run", "check", "--thread", "thread-existing", "--agent", "agent-assistant"]
+    request = CliRequest(
+        command="run",
+        prompt="check",
+        thread_id="thread-existing",
+        agent_id="agent-assistant",
     )
 
     with pytest.raises(ConfigurationError) as conflict:
-        await cli_module._run_one_shot(app, _configuration(), args)
+        await cli_module._run_one_shot(app, _configuration(), request)
 
     assert conflict.value.code == "run_arguments_conflict"
     assert app.runs == []
+
+
+def test_text_renderer_is_readable_and_stable() -> None:
+    rendered = cli_module._render_text(
+        {
+            "plugins": [
+                {
+                    "plugin_id": "plugin-reviewer",
+                    "enabled": True,
+                    "description": None,
+                }
+            ],
+            "next_cursor": None,
+            "warnings": [],
+        }
+    )
+
+    assert rendered == (
+        "Plugins (1):\n"
+        "  - Plugin ID: plugin-reviewer\n"
+        "    Enabled: yes\n"
+        "    Description: -\n"
+        "Next cursor: -\n"
+        "Warnings (0): -"
+    )
+
+
+def test_projection_json_remains_compact_and_machine_readable(capsys: pytest.CaptureFixture[str]) -> None:
+    cli_module._print_projection(
+        {"message": "检查完成", "items": [1, 2], "empty": None},
+        OutputFormat.json,
+    )
+
+    assert capsys.readouterr().out == '{"message":"检查完成","items":[1,2],"empty":null}\n'
 
 
 class _FakeApp:

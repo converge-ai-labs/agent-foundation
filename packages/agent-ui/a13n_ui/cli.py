@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import json
-import sys
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
+from typing import Any
 
+import click
 from a13n_harness.model_auth import (
     CodexCredentials,
     CodexOAuthFlow,
@@ -52,193 +52,620 @@ from a13n_ui.terminal import run as run_tui
 from a13n_ui.thread_service import RootThreadDefaults
 
 
-def _parser() -> argparse.ArgumentParser:
-    tui_options = argparse.ArgumentParser(add_help=False)
-    _add_tui_launch_arguments(tui_options)
-    parser = argparse.ArgumentParser(prog="a13n-ui", parents=(tui_options,))
-    parser.add_argument(
-        "--config",
-        type=Path,
-        help="explicit Agent UI configuration YAML (default: ~/.a13n-ui/a13n-ui.yaml)",
-    )
-    parser.add_argument(
-        "--data-root",
-        type=Path,
-        help="override the local Agent UI data root",
-    )
-    commands = parser.add_subparsers(dest="command")
-    commands.add_parser(
-        "tui",
-        parents=(tui_options,),
-        help="run the interactive terminal workstation (default)",
-    )
-    commands.add_parser("webui", help="run the bundled WebUI frontend")
+class OutputFormat(StrEnum):
+    """Supported stable terminal output formats."""
 
-    run = commands.add_parser("run", help="execute one headless Thread message")
-    run.add_argument("prompt", help="message to execute")
-    run.add_argument("--thread", help="continue an existing root Thread")
-    run.add_argument("--project", help="Project used when creating a Thread")
-    run.add_argument("--agent", help="Agent used when creating a Thread")
-    environment_selection = run.add_mutually_exclusive_group()
-    environment_selection.add_argument(
-        "--environment-mode",
-        choices=tuple(item.value for item in EnvironmentMode),
-        help="built-in execution mode used when creating a Thread",
-    )
-    environment_selection.add_argument(
-        "--environment-profile",
-        help="advanced custom Environment profile used when creating a Thread",
-    )
-    run.add_argument("--title", help="title used when creating a Thread")
-    _add_format(run)
-
-    config = commands.add_parser("config", help="locate, validate, or inspect configuration")
-    config_commands = config.add_subparsers(dest="config_command", required=True)
-    _add_format(config_commands.add_parser("path", help="show the selected configuration and data paths"))
-    _add_format(config_commands.add_parser("validate", help="validate the selected source tree"))
-    _add_format(config_commands.add_parser("show", help="show the accepted configuration"))
-
-    import_command = commands.add_parser("import", help="run an explicit external resource conversion")
-    import_commands = import_command.add_subparsers(dest="import_command", required=True)
-    import_subagents = import_commands.add_parser("subagents", help="preview or apply external subagent imports")
-    import_subagents.add_argument(
-        "--product",
-        choices=tuple(item.value for item in ExternalSubagentProduct),
-        required=True,
-    )
-    import_subagents.add_argument(
-        "--scope",
-        choices=tuple(item.value for item in ExternalSubagentScope),
-        required=True,
-    )
-    import_subagents.add_argument("--project-root", type=Path)
-    import_subagents.add_argument("--user-home", type=Path)
-    import_subagents.add_argument(
-        "--apply",
-        action="store_true",
-        help="apply every ready candidate; omission is a dry-run preview",
-    )
-    _add_format(import_subagents)
-
-    plugin = commands.add_parser("plugin", help="install or manage declarative Content Plugins")
-    plugin_commands = plugin.add_subparsers(dest="plugin_command", required=True)
-    plugin_install = plugin_commands.add_parser("install", help="install one Content Plugin from a Git repository")
-    plugin_install.add_argument("repository", help="Git repository URL or local path")
-    plugin_install.add_argument("--plugin", dest="plugin_id", help="plugin ID when the repository contains several")
-    plugin_install.add_argument("--ref", help="Git branch, tag, or commit to install")
-    _add_format(plugin_install)
-    _add_format(plugin_commands.add_parser("list", help="list installed Content Plugins and their directories"))
-    plugin_uninstall = plugin_commands.add_parser("uninstall", help="unregister one Content Plugin")
-    plugin_uninstall.add_argument("plugin_id")
-    _add_format(plugin_uninstall)
-
-    project = commands.add_parser("project", help="query configured Projects")
-    project_commands = project.add_subparsers(dest="project_command", required=True)
-    project_list = project_commands.add_parser("list", help="list Projects")
-    _add_format(project_list)
-
-    environment = commands.add_parser("environment", help="query Environment modes and profiles")
-    environment_commands = environment.add_subparsers(dest="environment_command", required=True)
-    environment_list = environment_commands.add_parser("list", help="list Environment modes and profiles")
-    _add_format(environment_list)
-
-    thread = commands.add_parser("thread", help="query or archive Threads")
-    thread_commands = thread.add_subparsers(dest="thread_command", required=True)
-    thread_list = thread_commands.add_parser("list", help="list Threads")
-    thread_list.add_argument("--query")
-    thread_list.add_argument("--include-archived", action="store_true")
-    thread_list.add_argument("--cursor")
-    thread_list.add_argument("--limit", type=int, default=20)
-    _add_format(thread_list)
-    thread_show = thread_commands.add_parser("show", help="inspect one Thread")
-    thread_show.add_argument("thread_id")
-    thread_show.add_argument("--history-cursor")
-    thread_show.add_argument("--history-limit", type=int, default=50)
-    _add_format(thread_show)
-    thread_archive = thread_commands.add_parser("archive", help="archive one Thread")
-    thread_archive.add_argument("thread_id")
-    thread_archive.add_argument("--expected-version", type=int, required=True)
-    thread_archive.add_argument("--restore", action="store_true")
-    _add_format(thread_archive)
-
-    doctor = commands.add_parser("doctor", help="inspect App and extension health")
-    _add_format(doctor)
-
-    auth = commands.add_parser("auth", help="inspect or manage compatible Model authentication")
-    auth_commands = auth.add_subparsers(dest="auth_command", required=True)
-    auth_status = auth_commands.add_parser("status")
-    auth_status.add_argument("provider", nargs="?", choices=tuple(item.value for item in Provider))
-    _add_format(auth_status)
-    auth_login = auth_commands.add_parser("login")
-    auth_login.add_argument("provider", choices=tuple(item.value for item in Provider))
-    auth_login.add_argument("--allow-account-switch", action="store_true")
-    auth_login.add_argument("--device-code", action="store_true")
-    _add_format(auth_login)
-    auth_logout = auth_commands.add_parser("logout")
-    auth_logout.add_argument("provider", choices=tuple(item.value for item in Provider))
-    _add_format(auth_logout)
-    return parser
+    text = "text"
+    json = "json"
 
 
-def _add_tui_launch_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--thread",
-        default=argparse.SUPPRESS,
-        help="open an existing root Thread in the TUI",
+@dataclass(frozen=True, slots=True)
+class CliRequest:
+    """Typed command request passed from Click into the async application boundary."""
+
+    command: str | None = None
+    action: str | None = None
+    config_path: Path | None = None
+    data_root: Path | None = None
+    output_format: OutputFormat = OutputFormat.text
+    prompt: str | None = None
+    thread_id: str | None = None
+    project_id: str | None = None
+    agent_id: str | None = None
+    environment_mode: str | None = None
+    environment_profile_id: str | None = None
+    title: str | None = None
+    product: str | None = None
+    scope: str | None = None
+    project_root: Path | None = None
+    user_home: Path | None = None
+    apply: bool = False
+    repository: str | None = None
+    plugin_id: str | None = None
+    ref: str | None = None
+    query: str | None = None
+    include_archived: bool = False
+    cursor: str | None = None
+    limit: int = 20
+    history_cursor: str | None = None
+    history_limit: int = 50
+    expected_version: int | None = None
+    restore: bool = False
+    provider: str | None = None
+    allow_account_switch: bool = False
+    device_code: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _CliContext:
+    config_path: Path | None
+    data_root: Path | None
+    thread_id: str | None
+    project_id: str | None
+    agent_id: str | None
+    environment_mode: str | None
+    environment_profile_id: str | None
+
+
+_CONTEXT_SETTINGS = {"help_option_names": ("-h", "--help")}
+_FORMAT_CHOICE = click.Choice(tuple(item.value for item in OutputFormat), case_sensitive=True)
+_ENVIRONMENT_MODE_CHOICE = click.Choice(tuple(item.value for item in EnvironmentMode), case_sensitive=True)
+_PROVIDER_CHOICE = click.Choice(tuple(item.value for item in Provider), case_sensitive=True)
+_PRODUCT_CHOICE = click.Choice(tuple(item.value for item in ExternalSubagentProduct), case_sensitive=True)
+_SCOPE_CHOICE = click.Choice(tuple(item.value for item in ExternalSubagentScope), case_sensitive=True)
+_PATH = click.Path(path_type=Path)
+
+
+@click.group(
+    name="a13n-ui",
+    invoke_without_command=True,
+    no_args_is_help=False,
+    context_settings=_CONTEXT_SETTINGS,
+)
+@click.option(
+    "--config",
+    "config_path",
+    type=_PATH,
+    help="Explicit Agent UI configuration YAML (default: ~/.a13n-ui/a13n-ui.yaml).",
+)
+@click.option("--data-root", type=_PATH, help="Override the local Agent UI data root.")
+@click.option("--thread", "thread_id", help="Open an existing root Thread in the TUI.")
+@click.option("--project", "project_id", help="Override the new-Thread Project for this TUI launch.")
+@click.option("--agent", "agent_id", help="Override the new-Thread Agent for this TUI launch.")
+@click.option(
+    "--environment-mode",
+    type=_ENVIRONMENT_MODE_CHOICE,
+    help="Override the built-in Environment mode for this TUI launch.",
+)
+@click.option(
+    "--environment-profile",
+    "environment_profile_id",
+    help="Override the custom Environment profile for this TUI launch.",
+)
+@click.pass_context
+def cli(
+    ctx: click.Context,
+    config_path: Path | None,
+    data_root: Path | None,
+    thread_id: str | None,
+    project_id: str | None,
+    agent_id: str | None,
+    environment_mode: str | None,
+    environment_profile_id: str | None,
+) -> None:
+    """Run the Agent UI workstation and management commands."""
+
+    ctx.obj = _CliContext(
+        config_path=config_path,
+        data_root=data_root,
+        thread_id=thread_id,
+        project_id=project_id,
+        agent_id=agent_id,
+        environment_mode=environment_mode,
+        environment_profile_id=environment_profile_id,
     )
-    parser.add_argument(
-        "--project",
-        default=argparse.SUPPRESS,
-        help="override the new-Thread Project for this TUI launch",
-    )
-    parser.add_argument(
-        "--agent",
-        default=argparse.SUPPRESS,
-        help="override the new-Thread Agent for this TUI launch",
-    )
-    environment = parser.add_mutually_exclusive_group()
-    environment.add_argument(
-        "--environment-mode",
-        choices=tuple(item.value for item in EnvironmentMode),
-        default=argparse.SUPPRESS,
-        help="override the built-in Environment mode for this TUI launch",
-    )
-    environment.add_argument(
-        "--environment-profile",
-        default=argparse.SUPPRESS,
-        help="override the custom Environment profile for this TUI launch",
+    _validate_environment_selection(environment_mode, environment_profile_id)
+    if ctx.invoked_subcommand is not None:
+        return
+    _execute(
+        CliRequest(
+            config_path=config_path,
+            data_root=data_root,
+            thread_id=thread_id,
+            project_id=project_id,
+            agent_id=agent_id,
+            environment_mode=environment_mode,
+            environment_profile_id=environment_profile_id,
+        )
     )
 
 
-def _add_format(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-        help="terminal output format (default: text)",
+@cli.command("tui")
+@click.option("--thread", "thread_id", help="Open an existing root Thread.")
+@click.option("--project", "project_id", help="Override the new-Thread Project.")
+@click.option("--agent", "agent_id", help="Override the new-Thread Agent.")
+@click.option(
+    "--environment-mode",
+    type=_ENVIRONMENT_MODE_CHOICE,
+    help="Override the built-in Environment mode.",
+)
+@click.option(
+    "--environment-profile",
+    "environment_profile_id",
+    help="Override the custom Environment profile.",
+)
+@click.pass_context
+def tui_command(
+    ctx: click.Context,
+    thread_id: str | None,
+    project_id: str | None,
+    agent_id: str | None,
+    environment_mode: str | None,
+    environment_profile_id: str | None,
+) -> None:
+    """Run the interactive terminal workstation."""
+
+    root = _root_context(ctx)
+    thread_id = thread_id if thread_id is not None else root.thread_id
+    project_id = project_id if project_id is not None else root.project_id
+    agent_id = agent_id if agent_id is not None else root.agent_id
+    environment_mode = environment_mode if environment_mode is not None else root.environment_mode
+    environment_profile_id = (
+        environment_profile_id if environment_profile_id is not None else root.environment_profile_id
     )
+    _validate_environment_selection(environment_mode, environment_profile_id)
+    _execute(
+        _request(
+            ctx,
+            command="tui",
+            thread_id=thread_id,
+            project_id=project_id,
+            agent_id=agent_id,
+            environment_mode=environment_mode,
+            environment_profile_id=environment_profile_id,
+        )
+    )
+
+
+@cli.command("webui")
+@click.pass_context
+def webui_command(ctx: click.Context) -> None:
+    """Run the bundled WebUI frontend."""
+
+    _execute(_request(ctx, command="webui"))
+
+
+@cli.command("run")
+@click.argument("prompt")
+@click.option("--thread", "thread_id", help="Continue an existing root Thread.")
+@click.option("--project", "project_id", help="Project used when creating a Thread.")
+@click.option("--agent", "agent_id", help="Agent used when creating a Thread.")
+@click.option(
+    "--environment-mode",
+    type=_ENVIRONMENT_MODE_CHOICE,
+    help="Built-in execution mode used when creating a Thread.",
+)
+@click.option(
+    "--environment-profile",
+    "environment_profile_id",
+    help="Custom Environment profile used when creating a Thread.",
+)
+@click.option("--title", help="Title used when creating a Thread.")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def run_command(
+    ctx: click.Context,
+    prompt: str,
+    thread_id: str | None,
+    project_id: str | None,
+    agent_id: str | None,
+    environment_mode: str | None,
+    environment_profile_id: str | None,
+    title: str | None,
+    output_format: str,
+) -> None:
+    """Execute one headless Thread message."""
+
+    _validate_environment_selection(environment_mode, environment_profile_id)
+    _execute(
+        _request(
+            ctx,
+            command="run",
+            prompt=prompt,
+            thread_id=thread_id,
+            project_id=project_id,
+            agent_id=agent_id,
+            environment_mode=environment_mode,
+            environment_profile_id=environment_profile_id,
+            title=title,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@cli.group("config")
+def config_group() -> None:
+    """Locate, validate, or inspect configuration."""
+
+
+@config_group.command("path")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def config_path_command(ctx: click.Context, output_format: str) -> None:
+    """Show the selected configuration and data paths."""
+
+    _execute(_request(ctx, command="config", action="path", output_format=OutputFormat(output_format)))
+
+
+@config_group.command("validate")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def config_validate_command(ctx: click.Context, output_format: str) -> None:
+    """Validate the selected source tree."""
+
+    _execute(_request(ctx, command="config", action="validate", output_format=OutputFormat(output_format)))
+
+
+@config_group.command("show")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def config_show_command(ctx: click.Context, output_format: str) -> None:
+    """Show the accepted configuration."""
+
+    _execute(_request(ctx, command="config", action="show", output_format=OutputFormat(output_format)))
+
+
+@cli.group("import")
+def import_group() -> None:
+    """Run an explicit external resource conversion."""
+
+
+@import_group.command("subagents")
+@click.option("--product", type=_PRODUCT_CHOICE, required=True)
+@click.option("--scope", type=_SCOPE_CHOICE, required=True)
+@click.option("--project-root", type=_PATH)
+@click.option("--user-home", type=_PATH)
+@click.option("--apply", is_flag=True, help="Apply every ready candidate; omission is a dry-run preview.")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def import_subagents_command(
+    ctx: click.Context,
+    product: str,
+    scope: str,
+    project_root: Path | None,
+    user_home: Path | None,
+    apply: bool,
+    output_format: str,
+) -> None:
+    """Preview or apply external subagent imports."""
+
+    _execute(
+        _request(
+            ctx,
+            command="import",
+            action="subagents",
+            product=product,
+            scope=scope,
+            project_root=project_root,
+            user_home=user_home,
+            apply=apply,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@cli.group("plugin")
+def plugin_group() -> None:
+    """Install or manage declarative Content Plugins."""
+
+
+@plugin_group.command("install")
+@click.argument("repository")
+@click.option("--plugin", "plugin_id", help="Plugin ID when the repository contains several.")
+@click.option("--ref", help="Git branch, tag, or commit to install.")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def plugin_install_command(
+    ctx: click.Context,
+    repository: str,
+    plugin_id: str | None,
+    ref: str | None,
+    output_format: str,
+) -> None:
+    """Install one Content Plugin from a Git repository."""
+
+    _execute(
+        _request(
+            ctx,
+            command="plugin",
+            action="install",
+            repository=repository,
+            plugin_id=plugin_id,
+            ref=ref,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@plugin_group.command("list")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def plugin_list_command(ctx: click.Context, output_format: str) -> None:
+    """List installed Content Plugins and their directories."""
+
+    _execute(_request(ctx, command="plugin", action="list", output_format=OutputFormat(output_format)))
+
+
+@plugin_group.command("uninstall")
+@click.argument("plugin_id")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def plugin_uninstall_command(ctx: click.Context, plugin_id: str, output_format: str) -> None:
+    """Unregister one Content Plugin."""
+
+    _execute(
+        _request(
+            ctx,
+            command="plugin",
+            action="uninstall",
+            plugin_id=plugin_id,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@cli.group("project")
+def project_group() -> None:
+    """Query configured Projects."""
+
+
+@project_group.command("list")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def project_list_command(ctx: click.Context, output_format: str) -> None:
+    """List Projects."""
+
+    _execute(_request(ctx, command="project", action="list", output_format=OutputFormat(output_format)))
+
+
+@cli.group("environment")
+def environment_group() -> None:
+    """Query Environment modes and profiles."""
+
+
+@environment_group.command("list")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def environment_list_command(ctx: click.Context, output_format: str) -> None:
+    """List Environment modes and profiles."""
+
+    _execute(_request(ctx, command="environment", action="list", output_format=OutputFormat(output_format)))
+
+
+@cli.group("thread")
+def thread_group() -> None:
+    """Query or archive Threads."""
+
+
+@thread_group.command("list")
+@click.option("--query")
+@click.option("--include-archived", is_flag=True)
+@click.option("--cursor")
+@click.option("--limit", type=click.IntRange(min=1), default=20, show_default=True)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def thread_list_command(
+    ctx: click.Context,
+    query: str | None,
+    include_archived: bool,
+    cursor: str | None,
+    limit: int,
+    output_format: str,
+) -> None:
+    """List Threads."""
+
+    _execute(
+        _request(
+            ctx,
+            command="thread",
+            action="list",
+            query=query,
+            include_archived=include_archived,
+            cursor=cursor,
+            limit=limit,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@thread_group.command("show")
+@click.argument("thread_id")
+@click.option("--history-cursor")
+@click.option("--history-limit", type=click.IntRange(min=1), default=50, show_default=True)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def thread_show_command(
+    ctx: click.Context,
+    thread_id: str,
+    history_cursor: str | None,
+    history_limit: int,
+    output_format: str,
+) -> None:
+    """Inspect one Thread and its transcript."""
+
+    _execute(
+        _request(
+            ctx,
+            command="thread",
+            action="show",
+            thread_id=thread_id,
+            history_cursor=history_cursor,
+            history_limit=history_limit,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@thread_group.command("archive")
+@click.argument("thread_id")
+@click.option("--expected-version", type=int, required=True)
+@click.option("--restore", is_flag=True, help="Restore the Thread instead of archiving it.")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def thread_archive_command(
+    ctx: click.Context,
+    thread_id: str,
+    expected_version: int,
+    restore: bool,
+    output_format: str,
+) -> None:
+    """Archive or restore one Thread."""
+
+    _execute(
+        _request(
+            ctx,
+            command="thread",
+            action="archive",
+            thread_id=thread_id,
+            expected_version=expected_version,
+            restore=restore,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@cli.command("doctor")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def doctor_command(ctx: click.Context, output_format: str) -> None:
+    """Inspect App and extension health."""
+
+    _execute(_request(ctx, command="doctor", output_format=OutputFormat(output_format)))
+
+
+@cli.group("auth")
+def auth_group() -> None:
+    """Inspect or manage compatible Model authentication."""
+
+
+@auth_group.command("status")
+@click.argument("provider", required=False, type=_PROVIDER_CHOICE)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def auth_status_command(ctx: click.Context, provider: str | None, output_format: str) -> None:
+    """Show Model authentication status."""
+
+    _execute(
+        _request(
+            ctx,
+            command="auth",
+            action="status",
+            provider=provider,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@auth_group.command("login")
+@click.argument("provider", type=_PROVIDER_CHOICE)
+@click.option("--allow-account-switch", is_flag=True)
+@click.option("--device-code", is_flag=True, help="Use Grok device authorization instead of browser callback.")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def auth_login_command(
+    ctx: click.Context,
+    provider: str,
+    allow_account_switch: bool,
+    device_code: bool,
+    output_format: str,
+) -> None:
+    """Authenticate a compatible Model provider."""
+
+    _execute(
+        _request(
+            ctx,
+            command="auth",
+            action="login",
+            provider=provider,
+            allow_account_switch=allow_account_switch,
+            device_code=device_code,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+@auth_group.command("logout")
+@click.argument("provider", type=_PROVIDER_CHOICE)
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
+@click.pass_context
+def auth_logout_command(ctx: click.Context, provider: str, output_format: str) -> None:
+    """Remove locally stored Model credentials."""
+
+    _execute(
+        _request(
+            ctx,
+            command="auth",
+            action="logout",
+            provider=provider,
+            output_format=OutputFormat(output_format),
+        )
+    )
+
+
+def _root_context(ctx: click.Context) -> _CliContext:
+    root = ctx.find_root().obj
+    if not isinstance(root, _CliContext):
+        raise RuntimeError("Agent UI CLI context is unavailable")
+    return root
+
+
+def _request(ctx: click.Context, **values: Any) -> CliRequest:
+    root = _root_context(ctx)
+    return CliRequest(config_path=root.config_path, data_root=root.data_root, **values)
+
+
+def _validate_environment_selection(mode: str | None, profile_id: str | None) -> None:
+    if mode is not None and profile_id is not None:
+        raise click.UsageError("--environment-mode cannot be combined with --environment-profile.")
+
+
+def _execute(request: CliRequest) -> None:
+    try:
+        exit_code = asyncio.run(_run(request))
+    except KeyboardInterrupt as exc:
+        if request.command == "auth" and request.action == "login":
+            raise click.exceptions.Exit(130) from exc
+        return
+    except AgentUiError as exc:
+        if request.output_format is OutputFormat.json:
+            click.echo(json.dumps({"error": {"code": exc.code, "message": str(exc)}}, ensure_ascii=False))
+        else:
+            click.echo(f"Error [{exc.code}]: {exc}", err=True)
+        raise click.exceptions.Exit(1) from exc
+    if exit_code:
+        raise click.exceptions.Exit(exit_code)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    args = _parser().parse_args(argv)
+    """Run the Click command tree from the console-script boundary."""
+
     try:
-        exit_code = asyncio.run(_run(args))
-    except KeyboardInterrupt as exc:
-        if args.command == "auth" and args.auth_command == "login":
-            raise SystemExit(130) from exc
-        return
-    except AgentUiError as exc:
-        if getattr(args, "format", "text") == "json":
-            print(json.dumps({"error": {"code": exc.code, "message": str(exc)}}))
-        else:
-            print(f"{exc.code}: {exc}", file=sys.stderr)
+        exit_code = cli.main(args=None if argv is None else list(argv), prog_name="a13n-ui", standalone_mode=False)
+        if isinstance(exit_code, int) and exit_code:
+            raise SystemExit(exit_code)
+    except click.exceptions.Exit as exc:
+        if exc.exit_code:
+            raise SystemExit(exc.exit_code) from exc
+    except click.ClickException as exc:
+        exc.show()
+        raise SystemExit(exc.exit_code) from exc
+    except click.Abort as exc:
+        click.echo("Aborted!", err=True)
         raise SystemExit(1) from exc
-    if exit_code:
-        raise SystemExit(exit_code)
 
 
-async def _run(args: argparse.Namespace) -> int:
-    source = await load_agent_ui_settings(args.config, data_root=args.data_root)
+async def _run(request: CliRequest) -> int:
+    source = await load_agent_ui_settings(request.config_path, data_root=request.data_root)
     await asyncio.to_thread(ensure_default_directories, source)
     settings = source.settings
     configure_logging(
@@ -246,28 +673,28 @@ async def _run(args: argparse.Namespace) -> int:
         log_format=LogFormat(settings.log_format),
         logger_names=("a13n_ui",),
     )
-    if args.command == "plugin":
-        return await _run_content_plugins(args, settings.storage.data_root)
-    if args.command == "webui":
+    if request.command == "plugin":
+        return await _run_content_plugins(request, settings.storage.data_root)
+    if request.command == "webui":
         from a13n_ui.webui import run as run_web
 
         await asyncio.to_thread(run_web)
         return 0
     if (
-        args.command == "auth"
-        and args.auth_command == "login"
-        and args.provider == Provider.CODEX.value
-        and args.device_code
+        request.command == "auth"
+        and request.action == "login"
+        and request.provider == Provider.CODEX.value
+        and request.device_code
     ):
         raise ConfigurationError(
             "--device-code is available only for Grok login.",
             code="auth_device_code_unsupported",
         )
     use_grok_device_code = (
-        args.command == "auth"
-        and args.auth_command == "login"
-        and args.provider == Provider.GROK.value
-        and args.device_code
+        request.command == "auth"
+        and request.action == "login"
+        and request.provider == Provider.GROK.value
+        and request.device_code
     )
 
     def app_factory() -> AbstractAsyncContextManager[AgentUiApp]:
@@ -279,49 +706,53 @@ async def _run(args: argparse.Namespace) -> int:
             grok_login=lambda request: _grok_cli_login(request, device_code=use_grok_device_code),
         )
 
-    if args.command in {None, "tui"}:
-        await run_tui(app_factory, launch=_tui_launch_options(args))
+    if request.command in {None, "tui"}:
+        await run_tui(app_factory, launch=_tui_launch_options(request))
         return 0
 
     async with app_factory() as app:
-        if args.command == "run":
+        if request.command == "run":
             configuration = await app.current_configuration()
             if configuration is None:
                 raise ConfigurationError(
                     "No accepted Agent UI configuration is available.",
                     code="configuration_unavailable",
                 )
-            return await _run_one_shot(app, configuration, args)
+            return await _run_one_shot(app, configuration, request)
         return await _run_management(
             app,
-            args,
+            request,
             configuration_path=source.path,
             data_root=settings.storage.data_root,
         )
 
 
-async def _run_content_plugins(args: argparse.Namespace, data_root: Path) -> int:
+async def _run_content_plugins(request: CliRequest, data_root: Path) -> int:
     store = ContentPluginStore(data_root / "content-plugins")
-    if args.plugin_command == "install":
+    if request.action == "install":
+        if request.repository is None:
+            raise RuntimeError("Plugin install requires a repository")
         installed = await store.install(
-            args.repository,
-            plugin_id=args.plugin_id,
-            ref=args.ref,
+            request.repository,
+            plugin_id=request.plugin_id,
+            ref=request.ref,
         )
-        _print_projection({"installed": _content_plugin_projection(installed)}, args.format)
+        _print_projection({"installed": _content_plugin_projection(installed)}, request.output_format)
         return 0
-    if args.plugin_command == "list":
+    if request.action == "list":
         plugins = await store.list()
         _print_projection(
             {
                 "plugins": tuple(_content_plugin_projection(item) for item in plugins),
                 "diagnostics": tuple(store.diagnostics),
             },
-            args.format,
+            request.output_format,
         )
         return 0
-    removed = await store.uninstall(args.plugin_id)
-    _print_projection(removed, args.format)
+    if request.plugin_id is None:
+        raise RuntimeError("Plugin uninstall requires a plugin ID")
+    removed = await store.uninstall(request.plugin_id)
+    _print_projection(removed, request.output_format)
     return 0
 
 
@@ -337,18 +768,16 @@ def _content_plugin_projection(plugin: InstalledContentPlugin) -> dict[str, str]
     }
 
 
-def _tui_launch_options(args: argparse.Namespace) -> TuiLaunchOptions:
-    thread_id = getattr(args, "thread", None)
-    environment_profile_id = getattr(args, "environment_profile", None)
-    environment_mode = getattr(args, "environment_mode", None)
-    if environment_mode is not None:
-        environment_profile_id = environment_profile_id_for_mode(environment_mode)
+def _tui_launch_options(request: CliRequest) -> TuiLaunchOptions:
+    environment_profile_id = request.environment_profile_id
+    if request.environment_mode is not None:
+        environment_profile_id = environment_profile_id_for_mode(request.environment_mode)
     defaults = NewThreadDefaults(
-        project_id=getattr(args, "project", None),
-        agent_id=getattr(args, "agent", None),
+        project_id=request.project_id,
+        agent_id=request.agent_id,
         environment_profile_id=environment_profile_id,
     )
-    if thread_id is not None and any(
+    if request.thread_id is not None and any(
         value is not None
         for value in (
             defaults.project_id,
@@ -360,13 +789,13 @@ def _tui_launch_options(args: argparse.Namespace) -> TuiLaunchOptions:
             "An existing TUI Thread cannot be combined with new-Thread launch overrides.",
             code="tui_arguments_conflict",
         )
-    return TuiLaunchOptions(thread_id=thread_id, defaults=defaults)
+    return TuiLaunchOptions(thread_id=request.thread_id, defaults=defaults)
 
 
 async def _codex_cli_login(request: object) -> CodexCredentials:
     del request
     flow = CodexOAuthFlow()
-    print(f"Open this URL to authenticate Codex:\n{flow.authorization_url()}", file=sys.stderr)
+    click.echo(f"Open this URL to authenticate Codex:\n{flow.authorization_url()}", err=True)
     return await flow.exchange_code_from_callback()
 
 
@@ -394,9 +823,9 @@ async def _grok_cli_login(request: object, *, device_code: bool) -> GrokCredenti
             referrer="agent-ui",
         )
         url = authorization.verification_uri_complete or authorization.verification_uri
-        print(f"Open this URL to authenticate Grok:\n{url}", file=sys.stderr)
-        print(f"Confirm this code in your browser: {authorization.user_code}", file=sys.stderr)
-        print("Waiting for Grok authorization...", file=sys.stderr)
+        click.echo(f"Open this URL to authenticate Grok:\n{url}", err=True)
+        click.echo(f"Confirm this code in your browser: {authorization.user_code}", err=True)
+        click.echo("Waiting for Grok authorization...", err=True)
         return await authorization.wait_for_credentials()
 
     flow = await GrokOAuthFlow.discover(
@@ -405,28 +834,28 @@ async def _grok_cli_login(request: object, *, device_code: bool) -> GrokCredenti
         scopes=scopes,
         referrer="agent-ui",
     )
-    print(f"Open this URL to authenticate Grok:\n{flow.authorization_url()}", file=sys.stderr)
+    click.echo(f"Open this URL to authenticate Grok:\n{flow.authorization_url()}", err=True)
     return await flow.exchange_code_from_callback(timeout_seconds=600)
 
 
 async def _run_management(
     app: AgentUiApp,
-    args: argparse.Namespace,
+    request: CliRequest,
     *,
     configuration_path: Path | None = None,
     data_root: Path | None = None,
 ) -> int:
-    if args.command == "config":
-        if args.config_command == "path":
+    if request.command == "config":
+        if request.action == "path":
             _print_projection(
                 {
                     "configuration_path": None if configuration_path is None else str(configuration_path),
                     "data_root": None if data_root is None else str(data_root),
                 },
-                args.format,
+                request.output_format,
             )
             return 0
-        if args.config_command == "validate":
+        if request.action == "validate":
             status = await app.status()
             projection = {
                 "valid": status.candidate_error_code is None,
@@ -441,72 +870,78 @@ async def _run_management(
                     }
                 ),
             }
-            _print_projection(projection, args.format)
+            _print_projection(projection, request.output_format)
             return 0 if projection["valid"] else 1
-        if args.config_command == "show":
+        if request.action == "show":
             configuration = await _require_configuration(app)
-            _print_projection(configuration.model_dump(mode="json"), args.format)
+            _print_projection(configuration.model_dump(mode="json"), request.output_format)
             return 0
-    if args.command == "import":
+    if request.command == "import":
+        if request.product is None or request.scope is None:
+            raise RuntimeError("Subagent import requires a product and scope")
         preview = await app.preview_subagent_import(
-            product=args.product,
-            scope=args.scope,
-            project_root=args.project_root,
-            user_home=args.user_home,
+            product=request.product,
+            scope=request.scope,
+            project_root=request.project_root,
+            user_home=request.user_home,
         )
         applied: list[object] = []
-        if args.apply:
+        if request.apply:
             for candidate in preview.candidates:
                 if candidate.status == "ready":
                     applied.append(await app.apply_subagent_import(candidate))
         _print_projection(
             {
-                "dry_run": not args.apply,
+                "dry_run": not request.apply,
                 "preview": preview,
                 "applied": applied,
             },
-            args.format,
+            request.output_format,
         )
         return 0 if all(item.status != "invalid" for item in preview.candidates) else 1
 
-    if args.command == "project":
-        _print_projection({"projects": await app.projects()}, args.format)
+    if request.command == "project":
+        _print_projection({"projects": await app.projects()}, request.output_format)
         return 0
 
-    if args.command == "environment":
-        _print_projection({"environment_profiles": await app.environment_profiles()}, args.format)
+    if request.command == "environment":
+        _print_projection({"environment_profiles": await app.environment_profiles()}, request.output_format)
         return 0
 
-    if args.command == "thread":
-        if args.thread_command == "list":
+    if request.command == "thread":
+        if request.action == "list":
             page = await app.list_threads(
-                query=args.query,
-                include_archived=args.include_archived,
-                cursor=args.cursor,
-                limit=args.limit,
+                query=request.query,
+                include_archived=request.include_archived,
+                cursor=request.cursor,
+                limit=request.limit,
             )
-            _print_projection(page, args.format)
+            _print_projection(page, request.output_format)
             return 0
-        if args.thread_command == "show":
-            thread = await app.get_thread(args.thread_id)
+        if request.action == "show":
+            if request.thread_id is None:
+                raise RuntimeError("Thread show requires a Thread ID")
+            thread = await app.get_thread(request.thread_id)
             history = await app.get_thread_transcript(
-                thread_id=args.thread_id,
-                cursor=args.history_cursor,
-                limit=args.history_limit,
+                thread_id=request.thread_id,
+                cursor=request.history_cursor,
+                limit=request.history_limit,
             )
-            _print_projection({"thread": thread, "transcript": history}, args.format)
+            _print_projection({"thread": thread, "transcript": history}, request.output_format)
             return 0
+        if request.thread_id is None or request.expected_version is None:
+            raise RuntimeError("Thread archive requires a Thread ID and expected version")
         thread = await app.update_thread_metadata(
-            thread_id=args.thread_id,
+            thread_id=request.thread_id,
             mutation=ThreadMetadataMutation(
-                expected_version=args.expected_version,
-                patch=ThreadMetadataPatch(archived=not args.restore),
+                expected_version=request.expected_version,
+                patch=ThreadMetadataPatch(archived=not request.restore),
             ),
         )
-        _print_projection(thread, args.format)
+        _print_projection(thread, request.output_format)
         return 0
 
-    if args.command == "doctor":
+    if request.command == "doctor":
         status = await app.status()
         references = await app.list_catalog()
         projection = {
@@ -516,10 +951,12 @@ async def _run_management(
                 "ambiguous": [item for item in references if not item.configurable],
             },
         }
-        _print_projection(projection, args.format)
+        _print_projection(projection, request.output_format)
         return 0 if status.candidate_error_code is None else 1
 
-    if args.auth_command == "status" and args.provider is None:
+    if request.command != "auth" or request.action is None:
+        raise RuntimeError("Unsupported Agent UI CLI command")
+    if request.action == "status" and request.provider is None:
         result: object = {
             "accounts": [
                 await app.inspect_model_account(Provider.CODEX),
@@ -527,17 +964,19 @@ async def _run_management(
             ]
         }
     else:
-        provider = Provider(args.provider)
-        if args.auth_command == "status":
+        if request.provider is None:
+            raise RuntimeError("Authentication command requires a provider")
+        provider = Provider(request.provider)
+        if request.action == "status":
             result = await app.inspect_model_account(provider)
-        elif args.auth_command == "login":
+        elif request.action == "login":
             result = await app.login_model_account(
                 provider,
-                allow_account_switch=args.allow_account_switch,
+                allow_account_switch=request.allow_account_switch,
             )
         else:
             result = {"provider": provider.value, "logged_out": await app.logout_model_account(provider)}
-    _print_projection(result, args.format)
+    _print_projection(result, request.output_format)
     return 0
 
 
@@ -554,18 +993,20 @@ async def _require_configuration(app: AgentUiApp) -> LoadedAgentUiConfiguration:
 async def _run_one_shot(
     app: AgentUiApp,
     configuration: LoadedAgentUiConfiguration,
-    args: argparse.Namespace,
+    request: CliRequest,
 ) -> int:
-    thread_id = args.thread
+    if request.prompt is None:
+        raise RuntimeError("Headless Run requires a prompt")
+    thread_id = request.thread_id
     if thread_id is not None:
         if any(
             value is not None
             for value in (
-                args.project,
-                args.agent,
-                args.environment_mode,
-                args.environment_profile,
-                args.title,
+                request.project_id,
+                request.agent_id,
+                request.environment_mode,
+                request.environment_profile_id,
+                request.title,
             )
         ):
             raise ConfigurationError(
@@ -573,14 +1014,14 @@ async def _run_one_shot(
                 code="run_arguments_conflict",
             )
     else:
-        defaults = _new_thread_defaults(configuration, args)
-        thread = await app.create_thread(defaults=defaults, title=args.title)
+        defaults = _new_thread_defaults(configuration, request)
+        thread = await app.create_thread(defaults=defaults, title=request.title)
         thread_id = thread.thread_id
 
-    receipt = await app.submit_thread(thread_id=thread_id, prompt=args.prompt)
+    receipt = await app.submit_thread(thread_id=thread_id, prompt=request.prompt)
     operation = await app.wait_root_operation(receipt.receipt_id)
-    if args.format == "json":
-        print(operation.model_dump_json())
+    if request.output_format is OutputFormat.json:
+        click.echo(operation.model_dump_json())
     else:
         _print_text_result(operation)
     return 0 if operation.status is RootOperationStatus.completed else 1
@@ -588,11 +1029,11 @@ async def _run_one_shot(
 
 def _new_thread_defaults(
     configuration: LoadedAgentUiConfiguration,
-    args: argparse.Namespace,
+    request: CliRequest,
 ) -> RootThreadDefaults:
     defaults = configuration.document.defaults
-    project_id = args.project or defaults.project
-    agent_id = args.agent or defaults.agent
+    project_id = request.project_id or defaults.project
+    agent_id = request.agent_id or defaults.agent
     if project_id is None:
         raise ConfigurationError(
             "A headless Run requires --project or defaults.project.",
@@ -615,9 +1056,9 @@ def _new_thread_defaults(
             code="run_agent_missing",
             details={"agent_id": agent_id},
         )
-    environment_profile_id = args.environment_profile
-    if args.environment_mode is not None:
-        environment_profile_id = environment_profile_id_for_mode(args.environment_mode)
+    environment_profile_id = request.environment_profile_id
+    if request.environment_mode is not None:
+        environment_profile_id = environment_profile_id_for_mode(request.environment_mode)
     return RootThreadDefaults(
         project_id=project_id,
         agent_id=agent_id,
@@ -629,26 +1070,106 @@ def _print_text_result(operation: RootOperationView) -> None:
     outcome = operation.outcome
     if operation.status is RootOperationStatus.completed and outcome is not None:
         output = outcome.execution.output
-        print(output if isinstance(output, str) else json.dumps(output, ensure_ascii=False))
+        if isinstance(output, str):
+            click.echo(output)
+        else:
+            click.echo(_render_text(_jsonable(output)))
         cleanup_count = len(outcome.environment.cleanup_failures)
         if cleanup_count:
-            print(f"Environment cleanup reported {cleanup_count} error(s).", file=sys.stderr)
+            noun = "failure" if cleanup_count == 1 else "failures"
+            click.echo(f"Warning: environment cleanup reported {cleanup_count} {noun}.", err=True)
         return
     failure = operation.failure or (None if outcome is None else outcome.execution.failure)
     if failure is not None:
-        print(f"{failure.code}: {failure.message}", file=sys.stderr)
+        click.echo(f"Error [{failure.code}]: {failure.message}", err=True)
+        if failure.retry_hint:
+            click.echo(f"Retry: {failure.retry_hint}", err=True)
     elif operation.status is RootOperationStatus.suspended:
-        print("Run suspended with deferred tool requests.", file=sys.stderr)
+        click.echo("Run suspended: deferred tool requests require attention.", err=True)
     else:
-        print(f"Run {operation.status.value}.", file=sys.stderr)
+        click.echo(f"Run ended with status: {operation.status.value}.", err=True)
 
 
-def _print_projection(value: object, output_format: str) -> None:
+def _print_projection(value: object, output_format: OutputFormat) -> None:
     payload = _jsonable(value)
-    if output_format == "json":
-        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    if output_format is OutputFormat.json:
+        click.echo(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     else:
-        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        click.echo(_render_text(payload))
+
+
+def _render_text(value: object) -> str:
+    lines = _value_lines(value, indent=0)
+    return "\n".join(lines) if lines else "-"
+
+
+def _value_lines(value: object, *, indent: int) -> list[str]:
+    prefix = " " * indent
+    if isinstance(value, Mapping):
+        if not value:
+            return [f"{prefix}-"]
+        lines: list[str] = []
+        for key, item in value.items():
+            lines.extend(_field_lines(str(key), item, indent=indent))
+        return lines
+    if isinstance(value, list):
+        if not value:
+            return [f"{prefix}-"]
+        lines = []
+        for item in value:
+            lines.extend(_list_item_lines(item, indent=indent))
+        return lines
+    return [f"{prefix}{_text_scalar(value)}"]
+
+
+def _field_lines(key: str, value: object, *, indent: int) -> list[str]:
+    prefix = " " * indent
+    label = _humanize_label(key)
+    if isinstance(value, Mapping):
+        if not value:
+            return [f"{prefix}{label}: -"]
+        return [f"{prefix}{label}:", *_value_lines(value, indent=indent + 2)]
+    if isinstance(value, list):
+        if not value:
+            return [f"{prefix}{label} (0): -"]
+        return [f"{prefix}{label} ({len(value)}):", *_value_lines(value, indent=indent + 2)]
+    return [f"{prefix}{label}: {_text_scalar(value)}"]
+
+
+def _list_item_lines(value: object, *, indent: int) -> list[str]:
+    prefix = " " * indent
+    if isinstance(value, Mapping):
+        if not value:
+            return [f"{prefix}-"]
+        fields_iter = iter(value.items())
+        first_key, first_value = next(fields_iter)
+        first_lines = _field_lines(str(first_key), first_value, indent=indent + 2)
+        lines = [f"{prefix}- {first_lines[0][indent + 2 :]}", *first_lines[1:]]
+        for key, item in fields_iter:
+            lines.extend(_field_lines(str(key), item, indent=indent + 2))
+        return lines
+    if isinstance(value, list):
+        if not value:
+            return [f"{prefix}- -"]
+        return [f"{prefix}-", *_value_lines(value, indent=indent + 2)]
+    return [f"{prefix}- {_text_scalar(value)}"]
+
+
+def _humanize_label(value: str) -> str:
+    replacements = {"id": "ID", "ids": "IDs", "url": "URL", "uri": "URI"}
+    words = value.replace("-", "_").split("_")
+    rendered = [replacements.get(word.lower(), word.lower()) for word in words]
+    if rendered:
+        rendered[0] = rendered[0] if rendered[0] in replacements.values() else rendered[0].capitalize()
+    return " ".join(rendered)
+
+
+def _text_scalar(value: object) -> str:
+    if value is None or value == "":
+        return "-"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    return str(value)
 
 
 def _jsonable(value: object) -> object:
@@ -671,4 +1192,4 @@ def _jsonable(value: object) -> object:
     return str(value)
 
 
-__all__ = ["main"]
+__all__ = ["CliRequest", "OutputFormat", "cli", "main"]
