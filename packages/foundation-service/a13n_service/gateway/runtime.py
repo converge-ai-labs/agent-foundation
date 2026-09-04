@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .a2a import A2AService
 from .commands import NativeInteractionCommands
 from .hosted_agui import HostedAguiService
 from .native_streaming import NativeRunStreamService
@@ -22,6 +23,7 @@ class GatewayRuntime:
     notifications: NotificationService
     queries: NativeInteractionQueries
     queued_submissions: NativeQueuedSubmissionService
+    a2a: A2AService | None
 
 
 __all__ = ["GatewayRuntime"]

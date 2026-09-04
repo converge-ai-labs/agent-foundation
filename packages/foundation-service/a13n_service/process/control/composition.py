@@ -8,6 +8,7 @@ from a13n_service.connectivity.selection_resolution import ConnectivitySelection
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.gateway import GatewayRuntime
+from a13n_service.gateway.a2a import A2AService
 from a13n_service.gateway.commands import NativeInteractionCommands
 from a13n_service.gateway.hosted_agui import HostedAguiService
 from a13n_service.gateway.native_streaming import NativeRunStreamService
@@ -159,6 +160,16 @@ async def build_control_runtime(
             shared.storage.sessions,
             QueuedSubmissionStore(shared.storage.sessions, hooks.inline_validator),
             gateway_commands,
+        ),
+        a2a=(
+            A2AService(
+                shared.storage.sessions,
+                gateway_commands,
+                poll_interval_seconds=settings.a2a_poll_interval_seconds,
+                maximum_wait_seconds=settings.a2a_maximum_wait_seconds,
+            )
+            if settings.a2a_enabled
+            else None
         ),
     )
     runtime = ControlRuntime(

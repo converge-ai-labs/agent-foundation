@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "a13n-environment-provider",
+    "a2a-sdk[fastapi]>=1.1.2,<1.2",
     "aiobotocore[httpx2]>=3.9,<4",
     "aiosqlite>=0.21,<1",
     "alembic>=1.17.1,<2",
@@ -55,7 +56,7 @@ packages = ["a13n_service"]
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
-package_module_name_map = { "a13n-environment-provider" = "a13n_environment_provider", "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "pydantic-settings" = "pydantic_settings", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "a13n-environment-provider" = "a13n_environment_provider", "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "a2a-sdk" = "a2a", "ag-ui-protocol" = "ag_ui", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "pydantic-settings" = "pydantic_settings", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
 
 # Database drivers are loaded by SQLAlchemy from the selected backend. httpx2
 # is the service-wide outbound client contract and is used by service tests.

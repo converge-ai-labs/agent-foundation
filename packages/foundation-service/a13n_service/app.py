@@ -20,6 +20,7 @@ from a13n_service.connectivity.ingress.router import router as ingress_router
 from a13n_service.connectivity.mcp.router import router as mcp_router
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.router import router as environment_router
+from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.router import router as gateway_router
 from a13n_service.hooks.router import router as hook_router
 from a13n_service.lifecycle.router import router as lifecycle_router
@@ -172,6 +173,8 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.include_router(hook_router)
         app.include_router(lifecycle_router)
         app.include_router(gateway_router)
+        if resolved_settings.a2a_enabled:
+            app.include_router(a2a_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:

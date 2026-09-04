@@ -202,6 +202,11 @@ class ServiceSettings(BaseSettings):
     gateway_run_max_handoffs: int = Field(default=2, ge=0, le=100)
     gateway_run_queue_name: str = Field(default="default", pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")
     gateway_run_priority: int = Field(default=0, ge=-1_000_000, le=1_000_000)
+    a2a_enabled: bool = True
+    a2a_public_origin: str | None = Field(default=None, min_length=1, max_length=2048)
+    a2a_default_agent_id: str | None = Field(default=None, min_length=1, max_length=72)
+    a2a_poll_interval_seconds: float = Field(default=0.5, gt=0, le=30)
+    a2a_maximum_wait_seconds: float = Field(default=300, gt=0, le=3600)
     secret_master_key_base64: SecretStr | None = Field(default=None, repr=False)
     secret_encryption_key_id: str | None = Field(default=None, min_length=1, max_length=128, repr=False)
 
