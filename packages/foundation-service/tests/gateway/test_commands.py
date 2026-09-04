@@ -14,6 +14,7 @@ from a13n_service.gateway.commands import (
     NativeInteractionCommands,
     RetryRunRequest,
     StartRunRequest,
+    WaitingContinueRunRequest,
 )
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.interactions import (
@@ -707,6 +708,64 @@ async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
         )
 
     assert captured.value.code == "idempotency_conflict"
+
+
+async def test_waiting_continue_defaults_feedback_and_preserves_new_input(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    source = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="waiting-continue-source",
+        request=_request(),
+    )
+    digest = await _wait_run(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        run_id=source.run_id,
+    )
+    request = WaitingContinueRunRequest(
+        expected_thread_version=2,
+        sealed_state_digest_sha256=digest,
+        input=_request("handle this instead").input,
+    )
+
+    first = await commands.continue_waiting(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="waiting-continue-one",
+        request=request,
+    )
+    repeated = await commands.continue_waiting(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="waiting-continue-one",
+        request=request,
+    )
+
+    assert repeated == first
+    assert first.thread_version == 3
+    async with short_session(lifecycle_interaction_sessions) as database:
+        successor = await database.scalar(select(RunRecord).where(RunRecord.id == first.run_id))
+        thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == source.thread_id))
+    assert successor is not None and thread is not None
+    assert successor.input_kind == "waiting_continue"
+    assert successor.parent_run_id == source.run_id
+    assert successor.authority_principal_id == USER_ID
+    assert successor.input_text == "handle this instead"
+    assert successor.input_json["resolutions"][0]["outcome"] == "reject"
+    assert successor.input_json["input"]["content"] == [{"type": "text", "text": "handle this instead"}]
+    assert thread.current_run_id == successor.id
+    assert thread.head_run_id == source.run_id
 
 
 async def test_steer_is_atomic_replayable_and_does_not_advance_thread(

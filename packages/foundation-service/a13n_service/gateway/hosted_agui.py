@@ -33,7 +33,7 @@ from a13n_service.run_stream import RedisRunStream, RunReplayStore, RunStreamEnt
 from a13n_service.storage import ObjectNotFound, short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest
+from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest, WaitingContinueRunRequest
 from .models import AguiRunBindingRecord, AguiThreadBindingRecord
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
@@ -250,18 +250,37 @@ class HostedAguiService:
                     "Historical parentRunId requires an explicit authorized fork.",
                     status_code=409,
                 )
-            source, foundation_thread = await self._load_completed_source(latest.run_id, thread.active_thread_id)
-            await self._commands.continue_from(
-                actor=actor,
-                source_run_id=source.id,
-                idempotency_key=idempotency_key,
-                request=ContinueRunRequest(
-                    expected_thread_version=foundation_thread.version,
-                    input=input_value,
-                    agent_id=agent_id,
-                ),
-                transaction_hook=bind,
-            )
+            source, foundation_thread = await self._load_continuation_source(latest.run_id, thread.active_thread_id)
+            if source.status == RunStatus.waiting.value:
+                if source.sealed_state_digest_sha256 is None:
+                    raise HostedAguiError(
+                        "agui_waiting_state_invalid",
+                        "The active AG-UI Run has no complete waiting state.",
+                        status_code=409,
+                    )
+                await self._commands.continue_waiting(
+                    actor=actor,
+                    run_id=source.id,
+                    idempotency_key=idempotency_key,
+                    request=WaitingContinueRunRequest(
+                        expected_thread_version=foundation_thread.version,
+                        sealed_state_digest_sha256=source.sealed_state_digest_sha256,
+                        input=input_value,
+                    ),
+                    transaction_hook=bind,
+                )
+            else:
+                await self._commands.continue_from(
+                    actor=actor,
+                    source_run_id=source.id,
+                    idempotency_key=idempotency_key,
+                    request=ContinueRunRequest(
+                        expected_thread_version=foundation_thread.version,
+                        input=input_value,
+                        agent_id=agent_id,
+                    ),
+                    transaction_hook=bind,
+                )
 
         bound = await self._load_run_binding(
             actor=actor,
@@ -531,7 +550,7 @@ class HostedAguiService:
                 .limit(1)
             )
 
-    async def _load_completed_source(self, run_id: str, thread_id: str) -> tuple[RunRecord, ThreadRecord]:
+    async def _load_continuation_source(self, run_id: str, thread_id: str) -> tuple[RunRecord, ThreadRecord]:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
@@ -546,10 +565,10 @@ class HostedAguiService:
                     .where(RunRecord.id == run_id, RunRecord.thread_id == thread_id)
                 )
             ).one_or_none()
-        if row is None or row[0].status != RunStatus.completed.value:
+        if row is None or row[0].status not in {RunStatus.completed.value, RunStatus.waiting.value}:
             raise HostedAguiError(
                 "agui_run_not_continuable",
-                "The active AG-UI Run is not completed.",
+                "The active AG-UI Run is neither completed nor waiting.",
                 status_code=409,
             )
         return row[0], row[1]

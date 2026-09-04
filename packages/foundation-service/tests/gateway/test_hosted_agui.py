@@ -21,7 +21,7 @@ from ag_ui.core import RunAgentInput
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.gateway.test_commands import _commands, _frozen, _Preparation
+from tests.gateway.test_commands import _commands, _frozen, _Preparation, _wait_run
 from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import AGENT_ID, NOW
 
@@ -46,7 +46,7 @@ async def _service(
     sessions: async_sessionmaker[AsyncSession],
     tmp_path,
     stack: AsyncExitStack,
-) -> tuple[HostedAguiService, RedisRunStream]:
+) -> tuple[HostedAguiService, RedisRunStream, LocalObjectStore]:
     objects = await LocalObjectStore.create(tmp_path / "objects")
     redis = await stack.enter_async_context(open_redis(RedisMemoryConfig()))
     stream = RedisRunStream(redis)
@@ -64,6 +64,7 @@ async def _service(
             clock=lambda: NOW,
         ),
         stream,
+        objects,
     )
 
 
@@ -79,7 +80,7 @@ async def test_initial_run_atomically_creates_external_bindings_and_replays(
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     async with AsyncExitStack() as stack:
-        service, _stream = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        service, _stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
         request = _request()
 
         first = await service.accept(actor=_actor(), agent_id=AGENT_ID, request=request, last_event_id=None)
@@ -108,7 +109,7 @@ async def test_reused_external_run_id_with_different_request_conflicts(
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     async with AsyncExitStack() as stack:
-        service, _stream = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        service, _stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
         await service.accept(actor=_actor(), agent_id=AGENT_ID, request=_request(), last_event_id=None)
 
         with pytest.raises(HostedAguiError) as captured:
@@ -123,13 +124,63 @@ async def test_reused_external_run_id_with_different_request_conflicts(
     assert captured.value.status_code == 409
 
 
+async def test_new_user_tail_defaults_active_waiting_run(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    async with AsyncExitStack() as stack:
+        service, _stream, objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        first = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=_request(),
+            last_event_id=None,
+        )
+        await _wait_run(
+            lifecycle_interaction_sessions,
+            objects,
+            run_id=first.binding.run_id,
+        )
+        request = RunAgentInput.model_validate(
+            {
+                "threadId": "external-thread-1",
+                "runId": "external-run-2",
+                "parentRunId": "external-run-1",
+                "state": {},
+                "messages": [
+                    {"id": "message-external-run-1", "role": "user", "content": "hello"},
+                    {"id": "message-external-run-2", "role": "user", "content": "handle this instead"},
+                ],
+                "tools": [],
+                "context": [],
+                "forwardedProps": {},
+            }
+        )
+
+        second = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=request,
+            last_event_id=None,
+        )
+
+    async with short_session(lifecycle_interaction_sessions) as database:
+        successor = await database.scalar(select(RunRecord).where(RunRecord.id == second.binding.run_id))
+    assert successor is not None
+    assert successor.parent_run_id == first.binding.run_id
+    assert successor.input_kind == "waiting_continue"
+    assert successor.input_json["resolutions"][0]["outcome"] == "reject"
+    assert successor.input_json["input"]["content"] == [{"type": "text", "text": "handle this instead"}]
+
+
 async def test_hosted_stream_projects_standard_events_and_resumes_with_hosted_cursor(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     async with AsyncExitStack() as stack:
-        service, stream = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        service, stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
         attachment = await service.accept(
             actor=_actor(),
             agent_id=AGENT_ID,
@@ -192,7 +243,7 @@ async def test_hosted_cancel_resolves_binding_and_interrupts_foundation_run(
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     async with AsyncExitStack() as stack:
-        service, _stream = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        service, _stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
         attachment = await service.accept(
             actor=_actor(),
             agent_id=AGENT_ID,
