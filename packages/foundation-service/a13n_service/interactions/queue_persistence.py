@@ -9,12 +9,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.iam.domain import PrincipalRef
 
-from .control_domain import QueuedSubmissionFailure
+from .control_domain import QueuedSubmission, QueuedSubmissionFailure
 from .control_models import QueuedSubmissionRecord
 
 
 class QueueConsumptionConflict(RuntimeError):
     """The selected queue head no longer matches prepared Run acceptance."""
+
+
+async def load_live_queued_submission(
+    database: AsyncSession,
+    *,
+    tenant_id: str,
+    queued_submission_id: str,
+    submission_digest_sha256: str,
+) -> QueuedSubmission:
+    row = await database.scalar(
+        select(QueuedSubmissionRecord).where(
+            QueuedSubmissionRecord.tenant_id == tenant_id,
+            QueuedSubmissionRecord.id == queued_submission_id,
+            QueuedSubmissionRecord.position.is_not(None),
+        )
+    )
+    if row is None or row.submission_digest_sha256 != submission_digest_sha256:
+        raise QueueConsumptionConflict("prepared queued submission intent changed")
+    return row.to_resource()
 
 
 async def consume_first_submission(
@@ -127,4 +146,9 @@ async def _compact_after_head(
         row.position -= offset + 1
 
 
-__all__ = ["QueueConsumptionConflict", "consume_first_submission", "fail_first_submission"]
+__all__ = [
+    "QueueConsumptionConflict",
+    "consume_first_submission",
+    "fail_first_submission",
+    "load_live_queued_submission",
+]

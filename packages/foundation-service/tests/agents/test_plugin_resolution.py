@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from importlib.metadata import version as distribution_version
 
 import pytest
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     AgentRunOverride,
     CreateAgentRequest,
@@ -16,7 +17,6 @@ from a13n_service.agents.errors import AgentError
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError
 from a13n_service.agents.resolution import AgentResolver
-from a13n_service.agents.service import AgentService
 from a13n_service.etags import resource_etag
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
@@ -149,7 +149,7 @@ def _runner_selection(*, config: dict[str, object] | None = None) -> dict[str, o
 
 def _runner_services(
     sessions: async_sessionmaker[AsyncSession],
-) -> tuple[AgentService, AgentInvocationResolver, AgentResolver, AgentPluginSelectionResolver]:
+) -> tuple[AgentManagement, AgentInvocationResolver, AgentResolver, AgentPluginSelectionResolver]:
     model_selector = AcceptedModelSelector(
         sessions,
         built_in_provider_registry(),
@@ -175,7 +175,7 @@ def _runner_services(
         plugin_resolver=plugin_resolver,
     )
     return (
-        AgentService(sessions, revision_resolver, invocation, clock=lambda: NOW),
+        AgentManagement(sessions, revision_resolver, invocation, clock=lambda: NOW),
         invocation,
         revision_resolver,
         plugin_resolver,
@@ -233,11 +233,11 @@ async def _set_runner_catalog(
 
 @pytest.mark.anyio
 async def test_create_revision_freezes_exact_plugin_version(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions, requires_dist=("packaging>=25,<26",))
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-plugin-agent",
@@ -247,7 +247,7 @@ async def test_create_revision_freezes_exact_plugin_version(
         ),
     )
 
-    revision_result = await agent_service.create_revision(
+    revision_result = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-plugin-agent",
@@ -294,32 +294,32 @@ async def test_create_revision_freezes_exact_plugin_version(
 
 @pytest.mark.anyio
 async def test_run_override_resolves_plugin_and_changes_runtime_lock(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-plugin-override",
         request=CreateAgentRequest(name="Plugin Override", config=agent_config()),
     )
-    revision_result = await agent_service.create_revision(
+    revision_result = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-plugin-override",
         request=CreateAgentRevisionRequest(expected_version=1, config=agent.revision.config),
     )
 
-    prepared = await agent_invocation_resolver.prepare(
+    prepared = await agent_invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=agent.agent.id,
         agent_revision_id=revision_result.revision.id,
         config_override=AgentRunOverride.model_validate({"plugins": [_selection()]}),
     )
     async with transaction(agent_sessions) as session:
-        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert frozen.effective_config.resolved_plugin_versions[0].plugin_version_id == PLUGIN_VERSION_ID
     assert frozen.effective_config.runtime_lock_digest != revision_result.revision.runtime_lock_digest
@@ -327,12 +327,12 @@ async def test_run_override_resolves_plugin_and_changes_runtime_lock(
 
 @pytest.mark.anyio
 async def test_run_override_plugin_config_reuses_exact_runtime_lock(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-plugin-config-override",
@@ -341,14 +341,14 @@ async def test_run_override_plugin_config_reuses_exact_runtime_lock(
             config=agent_config(plugins=[_selection()]),
         ),
     )
-    revision_result = await agent_service.create_revision(
+    revision_result = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-plugin-config-override",
         request=CreateAgentRevisionRequest(expected_version=1, config=agent.revision.config),
     )
 
-    prepared = await agent_invocation_resolver.prepare(
+    prepared = await agent_invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=agent.agent.id,
         agent_revision_id=revision_result.revision.id,
@@ -357,7 +357,7 @@ async def test_run_override_plugin_config_reuses_exact_runtime_lock(
         ),
     )
     async with transaction(agent_sessions) as session:
-        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert frozen.effective_config.resolved_plugin_versions[0].config == {"level": "lenient"}
     assert frozen.effective_config.runtime_lock_digest == revision_result.revision.runtime_lock_digest
@@ -365,11 +365,11 @@ async def test_run_override_plugin_config_reuses_exact_runtime_lock(
 
 @pytest.mark.anyio
 async def test_create_revision_composes_subagent_runtime_lock_and_rejects_version_conflict(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    child = await agent_service.create(
+    child = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-plugin-lock-child",
@@ -379,12 +379,12 @@ async def test_create_revision_composes_subagent_runtime_lock_and_rejects_versio
         ),
     )
     child_revision, _ = await create_current_revision(
-        agent_service,
+        agent_management,
         agent_id=child.agent.id,
         expected_version=1,
         key="plugin-lock-child",
     )
-    parent = await agent_service.create(
+    parent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-plugin-lock-parent",
@@ -393,7 +393,7 @@ async def test_create_revision_composes_subagent_runtime_lock_and_rejects_versio
             config=agent_config(subagents={"child": {"agent_id": child.agent.id, "environment": {"mode": "none"}}}),
         ),
     )
-    parent_revision = await agent_service.create_revision(
+    parent_revision = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=parent.agent.id,
         idempotency_key="create_revision-plugin-lock-parent",
@@ -414,7 +414,7 @@ async def test_create_revision_composes_subagent_runtime_lock_and_rejects_versio
         digest="b" * 64,
     )
     with pytest.raises(AgentError) as rejected:
-        await agent_service.create(
+        await agent_management.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="create-plugin-lock-conflict",
@@ -441,7 +441,7 @@ async def test_runner_revision_creation_resolves_active_version_and_pins_catalog
         plugin_resolver,
         plugin_version_id=PLUGIN_VERSION_ID,
     )
-    agent = await service.create(
+    agent = await service.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-runner-plugin",
@@ -451,7 +451,7 @@ async def test_runner_revision_creation_resolves_active_version_and_pins_catalog
         ),
     )
 
-    revision_result = await service.create_revision(
+    revision_result = await service.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-runner-plugin",
@@ -481,7 +481,7 @@ async def test_runner_revision_creation_requires_committed_active_catalog(
             )
         )
     with pytest.raises(AgentError) as rejected:
-        await service.create(
+        await service.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="create-runner-without-catalog",
@@ -506,7 +506,7 @@ async def test_runner_historical_revision_keeps_lock_while_new_revision_uses_new
         plugin_resolver,
         plugin_version_id=PLUGIN_VERSION_ID,
     )
-    agent = await service.create(
+    agent = await service.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-runner-history",
@@ -515,7 +515,7 @@ async def test_runner_historical_revision_keeps_lock_while_new_revision_uses_new
             config=agent_config(plugins=[_runner_selection()]),
         ),
     )
-    first = await service.create_revision(
+    first = await service.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-runner-history-v1",
@@ -534,14 +534,14 @@ async def test_runner_historical_revision_keeps_lock_while_new_revision_uses_new
         plugin_version_id=second_version_id,
     )
 
-    retained = await invocation.prepare(
+    retained = await invocation.preparation.prepare(
         actor=actor(),
         agent_id=agent.agent.id,
         agent_revision_id=first.revision.id,
     )
     async with transaction(agent_sessions) as session:
-        frozen = await invocation.freeze_in_transaction(session, prepared=retained)
-    second = await service.create_revision(
+        frozen = await invocation.freezing.freeze_in_transaction(session, prepared=retained)
+    second = await service.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-runner-history-v2",
@@ -569,7 +569,7 @@ async def test_runner_plugin_override_resolves_current_catalog_and_freezes_new_l
         plugin_resolver,
         plugin_version_id=PLUGIN_VERSION_ID,
     )
-    agent = await service.create(
+    agent = await service.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-runner-override",
@@ -578,7 +578,7 @@ async def test_runner_plugin_override_resolves_current_catalog_and_freezes_new_l
             config=agent_config(plugins=[_runner_selection()]),
         ),
     )
-    first = await service.create_revision(
+    first = await service.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-runner-override",
@@ -597,7 +597,7 @@ async def test_runner_plugin_override_resolves_current_catalog_and_freezes_new_l
         plugin_version_id=second_version_id,
     )
 
-    prepared = await invocation.prepare(
+    prepared = await invocation.preparation.prepare(
         actor=actor(),
         agent_id=agent.agent.id,
         agent_revision_id=first.revision.id,
@@ -606,7 +606,7 @@ async def test_runner_plugin_override_resolves_current_catalog_and_freezes_new_l
         ),
     )
     async with transaction(agent_sessions) as session:
-        frozen = await invocation.freeze_in_transaction(session, prepared=prepared)
+        frozen = await invocation.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert first.revision.resolved_plugin_versions[0].plugin_version_id == PLUGIN_VERSION_ID
     assert frozen.effective_config.resolved_plugin_versions[0].plugin_version_id == second_version_id
@@ -625,7 +625,7 @@ async def test_runner_revision_creation_rechecks_active_catalog_in_commit_transa
         plugin_resolver,
         plugin_version_id=PLUGIN_VERSION_ID,
     )
-    agent = await service.create(
+    agent = await service.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-runner-race",
@@ -673,7 +673,7 @@ async def test_runner_parent_revision_rejects_child_from_different_catalog_lock(
         plugin_resolver,
         plugin_version_id=PLUGIN_VERSION_ID,
     )
-    child = await service.create(
+    child = await service.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-runner-child",
@@ -701,7 +701,7 @@ async def test_runner_parent_revision_rejects_child_from_different_catalog_lock(
         plugin_version_id=second_version_id,
     )
     with pytest.raises(AgentError) as rejected:
-        await service.create(
+        await service.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="create-runner-parent",
@@ -717,12 +717,12 @@ async def test_runner_parent_revision_rejects_child_from_different_catalog_lock(
 
 @pytest.mark.anyio
 async def test_retained_revision_keeps_archived_plugin_executable(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-retained-plugin",
@@ -731,7 +731,7 @@ async def test_retained_revision_keeps_archived_plugin_executable(
             config=agent_config(plugins=[_selection()]),
         ),
     )
-    revision_result = await agent_service.create_revision(
+    revision_result = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-retained-plugin",
@@ -742,13 +742,13 @@ async def test_retained_revision_keeps_archived_plugin_executable(
         assert plugin is not None
         plugin.archived_at = NOW
 
-    prepared = await agent_invocation_resolver.prepare(
+    prepared = await agent_invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=agent.agent.id,
         agent_revision_id=revision_result.revision.id,
     )
     async with transaction(agent_sessions) as session:
-        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert frozen.effective_config.resolved_plugin_versions == revision_result.revision.resolved_plugin_versions
     assert frozen.effective_config.runtime_lock_digest == revision_result.revision.runtime_lock_digest
@@ -756,17 +756,17 @@ async def test_retained_revision_keeps_archived_plugin_executable(
 
 @pytest.mark.anyio
 async def test_retained_revision_fails_closed_when_runtime_lock_is_missing(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-missing-runtime-lock",
         request=CreateAgentRequest(name="Missing Runtime Lock", config=agent_config()),
     )
-    revision_result = await agent_service.create_revision(
+    revision_result = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-missing-runtime-lock",
@@ -777,14 +777,14 @@ async def test_retained_revision_fails_closed_when_runtime_lock_is_missing(
         assert record is not None
         await session.delete(record)
 
-    prepared = await agent_invocation_resolver.prepare(
+    prepared = await agent_invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=agent.agent.id,
         agent_revision_id=revision_result.revision.id,
     )
     with pytest.raises(AgentError) as rejected:
         async with transaction(agent_sessions) as session:
-            await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+            await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert rejected.value.code == "agent_revision_not_executable"
     assert rejected.value.details == {"reason": "plugin_runtime_lock_unavailable"}
@@ -792,11 +792,11 @@ async def test_retained_revision_fails_closed_when_runtime_lock_is_missing(
 
 @pytest.mark.anyio
 async def test_enable_revalidates_retained_plugin_without_following_archive_state(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-enable-retained-plugin",
@@ -806,12 +806,12 @@ async def test_enable_revalidates_retained_plugin_without_following_archive_stat
         ),
     )
     _, selected = await create_current_revision(
-        agent_service,
+        agent_management,
         agent_id=agent.agent.id,
         expected_version=1,
         key="enable-retained-plugin",
     )
-    disabled = await agent_service.change_lifecycle(
+    disabled = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=agent.agent.id,
         action="disable",
@@ -823,7 +823,7 @@ async def test_enable_revalidates_retained_plugin_without_following_archive_stat
         assert plugin is not None
         plugin.archived_at = NOW
 
-    enabled = await agent_service.change_lifecycle(
+    enabled = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=agent.agent.id,
         action="enable",
@@ -836,11 +836,11 @@ async def test_enable_revalidates_retained_plugin_without_following_archive_stat
 
 @pytest.mark.anyio
 async def test_enable_rejects_changed_retained_plugin_evidence(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-changed-retained-plugin",
@@ -850,12 +850,12 @@ async def test_enable_rejects_changed_retained_plugin_evidence(
         ),
     )
     _, selected = await create_current_revision(
-        agent_service,
+        agent_management,
         agent_id=agent.agent.id,
         expected_version=1,
         key="changed-retained-plugin",
     )
-    disabled = await agent_service.change_lifecycle(
+    disabled = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=agent.agent.id,
         action="disable",
@@ -868,7 +868,7 @@ async def test_enable_rejects_changed_retained_plugin_evidence(
         version.content_digest = "b" * 64
 
     with pytest.raises(AgentError) as rejected:
-        await agent_service.change_lifecycle(
+        await agent_management.commands.change_lifecycle(
             actor=actor(),
             agent_id=agent.agent.id,
             action="enable",
@@ -876,7 +876,7 @@ async def test_enable_rejects_changed_retained_plugin_evidence(
             if_match=resource_etag(disabled.id, disabled.updated_at),
         )
 
-    current = await agent_service.get(actor=actor(), agent_id=agent.agent.id)
+    current = await agent_management.queries.get(actor=actor(), agent_id=agent.agent.id)
     assert rejected.value.code == "agent_revision_not_executable"
     assert rejected.value.details == {"reason": "plugin_version_changed"}
     assert not current.enabled
@@ -885,11 +885,11 @@ async def test_enable_rejects_changed_retained_plugin_evidence(
 
 @pytest.mark.anyio
 async def test_set_default_reuses_archived_retained_plugin_version(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-set-default-retained-plugin",
@@ -899,7 +899,7 @@ async def test_set_default_reuses_archived_retained_plugin_version(
         ),
     )
     first = agent
-    second = await agent_service.create_revision(
+    second = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create-revision-retained-plugin-2",
@@ -913,7 +913,7 @@ async def test_set_default_reuses_archived_retained_plugin_version(
         assert plugin is not None
         plugin.archived_at = NOW
 
-    restored = await agent_service.restore_revision(
+    restored = await agent_management.revisions.restore_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         revision_id=first.revision.id,
@@ -921,7 +921,9 @@ async def test_set_default_reuses_archived_retained_plugin_version(
         request=RestoreAgentRevisionRequest(expected_version=second.agent.version),
     )
 
-    revisions = await agent_service.list_revisions(actor=actor(), agent_id=agent.agent.id, limit=10, cursor=None)
+    revisions = await agent_management.queries.list_revisions(
+        actor=actor(), agent_id=agent.agent.id, limit=10, cursor=None
+    )
     assert restored.agent.version == 3
     assert restored.agent.current_revision_id == restored.revision.id
     assert restored.revision.source_revision_id == first.revision.id
@@ -930,11 +932,11 @@ async def test_set_default_reuses_archived_retained_plugin_version(
 
 @pytest.mark.anyio
 async def test_set_default_rejects_changed_retained_plugin_without_committing(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-invalid-default-plugin",
@@ -944,7 +946,7 @@ async def test_set_default_rejects_changed_retained_plugin_without_committing(
         ),
     )
     first = agent
-    second = await agent_service.create_revision(
+    second = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create-revision-invalid-default-plugin-2",
@@ -959,7 +961,7 @@ async def test_set_default_rejects_changed_retained_plugin_without_committing(
         version.content_digest = "b" * 64
 
     with pytest.raises(AgentError) as rejected:
-        await agent_service.restore_revision(
+        await agent_management.revisions.restore_revision(
             actor=actor(),
             agent_id=agent.agent.id,
             revision_id=first.revision.id,
@@ -967,8 +969,8 @@ async def test_set_default_rejects_changed_retained_plugin_without_committing(
             request=RestoreAgentRevisionRequest(expected_version=second.agent.version),
         )
 
-    current = await agent_service.get(actor=actor(), agent_id=agent.agent.id)
-    revisions = await agent_service.list_revisions(
+    current = await agent_management.queries.get(actor=actor(), agent_id=agent.agent.id)
+    revisions = await agent_management.queries.list_revisions(
         actor=actor(),
         agent_id=agent.agent.id,
         limit=10,
@@ -983,11 +985,11 @@ async def test_set_default_rejects_changed_retained_plugin_without_committing(
 
 @pytest.mark.anyio
 async def test_duplicate_rejects_changed_retained_plugin_without_creating_copy(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-invalid-duplicate-plugin",
@@ -997,7 +999,7 @@ async def test_duplicate_rejects_changed_retained_plugin_without_creating_copy(
         ),
     )
     _, selected = await create_current_revision(
-        agent_service,
+        agent_management,
         agent_id=agent.agent.id,
         expected_version=1,
         key="invalid-duplicate-plugin",
@@ -1008,7 +1010,7 @@ async def test_duplicate_rejects_changed_retained_plugin_without_creating_copy(
         version.content_digest = "b" * 64
 
     with pytest.raises(AgentError) as rejected:
-        await agent_service.duplicate(
+        await agent_management.duplication.duplicate(
             actor=actor(),
             agent_id=agent.agent.id,
             idempotency_key="duplicate-invalid-retained-plugin",
@@ -1018,7 +1020,7 @@ async def test_duplicate_rejects_changed_retained_plugin_without_creating_copy(
             ),
         )
 
-    agents = await agent_service.list(
+    agents = await agent_management.queries.list(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         limit=10,
@@ -1034,12 +1036,12 @@ async def test_duplicate_rejects_changed_retained_plugin_without_creating_copy(
 
 @pytest.mark.anyio
 async def test_create_revision_rejects_mode_and_worker_dependency_mismatches(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions, requires_dist=("foundation-plugin-missing>=1",))
     with pytest.raises(AgentError) as rejected:
-        await agent_service.create(
+        await agent_management.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="create-missing-plugin-dependency",
@@ -1052,7 +1054,7 @@ async def test_create_revision_rejects_mode_and_worker_dependency_mismatches(
     assert rejected.value.details == {"reason": "plugin_worker_dependency_missing", "path": "plugins.0"}
 
     with pytest.raises(AgentError) as mode_rejected:
-        await agent_service.create(
+        await agent_management.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="create-wrong-plugin-mode",
@@ -1110,11 +1112,11 @@ async def test_plugin_state_is_rechecked_in_commit_transaction(
 
 @pytest.mark.anyio
 async def test_retained_plugin_evidence_is_rechecked_in_commit_transaction(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     await _add_plugin(agent_sessions)
-    agent = await agent_service.create(
+    agent = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-retained-plugin-race",
@@ -1123,7 +1125,7 @@ async def test_retained_plugin_evidence_is_rechecked_in_commit_transaction(
             config=agent_config(plugins=[_selection()]),
         ),
     )
-    revision_result = await agent_service.create_revision(
+    revision_result = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=agent.agent.id,
         idempotency_key="create_revision-retained-plugin-race",

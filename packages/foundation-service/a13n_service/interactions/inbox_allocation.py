@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .control_domain import ThreadInboxEntry, ThreadInboxKind, ThreadInboxStatus
 from .control_records import thread_inbox_record
+from .domain import JsonObject
 from .inbox_persistence import ThreadInboxCapacityExceeded, lock_inbox_counter
 
 
@@ -21,7 +21,7 @@ async def allocate_steer(
     target_run_id: str | None,
     source_waiting_run_id: str | None,
     entry_id: str,
-    payload: dict[str, Any],
+    payload: JsonObject,
     payload_size_bytes: int,
     max_pending_count: int,
     max_pending_bytes: int,
@@ -73,7 +73,7 @@ async def allocate_async_result(
     target_run_id: str | None,
     source_waiting_run_id: str | None,
     entry_id: str,
-    payload: dict[str, Any],
+    payload: JsonObject,
     payload_size_bytes: int,
     suppressed: bool,
     max_pending_count: int,

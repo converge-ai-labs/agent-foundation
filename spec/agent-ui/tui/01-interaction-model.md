@@ -175,7 +175,7 @@ Typing `@` opens a bounded fuzzy completion over logical paths beneath the focus
 
 Selecting a result inserts an unambiguous logical Project path reference into the prompt. It does not eagerly attach file bytes, change or reorder the Project, grant a new mount, or bypass the Agent's file tools. The visible reference remains editable text and the selected Agent decides whether it needs to read the path.
 
-Duplicate root-relative names include their mount label. Paths outside the selected Project do not appear.
+Duplicate root-relative names include their mount label. Paths outside the selected Project do not appear. The `@` namespace is limited to Project logical paths; it does not also encode Skills, Agents, MCP resources, or eager file attachments.
 
 ## Commands and Palette
 
@@ -198,9 +198,9 @@ The command palette is the complete discovery surface for secondary actions. Sla
 | `/help`        | Show bindings and input-routing rules                                               |
 | `/exit`        | Begin explicit TUI and App shutdown                                                 |
 
-A recognized slash command runs on the terminal control plane and is not sent to the model. An unrecognized slash-prefixed string remains ordinary prompt or steering text. Built-in commands cannot be shadowed by Agent or resource configuration.
+A recognized slash command runs on the terminal control plane and is not sent to the model. An unrecognized slash-prefixed string remains ordinary prompt or steering text. Built-in commands cannot be shadowed by Agent or resource configuration. The command registry is a fixed TUI control surface and does not dynamically import Skill names, MCP prompts, or configuration Markdown into the slash namespace.
 
-Thread configuration presents the stored Project as read-only context. Selectors list only accepted Agents, Environment profiles, Harness Plugins, Environment Run Extensions, and MCP servers and use the current exact Thread configuration version. Moving a Thread to another Project remains a WebUI operation; the TUI never exposes Project or root mutation. A conflict refetches and displays the newer state instead of overwriting it. Changing a supported sticky selection during a Run is clearly labeled **applies to the next Run**; it cannot mutate the captured active composition. Direct Model selection is absent because the Agent resource owns its Model. The selector can show the Model resolved by the selected Agent as read-only context.
+Thread configuration presents the stored Project as read-only context. Selectors list only accepted Agents, Environment profiles, Harness Plugins, Environment Run Extensions, and MCP servers and use the current exact Thread configuration version. The Environment selector presents the release-owned **Full Control** and **Sandbox** entries from the App projection before custom profiles and shows their authority descriptions; it never relabels Full Control as “Native” or infers safety from canonical Host path presentation. Moving a Thread to another Project remains a WebUI operation; the TUI never exposes Project or root mutation. A conflict refetches and displays the newer state instead of overwriting it. Changing a supported sticky selection during a Run is clearly labeled **applies to the next Run**; it cannot mutate the captured active composition. Direct Model selection is absent because the Agent resource owns its Model. The selector can show the Model resolved by the selected Agent as read-only context.
 
 Selectors and status views can expose accepted-generation diagnostics, installed-catalog availability, and the App-approved configuration source location. They do not expose resource create, duplicate, source-edit, delete, import, package-install, or package-upgrade actions. The TUI never turns an unavailable selection into an inline resource editor; the user resolves desired-resource or Skill changes through direct files, the CLI, or the WebUI and then reloads or refreshes the App-owned catalog.
 

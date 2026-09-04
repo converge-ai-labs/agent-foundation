@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
     AttemptAuthorityError,
@@ -47,6 +49,7 @@ from a13n_service.interactions import (
     initialize_start_state,
 )
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
+from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.storage import ObjectStore, short_session
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -150,6 +153,27 @@ async def test_claim_execute_checkpoint_and_complete_atomically(
         assert run_record.usage_charged_json["model_requests"] == 1
         assert attempt.status == "succeeded"
         assert (thread.head_run_id, thread.current_run_id, thread.version) == (run.id, run.id, 2)
+        events = (
+            await database.scalars(
+                select(LifecycleEventRecord)
+                .where(LifecycleEventRecord.run_id == run.id)
+                .order_by(LifecycleEventRecord.seq)
+            )
+        ).all()
+        assert tuple(event.event_type for event in events) == (
+            "run.accepted",
+            "run_attempt.leased",
+            "run.running",
+            "run_attempt.running",
+            "run_attempt.succeeded",
+            "run.completed",
+        )
+        assert tuple(event.resource_seq for event in events if event.entity_type == "run") == (1, 2, 3)
+        assert tuple(event.resource_seq for event in events if event.entity_type == "run_attempt") == (1, 2, 3)
+        completed = next(event for event in events if event.event_type == "run.completed")
+        succeeded = next(event for event in events if event.event_type == "run_attempt.succeeded")
+        assert completed.payload["final_run_attempt_id"] == claim.attempt.id
+        assert succeeded.payload["resulting_run_lifecycle_event_id"] == completed.id
     if output_reference is not None:
         assert await payloads.read(TENANT_ID, output_reference) == RunPayloadEnvelope(
             run_id=run.id,
@@ -324,6 +348,19 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
         assert current.to_resource().available_at == NOW + timedelta(seconds=7)
         assert attempt.status == "failed"
         assert thread.version == 1
+        events = (
+            await database.scalars(
+                select(LifecycleEventRecord)
+                .where(LifecycleEventRecord.run_id == run.id)
+                .order_by(LifecycleEventRecord.seq)
+            )
+        ).all()
+        assert tuple(event.event_type for event in events) == (
+            "run.accepted",
+            "run_attempt.leased",
+            "run.running",
+            "run_attempt.failed",
+        )
 
     recovery = AttemptScheduler(
         interaction_sessions,
@@ -493,6 +530,14 @@ async def test_yield_prefers_a_different_build_without_consuming_recovery_budget
         current = await database.get(RunRecord, run.id)
         assert current is not None
         assert (current.attempts_started, current.recovery_attempts_started, current.handoffs_completed) == (2, 1, 1)
+        run_events = (
+            await database.scalars(
+                select(LifecycleEventRecord)
+                .where(LifecycleEventRecord.run_id == run.id, LifecycleEventRecord.entity_type == "run")
+                .order_by(LifecycleEventRecord.resource_seq)
+            )
+        ).all()
+        assert tuple(event.event_type for event in run_events) == ("run.accepted", "run.running")
 
 
 async def test_waiting_outcome_selects_the_frozen_continuation_head(
@@ -628,7 +673,13 @@ async def _accept_root(
         updated_at=NOW,
     )
     states = RunStateStore(objects)
-    await RunAcceptanceService(sessions, states, RunPayloadStore(objects), clock=lambda: NOW).accept_new_thread(
+    await RunAcceptanceService(
+        sessions,
+        states,
+        RunPayloadStore(objects),
+        InlineHookValidator(EndpointPolicy()),
+        clock=lambda: NOW,
+    ).accept_new_thread(
         session=Session(
             id=SESSION_ID,
             tenant_id=TENANT_ID,

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Agent UI WebUI is the bundled browser workstation distributed inside `a13n-ui`. It is a static React application served by the local Web adapter and connected to the same process-local `AgentUiApp` used by the CLI. It separates three jobs: the Threads area provides Project-filtered attention-first supervision and focused interaction; Configure provides complete Project and other desired-resource management; and Debug provides detailed read-only inspection and application diagnostics.
+The Agent UI WebUI is the bundled browser workstation distributed inside `a13n-ui`. It is a static React application served by the local Web adapter and connected to the same process-local `AgentUiApp` used by the CLI and TUI. It separates three jobs: the Threads area provides Project-filtered attention-first supervision and focused interaction; Configure provides complete Project and other desired-resource management; and Debug provides detailed read-only inspection and application diagnostics.
 
 The WebUI is a presentation and editing surface. It does not own another Agent loop, Thread model, desired-resource store, durable queue, authorization system, or recovery mechanism. Browser state improves interaction latency only; detached App projections, selected continuations, accepted configuration generations, exact receipts, and compare-and-select preconditions remain authoritative.
 

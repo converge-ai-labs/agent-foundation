@@ -3,6 +3,7 @@
 FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
 SANDBOX_IMAGE ?= agent-foundation-sandbox:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
+PYTHON_TEST_DIRS := $(sort $(wildcard packages/*/tests) scripts/tests)
 LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
@@ -151,7 +152,7 @@ langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
 .PHONY: a13n-ui
-a13n-ui: sync ## Run the Agent UI interactive CLI
+a13n-ui: sync ## Run the Agent UI interactive TUI
 	@uv run --locked a13n-ui
 
 .PHONY: agent-ui-db-migrate
@@ -218,7 +219,9 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 
 .PHONY: test
 test: sync ## Run Python workspace tests
-	@uv run --locked python -m pytest -n 2 --dist loadgroup
+	@for directory in $(PYTHON_TEST_DIRS); do \
+		uv run --locked python -m pytest -n 2 --dist loadgroup "$$directory" || exit $$?; \
+	done
 
 .PHONY: eip-generate
 eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspection artifacts

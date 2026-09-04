@@ -10,6 +10,7 @@ from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
 
+from .application import AgentManagement
 from .domain import (
     Agent,
     AgentCollection,
@@ -24,7 +25,6 @@ from .domain import (
     UpdateAgentRequest,
 )
 from .errors import AgentError
-from .service import AgentService
 
 router = APIRouter(prefix="/api/v1", tags=["agent-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
@@ -32,7 +32,7 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, ma
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
 
-def _service(request: Request) -> AgentService:
+def _management(request: Request) -> AgentManagement:
     control = get_control_runtime(request)
     if control is None:
         raise AgentError("agent_management_unavailable", "Agent Management is unavailable.", status_code=503)
@@ -54,7 +54,7 @@ async def list_agents(
     source: AgentSource | None = None,
     include_archived: bool = False,
 ) -> AgentCollection:
-    return await _service(request).list(
+    return await _management(request).queries.list(
         actor=actor,
         workspace_id=workspace_id,
         limit=limit,
@@ -78,7 +78,7 @@ async def create_agent(
     body: CreateAgentRequest,
     idempotency_key: IdempotencyKey,
 ) -> AgentRevisionCreateResult:
-    result = await _service(request).create(
+    result = await _management(request).commands.create(
         actor=actor,
         workspace_id=workspace_id,
         idempotency_key=idempotency_key,
@@ -90,7 +90,7 @@ async def create_agent(
 
 @router.get("/agents/{agent_id}", response_model=Agent)
 async def get_agent(request: Request, response: Response, actor: Actor, agent_id: str) -> Agent:
-    agent = await _service(request).get(actor=actor, agent_id=agent_id)
+    agent = await _management(request).queries.get(actor=actor, agent_id=agent_id)
     _set_etag(response, agent)
     return agent
 
@@ -104,7 +104,7 @@ async def update_agent(
     body: UpdateAgentRequest,
     if_match: IfMatch,
 ) -> Agent:
-    agent = await _service(request).patch_metadata(
+    agent = await _management(request).commands.patch_metadata(
         actor=actor,
         agent_id=agent_id,
         if_match=if_match,
@@ -127,7 +127,7 @@ async def create_agent_revision(
     body: CreateAgentRevisionRequest,
     idempotency_key: IdempotencyKey,
 ) -> AgentRevisionCreateResult:
-    result = await _service(request).create_revision(
+    result = await _management(request).revisions.create_revision(
         actor=actor,
         agent_id=agent_id,
         idempotency_key=idempotency_key,
@@ -151,7 +151,7 @@ async def restore_agent_revision(
     body: RestoreAgentRevisionRequest,
     idempotency_key: IdempotencyKey,
 ) -> AgentRevisionCreateResult:
-    result = await _service(request).restore_revision(
+    result = await _management(request).revisions.restore_revision(
         actor=actor,
         agent_id=agent_id,
         revision_id=revision_id,
@@ -175,7 +175,7 @@ async def duplicate_agent(
     body: DuplicateAgentRequest,
     idempotency_key: IdempotencyKey,
 ) -> Agent:
-    agent = await _service(request).duplicate(
+    agent = await _management(request).duplication.duplicate(
         actor=actor,
         agent_id=agent_id,
         idempotency_key=idempotency_key,
@@ -195,7 +195,7 @@ async def change_agent_lifecycle(
     idempotency_key: IdempotencyKey,
     if_match: IfMatch,
 ) -> Agent:
-    agent = await _service(request).change_lifecycle(
+    agent = await _management(request).commands.change_lifecycle(
         actor=actor,
         agent_id=agent_id,
         action=action,
@@ -214,7 +214,7 @@ async def list_agent_revisions(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> AgentRevisionCollection:
-    return await _service(request).list_revisions(
+    return await _management(request).queries.list_revisions(
         actor=actor,
         agent_id=agent_id,
         limit=limit,
@@ -228,4 +228,4 @@ async def get_agent_revision(
     actor: Actor,
     agent_revision_id: str,
 ) -> AgentRevision:
-    return await _service(request).get_revision(actor=actor, revision_id=agent_revision_id)
+    return await _management(request).queries.get_revision(actor=actor, revision_id=agent_revision_id)

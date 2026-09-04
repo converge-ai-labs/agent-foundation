@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     AgentConfig,
     AgentRunOverride,
@@ -10,7 +11,6 @@ from a13n_service.agents.domain import (
 )
 from a13n_service.agents.errors import AgentError
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
-from a13n_service.agents.service import AgentService
 from a13n_service.agents.validation import (
     AgentConfigValidationError,
     AgentProtocolPolicy,
@@ -74,13 +74,13 @@ def _with_protocol(configure: Callable[[dict[str, object]], None]) -> AgentConfi
     ],
 )
 async def test_create_validates_v1_revision_against_protocol_policy(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     config: AgentConfig,
     reason: str,
     path: str,
 ) -> None:
     with pytest.raises(AgentError) as rejected:
-        await agent_service.create(
+        await agent_management.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key=f"create-invalid-protocol-{reason}",
@@ -129,17 +129,17 @@ def test_protocol_client_tool_policies_are_unique() -> None:
 
 @pytest.mark.anyio
 async def test_run_override_revalidates_replaced_output_schema(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
 ) -> None:
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-run-output-validation",
         request=CreateAgentRequest(name="Run Output Validation", config=agent_config()),
     )
     with pytest.raises(AgentError) as rejected:
-        await agent_invocation_resolver.prepare(
+        await agent_invocation_resolver.preparation.prepare(
             actor=actor(),
             agent_id=created.agent.id,
             agent_revision_id=created.revision.id,
@@ -154,7 +154,7 @@ async def test_run_override_revalidates_replaced_output_schema(
 
 @pytest.mark.anyio
 async def test_run_override_cannot_remove_a_protocol_client_tool(
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
 ) -> None:
     payload = agent_config().model_dump(mode="python", by_alias=True)
@@ -169,14 +169,14 @@ async def test_run_override_cannot_remove_a_protocol_client_tool(
     protocol["client_tools"] = [{"name": "lookup_order", "required": True}]
     payload["protocol"] = protocol
     config = AgentConfig.model_validate(payload)
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-client-tool-validation",
         request=CreateAgentRequest(name="Client Tool Validation", config=config),
     )
     with pytest.raises(AgentError) as rejected:
-        await agent_invocation_resolver.prepare(
+        await agent_invocation_resolver.preparation.prepare(
             actor=actor(),
             agent_id=created.agent.id,
             agent_revision_id=created.revision.id,

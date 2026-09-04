@@ -11,14 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.interactions.control_domain import ThreadInboxEntry, ThreadInboxKind
-from a13n_service.interactions.domain import Run, RunInputKind, RunStatus
+from a13n_service.interactions.domain import Run, RunInputKind, RunPayloadObjectRef, RunStatus
 from a13n_service.interactions.models import RunRecord
-from a13n_service.presentation import (
+from a13n_service.run_stream import (
     RetainedItem,
-    RunOutputItemContent,
-    RunReplayError,
     RunReplaySnapshot,
     RunReplayStore,
+    RunStreamError,
 )
 
 from .domain import (
@@ -79,9 +78,9 @@ def build_async_subagent_result_payload(
         else:
             if terminal_item is None:
                 raise AsyncSubagentResultError("object-backed child output requires an authorized terminal result Item")
-            content = _validate_terminal_item(child, terminal_item)
+            output_object = _validate_terminal_item(child, terminal_item)
             terminal_item_id = terminal_item.id
-            digest = content.result_digest
+            digest = output_object.digest_sha256
     else:
         if terminal_item is not None:
             raise AsyncSubagentResultError("unsuccessful child outcome cannot select a result Item")
@@ -217,7 +216,7 @@ async def load_async_subagent_terminal_item(
             child.id,
             expected_thread_id=child.thread_id,
         )
-    except RunReplayError as error:
+    except RunStreamError as error:
         raise AsyncSubagentResultItemUnavailable("authorized terminal result Item is unavailable") from error
     return _select_terminal_item(snapshot, expected_item_id=expected_item_id)
 
@@ -227,10 +226,12 @@ def _select_terminal_item(
     *,
     expected_item_id: str | None,
 ) -> RetainedItem:
-    terminal_event = snapshot.events[-1].event
-    item_id = terminal_event.item_id
-    if terminal_event.event_type != "RUN_FINISHED" or item_id is None:
+    terminal_events = tuple(
+        retained.event for retained in snapshot.events if retained.event.event_type == "run.completed"
+    )
+    if len(terminal_events) != 1 or terminal_events[0].item_id is None:
         raise AsyncSubagentResultError("retained replay has no completed terminal result Item")
+    item_id = terminal_events[0].item_id
     if expected_item_id is not None and item_id != expected_item_id:
         raise AsyncSubagentResultError("async result Item does not match the retained terminal event")
     item = next((candidate for candidate in snapshot.items if candidate.id == item_id), None)
@@ -239,16 +240,16 @@ def _select_terminal_item(
     return item
 
 
-def _validate_terminal_item(child: Run, item: RetainedItem) -> RunOutputItemContent:
+def _validate_terminal_item(child: Run, item: RetainedItem) -> RunPayloadObjectRef:
     if item.kind != "run_output" or item.state != "completed":
         raise AsyncSubagentResultError("object-backed child output requires an authorized terminal result Item")
     try:
-        content = RunOutputItemContent.model_validate(item.content)
+        output_object = RunPayloadObjectRef.model_validate(item.content)
     except ValidationError as error:
         raise AsyncSubagentResultError("terminal result Item content is invalid") from error
-    if content.output_object != child.output_object or "output" in content.model_fields_set:
+    if output_object != child.output_object:
         raise AsyncSubagentResultError("terminal result Item does not select the sealed child output")
-    return content
+    return output_object
 
 
 def project_async_subagent_result(payload: AsyncSubagentResultInboxPayload) -> str:

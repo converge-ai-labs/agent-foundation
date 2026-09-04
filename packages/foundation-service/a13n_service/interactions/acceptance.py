@@ -8,6 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import canonical_digest
+from a13n_service.hooks import InlineHookValidator
+from a13n_service.hooks.domain import InlineHookSubscriptionInput
+from a13n_service.hooks.persistence import load_inline_hook_subscription
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import utc_now
 
@@ -31,23 +34,20 @@ from .domain import (
     ThreadRole,
 )
 from .environment_bindings import add_run_with_environment_binding, verify_environment_binding
+from .errors import RunAcceptanceError
 from .inbox_persistence import (
     abandon_waiting_entries,
     bind_unbound_async_entries,
     bind_waiting_entries,
 )
+from .inline_hooks import InlineHookAcceptance
 from .input import AcceptedAgentInput
+from .lifecycle import append_accepted_run_lifecycle
 from .models import RunRecord, SessionRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
 from .records import session_record, thread_record
 from .state import RunPayloadEnvelope, RunStateEnvelope
-
-
-class RunAcceptanceError(RuntimeError):
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 class RunAcceptanceService:
@@ -56,12 +56,14 @@ class RunAcceptanceService:
         sessions: async_sessionmaker[AsyncSession],
         states: RunStateStore,
         payloads: RunPayloadStore,
+        inline_hooks: InlineHookValidator,
         *,
         clock=None,
     ) -> None:
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
+        self._inline_hooks = InlineHookAcceptance(sessions, inline_hooks)
         self._clock = clock or utc_now
 
     async def accept_new_thread(
@@ -71,12 +73,15 @@ class RunAcceptanceService:
         thread: Thread,
         run: Run,
         state: RunStateEnvelope,
+        hook_subscription: InlineHookSubscriptionInput | None = None,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
         _validate_new_thread(thread, run, session)
         replay = await self._load_replay(run, state, accepted_thread_version=1)
         if replay is not None:
+            await self._require_inline_hook_replay(run, hook_subscription)
             return replay
+        await self._inline_hooks.validate_destination(hook_subscription)
         await self._verify_input_payload(run)
         await self._publish_initial(run, state)
         try:
@@ -87,19 +92,33 @@ class RunAcceptanceService:
                 else:
                     database.add(session_record(session))
                     workspace_id = session.workspace_id
+                await self._inline_hooks.authorize(
+                    database,
+                    run=run,
+                    workspace_id=workspace_id,
+                    subscription=hook_subscription,
+                )
                 if thread.origin_kind is not ThreadOriginKind.new:
                     await _require_origin(database, thread, run)
                 database.add(thread_record(thread))
-                await add_run_with_environment_binding(
+                run_record_value = await add_run_with_environment_binding(
                     database,
                     run=run,
                     state=state,
                     workspace_id=workspace_id,
                 )
                 database.add(inbox_counter_record(thread))
+                hook_subscription_id = await self._inline_hooks.create(
+                    database,
+                    run=run_record_value,
+                    workspace_id=workspace_id,
+                    subscription=hook_subscription,
+                    now=self._clock(),
+                )
+                await append_accepted_run_lifecycle(database, run_record_value)
         except IntegrityError as error:
             return await self._reconcile_conflict(run, state, error, accepted_thread_version=1)
-        return _receipt(thread, run)
+        return _receipt(thread, run, hook_subscription_id=hook_subscription_id)
 
     async def advance_thread(
         self,
@@ -110,12 +129,15 @@ class RunAcceptanceService:
         expected_current_run_id: str,
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
+        hook_subscription: InlineHookSubscriptionInput | None = None,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
+            await self._require_inline_hook_replay(run, hook_subscription)
             return replay
+        await self._inline_hooks.validate_destination(hook_subscription)
         candidate_payload = await self._verify_input_payload(run)
         await self._verify_retry_payload(run, candidate_payload)
         await self._publish_initial(run, state)
@@ -140,7 +162,13 @@ class RunAcceptanceService:
                     next_head_run_id=next_head_run_id,
                 )
                 session_record_value = await _require_session(database, run)
-                await add_run_with_environment_binding(
+                await self._inline_hooks.authorize(
+                    database,
+                    run=run,
+                    workspace_id=session_record_value.workspace_id,
+                    subscription=hook_subscription,
+                )
+                run_record_value = await add_run_with_environment_binding(
                     database,
                     run=run,
                     state=state,
@@ -172,12 +200,21 @@ class RunAcceptanceService:
                 thread.head_run_id = next_head_run_id
                 thread.updated_at = self._clock()
                 await database.flush()
+                hook_subscription_id = await self._inline_hooks.create(
+                    database,
+                    run=run_record_value,
+                    workspace_id=session_record_value.workspace_id,
+                    subscription=hook_subscription,
+                    now=self._clock(),
+                )
+                await append_accepted_run_lifecycle(database, run_record_value)
                 receipt = RunAcceptanceReceipt(
                     session_id=thread.session_id,
                     thread_id=thread.id,
                     thread_version=thread.version,
                     run_id=run.id,
                     run_version=run.version,
+                    hook_subscription_id=hook_subscription_id,
                 )
         except IntegrityError as error:
             return await self._reconcile_conflict(
@@ -219,6 +256,11 @@ class RunAcceptanceService:
                 queue_version=expected_queue_version + 1,
                 run=replay,
             )
+        await self._inline_hooks.validate_queued_destination(
+            tenant_id=run.tenant_id,
+            queued_submission_id=queued_submission_id,
+            submission_digest_sha256=submission_digest_sha256,
+        )
         candidate_payload = await self._verify_input_payload(run)
         _validate_queued_run_input(run, candidate_payload, accepted_input)
         await self._verify_retry_payload(run, candidate_payload)
@@ -246,7 +288,7 @@ class RunAcceptanceService:
                     next_head_run_id=next_head_run_id,
                 )
                 session_record_value = await _require_session(database, run)
-                await add_run_with_environment_binding(
+                run_record_value = await add_run_with_environment_binding(
                     database,
                     run=run,
                     state=state,
@@ -282,6 +324,21 @@ class RunAcceptanceService:
                 thread.head_run_id = next_head_run_id
                 thread.updated_at = now
                 await database.flush()
+                queued_hook = consumed.to_resource().submission.hook_subscription
+                await self._inline_hooks.authorize(
+                    database,
+                    run=run,
+                    workspace_id=session_record_value.workspace_id,
+                    subscription=queued_hook,
+                )
+                hook_subscription_id = await self._inline_hooks.create(
+                    database,
+                    run=run_record_value,
+                    workspace_id=session_record_value.workspace_id,
+                    subscription=queued_hook,
+                    now=now,
+                )
+                await append_accepted_run_lifecycle(database, run_record_value)
                 if consumed.consumed_run_id != run.id:
                     raise RuntimeError("queue consumption lost its accepted Run correlation")
                 receipt = QueuedSubmissionConsumptionReceipt(
@@ -294,6 +351,7 @@ class RunAcceptanceService:
                         thread_version=thread.version,
                         run_id=run.id,
                         run_version=run.version,
+                        hook_subscription_id=hook_subscription_id,
                     ),
                 )
         except IntegrityError as error:
@@ -448,6 +506,19 @@ class RunAcceptanceService:
         if replay is not None:
             return replay
         raise RunAcceptanceError("run_acceptance_conflict", "Run acceptance lost a concurrent mutation") from error
+
+    async def _require_inline_hook_replay(
+        self,
+        run: Run,
+        expected: InlineHookSubscriptionInput | None,
+    ) -> None:
+        async with short_session(self._sessions) as database:
+            record = await database.get(RunRecord, run.id)
+            if record is None or not await self._inline_hooks.replay_matches(database, run=record, expected=expected):
+                raise RunAcceptanceError(
+                    "run_idempotency_conflict",
+                    "Idempotency key was reused with different inline Hook configuration",
+                )
 
     async def _validate_queue_replay(
         self,
@@ -800,12 +871,18 @@ async def _validate_replay(
     )
     if thread is None:
         raise RunAcceptanceError("run_acceptance_corrupt", "Accepted Run has no owning Thread")
+    persisted_hook = await load_inline_hook_subscription(
+        database,
+        organization_id=record.tenant_id,
+        run_id=record.id,
+    )
     return RunAcceptanceReceipt(
         session_id=record.session_id,
         thread_id=record.thread_id,
         thread_version=accepted_thread_version,
         run_id=record.id,
         run_version=1,
+        hook_subscription_id=None if persisted_hook is None else persisted_hook[0].id,
     )
 
 
@@ -822,13 +899,19 @@ def _validate_queued_run_input(
         raise ValueError("prepared queued Run input does not match its accepted submission")
 
 
-def _receipt(thread: Thread, run: Run) -> RunAcceptanceReceipt:
+def _receipt(
+    thread: Thread,
+    run: Run,
+    *,
+    hook_subscription_id: str | None,
+) -> RunAcceptanceReceipt:
     return RunAcceptanceReceipt(
         session_id=thread.session_id,
         thread_id=thread.id,
         thread_version=thread.version,
         run_id=run.id,
         run_version=run.version,
+        hook_subscription_id=hook_subscription_id,
     )
 
 

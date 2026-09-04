@@ -20,6 +20,8 @@ from a13n_service.connectivity.ingress.router import router as ingress_router
 from a13n_service.connectivity.mcp.router import router as mcp_router
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.router import router as environment_router
+from a13n_service.hooks.router import router as hook_router
+from a13n_service.lifecycle.router import router as lifecycle_router
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.router import router as model_router
 from a13n_service.plugins.on_demand import OnDemandPluginRuntime
@@ -166,6 +168,8 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.include_router(ingress_router)
         app.include_router(connector_router)
         app.include_router(mcp_router)
+        app.include_router(hook_router)
+        app.include_router(lifecycle_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:

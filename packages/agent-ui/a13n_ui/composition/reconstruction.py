@@ -17,7 +17,7 @@ from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_ui.environment_paths import EnvironmentPathLayout
 from a13n_ui.errors import CompositionError
-from a13n_ui.extensions import NATIVE_PROVIDER_KEY, AgentUiExtensionCatalog
+from a13n_ui.extensions import AgentUiExtensionCatalog
 from a13n_ui.mcp_adapters import AgentUiMCP
 from a13n_ui.model_runtime import AgentUiModelResolver, SubscriptionSource, model_recipe_id
 
@@ -90,8 +90,13 @@ class AgentReconstructor:
         )
         try:
             plugin_catalog = self._catalog.plugin_catalog(plugin_keys)
+            environment_profile = composition.environment_profile
+            environment_adapter = self._catalog.environment_adapter(
+                environment_profile.adapter_key,
+                environment_profile.provider_key,
+            )
             path_layout = EnvironmentPathLayout.resolve(
-                native=composition.environment_profile.provider_key == NATIVE_PROVIDER_KEY,
+                canonical_host_paths=environment_adapter.preserves_host_paths,
                 project_roots=composition.project_roots,
                 user_skills_root=self._user_skills_root,
             )

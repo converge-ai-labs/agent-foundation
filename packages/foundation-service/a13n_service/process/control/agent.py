@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.agents.resolution import AgentResolver
-from a13n_service.agents.service import AgentService
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.process.components import ServiceComponents
@@ -14,7 +14,7 @@ from a13n_service.process.runtime import SharedRuntime
 from a13n_service.settings import ServiceSettings
 
 
-def build_agent_service(
+def build_agent_management(
     settings: ServiceSettings,
     components: ServiceComponents,
     shared: SharedRuntime,
@@ -22,8 +22,8 @@ def build_agent_service(
     environment_selection: AgentEnvironmentSelectionResolver,
     plugin_selection: AgentPluginSelectionResolver,
     connectivity_selection: ConnectivitySelectionResolver | None,
-) -> AgentService:
-    """Construct Agent read and invocation resolution behind one service."""
+) -> AgentManagement:
+    """Construct the explicit Agent management use-case surface."""
 
     resolver = components.agent_resolver or AgentResolver(
         shared.storage.sessions,
@@ -41,7 +41,7 @@ def build_agent_service(
         plugin_resolver=plugin_selection,
         connectivity_resolver=connectivity_selection,
     )
-    return AgentService(shared.storage.sessions, resolver, invocation_resolver)
+    return AgentManagement(shared.storage.sessions, resolver, invocation_resolver)
 
 
-__all__ = ["build_agent_service"]
+__all__ = ["build_agent_management"]

@@ -18,15 +18,19 @@ from a13n_environment_provider import (
 )
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from a13n_ui.environment_profiles import (
+    FULL_CONTROL_PROFILE,
+    SANDBOX_PROFILE,
+)
 from a13n_ui.errors import CompositionError
 
 if TYPE_CHECKING:
     from a13n_ui.composition.models import ResolvedEnvironmentProfile
 
-NATIVE_PROVIDER_KEY = "a13n.direct-local"
-LOCAL_ENVD_PROVIDER_KEY = "a13n.local-envd"
-NATIVE_ADAPTER_KEY = "a13n.native-project-root"
-LOCAL_ENVD_ADAPTER_KEY = "a13n.local-envd-project-root"
+NATIVE_PROVIDER_KEY = FULL_CONTROL_PROFILE.provider_key
+LOCAL_ENVD_PROVIDER_KEY = SANDBOX_PROFILE.provider_key
+NATIVE_ADAPTER_KEY = FULL_CONTROL_PROFILE.adapter_key
+LOCAL_ENVD_ADAPTER_KEY = SANDBOX_PROFILE.adapter_key
 _NATIVE_ENVIRONMENT_KEYS = frozenset(
     {
         "CI",
@@ -64,6 +68,7 @@ class EnvironmentProjectAdapter(ABC):
 
     key: ClassVar[str]
     provider_key: ClassVar[str]
+    preserves_host_paths: ClassVar[bool] = False
 
     @abstractmethod
     def validate_profile(
@@ -92,6 +97,7 @@ class EnvironmentProjectAdapter(ABC):
 class NativeProjectAdapter(EnvironmentProjectAdapter):
     key = NATIVE_ADAPTER_KEY
     provider_key = NATIVE_PROVIDER_KEY
+    preserves_host_paths = True
 
     def validate_profile(
         self,
@@ -135,6 +141,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
 class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
     key = LOCAL_ENVD_ADAPTER_KEY
     provider_key = LOCAL_ENVD_PROVIDER_KEY
+    preserves_host_paths = True
 
     def validate_profile(
         self,
@@ -165,7 +172,16 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
             "execution_network": "deny",
             "trusted_executable_roots": [] if shell is None else [str(shell.parent)],
             "shell_profiles": (
-                [] if shell is None else [{"profile_id": "default", "executable": str(shell), "allow_login": True}]
+                []
+                if shell is None
+                else [
+                    {
+                        "profile_id": "default",
+                        "executable": str(shell),
+                        "fixed_arguments": ["-c"],
+                        "allow_login": True,
+                    }
+                ]
             ),
         }
         configuration = provider.validate_configuration(

@@ -108,7 +108,7 @@ Project-path completion uses only the App's bounded logical completion query ben
 
 ## Thread Configuration and Admission
 
-The composer exposes a compact configuration summary and an expanded editor for Project, Agent, Environment profile, ordered Harness Plugins, ordered Environment Run Extensions, and ordered MCP servers. The controls start from one `ThreadConfigurationView` version.
+The composer exposes a compact configuration summary and an expanded editor for Project, Agent, Environment profile, ordered Harness Plugins, ordered Environment Run Extensions, and ordered MCP servers. The Environment control consumes the App's shared profile projection, presents **Full Control** and **Sandbox** before custom profiles, and shows their authority descriptions rather than inferring safety from canonical Host path presentation. The controls start from one `ThreadConfigurationView` version.
 
 A user can either save configuration independently or submit a prompt with one optional patch. Prompt-plus-patch remains one App admission operation: the exact expected configuration version accompanies every non-empty patch, and the returned receipt proves admission only. The UI does not perform a preliminary configuration write followed by a separate prompt when the user chose atomic admission.
 

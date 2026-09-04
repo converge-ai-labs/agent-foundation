@@ -37,6 +37,52 @@ def test_defaults_to_interactive_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls[0].command is None
 
 
+def test_tui_is_the_default_and_canonical_interactive_command() -> None:
+    parser = cli_module._parser()
+
+    bare = parser.parse_args(
+        [
+            "--project",
+            "project-main",
+            "--agent",
+            "agent-reviewer",
+            "--environment-mode",
+            "sandbox",
+        ]
+    )
+    explicit = parser.parse_args(
+        [
+            "tui",
+            "--project",
+            "project-main",
+            "--agent",
+            "agent-reviewer",
+            "--environment-mode",
+            "sandbox",
+        ]
+    )
+    webui = parser.parse_args(["webui"])
+
+    assert bare.command is None
+    assert explicit.command == "tui"
+    assert webui.command == "webui"
+    assert cli_module._tui_launch_options(bare) == cli_module._tui_launch_options(explicit)
+    launch = cli_module._tui_launch_options(bare)
+    assert launch.thread_id is None
+    assert launch.defaults.project_id == "project-main"
+    assert launch.defaults.agent_id == "agent-reviewer"
+    assert launch.defaults.environment_profile_id == "environment-sandbox"
+
+
+def test_tui_rejects_new_thread_overrides_when_opening_existing_thread() -> None:
+    args = cli_module._parser().parse_args(["tui", "--thread", "thread-1", "--agent", "agent-reviewer"])
+
+    with pytest.raises(ConfigurationError) as conflict:
+        cli_module._tui_launch_options(args)
+
+    assert conflict.value.code == "tui_arguments_conflict"
+
+
 def test_auth_login_interruption_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
     async def run(args: argparse.Namespace) -> None:
         del args
@@ -203,6 +249,7 @@ def test_parses_management_commands_and_data_root() -> None:
             "--apply",
         ]
     )
+    environment = parser.parse_args(["environment", "list", "--format", "json"])
     thread = parser.parse_args(["thread", "archive", "thread-1", "--expected-version", "3", "--restore"])
 
     assert validate.data_root.as_posix() == "/tmp/a13n-data"
@@ -211,9 +258,31 @@ def test_parses_management_commands_and_data_root() -> None:
     assert import_subagents.product == "codex"
     assert import_subagents.scope == "project"
     assert import_subagents.apply is True
+    assert environment.environment_command == "list"
+    assert environment.format == "json"
     assert thread.thread_id == "thread-1"
     assert thread.restore is True
     assert thread.expected_version == 3
+
+
+def test_builtin_environment_mode_resolves_to_stable_profile_id() -> None:
+    args = cli_module._parser().parse_args(
+        [
+            "run",
+            "inspect plugin",
+            "--project",
+            "project-main",
+            "--agent",
+            "agent-assistant",
+            "--environment-mode",
+            "sandbox",
+        ]
+    )
+
+    defaults = cli_module._new_thread_defaults(_configuration(), args)
+
+    assert args.environment_mode == "sandbox"
+    assert defaults.environment_profile_id == "environment-sandbox"
 
 
 def test_parses_headless_thread_arguments(monkeypatch: pytest.MonkeyPatch) -> None:

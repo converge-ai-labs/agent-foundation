@@ -78,7 +78,18 @@ Plugin order is the selection order stored by the Agent or Thread. There is no r
 
 Environment Provider packages use `a13n_environment_provider.providers`, `discover_environment_provider_references()`, and `build_environment_provider_catalog()`. Agent UI consumes these public values directly and does not reimplement entry-point loading.
 
-An Environment profile is an Agent UI resource that selects one installed Provider and one approved Host adapter configuration. It is not the Provider implementation and is distinct from the runtime `Environment.environment_id`. A configured profile has this conceptual serialized shape:
+An Environment profile selects one installed Provider and one approved Host adapter configuration. It is not the Provider implementation and is distinct from the runtime `Environment.environment_id`.
+
+Agent UI owns two fixed profiles that require no YAML resource:
+
+| Stable profile ID     | Surface mode     | Provider            | Host adapter                   | Command authority                                                                                               |
+| --------------------- | ---------------- | ------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `environment-native`  | **Full Control** | `a13n.direct-local` | `a13n.native-project-root`     | Direct Host-user execution with ambient Host filesystem and network access                                      |
+| `environment-sandbox` | **Sandbox**      | `a13n.local-envd`   | `a13n.local-envd-project-root` | EIP execution with required native filesystem/process isolation and denied networking; no Full Control fallback |
+
+These IDs are release-owned and a configured resource cannot redefine them. `environment-native` remains the omission fallback for compatible existing configuration, while surfaces present it as **Full Control** rather than exposing “Native” as the user-facing safety label.
+
+An advanced configured profile has this conceptual serialized shape:
 
 ```yaml
 schema_version: "1"
@@ -92,11 +103,11 @@ adapter_key: a13n.docker-project-roots
 adapter_configuration: {}
 ```
 
-`provider_configuration` contains desired Provider behavior independent of a particular Project root. The Agent UI Host adapter validates that template, resolves runtime collaborators, and binds each captured Project root into one fresh Provider configuration and `Environment` adapter.
+`provider_configuration` contains desired Provider behavior independent of a particular Project root. The Agent UI Host adapter validates that template, resolves runtime collaborators, and binds each captured Project root into one fresh Provider configuration and `Environment` adapter. The adapter also declares whether its aggregate path presentation preserves canonical Host paths. An adapter that does not explicitly preserve them receives the provider-neutral virtual layout.
 
-Provider discovery alone can prove installation but cannot prove that Agent UI knows how to map local Project roots or construct Docker, E2B, credential, transport, or bootstrap collaborators. A discovered Provider without an approved Host adapter is reported as installed but not configurable. Native, Local EIP, and other Agent UI-supported Providers use release-owned adapters. Explicit embedding integrations can add exact approved adapters without placing Python import targets in YAML.
+Provider discovery alone can prove installation but cannot prove that Agent UI knows how to map local Project roots or construct Docker, E2B, credential, transport, or bootstrap collaborators. A discovered Provider without an approved Host adapter is reported as installed but not configurable. Full Control, Sandbox, and other Agent UI-supported Providers use release-owned adapters. Explicit embedding integrations can add exact approved adapters without placing Python import targets in YAML.
 
-A Thread selects exactly one Environment profile. Omission during new root Thread creation resolves through defaults and finally to the release-owned Native profile. A Run never silently falls back to Native after another selected profile or Provider fails.
+A Thread selects exactly one Environment profile. Omission during new root Thread creation resolves through defaults and finally to the release-owned Full Control profile. A Run never silently falls back to Full Control after Sandbox, a custom profile, its Provider, or required isolation fails.
 
 ## Environment Run Extension Resources
 
@@ -117,12 +128,12 @@ The upstream factory creates a fresh pre-entry-inert extension and validates the
 
 ## Selection Ownership
 
-| Kind                      | Configured by                  | Selected by                                 | Fresh runtime scope                            |
-| ------------------------- | ------------------------------ | ------------------------------------------- | ---------------------------------------------- |
-| Capability                | Agent capability specification | Agent                                       | Native Agent/Run according to Capability hooks |
-| Harness Plugin            | Extension YAML                 | Agent default or root/child Thread override | Each resolved Agent definition                 |
-| Environment profile       | Extension YAML                 | Thread                                      | Fresh Provider and adapter per Project root    |
-| Environment Run Extension | Extension YAML                 | Thread                                      | Complete Environment aggregate for each Run    |
+| Kind                      | Configured by                      | Selected by                                 | Fresh runtime scope                            |
+| ------------------------- | ---------------------------------- | ------------------------------------------- | ---------------------------------------------- |
+| Capability                | Agent capability specification     | Agent                                       | Native Agent/Run according to Capability hooks |
+| Harness Plugin            | Extension YAML                     | Agent default or root/child Thread override | Each resolved Agent definition                 |
+| Environment profile       | Agent UI release or Extension YAML | Thread                                      | Fresh Provider and adapter per Project root    |
+| Environment Run Extension | Extension YAML                     | Thread                                      | Complete Environment aggregate for each Run    |
 
 An Agent can select Capabilities, Harness Plugins, MCP servers, and tool visibility. A root Thread can replace the Agent's Harness Plugin and MCP defaults. A child Thread retains its selected Agent-resource or Markdown-subagent source and initializes Host selections under the rules in [Projects, Threads, and Environments](04-projects-threads-and-environments.md#sticky-thread-configuration), then owns its sticky selections.
 
@@ -165,12 +176,13 @@ This value explains what the admitted Run used. Model routes, authentication kin
 
 ## Invariants
 
-1. Capability discovery and the three extension planes are visible through one management surface but retain distinct runtime contracts.
-2. Metadata discovery does not import targets.
-3. Only selected keys are imported and constructed.
-4. YAML never contains a Python import target.
-5. Availability, configured resource identity, and Thread/Agent selection are separate facts.
-6. Toolsets are configured through their owning Capabilities rather than a parallel discovery plane.
-7. Every independent Run receives fresh extension instances.
-8. An Environment profile is a Host configuration resource, not a runtime `Environment` identity.
-9. A Provider without a Host Project-root adapter is not executable merely because it is installed.
+01. Capability discovery and the three extension planes are visible through one management surface but retain distinct runtime contracts.
+02. Metadata discovery does not import targets.
+03. Only selected keys are imported and constructed.
+04. YAML never contains a Python import target.
+05. Availability, configured resource identity, and Thread/Agent selection are separate facts.
+06. Toolsets are configured through their owning Capabilities rather than a parallel discovery plane.
+07. Every independent Run receives fresh extension instances.
+08. An Environment profile is Host configuration, not a runtime `Environment` identity.
+09. Full Control and Sandbox are fixed release-owned profiles whose IDs cannot be shadowed by configuration resources.
+10. A Provider without a Host Project-root adapter is not executable merely because it is installed.

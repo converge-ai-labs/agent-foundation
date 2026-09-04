@@ -50,7 +50,7 @@ from .conftest import (
     WORKSPACE_ID,
     effective_agent_config,
 )
-from .test_acceptance import _accepted_run
+from .test_acceptance import _accepted_run, _inline_hooks
 from .test_attempt_execution import _authority, _worker
 from .test_subagent_acceptance import (
     CHILD_AGENT_ID,
@@ -313,6 +313,7 @@ async def _continue_parent(
         sessions,
         states,
         RunPayloadStore(objects),
+        _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=6),
     ).advance_thread(
         run=next_run,
@@ -382,7 +383,13 @@ async def _additional_parent_thread(
         request_fingerprint="8" * 64,
         config=config,
     ).model_copy(update={"parent_run_id": source.id, "lineage_kind": RunLineageKind.fork})
-    await RunAcceptanceService(sessions, states, RunPayloadStore(objects), clock=lambda: NOW).accept_new_thread(
+    await RunAcceptanceService(
+        sessions,
+        states,
+        RunPayloadStore(objects),
+        _inline_hooks(),
+        clock=lambda: NOW,
+    ).accept_new_thread(
         session=None,
         thread=Thread(
             id=thread_id,

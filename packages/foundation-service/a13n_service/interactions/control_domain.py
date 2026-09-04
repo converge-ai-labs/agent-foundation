@@ -10,6 +10,7 @@ import rfc8785
 from pydantic import Field, JsonValue, StringConstraints, field_validator, model_validator
 
 from a13n_service.agents.domain import AgentRunOverride
+from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
 
@@ -26,26 +27,6 @@ from .domain import (
     UtcDateTime,
 )
 from .input import AcceptedAgentInput, AgentInput
-
-_MAX_HOOK_NAMES = 128
-
-
-class WebhookDestinationConfig(StrictModel):
-    endpoint_url: Annotated[str, StringConstraints(min_length=1, max_length=8192)]
-    signing_secret_id: ObjectId
-    signature_profile: Literal["hmac_sha256_v1"] = "hmac_sha256_v1"
-
-
-class InlineHookSubscriptionInput(StrictModel):
-    hook_names: tuple[BoundedKey, ...] = Field(min_length=1, max_length=_MAX_HOOK_NAMES)
-    webhook: WebhookDestinationConfig
-
-    @field_validator("hook_names")
-    @classmethod
-    def names_are_unique(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if len(value) != len(set(value)):
-            raise ValueError("hook names must be unique")
-        return value
 
 
 class ThreadRunSubmissionIntent(StrictModel):
@@ -601,7 +582,6 @@ __all__ = [
     "ConsumeQueuedSubmissionRequest",
     "ControlValidationError",
     "InboxPayloadObjectRef",
-    "InlineHookSubscriptionInput",
     "InterruptRequest",
     "PendingResolutionOutcome",
     "QueuedSubmission",
@@ -630,7 +610,6 @@ __all__ = [
     "WaitingRunContinueInput",
     "WaitingRunFeedback",
     "WaitingRunFeedbackRequest",
-    "WebhookDestinationConfig",
     "new_queued_submission_id",
     "new_thread_inbox_entry_id",
     "normalize_feedback",

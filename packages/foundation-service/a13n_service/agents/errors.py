@@ -2,11 +2,53 @@
 
 from __future__ import annotations
 
+from a13n_service.iam import AuthorizationError
+from a13n_service.models.service import ModelError
 from a13n_service.public_errors import PublicError
 
 
 class AgentError(PublicError):
     pass
+
+
+def map_authorization_error(error: AuthorizationError, *, exact: bool = False) -> AgentError:
+    if exact or error.concealed:
+        return agent_not_found()
+    return AgentError("forbidden", "The operation is not allowed.", status_code=403)
+
+
+def builtin_identity_conflict() -> AgentError:
+    return AgentError(
+        "agent_state_conflict",
+        "The built-in Agent identity is already in use.",
+        status_code=409,
+    )
+
+
+def invalid_idempotency_key() -> AgentError:
+    return AgentError(
+        "invalid_request",
+        "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
+        status_code=400,
+    )
+
+
+def idempotency_conflict() -> AgentError:
+    return AgentError(
+        "idempotency_conflict",
+        "The Idempotency-Key was already used with different request content.",
+        status_code=409,
+    )
+
+
+def model_error_reason(error: ModelError) -> str:
+    return {
+        "model_not_found": "model_unavailable",
+        "model_disabled": "model_unavailable",
+        "credential_not_eligible": "model_credential_unavailable",
+        "model_configuration_changed": "model_configuration_changed",
+        "invalid_model_configuration": "model_incompatible",
+    }.get(error.code, "model_unavailable")
 
 
 def agent_not_found() -> AgentError:

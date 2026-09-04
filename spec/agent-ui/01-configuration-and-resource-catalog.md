@@ -138,7 +138,7 @@ Global defaults initialize a new root Thread. The App resolves omitted create fi
 explicit Thread creation selection
 then selected Agent default, where that Agent owns the axis
 then root YAML global default
-then the release-owned Native Environment profile
+then the release-owned Full Control Environment profile (`environment-native`)
 ```
 
 The resulting Thread stores exact resource IDs. Later global-default or file changes do not rewrite an existing Thread's selections. A Thread Run with no configuration patch therefore uses that Thread's previous sticky values.

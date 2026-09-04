@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     AgentRunOverride,
     CreateAgentRequest,
 )
 from a13n_service.agents.errors import AgentError
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
-from a13n_service.agents.service import AgentService
 from a13n_service.environments.domain import (
     CreateEnvironmentRequest,
     CreateEnvironmentRevisionRequest,
@@ -124,14 +124,14 @@ async def _skill(sessions: async_sessionmaker[AsyncSession]) -> None:
 @pytest.mark.anyio
 async def test_create_revision_freezes_exact_environment_and_invocation_can_override_inline(
     agent_environment_service: EnvironmentManagementService,
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
     tmp_path: Path,
 ) -> None:
     await _skill(agent_sessions)
     environment_id, environment_revision_id = await _environment(agent_environment_service, tmp_path)
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-with-environment",
@@ -144,7 +144,7 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
         ),
     )
     revision_result, _ = await create_current_revision(
-        agent_service,
+        agent_management,
         agent_id=created.agent.id,
         expected_version=1,
         key="with-environment",
@@ -183,9 +183,9 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
     )
     assert newer.created
 
-    inherited = await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
+    inherited = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     async with transaction(agent_sessions) as session:
-        inherited_frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=inherited)
+        inherited_frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=inherited)
     inherited_environment = inherited_frozen.effective_config.resolved_environment
     assert inherited_environment is not None
     assert inherited_environment.source_environment_revision_id == environment_revision_id
@@ -217,18 +217,18 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
         )
         skill.current_revision_id = SKILL_REVISION_V2_ID
         skill.version = 2
-    advanced = await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
+    advanced = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     async with transaction(agent_sessions) as session:
-        advanced_frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=advanced)
+        advanced_frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=advanced)
     assert advanced_frozen.effective_config.skills[0].skill_revision_id == SKILL_REVISION_V2_ID
     assert advanced_frozen.effective_config.skills[0].version == 2
-    pinned_override = await agent_invocation_resolver.prepare(
+    pinned_override = await agent_invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=created.agent.id,
         config_override=AgentRunOverride.model_validate({"skills": [{"skill_key": "deploy", "version": 1}]}),
     )
     async with transaction(agent_sessions) as session:
-        pinned_override_frozen = await agent_invocation_resolver.freeze_in_transaction(
+        pinned_override_frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(
             session,
             prepared=pinned_override,
         )
@@ -248,7 +248,7 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
         "access": "read_only",
     }
     with pytest.raises(AgentError) as invalid_override:
-        await agent_invocation_resolver.prepare(
+        await agent_invocation_resolver.preparation.prepare(
             actor=actor(),
             agent_id=created.agent.id,
             config_override=AgentRunOverride.model_validate({"environment": inline_read_only}),
@@ -256,13 +256,13 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
     assert invalid_override.value.code == "agent_revision_not_executable"
     assert invalid_override.value.details["reason"] == "skill_environment_not_writable"
 
-    prepared = await agent_invocation_resolver.prepare(
+    prepared = await agent_invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=created.agent.id,
         config_override=AgentRunOverride.model_validate({"skills": [], "environment": inline_read_only}),
     )
     async with transaction(agent_sessions) as session:
-        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     assert frozen.effective_config.resolved_environment is not None
     assert frozen.effective_config.resolved_environment.source_environment_revision_id is None
     assert frozen.effective_config.resolved_environment.access == "read_only"
@@ -273,7 +273,7 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
         assert skill is not None
         skill.deleted_at = NOW
     with pytest.raises(AgentError) as deleted:
-        await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
+        await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     assert deleted.value.code == "agent_revision_not_executable"
     assert deleted.value.details["reason"] == "skill_selection_invalid"
 
@@ -281,12 +281,12 @@ async def test_create_revision_freezes_exact_environment_and_invocation_can_over
 @pytest.mark.anyio
 async def test_skill_selection_requires_a_writable_primary_environment(
     agent_environment_service: EnvironmentManagementService,
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
     tmp_path: Path,
 ) -> None:
     with pytest.raises(AgentError) as missing:
-        await agent_service.create(
+        await agent_management.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="create-skill-without-environment",
@@ -301,7 +301,7 @@ async def test_skill_selection_requires_a_writable_primary_environment(
     await _skill(agent_sessions)
     _, environment_revision_id = await _environment(agent_environment_service, tmp_path, access="read_only")
     with pytest.raises(AgentError) as read_only_error:
-        await agent_service.create(
+        await agent_management.commands.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="create-skill-read-only-environment",
@@ -323,14 +323,14 @@ async def test_skill_selection_requires_a_writable_primary_environment(
 @pytest.mark.anyio
 async def test_pinned_skill_version_stays_exact_when_current_advances(
     agent_environment_service: EnvironmentManagementService,
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
     tmp_path: Path,
 ) -> None:
     await _skill(agent_sessions)
     _, environment_revision_id = await _environment(agent_environment_service, tmp_path)
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-pinned-skill-agent",
@@ -368,9 +368,9 @@ async def test_pinned_skill_version_stays_exact_when_current_advances(
         skill.current_revision_id = SKILL_REVISION_V2_ID
         skill.version = 2
 
-    prepared = await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     async with transaction(agent_sessions) as session:
-        frozen = await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     assert frozen.effective_config.skills[0].skill_revision_id == SKILL_REVISION_ID
     assert frozen.effective_config.skills[0].version == 1
 
@@ -378,13 +378,13 @@ async def test_pinned_skill_version_stays_exact_when_current_advances(
 @pytest.mark.anyio
 async def test_unarchive_revalidates_current_skill_bindings(
     agent_environment_service: EnvironmentManagementService,
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_sessions: async_sessionmaker[AsyncSession],
     tmp_path: Path,
 ) -> None:
     await _skill(agent_sessions)
     _, environment_revision_id = await _environment(agent_environment_service, tmp_path)
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-agent-for-unarchive",
@@ -396,14 +396,14 @@ async def test_unarchive_revalidates_current_skill_bindings(
             ),
         ),
     )
-    disabled = await agent_service.change_lifecycle(
+    disabled = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=created.agent.id,
         action="disable",
         idempotency_key="disable-agent-for-unarchive",
         if_match=resource_etag(created.agent.id, created.agent.updated_at),
     )
-    archived = await agent_service.change_lifecycle(
+    archived = await agent_management.commands.change_lifecycle(
         actor=actor(),
         agent_id=created.agent.id,
         action="archive",
@@ -416,7 +416,7 @@ async def test_unarchive_revalidates_current_skill_bindings(
         skill.deleted_at = NOW
 
     with pytest.raises(AgentError) as unavailable:
-        await agent_service.change_lifecycle(
+        await agent_management.commands.change_lifecycle(
             actor=actor(),
             agent_id=archived.id,
             action="unarchive",
@@ -430,13 +430,13 @@ async def test_unarchive_revalidates_current_skill_bindings(
 @pytest.mark.anyio
 async def test_invocation_rejects_provider_selection_race(
     agent_environment_service: EnvironmentManagementService,
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
     tmp_path: Path,
 ) -> None:
     _, environment_revision_id = await _environment(agent_environment_service, tmp_path)
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-environment-race",
@@ -446,12 +446,12 @@ async def test_invocation_rejects_provider_selection_race(
         ),
     )
     await create_current_revision(
-        agent_service,
+        agent_management,
         agent_id=created.agent.id,
         expected_version=1,
         key="environment-race",
     )
-    prepared = await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     selected = await agent_environment_service.get_provider_selection(
         actor=actor(), workspace_id=WORKSPACE_ID, provider_key=PROVIDER_KEY
     )
@@ -468,7 +468,7 @@ async def test_invocation_rejects_provider_selection_race(
 
     with pytest.raises(AgentError) as raced:
         async with transaction(agent_sessions) as session:
-            await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+            await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     assert raced.value.code == "agent_revision_not_executable"
     assert raced.value.details["reason"] == "environment_provider_disabled"
 
@@ -476,13 +476,13 @@ async def test_invocation_rejects_provider_selection_race(
 @pytest.mark.anyio
 async def test_invocation_rejects_environment_archived_during_acceptance(
     agent_environment_service: EnvironmentManagementService,
-    agent_service: AgentService,
+    agent_management: AgentManagement,
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
     tmp_path: Path,
 ) -> None:
     environment_id, environment_revision_id = await _environment(agent_environment_service, tmp_path)
-    created = await agent_service.create(
+    created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-environment-archive-race",
@@ -492,12 +492,12 @@ async def test_invocation_rejects_environment_archived_during_acceptance(
         ),
     )
     await create_current_revision(
-        agent_service,
+        agent_management,
         agent_id=created.agent.id,
         expected_version=1,
         key="environment-archive-race",
     )
-    prepared = await agent_invocation_resolver.prepare(actor=actor(), agent_id=created.agent.id)
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     environment = await agent_environment_service.get(actor=actor(), environment_id=environment_id)
     await agent_environment_service.patch(
         actor=actor(),
@@ -508,6 +508,6 @@ async def test_invocation_rejects_environment_archived_during_acceptance(
 
     with pytest.raises(AgentError) as raced:
         async with transaction(agent_sessions) as session:
-            await agent_invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+            await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     assert raced.value.code == "agent_revision_not_executable"
     assert raced.value.details["reason"] == "environment_revision_changed"

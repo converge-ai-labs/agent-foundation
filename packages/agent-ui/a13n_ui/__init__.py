@@ -1,4 +1,4 @@
-"""Process-local Agent UI application for CLI and Web surfaces."""
+"""Process-local Agent UI application for CLI, TUI, and WebUI surfaces."""
 
 from importlib.metadata import version
 

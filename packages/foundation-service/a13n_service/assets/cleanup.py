@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import timedelta
 
 import anyio
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.durable_operations.models import OutboxRecord
+from a13n_service.durable_operations.outbox import OutboxClaim, claim_outbox, complete_outbox, fail_outbox
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
@@ -18,14 +17,6 @@ from .models import AssetRecord
 from .objects import ASSET_OBJECT_DESTINATION, AssetObjectStore
 
 logger = logging.getLogger("a13n_service.assets.cleanup")
-
-
-@dataclass(frozen=True, slots=True)
-class AssetCleanupClaim:
-    outbox_id: str
-    asset_id: str
-    generation: int
-    attempt_count: int
 
 
 class AssetCleanupReconciler:
@@ -60,7 +51,7 @@ class AssetCleanupReconciler:
         claims = await self._claim(limit=limit)
         for claim in claims:
             try:
-                owner = await self._load_owner(claim.asset_id)
+                owner = await self._load_owner(claim.source_id)
                 if owner is None:
                     await self._finish(claim, error_code="asset_cleanup_source_missing")
                     continue
@@ -68,7 +59,7 @@ class AssetCleanupReconciler:
                 await self._objects.delete_content(
                     organization_id=organization_id,
                     workspace_id=workspace_id,
-                    asset_id=claim.asset_id,
+                    asset_id=claim.source_id,
                 )
             except anyio.get_cancelled_exc_class():
                 raise
@@ -78,47 +69,18 @@ class AssetCleanupReconciler:
                 await self._finish(claim, error_code=None)
         return len(claims)
 
-    async def _claim(self, *, limit: int) -> tuple[AssetCleanupClaim, ...]:
+    async def _claim(self, *, limit: int) -> tuple[OutboxClaim, ...]:
         now = self._clock()
         async with transaction(self._sessions) as session:
-            records = tuple(
-                (
-                    await session.scalars(
-                        select(OutboxRecord)
-                        .where(
-                            OutboxRecord.source_kind == "asset",
-                            OutboxRecord.destination_kind == "asset_content_cleanup",
-                            OutboxRecord.destination_ref == ASSET_OBJECT_DESTINATION,
-                            or_(
-                                (OutboxRecord.status == "pending") & (OutboxRecord.available_at <= now),
-                                (OutboxRecord.status == "publishing") & (OutboxRecord.lease_expires_at <= now),
-                            ),
-                        )
-                        .order_by(OutboxRecord.available_at, OutboxRecord.id)
-                        .limit(limit)
-                        .with_for_update(skip_locked=True)
-                    )
-                ).all()
+            return await claim_outbox(
+                session,
+                source_kind="asset",
+                destination_kind="asset_content_cleanup",
+                destination_ref=ASSET_OBJECT_DESTINATION,
+                now=now,
+                lease_duration=timedelta(seconds=self._lease_seconds),
+                limit=limit,
             )
-            claims: list[AssetCleanupClaim] = []
-            for record in records:
-                record.status = "publishing"
-                record.claim_generation += 1
-                record.attempt_count += 1
-                record.lease_expires_at = now + timedelta(seconds=self._lease_seconds)
-                record.updated_at = now
-                record.published_at = None
-                record.dead_lettered_at = None
-                claims.append(
-                    AssetCleanupClaim(
-                        outbox_id=record.id,
-                        asset_id=record.source_id,
-                        generation=record.claim_generation,
-                        attempt_count=record.attempt_count,
-                    )
-                )
-            await session.flush()
-            return tuple(claims)
 
     async def _load_owner(self, asset_id: str) -> tuple[str, str] | None:
         async with transaction(self._sessions) as session:
@@ -132,33 +94,18 @@ class AssetCleanupReconciler:
             ).one_or_none()
             return None if row is None else (row.organization_id, row.workspace_id)
 
-    async def _finish(self, claim: AssetCleanupClaim, *, error_code: str | None) -> None:
+    async def _finish(self, claim: OutboxClaim, *, error_code: str | None) -> None:
         now = self._clock()
         async with transaction(self._sessions) as session:
-            record = await session.scalar(
-                select(OutboxRecord)
-                .where(
-                    OutboxRecord.id == claim.outbox_id,
-                    OutboxRecord.status == "publishing",
-                    OutboxRecord.claim_generation == claim.generation,
-                )
-                .with_for_update()
-            )
-            if record is None:
-                return
-            record.lease_expires_at = None
-            record.updated_at = now
-            record.last_error_code = error_code
             if error_code is None:
-                record.status = "published"
-                record.published_at = now
-                record.dead_lettered_at = None
-            elif claim.attempt_count >= self._max_attempts or error_code == "asset_cleanup_source_missing":
-                record.status = "dead_lettered"
-                record.published_at = None
-                record.dead_lettered_at = now
-            else:
-                record.status = "pending"
-                record.available_at = now + timedelta(seconds=min(300, 2 ** min(claim.attempt_count, 8)))
-                record.published_at = None
-                record.dead_lettered_at = None
+                await complete_outbox(session, claim, completed_at=now)
+                return
+            await fail_outbox(
+                session,
+                claim,
+                failed_at=now,
+                error_code=error_code,
+                retryable=error_code != "asset_cleanup_source_missing",
+                retry_after=timedelta(seconds=min(300, 2 ** min(claim.attempt_count, 8))),
+                max_attempts=self._max_attempts,
+            )

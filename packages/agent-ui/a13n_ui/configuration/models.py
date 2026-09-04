@@ -19,6 +19,8 @@ from pydantic import (
     model_validator,
 )
 
+from a13n_ui.environment_profiles import built_in_environment_profile
+
 _RESOURCE_ID = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
 _NAME = r"^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$"
 _CATALOG_KEY = r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
@@ -184,6 +186,8 @@ class EnvironmentProfileResource(StrictModel):
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "environment-")
+        if built_in_environment_profile(self.id) is not None:
+            raise ValueError("release-owned Environment profile IDs cannot be redefined")
         _validate_json_mapping(self.provider_configuration)
         _validate_json_mapping(self.adapter_configuration)
         return self
@@ -425,7 +429,10 @@ class LoadedAgentUiConfiguration(StrictModel):
         defaults = self.document.defaults
         _require_reference(defaults.project, self.projects, "defaults.project")
         _require_reference(defaults.agent, self.agents, "defaults.agent")
-        if defaults.environment_profile != "environment-native":
+        if (
+            defaults.environment_profile is not None
+            and built_in_environment_profile(defaults.environment_profile) is None
+        ):
             _require_reference(defaults.environment_profile, self.environment_profiles, "defaults.environment_profile")
         for item in defaults.harness_plugins:
             _require_reference(item, self.harness_plugins, "defaults.harness_plugins")

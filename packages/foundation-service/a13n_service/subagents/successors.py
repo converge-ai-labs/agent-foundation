@@ -26,7 +26,7 @@ from a13n_service.interactions.objects import (
     StaleStateWriter,
     StoredRunState,
 )
-from a13n_service.presentation import RetainedItem, RunReplayStore
+from a13n_service.run_stream import RetainedItem, RunReplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 

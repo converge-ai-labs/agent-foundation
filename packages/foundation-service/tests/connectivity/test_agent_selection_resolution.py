@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import AgentConfig, CreateAgentRequest, PluginRuntimeMode
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
-from a13n_service.agents.service import AgentService
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.models.domain import ModelApiConfig, ModelProfile
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
@@ -46,7 +46,7 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
         connectivity_resolver=connectivity,
     )
-    service = AgentService(
+    service = AgentManagement(
         connectivity_sessions,
         revision_resolver,
         invocation_resolver,
@@ -69,26 +69,26 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
         }
     )
 
-    created = await service.create(
+    created = await service.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-selection-agent",
         request=CreateAgentRequest(name="Selection agent", config=config),
     )
-    retained = await invocation_resolver.prepare_retained_revision_graph(
+    retained = await invocation_resolver.preparation.prepare_retained_revision_graph(
         actor=actor(),
         agent_id=created.agent.id,
     )
     async with transaction(connectivity_sessions) as session:
-        await invocation_resolver.freeze_retained_revision_graph(session, prepared=retained)
+        await invocation_resolver.freezing.freeze_retained_revision_graph(session, prepared=retained)
 
-    prepared = await invocation_resolver.prepare(
+    prepared = await invocation_resolver.preparation.prepare(
         actor=actor(),
         agent_id=created.agent.id,
         run_id="run_1234567890abcdef",
     )
     async with transaction(connectivity_sessions) as session:
-        frozen = await invocation_resolver.freeze_in_transaction(session, prepared=prepared)
+        frozen = await invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert created.revision.connector_tools[0].connector_connection_id == CONNECTOR_CONNECTION_ID
     assert frozen.connector_connection_selections[0].allowed_tool_keys == ("find_order",)

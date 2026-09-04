@@ -28,10 +28,11 @@ async def add_run_with_environment_binding(
     run: Run,
     state: RunStateEnvelope,
     workspace_id: str,
-) -> None:
+) -> RunRecord:
     """Insert the Run first, then stage its optional binding in the same transaction."""
 
-    database.add(run_record(run))
+    record = run_record(run)
+    database.add(record)
     await database.flush()
     binding = environment_binding_record(run, state, workspace_id=workspace_id)
     if binding is not None:
@@ -49,6 +50,7 @@ async def add_run_with_environment_binding(
             raise ValueError("Run Environment binding references an invalid target")
         activate_environment_target(target, now=run.created_at)
         database.add(binding)
+    return record
 
 
 def environment_binding_record(

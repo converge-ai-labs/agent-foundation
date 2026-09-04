@@ -70,19 +70,23 @@ The TUI cannot make an operation true by rendering it. A submitted prompt become
 
 ## Startup and Routing
 
+Bare `a13n-ui` and canonical `a13n-ui tui` start the same terminal workstation. Browser startup is the separate explicit `a13n-ui webui` command; no omission selects the browser surface.
+
+The TUI invocation can supply `--thread` to open one existing root Thread, or new-draft overrides such as `--project`, `--agent`, and one of `--environment-mode` or `--environment-profile`. These values are terminal-local launch selection. They initialize this TUI lifetime's new draft and never edit root YAML defaults, resource files, an existing Thread, or another invocation. `--thread` cannot be combined with new-draft overrides.
+
 The default interactive entry opens the terminal shell before loading expensive optional views. Startup resolves the initial screen as follows:
 
-1. The App resolves the current working directory against configured Projects' first roots and retains that result as the launch Project context.
+1. An explicit `--project` selects that accepted Project as the launch Project; otherwise the App resolves the current working directory against configured Projects' first roots.
 2. An explicitly selected root Thread opens in Focus mode without replacing the launch Project or its default Workbench filter.
 3. An explicit Workbench entry opens Workbench under the launch Project filter, or as All Projects when resolution is unmatched or ambiguous.
 4. Without an explicit route, one unambiguous launch Project opens a new draft in Focus mode with that Project context and the same Project-filtered Workbench behind it.
 5. Without an explicit route, an unmatched or ambiguous directory opens All Projects with new-Thread creation disabled and one bounded configuration notice.
 
-The launch directory is an input to [current-directory Project resolution](../04-projects-threads-and-environments.md#current-directory-resolution), not a new resource or dynamic root override. The TUI never creates a Project, reorders roots, asks the user to navigate a Project tree, or opens a Project picker. The configured first root remains the default working directory and receives mount alias `workspace`; later roots remain additional mounts managed through files or the WebUI. An unmatched or ambiguous notice identifies the resolved configuration location and offers the WebUI or direct-file path for repair without blocking inspection of existing Threads through All Projects.
+The launch directory is an input to [current-directory Project resolution](../04-projects-threads-and-environments.md#current-directory-resolution), not a new resource or dynamic root override. An explicit Project launch override selects an existing configured Project and likewise grants no root mutation. The TUI never creates a Project, reorders roots, asks the user to navigate a Project tree, or opens a Project picker. The configured first root remains the default working directory and receives mount alias `workspace`; later roots remain additional mounts managed through files or the WebUI. An unmatched or ambiguous notice identifies the resolved configuration location and offers the WebUI or direct-file path for repair without blocking inspection of existing Threads through All Projects.
 
 The selected Workbench Project filter is terminal-local presentation state initialized from the launch Project or All Projects. When a launch Project exists, the user can switch explicitly between that Project and All Projects; otherwise only All Projects is available. Opening an existing Thread changes neither its stored Project nor the selected Workbench filter; returning from Focus retains the selected filter.
 
-A new draft remains terminal-local until the first submission. On submission, the controller creates the root Thread with the launch-resolved Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers, then submits the prompt. If Thread creation succeeds and prompt admission fails, the created Thread remains visible and the draft is restored; the TUI does not pretend the two operations were atomic.
+A new draft remains terminal-local until the first submission. Its Project, Agent, and Environment profile use explicit launch overrides when supplied and otherwise use current-directory resolution and accepted file defaults; later selector or slash-command changes replace only this terminal-local draft selection. On submission, the controller creates the root Thread with those effective selections plus the selected Harness Plugins, Environment Run Extensions, and MCP servers, then submits the prompt. If Thread creation succeeds and prompt admission fails, the created Thread remains visible and the draft is restored; the TUI does not pretend the two operations were atomic.
 
 Startup does not automatically resume the most recent Thread. Existing history opens only through an explicit Thread selection, preserving the distinction between a new task and continuation.
 
@@ -113,7 +117,7 @@ Focus mode is the primary turn loop. It contains:
 ### Wide Focus Layout
 
 ```text
-+ Agent UI - agent-foundation / Fix flaky tests - Assistant - Native - Running +
++ Agent UI - agent-foundation / Fix flaky tests - Assistant - Full Control - Running +
 |                                                                              |
 | YOU                                                      | TASKS  2/5        |
 | Find the source of the flaky checkout test.              | [x] inspect       |
@@ -127,7 +131,7 @@ Focus mode is the primary turn loop. It contains:
 | |    ... 14 passed, waiting on test_retry ...             | CONTEXT           |
 | `- Subagents  2 running                                  | Agent assistant   |
 |                                                          | Project foundation|
-| Thinking                                                 | Env native        |
+| Thinking                                                 | Env Full Control  |
 | inspecting retry cancellation...                         | MCP 2             |
 |                                                                              |
 + Steer current run ------------------------------------------------------------+

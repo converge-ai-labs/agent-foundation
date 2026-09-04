@@ -25,7 +25,7 @@ from a13n_service.interactions.inbox_persistence import (
     ThreadInboxConflict,
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
-from a13n_service.presentation import RunReplayStore
+from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 

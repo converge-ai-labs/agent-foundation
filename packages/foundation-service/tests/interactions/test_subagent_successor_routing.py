@@ -19,7 +19,7 @@ from a13n_service.interactions import (
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import RunInputKind, RunLineageKind
 from a13n_service.interactions.models import RunRecord
-from a13n_service.presentation import RunReplayStore
+from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     AsyncSubagentResultPublisher,
@@ -30,7 +30,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW, TENANT_ID, USER_ID, WORKSPACE_ID
-from .test_acceptance import _accepted_run
+from .test_acceptance import _accepted_run, _inline_hooks
 from .test_subagent_results import RecordingSignals, _accept_child, _fail_child
 from .test_subagent_successors import _seal_parent
 
@@ -83,6 +83,7 @@ async def test_queued_submission_keeps_precedence_over_unbound_result(
     )
     await QueuedSubmissionStore(
         interaction_sessions,
+        _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=2),
     ).enqueue(
         tenant_id=TENANT_ID,
@@ -213,6 +214,7 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=6),
     ).advance_thread(
         run=manual_run,

@@ -9,6 +9,7 @@ from a13n_harness import HarnessState
 
 from a13n_ui.composition import CompositionAcceptanceService
 from a13n_ui.configuration import LoadedAgentUiConfiguration
+from a13n_ui.environment_profiles import FULL_CONTROL_PROFILE_ID, built_in_environment_profile
 from a13n_ui.errors import ThreadError
 from a13n_ui.storage import (
     AgentResourceSource,
@@ -60,7 +61,7 @@ class ThreadService:
             raise ThreadError("A root Thread requires an available Agent.", code="thread_agent_missing")
         agent = source.agents[agent_id]
         environment_profile_id = (
-            requested.environment_profile_id or source.document.defaults.environment_profile or "environment-native"
+            requested.environment_profile_id or source.document.defaults.environment_profile or FULL_CONTROL_PROFILE_ID
         )
         configuration = ThreadConfiguration(
             version=1,
@@ -158,7 +159,7 @@ def _validate_configuration(
     if value.agent_source.id not in resources:
         raise ThreadError("The selected Agent source is unavailable.", code="thread_agent_missing")
     if (
-        value.environment_profile_id != "environment-native"
+        built_in_environment_profile(value.environment_profile_id) is None
         and value.environment_profile_id not in source.environment_profiles
     ):
         raise ThreadError(

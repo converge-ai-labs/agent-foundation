@@ -15,7 +15,7 @@ from a13n_service.interactions import (
 from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
 from a13n_service.interactions.domain import Run, RunInputKind
 from a13n_service.interactions.models import RunRecord, ThreadRecord
-from a13n_service.presentation import RunReplayPublisher, RunReplayStore
+from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     AsyncSubagentResultError,
@@ -33,7 +33,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .conftest import NOW, TENANT_ID, effective_agent_config
 from .test_attempt_execution import _completed_state, _waiting_state
 from .test_subagent_acceptance import CHILD_AGENT_ID, CHILD_DEFINITION_ID, CHILD_REVISION_ID
-from .test_subagent_results import _accept_child, _complete_object_backed_child, _fail_child
+from .test_subagent_results import (
+    _accept_child,
+    _complete_object_backed_child,
+    _fail_child,
+    _project_all_lifecycle,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -141,20 +146,15 @@ async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
         authority,
         outcome="completed",
     )
-    replays, payloads, output = await _complete_object_backed_child(
+    replays, projector, output = await _complete_object_backed_child(
         interaction_sessions,
         interaction_object_store,
         redis_client,
         states,
         child_run_id,
     )
-    snapshot = await RunReplayPublisher(
-        interaction_sessions,
-        redis_client,
-        replays,
-        payloads,
-        stream_ttl_seconds=60,
-    ).publish(tenant_id=TENANT_ID, run_id=child_run_id)
+    await _project_all_lifecycle(projector)
+    snapshot = await replays.read(TENANT_ID, child_run_id)
     entry = await AsyncSubagentResultPublisher(
         interaction_sessions,
         replays,

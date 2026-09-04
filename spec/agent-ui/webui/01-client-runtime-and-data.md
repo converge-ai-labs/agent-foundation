@@ -20,7 +20,7 @@ The generated client covers finite queries and commands. The summary and focused
 
 The access key can enter the browser through either:
 
-1. the generated-key convenience fragment `#api_key=<percent-encoded-key>` printed by `a13n-ui web`; or
+1. the generated-key convenience fragment `#api_key=<percent-encoded-key>` printed by `a13n-ui webui`; or
 2. a manual access form for a user-supplied key, a copied generated key, or a new browser tab.
 
 Bootstrap runs before the router and before any request instrumentation. It parses the fragment, rejects duplicate or malformed key fields, writes a replacement history entry with the complete fragment removed, and only then makes the value available to the application. The key is retained in origin-scoped `sessionStorage` for the lifetime of that browser tab. It is never copied into a route, search parameter, query key, query result, DOM attribute, analytics payload, error detail, console message, or application log.

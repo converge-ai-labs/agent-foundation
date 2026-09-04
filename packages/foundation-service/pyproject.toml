@@ -18,6 +18,7 @@ dependencies = [
     "a13n-harness",
     "a13n-logging",
     "a13n-stream-protocol",
+    "ag-ui-protocol>=0.1.18,<0.2",
     "fakeredis>=2.31,<3",
     "fastapi>=0.116,<1",
     "google-auth>=2.40,<3",
@@ -54,7 +55,7 @@ packages = ["a13n_service"]
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
-package_module_name_map = { "a13n-environment-provider" = "a13n_environment_provider", "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "a13n-stream-protocol" = "a13n_stream_protocol", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "pydantic-settings" = "pydantic_settings", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "a13n-environment-provider" = "a13n_environment_provider", "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "a13n-stream-protocol" = "a13n_stream_protocol", "ag-ui-protocol" = "ag_ui", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "pydantic-settings" = "pydantic_settings", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
 
 # Database drivers are loaded by SQLAlchemy from the selected backend. httpx2
 # is the service-wide outbound client contract and is used by service tests.

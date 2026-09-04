@@ -387,8 +387,9 @@ class EnvironmentRunService:
         profile = composition.environment_profile
         reconstructed = self._reconstructor.reconstruct(profile)
         roots = await normalize_project_roots(composition.project_roots)
+        canonical_host_paths = reconstructed.adapter.preserves_host_paths
         path_layout = EnvironmentPathLayout.resolve(
-            native=profile.provider_key == NATIVE_PROVIDER_KEY,
+            canonical_host_paths=canonical_host_paths,
             project_roots=roots,
             user_skills_root=self._user_skills_root,
         )
@@ -418,19 +419,15 @@ class EnvironmentRunService:
                         supplied_state=state,
                         environment=environment,
                         permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                        mount_path=(
-                            path_layout.project_mounts[index - 1]
-                            if profile.provider_key == NATIVE_PROVIDER_KEY
-                            else None
-                        ),
+                        mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
                     )
                 )
             if _root_selects_skills(composition) and not (
-                profile.provider_key == NATIVE_PROVIDER_KEY and Path(path_layout.user_skills) in roots
+                canonical_host_paths and Path(path_layout.user_skills) in roots
             ):
                 mounts.append(
                     await self._prepare_user_skills_mount(
-                        mount_path=(path_layout.user_skills if profile.provider_key == NATIVE_PROVIDER_KEY else None)
+                        mount_path=(path_layout.user_skills if canonical_host_paths else None)
                     )
                 )
             extensions = await self._reconstructor.create_extensions(composition)

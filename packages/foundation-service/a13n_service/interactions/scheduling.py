@@ -13,6 +13,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -20,6 +21,7 @@ from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_att
 from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
 from .environment_bindings import deactivate_run_environment
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
+from .lifecycle import append_run_attempt_lifecycle, append_run_lifecycle, append_run_with_attempt_lifecycle
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
 from .records import run_attempt_record
 
@@ -182,6 +184,8 @@ class AttemptScheduler:
             classification = _classify_candidate(run, predecessor, claim, now)
             if classification is None:
                 return None
+            mutation_id = new_mutation_id()
+            initially_accepted = run.status == RunStatus.accepted.value
 
             if classification == "lease_expired":
                 assert predecessor is not None
@@ -198,6 +202,29 @@ class AttemptScheduler:
                 await deactivate_run_environment(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, budget_failure, now)
+                if classification == "lease_expired":
+                    assert predecessor is not None
+                    await append_run_with_attempt_lifecycle(
+                        database,
+                        run,
+                        "run.failed",
+                        attempt=predecessor,
+                        attempt_event_type="run_attempt.failed",
+                        mutation_id=mutation_id,
+                        occurred_at=now,
+                        actor_type="worker",
+                        actor_id=claim.worker_id,
+                    )
+                else:
+                    await append_run_lifecycle(
+                        database,
+                        run,
+                        "run.failed",
+                        mutation_id=mutation_id,
+                        occurred_at=now,
+                        actor_type="worker",
+                        actor_id=claim.worker_id,
+                    )
                 return SealedClaim(budget_failure)
 
             token = self._token_factory()
@@ -230,7 +257,8 @@ class AttemptScheduler:
                 claimed_at=now,
                 updated_at=now,
             )
-            database.add(run_attempt_record(attempt))
+            attempt_record_value = run_attempt_record(attempt)
+            database.add(attempt_record_value)
             run.status = RunStatus.running.value
             run.current_run_attempt_id = attempt.id
             run.attempts_started += 1
@@ -240,6 +268,37 @@ class AttemptScheduler:
             run.version += 1
             run.updated_at = now
             await database.flush()
+            if classification == "lease_expired":
+                assert predecessor is not None
+                await append_run_attempt_lifecycle(
+                    database,
+                    run,
+                    predecessor,
+                    "run_attempt.failed",
+                    mutation_id=mutation_id,
+                    occurred_at=now,
+                )
+            if initially_accepted:
+                await append_run_with_attempt_lifecycle(
+                    database,
+                    run,
+                    "run.running",
+                    attempt=attempt_record_value,
+                    attempt_event_type="run_attempt.leased",
+                    mutation_id=mutation_id,
+                    occurred_at=now,
+                    actor_type="worker",
+                    actor_id=claim.worker_id,
+                )
+            else:
+                await append_run_attempt_lifecycle(
+                    database,
+                    run,
+                    attempt_record_value,
+                    "run_attempt.leased",
+                    mutation_id=mutation_id,
+                    occurred_at=now,
+                )
             return ClaimedAttempt(
                 attempt=attempt,
                 thread_id=run.thread_id,

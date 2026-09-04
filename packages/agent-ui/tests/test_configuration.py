@@ -234,6 +234,42 @@ subagents: [{markdown: subagent-missing}]
     assert invalid.value.code == "configuration_invalid"
 
 
+async def test_accepts_release_owned_sandbox_as_global_default(tmp_path: Path) -> None:
+    config = _write_source_tree(
+        tmp_path,
+        root='schema_version: "2"\ndefaults:\n  environment_profile: environment-sandbox\n',
+    )
+
+    loaded = await load_agent_ui_configuration(config)
+
+    assert loaded.document.defaults.environment_profile == "environment-sandbox"
+    assert loaded.environment_profiles == {}
+
+
+async def test_rejects_configured_profile_that_shadows_a_release_owned_mode(tmp_path: Path) -> None:
+    config = _write_source_tree(
+        tmp_path,
+        resources={
+            "extensions/sandbox.yaml": """
+schema_version: "1"
+kind: environment_profile
+id: environment-sandbox
+name: Shadow Sandbox
+provider_key: a13n.local-envd
+provider_schema_version: "1"
+provider_configuration: {}
+adapter_key: a13n.local-envd-project-root
+adapter_configuration: {}
+"""
+        },
+    )
+
+    with pytest.raises(ConfigurationError) as invalid:
+        await load_agent_ui_configuration(config)
+
+    assert invalid.value.code == "configuration_resource_invalid"
+
+
 async def test_rejects_symlinked_canonical_directory(tmp_path: Path) -> None:
     config = _write_source_tree(tmp_path)
     actual = tmp_path / "actual"

@@ -86,7 +86,9 @@ class RunControlPort(Protocol):
     def current_state(self) -> StoredRunState: ...
 
     @property
-    def handoff_ready(self) -> bool: ...
+    def terminal_observation_allowed(self) -> bool:
+        """Whether the current Harness terminal item is an ordinary outcome."""
+        ...
 
     async def enter_harness(
         self,

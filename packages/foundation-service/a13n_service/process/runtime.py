@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from a13n_service.agents.service import AgentService
+    from a13n_service.agents.application import AgentManagement
     from a13n_service.assets.service import AssetService
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
     from a13n_service.environments.service import EnvironmentManagementService
+    from a13n_service.hooks.management import HookSubscriptionService
     from a13n_service.iam import RequestAuthenticator
+    from a13n_service.lifecycle.service import LifecycleEventService
     from a13n_service.models.model_factory import NativeModelFactory
     from a13n_service.models.provider_service import ModelProviderService
     from a13n_service.models.service import ModelService
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
     from a13n_service.plugins.on_demand import OnDemandPluginRuntime
     from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
     from a13n_service.plugins.service import PluginService
+    from a13n_service.run_stream import RedisRunStream, RunReplayStore
     from a13n_service.secrets import SecretProtector
     from a13n_service.settings import ServiceSettings
     from a13n_service.skills.catalog import SkillCatalogService
@@ -48,10 +51,12 @@ class ControlRuntime:
     skill_uploads: SkillUploadService
     skill_publication: SkillPublicationService
     skill_catalog: SkillCatalogService
-    agents: AgentService
+    agents: AgentManagement
     models: ModelService
     model_providers: ModelProviderService
     assets: AssetService
+    hook_subscriptions: HookSubscriptionService
+    lifecycle_events: LifecycleEventService
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +68,8 @@ class WorkerRuntime:
     native_model_factory: NativeModelFactory
     skill_runtime: SkillRuntimePreparer
     environment_keepalive: EnvironmentKeepaliveLoop
+    run_stream: RedisRunStream
+    run_replay: RunReplayStore
 
 
 @dataclass(slots=True)

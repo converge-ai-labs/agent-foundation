@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.control_domain import ThreadInboxEntry
 from a13n_service.interactions.models import RunRecord, SessionRecord
-from a13n_service.presentation import RunReplayStore
+from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage import short_session
 
 from .result_payload import (

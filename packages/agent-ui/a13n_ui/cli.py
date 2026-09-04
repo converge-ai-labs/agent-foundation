@@ -28,6 +28,7 @@ from a13n_ui.configuration import (
     ExternalSubagentScope,
     LoadedAgentUiConfiguration,
 )
+from a13n_ui.environment_profiles import EnvironmentMode, environment_profile_id_for_mode
 from a13n_ui.errors import AgentUiError, ConfigurationError
 from a13n_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_SCOPE,
@@ -38,12 +39,15 @@ from a13n_ui.model_accounts import (
 )
 from a13n_ui.settings_loader import ensure_default_directories, load_agent_ui_settings
 from a13n_ui.surfaces import RootOperationStatus, RootOperationView, ThreadMetadataMutation, ThreadMetadataPatch
-from a13n_ui.terminal import run as run_cli
+from a13n_ui.terminal import TuiLaunchOptions
+from a13n_ui.terminal import run as run_tui
 from a13n_ui.thread_service import RootThreadDefaults
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="a13n-ui")
+    tui_options = argparse.ArgumentParser(add_help=False)
+    _add_tui_launch_arguments(tui_options)
+    parser = argparse.ArgumentParser(prog="a13n-ui", parents=(tui_options,))
     parser.add_argument(
         "--config",
         type=Path,
@@ -55,17 +59,27 @@ def _parser() -> argparse.ArgumentParser:
         help="override the local Agent UI data root",
     )
     commands = parser.add_subparsers(dest="command")
-    commands.add_parser("cli", help="run the interactive terminal frontend")
-    commands.add_parser("web", help="run the bundled WebUI frontend")
+    commands.add_parser(
+        "tui",
+        parents=(tui_options,),
+        help="run the interactive terminal workstation (default)",
+    )
+    commands.add_parser("webui", help="run the bundled WebUI frontend")
 
     run = commands.add_parser("run", help="execute one headless Thread message")
     run.add_argument("prompt", help="message to execute")
     run.add_argument("--thread", help="continue an existing root Thread")
     run.add_argument("--project", help="Project used when creating a Thread")
     run.add_argument("--agent", help="Agent used when creating a Thread")
-    run.add_argument(
+    environment_selection = run.add_mutually_exclusive_group()
+    environment_selection.add_argument(
+        "--environment-mode",
+        choices=tuple(item.value for item in EnvironmentMode),
+        help="built-in execution mode used when creating a Thread",
+    )
+    environment_selection.add_argument(
         "--environment-profile",
-        help="Environment profile used when creating a Thread",
+        help="advanced custom Environment profile used when creating a Thread",
     )
     run.add_argument("--title", help="title used when creating a Thread")
     _add_format(run)
@@ -102,6 +116,11 @@ def _parser() -> argparse.ArgumentParser:
     project_commands = project.add_subparsers(dest="project_command", required=True)
     project_list = project_commands.add_parser("list", help="list Projects")
     _add_format(project_list)
+
+    environment = commands.add_parser("environment", help="query Environment modes and profiles")
+    environment_commands = environment.add_subparsers(dest="environment_command", required=True)
+    environment_list = environment_commands.add_parser("list", help="list Environment modes and profiles")
+    _add_format(environment_list)
 
     thread = commands.add_parser("thread", help="query or archive Threads")
     thread_commands = thread.add_subparsers(dest="thread_command", required=True)
@@ -141,6 +160,36 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_tui_launch_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--thread",
+        default=argparse.SUPPRESS,
+        help="open an existing root Thread in the TUI",
+    )
+    parser.add_argument(
+        "--project",
+        default=argparse.SUPPRESS,
+        help="override the new-Thread Project for this TUI launch",
+    )
+    parser.add_argument(
+        "--agent",
+        default=argparse.SUPPRESS,
+        help="override the new-Thread Agent for this TUI launch",
+    )
+    environment = parser.add_mutually_exclusive_group()
+    environment.add_argument(
+        "--environment-mode",
+        choices=tuple(item.value for item in EnvironmentMode),
+        default=argparse.SUPPRESS,
+        help="override the built-in Environment mode for this TUI launch",
+    )
+    environment.add_argument(
+        "--environment-profile",
+        default=argparse.SUPPRESS,
+        help="override the custom Environment profile for this TUI launch",
+    )
+
+
 def _add_format(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--format",
@@ -177,7 +226,7 @@ async def _run(args: argparse.Namespace) -> int:
         log_format=LogFormat(settings.log_format),
         logger_names=("a13n_ui",),
     )
-    if args.command == "web":
+    if args.command == "webui":
         from a13n_ui.webui import run as run_web
 
         await asyncio.to_thread(run_web)
@@ -214,15 +263,41 @@ async def _run(args: argparse.Namespace) -> int:
                     code="configuration_unavailable",
                 )
             return await _run_one_shot(app, configuration, args)
-        if args.command in {"config", "import", "project", "thread", "doctor", "auth"}:
+        if args.command in {"config", "import", "project", "environment", "thread", "doctor", "auth"}:
             return await _run_management(
                 app,
                 args,
                 configuration_path=source.path,
                 data_root=settings.storage.data_root,
             )
-        await run_cli(app)
+        await run_tui(app, launch=_tui_launch_options(args))
     return 0
+
+
+def _tui_launch_options(args: argparse.Namespace) -> TuiLaunchOptions:
+    thread_id = getattr(args, "thread", None)
+    environment_profile_id = getattr(args, "environment_profile", None)
+    environment_mode = getattr(args, "environment_mode", None)
+    if environment_mode is not None:
+        environment_profile_id = environment_profile_id_for_mode(environment_mode)
+    defaults = RootThreadDefaults(
+        project_id=getattr(args, "project", None),
+        agent_id=getattr(args, "agent", None),
+        environment_profile_id=environment_profile_id,
+    )
+    if thread_id is not None and any(
+        value is not None
+        for value in (
+            defaults.project_id,
+            defaults.agent_id,
+            defaults.environment_profile_id,
+        )
+    ):
+        raise ConfigurationError(
+            "An existing TUI Thread cannot be combined with new-Thread launch overrides.",
+            code="tui_arguments_conflict",
+        )
+    return TuiLaunchOptions(thread_id=thread_id, defaults=defaults)
 
 
 async def _codex_cli_login(request: object) -> CodexCredentials:
@@ -334,6 +409,10 @@ async def _run_management(
         _print_projection({"projects": await app.projects()}, args.format)
         return 0
 
+    if args.command == "environment":
+        _print_projection({"environment_profiles": await app.environment_profiles()}, args.format)
+        return 0
+
     if args.command == "thread":
         if args.thread_command == "list":
             page = await app.list_threads(
@@ -420,6 +499,7 @@ async def _run_one_shot(
             for value in (
                 args.project,
                 args.agent,
+                args.environment_mode,
                 args.environment_profile,
                 args.title,
             )
@@ -471,10 +551,13 @@ def _new_thread_defaults(
             code="run_agent_missing",
             details={"agent_id": agent_id},
         )
+    environment_profile_id = args.environment_profile
+    if args.environment_mode is not None:
+        environment_profile_id = environment_profile_id_for_mode(args.environment_mode)
     return RootThreadDefaults(
         project_id=project_id,
         agent_id=agent_id,
-        environment_profile_id=(args.environment_profile or defaults.environment_profile),
+        environment_profile_id=(environment_profile_id or defaults.environment_profile),
     )
 
 

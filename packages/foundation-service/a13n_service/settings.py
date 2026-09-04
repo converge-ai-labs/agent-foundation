@@ -159,6 +159,32 @@ class ServiceSettings(BaseSettings):
     model_private_endpoint_cidrs: tuple[str, ...] = ()
     model_resolve_dns_on_save: bool = True
     model_connection_test_timeout_seconds: float = Field(default=15, gt=0, le=120)
+    webhook_private_endpoint_domains: tuple[str, ...] = ()
+    webhook_private_endpoint_cidrs: tuple[str, ...] = ()
+    webhook_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
+    webhook_claim_lease_seconds: float = Field(default=30, gt=0, le=3600)
+    webhook_claim_limit: int = Field(default=25, ge=1, le=100)
+    webhook_max_attempts: int = Field(default=10, ge=1, le=1000)
+    webhook_retry_base_seconds: float = Field(default=2, gt=0, le=3600)
+    webhook_retry_max_seconds: float = Field(default=300, gt=0, le=86_400)
+    webhook_request_timeout_seconds: float = Field(default=10, gt=0, le=300)
+    webhook_max_response_bytes: int = Field(default=64 * 1024, ge=1, le=16 * 1024 * 1024)
+    lifecycle_retention_days: int = Field(default=30, ge=1, le=3650)
+    lifecycle_published_delivery_retention_days: int = Field(default=7, ge=1, le=3650)
+    lifecycle_dead_letter_retention_days: int = Field(default=30, ge=1, le=3650)
+    lifecycle_retention_poll_interval_seconds: float = Field(default=300, gt=0, le=86_400)
+    lifecycle_retention_batch_limit: int = Field(default=200, ge=1, le=1000)
+    lifecycle_projection_poll_interval_seconds: float = Field(default=1, gt=0, le=60)
+    lifecycle_projection_lease_seconds: float = Field(default=60, gt=0, le=3600)
+    lifecycle_projection_retry_seconds: float = Field(default=5, ge=0, le=3600)
+    lifecycle_projection_max_attempts: int = Field(default=20, ge=1, le=1000)
+    lifecycle_projection_claim_limit: int = Field(default=16, ge=1, le=200)
+    run_stream_max_events: int = Field(default=4096, ge=1, le=100_000)
+    run_stream_max_event_bytes: int = Field(default=320 * 1024, ge=1024, le=16 * 1024 * 1024)
+    run_stream_closed_ttl_seconds: int = Field(default=24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60)
+    run_replay_max_events: int = Field(default=4096, ge=1, le=100_000)
+    run_replay_max_items: int = Field(default=2048, ge=1, le=100_000)
+    run_replay_max_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
     secret_master_key_base64: SecretStr | None = Field(default=None, repr=False)
     secret_encryption_key_id: str | None = Field(default=None, min_length=1, max_length=128, repr=False)
 
@@ -276,6 +302,14 @@ class ServiceSettings(BaseSettings):
             self.connectivity_read_timeout_seconds,
         ):
             raise ValueError("Connectivity total timeout cannot be shorter than a phase timeout")
+        return self
+
+    @model_validator(mode="after")
+    def webhook_delivery_policy_is_coherent(self) -> Self:
+        if self.webhook_claim_lease_seconds <= self.webhook_request_timeout_seconds:
+            raise ValueError("Webhook claim lease must exceed the request timeout")
+        if self.webhook_retry_max_seconds < self.webhook_retry_base_seconds:
+            raise ValueError("Webhook maximum retry delay must cover the base delay")
         return self
 
     def database_config(self) -> PostgreSQLConfig | SQLiteConfig:

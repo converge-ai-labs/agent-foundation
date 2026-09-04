@@ -61,7 +61,7 @@ from .conftest import (
     effective_agent_config,
     environment_execution_config,
 )
-from .test_acceptance import _accepted_run
+from .test_acceptance import _accepted_run, _inline_hooks
 from .test_attempt_execution import _authority, _completed_state, _worker
 
 pytestmark = pytest.mark.anyio
@@ -548,7 +548,13 @@ async def _accept_parent(
         config=config,
     )
     states = RunStateStore(objects)
-    await RunAcceptanceService(sessions, states, RunPayloadStore(objects), clock=lambda: NOW).accept_new_thread(
+    await RunAcceptanceService(
+        sessions,
+        states,
+        RunPayloadStore(objects),
+        _inline_hooks(),
+        clock=lambda: NOW,
+    ).accept_new_thread(
         session=Session(
             id=SESSION_ID,
             tenant_id=TENANT_ID,

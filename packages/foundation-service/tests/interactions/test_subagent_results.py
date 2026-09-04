@@ -12,6 +12,7 @@ from a13n_service.interactions import (
     AttemptScheduler,
     CompletedOutcomeCandidate,
     RunPayloadEnvelope,
+    RunPayloadObjectRef,
     RunPayloadStore,
     RunStateStore,
 )
@@ -21,11 +22,11 @@ from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, Threa
 from a13n_service.interactions.inbox_persistence import ThreadInboxCapacityExceeded
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunRecord
-from a13n_service.presentation import (
-    RunOutputItemContent,
-    RunReplayPublisher,
+from a13n_service.run_stream import (
+    LifecycleRunStreamProjector,
+    RedisRunStream,
     RunReplayStore,
-    RunStreamProjector,
+    RunStreamHarnessProjector,
 )
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
@@ -303,7 +304,7 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
         interaction_sessions,
         interaction_object_store,
     )
-    replays, payloads, output = await _complete_object_backed_child(
+    replays, projector, output = await _complete_object_backed_child(
         interaction_sessions,
         interaction_object_store,
         redis_client,
@@ -326,20 +327,15 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
         assert (counter.next_delivery_sequence, counter.pending_count, counter.pending_bytes) == (1, 0, 0)
         assert rows == ()
 
-    snapshot = await RunReplayPublisher(
-        interaction_sessions,
-        redis_client,
-        replays,
-        payloads,
-        stream_ttl_seconds=60,
-    ).publish(tenant_id=TENANT_ID, run_id=child_run_id)
+    await _project_all_lifecycle(projector)
+    snapshot = await replays.read(TENANT_ID, child_run_id)
     entry = await publisher.publish(tenant_id=TENANT_ID, child_run_id=child_run_id)
     result = _RESULT_ADAPTER.validate_python(entry.payload)
     output_item = snapshot.items[-1]
-    output_content = RunOutputItemContent.model_validate(output_item.content)
+    output_reference = RunPayloadObjectRef.model_validate(output_item.content)
 
     assert result.terminal_result_item_id == output_item.id
-    assert result.result_digest == output_content.result_digest
+    assert result.result_digest == output_reference.digest_sha256
     assert "result_payload" not in result.model_fields_set
     materializer = AsyncSubagentResultMaterializer(interaction_sessions, replays)
     projected = await materializer(entry)
@@ -530,7 +526,7 @@ async def _complete_object_backed_child(
     redis: Redis,
     states: RunStateStore,
     child_run_id: str,
-) -> tuple[RunReplayStore, RunPayloadStore, str]:
+) -> tuple[RunReplayStore, LifecycleRunStreamProjector, str]:
     claim = await AttemptScheduler(
         sessions,
         clock=lambda: NOW + timedelta(seconds=3),
@@ -553,14 +549,16 @@ async def _complete_object_backed_child(
             payload=output,
         ),
     )
-    await RunStreamProjector(
-        redis,
+    stream = RedisRunStream(redis)
+    live_projector = RunStreamHarnessProjector(
+        stream,
         tenant_id=TENANT_ID,
         run_id=child_run_id,
         thread_id=child_resource.thread_id,
         run_attempt_id=claim.attempt.id,
-        max_event_bytes=1024,
-    ).project(
+        harness_run_id="completed-child",
+    )
+    live_projector.project(
         HarnessRunResultEvent(
             thread_id=child_resource.thread_id,
             run_id="completed-child",
@@ -576,6 +574,7 @@ async def _complete_object_backed_child(
             ),
         )
     )
+    await live_projector.close()
     await _complete_run(
         sessions,
         objects,
@@ -585,4 +584,19 @@ async def _complete_object_backed_child(
         outcome=CompletedOutcomeCandidate(output_object=output_object),
         time_offset_seconds=4,
     )
-    return RunReplayStore(objects), payloads, output
+    replays = RunReplayStore(objects)
+    projector = LifecycleRunStreamProjector(
+        sessions,
+        stream,
+        replays,
+        worker_id="subagent-result-test-projector",
+        clock=lambda: NOW + timedelta(seconds=5),
+    )
+    return replays, projector, output
+
+
+async def _project_all_lifecycle(projector: LifecycleRunStreamProjector) -> None:
+    for _ in range(100):
+        if await projector.project_once(limit=200) == 0:
+            return
+    raise AssertionError("lifecycle projection did not drain")
