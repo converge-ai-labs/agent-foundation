@@ -76,11 +76,7 @@ async def test_later_parent_run_can_resume_retained_child_from_same_thread(
     )
     delegated = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(
-            subagent_name="researcher",
-            prompt="research",
-            delegation_intent_id=f"sdi_{'1' * 64}",
-        ),
+        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
     )
     await _complete_delegated_child(
         interaction_sessions,
@@ -142,11 +138,7 @@ async def test_session_visibility_controls_cross_thread_retained_child_reads(
     )
     delegated = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(
-            subagent_name="researcher",
-            prompt="research",
-            delegation_intent_id=f"sdi_{'1' * 64}",
-        ),
+        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
     )
     other_operator, other_context = await _additional_parent_thread(
         interaction_sessions,
@@ -184,11 +176,7 @@ async def test_retained_child_read_reauthorizes_current_parent_principal(
     )
     delegated = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(
-            subagent_name="researcher",
-            prompt="research",
-            delegation_intent_id=f"sdi_{'1' * 64}",
-        ),
+        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
     )
     async with transaction(interaction_sessions) as database:
         binding = await database.scalar(
@@ -216,11 +204,7 @@ async def test_later_parent_roster_revision_can_resume_retained_child_checkpoint
     )
     delegated = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(
-            subagent_name="researcher",
-            prompt="research",
-            delegation_intent_id=f"sdi_{'1' * 64}",
-        ),
+        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
     )
     await _complete_delegated_child(
         interaction_sessions,

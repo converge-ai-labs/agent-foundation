@@ -127,36 +127,17 @@ class SubagentExecutionStore:
             )
         return page.items[0]
 
-    async def read_delegation_intent(
-        self,
-        context: SubagentOperatorContext,
-        delegation_intent_id: str,
-    ) -> RetainedChildExecution | None:
-        """Read one accepted delegate operation in the current parent Run scope."""
-
-        page = await self.read_page(
-            context,
-            delegation_intent_id=delegation_intent_id,
-            offset=0,
-            limit=1,
-            action=WorkspaceAction.run_read,
-        )
-        return page.items[0] if page.items else None
-
     async def read_page(
         self,
         context: SubagentOperatorContext,
         *,
         execution_id: str | None = None,
-        delegation_intent_id: str | None = None,
         offset: int,
         limit: int,
         action: WorkspaceAction,
     ) -> ExecutionPage:
         authority = self.require_context(context)
-        if execution_id is not None and delegation_intent_id is not None:
-            raise ValueError("execution and delegation-intent filters are mutually exclusive")
-        query_offset = 0 if execution_id is not None or delegation_intent_id is not None else offset
+        query_offset = 0 if execution_id is not None else offset
         async with short_session(self._sessions) as database:
             parent, _, _ = await read_attempt_authority(database, authority, assume_utc(self._clock()))
             session = await _require_session(database, parent)
@@ -171,13 +152,6 @@ class SubagentExecutionStore:
             ]
             if execution_id is not None:
                 filters.append(ChildRunRelationshipRecord.id == execution_id)
-            if delegation_intent_id is not None:
-                filters.extend(
-                    (
-                        ChildRunRelationshipRecord.parent_run_id == authority.run_id,
-                        ChildRunRelationshipRecord.delegation_intent_id == delegation_intent_id,
-                    )
-                )
             relationship_scope = and_(
                 origin_parent.tenant_id == ChildRunRelationshipRecord.tenant_id,
                 origin_parent.id == ChildRunRelationshipRecord.parent_run_id,

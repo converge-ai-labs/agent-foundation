@@ -1,7 +1,7 @@
 """add asynchronous child run relationships.
 
 Revision ID: 98e1246af6af
-Revises: e416d6806802
+Revises: 93b882c58ee2
 Create Date: 2026-09-03 14:00:42.341306+00:00
 """
 
@@ -33,8 +33,6 @@ def upgrade() -> None:
         sa.Column("parent_run_attempt_id", sa.String(length=72), nullable=False),
         sa.Column("parent_run_attempt_generation", sa.BigInteger(), nullable=False),
         sa.Column("subagent_name", sa.String(length=63), nullable=False),
-        sa.Column("delegation_intent_id", sa.String(length=68), nullable=True),
-        sa.Column("delegation_request_digest", sa.String(length=64), nullable=True),
         sa.Column("child_run_id", sa.String(length=72), nullable=False),
         sa.Column("child_thread_id", sa.String(length=72), nullable=False),
         sa.Column("cancellation_policy", sa.String(length=32), nullable=False),
@@ -50,19 +48,6 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "length(subagent_name) BETWEEN 1 AND 63", name=op.f("ck_child_run_relationships_subagent_name_bounded")
-        ),
-        sa.CheckConstraint(
-            "delegation_intent_id IS NULL OR "
-            "(length(delegation_intent_id) = 68 AND substr(delegation_intent_id, 1, 4) = 'sdi_')",
-            name=op.f("ck_child_run_relationships_delegation_intent_id_canonical"),
-        ),
-        sa.CheckConstraint(
-            "delegation_request_digest IS NULL OR length(delegation_request_digest) = 64",
-            name=op.f("ck_child_run_relationships_delegation_request_digest_bounded"),
-        ),
-        sa.CheckConstraint(
-            "(delegation_intent_id IS NULL) = (delegation_request_digest IS NULL)",
-            name=op.f("ck_child_run_relationships_delegation_intent_evidence_complete"),
         ),
         sa.CheckConstraint(
             "parent_run_attempt_generation >= 1",
@@ -95,12 +80,6 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_child_run_relationships")),
         sa.UniqueConstraint("tenant_id", "child_run_id", name="uq_child_run_relationships_child_run"),
-        sa.UniqueConstraint(
-            "tenant_id",
-            "parent_run_id",
-            "delegation_intent_id",
-            name="uq_child_run_relationships_delegation_intent",
-        ),
         sa.UniqueConstraint("tenant_id", "id", name="uq_child_run_relationships_tenant_id"),
     )
     op.create_index(

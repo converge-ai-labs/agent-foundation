@@ -253,11 +253,6 @@ async def test_subagent_modes_expose_mutually_exclusive_standard_tools(
         del messages
         observed.update(tool.name for tool in info.function_tools)
         if async_enabled:
-            delegate = next(tool for tool in info.function_tools if tool.name == "delegate")
-            assert delegate.metadata is not None
-            delegate_metadata = normalize_harness_tool_metadata(delegate.metadata[HARNESS_TOOL_METADATA_KEY])
-            assert delegate_metadata.idempotency == "provider_key"
-            assert "delegation_key" in delegate.parameters_json_schema["required"]
             wait = next(tool for tool in info.function_tools if tool.name == "wait_subagent")
             assert wait.metadata is not None
             metadata = normalize_harness_tool_metadata(wait.metadata[HARNESS_TOOL_METADATA_KEY])
@@ -281,14 +276,7 @@ async def test_subagent_modes_expose_mutually_exclusive_standard_tools(
 async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> None:
     operator = RecordingSubagentOperator()
     steps = (
-        (
-            "delegate",
-            {
-                "subagent_name": "reviewer",
-                "prompt": "inspect",
-                "delegation_key": "review-parent-objective",
-            },
-        ),
+        ("delegate", {"subagent_name": "reviewer", "prompt": "inspect"}),
         ("subagent_info", {"execution_id": "execution-1"}),
         ("wait_subagent", {"execution_id": "execution-1", "timeout_seconds": 0.01}),
         ("steer_subagent", {"execution_id": "execution-1", "message": "focus"}),
@@ -353,57 +341,9 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
     }
     assert resume_plan.context.input != first_plan.context.input
     assert isinstance(operator.requests[0], AsyncDelegateRequest)
-    assert operator.requests[0].delegation_intent_id == (
-        "sdi_02ccb21954f00c4faf20d817b0f3e6e2ce64d721f6d409c6377958367844f4a0"
-    )
     assert isinstance(operator.requests[-1], AsyncResumeRequest)
     assert result.state is not None
     assert SUBAGENT_CAPABILITY_ID not in result.state.agent_context_state.entries
-
-
-async def test_async_delegate_intent_is_stable_across_tool_call_retries() -> None:
-    operator = RecordingSubagentOperator()
-    arguments = {
-        "subagent_name": "reviewer",
-        "prompt": "inspect",
-        "delegation_key": "stable-review",
-    }
-
-    async def parent_model(
-        messages: list[ModelMessage],
-        info: AgentInfo,
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        returns = [
-            part
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart)
-        ]
-        if len(returns) < 2:
-            yield {
-                0: DeltaToolCall(
-                    name="delegate",
-                    json_args=json.dumps(arguments),
-                    tool_call_id=f"delegate-attempt-{len(returns) + 1}",
-                )
-            }
-            return
-        yield "done"
-
-    executable = HarnessBuilder().build(
-        _definition(
-            FunctionModel(stream_function=parent_model),
-            SubagentCapability(async_enabled=True, operator=operator),
-        )
-    )
-    result = await executable.run("parent objective", bindings=_bindings())
-
-    assert result.output_or_raise() == "done"
-    requests = [request for request in operator.requests if isinstance(request, AsyncDelegateRequest)]
-    assert len(requests) == 2
-    assert requests[0].delegation_intent_id == requests[1].delegation_intent_id
 
 
 async def test_parent_exit_does_not_cancel_host_owned_execution() -> None:
@@ -424,9 +364,7 @@ async def test_parent_exit_does_not_cancel_host_owned_execution() -> None:
             yield {
                 0: DeltaToolCall(
                     name="delegate",
-                    json_args=(
-                        '{"subagent_name":"reviewer","prompt":"background","delegation_key":"background-review"}'
-                    ),
+                    json_args='{"subagent_name":"reviewer","prompt":"background"}',
                     tool_call_id="delegate-1",
                 )
             }
@@ -471,7 +409,7 @@ async def test_async_operator_execution_identity_mismatch_is_rejected() -> None:
         yield {
             0: DeltaToolCall(
                 name="delegate",
-                json_args=('{"subagent_name":"reviewer","prompt":"inspect","delegation_key":"inspect-review"}'),
+                json_args='{"subagent_name":"reviewer","prompt":"inspect"}',
                 tool_call_id="delegate-1",
             )
         }
@@ -504,7 +442,7 @@ async def test_async_operator_return_type_mismatch_is_rejected() -> None:
         yield {
             0: DeltaToolCall(
                 name="delegate",
-                json_args=('{"subagent_name":"reviewer","prompt":"inspect","delegation_key":"inspect-review"}'),
+                json_args='{"subagent_name":"reviewer","prompt":"inspect"}',
                 tool_call_id="delegate-1",
             )
         }

@@ -104,7 +104,7 @@ At an acceptable complete or suspended result, Agent UI publishes the continuati
 
 ## Child Threads and Execution Segments
 
-A logical async child is an ordinary Thread with a `parent_thread_id`. A newly accepted `delegate` intent creates the child and segment zero. While its process-local parent Run remains registered, Agent UI retains the Harness-derived intent ID and exact request digest in memory: exact replay returns the existing execution, conflicting reuse fails, and concurrent replay cannot create two segments. The registry is not another durable work protocol because active root Runs and their retry authority do not survive App loss. `resume_subagent` keeps `thread_id`, applies an optional sticky configuration patch, creates a new `child_run_id`, increments `segment_index`, and starts from the selected child `HarnessState`.
+A logical async child is an ordinary Thread with a `parent_thread_id`. `delegate` creates the child and segment zero. `resume_subagent` keeps `thread_id`, applies an optional sticky configuration patch, creates a new `child_run_id`, increments `segment_index`, and starts from the selected child `HarnessState`.
 
 ```python
 class ChildExecutionHead(BaseModel):
@@ -179,8 +179,6 @@ External model, tool, and Environment effects can be unknown and may repeat afte
 | Thread configuration version conflicts          | Stale patch is rejected without partial selection changes           |
 | Root process exits during a Run                 | Prior continuation remains current                                  |
 | Child process exits abruptly during a segment   | Saved nonterminal head remains; no liveness or takeover is inferred |
-| Delegate response is lost in the active parent  | Exact same-key replay returns the accepted child execution          |
-| Delegate key is reused with a different request | The conflicting call fails without creating another child           |
 | Child terminal checkpoint cannot be selected    | Execution is not reported as succeeded                              |
 | Live delivery fails                             | Saved heads are unaffected                                          |
 
@@ -196,4 +194,3 @@ External model, tool, and Environment effects can be unknown and may repeat afte
 08. Compact display never becomes Harness continuation state.
 09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery.
 10. Transactions remain short and outside file or external execution I/O.
-11. One process-local parent Run admits at most one child for each async delegate intent; exact replay resolves it and conflicting reuse fails.

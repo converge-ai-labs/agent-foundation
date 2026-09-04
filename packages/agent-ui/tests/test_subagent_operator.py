@@ -1,20 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 
 import a13n_ui.subagent_operator as subagent_module
 import pytest
 from a13n_harness import SafeFailure
-from a13n_harness.capabilities import (
-    AsyncDelegateRequest,
-    AsyncExecutionView,
-    SubagentExecutionView,
-    SubagentOperatorContext,
-)
+from a13n_harness.capabilities import SubagentExecutionView
 from a13n_ui.errors import RunCoordinationError
 from a13n_ui.settings import StorageSettings
 from a13n_ui.storage import ChildExecutionHead, CompactChildDisplay, ObjectKind, ObjectRef, open_local_store
@@ -56,123 +49,6 @@ async def test_subagent_operator_owns_bounded_lifecycle_and_parent_scoped_querie
 
         await operator.stop_admission()
         await operator.close(timeout_seconds=1)
-
-
-async def test_delegate_replays_one_parent_run_intent_and_rejects_conflicting_reuse(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    reference = ObjectRef(
-        object_kind=ObjectKind.run_composition,
-        object_schema_version="1",
-        logical_digest="1" * 64,
-    )
-    now = datetime.now(UTC)
-    head = ChildExecutionHead(
-        execution_id="execution-1",
-        parent_thread_id="thread-parent",
-        child_thread_id="thread-child",
-        child_run_id="run-child",
-        segment_index=0,
-        run_composition=reference,
-        status="running",
-        selected_checkpoint=None,
-        resumed_from=None,
-        failure=None,
-        created_at=now,
-        updated_at=now,
-        completed_at=None,
-    )
-
-    class ChildExecutions:
-        async def get(self, execution_id: str) -> ChildExecutionHead | None:
-            return head if execution_id == head.execution_id else None
-
-    store = SimpleNamespace(child_executions=ChildExecutions())
-    unavailable = cast(Any, object())
-    operator = AgentUiSubagentOperator(
-        store=cast(Any, store),
-        configurations=unavailable,
-        compositions=unavailable,
-        agent_reconstructor=unavailable,
-        environment_service=unavailable,
-    )
-    operator._accepting = True
-    operator._task_group = unavailable
-    context = SubagentOperatorContext(
-        parent_thread_id="thread-parent",
-        parent_run_id="run-parent",
-        parent_agent_instance_id="agent-parent",
-        host_refs={"thread_id": "thread-parent"},
-    )
-    definition = SimpleNamespace(source_kind="agent", source_id="reviewer")
-    edge = SimpleNamespace(name="reviewer", definition=definition)
-    scope = SimpleNamespace(
-        thread_id="thread-parent",
-        run_id="run-parent",
-        agent_instance_id="agent-parent",
-        composition=SimpleNamespace(root=SimpleNamespace(children=(edge,))),
-    )
-    operator._parents[("thread-parent", "run-parent", "agent-parent")] = cast(Any, scope)
-    plan = cast(
-        Any,
-        SimpleNamespace(
-            parent=context,
-            child=SimpleNamespace(
-                declaration=SimpleNamespace(name="reviewer"),
-                definition=SimpleNamespace(definition_id="agent-ui:agent:reviewer"),
-            ),
-        ),
-    )
-    calls = 0
-    entered = Event()
-    release = Event()
-
-    async def delegate_once(
-        _plan: Any,
-        request: AsyncDelegateRequest,
-        *,
-        scope: Any,
-        edge: Any,
-        intent: Any,
-    ) -> AsyncExecutionView:
-        del _plan, scope, edge
-        nonlocal calls
-        calls += 1
-        entered.set()
-        await release.wait()
-        intent.execution_id = head.execution_id
-        return AsyncExecutionView(
-            execution_id=head.execution_id,
-            subagent_name=request.subagent_name,
-            child_definition_id="agent-ui:agent:reviewer",
-            status="running",
-            thread_id=head.child_thread_id,
-            child_run_id=head.child_run_id,
-            segment_index=0,
-        )
-
-    monkeypatch.setattr(operator, "_delegate_once", delegate_once)
-    request = AsyncDelegateRequest(
-        subagent_name="reviewer",
-        prompt="inspect",
-        delegation_intent_id=f"sdi_{'1' * 64}",
-    )
-
-    first_call = asyncio.create_task(operator.delegate(plan, request))
-    await entered.wait()
-    replay_call = asyncio.create_task(operator.delegate(plan, request))
-    await asyncio.sleep(0)
-    release.set()
-    first, replay = await asyncio.gather(first_call, replay_call)
-
-    assert first == replay
-    assert calls == 1
-    with pytest.raises(RunCoordinationError) as conflict:
-        await operator.delegate(
-            plan,
-            request.model_copy(update={"prompt": "changed"}),
-        )
-    assert conflict.value.code == "subagent_delegation_conflict"
 
 
 async def test_terminal_child_projection_does_not_expose_stale_local_control(

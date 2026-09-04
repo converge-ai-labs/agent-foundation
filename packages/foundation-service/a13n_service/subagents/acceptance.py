@@ -12,14 +12,12 @@ from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAc
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
     validate_prepared_run,
-    validate_run_state_selection,
 )
 from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority, read_attempt_authority
 from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import Run, StrictModel, Thread
 from a13n_service.interactions.environment_bindings import (
     add_run_with_environment_binding,
-    verify_environment_binding,
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import (
@@ -103,9 +101,6 @@ class ChildRunAcceptanceService:
             parent_state.envelope,
             authority,
         )
-        replay = await self._load_delegate_replay(prepared, authority)
-        if replay is not None:
-            return replay
         if prepared.run.input_object is not None:
             await self._payloads.verify_reference(
                 prepared.run.tenant_id,
@@ -148,10 +143,6 @@ class ChildRunAcceptanceService:
                 database.add(child_run_relationship_record(prepared.relationship, tenant_id=prepared.run.tenant_id))
                 database.add(inbox_counter_record(prepared.thread))
         except IntegrityError as error:
-            if _is_delegation_intent_race(error):
-                replay = await self._load_delegate_replay(prepared, authority)
-                if replay is not None:
-                    return replay
             raise ChildRunAcceptanceError(
                 "child_run_acceptance_conflict",
                 "Child Run acceptance lost a concurrent mutation",
@@ -315,58 +306,6 @@ class ChildRunAcceptanceService:
                 "Child Run state key already contains accepted state",
             ) from error
 
-    async def _load_delegate_replay(
-        self,
-        prepared: PreparedChildRunAcceptance,
-        authority: AttemptContext,
-    ) -> ChildRunAcceptanceReceipt | None:
-        relationship = prepared.relationship
-        if relationship.delegation_intent_id is None:
-            raise ValueError("prepared delegate relationship requires an intent identity")
-        async with short_session(self._sessions) as database:
-            parent, _, _ = await read_attempt_authority(database, authority, assume_utc(self._clock()))
-            record = await database.scalar(
-                select(ChildRunRelationshipRecord).where(
-                    ChildRunRelationshipRecord.tenant_id == prepared.run.tenant_id,
-                    ChildRunRelationshipRecord.parent_run_id == relationship.parent_run_id,
-                    ChildRunRelationshipRecord.delegation_intent_id == relationship.delegation_intent_id,
-                )
-            )
-            if record is None:
-                return None
-            existing = record.to_resource()
-            child = await database.scalar(
-                select(RunRecord).where(
-                    RunRecord.tenant_id == prepared.run.tenant_id,
-                    RunRecord.id == existing.child_run_id,
-                )
-            )
-            if child is None or parent.id != existing.parent_run_id:
-                raise ChildRunAcceptanceError(
-                    "child_run_replay_corrupt",
-                    "Accepted child delegation relationship is incomplete",
-                )
-            session = await _require_session(database, parent)
-            parent_resource = parent.to_resource()
-            child_resource = child.to_resource()
-            await _reauthorize(
-                database,
-                parent=parent_resource,
-                child=child_resource,
-                child_definition_id=prepared.child_definition_id,
-                workspace_id=session.workspace_id,
-            )
-            _validate_delegate_replay(existing, child, prepared)
-        state = await self._states.read(
-            child_resource.tenant_id,
-            child_resource.id,
-            expected_thread_id=child_resource.thread_id,
-        )
-        validate_run_state_selection(child_resource, state.envelope)
-        async with short_session(self._sessions) as database:
-            await verify_environment_binding(database, run=child_resource, state=state.envelope)
-        return _receipt(existing, child_resource.session_id)
-
 
 def _validate_bundle(prepared: PreparedChildRunAcceptance) -> None:
     validate_prepared_run(prepared.run, prepared.state)
@@ -383,12 +322,7 @@ def _validate_bundle(prepared: PreparedChildRunAcceptance) -> None:
         or thread.tenant_id != run.tenant_id
     ):
         raise ValueError("prepared child Thread, Run, and relationship identities do not match")
-    if (
-        relationship.delegation_intent_id is None
-        or relationship.delegation_request_digest is None
-        or run.delegation_id != relationship.id
-        or run.trigger_entity_id != relationship.id
-    ):
+    if run.delegation_id != relationship.id or run.trigger_entity_id != relationship.id:
         raise ValueError("prepared child Run does not retain its relationship correlation")
 
 
@@ -403,8 +337,6 @@ def _validate_resume_bundle(prepared: PreparedChildRunResume) -> None:
         or run.lineage_kind.value != "continue"
         or run.delegation_id != relationship.id
         or run.trigger_entity_id != relationship.id
-        or relationship.delegation_intent_id is not None
-        or relationship.delegation_request_digest is not None
         or prepared.resumed_from_relationship_id == relationship.id
         or not prepared.source_parent_run_id
         or prepared.source_thread_version < 1
@@ -629,42 +561,6 @@ async def _reauthorize(
             "child_run_authorization_denied",
             "Persisted parent Principal is no longer authorized to invoke the child Agent",
         ) from error
-
-
-def _validate_delegate_replay(
-    existing: ChildRunRelationship,
-    child: RunRecord,
-    prepared: PreparedChildRunAcceptance,
-) -> None:
-    candidate = prepared.relationship
-    if (
-        existing.delegation_intent_id != candidate.delegation_intent_id
-        or existing.delegation_request_digest != candidate.delegation_request_digest
-        or existing.subagent_name != candidate.subagent_name
-        or existing.cancellation_policy is not candidate.cancellation_policy
-        or existing.result_visibility is not candidate.result_visibility
-        or child.agent_id != prepared.run.agent_id
-        or child.agent_revision_id != prepared.run.agent_revision_id
-        or child.effective_agent_config_digest != prepared.run.effective_agent_config_digest
-    ):
-        raise ChildRunAcceptanceError(
-            "child_run_idempotency_conflict",
-            "Delegation key was reused with a different child request",
-        )
-
-
-def _is_delegation_intent_race(error: IntegrityError) -> bool:
-    constraint = "uq_child_run_relationships_delegation_intent"
-    diagnostic = getattr(getattr(error, "orig", None), "diag", None)
-    if diagnostic is not None:
-        return getattr(diagnostic, "constraint_name", None) == constraint
-    message = str(getattr(error, "orig", error)).casefold()
-    return (
-        "unique constraint failed" in message
-        and "child_run_relationships.tenant_id" in message
-        and "child_run_relationships.parent_run_id" in message
-        and "child_run_relationships.delegation_intent_id" in message
-    )
 
 
 def _receipt(relationship: ChildRunRelationship, session_id: str) -> ChildRunAcceptanceReceipt:

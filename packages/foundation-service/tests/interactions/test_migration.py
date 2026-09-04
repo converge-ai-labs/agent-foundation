@@ -123,21 +123,15 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             "fk_child_run_relationships_child_run",
         } <= child_relationship_foreign_keys
         child_relationship_unique = {
-            constraint["name"]: tuple(constraint["column_names"])
-            for constraint in inspector.get_unique_constraints("child_run_relationships")
+            constraint["name"] for constraint in inspector.get_unique_constraints("child_run_relationships")
         }
         child_relationship_columns = {column["name"] for column in inspector.get_columns("child_run_relationships")}
-        assert {"delegation_intent_id", "delegation_request_digest"} <= child_relationship_columns
+        assert "spawn_operation_id" not in child_relationship_columns
+        assert "uq_child_run_relationships_spawn_operation" not in child_relationship_unique
         assert {
             "uq_child_run_relationships_tenant_id",
             "uq_child_run_relationships_child_run",
-            "uq_child_run_relationships_delegation_intent",
-        } <= child_relationship_unique.keys()
-        assert child_relationship_unique["uq_child_run_relationships_delegation_intent"] == (
-            "tenant_id",
-            "parent_run_id",
-            "delegation_intent_id",
-        )
+        } <= child_relationship_unique
         with engine.connect() as connection:
             if connection.dialect.name == "postgresql":
                 trigger_names = set(

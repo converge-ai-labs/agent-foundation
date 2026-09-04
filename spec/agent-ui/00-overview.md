@@ -104,7 +104,7 @@ Environment-state publication and continuation selection are independent complet
 
 ## Async Child Flow
 
-One newly accepted `delegate` intent creates a child Thread and segment zero. Exact replay of that intent during the same process-local parent Run returns the accepted segment; conflicting reuse fails. The child retains its selected Agent-resource or Markdown-subagent source and owns its sticky configuration, while Project and Environment profile defaults are initialized from the admitting parent. `resume_subagent` retains the child Thread identity, applies an optional child configuration patch, and creates the next segment from the selected child `HarnessState`.
+One `delegate` creates a child Thread and segment zero. The child retains its selected Agent-resource or Markdown-subagent source and owns its sticky configuration, while Project and Environment profile defaults are initialized from the admitting parent. `resume_subagent` retains the child Thread identity, applies an optional child configuration patch, and creates the next segment from the selected child `HarnessState`.
 
 ```mermaid
 sequenceDiagram

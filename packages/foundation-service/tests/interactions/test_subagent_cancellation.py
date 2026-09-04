@@ -25,9 +25,6 @@ from .test_subagent_acceptance import (
 
 pytestmark = pytest.mark.anyio
 
-REQUESTED_DELEGATION_INTENT_ID = f"sdi_{'4' * 64}"
-INDEPENDENT_DELEGATION_INTENT_ID = f"sdi_{'5' * 64}"
-
 
 async def test_parent_cancellation_propagates_only_to_requested_child_threads(
     interaction_sessions: async_sessionmaker[AsyncSession],
@@ -109,7 +106,6 @@ async def _cancel_parent_with_children(
             authority.fence,
             child_config,
             suffix="a",
-            delegation_intent_id=REQUESTED_DELEGATION_INTENT_ID,
             cancellation_policy=ChildCancellationPolicy.request_child_cancel,
         ),
         authority,
@@ -122,7 +118,6 @@ async def _cancel_parent_with_children(
             authority.fence,
             child_config,
             suffix="b",
-            delegation_intent_id=INDEPENDENT_DELEGATION_INTENT_ID,
         ),
         authority,
     )

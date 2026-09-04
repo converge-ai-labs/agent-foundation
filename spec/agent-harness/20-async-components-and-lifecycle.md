@@ -48,13 +48,13 @@ The Host chooses the operator lifetime. The operator can outlive one parent Run,
 
 Async admission is one complete Host boundary:
 
-1. Harness validates the model request, including the required stable `delegation_key`, and resolves one exact built child.
-2. Harness derives an opaque `delegation_intent_id` from the key and stable operation/schema identity, then constructs `SubagentDelegationPlan` with the derived child Identity, applied context, usage ceilings, and detached parent correlation.
+1. Harness validates the model request and resolves one exact built child.
+2. Harness constructs `SubagentDelegationPlan` with the derived child Identity, applied context, usage ceilings, and detached parent correlation.
 3. The Host operator applies only narrower policy, creates or resolves the child Thread, registers or persists the execution, and admits work according to its own acceptance guarantee.
-4. The operator returns a validated `AsyncExecutionView` after fresh acceptance or exact replay.
-5. Harness returns the public execution reference; newly accepted execution continues under Host ownership.
+4. The operator returns a validated `AsyncExecutionView` after acceptance.
+5. Harness returns the public execution reference; execution continues under Host ownership.
 
-An operator exception before its documented acceptance boundary is rejection. If a backend can accept delegate work but lose the response, the caller can replay the exact request with the same `delegation_key`; the Host uses `delegation_intent_id` to return the originally accepted execution and rejects reuse of that key with a different `subagent_name` or `prompt`. Harness does not automatically retry delegate, assign idempotency to resume, or keep a compensating parent projection.
+An operator exception before its documented acceptance boundary is rejection. If a backend can accept work but lose the response, the Host reports the outcome as unknown and may expose its own reconciliation path. Harness does not assign an idempotency identity, automatically retry delegate or resume operations, or keep a compensating parent projection.
 
 The Host independently selects child Environment association, loads current Host state, constructs fresh adapters and `RunBindings`, invokes Harness, stores observations, acknowledges checkpoints, and publishes Environment state. Accepted work never borrows the parent Run's entered Environment, mutable state coordinator, live context, credential, or callback.
 
@@ -126,9 +126,7 @@ The Host owns acceptance, exact checkpoint selection, retries, wake, final state
 | Condition                                     | Required outcome                                                  |
 | --------------------------------------------- | ----------------------------------------------------------------- |
 | Validation or authority rejection             | Tool fails before Host admission                                  |
-| Delegate acceptance response lost             | Exact replay with the same key resolves the accepted execution    |
-| Delegate key reused with a different request  | Host rejects the conflict and admits no additional child          |
-| Resume acceptance response lost               | Host-defined unknown outcome; Harness performs no automatic retry |
+| Acceptance response lost                      | Host-defined unknown outcome; Harness performs no automatic retry |
 | Parent Run cancellation or closure            | Accepted child continues under Host policy                        |
 | Observation or wake failure                   | Explicit info and wait remain authoritative                       |
 | Checkpoint or final state publication failure | Host records failed, lost, or unknown according to its contract   |
@@ -138,13 +136,12 @@ The Host owns acceptance, exact checkpoint selection, retries, wake, final state
 
 ## Invariants
 
-01. Canonical async work belongs to its configured Host operator, never to the parent Run.
-02. Harness provides no default async manager, execution store, observer registry, wake ledger, or shutdown lifecycle.
-03. Async child status, bounded closed activity, and State are queried from Host authority and are not mirrored into parent `HarnessState`.
-04. The operator receives an authorized detached plan and constructs fresh independent child authority and Environment adapters.
-05. Parent closure never cancels accepted async work by implication and never closes its operator.
-06. A later Run restores parent Thread identity but receives fresh bindings and operator authority.
-07. Fork, restart, loss, and retention expiry never retarget a public execution reference.
-08. A delegate retry reuses its stable key and exact model-visible request; `tool_call_id` does not define delegate intent.
-09. Durable scheduling, checkpointing, delivery, wake, retries, cleanup, and retention remain Host responsibilities.
-10. Background shell processes follow their independent Environment contract and share no async-subagent lifecycle infrastructure.
+1. Canonical async work belongs to its configured Host operator, never to the parent Run.
+2. Harness provides no default async manager, execution store, observer registry, wake ledger, or shutdown lifecycle.
+3. Async child status, bounded closed activity, and State are queried from Host authority and are not mirrored into parent `HarnessState`.
+4. The operator receives an authorized detached plan and constructs fresh independent child authority and Environment adapters.
+5. Parent closure never cancels accepted async work by implication and never closes its operator.
+6. A later Run restores parent Thread identity but receives fresh bindings and operator authority.
+7. Fork, restart, loss, and retention expiry never retarget a public execution reference.
+8. Durable scheduling, checkpointing, delivery, wake, retries, cleanup, and retention remain Host responsibilities.
+9. Background shell processes follow their independent Environment contract and share no async-subagent lifecycle infrastructure.

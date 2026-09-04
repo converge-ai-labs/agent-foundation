@@ -26,7 +26,6 @@ from a13n_service.subagents import (
     prepare_child_run,
     project_accepted_async_subagent_result,
 )
-from a13n_service.subagents.domain import delegation_request_digest
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -356,11 +355,6 @@ async def _accept_another_child(
         parent_run_attempt_id=authority.run_attempt_id,
         parent_run_attempt_generation=authority.fence,
         parent_agent_instance_id="agent-parent",
-        delegation_intent_id=f"sdi_{'3' * 64}",
-        delegation_request_digest=delegation_request_digest(
-            subagent_name="researcher",
-            prompt="second",
-        ),
         subagent_name="researcher",
         delegated_input='{"delegated_task":"second"}',
         child_definition_id=CHILD_DEFINITION_ID,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from typing import Annotated, Any
 
 from pydantic import Field, JsonValue
@@ -11,7 +10,6 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.toolsets import FunctionToolset
 
-from a13n_harness._json import dump_json_bytes
 from a13n_harness.capabilities.subagents import (
     AsyncDelegateRequest,
     AsyncExecutionView,
@@ -55,8 +53,6 @@ _WAIT_OUTPUT_POLICY = ToolOutputPolicy(
     overflow="spill",
     redact=True,
 )
-_DELEGATION_KEY_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
-_ASYNC_DELEGATE_TOOL_ID = "subagents.async.delegate"
 
 
 class AsyncSubagentToolset:
@@ -77,7 +73,7 @@ class AsyncSubagentToolset:
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools = [
-            self._tool(self.delegate, _ASYNC_DELEGATE_TOOL_ID, {"execute"}, "provider_key"),
+            self._tool(self.delegate, "subagents.async.delegate", {"execute"}, "none"),
             self._tool(self.subagent_info, "subagents.async.info", {"read"}, "read_only"),
             self._tool(
                 self.wait_subagent,
@@ -107,26 +103,10 @@ class AsyncSubagentToolset:
         ctx: RunContext[AgentContext],
         subagent_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,62}$", max_length=63)],
         prompt: Annotated[str, Field(min_length=1, max_length=1024 * 1024)],
-        delegation_key: Annotated[
-            str,
-            Field(
-                pattern=_DELEGATION_KEY_PATTERN,
-                max_length=128,
-                description=(
-                    "Deterministic key derived from this child's logical purpose. Reuse it with the exact same "
-                    "subagent and prompt when retrying; use a new key for an independent child. Do not use a "
-                    "tool-call ID or random value."
-                ),
-            ),
-        ],
     ) -> JsonValue:
         self._require_context(ctx)
         child = self._require_child(subagent_name)
-        request = AsyncDelegateRequest(
-            subagent_name=subagent_name,
-            prompt=prompt,
-            delegation_intent_id=_delegation_intent_id(delegation_key),
-        )
+        request = AsyncDelegateRequest(subagent_name=subagent_name, prompt=prompt)
         plan = self._plan(ctx, child, prompt)
         result = _validate_model(AsyncExecutionView, await self._operator.delegate(plan, request))
         _validate_execution(result, child, resumed_from=None)
@@ -307,16 +287,6 @@ def _validate_model(model_type, value):
     if not isinstance(value, model_type):
         raise TypeError(f"subagent operator must return {model_type.__name__}")
     return model_type.model_validate(value.model_dump(mode="python"))
-
-
-def _delegation_intent_id(delegation_key: str) -> str:
-    payload = {
-        "delegation_key": delegation_key,
-        "operation": _ASYNC_DELEGATE_TOOL_ID,
-        "schema_version": "1",
-    }
-    digest = hashlib.sha256(dump_json_bytes(payload, sort_keys=True)).hexdigest()
-    return f"sdi_{digest}"
 
 
 def _require_exact_execution(executions, execution_id: str):

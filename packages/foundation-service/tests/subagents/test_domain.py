@@ -8,7 +8,6 @@ from a13n_service.subagents import (
     ChildRunRelationship,
     new_child_run_relationship_id,
 )
-from a13n_service.subagents.domain import delegation_request_digest
 from a13n_service.subagents.records import child_run_relationship_record
 from pydantic import ValidationError
 
@@ -22,8 +21,6 @@ def relationship() -> ChildRunRelationship:
         parent_run_attempt_id="rat_1234567890abcdef",
         parent_run_attempt_generation=3,
         subagent_name="researcher",
-        delegation_intent_id=f"sdi_{'1' * 64}",
-        delegation_request_digest="2" * 64,
         child_run_id="run_abcdef1234567890",
         child_thread_id="thread-abcdef1234567890abcdef1234567890",
         cancellation_policy=ChildCancellationPolicy.independent,
@@ -49,22 +46,6 @@ def test_relationship_rejects_parent_as_its_own_child() -> None:
                 "child_run_id": "run_1234567890abcdef",
             }
         )
-
-
-def test_relationship_requires_complete_delegation_intent_evidence() -> None:
-    with pytest.raises(ValidationError, match="present together"):
-        ChildRunRelationship.model_validate(
-            {
-                **relationship().model_dump(mode="python"),
-                "delegation_request_digest": None,
-            }
-        )
-
-
-def test_delegation_request_digest_has_stable_canonical_encoding() -> None:
-    assert delegation_request_digest(subagent_name="researcher", prompt="research") == (
-        "dd8ab99657cbacb67de621671f50a44d5b31bb8ff8405f458ea9b49463a06b73"
-    )
 
 
 def test_result_payload_is_bounded_and_canonical() -> None:
