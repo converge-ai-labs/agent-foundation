@@ -133,7 +133,7 @@ Mounted timeline blocks remain bounded around the active turn and viewport. Evic
 
 ## Composer
 
-The composer is multiline and owns one bounded local draft per recently visited root Thread plus one new-Thread draft. Draft state includes text, cursor, referenced Project paths, and editor revision. Structured references contain no eagerly loaded Project file bytes or credential objects, but arbitrary user-authored draft text is potentially sensitive.
+The composer is multiline and owns one bounded local draft per recently visited root Thread plus one new-Thread draft. Draft state includes text, cursor, exact Project-path and Skill references, and editor revision. Structured references contain no eagerly loaded Project or Skill file bytes or credential objects, but arbitrary user-authored draft text is potentially sensitive.
 
 Default editing behavior is:
 
@@ -159,7 +159,7 @@ Default editing behavior is:
 
 Opening a selected Workbench row always makes that row the focused Thread. It does not overload the return-to-previous-focus action.
 
-The footer always shows the effective context-sensitive actions, so the user does not need to memorize bindings. An external editor action creates an owner-private temporary file outside Project roots and the Agent UI data root, writes only the bounded current draft, waits for the configured editor, reads a bounded result, and restores the TUI. It never logs the file content or path and performs best-effort deletion after normal or exceptional editor exit. It does not expose Agent UI storage or Project file authority.
+The footer always shows the effective context-sensitive actions, so the user does not need to memorize bindings. An external editor action resolves `$VISUAL` and then `$EDITOR`, parses the selected value into an executable and arguments without an intermediary shell, and reports the action as unavailable when neither variable supplies a usable command. It creates an owner-private temporary file outside Project roots and the Agent UI data root, writes only the bounded current draft, suspends full-screen terminal presentation, launches the editor with the ordinary terminal attached, waits without blocking App-owned execution, reads a bounded result, and restores the TUI. The original draft remains intact when editor launch or result reading fails. The action never logs the file content or path and performs best-effort deletion after normal or exceptional editor exit. It does not expose Agent UI storage or Project file authority. App work can continue while the editor owns the terminal; after resuming, the TUI reconciles current App projections before presenting new activity as complete.
 
 ### Submission Semantics
 
@@ -169,34 +169,39 @@ When running, non-blank input is labeled **Steer current run** and is offered on
 
 During preparation or cancellation, ordinary input remains a draft and is not queued. When awaiting a decision, ordinary prompt submission is disabled until the selected request set is answered or denied.
 
-### Project Path References
+### Project Path and Skill References
 
-Typing `@` opens a bounded fuzzy completion over logical paths beneath the focused Thread's stored Project roots or, for a new draft, the launch-resolved Project roots. Completion is supplied through an App-owned safe query; the TUI does not crawl roots through an independent filesystem path.
+Typing `@` opens a bounded fuzzy completion over logical paths beneath the focused Thread's stored Project roots or, for a new draft, the launch-resolved Project roots. Project-path completion is supplied through an App-owned safe query; the TUI does not crawl roots through an independent filesystem path.
 
-Selecting a result inserts an unambiguous logical Project path reference into the prompt. It does not eagerly attach file bytes, change or reorder the Project, grant a new mount, or bypass the Agent's file tools. The visible reference remains editable text and the selected Agent decides whether it needs to read the path.
+Selecting a Project result inserts an unambiguous logical path reference into the prompt. It does not eagerly attach file bytes, change or reorder the Project, grant a new mount, or bypass the Agent's file tools. Duplicate root-relative names include their mount label, paths outside the selected Project do not appear, and the selected Agent decides whether it needs to read the path.
 
-Duplicate root-relative names include their mount label. Paths outside the selected Project do not appear. The `@` namespace is limited to Project logical paths; it does not also encode Skills, Agents, MCP resources, or eager file attachments.
+Typing `$` at a token boundary opens a bounded fuzzy completion over the effective conflict-resolved Skill catalog. `/skills` opens the same read-only picker without inserting anything until the user selects one result. The App supplies the catalog projection through the same Environment-routed source composition used by the selected Agent: a draft or idle Thread uses its effective next-Run configuration, while active steering uses only the current Run's frozen catalog. When the selected Agent does not include the Skills Capability or no effective catalog is available, the picker explains that state and offers no fabricated candidates.
+
+Selecting a Skill inserts a visible `$<skill-name>` marker and records the exact catalog identity as a typed composer reference. An exact manually typed marker becomes a Skill reference only after App resolution; unresolved dollar-prefixed text remains ordinary user input. A resolved reference is an explicit current-input request to use that Skill. Before prompt admission or steering acceptance, the App verifies every typed reference against the applicable effective or frozen catalog; an unavailable or stale reference rejects that action and preserves the complete draft for correction.
+
+A Skill reference does not eagerly attach `SKILL.md` bytes, change Skill source precedence, narrow the complete run-frozen catalog, suppress implicit use of another available Skill, mutate Agent or Thread configuration, grant Environment access, or install a package. The selected Agent still activates and reads the Skill through ordinary Skills Capability routing and Environment file operations. Several Skill references can coexist in one input. Skill names never become dynamic slash commands, and `@` remains limited to Project logical paths rather than sharing an ambiguous namespace with Skills, Agents, MCP resources, or eager file attachments.
 
 ## Commands and Palette
 
 The command palette is the complete discovery surface for secondary actions. Slash commands provide concise aliases for frequent terminal-local actions:
 
-| Command        | Behavior                                                                            |
-| -------------- | ----------------------------------------------------------------------------------- |
-| `/new`         | Start a new root-Thread draft without persisting it yet                             |
-| `/workbench`   | Open Workbench under the current terminal-local Project filter or All Projects      |
-| `/threads`     | Open the searchable root-Thread picker with an explicit Project/All Projects toggle |
-| `/status`      | Show App, Thread, operation, continuation, configuration, and live-delivery status  |
-| `/details`     | Toggle default tool detail for the focused timeline                                 |
-| `/thinking`    | Toggle permitted reasoning detail                                                   |
-| `/agent`       | Open the Agent selector for current or draft Thread configuration                   |
-| `/environment` | Open the Environment profile selector                                               |
-| `/extensions`  | Inspect and select Harness Plugins, Run Extensions, and MCP servers                 |
-| `/editor`      | Edit the current composer draft in the configured external editor                   |
-| `/cancel`      | Request cancellation against the exact focused root receipt                         |
-| `/archive`     | Archive the idle focused root Thread through metadata compare-and-select            |
-| `/help`        | Show bindings and input-routing rules                                               |
-| `/exit`        | Begin explicit TUI and App shutdown                                                 |
+| Command        | Behavior                                                                                                                                                                                                                         |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/new`         | Start a new terminal-local root-Thread draft under the launch Project. Nothing is persisted until its first prompt is submitted successfully, and the action is unavailable when no launch Project was resolved.                 |
+| `/workbench`   | Enter the persistent Workbench top-level mode under the current terminal-local Project filter or All Projects. It is not a Focus toggle and does not cancel or otherwise change App-owned work.                                  |
+| `/threads`     | Open the transient searchable root-Thread picker with an explicit Project/All Projects toggle. Selecting a result opens that Thread in Focus; dismissing the picker restores the underlying mode and local presentation state.   |
+| `/skills`      | Open the read-only effective Skill picker used by `$` completion. Selecting a result inserts one exact Skill reference into the composer; the command does not edit sources, install packages, or change Thread configuration.   |
+| `/status`      | Open a read-only status surface for the App, focused Thread, operation, selected continuation, accepted configuration, and live delivery. It performs no refresh, mutation, or execution action merely by being opened.          |
+| `/details`     | Toggle the terminal-local default disclosure of tool details in the focused timeline. It changes presentation only and does not alter tool execution, retention, or policy.                                                      |
+| `/thinking`    | Toggle the terminal-local default disclosure of reasoning content that the App is permitted to expose. It never enables reasoning, changes Model effort or Agent configuration, or reveals encrypted or policy-hidden reasoning. |
+| `/agent`       | Open the accepted Agent selector for a new draft or the current Thread. A persisted change uses the exact Thread configuration version, and a change made during an active Run applies only to the next Run.                     |
+| `/environment` | Open the accepted Environment profile selector, including the release-owned Full Control and Sandbox choices. It changes draft or sticky Thread selection only and never mutates the Environment captured by an active Run.      |
+| `/extensions`  | Inspect and select accepted Harness Plugins, Environment Run Extensions, and MCP servers for a draft or Thread. It exposes no package installation, resource authoring, or source mutation action.                               |
+| `/editor`      | Suspend full-screen presentation and edit the bounded current composer draft through `$VISUAL` or `$EDITOR`. Returning from the editor restores the TUI and preserves the original draft if launch or result reading fails.      |
+| `/cancel`      | Request cancellation against the exact eligible focused root receipt. It does not infer a target from recent activity, cancel child work independently, or turn cancellation acknowledgement into a terminal result.             |
+| `/archive`     | Archive an idle focused root Thread through metadata compare-and-select. It does not delete retained history and reports a conflict instead of overwriting newer metadata.                                                       |
+| `/help`        | Open the context-aware binding, command, and input-routing reference. Closing it restores the underlying mode, draft, selection, and reading position.                                                                           |
+| `/exit`        | Begin explicit TUI and App shutdown. When process-local work is active, the command explains that the work cannot continue after App exit and requires confirmation before interruption.                                         |
 
 A recognized slash command runs on the terminal control plane and is not sent to the model. An unrecognized slash-prefixed string remains ordinary prompt or steering text. Built-in commands cannot be shadowed by Agent or resource configuration. The command registry is a fixed TUI control surface and does not dynamically import Skill names, MCP prompts, or configuration Markdown into the slash namespace.
 
@@ -323,3 +328,4 @@ Workbench owns no queued delivery. A dispatch can remain on Workbench or open Fo
 09. Tool, diff, task, and child detail use progressive disclosure and bounded App data.
 10. Workbench attention is useful presentation, not another scheduler or durable state machine.
 11. The Project/All Projects filter changes terminal queries only and never mutates Thread configuration.
+12. `$` references exact App-resolved Skills for the current input without changing Skill sources, catalog selection, Thread configuration, or Environment authority.

@@ -223,7 +223,7 @@ Textual's retained tree is bounded explicitly:
 - only a bounded window around the viewport, current turn, and open activity remains mounted;
 - older retained blocks are represented by paging sentinels and remounted on demand;
 - completed Markdown streams stop and lose active watchers;
-- large tool output, diffs, Project-path choices, task graphs, and child detail mount lazily;
+- large tool output, diffs, Project-path choices, Skill choices, task graphs, and child detail mount lazily;
 - Workbench rows are small immutable projections rather than hidden Focus screens;
 - inactive Thread drafts use a bounded least-recently-used terminal cache;
 - shell output, notices, and local errors have independent byte and row limits;

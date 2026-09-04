@@ -22,7 +22,7 @@ The TUI provides:
 - structured assistant text, reasoning, tool, task, failure, and child activity;
 - compact tool presentation and focused detail or diff review;
 - attention-first multi-Thread supervision and bounded peek;
-- command palette, contextual actions, `@` Project-path completion, and external-editor handoff;
+- command palette, contextual actions, `@` Project-path completion, `$` Skill completion, and external-editor handoff;
 - responsive wide, medium, and narrow layouts;
 - explicit startup, degraded-live, conflict, and shutdown presentation.
 
@@ -40,7 +40,7 @@ It does not provide:
 - an embedded PTY terminal emulator;
 - browser preview, rich media editing, drag and drop, or a full code editor.
 
-Desired-resource authoring uses direct file editing or the WebUI; Skill authoring uses direct file editing or external tools. The read-only configuration CLI locates, validates, and shows accepted files, while explicit import commands remain narrow conversion operations. The TUI can inspect accepted resources, installed catalogs, source locations, and diagnostics and can select existing resources for a draft or persisted Thread; those actions never create or mutate a resource or Skill source. It filters Workbench by the launch Project or shows All Projects. Interactive shell programs and long-form source editing use an external terminal or editor. Ordinary shell-tool activity remains a semantic timeline block with bounded output.
+Desired-resource authoring uses direct file editing or the WebUI; Skill authoring uses direct file editing or external tools. The read-only configuration CLI locates, validates, and shows accepted files, while explicit import commands remain narrow conversion operations. The TUI can inspect accepted resources, installed catalogs, source locations, and diagnostics, select existing resources for a draft or persisted Thread, and explicitly reference a Skill from an App-supplied effective catalog; those actions never create or mutate a resource or Skill source. It filters Workbench by the launch Project or shows All Projects. Interactive shell programs and long-form source editing use an external terminal or editor. Ordinary shell-tool activity remains a semantic timeline block with bounded output.
 
 ## Application Relationship
 
