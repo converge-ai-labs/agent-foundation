@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import ClassVar
 
@@ -41,6 +42,8 @@ from a13n_ui.tui.screens.review import ReviewPane
 from a13n_ui.tui.screens.workbench import WorkbenchScreen
 from a13n_ui.tui.widgets.completions import CompletionPopup
 from a13n_ui.tui.widgets.messages import IntentRequested
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class StateProjected(Message):
@@ -110,9 +113,20 @@ class AgentUiTerminalApp(App[None]):
 
     def on_resize(self, event: events.Resize) -> None:
         self._apply_width_class(event.size.width)
+        focus = self.query_one(FocusScreen)
+        focus.apply_width(wide=event.size.width >= 120)
+        thread_id = self.terminal_state.focused_thread_id
+        view = None if thread_id is None else self.terminal_state.thread_view(thread_id)
+        if view is not None and view.reading_anchor is not None:
+            self.call_after_refresh(focus.restore_reading_anchor, view.reading_anchor)
         review = self.terminal_state.review
         if review is not None:
-            self.query_one(ReviewPane).project(review, wide=event.size.width >= 120)
+            pane = self.query_one(ReviewPane)
+            try:
+                pane.project(review, wide=event.size.width >= 120)
+            except Exception:
+                _LOGGER.exception("Review surface rendering failed during resize")
+                pane.show_render_failure()
 
     async def on_state_projected(self, message: StateProjected) -> None:
         self.terminal_state = message.state
@@ -140,6 +154,13 @@ class AgentUiTerminalApp(App[None]):
         if self.terminal_state.overlays:
             self._submit_intent(CloseOverlay())
             return
+        if self.terminal_state.lifecycle is not TerminalLifecycle.READY:
+            self._submit_intent(ExitTerminal())
+            return
+        workbench = self.query_one(WorkbenchScreen)
+        if self.terminal_state.mode is TerminalMode.WORKBENCH and workbench.showing_preview:
+            workbench.show_list()
+            return
         view = (
             None
             if self.terminal_state.focused_thread_id is None
@@ -155,6 +176,10 @@ class AgentUiTerminalApp(App[None]):
             self._submit_intent(CloseCompletions())
         elif self.terminal_state.overlays:
             self._submit_intent(CloseOverlay())
+        elif self.terminal_state.mode is TerminalMode.WORKBENCH:
+            workbench = self.query_one(WorkbenchScreen)
+            if workbench.showing_preview:
+                workbench.show_list()
 
     def action_command_palette(self) -> None:
         self._submit_intent(OpenOverlay("commands"))
@@ -179,7 +204,13 @@ class AgentUiTerminalApp(App[None]):
 
     async def _handle_intent(self, intent: TerminalIntent) -> None:
         async with self._intent_lock:
-            await self.controller.handle(intent)
+            try:
+                await self.controller.handle(intent)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _LOGGER.exception("Unexpected terminal controller failure")
+                await self.controller.fail(exc)
 
     async def _edit_external(self, key: str, draft: DraftState) -> str:
         del key
@@ -210,9 +241,17 @@ class AgentUiTerminalApp(App[None]):
             focus.display = state.mode is TerminalMode.FOCUS
             workbench.display = state.mode is TerminalMode.WORKBENCH
             if focus.display:
-                await focus.project(state, hints)
+                try:
+                    await focus.project(state, hints)
+                except Exception:
+                    _LOGGER.exception("Focus surface rendering failed")
+                    focus.show_render_failure()
             elif workbench.display:
-                await workbench.project(state)
+                try:
+                    await workbench.project(state)
+                except Exception:
+                    _LOGGER.exception("Workbench surface rendering failed")
+                    workbench.show_render_failure()
 
         review_open = bool(
             state.lifecycle is TerminalLifecycle.READY
@@ -222,18 +261,35 @@ class AgentUiTerminalApp(App[None]):
         )
         review.display = review_open
         if review_open and state.review is not None:
-            review.project(state.review, wide=self.size.width >= 120)
+            try:
+                review.project(state.review, wide=self.size.width >= 120)
+            except Exception:
+                _LOGGER.exception("Review surface rendering failed")
+                review.show_render_failure()
         overlay_open = bool(
-            state.lifecycle is TerminalLifecycle.READY and state.overlays and state.overlays[-1].kind != "review"
+            state.overlays
+            and state.overlays[-1].kind != "review"
+            and (
+                state.lifecycle is TerminalLifecycle.READY
+                or (state.lifecycle is TerminalLifecycle.FAILED and state.overlays[-1].kind == "exit")
+            )
         )
         overlay.display = overlay_open
         if overlay_open:
-            await overlay.project(state)
+            try:
+                await overlay.project(state)
+            except Exception:
+                _LOGGER.exception("Overlay surface rendering failed")
+                overlay.show_render_failure()
         completions.display = (
             state.lifecycle is TerminalLifecycle.READY and state.completion is not None and not state.overlays
         )
         if completions.display and state.completion is not None:
-            await completions.project(state.completion)
+            try:
+                await completions.project(state.completion)
+            except Exception:
+                _LOGGER.exception("Completion surface rendering failed")
+                completions.display = False
 
         if review_open and state.review is not None:
             modal_key: tuple[object, ...] | None = ("review", state.review.key)
@@ -279,7 +335,10 @@ def _status_text(state: TerminalState) -> str:
     if state.lifecycle is TerminalLifecycle.STARTING:
         return "Starting Agent UI..."
     if state.lifecycle is TerminalLifecycle.FAILED:
-        message = state.notices[-1].message if state.notices else "Agent UI could not start."
+        notice = state.notices[-1] if state.notices else None
+        message = notice.message if notice is not None else "Agent UI could not start."
+        if notice is not None and notice.code == "terminal_controller_failed":
+            return f"Terminal controller failed\n\n{message}\n\nPress Ctrl+C to exit."
         return f"Startup failed\n\n{message}\n\nPress Ctrl+R to retry or Ctrl+C to exit."
     if state.lifecycle is TerminalLifecycle.CLOSING:
         return "Closing Agent UI..."

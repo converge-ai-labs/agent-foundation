@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from a13n_ui.errors import AgentUiError, LivePresentationError
 from a13n_ui.surfaces import (
+    ActiveWorkSummary,
     AgentSourceView,
     AgentSummary,
     ApprovalDecision,
@@ -60,6 +61,7 @@ from a13n_ui.tui.intents import (
     CloseCompletions,
     EditDraft,
     ExecuteCommand,
+    ExitTerminal,
     OpenExternalEditor,
     OpenFocus,
     OpenOverlay,
@@ -128,6 +130,8 @@ class _FakeApp:
         self.response_error: AgentUiError | None = None
         self.next_decisions: DecisionBatchView | None = None
         self.wait_forever = asyncio.Event()
+        self.active_root_count = 0
+        self.active_child_count = 0
 
     async def resolve_launch_project(self, directory: Path, *, project_id: str | None = None) -> Any:
         del directory, project_id
@@ -147,6 +151,12 @@ class _FakeApp:
         project_id = kwargs.get("project_id")
         assert project_id is None or isinstance(project_id, str)
         return self.workbench_page.model_copy(update={"project_id": project_id})
+
+    async def active_work_summary(self) -> ActiveWorkSummary:
+        return ActiveWorkSummary(
+            root_operations=self.active_root_count,
+            child_executions=self.active_child_count,
+        )
 
     async def projects(self) -> tuple[ProjectSummary, ...]:
         return (
@@ -439,6 +449,111 @@ async def test_controller_installs_summary_before_startup_queries_and_owns_clean
     assert exits == ["closed"]
     assert controller.background_task_count == 0
     assert controller.state.lifecycle is TerminalLifecycle.CLOSING
+
+
+@pytest.mark.anyio
+async def test_exit_cancels_a_blocked_startup_before_waiting_for_cleanup(tmp_path: Path) -> None:
+    entered = asyncio.Event()
+    blocked = asyncio.Event()
+    exits: list[str] = []
+
+    @asynccontextmanager
+    async def open_app() -> AsyncIterator[Any]:
+        entered.set()
+        await blocked.wait()
+        raise AssertionError("cancelled startup must not enter the App context")
+        yield
+
+    async def request_exit() -> None:
+        exits.append("requested")
+
+    controller = TerminalController(
+        app_factory=open_app,
+        render=_renderer([]),
+        launch_directory=tmp_path,
+        exit_callback=request_exit,
+    )
+    startup = asyncio.create_task(controller.start())
+    await entered.wait()
+
+    await controller.handle(ExitTerminal())
+    await asyncio.wait_for(startup, timeout=1)
+    await controller.close()
+
+    assert exits == ["requested"]
+    assert controller.state.lifecycle is TerminalLifecycle.CLOSING
+    assert controller.background_task_count == 0
+
+
+@pytest.mark.anyio
+async def test_active_work_requires_confirmed_exit_and_stops_new_intents(tmp_path: Path) -> None:
+    app = _FakeApp()
+    app.active_root_count = 1
+    app.active_child_count = 2
+    exits: list[str] = []
+
+    async def request_exit() -> None:
+        exits.append("requested")
+
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+        exit_callback=request_exit,
+    )
+    await controller.start()
+
+    await controller.handle(ExitTerminal())
+
+    assert controller.state.lifecycle is TerminalLifecycle.READY
+    assert controller.state.workbench.rows == ()
+    assert controller.state.overlays[-1].kind == "exit"
+    assert controller.state.overlays[-1].active_root_operations == 1
+    assert controller.state.overlays[-1].active_child_executions == 2
+    assert exits == []
+    assert app.summary_active == 1
+
+    await controller.handle(ExitTerminal(confirmed=True))
+
+    assert controller.state.lifecycle is TerminalLifecycle.CLOSING
+    assert controller.state.overlays == ()
+    assert exits == ["requested"]
+    await _wait_until(lambda: app.summary_active == 0)
+    await controller.handle(OpenWorkbench())
+    assert controller.state.lifecycle is TerminalLifecycle.CLOSING
+
+    await controller.close()
+    assert controller.background_task_count == 0
+
+
+@pytest.mark.anyio
+async def test_unexpected_controller_failure_rejects_later_intents_until_exit(tmp_path: Path) -> None:
+    app = _FakeApp()
+    exits: list[str] = []
+
+    async def request_exit() -> None:
+        exits.append("requested")
+
+    controller = TerminalController(
+        app_factory=_factory(app),
+        render=_renderer([]),
+        launch_directory=tmp_path,
+        exit_callback=request_exit,
+    )
+    await controller.start()
+
+    await controller.fail(RuntimeError("projection crashed"))
+
+    assert controller.state.lifecycle is TerminalLifecycle.FAILED
+    assert controller.state.notices[-1].code == "terminal_controller_failed"
+    previous_mode = controller.state.mode
+    await controller.handle(OpenWorkbench())
+    assert controller.state.mode is previous_mode
+
+    await controller.handle(ExitTerminal())
+    assert controller.state.lifecycle is TerminalLifecycle.CLOSING
+    assert exits == ["requested"]
+    await controller.close()
 
 
 @pytest.mark.anyio

@@ -45,6 +45,13 @@ class ReviewPane(Container):
         self.query_one("#review-child-steer", Button).display = "steer" in review.available_actions
         self.query_one("#review-child-cancel", Button).display = "cancel" in review.available_actions
 
+    def show_render_failure(self) -> None:
+        self.query_one("#review-title", Static).update("Review unavailable")
+        self.query_one("#review-body", Static).update(
+            Text("This review could not be rendered safely. No action was taken.", style="bold red")
+        )
+        self.query_one("#review-child-controls", Horizontal).display = False
+
     def focus_initial(self) -> None:
         message = self.query_one("#review-child-message", Input)
         if message.display:

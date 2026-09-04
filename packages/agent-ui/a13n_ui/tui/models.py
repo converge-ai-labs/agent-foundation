@@ -165,9 +165,12 @@ class OverlayState:
         "projects",
         "review",
         "inspector",
+        "exit",
     ]
     key: str | None = None
     context_key: str | None = None
+    active_root_operations: int = 0
+    active_child_executions: int = 0
 
 
 @dataclass(frozen=True, slots=True)

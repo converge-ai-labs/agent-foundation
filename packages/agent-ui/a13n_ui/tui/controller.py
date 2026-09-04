@@ -15,6 +15,7 @@ from a13n_ui.errors import AgentUiError, LivePresentationError
 from a13n_ui.live import LiveEvent, SummaryCursor, SummaryInvalidation, SummarySubscription
 from a13n_ui.storage import ThreadConfigurationMutation
 from a13n_ui.surfaces import (
+    ActiveWorkSummary,
     ApprovalDecision,
     ChildControlResult,
     DecisionBatchView,
@@ -176,6 +177,8 @@ class TerminalAppProtocol(Protocol):
         cursor: str | None = None,
         limit: int = 20,
     ) -> WorkbenchPage: ...
+
+    async def active_work_summary(self) -> ActiveWorkSummary: ...
 
     async def projects(self) -> tuple[ProjectSummary, ...]: ...
 
@@ -369,6 +372,7 @@ class TerminalController:
         self._focus_task: asyncio.Task[None] | None = None
         self._completion_task: asyncio.Task[None] | None = None
         self._request_version = 0
+        self._accepting_intents = True
         self._closed = False
 
     @property
@@ -457,15 +461,37 @@ class TerminalController:
             await self._close_app_lifetime(stack)
 
     async def retry_startup(self) -> None:
-        if self._state.lifecycle is not TerminalLifecycle.FAILED:
+        if self._state.lifecycle is not TerminalLifecycle.FAILED or not self._accepting_intents:
             return
         await self._dispatch(StartupStarted(), immediate=True)
         await self.start()
 
     async def handle(self, intent: TerminalIntent) -> None:
+        if self._state.lifecycle is TerminalLifecycle.CLOSING or (
+            not self._accepting_intents and not isinstance(intent, ExitTerminal)
+        ):
+            return
         if isinstance(intent, RetryStartup):
             await self.retry_startup()
         elif isinstance(intent, ExitTerminal):
+            if not intent.confirmed:
+                if self._state.overlays and self._state.overlays[-1].kind == "exit":
+                    return
+                work = ActiveWorkSummary() if self._app is None else await self._app.active_work_summary()
+                if work.root_operations or work.child_executions:
+                    await self._dispatch(
+                        OverlayOpened(
+                            OverlayState(
+                                kind="exit",
+                                active_root_operations=work.root_operations,
+                                active_child_executions=work.child_executions,
+                            )
+                        ),
+                        immediate=True,
+                    )
+                    return
+            self._cancel_completion()
+            await self._begin_shutdown()
             await self._dispatch(ClosingStarted(), immediate=True)
             if self._exit_callback is not None:
                 await self._exit_callback()
@@ -640,23 +666,37 @@ class TerminalController:
         else:
             raise TypeError(f"Unsupported terminal intent: {type(intent).__name__}")
 
+    async def fail(self, exc: BaseException) -> None:
+        """Stop accepting intents after an unexpected controller boundary failure."""
+
+        if self._state.lifecycle is TerminalLifecycle.CLOSING:
+            return
+        self._accepting_intents = False
+        failure = _failure(exc).model_copy(update={"code": "terminal_controller_failed"})
+        await self._dispatch(StartupFailed(failure), immediate=True)
+
     async def close(self) -> None:
+        await self._begin_shutdown()
+        async with self._lifecycle_lock:
+            task = self._lifetime_task
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+        await self._scheduler.close()
+
+    async def _begin_shutdown(self) -> None:
         async with self._lifecycle_lock:
             if self._closed:
                 return
             was_starting = self._state.lifecycle is TerminalLifecycle.STARTING
+            self._accepting_intents = False
             self._closed = True
             async with self._state_lock:
                 self._state = reduce_terminal(self._state, ClosingStarted()).state
             task = self._lifetime_task
-            shutdown = self._shutdown_event
-            if shutdown is not None:
-                shutdown.set()
+            if self._shutdown_event is not None:
+                self._shutdown_event.set()
             if was_starting and task is not None:
                 task.cancel()
-        if task is not None:
-            await asyncio.gather(task, return_exceptions=True)
-        await self._scheduler.close()
 
     async def _close_app_lifetime(self, stack: AsyncExitStack) -> None:
         await self._stop_focus()

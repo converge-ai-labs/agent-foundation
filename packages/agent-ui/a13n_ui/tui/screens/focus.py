@@ -8,11 +8,12 @@ from textual.containers import Container, Horizontal
 from textual.widgets import Button, Static
 
 from a13n_ui.surfaces import RootOperationStatus
-from a13n_ui.tui.intents import CancelFocusedOperation, OpenWorkbench
+from a13n_ui.tui.intents import CancelFocusedOperation, OpenOverlay, OpenWorkbench
 from a13n_ui.tui.models import (
     ControlMode,
     DraftState,
     ProjectionHints,
+    ReadingAnchor,
     TerminalState,
     ThreadViewState,
 )
@@ -28,12 +29,15 @@ class FocusScreen(Container):
 
     def __init__(self) -> None:
         super().__init__(id="focus-screen")
+        self._inspector_available = False
+        self._focused_thread_id: str | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="focus-header"):
             yield Static("New Thread", id="focus-identity")
             yield Static("Draft", id="focus-activity")
             yield Button("Cancel", id="focus-cancel", variant="error")
+            yield Button("Inspect", id="focus-inspect")
             yield Button("Workbench", id="focus-workbench")
         yield Static(id="focus-operation-summary")
         with Horizontal(id="focus-main"):
@@ -47,6 +51,7 @@ class FocusScreen(Container):
 
     async def project(self, state: TerminalState, hints: ProjectionHints) -> None:
         thread_id = state.focused_thread_id
+        self._focused_thread_id = thread_id
         view = None if thread_id is None else state.thread_view(thread_id)
         identity = self.query_one("#focus-identity", Static)
         activity = self.query_one("#focus-activity", Static)
@@ -59,6 +64,8 @@ class FocusScreen(Container):
         cancel = self.query_one("#focus-cancel", Button)
 
         if thread_id is None:
+            self._inspector_available = False
+            self.apply_width(wide=self.app.has_class("width-wide"))
             identity.update(_draft_identity(state))
             activity.update("Draft")
             operation.display = False
@@ -80,6 +87,8 @@ class FocusScreen(Container):
             return
 
         if view is None or view.detail is None:
+            self._inspector_available = False
+            self.apply_width(wide=self.app.has_class("width-wide"))
             identity.update(f"Thread {thread_id}")
             activity.update("Refreshing")
             operation.display = False
@@ -113,7 +122,8 @@ class FocusScreen(Container):
         operation.update(operation_text)
         intro.display = False
         timeline.display = True
-        inspector.display = True
+        self._inspector_available = True
+        self.apply_width(wide=self.app.has_class("width-wide"))
         await timeline.project(
             view,
             hints,
@@ -154,6 +164,27 @@ class FocusScreen(Container):
         )
         self._project_footer(state, view, view.control_mode)
 
+    def apply_width(self, *, wide: bool) -> None:
+        self.query_one(FocusInspector).display = self._inspector_available and wide
+        self.query_one("#focus-inspect", Button).display = self._inspector_available and not wide
+
+    def restore_reading_anchor(self, anchor: ReadingAnchor) -> None:
+        self.query_one(TimelineView).restore_reading_anchor(anchor)
+
+    def show_render_failure(self) -> None:
+        self._inspector_available = False
+        self.query_one("#focus-operation-summary", Static).display = False
+        intro = self.query_one("#focus-draft-intro", Static)
+        intro.display = True
+        intro.update("The Focus surface could not be rendered safely. App-owned work continues.")
+        self.query_one(TimelineView).display = False
+        self.query_one(FocusInspector).display = False
+        self.query_one(DecisionPane).display = False
+        self.query_one(Composer).display = False
+        self.query_one("#focus-cancel", Button).display = False
+        self.query_one("#focus-inspect", Button).display = False
+        self.query_one("#focus-actions", Static).update("Ctrl+O workbench  Ctrl+P commands")
+
     def _project_footer(
         self,
         state: TerminalState,
@@ -184,6 +215,9 @@ class FocusScreen(Container):
         if event.button.id == "focus-cancel":
             event.stop()
             self.post_message(IntentRequested(CancelFocusedOperation()))
+        elif event.button.id == "focus-inspect":
+            event.stop()
+            self.post_message(IntentRequested(OpenOverlay("inspector", context_key=self._focused_thread_id)))
         elif event.button.id == "focus-workbench":
             event.stop()
             self.post_message(IntentRequested(OpenWorkbench()))

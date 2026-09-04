@@ -201,6 +201,10 @@ async def test_application_starts_persists_objects_and_closes(tmp_path: Path) ->
     async with open_agent_ui_app(settings) as app:
         retained = app
         assert app.state is AppState.ready
+        assert (await app.active_work_summary()).model_dump() == {
+            "root_operations": 0,
+            "child_executions": 0,
+        }
         reference = await app._store.publish_object(
             object_kind=ObjectKind.run_composition,
             object_schema_version="1",

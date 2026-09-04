@@ -88,6 +88,7 @@ from a13n_ui.storage import (
 )
 from a13n_ui.subagent_operator import AgentUiSubagentOperator
 from a13n_ui.surfaces import (
+    ActiveWorkSummary,
     ChildControlResult,
     ChildExecutionPage,
     DecisionBatchView,
@@ -455,6 +456,17 @@ class AgentUiApp:
                 include_archived=include_archived,
                 cursor=cursor,
                 limit=limit,
+            )
+
+    async def active_work_summary(self) -> ActiveWorkSummary:
+        """Return authoritative process-local root and child activity counts."""
+
+        async with self._operation():
+            root_operations = await self._root_runs.active_count()
+            child_executions = len(await self._subagent_operator.active_execution_ids())
+            return ActiveWorkSummary(
+                root_operations=root_operations,
+                child_executions=child_executions,
             )
 
     async def thread_tasks(

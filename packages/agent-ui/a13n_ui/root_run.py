@@ -102,6 +102,12 @@ class RootRunCoordinator:
         async with self._lock:
             self._accepting = False
 
+    async def active_count(self) -> int:
+        """Return the number of process-local active root operations."""
+
+        async with self._lock:
+            return len(self._active_by_thread)
+
     async def close(self, *, timeout_seconds: float) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")

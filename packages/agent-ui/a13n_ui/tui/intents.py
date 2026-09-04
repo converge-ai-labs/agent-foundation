@@ -21,7 +21,7 @@ class RetryStartup:
 
 @dataclass(frozen=True, slots=True)
 class ExitTerminal:
-    pass
+    confirmed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +195,7 @@ class OpenOverlay:
         "projects",
         "review",
         "inspector",
+        "exit",
     ]
     key: str | None = None
     context_key: str | None = None

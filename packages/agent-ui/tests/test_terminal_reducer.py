@@ -34,6 +34,7 @@ from a13n_ui.surfaces import (
     WorkbenchThreadView,
 )
 from a13n_ui.tui.events import (
+    ClosingStarted,
     CompletionAcknowledged,
     DraftChanged,
     FocusLoaded,
@@ -57,6 +58,7 @@ from a13n_ui.tui.models import (
     BlockKind,
     BlockStatus,
     ControlMode,
+    OverlayState,
     ReadingAnchor,
     TerminalLifecycle,
     TerminalMode,
@@ -206,6 +208,21 @@ def _workbench_row(
             lost=lost_children,
         ),
     )
+
+
+def test_closing_clears_transient_surfaces_without_changing_domain_state() -> None:
+    state = TerminalState(
+        lifecycle=TerminalLifecycle.READY,
+        focused_thread_id="thread-1",
+        overlays=(OverlayState(kind="status"),),
+    )
+
+    result = reduce_terminal(state, ClosingStarted())
+
+    assert result.state.lifecycle is TerminalLifecycle.CLOSING
+    assert result.state.focused_thread_id == "thread-1"
+    assert result.state.overlays == ()
+    assert result.hints.changed == frozenset({"lifecycle", "overlay"})
 
 
 def test_startup_uses_selected_project_and_unmatched_falls_back_to_workbench() -> None:

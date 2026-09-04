@@ -17,6 +17,7 @@ from a13n_ui.surfaces import (
     AgentSourceView,
     AgentSummary,
     ChildExecutionPage,
+    ChildStatusCounts,
     DecisionBatchView,
     EnvironmentProfileSummary,
     ProjectSummary,
@@ -42,11 +43,13 @@ from a13n_ui.tui.intents import (
     ApplyCompletion,
     CloseOverlay,
     ExecuteCommand,
+    ExitTerminal,
     InsertSkillReference,
     OpenFocus,
     OpenOverlay,
     SearchWorkbench,
     SelectConfigurationResource,
+    SetReadingAnchor,
     SetWorkbenchFilter,
     StartNewDraft,
     SubmitComposer,
@@ -65,6 +68,7 @@ from a13n_ui.tui.models import (
     DraftState,
     OverlayState,
     ProjectionHints,
+    ReadingAnchor,
     ReviewState,
     TerminalLifecycle,
     TerminalMode,
@@ -74,6 +78,8 @@ from a13n_ui.tui.models import (
     WorkbenchState,
 )
 from a13n_ui.tui.scheduler import ProjectionScheduler
+from a13n_ui.tui.widgets.blocks import TimelineBlockWidget
+from a13n_ui.tui.widgets.timeline import TimelineScroll
 from textual.widgets import Input, ListView, Markdown, Static, TextArea
 
 
@@ -272,6 +278,129 @@ async def test_focus_keeps_one_markdown_widget_across_streaming_updates(tmp_path
 
 
 @pytest.mark.anyio
+async def test_failed_terminal_ctrl_c_exits_instead_of_cancelling_stale_work(tmp_path: Path) -> None:
+    app, _release = _blocked_terminal_app(tmp_path)
+    handled = AsyncMock()
+    app.controller.handle = handled
+    state = _focused_state()
+    failed_view = replace(state.thread_views[0], control_mode=ControlMode.RUNNING)
+    failed_state = replace(
+        state,
+        lifecycle=TerminalLifecycle.FAILED,
+        thread_views=(failed_view,),
+    )
+
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.post_message(StateProjected(failed_state, ProjectionHints(changed=frozenset({"lifecycle"}))))
+        await pilot.pause(0.05)
+        await pilot.press("ctrl+c")
+        await pilot.pause(0.02)
+        assert isinstance(handled.await_args_list[-1].args[0], ExitTerminal)
+
+    await app.controller.close()
+
+
+@pytest.mark.anyio
+async def test_surface_and_controller_failures_remain_at_terminal_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _release = _blocked_terminal_app(tmp_path)
+
+    async with app.run_test(size=(100, 32)) as pilot:
+        focus_screen = app.query_one("#focus-screen")
+        monkeypatch.setattr(
+            focus_screen,
+            "project",
+            AsyncMock(side_effect=RuntimeError("render failed")),
+        )
+        app.post_message(StateProjected(_focused_state(), ProjectionHints(changed=frozenset({"focus"}))))
+        await pilot.pause(0.05)
+        assert "could not be rendered safely" in str(app.query_one("#focus-draft-intro", Static).render())
+
+        async def fail_handle(intent: object) -> None:
+            del intent
+            raise RuntimeError("controller failed")
+
+        failed = AsyncMock()
+        monkeypatch.setattr(app.controller, "handle", fail_handle)
+        monkeypatch.setattr(app.controller, "fail", failed)
+        await pilot.press("ctrl+p")
+        await pilot.pause(0.05)
+        failed.assert_awaited_once()
+        assert isinstance(failed.await_args.args[0], RuntimeError)
+
+    await app.controller.close()
+
+
+@pytest.mark.anyio
+async def test_timeline_reports_reading_anchor_and_preserves_it_on_projection(tmp_path: Path) -> None:
+    app, _release = _blocked_terminal_app(tmp_path)
+    handled = AsyncMock()
+    app.controller.handle = handled
+    blocks = tuple(
+        TimelineBlock(
+            block_id=f"retained:{index}",
+            thread_id="thread-1",
+            kind=BlockKind.USER,
+            status=BlockStatus.CLOSED,
+            source_text="\n".join(f"line {line}" for line in range(5)),
+        )
+        for index in range(12)
+    )
+    state = _focused_state(timeline=blocks)
+
+    async with app.run_test(size=(60, 24)) as pilot:
+        app.post_message(StateProjected(state, ProjectionHints(changed=frozenset({"focus"}))))
+        await pilot.pause(0.1)
+        scroll = app.query_one(TimelineScroll)
+        assert scroll.max_scroll_y > 4
+        scroll.scroll_to(y=4, animate=False, immediate=True)
+        await pilot.pause(0.05)
+
+        intent = next(
+            call.args[0] for call in reversed(handled.await_args_list) if isinstance(call.args[0], SetReadingAnchor)
+        )
+        assert intent.thread_id == "thread-1"
+        assert intent.block_id in {block.block_id for block in blocks}
+
+        anchor = ReadingAnchor(intent.block_id, intent.line_offset)
+        view = replace(state.thread_views[0], reading_anchor=anchor)
+        projected = replace(state, thread_views=(view,))
+        scroll.scroll_end(animate=False, immediate=True)
+        app.post_message(
+            StateProjected(
+                projected,
+                ProjectionHints(changed=frozenset({"focus"}), preserve_anchor=anchor),
+            )
+        )
+        await pilot.pause(0.05)
+        assert scroll.scroll_y < scroll.max_scroll_y
+        assert app.terminal_state.thread_view("thread-1").reading_anchor == anchor
+
+        await pilot.resize_terminal(100, 28)
+        await pilot.pause(0.05)
+        anchored_widget = next(
+            widget for widget in scroll.query(TimelineBlockWidget) if widget.block.block_id == anchor.block_id
+        )
+        expected_y = min(
+            scroll.max_scroll_y,
+            anchored_widget.virtual_region.y + anchor.line_offset,
+        )
+        assert abs(scroll.scroll_y - expected_y) <= 1
+
+        await pilot.resize_terminal(60, 24)
+        await pilot.pause(0.05)
+        expected_y = min(
+            scroll.max_scroll_y,
+            anchored_widget.virtual_region.y + anchor.line_offset,
+        )
+        assert abs(scroll.scroll_y - expected_y) <= 1
+
+    await app.controller.close()
+
+
+@pytest.mark.anyio
 async def test_decision_and_review_surfaces_emit_explicit_actions_only(tmp_path: Path) -> None:
     app, _release = _blocked_terminal_app(tmp_path)
     handled = AsyncMock()
@@ -405,6 +534,148 @@ async def test_workbench_navigation_search_and_prompt_preserve_one_terminal_stat
         await pilot.pause(0.05)
         assert app.has_class("width-wide")
         assert app.terminal_state.workbench.selected_thread_id == "thread-1"
+
+    await app.controller.close()
+
+
+@pytest.mark.anyio
+async def test_medium_and_narrow_use_one_pane_preview_and_inspector_drill_down(tmp_path: Path) -> None:
+    app, _release = _blocked_terminal_app(tmp_path)
+    handled = AsyncMock()
+    app.controller.handle = handled
+    workbench_state = _workbench_state()
+
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.post_message(StateProjected(workbench_state, ProjectionHints(changed=frozenset({"workbench"}))))
+        await pilot.pause(0.1)
+        workbench = app.query_one("#workbench-screen")
+        list_pane = app.query_one("#workbench-list-pane")
+        preview = app.query_one("#workbench-preview")
+        assert app.has_class("width-medium")
+        assert list_pane.display
+        assert not preview.display
+
+        app.query_one("#workbench-list", ListView).focus()
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert workbench.has_class("show-preview")
+        assert not list_pane.display
+        assert preview.display
+        assert not any(isinstance(call.args[0], OpenFocus) for call in handled.await_args_list)
+
+        await pilot.click("#workbench-open")
+        await pilot.pause(0.02)
+        assert any(isinstance(call.args[0], OpenFocus) for call in handled.await_args_list)
+        await pilot.press("escape")
+        await pilot.pause(0.02)
+        assert not workbench.has_class("show-preview")
+        assert list_pane.display
+
+        await pilot.resize_terminal(60, 28)
+        await pilot.pause(0.05)
+        assert app.has_class("width-narrow")
+        app.query_one("#workbench-list", ListView).focus()
+        await pilot.press("enter")
+        await pilot.pause(0.02)
+        assert workbench.has_class("show-preview")
+        assert preview.display
+        assert workbench_state.workbench.selected_thread_id == app.terminal_state.workbench.selected_thread_id
+
+        await pilot.resize_terminal(130, 36)
+        await pilot.pause(0.05)
+        assert app.has_class("width-wide")
+        assert list_pane.display
+        assert preview.display
+
+        focus_state = _focused_state()
+        app.post_message(StateProjected(focus_state, ProjectionHints(changed=frozenset({"focus"}))))
+        await pilot.pause(0.05)
+        assert app.query_one("#focus-inspector").display
+        assert not app.query_one("#focus-inspect").display
+
+        await pilot.resize_terminal(100, 32)
+        await pilot.pause(0.05)
+        assert not app.query_one("#focus-inspector").display
+        assert app.query_one("#focus-inspect").display
+        handled.reset_mock()
+        await pilot.click("#focus-inspect")
+        await pilot.pause(0.02)
+        inspect_intent = handled.await_args_list[-1].args[0]
+        assert isinstance(inspect_intent, OpenOverlay)
+        assert inspect_intent.kind == "inspector"
+
+        inspector_state = replace(
+            focus_state,
+            overlays=(OverlayState(kind="inspector", context_key="thread-1"),),
+        )
+        app.post_message(StateProjected(inspector_state, ProjectionHints(changed=frozenset({"overlay"}))))
+        await pilot.resize_terminal(60, 28)
+        await pilot.pause(0.05)
+        inspector_text = str(app.query_one("#overlay-body", Static).render())
+        assert "CONTEXT" in inspector_text
+        assert "CHILDREN" in inspector_text
+        assert app.terminal_state.overlays[-1].kind == "inspector"
+
+    await app.controller.close()
+
+
+@pytest.mark.anyio
+async def test_exit_overlay_explains_active_work_and_requires_explicit_action(tmp_path: Path) -> None:
+    app, _release = _blocked_terminal_app(tmp_path)
+    handled = AsyncMock()
+    app.controller.handle = handled
+    state = _workbench_state()
+    row = state.workbench.rows[0]
+    active_thread = row.thread.model_copy(
+        update={
+            "root_activity": RootActivityView(
+                state=RootActivityState.running,
+                receipt_id="receipt-1",
+                run_id="run-1",
+                available_actions=("wait", "steer", "cancel"),
+            )
+        }
+    )
+    active_row = row.model_copy(
+        update={
+            "thread": active_thread,
+            "children": ChildStatusCounts(running=1, active=1),
+        }
+    )
+    active_state = replace(
+        state,
+        workbench=replace(
+            state.workbench,
+            page=WorkbenchPage(project_id="project-main", rows=(active_row,), total=1),
+        ),
+        overlays=(
+            OverlayState(
+                kind="exit",
+                active_root_operations=1,
+                active_child_executions=1,
+            ),
+        ),
+    )
+
+    async with app.run_test(size=(60, 28)) as pilot:
+        app.post_message(StateProjected(active_state, ProjectionHints(changed=frozenset({"overlay"}))))
+        await pilot.pause(0.05)
+
+        body = str(app.query_one("#overlay-body", Static).render())
+        assert "Active root operations: 1" in body
+        assert "Active child executions: 1" in body
+        assert "will not continue" in body
+        assert app.query_one("#overlay-close").has_focus
+
+        await pilot.click("#overlay-confirm-exit")
+        await pilot.pause(0.02)
+        intent = handled.await_args_list[-1].args[0]
+        assert isinstance(intent, ExitTerminal)
+        assert intent.confirmed
+
+        await pilot.click("#overlay-close")
+        await pilot.pause(0.02)
+        assert isinstance(handled.await_args_list[-1].args[0], CloseOverlay)
 
     await app.controller.close()
 

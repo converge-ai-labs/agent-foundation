@@ -459,6 +459,11 @@ class PendingDecisionSummary(SurfaceModel):
     count: int = Field(ge=1, le=256)
 
 
+class ActiveWorkSummary(SurfaceModel):
+    root_operations: int = Field(default=0, ge=0)
+    child_executions: int = Field(default=0, ge=0)
+
+
 class ChildStatusCounts(SurfaceModel):
     running: int = Field(default=0, ge=0)
     succeeded: int = Field(default=0, ge=0)
@@ -681,6 +686,7 @@ class ReviewView(SurfaceModel):
 
 
 __all__ = [
+    "ActiveWorkSummary",
     "ActivitySummary",
     "AgentSourceView",
     "AgentSummary",

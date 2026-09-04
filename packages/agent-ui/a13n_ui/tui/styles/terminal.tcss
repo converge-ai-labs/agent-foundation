@@ -290,15 +290,20 @@ Screen {
 }
 
 .width-narrow #focus-header {
-    height: 2;
+    height: 3;
 }
 
 .width-narrow #focus-identity {
     width: 1fr;
 }
 
-.width-narrow #focus-header Button {
+.width-narrow #focus-activity {
     display: none;
+}
+
+.width-narrow #focus-header Button {
+    min-width: 8;
+    margin-left: 0;
 }
 
 .width-narrow #composer {
@@ -325,10 +330,20 @@ Screen {
 
 #workbench-header Button {
     width: auto;
-    min-width: 12;
+    min-width: 10;
     height: 1;
     min-height: 1;
     margin-left: 1;
+}
+
+#workbench-render-error {
+    display: none;
+    width: 100%;
+    height: 1fr;
+    content-align: center middle;
+    text-align: center;
+    padding: 2;
+    color: $error;
 }
 
 #workbench-main {
@@ -412,6 +427,10 @@ Screen {
     margin-top: 1;
 }
 
+#workbench-view-toggle {
+    display: none;
+}
+
 #workbench-footer {
     width: 100%;
     height: 1;
@@ -467,10 +486,13 @@ Screen {
     padding: 0 1;
 }
 
+#overlay-confirm-exit,
 #overlay-close {
-    width: 12;
+    width: auto;
+    min-width: 12;
     height: 1;
     min-height: 1;
+    margin-right: 1;
 }
 
 #completion-popup {
@@ -500,16 +522,36 @@ Screen {
     min-height: 2;
 }
 
-.width-medium #workbench-preview {
-    width: 1fr;
+.width-medium #workbench-view-toggle,
+.width-narrow #workbench-view-toggle {
+    display: block;
 }
 
+.width-medium #workbench-list-pane,
+.width-narrow #workbench-list-pane {
+    width: 100%;
+    border-right: none;
+}
+
+.width-medium #workbench-preview,
 .width-narrow #workbench-preview {
     display: none;
 }
 
-.width-narrow #workbench-list-pane {
+.width-medium #workbench-screen.show-preview #workbench-list-pane,
+.width-narrow #workbench-screen.show-preview #workbench-list-pane {
+    display: none;
+}
+
+.width-medium #workbench-screen.show-preview #workbench-preview,
+.width-narrow #workbench-screen.show-preview #workbench-preview {
+    display: block;
     width: 100%;
+}
+
+.width-narrow #workbench-header Button {
+    min-width: 7;
+    margin-left: 0;
 }
 
 .width-narrow #overlay-pane {

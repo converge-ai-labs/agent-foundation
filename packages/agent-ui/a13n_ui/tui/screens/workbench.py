@@ -52,7 +52,9 @@ class WorkbenchScreen(Container):
         with Horizontal(id="workbench-header"):
             yield Input(placeholder="Search Threads", id="workbench-search")
             yield Button("Project", id="workbench-project")
+            yield Button("Preview", id="workbench-view-toggle")
             yield Button("New", id="workbench-new", variant="primary")
+        yield Static(id="workbench-render-error")
         with Horizontal(id="workbench-main"):
             with VerticalScroll(id="workbench-list-pane"):
                 yield ListView(id="workbench-list")
@@ -75,6 +77,8 @@ class WorkbenchScreen(Container):
 
     async def project(self, state: TerminalState) -> None:
         self._state = state
+        self.query_one("#workbench-render-error", Static).display = False
+        self.query_one("#workbench-main").display = True
         page = state.workbench.page
         search = self.query_one("#workbench-search", Input)
         if not search.has_focus and search.value != state.workbench.query:
@@ -93,9 +97,13 @@ class WorkbenchScreen(Container):
         if rows != self._rows:
             await self._rebuild_rows(rows, selected_id)
         self.query_one("#workbench-more", Button).display = page is not None and page.next_cursor is not None
+        self.query_one("#workbench-view-toggle", Button).disabled = selected_id is None
+        if not rows:
+            self.show_list(focus=False)
         total = 0 if page is None else page.total
+        action = "open" if self.app.has_class("width-wide") else "preview"
         self.query_one("#workbench-footer", Static).update(
-            f"{len(rows)} of {total} Thread(s) - Enter open - Ctrl+N new - Ctrl+O return to Focus"
+            f"{len(rows)} of {total} Thread(s) - Enter {action} - Ctrl+N new - Ctrl+O return to Focus"
         )
         self._project_preview(state, next((row for row in rows if row.thread.thread_id == selected_id), None))
 
@@ -207,8 +215,33 @@ class WorkbenchScreen(Container):
         if event.item.id is None:
             return
         thread_id = self._row_ids.get(event.item.id)
-        if thread_id is not None:
+        if thread_id is None:
+            return
+        if self.app.has_class("width-wide"):
             self.post_message(IntentRequested(OpenFocus(thread_id)))
+        else:
+            self.show_preview()
+
+    def show_render_failure(self) -> None:
+        error = self.query_one("#workbench-render-error", Static)
+        error.display = True
+        error.update("The Workbench surface could not be rendered safely. App-owned work continues.")
+        self.query_one("#workbench-main").display = False
+
+    @property
+    def showing_preview(self) -> bool:
+        return self.has_class("show-preview")
+
+    def show_preview(self) -> None:
+        self.add_class("show-preview")
+        self.query_one("#workbench-view-toggle", Button).label = "Threads"
+        self.query_one("#workbench-open", Button).focus()
+
+    def show_list(self, *, focus: bool = True) -> None:
+        self.remove_class("show-preview")
+        self.query_one("#workbench-view-toggle", Button).label = "Preview"
+        if focus:
+            self.query_one("#workbench-list", ListView).focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if self._projecting or event.input.id != "workbench-search":
@@ -265,6 +298,12 @@ class WorkbenchScreen(Container):
         if event.button.id == "workbench-project":
             event.stop()
             self.post_message(IntentRequested(OpenOverlay("projects")))
+        elif event.button.id == "workbench-view-toggle":
+            event.stop()
+            if self.showing_preview:
+                self.show_list()
+            elif selected_id is not None:
+                self.show_preview()
         elif event.button.id == "workbench-new" and state is not None:
             project_id = state.launch_project_id or state.draft_defaults.project_id
             if project_id is None:

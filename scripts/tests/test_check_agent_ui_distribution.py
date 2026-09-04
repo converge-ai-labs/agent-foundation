@@ -22,6 +22,9 @@ def _write_wheel(
     harness_version: str | None = "1.2.3",
     protocol_version: str | None = "1.2.3",
     include_runtime_manifest: bool = True,
+    include_terminal_style: bool = True,
+    include_entrypoint: bool = True,
+    cli_content: bytes = b"def main(): pass\n",
     extra_packaged_files: dict[str, bytes] | None = None,
 ) -> None:
     files = {
@@ -41,6 +44,14 @@ def _write_wheel(
             "a13n_ui/static/asset-manifest.json",
             json.dumps(manifest),
         )
+        archive.writestr("a13n_ui/__init__.py", b"\n")
+        archive.writestr("a13n_ui/__main__.py", b"from a13n_ui.cli import main\nmain()\n")
+        archive.writestr("a13n_ui/cli.py", cli_content)
+        archive.writestr("a13n_ui/terminal.py", b"\n")
+        archive.writestr("a13n_ui/tui/__init__.py", b"\n")
+        archive.writestr("a13n_ui/tui/application.py", b"class AgentUiTerminalApp: pass\n")
+        if include_terminal_style:
+            archive.writestr("a13n_ui/tui/styles/terminal.tcss", b"Screen { color: white; }\n")
         if include_runtime_manifest:
             archive.writestr(
                 "a13n_ui/assets/agent-envd-release.json",
@@ -52,6 +63,11 @@ def _write_wheel(
                         "targets": {"test-target": {}},
                     }
                 ),
+            )
+        if include_entrypoint:
+            archive.writestr(
+                "a13n_ui-9.8.7.dist-info/entry_points.txt",
+                "[console_scripts]\na13n-ui = a13n_ui.cli:main\n",
             )
         archive.writestr(
             "a13n_ui-9.8.7.dist-info/METADATA",
@@ -105,6 +121,42 @@ def test_rejects_missing_agent_envd_manifest(tmp_path: Path) -> None:
     )
 
     with pytest.raises(DistributionError, match=r"missing a13n_ui/assets/agent-envd-release\.json"):
+        validate_wheel(wheel)
+
+
+def test_rejects_missing_console_entrypoint(tmp_path: Path) -> None:
+    wheel = tmp_path / "agent-ui.whl"
+    _write_wheel(
+        wheel,
+        index=b'<script src="/assets/main.js"></script>',
+        include_entrypoint=False,
+    )
+
+    with pytest.raises(DistributionError, match=r"Expected one entry_points\.txt"):
+        validate_wheel(wheel)
+
+
+def test_rejects_unimportable_entrypoint(tmp_path: Path) -> None:
+    wheel = tmp_path / "agent-ui.whl"
+    _write_wheel(
+        wheel,
+        index=b'<script src="/assets/main.js"></script>',
+        cli_content=b"raise RuntimeError('broken wheel')\n",
+    )
+
+    with pytest.raises(DistributionError, match="cannot import its entrypoint and TUI"):
+        validate_wheel(wheel)
+
+
+def test_rejects_missing_terminal_style(tmp_path: Path) -> None:
+    wheel = tmp_path / "agent-ui.whl"
+    _write_wheel(
+        wheel,
+        index=b'<script src="/assets/main.js"></script>',
+        include_terminal_style=False,
+    )
+
+    with pytest.raises(DistributionError, match=r"missing a13n_ui/tui/styles/terminal\.tcss"):
         validate_wheel(wheel)
 
 

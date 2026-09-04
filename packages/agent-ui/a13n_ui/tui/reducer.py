@@ -144,15 +144,33 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
 
     if isinstance(event, StartupFailed):
         next_state = _notice(
-            replace(state, lifecycle=TerminalLifecycle.FAILED),
+            replace(
+                state,
+                lifecycle=TerminalLifecycle.FAILED,
+                overlays=(),
+                review=None,
+                completion=None,
+                configuration_conflict=None,
+            ),
             severity="error",
             message=event.failure.message,
             code=event.failure.code,
         )
-        return _result(next_state, "lifecycle", "notice")
+        return _result(next_state, "lifecycle", "overlay", "notice")
 
     if isinstance(event, ClosingStarted):
-        return _result(replace(state, lifecycle=TerminalLifecycle.CLOSING), "lifecycle")
+        return _result(
+            replace(
+                state,
+                lifecycle=TerminalLifecycle.CLOSING,
+                overlays=(),
+                review=None,
+                completion=None,
+                configuration_conflict=None,
+            ),
+            "lifecycle",
+            "overlay",
+        )
 
     if isinstance(event, WorkbenchLoaded):
         if event.request_version < state.workbench.projection_version:

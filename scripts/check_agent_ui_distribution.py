@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import tomllib
@@ -23,6 +25,15 @@ DISTRIBUTION_STEM = "a13n_ui"
 MANIFEST_NAME = "asset-manifest.json"
 PACKAGE_PREFIX = PurePosixPath("a13n_ui/static")
 RUNTIME_MANIFEST_PATH = PurePosixPath("a13n_ui/assets/agent-envd-release.json")
+TERMINAL_PACKAGE_PATHS = (
+    PurePosixPath("a13n_ui/__init__.py"),
+    PurePosixPath("a13n_ui/__main__.py"),
+    PurePosixPath("a13n_ui/cli.py"),
+    PurePosixPath("a13n_ui/terminal.py"),
+    PurePosixPath("a13n_ui/tui/__init__.py"),
+    PurePosixPath("a13n_ui/tui/application.py"),
+    PurePosixPath("a13n_ui/tui/styles/terminal.tcss"),
+)
 INTERNAL_PACKAGES = (
     "a13n-environment-provider",
     "a13n-harness",
@@ -129,6 +140,49 @@ def _validate_assets(read: Callable[[str], bytes], names: set[str], prefix: Pure
             raise DistributionError(f"Agent UI shell references an undeclared or missing asset: {value}")
 
 
+def _validate_terminal_package(names: set[str], prefix: PurePosixPath | None = None) -> None:
+    root = prefix or PurePosixPath()
+    for path in TERMINAL_PACKAGE_PATHS:
+        artifact_path = (root / path).as_posix()
+        if artifact_path not in names:
+            raise DistributionError(f"Agent UI artifact is missing {artifact_path}")
+
+
+def _validate_wheel_imports(path: Path) -> None:
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(path.resolve())
+    with tempfile.TemporaryDirectory(prefix="agent-ui-wheel-import-") as directory:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-P",
+                "-c",
+                (
+                    "from a13n_ui.cli import main; "
+                    "from a13n_ui.tui.application import AgentUiTerminalApp; "
+                    "assert callable(main) and AgentUiTerminalApp"
+                ),
+            ],
+            cwd=directory,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    if result.returncode != 0:
+        raise DistributionError(f"Agent UI wheel cannot import its entrypoint and TUI:\n{result.stderr}")
+
+
+def _validate_console_entrypoint(content: bytes) -> None:
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read_string(content.decode("utf-8"))
+    except (configparser.Error, UnicodeDecodeError) as error:
+        raise DistributionError(f"Invalid Agent UI entry_points.txt: {error}") from error
+    if parser.get("console_scripts", "a13n-ui", fallback=None) != "a13n_ui.cli:main":
+        raise DistributionError("Agent UI artifact is missing the a13n-ui console entrypoint")
+
+
 def _validate_runtime_manifest(read: Callable[[str], bytes], names: set[str], path: PurePosixPath) -> None:
     manifest_path = path.as_posix()
     if manifest_path not in names:
@@ -171,6 +225,11 @@ def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) 
         names = set(archive.namelist())
         _validate_assets(archive.read, names, PACKAGE_PREFIX)
         _validate_runtime_manifest(archive.read, names, RUNTIME_MANIFEST_PATH)
+        _validate_terminal_package(names)
+        entrypoint_paths = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
+        if len(entrypoint_paths) != 1:
+            raise DistributionError(f"Expected one entry_points.txt in {path}, found {len(entrypoint_paths)}")
+        _validate_console_entrypoint(archive.read(entrypoint_paths[0]))
         metadata_paths = [name for name in names if name.endswith(".dist-info/METADATA")]
         if len(metadata_paths) != 1:
             raise DistributionError(f"Expected one METADATA file in {path}, found {len(metadata_paths)}")
@@ -178,9 +237,9 @@ def validate_wheel(path: Path, *, require_exact_internal_version: bool = False) 
         requirements = metadata.get_all("Requires-Dist", [])
         if not all(isinstance(requirement, str) for requirement in requirements):
             raise DistributionError(f"Invalid Requires-Dist metadata in {path}")
-        if require_exact_internal_version:
-            return _validate_internal_requirements(requirements)
-        return None
+        pin = _validate_internal_requirements(requirements) if require_exact_internal_version else None
+    _validate_wheel_imports(path)
+    return pin
 
 
 def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) -> tuple[str, str | None]:
@@ -200,6 +259,7 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
 
         _validate_assets(read, names, PurePosixPath(root) / PACKAGE_PREFIX)
         _validate_runtime_manifest(read, names, PurePosixPath(root) / RUNTIME_MANIFEST_PATH)
+        _validate_terminal_package(names, PurePosixPath(root))
         if any("apps/harness-ui" in name for name in names):
             raise DistributionError("Agent UI sdist must not require the Harness UI source tree")
         pyproject_path = f"{root}/pyproject.toml"
@@ -208,10 +268,13 @@ def validate_sdist(path: Path, *, require_exact_internal_version: bool = False) 
         try:
             project = tomllib.loads(read(pyproject_path).decode("utf-8"))["project"]
             requirements = project["dependencies"]
+            scripts = project["scripts"]
         except (KeyError, TypeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             raise DistributionError(f"Cannot read Agent UI sdist dependencies: {error}") from error
         if not isinstance(requirements, list) or not all(isinstance(value, str) for value in requirements):
             raise DistributionError("Agent UI sdist has invalid project.dependencies")
+        if not isinstance(scripts, dict) or scripts.get("a13n-ui") != "a13n_ui.cli:main":
+            raise DistributionError("Agent UI sdist is missing the a13n-ui console entrypoint")
         pin = _validate_internal_requirements(requirements) if require_exact_internal_version else None
         return root, pin
 

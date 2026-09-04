@@ -8,8 +8,8 @@ from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.widgets import Button, Static
 
-from a13n_ui.tui.intents import LoadOlderTranscript, SetFollowLatest
-from a13n_ui.tui.models import ProjectionHints, ThreadViewState, TimelineBlock
+from a13n_ui.tui.intents import LoadOlderTranscript, SetFollowLatest, SetReadingAnchor
+from a13n_ui.tui.models import ProjectionHints, ReadingAnchor, ThreadViewState, TimelineBlock
 from a13n_ui.tui.widgets.blocks import TimelineBlockWidget
 from a13n_ui.tui.widgets.messages import IntentRequested
 
@@ -31,6 +31,21 @@ class TimelineScroll(VerticalScroll):
         if at_end != self.follow_latest:
             self.follow_latest = at_end
             self.post_message(IntentRequested(SetFollowLatest(self.thread_id, at_end)))
+        viewport_top = int(new_value)
+        anchor = next(
+            (widget for widget in self.query(TimelineBlockWidget) if widget.virtual_region.bottom > viewport_top),
+            None,
+        )
+        if anchor is not None:
+            self.post_message(
+                IntentRequested(
+                    SetReadingAnchor(
+                        self.thread_id,
+                        anchor.block.block_id,
+                        max(0, viewport_top - anchor.virtual_region.y),
+                    )
+                )
+            )
 
 
 class TimelineView(Container):
@@ -72,15 +87,24 @@ class TimelineView(Container):
             show_tool_details=show_tool_details,
         )
         if hints.preserve_anchor is not None:
-            anchor = self._widgets.get(hints.preserve_anchor.block_id)
-            if anchor is not None:
-                scroll.projecting = True
-                anchor.scroll_visible(top=True, animate=False, immediate=True)
-                scroll.projecting = False
+            self.restore_reading_anchor(hints.preserve_anchor)
         elif hints.scroll_to_latest and view.follow_latest:
             scroll.projecting = True
             scroll.scroll_end(animate=False, immediate=True)
             scroll.projecting = False
+
+    def restore_reading_anchor(self, reading_anchor: ReadingAnchor) -> None:
+        anchor = self._widgets.get(reading_anchor.block_id)
+        if anchor is None:
+            return
+        scroll = self.query_one(TimelineScroll)
+        scroll.projecting = True
+        scroll.scroll_to(
+            y=anchor.virtual_region.y + reading_anchor.line_offset,
+            animate=False,
+            immediate=True,
+        )
+        scroll.projecting = False
 
     async def _reconcile_blocks(
         self,

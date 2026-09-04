@@ -15,6 +15,7 @@ from a13n_ui.tui.commands import COMMANDS, command_available
 from a13n_ui.tui.intents import (
     CloseOverlay,
     ExecuteCommand,
+    ExitTerminal,
     InsertSkillReference,
     OpenFocus,
     OpenOverlay,
@@ -56,6 +57,7 @@ class OverlayPane(Container):
         yield Button("Scope", id="overlay-scope")
         yield Static(id="overlay-body")
         yield ListView(id="overlay-list")
+        yield Button("Exit and stop work", id="overlay-confirm-exit", variant="error")
         yield Button("Back", id="overlay-close", variant="primary")
 
     async def project(self, state: TerminalState) -> None:
@@ -72,6 +74,19 @@ class OverlayPane(Container):
             search.value = self._query
             self._projecting = False
         await self._rebuild()
+
+    def show_render_failure(self) -> None:
+        self.query_one("#overlay-title", Static).update("Surface unavailable")
+        body = self.query_one("#overlay-body", Static)
+        body.display = True
+        body.update("This surface could not be rendered safely. No action was taken.")
+        self.query_one("#overlay-search", Input).display = False
+        self.query_one("#overlay-scope", Button).display = False
+        self.query_one("#overlay-list", ListView).display = False
+        self.query_one("#overlay-confirm-exit", Button).display = False
+        close = self.query_one("#overlay-close", Button)
+        close.label = "Back"
+        close.focus()
 
     def focus_initial(self) -> None:
         search = self.query_one("#overlay-search", Input)
@@ -94,14 +109,17 @@ class OverlayPane(Container):
         search = self.query_one("#overlay-search", Input)
         scope = self.query_one("#overlay-scope", Button)
         list_view = self.query_one("#overlay-list", ListView)
+        confirm_exit = self.query_one("#overlay-confirm-exit", Button)
         self._actions.clear()
         await list_view.clear()
         body.display = False
         body.update("")
-        search.display = overlay.kind not in {"status", "help"}
+        search.display = overlay.kind not in {"status", "help", "inspector", "exit"}
         scope.display = overlay.kind == "threads"
         scope.label = f"Project: {state.project_filter_id or 'All Projects'}"
-        list_view.display = overlay.kind not in {"status", "help"}
+        list_view.display = overlay.kind not in {"status", "help", "inspector", "exit"}
+        confirm_exit.display = overlay.kind == "exit"
+        self.query_one("#overlay-close", Button).label = "Keep running" if overlay.kind == "exit" else "Back"
 
         entries: list[tuple[str, str, TerminalIntent, bool]] = []
         query = self._query.casefold()
@@ -184,6 +202,19 @@ class OverlayPane(Container):
             title.update("Terminal help")
             body.display = True
             body.update(_help_text())
+        elif overlay.kind == "inspector":
+            title.update("Thread inspector")
+            body.display = True
+            body.update(_inspector_text(state, overlay.context_key))
+        elif overlay.kind == "exit":
+            title.update("Exit Agent UI?")
+            body.display = True
+            body.update(
+                f"Active root operations: {overlay.active_root_operations}\n"
+                f"Active child executions: {overlay.active_child_executions}\n\n"
+                "This work is process-local and will not continue after Agent UI shuts down. "
+                "Exit requests cooperative cancellation and begins bounded App cleanup."
+            )
         else:
             title.update(overlay.kind.title())
             body.display = True
@@ -231,9 +262,67 @@ class OverlayPane(Container):
         if event.button.id == "overlay-close":
             event.stop()
             self.post_message(IntentRequested(CloseOverlay()))
+        elif event.button.id == "overlay-confirm-exit":
+            event.stop()
+            self.post_message(IntentRequested(ExitTerminal(confirmed=True)))
         elif event.button.id == "overlay-scope":
             event.stop()
             self.post_message(IntentRequested(OpenOverlay("projects")))
+
+
+def _inspector_text(state: TerminalState, thread_id: str | None) -> str:
+    selected_id = thread_id or state.focused_thread_id
+    view = None if selected_id is None else state.thread_view(selected_id)
+    if view is None or view.detail is None:
+        return "Focused Thread details are unavailable."
+
+    configuration = view.detail.thread.configuration
+    lines = [
+        "CONTEXT",
+        f"Thread  {view.thread_id}",
+        f"Project {configuration.project_id}",
+        f"Agent   {configuration.agent_source.id}",
+        f"Env     {configuration.environment_profile_id}",
+        f"Config  v{configuration.version}",
+        "",
+        "SELECTION",
+    ]
+    selected = next((item for item in view.timeline if item.block_id == view.selected_block_id), None)
+    if selected is None:
+        lines.append("Focus a timeline block for details")
+    else:
+        lines.extend((f"Kind    {selected.kind.value}", f"Status  {selected.status.value}"))
+        if selected.summary:
+            lines.append(selected.summary)
+
+    lines.extend(("", "TASKS"))
+    if not view.tasks.available:
+        lines.append("Task state unavailable")
+    elif not view.tasks.tasks:
+        lines.append("No tasks")
+    else:
+        marker = {"pending": "[ ]", "in_progress": "[*]", "completed": "[x]"}
+        lines.extend(f"{marker[item.status]} {item.subject}" for item in view.tasks.tasks[:20])
+        if view.tasks.omitted:
+            lines.append(f"... {view.tasks.omitted} omitted")
+
+    lines.extend(("", "CHILDREN"))
+    children = () if view.snapshot is None else view.snapshot.children.executions
+    if not children:
+        lines.append("No child executions")
+    else:
+        for child in children[:20]:
+            status = (
+                "unavailable"
+                if child.persisted_status == "running" and child.local_status == "unavailable"
+                else child.persisted_status
+            )
+            lines.append(f"{child.subagent_name}  {status}")
+        assert view.snapshot is not None
+        omitted = view.snapshot.children.total - len(children)
+        if omitted > 0:
+            lines.append(f"... {omitted} omitted")
+    return "\n".join(lines)
 
 
 def _configuration_title(key: str | None) -> str:
