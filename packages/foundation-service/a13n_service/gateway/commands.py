@@ -2378,15 +2378,32 @@ class NativeInteractionCommands:
 
     async def _require_session(self, *, tenant_id: str, workspace_id: str, session_id: str) -> None:
         async with short_session(self._sessions) as database:
-            record = await database.scalar(
-                select(SessionRecord).where(
-                    SessionRecord.id == session_id,
-                    SessionRecord.tenant_id == tenant_id,
-                    SessionRecord.workspace_id == workspace_id,
+            row = (
+                await database.execute(
+                    select(SessionRecord, ThreadRecord.id)
+                    .outerjoin(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.session_id == SessionRecord.id,
+                            ThreadRecord.role == ThreadRole.root.value,
+                        ),
+                    )
+                    .where(
+                        SessionRecord.id == session_id,
+                        SessionRecord.tenant_id == tenant_id,
+                        SessionRecord.workspace_id == workspace_id,
+                    )
                 )
-            )
-        if record is None:
+            ).one_or_none()
+        if row is None:
             raise _not_found()
+        if row[1] is not None:
+            raise GatewayCommandError(
+                "session_root_exists",
+                "The selected Session already has its root Thread.",
+                status_code=409,
+            )
 
     async def _start_replay(
         self,

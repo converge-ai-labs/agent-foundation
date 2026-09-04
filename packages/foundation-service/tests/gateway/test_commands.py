@@ -290,6 +290,48 @@ async def test_start_rejects_idempotency_key_reuse_with_changed_request(
     assert captured.value.status_code == 409
 
 
+async def test_start_rejects_second_root_thread_in_existing_session(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    objects = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        objects,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    first = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="first-root",
+        request=_request(),
+    )
+
+    with pytest.raises(GatewayCommandError) as captured:
+        await commands.start(
+            actor=_actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="second-root",
+            request=_request("second").model_copy(update={"session_id": first.session_id}),
+        )
+
+    assert captured.value.code == "session_root_exists"
+    assert captured.value.status_code == 409
+    async with short_session(lifecycle_interaction_sessions) as database:
+        roots = tuple(
+            (
+                await database.scalars(
+                    select(ThreadRecord).where(
+                        ThreadRecord.session_id == first.session_id,
+                        ThreadRecord.role == "root",
+                    )
+                )
+            ).all()
+        )
+    assert len(roots) == 1
+
+
 async def test_start_rejects_final_invocation_drift_without_committing_run(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
