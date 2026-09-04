@@ -77,6 +77,8 @@ capability = SubagentCapability(
 
 The operator implements complete `delegate`, `info`, `wait`, `steer`, `cancel`, and `resume` use cases. Harness resolves the exact child, derived Identity, applied context, intersected usage limits, and detached parent correlation before admission. The operator then owns child Thread creation, fresh `RunBindings`, Environment association and re-entry, recursive Harness invocation, storage, checkpoints, observation, wake, cancellation, resume, loss, cleanup, and retention.
 
+The async `delegate` tool requires a model-supplied `delegation_key`. Derive a concise deterministic key from the child's logical purpose so it can be reconstructed after missing tool history; do not use a random value or Pydantic AI `tool_call_id`. Reuse that key with the exact same subagent and prompt when retrying one intended child, and use a new key for an independent child. Harness converts the key to an opaque `delegation_intent_id` in `AsyncDelegateRequest`; an operator must return the originally accepted execution for exact replay and reject conflicting reuse. Async `resume_subagent` remains a fresh operation on every invocation.
+
 Harness provides no default async manager, execution store, background task registry, parent-state execution mirror, or shutdown method. Parent Run or Environment closure does not cancel accepted child work or close the operator. `subagent_info` and `wait_subagent` query the Host directly on every call.
 
 ### Deliberate Boundary

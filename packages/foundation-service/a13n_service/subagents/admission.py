@@ -34,6 +34,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 from .domain import (
     ChildCancellationPolicy,
     ChildResultVisibility,
+    delegation_request_digest,
     new_child_run_relationship_id,
 )
 from .execution_store import FoundationSubagentOperatorError, RetainedChildExecution
@@ -108,6 +109,11 @@ class FoundationChildRunAdmissionPreparer:
             parent_run_attempt_id=authority.run_attempt_id,
             parent_run_attempt_generation=authority.fence,
             parent_agent_instance_id=plan.parent.parent_agent_instance_id,
+            delegation_intent_id=request.delegation_intent_id,
+            delegation_request_digest=delegation_request_digest(
+                subagent_name=request.subagent_name,
+                prompt=request.prompt,
+            ),
             subagent_name=request.subagent_name,
             delegated_input=delegated_input,
             child_definition_id=profile.definition_id,

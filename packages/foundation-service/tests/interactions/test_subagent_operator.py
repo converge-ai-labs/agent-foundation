@@ -41,6 +41,7 @@ from a13n_service.subagents import (
     ChildRunAdmissionProfile,
     FoundationChildRunAdmissionPreparer,
     FoundationSubagentOperator,
+    FoundationSubagentOperatorError,
 )
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.models.test import TestModel
@@ -61,6 +62,7 @@ from .test_subagent_acceptance import (
 )
 
 pytestmark = pytest.mark.anyio
+DELEGATION_INTENT_ID = f"sdi_{'1' * 64}"
 
 
 @dataclass(slots=True)
@@ -90,7 +92,7 @@ async def test_operator_delegates_reads_steers_waits_and_cancels(
 
     delegated = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+        _delegate_request(),
     )
     info = await operator.info(context, SubagentInfoRequest(execution_id=delegated.execution_id))
     steered = await operator.steer(
@@ -113,7 +115,7 @@ async def test_operator_delegates_reads_steers_waits_and_cancels(
     assert waited.executions[0].status == "cancelled"
 
 
-async def test_operator_treats_repeated_delegate_calls_as_distinct(
+async def test_operator_reuses_repeated_delegate_intent(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
@@ -124,18 +126,44 @@ async def test_operator_treats_repeated_delegate_calls_as_distinct(
 
     first = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+        _delegate_request(),
     )
     second = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+        _delegate_request(),
     )
     page = await operator.info(context, SubagentInfoRequest())
+
+    assert first == second
+    assert run_ids.calls == 1
+    assert page.total == 1
+
+
+async def test_operator_allows_distinct_delegate_keys_and_rejects_key_reuse_with_new_prompt(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    operator, _, delegate_plan, _, run_ids, _ = await _operator(
+        interaction_sessions,
+        interaction_object_store,
+    )
+
+    first = await operator.delegate(delegate_plan, _delegate_request())
+    second = await operator.delegate(
+        delegate_plan,
+        _delegate_request(delegation_intent_id=f"sdi_{'2' * 64}"),
+    )
 
     assert first.execution_id != second.execution_id
     assert first.child_run_id != second.child_run_id
     assert run_ids.calls == 2
-    assert page.total == 2
+
+    with pytest.raises(FoundationSubagentOperatorError) as raised:
+        await operator.delegate(
+            _plan(delegate_plan.parent, delegated_input='{"delegated_task":"changed"}'),
+            _delegate_request(prompt="changed"),
+        )
+    assert getattr(raised.value, "code", None) == "subagent_delegation_conflict"
 
 
 async def test_operator_resumes_only_the_selected_completed_child_head(
@@ -148,7 +176,7 @@ async def test_operator_resumes_only_the_selected_completed_child_head(
     )
     delegated = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+        _delegate_request(),
     )
     child_claim = await AttemptScheduler(
         interaction_sessions,
@@ -192,7 +220,7 @@ async def test_operator_projects_bounded_closed_child_output_activity(
     )
     delegated = await operator.delegate(
         delegate_plan,
-        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+        _delegate_request(),
     )
     assert delegated.child_run_id is not None
     child_claim = await AttemptScheduler(
@@ -323,6 +351,18 @@ def _plan(
         ),
         usage_limits=None,
         parent=context,
+    )
+
+
+def _delegate_request(
+    *,
+    prompt: str = "research",
+    delegation_intent_id: str = DELEGATION_INTENT_ID,
+) -> AsyncDelegateRequest:
+    return AsyncDelegateRequest(
+        subagent_name="researcher",
+        prompt=prompt,
+        delegation_intent_id=delegation_intent_id,
     )
 
 

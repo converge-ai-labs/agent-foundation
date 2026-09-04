@@ -57,6 +57,19 @@ class ChildRunRelationshipRecord(Base):
         CheckConstraint("parent_run_attempt_generation >= 1", name="parent_attempt_generation_positive"),
         CheckConstraint("length(subagent_name) BETWEEN 1 AND 63", name="subagent_name_bounded"),
         CheckConstraint(
+            "delegation_intent_id IS NULL OR "
+            "(length(delegation_intent_id) = 68 AND substr(delegation_intent_id, 1, 4) = 'sdi_')",
+            name="delegation_intent_id_canonical",
+        ),
+        CheckConstraint(
+            "delegation_request_digest IS NULL OR length(delegation_request_digest) = 64",
+            name="delegation_request_digest_bounded",
+        ),
+        CheckConstraint(
+            "(delegation_intent_id IS NULL) = (delegation_request_digest IS NULL)",
+            name="delegation_intent_evidence_complete",
+        ),
+        CheckConstraint(
             "cancellation_policy IN ('independent', 'request_child_cancel')",
             name="cancellation_policy_valid",
         ),
@@ -66,6 +79,12 @@ class ChildRunRelationshipRecord(Base):
         ),
         CheckConstraint("parent_run_id <> child_run_id", name="child_run_distinct"),
         UniqueConstraint("tenant_id", "id", name="uq_child_run_relationships_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "parent_run_id",
+            "delegation_intent_id",
+            name="uq_child_run_relationships_delegation_intent",
+        ),
         UniqueConstraint("tenant_id", "child_run_id", name="uq_child_run_relationships_child_run"),
         Index("ix_child_run_relationships_parent", "tenant_id", "parent_run_id", "created_at", "id"),
         Index("ix_child_run_relationships_child_thread", "tenant_id", "child_thread_id", "created_at", "id"),
@@ -77,6 +96,8 @@ class ChildRunRelationshipRecord(Base):
     parent_run_attempt_id: Mapped[str] = mapped_column(String(72), nullable=False)
     parent_run_attempt_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
     subagent_name: Mapped[str] = mapped_column(String(63), nullable=False)
+    delegation_intent_id: Mapped[str | None] = mapped_column(String(68))
+    delegation_request_digest: Mapped[str | None] = mapped_column(String(64))
     child_run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     child_thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
     cancellation_policy: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -90,6 +111,8 @@ class ChildRunRelationshipRecord(Base):
             parent_run_attempt_id=self.parent_run_attempt_id,
             parent_run_attempt_generation=self.parent_run_attempt_generation,
             subagent_name=self.subagent_name,
+            delegation_intent_id=self.delegation_intent_id,
+            delegation_request_digest=self.delegation_request_digest,
             child_run_id=self.child_run_id,
             child_thread_id=self.child_thread_id,
             cancellation_policy=ChildCancellationPolicy(self.cancellation_policy),

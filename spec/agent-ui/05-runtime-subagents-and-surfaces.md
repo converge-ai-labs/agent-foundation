@@ -117,11 +117,14 @@ The Harness resolves the selected child roster entry before calling the operator
 
 `delegate`:
 
-1. verifies parent Thread and Run correlation;
-2. creates the child Thread and exact sticky configuration;
-3. captures and publishes the child Run composition;
-4. commits segment zero as `running` before returning its execution ID;
-5. starts the segment under App ownership.
+1. verifies parent Thread and Run correlation and reserves the Harness-derived delegate intent within that active Run;
+2. returns the existing execution for exact replay or rejects conflicting key reuse;
+3. creates the child Thread and exact sticky configuration for a new intent;
+4. captures and publishes the child Run composition;
+5. commits segment zero as `running` before returning its execution ID;
+6. starts the segment under App ownership.
+
+The delegate-intent reservation is process-local because the parent root Run and its tool-retry authority are process-local. It is retained until that parent Run closes, records only a canonical request digest and accepted execution ID, and coordinates concurrent replay. Once segment-zero persistence commits, cancellation or response loss keeps the reservation bound to that accepted execution. Failure before acceptance releases it for retry. App restart cannot resume the parent Run and therefore cannot legitimately replay the same parent-Run intent.
 
 A surface can update the retained child Thread through the ordinary required-version configuration command before resume. `resume_subagent` then loads that Host-authorized sticky configuration, requires a selected terminal child checkpoint, increments `segment_index`, captures the new composition, commits the execution, and starts it. The new composition need not equal either the one that produced the prior checkpoint or the current parent roster definition. Harness still requires the same stable roster name and current plan context. Agent UI reapplies that roster edge's Identity policy to the selected replacement definition and intersects the plan usage ceiling with the replacement's own limits; the model cannot select the replacement Agent source.
 
@@ -368,6 +371,8 @@ Every editable response includes its current source digest. A stale mutation con
 | Root composition or credential failure         | Run fails before model dispatch; prior continuation remains selected                                           |
 | Root process loss                              | Receipts, active input, and partial output disappear; prior continuation remains selected                      |
 | Child admission persistence fails              | Delegate or resume is rejected before acceptance                                                               |
+| Delegate response is lost after acceptance     | Same-key exact replay in the active parent Run returns the accepted execution                                  |
+| Delegate key is reused for another request     | The conflicting call is rejected without another child admission                                               |
 | Child terminal persistence fails               | Execution is not reported as succeeded                                                                         |
 | Provider or extension cleanup fails            | Failure is reported independently; known state and continuation publication still proceed                      |
 | App graceful-drain timeout expires             | Remaining local tasks receive cooperative cancellation; saved nonterminal facts do not become invented success |
@@ -389,3 +394,4 @@ Every editable response includes its current source digest. A stale mutation con
 13. Summary SSE carries only invalidations; a fresh focused SSE watch begins with one high-water-bound snapshot, while a valid resume preserves the existing controller and replays only that root lineage's later sparse event sequence.
 14. Authenticated HTTP data is never cacheable; entry HTML revalidates and only content-hashed assets are immutable.
 15. Shutdown is bounded and does not invent completion.
+16. An active parent Run admits at most one async child for each delegate intent; exact replay returns it, conflicting reuse fails, and linked resume remains a fresh segment.

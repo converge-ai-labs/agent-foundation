@@ -68,7 +68,7 @@ Inline mode exposes exactly two standard tools:
 Async mode exposes exactly six standard tools:
 
 ```python
-delegate(subagent_name: str, prompt: str)
+delegate(subagent_name: str, prompt: str, delegation_key: str)
 subagent_info(execution_id: str | None = None, execution_offset: int = 0, execution_limit: int = 20)
 wait_subagent(
     execution_id: str | None = None,
@@ -82,12 +82,13 @@ resume_subagent(execution_id: str, prompt: str)
 ```
 
 - async `delegate` returns after Host admission rather than child completion;
+- `delegation_key` is a concise deterministic label derived from the intended child's logical purpose within the current parent Run: a retry of that child can reconstruct and reuse the same key with the exact same `subagent_name` and `prompt`, while an independent child uses a new key; random values and `tool_call_id` are invalid key-generation strategies;
 - `subagent_info` queries one execution or one bounded Host page;
 - `wait_subagent` performs one bounded wait for one execution or one bounded Host fan-in query;
 - `steer_subagent` and `cancel_subagent` return Host acknowledgements without inventing completion;
 - async `resume_subagent` first resolves the retained execution through the operator, requires resumability and the same stable child roster name in the current collection, then asks the Host to create a linked continuation under the current resolved plan.
 
-The two surfaces use distinct internal Toolset identities and never register duplicate external names in one Agent. Tool descriptions state whether `delegate` blocks for completion or returns after admission. `timeout_seconds` bounds one wait call and never implies cancellation.
+The two surfaces use distinct internal Toolset identities and never register duplicate external names in one Agent. Tool descriptions state whether `delegate` blocks for completion or returns after admission. Async `delegate` declares `idempotency="provider_key"` because `delegation_key` is its mutation-replay key; inline delegate and async resume retain no replay guarantee. `timeout_seconds` bounds one wait call and never implies cancellation.
 
 An async `execution_id` is a bounded public Host execution reference. It is not a provider resource ID, credential, Environment reference, or necessarily a Harness-generated value. Standard results never expose Host-private storage IDs, raw child state, raw business output, credentials, or native exceptions. A single-execution info and wait return the same bounded execution view; no-ID list and fan-in return bounded summaries. Harness output policy still bounds the serialized view.
 
@@ -119,7 +120,18 @@ class SubagentDelegationPlan:
     parent: SubagentOperatorContext
 ```
 
-The plan contains the exact currently built roster child, derived child Identity, already-applied child input and context policy, intersection of parent Run limits, child definition limits, and authored edge limits, plus detached parent correlation. Initial `delegate` executes that exact child; the Host may narrow policy but cannot substitute another definition. Harness does not assign an idempotency identity to delegate or resume admission, and each operator invocation is independent.
+The plan contains the exact currently built roster child, derived child Identity, already-applied child input and context policy, intersection of parent Run limits, child definition limits, and authored edge limits, plus detached parent correlation. Initial `delegate` executes that exact child; the Host may narrow policy but cannot substitute another definition. For async delegate, Harness accepts a 1-128 character `delegation_key` matching `[A-Za-z0-9][A-Za-z0-9._:/-]*` and derives a versioned, opaque `delegation_intent_id` from that key and the stable tool policy identity:
+
+```python
+payload = {
+    "delegation_key": delegation_key,
+    "operation": "subagents.async.delegate",
+    "schema_version": "1",
+}
+delegation_intent_id = "sdi_" + sha256(compact_sorted_utf8_json(payload)).hexdigest()
+```
+
+The derivation excludes `tool_call_id`, RunAttempt identity, timestamps, and random values, so replay after lost model-tool history or Worker replacement retains the same intent identity. The operator receives the internal identity in `AsyncDelegateRequest`; the model does not need to know its hash format. Async resume has no idempotency identity and every invocation requests a fresh linked continuation.
 
 On async resume, the current roster child can differ from the definition recorded by the prior execution. A Host that exposes a separately authorized mutable child-Thread configuration may resolve that retained Thread's current Agent definition instead of the roster child's definition. That selection comes only from Host authority, never from model arguments, and the stable roster name remains the parent-side admission gate.
 
@@ -265,6 +277,8 @@ For async work, the Host owns observation storage, subscriptions, wake policy, a
 | ---------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Unknown child                                  | Tool failure before child execution                                        | Tool failure before Host admission                                           |
 | Invalid context, Identity, or limit resolution | Tool failure before child execution                                        | Tool failure before Host admission                                           |
+| Delegate replay with the same key and request  | Not applicable                                                             | Host returns the originally accepted execution                               |
+| Delegate key reused for a different request    | Not applicable                                                             | Host rejects the conflicting intent without admitting another child          |
 | Child dispatch or execution failure            | Preserve the latest complete retained state and return bounded failure     | Host records and projects its authoritative accepted outcome                 |
 | Child completion                               | Store complete child state before tool success                             | Host reports success according to its own checkpoint acknowledgement         |
 | Child suspension                               | Retain resumable state and return bounded unsupported/suspension semantics | Host stores the exact checkpoint and reports resumability                    |
@@ -289,3 +303,4 @@ For async work, the Host owns observation storage, subscriptions, wake policy, a
 09. Parent Run closure does not cancel or force-close Host-owned async work.
 10. Async linked resume does not require equality with the prior child definition ID; the Host owns checkpoint compatibility, current authorization, and any retained child-definition selection.
 11. Harness contains no concrete async manager, execution-store lifecycle, background child registry, or Host shutdown policy.
+12. Async delegate intent derives only from the validated model-facing `delegation_key` and stable operation/schema identity; `tool_call_id` is invocation evidence and never the logical idempotency identity.

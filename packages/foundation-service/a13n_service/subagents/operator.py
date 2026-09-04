@@ -35,6 +35,7 @@ from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeServic
 from a13n_service.temporal import Clock, utc_now
 
 from .acceptance import ChildRunAcceptanceReceipt, ChildRunAcceptanceService
+from .domain import delegation_request_digest
 from .execution_store import (
     AttemptAuthoritySource,
     FoundationSubagentOperatorError,
@@ -118,15 +119,27 @@ class FoundationSubagentOperator(SubagentOperator):
     ) -> AsyncExecutionView:
         authority = self._require_plan(plan, request.subagent_name)
         delegated_input = _delegated_input(plan)
-        prepared = await self._admission_preparer.prepare_delegate(authority, plan, request, delegated_input)
-        _validate_delegate_candidate(prepared, plan=plan, delegated_input=delegated_input)
-        receipt = await self._acceptance.accept(prepared, authority)
-        return _accepted_view(
-            receipt,
-            child_definition_id=prepared.child_definition_id,
-            resumed_from=None,
-            segment_index=0,
+        replay = await self._executions.read_delegation_intent(
+            plan.parent,
+            request.delegation_intent_id,
         )
+        if replay is not None:
+            _validate_delegate_replay(replay, plan=plan, request=request)
+            return compact_execution_view(replay)
+        prepared = await self._admission_preparer.prepare_delegate(authority, plan, request, delegated_input)
+        _validate_delegate_candidate(
+            prepared,
+            plan=plan,
+            request=request,
+            delegated_input=delegated_input,
+        )
+        receipt = await self._acceptance.accept(prepared, authority)
+        accepted = await self._executions.read_exact(
+            plan.parent,
+            receipt.relationship.id,
+            WorkspaceAction.run_read,
+        )
+        return compact_execution_view(accepted)
 
     async def info(
         self,
@@ -302,11 +315,15 @@ def _validate_delegate_candidate(
     prepared: PreparedChildRunAcceptance,
     *,
     plan: SubagentDelegationPlan,
+    request: AsyncDelegateRequest,
     delegated_input: str,
 ) -> None:
     if (
         prepared.relationship.parent_run_id != plan.parent.parent_run_id
         or prepared.relationship.subagent_name != plan.child.declaration.name
+        or prepared.relationship.delegation_intent_id != request.delegation_intent_id
+        or prepared.relationship.delegation_request_digest
+        != delegation_request_digest(subagent_name=request.subagent_name, prompt=request.prompt)
         or prepared.run.parent_agent_instance_id != plan.parent.parent_agent_instance_id
         or execution_input(prepared.run) != delegated_input
         or prepared.child_definition_id != plan.child.definition.definition_id
@@ -314,6 +331,27 @@ def _validate_delegate_candidate(
         raise FoundationSubagentOperatorError(
             "subagent_admission_candidate_invalid",
             "Prepared child admission does not match the Harness plan",
+        )
+
+
+def _validate_delegate_replay(
+    execution: RetainedChildExecution,
+    *,
+    plan: SubagentDelegationPlan,
+    request: AsyncDelegateRequest,
+) -> None:
+    relationship = execution.relationship
+    if (
+        relationship.delegation_intent_id != request.delegation_intent_id
+        or relationship.delegation_request_digest
+        != delegation_request_digest(subagent_name=request.subagent_name, prompt=request.prompt)
+        or relationship.subagent_name != plan.child.declaration.name
+        or execution.resumed_from_relationship_id is not None
+        or execution.child_definition_id != plan.child.definition.definition_id
+    ):
+        raise FoundationSubagentOperatorError(
+            "subagent_delegation_conflict",
+            "Delegation key was reused with a different child request",
         )
 
 

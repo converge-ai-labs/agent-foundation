@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -20,6 +21,10 @@ from a13n_service.interactions.domain import (
 
 MAX_INLINE_ASYNC_RESULT_BYTES = 256 * 1024
 SubagentName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,62}$", max_length=63)]
+DelegationIntentId = Annotated[
+    str,
+    StringConstraints(pattern=r"^sdi_[0-9a-f]{64}$", min_length=68, max_length=68),
+]
 
 
 class ChildCancellationPolicy(StrEnum):
@@ -38,6 +43,8 @@ class ChildRunRelationship(StrictModel):
     parent_run_attempt_id: ObjectId
     parent_run_attempt_generation: int = Field(ge=1)
     subagent_name: SubagentName
+    delegation_intent_id: DelegationIntentId | None = None
+    delegation_request_digest: Sha256Digest | None = None
     child_run_id: ObjectId
     child_thread_id: ThreadId
     cancellation_policy: ChildCancellationPolicy
@@ -48,6 +55,8 @@ class ChildRunRelationship(StrictModel):
     def child_is_distinct(self) -> ChildRunRelationship:
         if self.parent_run_id == self.child_run_id:
             raise ValueError("asynchronous child Run must be distinct from its parent Run")
+        if (self.delegation_intent_id is None) != (self.delegation_request_digest is None):
+            raise ValueError("delegation intent identity and request digest must be present together")
         return self
 
 
@@ -68,6 +77,17 @@ def child_relationship_is_visible(
             or relationship.result_visibility is ChildResultVisibility.session
         )
     )
+
+
+def delegation_request_digest(*, subagent_name: str, prompt: str) -> str:
+    """Digest the exact model-visible command independently of its retry key."""
+
+    payload = {
+        "prompt": prompt,
+        "schema_version": "1",
+        "subagent_name": subagent_name,
+    }
+    return hashlib.sha256(rfc8785.dumps(payload)).hexdigest()
 
 
 class AsyncSubagentResultInboxPayload(StrictModel):
@@ -128,6 +148,8 @@ __all__ = [
     "ChildCancellationPolicy",
     "ChildResultVisibility",
     "ChildRunRelationship",
+    "DelegationIntentId",
     "child_relationship_is_visible",
+    "delegation_request_digest",
     "new_child_run_relationship_id",
 ]

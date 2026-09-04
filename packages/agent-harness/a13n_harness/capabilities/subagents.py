@@ -29,6 +29,7 @@ SUBAGENT_CAPABILITY_ID = "a13n.subagents"
 MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS = 32 * 1024
 _INLINE_SUBAGENT_STATE_VERSION = "1"
 _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-9a-f]{4})$")
+_DELEGATION_INTENT_ID_PATTERN = re.compile(r"^sdi_[0-9a-f]{64}$")
 _MAX_PROMPT_LENGTH = 1024 * 1024
 _MAX_EXECUTION_PAGE = 100
 
@@ -101,6 +102,14 @@ class AsyncDelegateRequest(BaseModel):
 
     subagent_name: str = Field(min_length=1, max_length=63)
     prompt: str = Field(min_length=1, max_length=_MAX_PROMPT_LENGTH)
+    delegation_intent_id: str = Field(min_length=68, max_length=68)
+
+    @field_validator("delegation_intent_id")
+    @classmethod
+    def _validate_delegation_intent_id(cls, value: str) -> str:
+        if _DELEGATION_INTENT_ID_PATTERN.fullmatch(value) is None:
+            raise ValueError("delegation intent identity is not canonical")
+        return value
 
 
 class AsyncResumeRequest(BaseModel):

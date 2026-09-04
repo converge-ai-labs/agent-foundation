@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 from collections.abc import AsyncGenerator, Mapping, Sequence
@@ -181,6 +182,14 @@ class _ActiveSegment:
     display: CompactChildDisplay
 
 
+@dataclass(slots=True)
+class _DelegateIntent:
+    request_digest: str
+    child_definition_id: str
+    settled: Event
+    execution_id: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class _PreparedSegment:
     head: ChildExecutionHead
@@ -224,6 +233,7 @@ class AgentUiSubagentOperator(SubagentOperator):
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._lock = Lock()
         self._parents: dict[tuple[str, str, str], ParentRunScope] = {}
+        self._delegate_intents: dict[tuple[str, str, str, str], _DelegateIntent] = {}
         self._active: dict[str, _ActiveSegment] = {}
         self._changed = Event()
         self._task_group_context: Any | None = None
@@ -291,6 +301,9 @@ class AgentUiSubagentOperator(SubagentOperator):
                     self._task_group_context = None
                     self._task_group = None
                     self._parents.clear()
+                    for intent in self._delegate_intents.values():
+                        intent.settled.set()
+                    self._delegate_intents.clear()
                     self._active.clear()
                     self._signal_change_locked()
 
@@ -341,6 +354,9 @@ class AgentUiSubagentOperator(SubagentOperator):
             with CancelScope(shield=True):
                 async with self._lock:
                     self._parents.pop(key, None)
+                    intent_keys = [intent_key for intent_key in self._delegate_intents if intent_key[:3] == key]
+                    for intent_key in intent_keys:
+                        self._delegate_intents.pop(intent_key).settled.set()
 
     async def delegate(
         self,
@@ -354,7 +370,81 @@ class AgentUiSubagentOperator(SubagentOperator):
             or plan.child.definition.definition_id != _definition_id(edge.definition)
         ):
             raise RunCoordinationError("The child admission was retargeted.", code="subagent_plan_invalid")
+        key = (
+            scope.thread_id,
+            scope.run_id,
+            scope.agent_instance_id,
+            request.delegation_intent_id,
+        )
+        request_digest = _delegate_request_digest(request)
+        child_definition_id = plan.child.definition.definition_id
+        while True:
+            async with self._lock:
+                self._require_started_locked()
+                intent = self._delegate_intents.get(key)
+                if intent is None:
+                    intent = _DelegateIntent(
+                        request_digest=request_digest,
+                        child_definition_id=child_definition_id,
+                        settled=Event(),
+                    )
+                    self._delegate_intents[key] = intent
+                    owns_intent = True
+                else:
+                    if intent.request_digest != request_digest or intent.child_definition_id != child_definition_id:
+                        raise RunCoordinationError(
+                            "The delegation key was reused with a different child request.",
+                            code="subagent_delegation_conflict",
+                        )
+                    owns_intent = False
+            if owns_intent:
+                try:
+                    result = await self._delegate_once(
+                        plan,
+                        request,
+                        scope=scope,
+                        edge=edge,
+                        intent=intent,
+                    )
+                except BaseException:
+                    with CancelScope(shield=True):
+                        await self._settle_delegate_intent(key, intent)
+                    raise
+                with CancelScope(shield=True):
+                    await self._settle_delegate_intent(key, intent)
+                return result
 
+            await intent.settled.wait()
+            async with self._lock:
+                if self._delegate_intents.get(key) is not intent:
+                    continue
+                execution_id = intent.execution_id
+            if execution_id is None:
+                raise RunCoordinationError(
+                    "The accepted delegation intent has no execution.",
+                    code="subagent_delegation_replay_invalid",
+                )
+            head = await self._store.child_executions.get(execution_id)
+            if head is None:
+                raise RunCoordinationError(
+                    "The accepted delegation execution is unavailable.",
+                    code="subagent_delegation_replay_invalid",
+                )
+            return _async_view(
+                head,
+                subagent_name=request.subagent_name,
+                child_definition_id=child_definition_id,
+            )
+
+    async def _delegate_once(
+        self,
+        plan: SubagentDelegationPlan,
+        request: AsyncDelegateRequest,
+        *,
+        scope: ParentRunScope,
+        edge: ResolvedSubagent,
+        intent: _DelegateIntent,
+    ) -> AsyncExecutionView:
         source = await self._configurations.load(scope.composition.generation_digest)
         state = HarnessState.new()
         configuration = _initial_child_configuration(scope.composition, edge)
@@ -417,6 +507,7 @@ class AgentUiSubagentOperator(SubagentOperator):
                 child_run_id=stream.run_id,
                 run_composition=published.reference,
             )
+            intent.execution_id = head.execution_id
         except BaseException as exc:
             await _finalize_rejected(
                 environment,
@@ -454,6 +545,16 @@ class AgentUiSubagentOperator(SubagentOperator):
             subagent_name=request.subagent_name,
             child_definition_id=reconstructed.executable.definition.definition_id,
         )
+
+    async def _settle_delegate_intent(
+        self,
+        key: tuple[str, str, str, str],
+        intent: _DelegateIntent,
+    ) -> None:
+        async with self._lock:
+            if self._delegate_intents.get(key) is intent and intent.execution_id is None:
+                self._delegate_intents.pop(key)
+            intent.settled.set()
 
     async def info(
         self,
@@ -1676,6 +1777,21 @@ def _selection(thread_id: str, configuration: ThreadConfiguration) -> ThreadComp
 
 def _definition_id(node: ResolvedAgentNode) -> str:
     return f"agent-ui:{node.source_kind}:{node.source_id}"
+
+
+def _delegate_request_digest(request: AsyncDelegateRequest) -> str:
+    payload = {
+        "prompt": request.prompt,
+        "schema_version": "1",
+        "subagent_name": request.subagent_name,
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _public_id(kind: str) -> str:

@@ -16,6 +16,8 @@ def child_run_relationship_record(
         parent_run_attempt_id=value.parent_run_attempt_id,
         parent_run_attempt_generation=value.parent_run_attempt_generation,
         subagent_name=value.subagent_name,
+        delegation_intent_id=value.delegation_intent_id,
+        delegation_request_digest=value.delegation_request_digest,
         child_run_id=value.child_run_id,
         child_thread_id=value.child_thread_id,
         cancellation_policy=value.cancellation_policy.value,
