@@ -111,7 +111,7 @@ The `connectivity` role owns provider event webhooks and long connections, the a
 
 | Capability                                      | `control` | `worker` | `connectivity` |    `all` |
 | ----------------------------------------------- | --------: | -------: | -------------: | -------: |
-| Product API and browser application             |       Yes |       No |             No |      Yes |
+| Product API                                     |       Yes |       No |             No |      Yes |
 | Native and Hosted AG-UI Gateway surfaces        |       Yes |       No |             No |      Yes |
 | A2A Gateway surface when enabled                |       Yes |       No |             No |      Yes |
 | Control authentication and authorization        |       Yes |       No |             No |      Yes |

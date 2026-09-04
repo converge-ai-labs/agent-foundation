@@ -36,7 +36,6 @@ from a13n_service.skills.router import router as skill_router
 from a13n_service.storage import short_session
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 from a13n_service.trace_query.router import router as trace_query_router
-from a13n_service.web import mount_web_application
 
 logger = logging.getLogger("a13n_service.app")
 
@@ -179,9 +178,6 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         async def unknown_api_path(api_path: str) -> None:
             del api_path
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API route not found")
-
-        if resolved_settings.web_dist_dir is not None:
-            mount_web_application(app, resolved_settings.web_dist_dir)
 
     return app
 

@@ -122,7 +122,6 @@ class ServiceSettings(BaseSettings):
         le=10 * 365 * 24 * 60 * 60,
     )
     environment_keepalive_max_concurrency: int = Field(default=4, ge=1, le=128)
-    web_dist_dir: Path | None = None
     observability_tracing: bool = True
     observability_trace_content: TraceContent = TraceContent.none
     observability_query_provider: str = Field(default="none", pattern=r"^[a-z][a-z0-9_]*$", max_length=64)

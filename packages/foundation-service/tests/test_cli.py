@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 
 import httpx2
 import pytest
@@ -9,13 +8,10 @@ from click.testing import CliRunner
 from fastapi import FastAPI
 
 
-def test_serve_role_override_does_not_construct_environment_app(
+def test_serve_role_overrides_environment_role(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    missing_web_dist = tmp_path / "missing-web"
     monkeypatch.setenv("FOUNDATION_ROLE", "all")
-    monkeypatch.setenv("FOUNDATION_WEB_DIST_DIR", str(missing_web_dist))
     get_settings.cache_clear()
     served_apps: list[FastAPI] = []
 
