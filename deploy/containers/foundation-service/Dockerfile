@@ -28,6 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY packages/agent-envd-client packages/agent-envd-client
 COPY packages/agent-environment-provider packages/agent-environment-provider
 COPY packages/agent-harness packages/agent-harness
+COPY packages/agent-stream-protocol packages/agent-stream-protocol
 COPY packages/logging packages/logging
 COPY packages/foundation-service packages/foundation-service
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -35,6 +36,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && rm -rf packages/agent-envd-client/tests \
         packages/agent-environment-provider/tests \
         packages/agent-harness/tests \
+        packages/agent-stream-protocol/tests \
         packages/logging/tests \
         packages/foundation-service/tests
 
