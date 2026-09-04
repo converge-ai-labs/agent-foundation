@@ -1,5 +1,5 @@
-"""OpenConnector Connector Provider implementation."""
+"""OOMOL OpenConnector personal and self-hosted runtime integration."""
 
-from .runtime import OpenConnectorProvider
+from .runtime import OpenConnectorRuntime
 
-__all__ = ["OpenConnectorProvider"]
+__all__ = ["OpenConnectorRuntime"]

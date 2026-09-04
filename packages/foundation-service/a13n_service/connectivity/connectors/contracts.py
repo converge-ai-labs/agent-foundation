@@ -86,12 +86,14 @@ class ConnectorProviderError(Exception):
         retryable: bool = False,
         outcome_unknown: bool = False,
         retry_after_seconds: int | None = None,
+        http_status: int | None = None,
     ) -> None:
         super().__init__(code)
         self.code = code
         self.retryable = retryable
         self.outcome_unknown = outcome_unknown
         self.retry_after_seconds = retry_after_seconds
+        self.http_status = http_status
 
 
 class ConnectionBinding(StrictModel):

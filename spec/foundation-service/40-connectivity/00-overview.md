@@ -4,7 +4,7 @@
 
 Connectivity is Foundation-owned configuration and authorization around provider-specific adapters. It preserves provider-native behavior at the edge and standardizes only the minimum concepts required to admit external input, select one Agent, select an authorized tool scope, and dispatch authorized external actions.
 
-Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Account can receive through its Ingress and reply as its Bot identity without a second OpenConnector or Composio ConnectorConnection. A separate ConnectorConnection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `MCPConnection`.
+Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Account can receive through its Ingress and reply as its Bot identity without a separate Composio ConnectorConnection. A separate ConnectorConnection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `MCPConnection`.
 
 ## Boundaries
 
@@ -15,7 +15,7 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 | Event matching, Agent override, and input policy | Route                                           | Selects one allowed Agent and one new or existing Agent Thread destination              |
 | External-to-Agent Thread correlation             | AgentThreadBinding                              | Fixes one adapter-declared stable external reference to one Agent and Agent Thread      |
 | Durable Run acceptance and active input          | [Foundation Service](../README.md)              | Owns Run creation, Ingress Steer, deduplication acceptance, and Thread lifecycle        |
-| General outbound connector service               | ConnectorProvider                               | Configures one OpenConnector, Composio, or another installed Connector Provider adapter |
+| General outbound connector service               | ConnectorProvider                               | Configures one Composio or another registered Connector Provider adapter                |
 | Safe externally managed account reference        | ConnectorConnection                             | Refers to one account whose real credentials remain in its external integration service |
 | User-configured remote MCP access                | MCPConnection                                   | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle    |
 | Foundation-owned in-process tool groups          | a13n MCP                                        | Serves Account actions, Ingress replies, and Connector tools for the current RunAttempt |
@@ -32,7 +32,7 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 
 `AgentThreadBinding` is exact durable correlation from one adapter-declared stable external reference to one fixed Agent and Foundation Thread. It never uses semantic similarity or model inference.
 
-`ConnectorProvider` is one configured external integration service account or endpoint such as OpenConnector Self-host, OpenConnector Cloud, or Composio. Its `type` selects an implementation, while its `id` identifies the independent configuration and credential. Several Providers can have the same type.
+`ConnectorProvider` is one configured external integration service account or endpoint such as Composio. Its `type` selects an implementation, while its `id` identifies the independent configuration and credential. Several Providers can have the same type. OOMOL OpenConnector personal/self-hosted runtime access is a separate integration without a Foundation owner binding, as defined by its [runtime profile](08-built-in-connector-adapters.md#oomol-openconnector-runtime-v1).
 
 `Connector` is one integration discovered through that configured Provider, such as GitHub or Slack. It is a safe Provider-scoped catalog value, not a separate Workspace resource. Its setup requirements and available tools retain Provider-specific semantics. [Connector discovery](03-connectors-and-connections.md#connector-discovery) owns this boundary.
 

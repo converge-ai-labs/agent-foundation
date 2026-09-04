@@ -10,9 +10,6 @@ from ..registry import ConnectorProviderImplementation, ConnectorProviderRegistr
 from .composio.configuration import ComposioConfiguration
 from .composio.configuration import validate_setup as composio_setup
 from .composio.runtime import ComposioProvider
-from .openconnector.configuration import OpenConnectorConfiguration
-from .openconnector.configuration import validate_setup as openconnector_setup
-from .openconnector.runtime import OpenConnectorProvider
 
 
 def built_in_connector_provider_registry(
@@ -21,18 +18,6 @@ def built_in_connector_provider_registry(
     http = ConnectorHttpClient(http_client, endpoint_validator, response_max_bytes=response_max_bytes)
     return ConnectorProviderRegistry(
         (
-            ConnectorProviderImplementation(
-                type="openconnector",
-                display_name="OpenConnector",
-                configuration_model=OpenConnectorConfiguration,
-                credential_model=ApiKeyCredentials,
-                setup_validator=openconnector_setup,
-                factory=lambda configuration, credentials: OpenConnectorProvider(
-                    http,
-                    OpenConnectorConfiguration.model_validate(configuration),
-                    ApiKeyCredentials.model_validate(credentials),
-                ),
-            ),
             ConnectorProviderImplementation(
                 type="composio",
                 display_name="Composio",

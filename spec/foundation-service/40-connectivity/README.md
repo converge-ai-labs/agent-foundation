@@ -25,7 +25,7 @@ These paths can appear together in one Agent Run but retain separate identity, c
 | [05 Contract Limits](05-contract-limits.md)                                                       | Explicit provider and product boundaries for which the common contract defines no portable behavior                                     |
 | [06 Remote MCP Connections](06-remote-mcp-connections.md)                                         | User-configured Streamable HTTP MCP endpoints, ownership, authentication, OAuth client behavior, lifecycle, and runtime eligibility     |
 | [07 Built-in Ingress Adapters](07-built-in-ingress-adapters.md)                                   | Exact Slack, Lark/Feishu, and GitHub App HTTP identities, wire validation, routing, acknowledgements, and native actions                |
-| [08 Built-in Connector Provider Adapters](08-built-in-connector-adapters.md)                      | Exact OpenConnector and Composio setup, callback, status, catalog, versioning, and execution profiles                                   |
+| [08 Built-in Connector Provider Adapters](08-built-in-connector-adapters.md)                      | Composio account lifecycle and tool execution; OOMOL OpenConnector personal/self-hosted runtime authority and API profile               |
 
 Read `00` first, then `01a` for Application Account identity and lifecycle. Read `01` for every inbound provider, `02` only for conversational messaging, `03` for general outbound SaaS accounts, `04` for every Agent-facing external tool, `05` for the limits of portable cross-provider behavior, `06` for user-configured Remote MCP, `07` for the built-in native providers, and `08` for the built-in Connector Provider implementations.
 

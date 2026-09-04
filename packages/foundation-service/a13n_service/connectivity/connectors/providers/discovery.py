@@ -5,7 +5,6 @@ from __future__ import annotations
 from asyncio import get_running_loop, timeout_at
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Literal
 
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
@@ -40,19 +39,15 @@ async def directory_items(
     endpoint: str,
     api_key: str,
     path: str,
-    pagination: Literal["next_cursor", "nextCursor", "offset"],
     budget: DirectoryBudget,
     page_size: int = 100,
 ) -> tuple[JsonObject, ...]:
     items: list[JsonObject] = []
     seen_cursors: set[str] = set()
     cursor: str | None = None
-    expected_total: int | None = None
     for _ in range(DISCOVERY_MAX_PAGES):
         params = {"limit": str(page_size)}
-        if pagination == "offset":
-            params["offset"] = str(len(items))
-        elif cursor is not None:
+        if cursor is not None:
             params["cursor"] = cursor
         try:
             async with timeout_at(budget.deadline):
@@ -66,27 +61,15 @@ async def directory_items(
             raise ConnectorProviderError("invalid_provider_response")
         budget.record(value, len(page))
         items.extend(required_object(item) for item in page)
-        if pagination == "offset":
-            total = value.get("total")
-            if type(total) is not int or not len(items) <= total <= DISCOVERY_MAX_TOOLS:
-                raise ConnectorProviderError("invalid_provider_response")
-            if expected_total is not None and expected_total != total:
-                raise ConnectorProviderError("directory_changed")
-            expected_total = total
-            if len(items) == total:
-                return tuple(items)
-            if not page:
-                raise ConnectorProviderError("invalid_provider_response")
-        else:
-            cursor = optional_string(value.get(pagination))
-            if cursor is None:
-                total = value.get("total_items" if pagination == "next_cursor" else "total")
-                if total is not None and (type(total) is not int or total != len(items)):
-                    raise ConnectorProviderError("incomplete_directory")
-                return tuple(items)
-            if not cursor or cursor in seen_cursors or not page:
-                raise ConnectorProviderError("invalid_provider_response")
-            seen_cursors.add(cursor)
+        cursor = optional_string(value.get("next_cursor"))
+        if cursor is None:
+            total = value.get("total_items")
+            if total is not None and (type(total) is not int or total != len(items)):
+                raise ConnectorProviderError("incomplete_directory")
+            return tuple(items)
+        if not cursor or cursor in seen_cursors or not page:
+            raise ConnectorProviderError("invalid_provider_response")
+        seen_cursors.add(cursor)
     raise ConnectorProviderError("directory_too_large")
 
 

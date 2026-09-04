@@ -11,10 +11,6 @@ from a13n_service.connectivity.connectors.providers.composio.configuration impor
     ComposioConfiguration,
 )
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
-from a13n_service.connectivity.connectors.providers.openconnector import OpenConnectorProvider
-from a13n_service.connectivity.connectors.providers.openconnector.configuration import (
-    OpenConnectorConfiguration,
-)
 from pydantic import ValidationError
 
 
@@ -34,191 +30,12 @@ def _context(*, callback: bool = False) -> SetupContext:
     )
 
 
-def _openconnector(http_client: httpx2.AsyncClient) -> OpenConnectorProvider:
-    return OpenConnectorProvider(
-        ConnectorHttpClient(http_client, _AllowEndpoint(), response_max_bytes=1024 * 1024),
-        OpenConnectorConfiguration(deployment="cloud", enabled_provider_slugs=("github",)),
-        ApiKeyCredentials(api_key="project-secret"),
-    )
-
-
 def _composio(http_client: httpx2.AsyncClient) -> ComposioProvider:
     return ComposioProvider(
         ConnectorHttpClient(http_client, _AllowEndpoint(), response_max_bytes=1024 * 1024),
         ComposioConfiguration(enabled_toolkits=("github",)),
         ApiKeyCredentials(api_key="secret"),
     )
-
-
-@pytest.mark.anyio
-async def test_openconnector_setup_inspection_catalog_execution_and_revoke_are_exact() -> None:
-    requests: list[httpx2.Request] = []
-
-    def respond(request: httpx2.Request) -> httpx2.Response:
-        requests.append(request)
-        path = request.url.path
-        if path.endswith("/toolkits"):
-            return httpx2.Response(
-                200,
-                json={
-                    "items": [
-                        {
-                            "slug": "github",
-                            "name": "GitHub",
-                            "authMethods": [{"id": "oauth", "kind": "oauth2", "status": "available"}],
-                        }
-                    ]
-                },
-            )
-        if path.endswith("/auth_configs"):
-            return httpx2.Response(
-                200,
-                json={
-                    "items": [
-                        {
-                            "id": "ac_github",
-                            "toolkitSlug": "github",
-                            "authMethodId": "oauth",
-                            "authMethodKind": "oauth2",
-                            "disabled": False,
-                        }
-                    ],
-                    "total": 1,
-                },
-            )
-        if path.endswith("/initiate"):
-            return httpx2.Response(
-                200,
-                json={
-                    "connectionId": "conn_external",
-                    "redirectUrl": "https://api.openconnector.dev/connect/private",
-                },
-            )
-        if path.endswith("/connectors/connections"):
-            return httpx2.Response(200, json={"items": []})
-        if path.endswith("/connections/conn_external") and request.method == "GET":
-            return httpx2.Response(
-                200,
-                json={
-                    "id": "conn_external",
-                    "toolkitSlug": "github",
-                    "userId": "usrh_opaque",
-                    "status": "active",
-                    "disabled": False,
-                    "authMethodKind": "oauth2",
-                    "alias": "work",
-                },
-            )
-        if path.endswith("/api/v1/tools"):
-            return httpx2.Response(
-                200,
-                json={"items": [{"slug": "GITHUB_CREATE", "version": "20260903_01"}], "total": 1},
-            )
-        if path.endswith("/api/v1/tools/GITHUB_CREATE"):
-            return httpx2.Response(
-                200,
-                json={
-                    "slug": "GITHUB_CREATE",
-                    "description": "Create",
-                    "inputParameters": {"type": "object"},
-                    "version": "20260903_01",
-                    "toolkit": "github",
-                },
-            )
-        if path.endswith("/execute"):
-            return httpx2.Response(200, json={"successful": True, "status": 201, "data": {"id": 1}})
-        if request.method == "DELETE":
-            return httpx2.Response(204)
-        raise AssertionError(f"unexpected request: {request.method} {path}")
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
-        adapter = _openconnector(http_client)
-        setup = {"auth_config_id": "ac_github"}
-        await adapter.test()
-        started = await adapter.start_setup(
-            setup=setup,
-            context=_context(),
-        )
-        connection = adapter.connect(
-            ConnectionBinding(
-                external_user_correlation="usrh_opaque", external_ref=started.external_ref, connector_key="github"
-            )
-        )
-        inspection = await connection.inspect()
-        connection = adapter.connect(
-            ConnectionBinding(
-                external_user_correlation="usrh_opaque", external_ref=started.external_ref, connector_key="github"
-            )
-        )
-        catalog = await connection.discover_tools(
-            cursor=None,
-        )
-        outcome = await connection.execute_tool(
-            tool_key="GITHUB_CREATE",
-            provider_version=catalog.items[0].provider_version,
-            arguments={"title": "safe"},
-            request_id="op_1",
-        )
-        await connection.revoke(
-            operation_id="cop_1",
-        )
-
-    assert inspection.status == "ready"
-    assert inspection.safe_metadata == {
-        "auth_method_kind": "oauth2",
-        "alias": "work",
-        "created_at": None,
-        "updated_at": None,
-    }
-    assert catalog.items[0].input_schema == {"type": "object"}
-    assert outcome.kind == "succeeded"
-    assert json.loads(next(item for item in requests if item.url.path.endswith("/initiate")).content) == {
-        "authConfigId": "ac_github",
-        "userId": "usrh_opaque",
-    }
-    assert (
-        next(item for item in requests if item.url.path.endswith("/initiate")).headers["idempotency-key"]
-        == "csa_abcdef1234567890"
-    )
-    assert json.loads(requests[-2].content) == {
-        "arguments": {"title": "safe"},
-        "connectedAccountId": "conn_external",
-        "userId": "usrh_opaque",
-    }
-    assert all(request.headers["x-api-key"] == "project-secret" for request in requests)
-
-
-@pytest.mark.anyio
-async def test_openconnector_rejects_substitution_and_reports_unknown_write() -> None:
-    responses = iter(
-        (
-            httpx2.Response(
-                200,
-                json={
-                    "id": "another",
-                    "toolkitSlug": "github",
-                    "userId": "usrh_opaque",
-                    "status": "active",
-                },
-            ),
-            httpx2.Response(200, json={"slug": "GITHUB_CREATE", "toolkit": "github", "version": "v1"}),
-            httpx2.Response(503),
-        )
-    )
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _request: next(responses))) as http_client:
-        adapter = _openconnector(http_client)
-        connection = adapter.connect(
-            ConnectionBinding(external_user_correlation="usrh_opaque", external_ref="expected", connector_key="github")
-        )
-        with pytest.raises(ConnectorProviderError, match="connection_substitution"):
-            await connection.inspect()
-        outcome = await connection.execute_tool(
-            tool_key="GITHUB_CREATE",
-            provider_version="v1",
-            arguments={},
-            request_id="op_unknown",
-        )
-    assert outcome.kind == "outcome_unknown"
 
 
 @pytest.mark.anyio
@@ -333,10 +150,6 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
 
 def test_connector_setup_contracts_reject_provider_credentials_and_unpinned_versions() -> None:
     with pytest.raises(ValidationError):
-        from a13n_service.connectivity.connectors.providers.openconnector.configuration import OpenConnectorSetup
-
-        OpenConnectorSetup.model_validate({"auth_config_id": "ac", "credentials": {"token": "secret"}})
-    with pytest.raises(ValidationError):
         from a13n_service.connectivity.connectors.providers.composio.configuration import ComposioSetup
 
         ComposioSetup.model_validate({"auth_config_id": "ac", "toolkit_version": "latest"})
@@ -450,7 +263,6 @@ async def test_discovery_rejects_repeated_pages_and_partial_failures() -> None:
                     endpoint="https://backend.composio.dev",
                     api_key="secret",
                     path="/api/v3.1/toolkits",
-                    pagination="next_cursor",
                     budget=DirectoryBudget(),
                 )
 
@@ -474,7 +286,7 @@ def test_discovery_rejects_unsafe_setup_schemas(schema) -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("make_provider", [_openconnector, _composio])
+@pytest.mark.parametrize("make_provider", [_composio])
 async def test_malformed_setup_response_retains_unknown_outcome(make_provider, monkeypatch) -> None:
     from a13n_service.connectivity.connectors.contracts import DiscoveredConnector
 
@@ -515,7 +327,6 @@ async def test_directory_budget_covers_catalog_and_auth_config_reads(monkeypatch
             endpoint="https://backend.composio.dev",
             api_key="secret",
             path="/toolkits",
-            pagination="next_cursor",
             budget=budget,
         )
         with pytest.raises(ConnectorProviderError, match="directory_too_large"):
@@ -524,7 +335,6 @@ async def test_directory_budget_covers_catalog_and_auth_config_reads(monkeypatch
                 endpoint="https://backend.composio.dev",
                 api_key="secret",
                 path="/auth_configs",
-                pagination="next_cursor",
                 budget=budget,
             )
 
