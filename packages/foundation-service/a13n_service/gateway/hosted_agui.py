@@ -31,6 +31,7 @@ from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAc
 from a13n_service.ids import new_object_id
 from a13n_service.interactions import (
     AgentInput,
+    CompletePendingResolution,
     InterruptRequest,
     RunAcceptanceReceipt,
     RunStatus,
@@ -296,7 +297,7 @@ class HostedAguiService:
                 binding=waiting_binding,
                 action=WorkspaceAction.run_feedback,
             )
-            if _forwarded_resolutions(request.forwarded_props) is None:
+            if not _has_feedback_input(request):
                 await self._authorize_action(
                     actor=actor,
                     binding=waiting_binding,
@@ -769,6 +770,13 @@ class HostedAguiService:
                 status_code=409,
             )
         resolutions = _forwarded_resolutions(request.forwarded_props)
+        tool_resolution = _tool_message_resolution(request.messages[-1]) if request.messages else None
+        if resolutions is not None and tool_resolution is not None:
+            raise HostedAguiError(
+                "agui_feedback_ambiguous",
+                "A tool result and forwardedProps.a13n.resume cannot be submitted together.",
+                status_code=400,
+            )
         if resolutions is not None:
             if thread is None or history is None:
                 raise HostedAguiError(
@@ -790,10 +798,31 @@ class HostedAguiService:
                 agent_revision_id=revision_id,
                 config_override=config_override,
             )
+        if tool_resolution is not None:
+            if thread is None or history is None:
+                raise HostedAguiError(
+                    "agui_feedback_without_binding",
+                    "An AG-UI tool result requires an existing waiting Run.",
+                    status_code=409,
+                )
+            expected = await self._expected_messages(history)
+            supplied = tuple(_message_json(item) for item in request.messages[:-1])
+            if supplied != expected:
+                raise HostedAguiError(
+                    "agui_history_conflict",
+                    "The AG-UI message snapshot does not match the authorized history.",
+                    status_code=409,
+                )
+            return _MappedAguiInput(
+                input=None,
+                resolutions=(tool_resolution,),
+                agent_revision_id=revision_id,
+                config_override=config_override,
+            )
         if not request.messages or not isinstance(request.messages[-1], UserMessage):
             raise HostedAguiError(
                 "agui_input_invalid",
-                "AG-UI input must append exactly one user message.",
+                "AG-UI input must append one user message or one waiting tool result.",
                 status_code=400,
             )
         if thread is None:
@@ -1260,6 +1289,31 @@ def _forwarded_resolutions(value: object) -> tuple[SubmittedPendingResolution, .
         raise HostedAguiError(
             "agui_extension_invalid",
             "forwardedProps.a13n is invalid.",
+            status_code=400,
+        ) from error
+
+
+def _has_feedback_input(request: RunAgentInput) -> bool:
+    return _forwarded_resolutions(request.forwarded_props) is not None or bool(
+        request.messages and isinstance(request.messages[-1], ToolMessage)
+    )
+
+
+def _tool_message_resolution(message: object) -> CompletePendingResolution | None:
+    if not isinstance(message, ToolMessage):
+        return None
+    if message.error is not None or message.encrypted_value is not None:
+        raise HostedAguiError(
+            "agui_tool_result_invalid",
+            "AG-UI tool results cannot contain error or encryptedValue fields.",
+            status_code=400,
+        )
+    try:
+        return CompletePendingResolution(call_id=message.tool_call_id, result=message.content)
+    except ValueError as error:
+        raise HostedAguiError(
+            "agui_tool_result_invalid",
+            "The AG-UI tool result is invalid.",
             status_code=400,
         ) from error
 

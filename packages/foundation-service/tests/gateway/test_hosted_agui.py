@@ -438,6 +438,81 @@ async def test_explicit_resume_maps_to_atomic_waiting_feedback_run(
     ]
 
 
+async def test_tool_message_tail_maps_to_exact_waiting_client_tool_feedback(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    await _set_protocol_surface(lifecycle_interaction_sessions, required_tool=True)
+    tools = [
+        {
+            "name": "lookup_order",
+            "description": "Look up one order.",
+            "parameters": {
+                "type": "object",
+                "properties": {"order_id": {"type": "string"}},
+                "required": ["order_id"],
+                "additionalProperties": False,
+            },
+        }
+    ]
+    async with AsyncExitStack() as stack:
+        service, _stream, objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        first = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=_surface_request(state={}, context=[], tools=tools),
+            last_event_id=None,
+        )
+        await _wait_run(
+            lifecycle_interaction_sessions,
+            objects,
+            run_id=first.binding.run_id,
+            pending_kind="client_tool",
+        )
+        request = RunAgentInput.model_validate(
+            {
+                "threadId": "external-thread-1",
+                "runId": "external-run-tool-result",
+                "parentRunId": "external-run-1",
+                "state": {},
+                "messages": [
+                    {"id": "message-external-run-1", "role": "user", "content": "hello"},
+                    {
+                        "id": "tool-result-1",
+                        "role": "tool",
+                        "toolCallId": "client-tool-1",
+                        "content": '{"status":"shipped"}',
+                    },
+                ],
+                "tools": tools,
+                "context": [],
+                "forwardedProps": {},
+            }
+        )
+
+        feedback = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=request,
+            last_event_id=None,
+        )
+
+    async with short_session(lifecycle_interaction_sessions) as database:
+        successor = await database.get(RunRecord, feedback.binding.run_id)
+    assert successor is not None
+    assert successor.parent_run_id == first.binding.run_id
+    assert successor.input_kind == "waiting_feedback"
+    assert successor.input_json["resolutions"] == [
+        {
+            "call_id": "client-tool-1",
+            "kind": "client_tool",
+            "outcome": "complete",
+            "result": '{"status":"shipped"}',
+        }
+    ]
+
+
 async def test_historical_parent_forks_and_selects_new_active_thread(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,

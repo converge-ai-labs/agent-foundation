@@ -192,6 +192,7 @@ async def _wait_run(
     objects: LocalObjectStore,
     *,
     run_id: str,
+    pending_kind: str = "approval",
 ) -> str:
     states = RunStateStore(objects)
     claim = await AttemptScheduler(
@@ -215,11 +216,45 @@ async def _wait_run(
         attempt_version=entered.attempt_version,
     )
     current = await states.read(TENANT_ID, run_id)
+    waiting = _waiting_state(current.envelope, claim.attempt.id, claim.attempt.fence)
+    if pending_kind == "client_tool":
+        payload = waiting.model_dump(mode="python", by_alias=True)
+        payload["host"]["deferred"] = {
+            "requests": {
+                "calls": [
+                    {
+                        "tool_name": "lookup_order",
+                        "args": {"order_id": "order-1"},
+                        "tool_call_id": "client-tool-1",
+                    }
+                ],
+                "approvals": [],
+                "metadata": {},
+            },
+            "effective_client_tool_surface": {"tools": ["lookup_order"]},
+            "effective_surface_digest_sha256": "b" * 64,
+        }
+        payload["outcome_candidate"] = {
+            "outcome": "waiting",
+            "wait_reason": "client_tool",
+            "pending": {
+                "calls": [
+                    {
+                        "call_id": "client-tool-1",
+                        "kind": "client_tool",
+                        "tool_name": "lookup_order",
+                    }
+                ]
+            },
+        }
+        waiting = type(waiting).model_validate(payload)
+    elif pending_kind != "approval":
+        raise ValueError("unsupported pending test kind")
     stored = await execution.publish_checkpoint(
         authority,
         states,
         current,
-        _waiting_state(current.envelope, claim.attempt.id, claim.attempt.fence),
+        waiting,
     )
     await RunOutcomeService(
         sessions,
