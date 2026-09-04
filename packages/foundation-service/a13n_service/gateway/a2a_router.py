@@ -83,9 +83,15 @@ async def direct_agent_card(request: Request, agent_id: str) -> Response:
 
 
 @router.get("/a2a/v1/agents/{agent_id}/extendedAgentCard")
-async def extended_agent_card(request: Request, actor: Actor, agent_id: str, version: _VERSION = None) -> Response:
+async def extended_agent_card(
+    request: Request,
+    actor: Actor,
+    agent_id: str,
+    version: _VERSION = None,
+    extensions: _EXTENSIONS = None,
+) -> Response:
     try:
-        _validate_wire(version=version, extensions=None, content_type=None, body_required=False)
+        _validate_wire(version=version, extensions=extensions, content_type=None, body_required=False)
         card = await _service(request).extended_agent_card(
             actor=actor,
             agent_id=agent_id,

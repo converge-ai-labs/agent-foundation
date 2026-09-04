@@ -465,7 +465,11 @@ def _event_payload(task: A2ATaskBindingRecord, event: LifecycleEventRecord) -> b
 def _event_status(event: LifecycleEventRecord) -> a2a.TaskStatus:
     state = {
         "run.running": a2a.TASK_STATE_WORKING,
-        "run.waiting": a2a.TASK_STATE_INPUT_REQUIRED,
+        "run.waiting": (
+            a2a.TASK_STATE_AUTH_REQUIRED
+            if event.payload.get("wait_reason") == "authentication"
+            else a2a.TASK_STATE_INPUT_REQUIRED
+        ),
         "run.completed": a2a.TASK_STATE_COMPLETED,
         "run.failed": a2a.TASK_STATE_FAILED,
         "run.cancelled": a2a.TASK_STATE_CANCELED,

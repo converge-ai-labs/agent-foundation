@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 from types import SimpleNamespace
+from typing import Any, cast
 
 import anyio
 import httpx2
@@ -18,7 +19,7 @@ from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
 from a13n_service.gateway.a2a_import import A2APartImporter
-from a13n_service.gateway.a2a_push import A2APushMaterial, A2APushPublisher
+from a13n_service.gateway.a2a_push import A2APushMaterial, A2APushPublisher, _event_status
 from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.models import (
     A2AContextBindingRecord,
@@ -44,6 +45,19 @@ pytestmark = pytest.mark.anyio
 
 def _protector() -> SecretProtector:
     return SecretProtector(key=b"a" * 32, encryption_key_id="test-key")
+
+
+async def test_push_waiting_authentication_projects_auth_required() -> None:
+    event = cast(
+        Any,
+        SimpleNamespace(
+            id="lev_auth_waiting",
+            event_type="run.waiting",
+            payload={"wait_reason": "authentication", "pending": {}},
+        ),
+    )
+
+    assert _event_status(event).state == a2a.TASK_STATE_AUTH_REQUIRED
 
 
 def _request(
