@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -74,6 +76,7 @@ class RunAcceptanceService:
         run: Run,
         state: RunStateEnvelope,
         hook_subscription: InlineHookSubscriptionInput | None = None,
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
         _validate_prepared_run(run, state)
         _validate_new_thread(thread, run, session)
@@ -86,6 +89,8 @@ class RunAcceptanceService:
         await self._publish_initial(run, state)
         try:
             async with transaction(self._sessions) as database:
+                if final_validator is not None:
+                    await final_validator(database)
                 if session is None:
                     session_record_value = await _require_session(database, run)
                     workspace_id = session_record_value.workspace_id
@@ -130,6 +135,7 @@ class RunAcceptanceService:
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
         hook_subscription: InlineHookSubscriptionInput | None = None,
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
         _validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
@@ -143,6 +149,8 @@ class RunAcceptanceService:
         await self._publish_initial(run, state)
         try:
             async with transaction(self._sessions) as database:
+                if final_validator is not None:
+                    await final_validator(database)
                 thread = await _lock_thread(database, run)
                 _require_thread_precondition(
                     thread,

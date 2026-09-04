@@ -97,6 +97,7 @@ class ServiceRuntimeFactory:
         trace_queries: object | None = None,
         hook_subscriptions: object | None = None,
         lifecycle_events: object | None = None,
+        gateway: object | None = None,
         ingress_events: IngressEventService | None = None,
     ) -> ServiceRuntime:
         placeholder = Mock()
@@ -114,8 +115,11 @@ class ServiceRuntimeFactory:
                 assets=placeholder,
                 hook_subscriptions=hook_subscriptions if hook_subscriptions is not None else placeholder,
                 lifecycle_events=lifecycle_events if lifecycle_events is not None else placeholder,
+                gateway=gateway if gateway is not None else placeholder,
             )
-            if any(value is not None for value in (agents, trace_queries, hook_subscriptions, lifecycle_events))
+            if any(
+                value is not None for value in (agents, trace_queries, hook_subscriptions, lifecycle_events, gateway)
+            )
             else None
         )
         connectivity = (

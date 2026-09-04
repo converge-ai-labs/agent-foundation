@@ -18,7 +18,7 @@ from .revisions import AgentRevisions
 class AgentManagement:
     """Complete Agent management surface grouped by cohesive use case."""
 
-    __slots__ = ("builtins", "commands", "duplication", "queries", "revisions")
+    __slots__ = ("builtins", "commands", "duplication", "invocations", "queries", "revisions")
 
     def __init__(
         self,
@@ -29,6 +29,7 @@ class AgentManagement:
         clock: Clock = utc_now,
     ) -> None:
         queries = AgentQueries(sessions)
+        self.invocations = invocation_resolver
         self.queries = queries
         self.commands = AgentCommands(sessions, resolver, invocation_resolver, queries, clock=clock)
         self.revisions = AgentRevisions(sessions, resolver, invocation_resolver, queries, clock=clock)

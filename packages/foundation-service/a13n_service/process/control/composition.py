@@ -5,12 +5,20 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
+from a13n_service.gateway import GatewayRuntime
+from a13n_service.gateway.commands import NativeInteractionCommands
+from a13n_service.gateway.native_streaming import NativeRunStreamService
+from a13n_service.gateway.notifications import NotificationService
+from a13n_service.gateway.queries import NativeInteractionQueries
+from a13n_service.interactions import RunAcceptanceService, RunPayloadStore, RunStateStore
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import ServiceComponents
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import ControlRuntime, SharedRuntime, WorkerRuntime
+from a13n_service.run_stream import RedisRunStream, RunReplayStore
 from a13n_service.settings import ServiceSettings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
@@ -70,6 +78,51 @@ async def build_control_runtime(
     )
     assets = await build_asset_bundle(settings, shared)
     hooks = await build_hook_bundle(settings, shared, stack)
+    gateway_stream = RedisRunStream(
+        shared.storage.redis,
+        max_events=settings.run_stream_max_events,
+        max_event_bytes=settings.run_stream_max_event_bytes,
+        closed_ttl_seconds=settings.run_stream_closed_ttl_seconds,
+    )
+    gateway_replay = RunReplayStore(
+        shared.storage.objects,
+        max_events=settings.run_replay_max_events,
+        max_items=settings.run_replay_max_items,
+        max_bytes=settings.run_replay_max_bytes,
+    )
+    gateway_states = RunStateStore(shared.storage.objects)
+    gateway_payloads = RunPayloadStore(shared.storage.objects)
+    gateway = GatewayRuntime(
+        commands=NativeInteractionCommands(
+            shared.storage.sessions,
+            agents.invocations,
+            RunAcceptanceService(
+                shared.storage.sessions,
+                gateway_states,
+                gateway_payloads,
+                hooks.inline_validator,
+            ),
+            gateway_states,
+            assets.service,
+            EndpointPolicy(),
+            recovery_max_attempts=settings.gateway_run_recovery_max_attempts,
+            max_handoffs=settings.gateway_run_max_handoffs,
+            queue_name=settings.gateway_run_queue_name,
+            priority=settings.gateway_run_priority,
+        ),
+        native_streams=NativeRunStreamService(
+            shared.storage.sessions,
+            gateway_stream,
+            gateway_replay,
+            page_size=settings.gateway_stream_page_size,
+            poll_interval_seconds=settings.gateway_stream_poll_interval_seconds,
+            heartbeat_interval_seconds=settings.gateway_stream_heartbeat_interval_seconds,
+            authorization_interval_seconds=settings.gateway_stream_authorization_interval_seconds,
+            maximum_lifetime_seconds=settings.gateway_stream_maximum_lifetime_seconds,
+        ),
+        notifications=NotificationService(shared.storage.sessions),
+        queries=NativeInteractionQueries(shared.storage.sessions, gateway_replay),
+    )
     runtime = ControlRuntime(
         trace_queries=trace_queries,
         environments=environments.service,
@@ -83,6 +136,7 @@ async def build_control_runtime(
         assets=assets.service,
         hook_subscriptions=hooks.subscriptions,
         lifecycle_events=hooks.lifecycle_events,
+        gateway=gateway,
     )
     background_tasks = [assets.cleanup_task, hooks.delivery_task, hooks.retention_task]
     if plugins.background_task is not None:

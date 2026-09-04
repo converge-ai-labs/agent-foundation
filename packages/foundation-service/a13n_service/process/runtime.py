@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
     from a13n_service.environments.service import EnvironmentManagementService
+    from a13n_service.gateway import GatewayRuntime
     from a13n_service.hooks.management import HookSubscriptionService
     from a13n_service.iam import RequestAuthenticator
     from a13n_service.lifecycle.service import LifecycleEventService
@@ -57,6 +58,7 @@ class ControlRuntime:
     assets: AssetService
     hook_subscriptions: HookSubscriptionService
     lifecycle_events: LifecycleEventService
+    gateway: GatewayRuntime
 
 
 @dataclass(frozen=True, slots=True)
