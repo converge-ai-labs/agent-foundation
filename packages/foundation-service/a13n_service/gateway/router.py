@@ -9,18 +9,20 @@ from time import monotonic
 from typing import Annotated, Literal, cast
 
 import anyio
+from ag_ui.core import RunAgentInput
 from fastapi import APIRouter, Depends, Header, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.ids import new_object_id
-from a13n_service.interactions import RunAcceptanceReceipt
+from a13n_service.interactions import AgentInput, InterruptRequest, RunAcceptanceReceipt, SteerReceipt, SteerStatus
 from a13n_service.process.runtime import ServiceRuntime
 from a13n_service.public_errors import PublicError
 from a13n_service.request_runtime import get_control_runtime
 
-from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest
+from .commands import ContinueRunRequest, InterruptReceipt, NativeInteractionCommands, StartRunRequest
+from .hosted_agui import HostedAguiCancelReceipt, HostedAguiCancelRequest, HostedAguiService
 from .native_streaming import NativeRunStreamService
 from .notifications import (
     AuthorizedNotificationSubscription,
@@ -110,6 +112,61 @@ def _commands(request: Request) -> NativeInteractionCommands:
     return control.gateway.commands
 
 
+def _hosted_agui(request: Request) -> HostedAguiService:
+    control = get_control_runtime(request)
+    if control is None:
+        raise PublicError(
+            "gateway_unavailable",
+            "The Protocol Gateway is unavailable.",
+            status_code=503,
+        )
+    return control.gateway.hosted_agui
+
+
+@router.post("/ag-ui/v1/agents/{agent_id}/runs", response_class=StreamingResponse)
+async def hosted_agui_run(
+    request: Request,
+    actor: Actor,
+    agent_id: str,
+    body: RunAgentInput,
+    accept: Annotated[str | None, Header()] = None,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID", max_length=128)] = None,
+) -> StreamingResponse:
+    media_types = {item.partition(";")[0].strip().lower() for item in (accept or "").split(",")}
+    if "text/event-stream" not in media_types:
+        raise PublicError(
+            "not_acceptable",
+            "Accept must include text/event-stream.",
+            status_code=406,
+        )
+    service = _hosted_agui(request)
+    attachment = await service.accept(
+        actor=actor,
+        agent_id=agent_id,
+        request=body,
+        last_event_id=last_event_id,
+    )
+    return StreamingResponse(
+        service.events(attachment),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/ag-ui/v1/agents/{agent_id}/cancel",
+    response_model=HostedAguiCancelReceipt,
+    status_code=202,
+)
+async def cancel_hosted_agui_run(
+    request: Request,
+    actor: Actor,
+    agent_id: str,
+    body: HostedAguiCancelRequest,
+) -> HostedAguiCancelReceipt:
+    return await _hosted_agui(request).cancel(actor=actor, agent_id=agent_id, request=body)
+
+
 @router.post(
     "/api/v1/workspaces/{workspace_id}/runs",
     response_model=RunAcceptanceReceipt,
@@ -148,6 +205,56 @@ async def continue_from_run(
         idempotency_key=idempotency_key,
         request=body,
     )
+
+
+@router.post(
+    "/api/v1/runs/{run_id}/interrupt",
+    response_model=InterruptReceipt,
+    status_code=202,
+)
+async def interrupt_run(
+    request: Request,
+    actor: Actor,
+    run_id: str,
+    body: InterruptRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> InterruptReceipt:
+    return await _commands(request).interrupt(
+        actor=actor,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+
+
+@router.post(
+    "/api/v1/runs/{run_id}/steer",
+    response_model=SteerReceipt,
+    status_code=202,
+)
+async def steer_run(
+    request: Request,
+    actor: Actor,
+    run_id: str,
+    body: AgentInput,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> SteerReceipt:
+    return await _commands(request).steer(
+        actor=actor,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+        input=body,
+    )
+
+
+@router.get("/api/v1/runs/{run_id}/steers/{steer_id}", response_model=SteerStatus)
+async def get_run_steer(
+    request: Request,
+    actor: Actor,
+    run_id: str,
+    steer_id: str,
+) -> SteerStatus:
+    return await _commands(request).get_steer(actor=actor, run_id=run_id, steer_id=steer_id)
 
 
 @router.get("/api/v1/workspaces/{workspace_id}/sessions", response_model=SessionCollection)

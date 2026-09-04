@@ -5,16 +5,27 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.commands import GatewayCommandError, NativeInteractionCommands, StartRunRequest
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
-from a13n_service.interactions import MCPToolSnapshotRef, RunAcceptanceService, RunPayloadStore, RunStateStore
+from a13n_service.interactions import (
+    InterruptRequest,
+    MCPToolSnapshotRef,
+    RunAcceptanceService,
+    RunOutcomeService,
+    RunPayloadStore,
+    RunStateStore,
+    ThreadInboxStore,
+)
+from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.storage import short_session
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
@@ -109,6 +120,8 @@ def _commands(
         RunStateStore(objects),
         AsyncMock(),
         EndpointPolicy(),
+        outcomes=RunOutcomeService(sessions, RunPayloadStore(objects), clock=lambda: NOW),
+        inbox=ThreadInboxStore(sessions, clock=lambda: NOW),
         clock=lambda: NOW,
     )
 
@@ -200,3 +213,169 @@ async def test_start_rejects_final_invocation_drift_without_committing_run(
     async with short_session(interaction_sessions) as database:
         count = len(tuple((await database.scalars(select(RunRecord).where(RunRecord.input_text == "hello"))).all()))
     assert count == 0
+
+
+async def test_interrupt_is_atomic_and_replays_exact_stable_receipt(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    accepted = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="interrupt-source",
+        request=_request(),
+    )
+    request = InterruptRequest(expected_run_version=1, expected_thread_version=1)
+
+    first = await commands.interrupt(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        idempotency_key="interrupt-one",
+        request=request,
+    )
+    repeated = await commands.interrupt(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        idempotency_key="interrupt-one",
+        request=request,
+    )
+
+    assert repeated == first
+    assert first.status == "cancelled"
+    async with short_session(lifecycle_interaction_sessions) as database:
+        run = await database.scalar(select(RunRecord).where(RunRecord.id == accepted.run_id))
+        thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == accepted.thread_id))
+        evidence = tuple((await database.scalars(select(IdempotencyEvidenceRecord))).all())
+    assert run is not None and run.status == "cancelled" and run.version == 2
+    assert thread is not None and thread.version == 2
+    assert len(evidence) == 1
+
+
+async def test_interrupt_idempotency_conflicts_before_terminal_precondition_check(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    accepted = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="interrupt-conflict-source",
+        request=_request(),
+    )
+    await commands.interrupt(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        idempotency_key="interrupt-conflict",
+        request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
+    )
+
+    with pytest.raises(GatewayCommandError) as captured:
+        await commands.interrupt(
+            actor=_actor(),
+            run_id=accepted.run_id,
+            idempotency_key="interrupt-conflict",
+            request=InterruptRequest(expected_run_version=2, expected_thread_version=2),
+        )
+
+    assert captured.value.code == "idempotency_conflict"
+
+
+async def test_steer_is_atomic_replayable_and_does_not_advance_thread(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    accepted = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="steer-source",
+        request=_request(),
+    )
+
+    first = await commands.steer(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        idempotency_key="steer-one",
+        input=_request("follow up").input,
+    )
+    repeated = await commands.steer(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        idempotency_key="steer-one",
+        input=_request("follow up").input,
+    )
+    status = await commands.get_steer(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        steer_id=first.steer_id,
+    )
+
+    assert repeated == first
+    assert status.status == "pending"
+    assert status.accepted_against_run_id == accepted.run_id
+    assert status.target_run_id == accepted.run_id
+    async with short_session(lifecycle_interaction_sessions) as database:
+        thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == accepted.thread_id))
+        entries = tuple((await database.scalars(select(ThreadInboxRecord))).all())
+        evidence = tuple((await database.scalars(select(IdempotencyEvidenceRecord))).all())
+    assert thread is not None and thread.version == 1 and thread.queue_version == 0
+    assert len(entries) == 1
+    assert len(evidence) == 1
+
+
+async def test_steer_idempotency_rejects_changed_input(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    accepted = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="steer-conflict-source",
+        request=_request(),
+    )
+    await commands.steer(
+        actor=_actor(),
+        run_id=accepted.run_id,
+        idempotency_key="steer-conflict",
+        input=_request("first").input,
+    )
+
+    with pytest.raises(GatewayCommandError) as captured:
+        await commands.steer(
+            actor=_actor(),
+            run_id=accepted.run_id,
+            idempotency_key="steer-conflict",
+            input=_request("different").input,
+        )
+
+    assert captured.value.code == "idempotency_conflict"

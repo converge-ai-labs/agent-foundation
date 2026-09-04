@@ -9,10 +9,18 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.gateway import GatewayRuntime
 from a13n_service.gateway.commands import NativeInteractionCommands
+from a13n_service.gateway.hosted_agui import HostedAguiService
 from a13n_service.gateway.native_streaming import NativeRunStreamService
 from a13n_service.gateway.notifications import NotificationService
 from a13n_service.gateway.queries import NativeInteractionQueries
-from a13n_service.interactions import RunAcceptanceService, RunPayloadStore, RunStateStore
+from a13n_service.interactions import (
+    RedisThreadControlSignals,
+    RunAcceptanceService,
+    RunOutcomeService,
+    RunPayloadStore,
+    RunStateStore,
+    ThreadInboxStore,
+)
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import ServiceComponents
@@ -92,23 +100,45 @@ async def build_control_runtime(
     )
     gateway_states = RunStateStore(shared.storage.objects)
     gateway_payloads = RunPayloadStore(shared.storage.objects)
-    gateway = GatewayRuntime(
-        commands=NativeInteractionCommands(
+    gateway_control_signals = RedisThreadControlSignals(shared.storage.redis)
+    gateway_commands = NativeInteractionCommands(
+        shared.storage.sessions,
+        agents.invocations,
+        RunAcceptanceService(
             shared.storage.sessions,
-            agents.invocations,
-            RunAcceptanceService(
-                shared.storage.sessions,
-                gateway_states,
-                gateway_payloads,
-                hooks.inline_validator,
-            ),
             gateway_states,
-            assets.service,
-            EndpointPolicy(),
-            recovery_max_attempts=settings.gateway_run_recovery_max_attempts,
-            max_handoffs=settings.gateway_run_max_handoffs,
-            queue_name=settings.gateway_run_queue_name,
-            priority=settings.gateway_run_priority,
+            gateway_payloads,
+            hooks.inline_validator,
+        ),
+        gateway_states,
+        assets.service,
+        EndpointPolicy(),
+        outcomes=RunOutcomeService(
+            shared.storage.sessions,
+            gateway_payloads,
+            control_signals=gateway_control_signals,
+        ),
+        inbox=ThreadInboxStore(
+            shared.storage.sessions,
+            signals=gateway_control_signals,
+        ),
+        recovery_max_attempts=settings.gateway_run_recovery_max_attempts,
+        max_handoffs=settings.gateway_run_max_handoffs,
+        queue_name=settings.gateway_run_queue_name,
+        priority=settings.gateway_run_priority,
+    )
+    gateway = GatewayRuntime(
+        commands=gateway_commands,
+        hosted_agui=HostedAguiService(
+            shared.storage.sessions,
+            gateway_commands,
+            gateway_stream,
+            gateway_replay,
+            page_size=settings.gateway_stream_page_size,
+            poll_interval_seconds=settings.gateway_stream_poll_interval_seconds,
+            heartbeat_interval_seconds=settings.gateway_stream_heartbeat_interval_seconds,
+            authorization_interval_seconds=settings.gateway_stream_authorization_interval_seconds,
+            maximum_lifetime_seconds=settings.gateway_stream_maximum_lifetime_seconds,
         ),
         native_streams=NativeRunStreamService(
             shared.storage.sessions,

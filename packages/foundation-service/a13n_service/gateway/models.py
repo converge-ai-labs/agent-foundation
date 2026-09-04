@@ -1,0 +1,141 @@
+"""Durable protocol-adapter bindings owned by the Foundation Service Gateway."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Index,
+    String,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column
+
+from a13n_service.database import Base
+
+
+class AguiThreadBindingRecord(Base):
+    """One client-owned AG-UI thread mapped to an active Foundation Thread."""
+
+    __tablename__ = "agui_thread_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("agent_id", "organization_id", "workspace_id"),
+            ("agents.id", "agents.organization_id", "agents.workspace_id"),
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ("organization_id", "session_id"),
+            ("sessions.tenant_id", "sessions.id"),
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ("organization_id", "root_thread_id"),
+            ("threads.tenant_id", "threads.id"),
+            name="fk_agui_thread_bindings_root_thread",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ("organization_id", "active_thread_id"),
+            ("threads.tenant_id", "threads.id"),
+            name="fk_agui_thread_bindings_active_thread",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("client_principal_type IN ('user', 'service_account')", name="principal_type_valid"),
+        CheckConstraint("version >= 1", name="version_positive"),
+        UniqueConstraint(
+            "client_principal_type",
+            "client_principal_id",
+            "agent_id",
+            "external_thread_id",
+            name="uq_agui_thread_bindings_client_agent_thread",
+        ),
+        Index(
+            "uq_agui_thread_bindings_id_scope",
+            "id",
+            "organization_id",
+            "workspace_id",
+            unique=True,
+        ),
+        Index("ix_agui_thread_bindings_active_thread", "organization_id", "active_thread_id", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    client_principal_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    client_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    external_thread_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    session_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    root_thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    active_thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AguiRunBindingRecord(Base):
+    """One external AG-UI run identity mapped to one Foundation Run."""
+
+    __tablename__ = "agui_run_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("thread_binding_id", "organization_id", "workspace_id"),
+            (
+                "agui_thread_bindings.id",
+                "agui_thread_bindings.organization_id",
+                "agui_thread_bindings.workspace_id",
+            ),
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ("agent_id", "organization_id", "workspace_id"),
+            ("agents.id", "agents.organization_id", "agents.workspace_id"),
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ("agent_revision_id", "organization_id", "workspace_id"),
+            ("agent_revisions.id", "agent_revisions.organization_id", "agent_revisions.workspace_id"),
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ("organization_id", "run_id"),
+            ("runs.tenant_id", "runs.id"),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("length(request_digest_sha256) = 64", name="request_digest_sha256"),
+        UniqueConstraint("thread_binding_id", "external_run_id", name="uq_agui_run_bindings_external_run"),
+        UniqueConstraint("organization_id", "run_id", name="uq_agui_run_bindings_foundation_run"),
+        Index(
+            "uq_agui_run_bindings_id_scope",
+            "id",
+            "organization_id",
+            "workspace_id",
+            unique=True,
+        ),
+        Index("ix_agui_run_bindings_foundation_run", "organization_id", "run_id", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    thread_binding_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    agent_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    external_thread_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    external_run_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    parent_external_run_id: Mapped[str | None] = mapped_column(String(512))
+    request_digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    run_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+__all__ = ["AguiRunBindingRecord", "AguiThreadBindingRecord"]

@@ -77,6 +77,7 @@ class RunAcceptanceService:
         state: RunStateEnvelope,
         hook_subscription: InlineHookSubscriptionInput | None = None,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
         _validate_prepared_run(run, state)
         _validate_new_thread(thread, run, session)
@@ -121,9 +122,12 @@ class RunAcceptanceService:
                     now=self._clock(),
                 )
                 await append_accepted_run_lifecycle(database, run_record_value)
+                receipt = _receipt(thread, run, hook_subscription_id=hook_subscription_id)
+                if transaction_hook is not None:
+                    await transaction_hook(database, receipt)
         except IntegrityError as error:
             return await self._reconcile_conflict(run, state, error, accepted_thread_version=1)
-        return _receipt(thread, run, hook_subscription_id=hook_subscription_id)
+        return receipt
 
     async def advance_thread(
         self,
@@ -136,6 +140,7 @@ class RunAcceptanceService:
         next_head_run_id: str | None,
         hook_subscription: InlineHookSubscriptionInput | None = None,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
         _validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
@@ -224,6 +229,8 @@ class RunAcceptanceService:
                     run_version=run.version,
                     hook_subscription_id=hook_subscription_id,
                 )
+                if transaction_hook is not None:
+                    await transaction_hook(database, receipt)
         except IntegrityError as error:
             return await self._reconcile_conflict(
                 run,

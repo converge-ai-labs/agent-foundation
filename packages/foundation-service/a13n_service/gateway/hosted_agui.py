@@ -1,0 +1,855 @@
+"""Hosted AG-UI input binding and lifecycle projection."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
+from time import monotonic
+from typing import Any, Literal
+
+import anyio
+from ag_ui.core import (
+    AssistantMessage,
+    BinaryInputContent,
+    Event,
+    RunAgentInput,
+    ToolCall,
+    ToolMessage,
+    UserMessage,
+)
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from a13n_service.agents.domain import canonical_digest
+from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.ids import new_object_id
+from a13n_service.interactions import AgentInput, InterruptRequest, RunAcceptanceReceipt, RunStatus
+from a13n_service.interactions.models import RunRecord, ThreadRecord
+from a13n_service.public_errors import PublicError
+from a13n_service.run_stream import RedisRunStream, RunReplayStore, RunStreamEntry, RunStreamReplayGap
+from a13n_service.storage import ObjectNotFound, short_session
+from a13n_service.temporal import Clock, assume_utc, utc_now
+
+from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest
+from .models import AguiRunBindingRecord, AguiThreadBindingRecord
+
+_JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
+_EVENT = TypeAdapter(Event)
+_VISIBLE_EVENTS = frozenset(
+    {
+        "text_message_start",
+        "text_message_content",
+        "text_message_end",
+        "tool_call_start",
+        "tool_call_args",
+        "tool_call_end",
+        "tool_call_result",
+    }
+)
+
+
+class HostedAguiError(PublicError):
+    """A bounded Hosted AG-UI adapter failure."""
+
+
+class HostedAguiCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    thread_id: str = Field(alias="threadId")
+    run_id: str = Field(alias="runId")
+
+
+class HostedAguiCancelReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    thread_id: str = Field(alias="threadId")
+    run_id: str = Field(alias="runId")
+    status: Literal["cancelled"] = "cancelled"
+
+
+@dataclass(frozen=True, slots=True)
+class HostedAguiBinding:
+    organization_id: str
+    workspace_id: str
+    thread_binding_id: str
+    agent_id: str
+    agent_revision_id: str
+    external_thread_id: str
+    external_run_id: str
+    run_id: str
+    request_digest_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class HostedAguiAttachment:
+    actor: AuthenticatedActor
+    binding: HostedAguiBinding
+    after_ordinal: int
+
+
+class HostedAguiService:
+    """Map standard AG-UI calls to canonical Foundation interaction commands."""
+
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        commands: NativeInteractionCommands,
+        stream: RedisRunStream,
+        replay: RunReplayStore,
+        *,
+        page_size: int,
+        poll_interval_seconds: float,
+        heartbeat_interval_seconds: float,
+        authorization_interval_seconds: float,
+        maximum_lifetime_seconds: float,
+        clock: Clock = utc_now,
+    ) -> None:
+        self._sessions = sessions
+        self._commands = commands
+        self._stream = stream
+        self._replay = replay
+        self._page_size = page_size
+        self._poll_interval_seconds = poll_interval_seconds
+        self._heartbeat_interval_seconds = heartbeat_interval_seconds
+        self._authorization_interval_seconds = authorization_interval_seconds
+        self._maximum_lifetime_seconds = maximum_lifetime_seconds
+        self._clock = clock
+
+    async def accept(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        request: RunAgentInput,
+        last_event_id: str | None,
+    ) -> HostedAguiAttachment:
+        _validate_external_id(request.thread_id, name="threadId")
+        _validate_external_id(request.run_id, name="runId")
+        if request.parent_run_id is not None:
+            _validate_external_id(request.parent_run_id, name="parentRunId")
+        request_json = _JSON_OBJECT.validate_python(
+            request.model_dump(mode="json", by_alias=True, exclude_none=True),
+            strict=True,
+        )
+        request_digest = canonical_digest(request_json)
+        existing = await self._load_run_binding(
+            actor=actor,
+            agent_id=agent_id,
+            external_thread_id=request.thread_id,
+            external_run_id=request.run_id,
+        )
+        if existing is not None:
+            if existing.request_digest_sha256 != request_digest:
+                raise HostedAguiError(
+                    "agui_run_id_conflict",
+                    "The AG-UI runId was already used with different input.",
+                    status_code=409,
+                )
+            await self._authorize_read(actor=actor, binding=existing)
+            return HostedAguiAttachment(actor, existing, _resume_ordinal(existing, last_event_id))
+
+        thread = await self._load_thread_binding(
+            actor=actor,
+            agent_id=agent_id,
+            external_thread_id=request.thread_id,
+        )
+        input_value = await self._validate_and_map_input(request, thread=thread)
+        thread_binding_id = new_object_id("aguitb") if thread is None else thread.id
+        run_binding_id = new_object_id("aguirb")
+        now = assume_utc(self._clock())
+
+        async def bind(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
+            run = await database.scalar(
+                select(RunRecord).where(RunRecord.id == receipt.run_id, RunRecord.thread_id == receipt.thread_id)
+            )
+            if run is None:
+                raise HostedAguiError(
+                    "agui_binding_failed",
+                    "The accepted Run could not be bound.",
+                    status_code=409,
+                )
+            if thread is None:
+                database.add(
+                    AguiThreadBindingRecord(
+                        id=thread_binding_id,
+                        organization_id=run.tenant_id,
+                        workspace_id=actor.boundary_workspace_id,
+                        client_principal_type=actor.principal.principal_type.value,
+                        client_principal_id=actor.principal.principal_id,
+                        agent_id=agent_id,
+                        external_thread_id=request.thread_id,
+                        session_id=receipt.session_id,
+                        root_thread_id=receipt.thread_id,
+                        active_thread_id=receipt.thread_id,
+                        version=1,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                await database.flush()
+            else:
+                selected = await database.scalar(
+                    select(AguiThreadBindingRecord).where(AguiThreadBindingRecord.id == thread.id).with_for_update()
+                )
+                if (
+                    selected is None
+                    or selected.version != thread.version
+                    or selected.active_thread_id != receipt.thread_id
+                ):
+                    raise HostedAguiError(
+                        "agui_thread_changed",
+                        "The AG-UI thread binding changed before Run acceptance.",
+                        status_code=409,
+                    )
+                selected.version += 1
+                selected.updated_at = now
+            database.add(
+                AguiRunBindingRecord(
+                    id=run_binding_id,
+                    organization_id=run.tenant_id,
+                    workspace_id=actor.boundary_workspace_id,
+                    thread_binding_id=thread_binding_id,
+                    agent_id=agent_id,
+                    agent_revision_id=run.agent_revision_id,
+                    external_thread_id=request.thread_id,
+                    external_run_id=request.run_id,
+                    parent_external_run_id=request.parent_run_id,
+                    request_digest_sha256=request_digest,
+                    request_json=request_json,
+                    run_id=receipt.run_id,
+                    created_at=now,
+                )
+            )
+
+        idempotency_key = f"agui-{hashlib.sha256(request.run_id.encode()).hexdigest()}"
+        if thread is None:
+            if request.parent_run_id is not None:
+                raise HostedAguiError(
+                    "agui_parent_not_found",
+                    "An initial AG-UI Run cannot select parentRunId.",
+                    status_code=409,
+                )
+            await self._commands.start(
+                actor=actor,
+                workspace_id=actor.boundary_workspace_id,
+                idempotency_key=idempotency_key,
+                request=StartRunRequest(agent_id=agent_id, input=input_value),
+                transaction_hook=bind,
+            )
+        else:
+            latest = await self._load_latest_run(thread.id)
+            if latest is None or (
+                request.parent_run_id is not None and request.parent_run_id != latest.external_run_id
+            ):
+                raise HostedAguiError(
+                    "agui_parent_not_active",
+                    "Historical parentRunId requires an explicit authorized fork.",
+                    status_code=409,
+                )
+            source, foundation_thread = await self._load_completed_source(latest.run_id, thread.active_thread_id)
+            await self._commands.continue_from(
+                actor=actor,
+                source_run_id=source.id,
+                idempotency_key=idempotency_key,
+                request=ContinueRunRequest(
+                    expected_thread_version=foundation_thread.version,
+                    input=input_value,
+                    agent_id=agent_id,
+                ),
+                transaction_hook=bind,
+            )
+
+        bound = await self._load_run_binding(
+            actor=actor,
+            agent_id=agent_id,
+            external_thread_id=request.thread_id,
+            external_run_id=request.run_id,
+        )
+        if bound is None:
+            raise HostedAguiError(
+                "agui_binding_failed",
+                "The accepted Run binding is unavailable.",
+                status_code=503,
+            )
+        if bound.request_digest_sha256 != request_digest:
+            raise HostedAguiError(
+                "agui_run_id_conflict",
+                "The AG-UI runId was already used with different input.",
+                status_code=409,
+            )
+        return HostedAguiAttachment(actor, bound, _resume_ordinal(bound, last_event_id))
+
+    async def cancel(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        request: HostedAguiCancelRequest,
+    ) -> HostedAguiCancelReceipt:
+        _validate_external_id(request.thread_id, name="threadId")
+        _validate_external_id(request.run_id, name="runId")
+        binding = await self._load_run_binding(
+            actor=actor,
+            agent_id=agent_id,
+            external_thread_id=request.thread_id,
+            external_run_id=request.run_id,
+        )
+        if binding is None:
+            raise HostedAguiError(
+                "resource_not_found",
+                "The requested resource was not found.",
+                status_code=404,
+            )
+        await self._authorize_action(actor=actor, binding=binding, action=WorkspaceAction.run_interrupt)
+        run, thread = await self._load_run_and_thread(binding)
+        if run.status == RunStatus.cancelled.value:
+            return HostedAguiCancelReceipt(threadId=request.thread_id, runId=request.run_id)
+        if run.status not in {RunStatus.accepted.value, RunStatus.running.value}:
+            raise HostedAguiError(
+                "agui_run_not_interruptible",
+                "The selected AG-UI Run is no longer active.",
+                status_code=409,
+            )
+        key_material = f"{request.thread_id}\0{request.run_id}".encode()
+        await self._commands.interrupt(
+            actor=actor,
+            run_id=binding.run_id,
+            idempotency_key=f"agui-cancel-{hashlib.sha256(key_material).hexdigest()}",
+            request=InterruptRequest(
+                expected_run_version=run.version,
+                expected_thread_version=thread.version,
+            ),
+        )
+        return HostedAguiCancelReceipt(threadId=request.thread_id, runId=request.run_id)
+
+    async def events(self, attachment: HostedAguiAttachment) -> AsyncIterator[bytes]:
+        binding = attachment.binding
+        ordinal = 0
+        native_cursor: str | None = None
+        started = monotonic()
+        last_heartbeat = started
+        last_authorized = started
+
+        started_event: dict[str, Any] = {
+            "type": "RUN_STARTED",
+            "threadId": binding.external_thread_id,
+            "runId": binding.external_run_id,
+        }
+        if ordinal > attachment.after_ordinal:
+            yield _sse(binding, ordinal, started_event)
+        ordinal += 1
+
+        while monotonic() - started < self._maximum_lifetime_seconds:
+            now = monotonic()
+            if now - last_authorized >= self._authorization_interval_seconds:
+                try:
+                    await self._authorize_read(actor=attachment.actor, binding=binding)
+                except HostedAguiError:
+                    return
+                last_authorized = now
+            try:
+                page = await self._stream.read(
+                    binding.organization_id,
+                    binding.run_id,
+                    after_stream_id=native_cursor,
+                    limit=self._page_size,
+                )
+                entries = page.items
+                closed = page.closed and (page.next_stream_id == page.high_watermark or not page.items)
+            except RunStreamReplayGap:
+                retained = await self._retained_entries(binding)
+                if retained is None:
+                    gap = {
+                        "type": "CUSTOM",
+                        "name": "a13n.foundation.replay_gap",
+                        "value": {"schema_version": "1", "run_id": binding.external_run_id},
+                    }
+                    if ordinal > attachment.after_ordinal:
+                        yield _sse(binding, ordinal, gap)
+                    return
+                entries = tuple(item for item in retained if _after(item.stream_id, native_cursor))
+                closed = True
+            for entry in entries:
+                native_cursor = entry.stream_id
+                projected = _project_event(entry)
+                if projected is None:
+                    continue
+                if ordinal > attachment.after_ordinal:
+                    yield _sse(binding, ordinal, projected)
+                    last_heartbeat = monotonic()
+                ordinal += 1
+            run = await self._run_record(binding)
+            status = RunStatus(run.status)
+            if closed or status in {RunStatus.waiting, RunStatus.completed, RunStatus.failed, RunStatus.cancelled}:
+                terminal = _terminal_event(binding, run)
+                if terminal is not None and ordinal > attachment.after_ordinal:
+                    yield _sse(binding, ordinal, terminal)
+                return
+            now = monotonic()
+            if now - last_heartbeat >= self._heartbeat_interval_seconds:
+                yield b": heartbeat\n\n"
+                last_heartbeat = now
+            await anyio.sleep(self._poll_interval_seconds)
+
+    async def _validate_and_map_input(
+        self,
+        request: RunAgentInput,
+        *,
+        thread: AguiThreadBindingRecord | None,
+    ) -> AgentInput:
+        if not _empty(request.state) or request.context or request.tools or not _empty(request.forwarded_props):
+            raise HostedAguiError(
+                "agui_surface_not_allowed",
+                "This Agent does not accept AG-UI state, context, tools, or forwardedProps.",
+                status_code=400,
+            )
+        if request.resume is not None:
+            raise HostedAguiError(
+                "agui_resume_not_supported",
+                "The AG-UI resume extension is not available for this Run.",
+                status_code=409,
+            )
+        if not request.messages or not isinstance(request.messages[-1], UserMessage):
+            raise HostedAguiError(
+                "agui_input_invalid",
+                "AG-UI input must append exactly one user message.",
+                status_code=400,
+            )
+        if thread is None:
+            if len(request.messages) != 1:
+                raise HostedAguiError(
+                    "agui_history_import_forbidden",
+                    "An initial AG-UI Run cannot import prior message history.",
+                    status_code=400,
+                )
+        else:
+            latest = await self._load_latest_run(thread.id)
+            if latest is None:
+                raise HostedAguiError("agui_binding_invalid", "The AG-UI binding has no Run.", status_code=409)
+            expected = await self._expected_messages(latest)
+            supplied = tuple(_message_json(item) for item in request.messages[:-1])
+            if supplied != expected:
+                raise HostedAguiError(
+                    "agui_history_conflict",
+                    "The AG-UI message snapshot does not match the authorized history.",
+                    status_code=409,
+                )
+        return _user_input(request.messages[-1])
+
+    async def _expected_messages(self, latest: AguiRunBindingRecord) -> tuple[dict[str, JsonValue], ...]:
+        raw_messages = latest.request_json.get("messages")
+        if not isinstance(raw_messages, list):
+            raise HostedAguiError("agui_binding_invalid", "The AG-UI message snapshot is invalid.", status_code=409)
+        prefix = tuple(_JSON_OBJECT.validate_python(item, strict=True) for item in raw_messages)
+        entries = await self._all_entries(latest.organization_id, latest.run_id)
+        return prefix + _messages_from_entries(entries)
+
+    async def _all_entries(self, organization_id: str, run_id: str) -> tuple[RunStreamEntry, ...]:
+        cursor: str | None = None
+        values: list[RunStreamEntry] = []
+        try:
+            while True:
+                page = await self._stream.read(
+                    organization_id,
+                    run_id,
+                    after_stream_id=cursor,
+                    limit=self._page_size,
+                )
+                values.extend(page.items)
+                if not page.items:
+                    break
+                cursor = page.items[-1].stream_id
+                if page.closed and cursor == page.high_watermark:
+                    break
+        except RunStreamReplayGap:
+            retained = await self._replay.read(organization_id, run_id)
+            return tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
+        return tuple(values)
+
+    async def _retained_entries(self, binding: HostedAguiBinding) -> tuple[RunStreamEntry, ...] | None:
+        try:
+            retained = await self._replay.read(binding.organization_id, binding.run_id)
+        except ObjectNotFound:
+            return None
+        return tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
+
+    async def _load_thread_binding(
+        self, *, actor: AuthenticatedActor, agent_id: str, external_thread_id: str
+    ) -> AguiThreadBindingRecord | None:
+        async with short_session(self._sessions) as database:
+            return await database.scalar(
+                select(AguiThreadBindingRecord).where(
+                    AguiThreadBindingRecord.workspace_id == actor.boundary_workspace_id,
+                    AguiThreadBindingRecord.client_principal_type == actor.principal.principal_type.value,
+                    AguiThreadBindingRecord.client_principal_id == actor.principal.principal_id,
+                    AguiThreadBindingRecord.agent_id == agent_id,
+                    AguiThreadBindingRecord.external_thread_id == external_thread_id,
+                )
+            )
+
+    async def _load_run_binding(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        external_thread_id: str,
+        external_run_id: str,
+    ) -> HostedAguiBinding | None:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(AguiRunBindingRecord, AguiThreadBindingRecord)
+                    .join(
+                        AguiThreadBindingRecord,
+                        AguiThreadBindingRecord.id == AguiRunBindingRecord.thread_binding_id,
+                    )
+                    .where(
+                        AguiThreadBindingRecord.workspace_id == actor.boundary_workspace_id,
+                        AguiThreadBindingRecord.client_principal_type == actor.principal.principal_type.value,
+                        AguiThreadBindingRecord.client_principal_id == actor.principal.principal_id,
+                        AguiRunBindingRecord.agent_id == agent_id,
+                        AguiRunBindingRecord.external_thread_id == external_thread_id,
+                        AguiRunBindingRecord.external_run_id == external_run_id,
+                    )
+                )
+            ).one_or_none()
+        if row is None:
+            return None
+        run, thread = row
+        return _binding(run, thread)
+
+    async def _load_latest_run(self, thread_binding_id: str) -> AguiRunBindingRecord | None:
+        async with short_session(self._sessions) as database:
+            return await database.scalar(
+                select(AguiRunBindingRecord)
+                .where(AguiRunBindingRecord.thread_binding_id == thread_binding_id)
+                .order_by(AguiRunBindingRecord.created_at.desc(), AguiRunBindingRecord.id.desc())
+                .limit(1)
+            )
+
+    async def _load_completed_source(self, run_id: str, thread_id: str) -> tuple[RunRecord, ThreadRecord]:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, ThreadRecord)
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.id == RunRecord.thread_id,
+                        ),
+                    )
+                    .where(RunRecord.id == run_id, RunRecord.thread_id == thread_id)
+                )
+            ).one_or_none()
+        if row is None or row[0].status != RunStatus.completed.value:
+            raise HostedAguiError(
+                "agui_run_not_continuable",
+                "The active AG-UI Run is not completed.",
+                status_code=409,
+            )
+        return row[0], row[1]
+
+    async def _authorize_read(self, *, actor: AuthenticatedActor, binding: HostedAguiBinding) -> None:
+        await self._authorize_action(actor=actor, binding=binding, action=WorkspaceAction.run_read)
+
+    async def _authorize_action(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        binding: HostedAguiBinding,
+        action: WorkspaceAction,
+    ) -> None:
+        async with short_session(self._sessions) as database:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=binding.workspace_id,
+                    agent_id=binding.agent_id,
+                    action=action,
+                )
+            except AuthorizationError as error:
+                raise HostedAguiError(
+                    "resource_not_found",
+                    "The requested resource was not found.",
+                    status_code=404,
+                ) from error
+
+    async def _load_run_and_thread(self, binding: HostedAguiBinding) -> tuple[RunRecord, ThreadRecord]:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, ThreadRecord)
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.id == RunRecord.thread_id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.tenant_id == binding.organization_id,
+                        RunRecord.id == binding.run_id,
+                    )
+                )
+            ).one_or_none()
+        if row is None:
+            raise HostedAguiError("resource_not_found", "The requested resource was not found.", status_code=404)
+        return row[0], row[1]
+
+    async def _run_record(self, binding: HostedAguiBinding) -> RunRecord:
+        async with short_session(self._sessions) as database:
+            record = await database.scalar(
+                select(RunRecord).where(
+                    RunRecord.tenant_id == binding.organization_id,
+                    RunRecord.id == binding.run_id,
+                )
+            )
+        if record is None:
+            raise HostedAguiError("resource_not_found", "The requested resource was not found.", status_code=404)
+        return record
+
+
+def _binding(run: AguiRunBindingRecord, thread: AguiThreadBindingRecord) -> HostedAguiBinding:
+    return HostedAguiBinding(
+        organization_id=run.organization_id,
+        workspace_id=run.workspace_id,
+        thread_binding_id=thread.id,
+        agent_id=run.agent_id,
+        agent_revision_id=run.agent_revision_id,
+        external_thread_id=run.external_thread_id,
+        external_run_id=run.external_run_id,
+        run_id=run.run_id,
+        request_digest_sha256=run.request_digest_sha256,
+    )
+
+
+def _validate_external_id(value: str, *, name: str) -> None:
+    if not 1 <= len(value.encode("utf-8")) <= 512 or "\x00" in value:
+        raise HostedAguiError("agui_id_invalid", f"{name} is invalid.", status_code=400)
+
+
+def _empty(value: object) -> bool:
+    return value is None or value == {} or value == []
+
+
+def _user_input(message: UserMessage) -> AgentInput:
+    if message.name is not None or message.encrypted_value is not None:
+        raise HostedAguiError("agui_input_invalid", "Unsupported user message metadata.", status_code=400)
+    content = message.content
+    blocks: list[dict[str, Any]] = []
+    if isinstance(content, str):
+        if content:
+            blocks.append({"type": "text", "text": content})
+    else:
+        for part in content:
+            if part.type == "text":
+                blocks.append({"type": "text", "text": part.text})
+                continue
+            if isinstance(part, BinaryInputContent):
+                if part.url is None or part.data is not None:
+                    raise HostedAguiError(
+                        "agui_binary_source_unsupported",
+                        "Inline AG-UI binary data is not supported; use an authorized URL.",
+                        status_code=400,
+                    )
+                blocks.append(
+                    {
+                        "type": "binary",
+                        "source": {"type": "url", "url": part.url},
+                        "filename": part.filename,
+                        "media_type": part.mime_type,
+                    }
+                )
+                continue
+            source = part.source
+            if source.type != "url":
+                raise HostedAguiError(
+                    "agui_binary_source_unsupported",
+                    "Inline AG-UI binary data is not supported; use an authorized URL.",
+                    status_code=400,
+                )
+            metadata = part.metadata if isinstance(part.metadata, dict) else {}
+            blocks.append(
+                {
+                    "type": "binary",
+                    "source": {"type": "url", "url": source.value},
+                    "filename": metadata.get("filename"),
+                    "media_type": source.mime_type,
+                }
+            )
+    if not blocks:
+        raise HostedAguiError("agui_input_invalid", "The user message is empty.", status_code=400)
+    try:
+        return AgentInput.model_validate({"schema_version": "2", "content": blocks})
+    except ValueError as error:
+        raise HostedAguiError("agui_input_invalid", "The user message is invalid.", status_code=400) from error
+
+
+def _message_json(message: BaseModel) -> dict[str, JsonValue]:
+    return _JSON_OBJECT.validate_python(
+        message.model_dump(mode="json", by_alias=True, exclude_none=True),
+        strict=True,
+    )
+
+
+def _messages_from_entries(entries: Sequence[RunStreamEntry]) -> tuple[dict[str, JsonValue], ...]:
+    messages: list[dict[str, JsonValue]] = []
+    assistants: dict[str, dict[str, Any]] = {}
+    tool_calls: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        projected = _project_event(entry)
+        if projected is None:
+            continue
+        event_type = projected["type"]
+        if event_type == "TEXT_MESSAGE_START":
+            message_id = projected.get("messageId")
+            if isinstance(message_id, str):
+                assistants[message_id] = {"id": message_id, "role": projected.get("role", "assistant"), "content": ""}
+        elif event_type == "TEXT_MESSAGE_CONTENT":
+            message_id = projected.get("messageId")
+            delta = projected.get("delta")
+            if isinstance(message_id, str) and isinstance(delta, str) and message_id in assistants:
+                assistants[message_id]["content"] += delta
+        elif event_type == "TEXT_MESSAGE_END":
+            message_id = projected.get("messageId")
+            if isinstance(message_id, str) and message_id in assistants:
+                messages.append(_message_json(AssistantMessage.model_validate(assistants.pop(message_id))))
+        elif event_type == "TOOL_CALL_START":
+            call_id = projected.get("toolCallId")
+            if isinstance(call_id, str):
+                tool_calls[call_id] = {
+                    "id": call_id,
+                    "name": projected.get("toolCallName", "tool"),
+                    "arguments": "",
+                    "parent": projected.get("parentMessageId"),
+                }
+        elif event_type == "TOOL_CALL_ARGS":
+            call_id = projected.get("toolCallId")
+            delta = projected.get("delta")
+            if isinstance(call_id, str) and isinstance(delta, str) and call_id in tool_calls:
+                tool_calls[call_id]["arguments"] += delta
+        elif event_type == "TOOL_CALL_END":
+            call_id = projected.get("toolCallId")
+            call = tool_calls.get(call_id) if isinstance(call_id, str) else None
+            if call is not None:
+                parent = call.pop("parent")
+                value = ToolCall.model_validate(
+                    {
+                        "id": call["id"],
+                        "function": {"name": call["name"], "arguments": call["arguments"]},
+                    }
+                )
+                if isinstance(parent, str) and parent in assistants:
+                    assistants[parent].setdefault("toolCalls", []).append(value.model_dump(mode="json", by_alias=True))
+                else:
+                    messages.append(
+                        _message_json(AssistantMessage(id=f"assistant-{call_id}", content=None, tool_calls=[value]))
+                    )
+        elif event_type == "TOOL_CALL_RESULT":
+            call_id = projected.get("toolCallId")
+            message_id = projected.get("messageId")
+            content = projected.get("content")
+            if isinstance(call_id, str) and isinstance(message_id, str) and isinstance(content, str):
+                messages.append(_message_json(ToolMessage(id=message_id, tool_call_id=call_id, content=content)))
+    return tuple(messages)
+
+
+def _project_event(entry: RunStreamEntry) -> dict[str, Any] | None:
+    prefix, separator, name = entry.event.event_type.partition(".")
+    if prefix != "agui" or not separator or name not in _VISIBLE_EVENTS:
+        return None
+    return _standard_event({"type": name.upper(), **entry.event.payload})
+
+
+def _terminal_event(binding: HostedAguiBinding, run: RunRecord) -> dict[str, Any] | None:
+    status = RunStatus(run.status)
+    if status is RunStatus.waiting:
+        return _standard_event(
+            {
+                "type": "CUSTOM",
+                "name": "a13n.foundation.run_status",
+                "value": {
+                    "schema_version": "1",
+                    "status": "waiting",
+                    "run_id": binding.external_run_id,
+                    "pending": run.pending_json,
+                },
+            }
+        )
+    if status is RunStatus.completed:
+        return _standard_event(
+            {"type": "RUN_FINISHED", "threadId": binding.external_thread_id, "runId": binding.external_run_id}
+        )
+    if status is RunStatus.failed:
+        failure = run.failure_json or {}
+        code = failure.get("code")
+        message = failure.get("message")
+        return _standard_event(
+            {
+                "type": "RUN_ERROR",
+                "code": code if isinstance(code, str) else "run_failed",
+                "message": message if isinstance(message, str) else "The Agent Run failed.",
+            }
+        )
+    if status is RunStatus.cancelled:
+        return _standard_event(
+            {"type": "RUN_FINISHED", "threadId": binding.external_thread_id, "runId": binding.external_run_id}
+        )
+    return None
+
+
+def _standard_event(value: dict[str, Any]) -> dict[str, Any]:
+    event = _EVENT.validate_python(value)
+    excluded = {"raw_event", *(event.model_extra or {}).keys()}
+    return event.model_dump(mode="json", by_alias=True, exclude_none=True, exclude=excluded)
+
+
+def _cursor(binding: HostedAguiBinding, ordinal: int) -> str:
+    scope = hashlib.sha256(
+        f"{binding.thread_binding_id}\0{binding.external_run_id}\0{binding.run_id}".encode()
+    ).hexdigest()[:24]
+    return f"hagui_{scope}_{ordinal}"
+
+
+def _resume_ordinal(binding: HostedAguiBinding, cursor: str | None) -> int:
+    if cursor is None:
+        return -1
+    prefix = _cursor(binding, 0).rsplit("_", maxsplit=1)[0] + "_"
+    if not cursor.startswith(prefix):
+        raise HostedAguiError("agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", status_code=400)
+    try:
+        value = int(cursor.removeprefix(prefix))
+    except ValueError as error:
+        raise HostedAguiError("agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", status_code=400) from error
+    if value < 0:
+        raise HostedAguiError("agui_cursor_invalid", "The Hosted AG-UI cursor is invalid.", status_code=400)
+    return value
+
+
+def _sse(binding: HostedAguiBinding, ordinal: int, event: dict[str, Any]) -> bytes:
+    data = json.dumps(_standard_event(event), separators=(",", ":"), ensure_ascii=False)
+    return f"id: {_cursor(binding, ordinal)}\ndata: {data}\n\n".encode()
+
+
+def _after(value: str, cursor: str | None) -> bool:
+    if cursor is None:
+        return True
+    left = tuple(int(item) for item in value.split("-", maxsplit=1))
+    right = tuple(int(item) for item in cursor.split("-", maxsplit=1))
+    return left > right
+
+
+__all__ = [
+    "HostedAguiAttachment",
+    "HostedAguiBinding",
+    "HostedAguiCancelReceipt",
+    "HostedAguiCancelRequest",
+    "HostedAguiError",
+    "HostedAguiService",
+]

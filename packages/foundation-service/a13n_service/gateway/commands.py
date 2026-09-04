@@ -3,14 +3,29 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Awaitable, Callable
+from datetime import datetime
+from typing import Literal
 
+from a13n_harness import SafeFailure
 from pydantic import Field
 from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import AgentRunOverride, canonical_digest
+from a13n_service.agents.domain import AgentRunOverride, EffectiveAgentConfig, canonical_digest
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver, FrozenAgentInvocation
 from a13n_service.assets.service import AssetService
+from a13n_service.durable_operations.idempotency import (
+    EvidenceScope,
+    IdempotencyConflict,
+    IdempotencyIdentity,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
+    is_evidence_unique_race,
+    load_evidence,
+    new_evidence,
+)
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
@@ -20,6 +35,7 @@ from a13n_service.interactions import (
     AgentInputAcceptance,
     AgentInputAcceptanceContext,
     AgentInputError,
+    InterruptRequest,
     RecoveryBudget,
     RecoveryUsage,
     Run,
@@ -28,11 +44,18 @@ from a13n_service.interactions import (
     RunAcceptanceService,
     RunInputKind,
     RunLineageKind,
+    RunObjectError,
+    RunOutcomeError,
+    RunOutcomeService,
     RunStateSeed,
     RunStateStore,
     RunStatus,
     Session,
+    SteerReceipt,
+    SteerStatus,
     Thread,
+    ThreadInboxConflict,
+    ThreadInboxStore,
     ThreadOriginKind,
     ThreadRole,
     initialize_completed_continuation_state,
@@ -44,8 +67,8 @@ from a13n_service.interactions import (
 from a13n_service.interactions.domain import StrictModel
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.public_errors import PublicError
-from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.storage import ObjectStoreError, short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 
 class GatewayCommandError(PublicError):
@@ -72,6 +95,13 @@ class ContinueRunRequest(StrictModel):
     hook_subscription: InlineHookSubscriptionInput | None = None
 
 
+class InterruptReceipt(StrictModel):
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    status: Literal["cancelled"] = "cancelled"
+    interrupted_at: datetime
+
+
 class NativeInteractionCommands:
     """Accept Agent work once for reuse by Native, AG-UI, and A2A adapters."""
 
@@ -84,6 +114,8 @@ class NativeInteractionCommands:
         assets: AssetService,
         endpoint_policy: EndpointPolicy,
         *,
+        outcomes: RunOutcomeService | None = None,
+        inbox: ThreadInboxStore | None = None,
         recovery_max_attempts: int = 3,
         max_handoffs: int = 2,
         queue_name: str = "default",
@@ -96,6 +128,8 @@ class NativeInteractionCommands:
         self._states = states
         self._assets = assets
         self._endpoint_policy = endpoint_policy
+        self._outcomes = outcomes
+        self._inbox = inbox
         self._recovery_max_attempts = recovery_max_attempts
         self._max_handoffs = max_handoffs
         self._queue_name = queue_name
@@ -109,6 +143,7 @@ class NativeInteractionCommands:
         workspace_id: str,
         idempotency_key: str,
         request: StartRunRequest,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
         if workspace_id != actor.boundary_workspace_id:
             raise _not_found()
@@ -260,6 +295,7 @@ class NativeInteractionCommands:
                 state=state,
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
+                transaction_hook=transaction_hook,
             )
         except RunAcceptanceError as error:
             raise _map_acceptance_error(error) from error
@@ -271,6 +307,7 @@ class NativeInteractionCommands:
         source_run_id: str,
         idempotency_key: str,
         request: ContinueRunRequest,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -406,9 +443,461 @@ class NativeInteractionCommands:
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
+                transaction_hook=transaction_hook,
             )
         except RunAcceptanceError as error:
             raise _map_acceptance_error(error) from error
+
+    async def interrupt(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        idempotency_key: str,
+        request: InterruptRequest,
+    ) -> InterruptReceipt:
+        if self._outcomes is None:
+            raise GatewayCommandError(
+                "gateway_command_unavailable",
+                "Run interruption is unavailable.",
+                status_code=503,
+            )
+        identity = _command_identity(idempotency_key, request)
+        scope = EvidenceScope(
+            workspace_id=actor.boundary_workspace_id,
+            actor_type=actor.principal.principal_type.value,
+            actor_id=actor.principal.principal_id,
+            operation="run.interrupt",
+            scope_id=run_id,
+        )
+        replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+        if replay is not None:
+            return replay
+        source, thread = await self._load_interrupt_source(actor=actor, run_id=run_id)
+        if source.version != request.expected_run_version or thread.version != request.expected_thread_version:
+            raise GatewayCommandError(
+                "run_precondition_changed",
+                "The Run or Thread version changed before interruption.",
+                status_code=409,
+            )
+        now = assume_utc(self._clock())
+
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_interrupt,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+
+        async def record_evidence(database: AsyncSession) -> None:
+            try:
+                existing = await load_evidence(database, scope=scope, identity=identity, now=now)
+            except IdempotencyConflict as error:
+                raise _idempotency_conflict() from error
+            if existing is None:
+                database.add(
+                    new_evidence(
+                        organization_id=source.tenant_id,
+                        scope=scope,
+                        identity=identity,
+                        result_kind="run_interrupt",
+                        result_ref=run_id,
+                        now=now,
+                    )
+                )
+
+        try:
+            await self._outcomes.cancel(
+                tenant_id=source.tenant_id,
+                run_id=run_id,
+                expected_run_version=request.expected_run_version,
+                expected_thread_version=request.expected_thread_version,
+                failure=SafeFailure(
+                    code="run_interrupted",
+                    message="The Run was interrupted by the client.",
+                    retry_hint="new_run",
+                ),
+                final_validator=validate_final,
+                transaction_hook=record_evidence,
+            )
+        except IntegrityError as error:
+            if not is_evidence_unique_race(error):
+                raise GatewayCommandError(
+                    "run_interrupt_conflict",
+                    "Run interruption lost a concurrent mutation.",
+                    status_code=409,
+                ) from error
+            replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+            if replay is not None:
+                return replay
+            raise GatewayCommandError(
+                "run_interrupt_conflict",
+                "Run interruption lost a concurrent mutation.",
+                status_code=409,
+            ) from error
+        except RunOutcomeError as error:
+            replay = await self._interrupt_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+            if replay is not None:
+                return replay
+            raise GatewayCommandError(
+                "run_interrupt_conflict",
+                "The Run can no longer be interrupted.",
+                status_code=409,
+            ) from error
+        return InterruptReceipt(run_id=run_id, interrupted_at=now)
+
+    async def steer(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        idempotency_key: str,
+        input: AgentInput,
+    ) -> SteerReceipt:
+        if self._inbox is None:
+            raise GatewayCommandError(
+                "gateway_command_unavailable",
+                "Run steering is unavailable.",
+                status_code=503,
+            )
+        identity = _command_identity(idempotency_key, input)
+        scope = EvidenceScope(
+            workspace_id=actor.boundary_workspace_id,
+            actor_type=actor.principal.principal_type.value,
+            actor_id=actor.principal.principal_id,
+            operation="run.steer",
+            scope_id=run_id,
+        )
+        replay = await self._steer_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+        if replay is not None:
+            return replay
+        source, _thread = await self._load_steer_source(actor=actor, run_id=run_id)
+        try:
+            state = await self._states.read(source.tenant_id, source.id, expected_thread_id=source.thread_id)
+        except (ObjectStoreError, RunObjectError) as error:
+            raise GatewayCommandError(
+                "run_state_unavailable",
+                "The selected Run state is unavailable.",
+                status_code=409,
+            ) from error
+        accepted = await self._accept_input_for_effective(
+            actor=actor,
+            workspace_id=actor.boundary_workspace_id,
+            submitted=input,
+            effective=state.envelope.effective_agent_config,
+        )
+        now = assume_utc(self._clock())
+
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_steer,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+
+        async def record_evidence(database: AsyncSession, receipt: SteerReceipt) -> None:
+            try:
+                existing = await load_evidence(database, scope=scope, identity=identity, now=now)
+            except IdempotencyConflict as error:
+                raise _idempotency_conflict() from error
+            if existing is None:
+                database.add(
+                    new_evidence(
+                        organization_id=source.tenant_id,
+                        scope=scope,
+                        identity=identity,
+                        result_kind="run_steer",
+                        result_ref=receipt.steer_id,
+                        now=now,
+                    )
+                )
+
+        try:
+            return await self._inbox.append_steer(
+                tenant_id=source.tenant_id,
+                run_id=source.id,
+                input=accepted,
+                final_validator=validate_final,
+                transaction_hook=record_evidence,
+            )
+        except IntegrityError as error:
+            if is_evidence_unique_race(error):
+                replay = await self._steer_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+                if replay is not None:
+                    return replay
+            raise GatewayCommandError(
+                "run_steer_conflict",
+                "Run steering lost a concurrent mutation.",
+                status_code=409,
+            ) from error
+        except ThreadInboxConflict as error:
+            raise GatewayCommandError(
+                "run_steer_conflict",
+                "The selected Run can no longer accept steer input.",
+                status_code=409,
+            ) from error
+
+    async def get_steer(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        steer_id: str,
+    ) -> SteerStatus:
+        if self._inbox is None:
+            raise GatewayCommandError(
+                "gateway_command_unavailable",
+                "Run steering is unavailable.",
+                status_code=503,
+            )
+        source, _thread = await self._load_steer_source(actor=actor, run_id=run_id, read_only=True)
+        try:
+            return await self._inbox.get_steer(tenant_id=source.tenant_id, run_id=run_id, steer_id=steer_id)
+        except ThreadInboxConflict as error:
+            raise _not_found() from error
+
+    async def _steer_replay(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        scope: EvidenceScope,
+        identity: IdempotencyIdentity,
+    ) -> SteerReceipt | None:
+        assert self._inbox is not None
+        now = assume_utc(self._clock())
+        async with transaction(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, SessionRecord)
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.id == RunRecord.session_id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.id == run_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            run, _session = row
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=run.agent_id,
+                    action=WorkspaceAction.run_steer,
+                )
+                evidence = await load_evidence(database, scope=scope, identity=identity, now=now)
+            except AuthorizationError as error:
+                raise _not_found() from error
+            except IdempotencyConflict as error:
+                raise _idempotency_conflict() from error
+            if evidence is None:
+                return None
+            if evidence.result_kind != "run_steer":
+                raise GatewayCommandError(
+                    "idempotency_evidence_invalid",
+                    "The Run steer replay evidence is invalid.",
+                    status_code=503,
+                )
+            steer_id = evidence.result_ref
+            tenant_id = run.tenant_id
+        try:
+            status = await self._inbox.get_steer(tenant_id=tenant_id, run_id=run_id, steer_id=steer_id)
+        except ThreadInboxConflict as error:
+            raise GatewayCommandError(
+                "idempotency_evidence_invalid",
+                "The Run steer replay evidence is invalid.",
+                status_code=503,
+            ) from error
+        return SteerReceipt(
+            session_id=status.session_id,
+            thread_id=status.thread_id,
+            run_id=status.accepted_against_run_id,
+            steer_id=status.steer_id,
+            delivery_sequence=status.delivery_sequence,
+            accepted_at=status.created_at,
+        )
+
+    async def _load_steer_source(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        read_only: bool = False,
+    ):
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, ThreadRecord)
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.id == RunRecord.session_id,
+                        ),
+                    )
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.id == RunRecord.thread_id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.id == run_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            source, thread = row
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_read if read_only else WorkspaceAction.run_steer,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            if not read_only and (
+                thread.current_run_id != source.id
+                or source.status
+                not in {
+                    RunStatus.accepted.value,
+                    RunStatus.running.value,
+                    RunStatus.waiting.value,
+                }
+            ):
+                raise GatewayCommandError(
+                    "run_not_steerable",
+                    "The selected Run cannot accept steer input.",
+                    status_code=409,
+                )
+            return source.to_resource(), thread.to_resource()
+
+    async def _interrupt_replay(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        scope: EvidenceScope,
+        identity: IdempotencyIdentity,
+    ) -> InterruptReceipt | None:
+        now = assume_utc(self._clock())
+        async with transaction(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, SessionRecord)
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.id == RunRecord.session_id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.id == run_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            run, _session = row
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=run.agent_id,
+                    action=WorkspaceAction.run_interrupt,
+                )
+                evidence = await load_evidence(database, scope=scope, identity=identity, now=now)
+            except AuthorizationError as error:
+                raise _not_found() from error
+            except IdempotencyConflict as error:
+                raise _idempotency_conflict() from error
+            if evidence is None:
+                return None
+            if evidence.result_kind != "run_interrupt" or evidence.result_ref != run.id or run.sealed_at is None:
+                raise GatewayCommandError(
+                    "idempotency_evidence_invalid",
+                    "The Run interruption replay evidence is invalid.",
+                    status_code=503,
+                )
+            return InterruptReceipt(run_id=run.id, interrupted_at=assume_utc(run.sealed_at))
+
+    async def _load_interrupt_source(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+    ):
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, ThreadRecord)
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.id == RunRecord.session_id,
+                        ),
+                    )
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.id == RunRecord.thread_id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.id == run_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            source, thread = row
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_interrupt,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            if source.status not in {RunStatus.accepted.value, RunStatus.running.value}:
+                raise GatewayCommandError(
+                    "run_not_interruptible",
+                    "The selected Run is not active.",
+                    status_code=409,
+                )
+            return source.to_resource(), thread.to_resource()
 
     async def _accept_input(
         self,
@@ -426,19 +915,34 @@ class NativeInteractionCommands:
         )
 
     async def _accept_input_value(self, *, actor, workspace_id, submitted, frozen):
+        return await self._accept_input_for_effective(
+            actor=actor,
+            workspace_id=workspace_id,
+            submitted=submitted,
+            effective=frozen.effective_config,
+        )
+
+    async def _accept_input_for_effective(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        submitted: AgentInput,
+        effective: EffectiveAgentConfig,
+    ):
         async def authorize_asset(asset_id: str):
             return await self._assets.require_for_use(actor=actor, asset_id=asset_id)
 
-        environment = frozen.effective_config.resolved_environment
+        environment = effective.resolved_environment
         acceptance = AgentInputAcceptance(self._endpoint_policy, authorize_asset)
         try:
             return await acceptance.accept(
                 submitted,
                 AgentInputAcceptanceContext(
                     workspace_id=workspace_id,
-                    model_characteristics=frozen.effective_config.resolved_model.characteristics,
-                    max_input_bytes=frozen.effective_config.protocol.limits.max_input_bytes,
-                    structured_content_schema=frozen.effective_config.protocol.input_data_schema,
+                    model_characteristics=effective.resolved_model.characteristics,
+                    max_input_bytes=effective.protocol.limits.max_input_bytes,
+                    structured_content_schema=effective.protocol.input_data_schema,
                     environment_writable=environment is not None and environment.access != "read_only",
                     environment_bindings=(frozenset({"workspace"}) if environment is not None else frozenset()),
                 ),
@@ -573,6 +1077,18 @@ def _require_idempotency_key(value: str) -> None:
         )
 
 
+def _command_identity(idempotency_key: str, request: StrictModel) -> IdempotencyIdentity:
+    try:
+        key_digest = digest_visible_ascii_key(idempotency_key)
+    except InvalidIdempotencyKey as error:
+        raise GatewayCommandError(
+            "invalid_request",
+            "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
+            status_code=400,
+        ) from error
+    return IdempotencyIdentity(key_digest=key_digest, request_digest=canonical_digest(request))
+
+
 def _scoped_idempotency_key(*, actor: AuthenticatedActor, operation: str, scope_id: str, supplied: str) -> str:
     material = "\x1f".join(
         (
@@ -602,9 +1118,18 @@ def _not_found() -> GatewayCommandError:
     return GatewayCommandError("resource_not_found", "The requested resource was not found.", status_code=404)
 
 
+def _idempotency_conflict() -> GatewayCommandError:
+    return GatewayCommandError(
+        "idempotency_conflict",
+        "The Idempotency-Key was already used with different request content.",
+        status_code=409,
+    )
+
+
 __all__ = [
     "ContinueRunRequest",
     "GatewayCommandError",
+    "InterruptReceipt",
     "NativeInteractionCommands",
     "StartRunRequest",
 ]
