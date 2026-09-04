@@ -32,6 +32,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/readyz" not in document["paths"]
     schemas = document["components"]["schemas"]
     assert {
+        "Account",
         "Asset",
         "Ingress",
         "Model",
@@ -66,6 +67,9 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/workspaces/{workspace_id}/events" in document["paths"]
     assert "/api/v1/runs/{run_id}/events" in document["paths"]
     assert "/api/v1/run-attempts/{run_attempt_id}/events" in document["paths"]
+    assert "/api/v1/workspaces/{workspace_id}/application-accounts" in document["paths"]
+    assert "/api/v1/application-accounts/{account_id}/credentials" in document["paths"]
+    assert "/api/v1/ingresses/{ingress_id}/credentials" not in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/ingresses" in document["paths"]
     assert "/api/v1/ingresses/{ingress_id}/routes" in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/mcp-connections" in document["paths"]
@@ -74,7 +78,10 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     connectivity_paths = {
         path: operations
         for path, operations in document["paths"].items()
-        if any(segment in path for segment in ("/ingresses", "/connectors", "/connector-connections", "/mcp"))
+        if any(
+            segment in path
+            for segment in ("/application-accounts", "/ingresses", "/connectors", "/connector-connections", "/mcp")
+        )
     }
     assert connectivity_paths
     assert all(
@@ -83,8 +90,11 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
         for operation in operations.values()
         if isinstance(operation, dict)
     )
-    assert document["components"]["schemas"]["CreateIngressRequest"]["properties"]["credentials"]["writeOnly"]
-    assert "credentials" not in document["components"]["schemas"]["Ingress"]["properties"]
+    for name in ("CreateAccountRequest", "ReplaceAccountCredentialsRequest"):
+        assert schemas[name]["properties"]["credentials"]["writeOnly"]
+    assert "account_id" in schemas["CreateIngressRequest"]["required"]
+    for name in ("Account", "Ingress", "CreateIngressRequest"):
+        assert "credentials" not in schemas[name]["properties"]
 
 
 @pytest.mark.parametrize("role", [ProcessRole.control, ProcessRole.all])
