@@ -50,8 +50,7 @@ def test_scalar_and_list_overrides_replace_and_clear() -> None:
     merged = merge_agent_run_override(base, override)
 
     assert merged.config.model.model_key == base.model.model_key
-    assert merged.config.model.model_api == base.model.model_api
-    assert merged.config.model.settings == {}
+    assert merged.config.model.settings == base.model.settings
     assert merged.config.model.characteristics.context_window == 32000
     assert merged.config.instructions == ""
     assert merged.config.plugins == ()
@@ -197,7 +196,6 @@ def test_connection_tool_overrides_replace_complete_lists() -> None:
         ({"instructions": None}, "instructions", "null_not_allowed"),
         ({"skills": None}, "skills", "null_not_allowed"),
         ({"retries": None}, "retries", "null_not_allowed"),
-        ({"model": {"settings": None}}, "model.settings", "null_not_allowed"),
         ({"retries": {"tools": None}}, "retries.tools", "null_not_allowed"),
         ({"subagents": {"new": {}}}, "subagents.new.agent_id", "required"),
         ({"connector_tools": None}, "connector_tools", "null_not_allowed"),
@@ -372,3 +370,66 @@ async def test_current_selector_detects_revision_change_between_prepare_and_comm
         async with transaction(agent_sessions) as session:
             await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     assert conflict.value.code == "current_revision_conflict"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("override", "temperature"),
+    [({}, 0.2), ({"settings": {}}, 0.2), ({"settings": None}, 0.8), ({"settings": {"temperature": 0.5}}, 0.5)],
+)
+async def test_run_freezes_model_defaults_agent_settings_and_explicit_overrides(
+    agent_management: AgentManagement,
+    agent_invocation_resolver: AgentInvocationResolver,
+    agent_sessions: async_sessionmaker[AsyncSession],
+    override: dict,
+    temperature: float,
+) -> None:
+    from a13n_service.models.models import ModelRecord
+
+    from .conftest import MODEL_ID
+
+    async with transaction(agent_sessions) as session:
+        record = await session.get(ModelRecord, MODEL_ID)
+        assert record is not None
+        record.settings = {"temperature": 0.8, "max_tokens": 123}
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="defaults-create",
+        request=CreateAgentRequest(name="Defaults", config=agent_config()),
+    )
+    assert created.revision.resolved_model.settings == {"temperature": 0.2}
+    assert "model_api" not in created.revision.resolved_model.model_dump()
+    prepared = await agent_invocation_resolver.preparation.prepare(
+        actor=actor(), agent_id=created.agent.id, config_override=AgentRunOverride.model_validate({"model": override})
+    )
+    async with transaction(agent_sessions) as session:
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
+    assert frozen.effective_config.resolved_model.settings == {"temperature": temperature, "max_tokens": 123}
+    async with transaction(agent_sessions) as session:
+        record = await session.get(ModelRecord, MODEL_ID)
+        assert record is not None
+        record.settings = {"max_tokens": 456}
+    assert frozen.effective_config.resolved_model.settings["max_tokens"] == 123
+
+
+@pytest.mark.anyio
+async def test_invalid_run_settings_preserve_the_parameter_error(
+    agent_management: AgentManagement,
+    agent_invocation_resolver: AgentInvocationResolver,
+) -> None:
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="invalid-settings-create",
+        request=CreateAgentRequest(name="Settings", config=agent_config()),
+    )
+    with pytest.raises(AgentError) as invalid:
+        await agent_invocation_resolver.preparation.prepare(
+            actor=actor(),
+            agent_id=created.agent.id,
+            config_override=AgentRunOverride.model_validate({"model": {"settings": {"temperature": "secret"}}}),
+        )
+    assert invalid.value.code == "invalid_model_settings"
+    assert invalid.value.details["path"] == ["settings", "temperature"]
+    assert "secret" not in str(invalid.value.details)

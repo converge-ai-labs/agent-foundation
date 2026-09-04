@@ -16,6 +16,7 @@ from a13n_service.iam import (
 )
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
+from a13n_service.models.settings import effective_settings
 from a13n_service.plugins.runtime import PluginRuntimeLockError
 
 from ..connectivity_resolution import freeze_invocation_connectivity
@@ -30,7 +31,7 @@ from ..errors import (
     agent_revision_not_executable,
     current_revision_conflict,
     map_authorization_error,
-    model_error_reason,
+    map_model_error,
 )
 from ..plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError
 from .contracts import (
@@ -137,7 +138,7 @@ class AgentInvocationFreezer:
             try:
                 execution = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
             except ModelError as error:
-                raise agent_revision_not_executable(model_error_reason(error)) from error
+                raise map_model_error(error) from error
             skills = await freeze_skills(session, prepared)
             try:
                 environment = (
@@ -190,7 +191,9 @@ class AgentInvocationFreezer:
             "schema_version": "1",
             "resolved_model": EffectiveAgentModel(
                 execution=execution,
-                settings=prepared.merged.config.model.settings,
+                settings=effective_settings(
+                    execution.model_api, prepared.model.resource.settings, prepared.merged.config.model.settings
+                ),
                 characteristics=prepared.merged.config.model.characteristics,
             ),
             "resolved_plugin_versions": plugins,

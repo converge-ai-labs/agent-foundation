@@ -90,6 +90,18 @@ Foundation Web uses only public Native API, including Trace Query, Run SSE, Work
 
 Foundation Web implements the product's supported browser workflows; it is not required to provide a page for every administrative resource in the Management API. An absent browser page does not remove the corresponding public API or SDK contract. Browser cookie authentication, Origin, CSRF, and same-origin behavior follow the shared ingress and IAM contracts.
 
+### Model setup and configuration
+
+Foundation Web implements the [Model Management](30-model-management.md) setup flow: choose a Provider type, enter credentials and necessary configuration, save, discover candidates when supported, and explicitly add selected Models. It provides search and traversal of discovery results and an always-available manual-add entry. Discovery errors, unsupported discovery, and successful empty results remain distinguishable; none removes the saved Provider or manual entry. Adding several candidates reports success or failure per Model using the ordinary create operation.
+
+Discovered and manually entered model IDs use the same configuration editor and public description operation. The editor prefills the suggested API, settings, and available metadata and lets users adjust them before saving. It displays the canonical API key, including `openrouter.chat_completions`, and allows selection only among that Provider's supported APIs. Changing the API refreshes its parameter description without silently deleting existing input; incompatible values require correction before save. A missing catalog entry or unknown capability does not make a manually entered ID invalid.
+
+Parameter forms use the returned settings schema and support information rather than a client-maintained model catalog. Common fields have ordinary controls; advanced settings include JSON editing and the supported extra-body escape hatch over the same settings object. Known unsupported parameters are not recommended by ordinary forms, while unknown support is identified without blocking manual configuration. API-schema type errors and upstream invocation failures are presented distinctly. Metadata is displayed as text and inert form data, never executed or rendered as trusted markup.
+
+Editing a saved Model starts from saved values, not newly suggested defaults. Settings absent from a new recommended form remain visible and editable in advanced configuration; refreshing descriptions never removes them. Applying suggestions is an explicit user edit. Displayed profile/limit information is distinguished from request settings, so editing a capability label is not presented as enabling an upstream feature.
+
+Agent configuration selects only a Model key and optionally edits settings overrides using that Model's description. SDKs and the CLI expose the same single-API Model, description, discovery, manual-create, and test contracts without requiring the browser or a bundled catalog. Model Management remains the sole owner of their fields, validation, and precedence rules.
+
 ## Standard Protocol Clients
 
 Hosted AG-UI and A2A remain independently interoperable standards. Foundation SDKs can add convenience factories or typed references for their URLs, but a client never needs Foundation-specific serialization to use a standard AG-UI Run or A2A Task. Such helpers cannot introduce another event model or hide standard protocol errors.

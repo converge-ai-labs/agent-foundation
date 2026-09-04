@@ -20,7 +20,6 @@ from a13n_service.environments.catalog import FoundationEnvironmentProviderCatal
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
-from a13n_service.models.domain import ModelApiConfig, ModelProfile
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
@@ -65,7 +64,6 @@ def agent_config(
         {
             "model": {
                 "model_key": MODEL_KEY,
-                "model_api": "openai.responses",
                 "settings": {"temperature": 0.2},
                 "characteristics": {"context_window": 128000},
             },
@@ -217,12 +215,10 @@ async def agent_sessions(
                     name="Primary",
                     description=None,
                     upstream_model="gpt-5.6-terra",
-                    model_apis=[
-                        ModelApiConfig(
-                            api="openai.responses",
-                            profile=ModelProfile(input_modalities=("text",), supports_tools=True),
-                        ).model_dump(mode="json")
-                    ],
+                    model_api="openai.responses",
+                    settings={},
+                    profile={},
+                    limits={},
                     enabled=True,
                     created_by_type="user",
                     created_by_id=USER_ID,

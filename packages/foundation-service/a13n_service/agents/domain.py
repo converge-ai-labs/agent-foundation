@@ -21,7 +21,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.environments.domain import (
@@ -32,7 +31,8 @@ from a13n_service.environments.domain import (
 )
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
-from a13n_service.models.domain import ModelApi, ModelExecutionSnapshot, ModelKey
+from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
+from a13n_service.models.settings import validate_settings_bounds
 from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
@@ -44,14 +44,6 @@ PluginKey = Annotated[
     StringConstraints(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", min_length=3, max_length=128),
 ]
 JsonObject = dict[str, JsonValue]
-_MODEL_SETTING_KEYS = frozenset(ModelSettings.__annotations__)
-
-
-def _validate_model_settings(value: JsonObject) -> JsonObject:
-    unknown = sorted(set(value) - _MODEL_SETTING_KEYS)
-    if unknown:
-        raise ValueError(f"unsupported ModelSettings fields: {', '.join(unknown)}")
-    return value
 
 
 def new_agent_id() -> str:
@@ -99,11 +91,8 @@ class StrictModel(BaseModel):
 
 class AgentModel(StrictModel):
     model_key: ModelKey
-    model_api: ModelApi
-    settings: JsonObject = Field(default_factory=dict)
+    settings: Annotated[JsonObject, AfterValidator(validate_settings_bounds)] = Field(default_factory=dict)
     characteristics: HarnessModelCharacteristics = Field(default_factory=HarnessModelCharacteristics)
-
-    _settings_are_native = field_validator("settings")(_validate_model_settings)
 
 
 class OnDemandPluginSelection(StrictModel):
@@ -317,14 +306,8 @@ EnvironmentOverride = EnvironmentSelection | InlineEnvironmentSelection
 
 class ModelOverride(StrictModel):
     model_key: ModelKey | None = None
-    model_api: ModelApi | None = None
-    settings: JsonObject | None = None
+    settings: Annotated[JsonObject, AfterValidator(validate_settings_bounds)] | None = None
     characteristics: HarnessModelCharacteristics | None = None
-
-    @field_validator("settings")
-    @classmethod
-    def validate_settings(cls, value: JsonObject | None) -> JsonObject | None:
-        return None if value is None else _validate_model_settings(value)
 
 
 class SubagentOverride(StrictModel):
@@ -361,19 +344,14 @@ class AgentRunOverride(StrictModel):
 class ResolvedAgentModel(StrictModel):
     model_id: ObjectId
     model_key: ModelKey
-    model_api: ModelApi
-    settings: JsonObject
+    settings: Annotated[JsonObject, AfterValidator(validate_settings_bounds)]
     characteristics: HarnessModelCharacteristics
-
-    _settings_are_native = field_validator("settings")(_validate_model_settings)
 
 
 class EffectiveAgentModel(StrictModel):
     execution: ModelExecutionSnapshot
-    settings: JsonObject
+    settings: Annotated[JsonObject, AfterValidator(validate_settings_bounds)]
     characteristics: HarnessModelCharacteristics
-
-    _settings_are_native = field_validator("settings")(_validate_model_settings)
 
 
 class ResolvedPluginVersion(StrictModel):

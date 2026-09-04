@@ -6,7 +6,6 @@ from a13n_service.agents.domain import AgentConfig, CreateAgentRequest, PluginRu
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
-from a13n_service.models.domain import ModelApiConfig, ModelProfile
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
@@ -56,7 +55,6 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
         {
             "model": {
                 "model_key": MODEL_KEY,
-                "model_api": "openai.responses",
                 "settings": {},
                 "characteristics": {"context_window": 128000},
             },
@@ -128,12 +126,10 @@ async def _seed_model(sessions: async_sessionmaker[AsyncSession]) -> None:
                 name="Selection Model",
                 description=None,
                 upstream_model="gpt-5.6-terra",
-                model_apis=[
-                    ModelApiConfig(
-                        api="openai.responses",
-                        profile=ModelProfile(input_modalities=("text",), supports_tools=True),
-                    ).model_dump(mode="json")
-                ],
+                model_api="openai.responses",
+                settings={},
+                profile={},
+                limits={},
                 enabled=True,
                 created_by_type="user",
                 created_by_id=actor().principal.principal_id,

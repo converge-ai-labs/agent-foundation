@@ -41,14 +41,17 @@ def idempotency_conflict() -> AgentError:
     )
 
 
-def model_error_reason(error: ModelError) -> str:
-    return {
+def map_model_error(error: ModelError) -> AgentError:
+    if error.code == "invalid_model_settings":
+        return AgentError(error.code, error.message, status_code=error.status_code, details=error.details)
+    reason = {
         "model_not_found": "model_unavailable",
         "model_disabled": "model_unavailable",
         "credential_not_eligible": "model_credential_unavailable",
         "model_configuration_changed": "model_configuration_changed",
         "invalid_model_configuration": "model_incompatible",
     }.get(error.code, "model_unavailable")
+    return agent_revision_not_executable(reason)
 
 
 def agent_not_found() -> AgentError:

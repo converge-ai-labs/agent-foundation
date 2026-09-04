@@ -12,7 +12,14 @@ from pydantic_ai.providers import Provider
 
 from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider, ValidatedProviderConfiguration
 
-DiscoveredModelIdentity = tuple[str, str | None]
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredModelIdentity:
+    upstream_model: str
+    display_name: str | None
+    metadata: Mapping[str, Any]
+
+
 NativeProviderBuilder = Callable[[RuntimeProvider, httpx2.AsyncClient, str], Provider[Any]]
 EndpointResolver = Callable[[Mapping[str, object]], str | None]
 CredentialValidator = Callable[[Mapping[str, object], bool], None]
@@ -65,7 +72,18 @@ class JsonModelDiscoveryAdapter:
             model_id = raw_id.removeprefix(self.schema.identifier_prefix).strip()
             if not 1 <= len(model_id) <= 256:
                 continue
-            parsed.append((model_id, _display_name(value, self.schema.display_name_fields, model_id)))
+            methods = value.get("supportedGenerationMethods")
+            if isinstance(methods, list) and "generateContent" not in methods:
+                continue
+            if model_id.startswith(("text-embedding-", "whisper-", "tts-", "omni-moderation-")):
+                continue
+            if value.get("type") in ("embedding", "rerank", "moderation", "transcription"):
+                continue
+            parsed.append(
+                DiscoveredModelIdentity(
+                    model_id, _display_name(value, self.schema.display_name_fields, model_id), dict(value)
+                )
+            )
         return parsed
 
 
@@ -78,6 +96,7 @@ class ProviderIntegration:
     configuration_model: type[ProviderConfiguration]
     supported_model_apis: tuple[str, ...]
     build_provider: NativeProviderBuilder
+    default_model_api: str | None = None
     credential_format: CredentialFormat | None = CredentialFormat.api_key
     credential_required: bool = True
     endpoint: str | EndpointResolver | None = None

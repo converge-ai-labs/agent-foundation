@@ -6,7 +6,16 @@ import unicodedata
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
@@ -46,7 +55,7 @@ class ModelProfile(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    input_modalities: tuple[Literal["text", "image", "audio", "video"], ...] = ()
+    input_modalities: tuple[Literal["text", "image", "audio", "video"], ...] | None = None
     supports_tools: bool | None = None
     supports_json_schema_output: bool | None = None
     supports_json_object_output: bool | None = None
@@ -57,7 +66,8 @@ class ModelProfile(BaseModel):
 
     @model_validator(mode="after")
     def normalize_modalities(self) -> ModelProfile:
-        object.__setattr__(self, "input_modalities", tuple(dict.fromkeys(self.input_modalities)))
+        if self.input_modalities is not None:
+            object.__setattr__(self, "input_modalities", tuple(dict.fromkeys(self.input_modalities)))
         return self
 
 
@@ -66,22 +76,6 @@ class ModelLimits(BaseModel):
 
     context_window_tokens: int | None = Field(default=None, gt=0)
     max_output_tokens: int | None = Field(default=None, gt=0)
-
-
-class ModelApiConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    api: ModelApi
-    profile: ModelProfile = Field(default_factory=ModelProfile)
-    limits: ModelLimits = Field(default_factory=ModelLimits)
-
-
-def _require_unique_apis(value: tuple[ModelApiConfig, ...]) -> None:
-    if not value:
-        raise ValueError("at least one model API must be supplied")
-    apis = [item.api for item in value]
-    if len(apis) != len(set(apis)):
-        raise ValueError("model APIs must be unique")
 
 
 class CreateModelProviderRequest(BaseModel):
@@ -144,13 +138,11 @@ class CreateModelRequest(BaseModel):
     name: BoundedName
     description: BoundedDescription | None = None
     upstream_model: UpstreamModel
-    model_apis: tuple[ModelApiConfig, ...]
+    model_api: ModelApi
+    settings: dict[str, JsonValue] = Field(default_factory=dict)
+    profile: ModelProfile = Field(default_factory=ModelProfile)
+    limits: ModelLimits = Field(default_factory=ModelLimits)
     enabled: bool = True
-
-    @model_validator(mode="after")
-    def validate_apis(self) -> CreateModelRequest:
-        _require_unique_apis(self.model_apis)
-        return self
 
 
 class UpdateModelRequest(BaseModel):
@@ -159,7 +151,10 @@ class UpdateModelRequest(BaseModel):
     name: BoundedName | None = None
     description: BoundedDescription | None = None
     upstream_model: UpstreamModel | None = None
-    model_apis: tuple[ModelApiConfig, ...] | None = None
+    model_api: ModelApi | None = None
+    settings: dict[str, JsonValue] | None = None
+    profile: ModelProfile | None = None
+    limits: ModelLimits | None = None
     enabled: bool | None = None
 
     @model_validator(mode="after")
@@ -169,8 +164,6 @@ class UpdateModelRequest(BaseModel):
         for field in self.model_fields_set - {"description"}:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
-        if self.model_apis is not None:
-            _require_unique_apis(self.model_apis)
         return self
 
 
@@ -185,7 +178,10 @@ class Model(BaseModel):
     name: str
     description: str | None
     upstream_model: str
-    model_apis: tuple[ModelApiConfig, ...]
+    model_api: ModelApi
+    settings: dict[str, JsonValue] = Field(default_factory=dict)
+    profile: ModelProfile = Field(default_factory=ModelProfile)
+    limits: ModelLimits = Field(default_factory=ModelLimits)
     enabled: bool
     created_by: PrincipalRef
     updated_by: PrincipalRef
@@ -200,11 +196,10 @@ class ModelCollection(BaseModel):
     next_cursor: str | None
 
 
-class ModelSelection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class ModelTestRequest(BaseModel):
+    """Model tests use the saved API and settings without a request selector."""
 
-    model_key: ModelKey
-    model_api: ModelApi
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class ModelConnectionTestResult(BaseModel):
@@ -215,12 +210,6 @@ class ModelConnectionTestResult(BaseModel):
     code: str
     message: str
     may_consume_quota_or_incur_cost: Literal[True] = True
-
-
-class TestModelRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    model_api: ModelApi
 
 
 class ModelExecutionObservation(BaseModel):
@@ -244,15 +233,12 @@ class ModelExecutionSnapshot(BaseModel):
     model_api: str
 
     @classmethod
-    def freeze(cls, model: Model, model_api: str) -> ModelExecutionSnapshot:
-        selected = next((item for item in model.model_apis if item.api == model_api), None)
-        if selected is None:
-            raise ValueError("the selected model API is not configured")
+    def freeze(cls, model: Model) -> ModelExecutionSnapshot:
         return cls(
             model_id=model.id,
             model_key=model.key,
             upstream_model=model.upstream_model,
-            model_api=selected.api,
+            model_api=model.model_api,
         )
 
     def observation(self) -> ModelExecutionObservation:

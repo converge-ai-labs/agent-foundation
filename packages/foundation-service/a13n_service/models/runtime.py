@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from a13n_harness import AgentContext, RunModelResolver
 from a13n_harness.errors import ModelResolutionError
@@ -26,6 +26,7 @@ from .models import ModelProviderRecord, ModelRecord
 from .provider_runtime import LiveProviderResolver
 from .providers import ProviderRegistry
 from .service_common import ModelError
+from .settings import JsonObject, effective_settings, validate_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +34,7 @@ class PreparedModelExecution:
     organization_id: str
     workspace_id: str
     resource: ModelResource
-    model_api: str
+    settings: JsonObject
 
 
 class AcceptedModelSelector:
@@ -50,8 +51,7 @@ class AcceptedModelSelector:
         workspace_id: str,
         model_key: str | None = None,
         model_id: str | None = None,
-        model_api: str,
-        **_: Any,
+        settings: JsonObject,
     ) -> PreparedModelExecution:
         if (model_key is None) == (model_id is None):
             raise ValueError("exactly one Model selector is required")
@@ -76,13 +76,13 @@ class AcceptedModelSelector:
             model_record, provider_record = row
             model = model_record.to_resource()
             _require_enabled(model_record, provider_record)
-            _require_model_api(model, model_api)
-            self._registry.validate_model_apis(provider_record.type, model.model_apis)
+            self._registry.validate_model_api(provider_record.type, model.model_api)
+            effective_settings(model.model_api, model.settings, settings)
             return PreparedModelExecution(
                 organization_id=organization_id,
                 workspace_id=workspace_id,
                 resource=model,
-                model_api=model_api,
+                settings=settings,
             )
 
     async def freeze_in_transaction(
@@ -108,8 +108,14 @@ class AcceptedModelSelector:
         model_record, provider_record = row
         _require_enabled(model_record, provider_record)
         model = model_record.to_resource()
-        _require_model_api(model, prepared.model_api)
-        return ModelExecutionSnapshot.freeze(model, prepared.model_api)
+        if model.updated_at != prepared.resource.updated_at:
+            raise ModelError(
+                "model_configuration_changed",
+                "The Model changed during acceptance. Retry the request.",
+                status_code=409,
+            )
+        effective_settings(model.model_api, model.settings, prepared.settings)
+        return ModelExecutionSnapshot.freeze(model)
 
 
 class LiveProviderModel(WrapperModel):
@@ -152,6 +158,7 @@ class LiveProviderModel(WrapperModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
+        validate_settings(self._snapshot.model_api, cast(JsonObject, dict(model_settings or {})))
         model = await self._fresh()
         async with model:
             return await model.request(messages, model_settings, model_request_parameters)
@@ -164,6 +171,7 @@ class LiveProviderModel(WrapperModel):
         model_request_parameters: ModelRequestParameters,
         run_context: Any = None,
     ) -> AsyncIterator[StreamedResponse]:
+        validate_settings(self._snapshot.model_api, cast(JsonObject, dict(model_settings or {})))
         model = await self._fresh()
         async with model:
             async with model.request_stream(messages, model_settings, model_request_parameters, run_context) as stream:
@@ -224,8 +232,3 @@ def _require_enabled(model: ModelRecord, provider: ModelProviderRecord) -> None:
         raise ModelError("model_disabled", "The selected Model is disabled.", status_code=409)
     if not provider.enabled:
         raise ModelError("model_provider_disabled", "The selected Model Provider is disabled.", status_code=409)
-
-
-def _require_model_api(model: ModelResource, model_api: str) -> None:
-    if not any(item.api == model_api for item in model.model_apis):
-        raise ModelError("model_api_not_configured", "The selected Model API is not configured.", status_code=409)

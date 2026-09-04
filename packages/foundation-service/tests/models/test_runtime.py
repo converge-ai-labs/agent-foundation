@@ -6,6 +6,7 @@ from unittest.mock import patch
 import httpx2
 import pytest
 from a13n_service.etags import resource_etag
+from a13n_service.models.connection_test import NativeModelConnectionTester
 from a13n_service.models.domain import (
     CreateModelProviderRequest,
     CreateModelRequest,
@@ -29,6 +30,67 @@ from pydantic_ai.models.openrouter import OpenRouterModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import ORG_ID, WORKSPACE_ID, actor, protector
+
+
+@pytest.mark.anyio
+async def test_connection_test_sends_saved_settings_and_single_model_identity(
+    provider_service: ModelProviderService,
+    model_service: ModelService,
+    model_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    provider = await provider_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelProviderRequest(type="openrouter", name="Router", credential="secret"),
+    )
+    model = await model_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelRequest(
+            key="primary",
+            provider_id=provider.id,
+            name="Primary",
+            upstream_model="team/unlisted-model",
+            model_api="openrouter.chat_completions",
+            settings={"temperature": 0.3, "max_tokens": 42, "openrouter_provider": {"only": ["vendor"]}},
+        ),
+    )
+    requests = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(json.loads(request.content))
+        assert str(request.url) == "https://openrouter.ai/api/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer secret"
+        return httpx2.Response(
+            200,
+            json={
+                "id": "reply",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "team/unlisted-model",
+                "provider": "vendor",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}],
+            },
+        )
+
+    registry = built_in_provider_registry()
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        tester = NativeModelConnectionTester(
+            provider_resolver=LiveProviderResolver(model_sessions, registry, _AllowEndpoints(), protector()),
+            model_factory=NativeModelFactory(client, registry),
+        )
+        await tester(
+            snapshot=ModelExecutionSnapshot.freeze(model),
+            settings=model.settings,
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+        )
+    assert len(requests) == 1
+    assert requests[0]["model"] == "team/unlisted-model"
+    assert "models" not in requests[0]
+    assert requests[0]["temperature"] == 0.3
+    assert requests[0]["max_tokens"] == 42
+    assert requests[0]["provider"]["only"] == ["vendor"]
 
 
 class _AllowEndpoints:
@@ -56,10 +118,10 @@ async def test_provider_credential_rotation_is_visible_to_same_model_snapshot(
             provider_id=provider.id,
             name="Primary",
             upstream_model="gpt-current",
-            model_apis=({"api": "openai.responses"},),
+            model_api="openai.responses",
         ),
     )
-    snapshot = ModelExecutionSnapshot.freeze(model, "openai.responses")
+    snapshot = ModelExecutionSnapshot.freeze(model)
     resolver = LiveProviderResolver(
         model_sessions,
         built_in_provider_registry(),
@@ -102,16 +164,16 @@ async def test_model_snapshot_keeps_accepted_api_after_model_edit(
             provider_id=provider.id,
             name="Primary",
             upstream_model="gpt-current",
-            model_apis=({"api": "openai.responses"},),
+            model_api="openai.responses",
         ),
     )
-    snapshot = ModelExecutionSnapshot.freeze(model, "openai.responses")
+    snapshot = ModelExecutionSnapshot.freeze(model)
     await model_service.update(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         model_id=model.id,
         if_match=resource_etag(model.id, model.updated_at),
-        request=UpdateModelRequest(model_apis=({"api": "openai.chat_completions"},)),
+        request=UpdateModelRequest(model_api="openai.chat_completions"),
     )
     resolver = LiveProviderResolver(
         model_sessions,

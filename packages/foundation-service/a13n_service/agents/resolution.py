@@ -107,7 +107,7 @@ class AgentResolver:
             organization_id=organization_id,
             workspace_id=workspace_id,
             model_key=config.model.model_key,
-            model_api=config.model.model_api,
+            settings=config.model.settings,
         )
         async with short_session(self._sessions) as session:
             await authorize_agent(
@@ -225,7 +225,6 @@ class AgentResolver:
             resolved_model=ResolvedAgentModel(
                 model_id=model.model_id,
                 model_key=model.model_key,
-                model_api=model.model_api,
                 settings=prepared.config.model.settings,
                 characteristics=prepared.config.model.characteristics,
             ),
