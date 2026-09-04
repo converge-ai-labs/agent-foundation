@@ -338,6 +338,8 @@ class ContentPluginStore:
             before = os.fstat(file_descriptor)
             raw = os.read(file_descriptor, _MAX_REGISTRATION_BYTES + 1)
             after = os.fstat(file_descriptor)
+            os.close(file_descriptor)
+            file_descriptor = -1
             if (
                 len(raw) > _MAX_REGISTRATION_BYTES
                 or len(raw) != before.st_size
