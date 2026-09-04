@@ -34,13 +34,16 @@ def upgrade() -> None:
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("credential_secret_id", sa.String(length=72), nullable=True),
         sa.Column("credential_generation", sa.BigInteger(), nullable=False),
-        sa.Column("catalog_generation", sa.BigInteger(), nullable=False),
-        sa.Column("current_catalog_digest", sa.String(length=64), nullable=True),
-        sa.Column("catalog_claim_generation", sa.BigInteger(), nullable=False),
-        sa.Column("catalog_claim_owner", sa.String(length=128), nullable=True),
-        sa.Column("catalog_claim_expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("catalog_available_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("catalog_last_error_code", sa.String(length=128), nullable=True),
+        sa.Column("refresh_claim_generation", sa.BigInteger(), server_default="0", nullable=False),
+        sa.Column("refresh_claim_owner", sa.String(length=128), nullable=True),
+        sa.Column("refresh_claim_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "refresh_available_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
+        sa.Column("refresh_last_error_code", sa.String(length=128), nullable=True),
         sa.Column("cleanup_pending", sa.Boolean(), nullable=False),
         sa.Column("cleanup_attempt_count", sa.BigInteger(), nullable=False),
         sa.Column("cleanup_available_at", sa.DateTime(timezone=True), nullable=False),
@@ -70,21 +73,16 @@ def upgrade() -> None:
             name=op.f("ck_mcp_connections_status_reason_value_valid"),
         ),
         sa.CheckConstraint(
-            "catalog_claim_generation >= 0", name=op.f("ck_mcp_connections_catalog_claim_generation_non_negative")
-        ),
-        sa.CheckConstraint("catalog_generation >= 0", name=op.f("ck_mcp_connections_catalog_generation_non_negative")),
-        sa.CheckConstraint(
             "cleanup_attempt_count >= 0", name=op.f("ck_mcp_connections_cleanup_attempt_count_non_negative")
         ),
         sa.CheckConstraint(
             "credential_generation >= 0", name=op.f("ck_mcp_connections_credential_generation_non_negative")
         ),
-        sa.CheckConstraint(
-            "current_catalog_digest IS NULL OR length(current_catalog_digest) = 64",
-            name=op.f("ck_mcp_connections_current_catalog_digest_valid"),
-        ),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_mcp_connections_name_bounded")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_mcp_connections_version_positive")),
+        sa.CheckConstraint(
+            "refresh_claim_generation >= 0", name=op.f("ck_mcp_connections_refresh_claim_generation_non_negative")
+        ),
         sa.ForeignKeyConstraint(
             ["credential_secret_id"],
             ["secrets.id"],
@@ -103,9 +101,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_mcp_connections")),
     )
     op.create_index(
-        "ix_mcp_connections_catalog_reconcile",
+        "ix_mcp_connections_refresh_reconcile",
         "mcp_connections",
-        ["status", "catalog_available_at", "catalog_claim_expires_at", "id"],
+        ["status", "refresh_available_at", "refresh_claim_expires_at", "id"],
         unique=False,
     )
     op.create_index(
@@ -182,52 +180,10 @@ def upgrade() -> None:
     )
     op.create_index("ix_mcp_oauth_sessions_expiry", "mcp_oauth_sessions", ["status", "expires_at", "id"], unique=False)
     op.create_index("uq_mcp_oauth_sessions_state", "mcp_oauth_sessions", ["state_digest"], unique=True)
-    op.create_table(
-        "mcp_tool_catalogs",
-        sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column("mcp_connection_id", sa.String(length=72), nullable=False),
-        sa.Column("digest_sha256", sa.String(length=64), nullable=False),
-        sa.Column("object_key", sa.String(length=1024), nullable=False),
-        sa.Column("size_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("tool_count", sa.BigInteger(), nullable=False),
-        sa.Column("credential_generation", sa.BigInteger(), nullable=False),
-        sa.Column("catalog_generation", sa.BigInteger(), nullable=False),
-        sa.Column("protocol_revision", sa.String(length=32), nullable=False),
-        sa.Column("server_name", sa.String(length=128), nullable=False),
-        sa.Column("server_version", sa.String(length=128), nullable=False),
-        sa.Column("published_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("retain_until", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("catalog_generation >= 1", name=op.f("ck_mcp_tool_catalogs_catalog_generation_positive")),
-        sa.CheckConstraint(
-            "credential_generation >= 0", name=op.f("ck_mcp_tool_catalogs_credential_generation_non_negative")
-        ),
-        sa.CheckConstraint("size_bytes > 0", name=op.f("ck_mcp_tool_catalogs_size_bytes_positive")),
-        sa.CheckConstraint("tool_count >= 0", name=op.f("ck_mcp_tool_catalogs_tool_count_non_negative")),
-        sa.ForeignKeyConstraint(
-            ["mcp_connection_id", "organization_id", "workspace_id"],
-            ["mcp_connections.id", "mcp_connections.organization_id", "mcp_connections.workspace_id"],
-            name=op.f("fk_mcp_tool_catalogs_mcp_connection_id_mcp_connections"),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_mcp_tool_catalogs")),
-    )
-    op.create_index(
-        "ix_mcp_tool_catalogs_latest", "mcp_tool_catalogs", ["mcp_connection_id", "published_at", "id"], unique=False
-    )
-    op.create_index("ix_mcp_tool_catalogs_retention", "mcp_tool_catalogs", ["retain_until", "id"], unique=False)
-    op.create_index(
-        "uq_mcp_tool_catalogs_digest", "mcp_tool_catalogs", ["mcp_connection_id", "digest_sha256"], unique=True
-    )
 
 
 def downgrade() -> None:
     """Remove the domain schema in reverse dependency order."""
-    op.drop_index("uq_mcp_tool_catalogs_digest", table_name="mcp_tool_catalogs")
-    op.drop_index("ix_mcp_tool_catalogs_retention", table_name="mcp_tool_catalogs")
-    op.drop_index("ix_mcp_tool_catalogs_latest", table_name="mcp_tool_catalogs")
-    op.drop_table("mcp_tool_catalogs")
     op.drop_index("uq_mcp_oauth_sessions_state", table_name="mcp_oauth_sessions")
     op.drop_index("ix_mcp_oauth_sessions_expiry", table_name="mcp_oauth_sessions")
     op.drop_index("ix_mcp_oauth_sessions_connection", table_name="mcp_oauth_sessions")
@@ -237,5 +193,5 @@ def downgrade() -> None:
     op.drop_index("ix_mcp_connections_workspace_updated", table_name="mcp_connections")
     op.drop_index("ix_mcp_connections_owner", table_name="mcp_connections")
     op.drop_index("ix_mcp_connections_cleanup", table_name="mcp_connections")
-    op.drop_index("ix_mcp_connections_catalog_reconcile", table_name="mcp_connections")
+    op.drop_index("ix_mcp_connections_refresh_reconcile", table_name="mcp_connections")
     op.drop_table("mcp_connections")

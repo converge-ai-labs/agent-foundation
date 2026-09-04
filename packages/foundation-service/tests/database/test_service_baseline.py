@@ -35,6 +35,10 @@ def test_domain_baselines_upgrade_and_downgrade_at_every_boundary(
             migrator.upgrade(revision.revision)
             inspector = inspect(engine)
             tables = set(inspector.get_table_names()) - {"alembic_version"}
+            assert {"connector_tool_catalogs", "mcp_tool_catalogs"}.isdisjoint(tables)
+            for table in tables & {"runs", "connector_connections", "mcp_connections"}:
+                columns = {column["name"] for column in inspector.get_columns(table)}
+                assert not any("catalog" in column or column.startswith("mcp_tool_snapshot_") for column in columns)
             for table in tables:
                 for foreign_key in inspector.get_foreign_keys(table):
                     assert foreign_key["referred_table"] in tables, (revision.revision, table, foreign_key)

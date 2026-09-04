@@ -1,4 +1,4 @@
-"""Relational MCPConnection, OAuth session, and immutable catalog facts."""
+"""Relational MCPConnection, OAuth session, and token-refresh coordination."""
 
 from __future__ import annotations
 

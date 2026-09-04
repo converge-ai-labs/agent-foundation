@@ -42,6 +42,6 @@ Worker composition provides `WorkerRuntime.external_tools`. A host constructing 
 
 Control owns connection management, setup, OAuth refresh, and cleanup. Connectivity owns inbound delivery and admission. Workers own tool discovery and outbound execution. No local MCP listener or separate MCP service is needed.
 
-## Development database upgrade
+## Development database setup
 
-This development-stage change removes persisted tool catalogs and Run tool snapshots. The migration refuses databases containing Agent Revisions or Runs because their old selection contracts are incompatible. Recreate the development database and reauthor Agent configurations with connection-selection lists before upgrading such an installation. No old-shape conversion or mixed-version execution is supported. Skill, Plugin, and Environment locks keep their existing contracts.
+The initial migrations create the current schema directly, without persisted tool catalogs or Run tool snapshots. If a local database was created from the previous schema, recreate it and reauthor Agent configurations with connection-selection lists. Existing revision stamps cannot update rewritten initial migrations. Skill, Plugin, and Environment locks keep their existing contracts.

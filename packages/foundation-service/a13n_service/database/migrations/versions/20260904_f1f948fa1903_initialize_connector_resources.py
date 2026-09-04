@@ -127,14 +127,6 @@ def upgrade() -> None:
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("setup_generation", sa.BigInteger(), nullable=False),
         sa.Column("revoke_generation", sa.BigInteger(), nullable=False),
-        sa.Column("catalog_generation", sa.BigInteger(), nullable=False),
-        sa.Column("current_catalog_digest", sa.String(length=64), nullable=True),
-        sa.Column("catalog_attempt_count", sa.BigInteger(), nullable=False),
-        sa.Column("catalog_claim_generation", sa.BigInteger(), nullable=False),
-        sa.Column("catalog_claim_owner", sa.String(length=128), nullable=True),
-        sa.Column("catalog_claim_expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("catalog_available_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("catalog_last_error_code", sa.String(length=128), nullable=True),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
@@ -162,19 +154,6 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "(owner_type IS NULL) = (owner_id IS NULL)", name=op.f("ck_connector_connections_owner_complete")
-        ),
-        sa.CheckConstraint(
-            "catalog_attempt_count >= 0", name=op.f("ck_connector_connections_catalog_attempt_count_non_negative")
-        ),
-        sa.CheckConstraint(
-            "catalog_claim_generation >= 0", name=op.f("ck_connector_connections_catalog_claim_generation_non_negative")
-        ),
-        sa.CheckConstraint(
-            "catalog_generation >= 0", name=op.f("ck_connector_connections_catalog_generation_non_negative")
-        ),
-        sa.CheckConstraint(
-            "current_catalog_digest IS NULL OR length(current_catalog_digest) = 64",
-            name=op.f("ck_connector_connections_current_catalog_digest_valid"),
         ),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_connector_connections_name_bounded")),
         sa.CheckConstraint(
@@ -346,64 +325,10 @@ def upgrade() -> None:
         ["connector_connection_id", "generation"],
         unique=True,
     )
-    op.create_table(
-        "connector_tool_catalogs",
-        sa.Column("id", sa.String(length=72), nullable=False),
-        sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column("connector_connection_id", sa.String(length=72), nullable=False),
-        sa.Column("digest_sha256", sa.String(length=64), nullable=False),
-        sa.Column("object_key", sa.String(length=1024), nullable=False),
-        sa.Column("size_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("tool_count", sa.BigInteger(), nullable=False),
-        sa.Column("connector_credential_generation", sa.BigInteger(), nullable=False),
-        sa.Column("connection_setup_generation", sa.BigInteger(), nullable=False),
-        sa.Column("compatibility_profile", sa.String(length=128), nullable=False),
-        sa.Column("provider_version", sa.String(length=128), nullable=False),
-        sa.Column("published_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("retain_until", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint(
-            "connection_setup_generation >= 1",
-            name=op.f("ck_connector_tool_catalogs_connection_setup_generation_positive"),
-        ),
-        sa.CheckConstraint(
-            "connector_credential_generation >= 1",
-            name=op.f("ck_connector_tool_catalogs_credential_generation_positive"),
-        ),
-        sa.CheckConstraint("length(digest_sha256) = 64", name=op.f("ck_connector_tool_catalogs_digest_bounded")),
-        sa.CheckConstraint("size_bytes >= 1", name=op.f("ck_connector_tool_catalogs_size_positive")),
-        sa.CheckConstraint("tool_count >= 0", name=op.f("ck_connector_tool_catalogs_tool_count_non_negative")),
-        sa.ForeignKeyConstraint(
-            ["connector_connection_id", "organization_id", "workspace_id"],
-            ["connector_connections.id", "connector_connections.organization_id", "connector_connections.workspace_id"],
-            name=op.f("fk_connector_tool_catalogs_connector_connection_id_connector_connections"),
-            ondelete="RESTRICT",
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_connector_tool_catalogs")),
-    )
-    op.create_index(
-        "ix_connector_tool_catalogs_latest",
-        "connector_tool_catalogs",
-        ["connector_connection_id", "published_at", "id"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_connector_tool_catalogs_retention", "connector_tool_catalogs", ["retain_until", "id"], unique=False
-    )
-    op.create_index(
-        "uq_connector_tool_catalogs_digest",
-        "connector_tool_catalogs",
-        ["connector_connection_id", "digest_sha256"],
-        unique=True,
-    )
 
 
 def downgrade() -> None:
     """Remove the domain schema in reverse dependency order."""
-    op.drop_index("uq_connector_tool_catalogs_digest", table_name="connector_tool_catalogs")
-    op.drop_index("ix_connector_tool_catalogs_retention", table_name="connector_tool_catalogs")
-    op.drop_index("ix_connector_tool_catalogs_latest", table_name="connector_tool_catalogs")
-    op.drop_table("connector_tool_catalogs")
     op.drop_index("uq_connector_setup_attempts_connection_generation", table_name="connector_setup_attempts")
     op.drop_index("ix_connector_setup_attempts_reconcile", table_name="connector_setup_attempts")
     op.drop_index("ix_connector_setup_attempts_expiry", table_name="connector_setup_attempts")
