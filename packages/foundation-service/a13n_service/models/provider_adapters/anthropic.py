@@ -12,7 +12,7 @@ from .base import (
     require_credential,
     require_endpoint,
 )
-from .types import EmptyProviderConfig, RuntimeProvider
+from .types import EmptyProviderConfiguration, RuntimeProvider
 
 
 def _build_provider(
@@ -38,9 +38,9 @@ def _request(provider: RuntimeProvider) -> ModelListRequest:
 
 
 INTEGRATION = ProviderIntegration(
-    key="anthropic",
+    type="anthropic",
     display_name="Anthropic",
-    config_model=EmptyProviderConfig,
+    configuration_model=EmptyProviderConfiguration,
     supported_model_apis=("anthropic.messages",),
     build_provider=_build_provider,
     endpoint="https://api.anthropic.com",

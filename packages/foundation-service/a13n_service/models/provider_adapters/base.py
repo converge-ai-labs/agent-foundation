@@ -10,7 +10,7 @@ import httpx2
 from a13n_harness.errors import ModelResolutionError
 from pydantic_ai.providers import Provider
 
-from .types import CredentialFormat, ProviderConfig, RuntimeProvider, ValidatedProviderConfig
+from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider, ValidatedProviderConfiguration
 
 DiscoveredModelIdentity = tuple[str, str | None]
 NativeProviderBuilder = Callable[[RuntimeProvider, httpx2.AsyncClient, str], Provider[Any]]
@@ -73,34 +73,40 @@ class JsonModelDiscoveryAdapter:
 class ProviderIntegration:
     """One trusted Provider type's metadata and connection behavior."""
 
-    key: str
+    type: str
     display_name: str
-    config_model: type[ProviderConfig]
+    configuration_model: type[ProviderConfiguration]
     supported_model_apis: tuple[str, ...]
     build_provider: NativeProviderBuilder
     credential_format: CredentialFormat | None = CredentialFormat.api_key
     credential_required: bool = True
     endpoint: str | EndpointResolver | None = None
-    endpoint_config_field: str | None = None
+    endpoint_configuration_field: str | None = None
     credential_validator: CredentialValidator | None = None
     model_discovery: ModelDiscoveryAdapter | None = None
 
-    def validate_config(self, config: Mapping[str, object], *, credential_configured: bool) -> ValidatedProviderConfig:
+    def validate_configuration(
+        self, configuration: Mapping[str, object], *, credential_configured: bool
+    ) -> ValidatedProviderConfiguration:
         if self.credential_required and not credential_configured:
             raise ValueError("the provider credential is required")
         if self.credential_format is None and credential_configured:
             raise ValueError("the provider does not accept a credential")
-        normalized = self.config_model.model_validate(dict(config)).model_dump(mode="json", exclude_none=True)
+        normalized = self.configuration_model.model_validate(dict(configuration)).model_dump(
+            mode="json", exclude_none=True
+        )
         if self.credential_validator is not None:
             self.credential_validator(normalized, credential_configured)
         endpoint = self.endpoint(normalized) if callable(self.endpoint) else self.endpoint
-        return ValidatedProviderConfig(config=normalized, endpoint=endpoint)
+        return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
 
-    def with_validated_endpoint(self, validated: ValidatedProviderConfig, endpoint: str) -> ValidatedProviderConfig:
-        normalized = dict(validated.config)
-        if self.endpoint_config_field is not None:
-            normalized[self.endpoint_config_field] = endpoint
-        return ValidatedProviderConfig(config=normalized, endpoint=endpoint)
+    def with_validated_endpoint(
+        self, validated: ValidatedProviderConfiguration, endpoint: str
+    ) -> ValidatedProviderConfiguration:
+        normalized = dict(validated.configuration)
+        if self.endpoint_configuration_field is not None:
+            normalized[self.endpoint_configuration_field] = endpoint
+        return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
 
 
 def openai_style_discovery(

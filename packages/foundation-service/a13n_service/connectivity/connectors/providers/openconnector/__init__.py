@@ -1,5 +1,5 @@
-"""OpenConnector provider."""
+"""OpenConnector Connector Provider implementation."""
 
-from .adapter import OpenConnectorAdapter, OpenConnectorConfig, OpenConnectorSetup
+from .runtime import OpenConnectorProvider
 
-__all__ = ["OpenConnectorAdapter", "OpenConnectorConfig", "OpenConnectorSetup"]
+__all__ = ["OpenConnectorProvider"]

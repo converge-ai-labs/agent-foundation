@@ -8,14 +8,15 @@ from dataclasses import dataclass
 
 import httpx2
 
-from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
+from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connectors.catalog import ConnectorCatalogService
 from a13n_service.connectivity.connectors.catalog_objects import ConnectorCatalogObjectStore
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
-from a13n_service.connectivity.connectors.providers import built_in_connector_adapter_registry
+from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
-from a13n_service.connectivity.connectors.service import ConnectorService
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.admission_domain import (
     FoundationInputAcceptor,
@@ -52,7 +53,7 @@ logger = logging.getLogger("a13n_service.process.connectivity")
 
 @dataclass(frozen=True, slots=True)
 class _ConnectorControl:
-    service: ConnectorService
+    service: ConnectorProviderService
     connections: ConnectorConnectionService
     catalog: ConnectorCatalogService
     reconciler: ConnectorReconciler
@@ -74,7 +75,7 @@ async def build_connectivity_runtime(
     stack: AsyncExitStack,
     *,
     ingress_adapters: AdapterRegistry[IngressAdapter] | None,
-    connector_adapters: AdapterRegistry[ConnectorAdapter] | None,
+    connector_providers: ConnectorProviderRegistry | None,
     input_acceptor: FoundationInputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
@@ -91,7 +92,7 @@ async def build_connectivity_runtime(
             settings,
             storage,
             ingress_adapters,
-            connector_adapters,
+            connector_providers,
             internal_secrets,
             stack,
         )
@@ -117,20 +118,20 @@ async def _build_control_runtime(
     settings: ServiceSettings,
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
-    connector_adapters: AdapterRegistry[ConnectorAdapter] | None,
+    connector_providers: ConnectorProviderRegistry | None,
     internal_secrets: InternalSecretService,
     stack: AsyncExitStack,
 ) -> tuple[ConnectivityControlRuntime, ConnectivitySelectionResolver, tuple[BackgroundTask, ...]]:
     public_origin = settings.validated_connectivity_public_origin()
     endpoint_policy = settings.connectivity_endpoint_policy()
-    if connector_adapters is None:
+    if connector_providers is None:
         connector_http_client = await stack.enter_async_context(
             httpx2.AsyncClient(
                 follow_redirects=False,
                 timeout=settings.connectivity_total_timeout_seconds,
             )
         )
-        connector_adapters = built_in_connector_adapter_registry(
+        connector_providers = built_in_connector_provider_registry(
             connector_http_client,
             endpoint_policy,
             response_max_bytes=settings.connectivity_response_max_bytes,
@@ -139,7 +140,7 @@ async def _build_control_runtime(
     connector = _build_connector_control(
         settings,
         storage,
-        connector_adapters,
+        connector_providers,
         internal_secrets,
         public_origin,
     )
@@ -175,7 +176,7 @@ async def _build_control_runtime(
             batch_max_events=settings.connectivity_batch_max_events,
             batch_max_wait_seconds=settings.connectivity_batch_max_wait_seconds,
         ),
-        connectors=connector.service,
+        connector_providers=connector.service,
         connector_connections=connector.connections,
         mcp_connections=mcp.connections,
         mcp_oauth=mcp.oauth,
@@ -191,15 +192,15 @@ async def _build_control_runtime(
 def _build_connector_control(
     settings: ServiceSettings,
     storage: StorageResources,
-    connector_adapters: AdapterRegistry[ConnectorAdapter],
+    connector_providers: ConnectorProviderRegistry,
     internal_secrets: InternalSecretService,
     public_origin: str,
 ) -> _ConnectorControl:
-    service = ConnectorService(storage.sessions, connector_adapters, internal_secrets)
+    service = ConnectorProviderService(storage.sessions, connector_providers, internal_secrets)
     correlation_secret = settings.connectivity_setup_correlation_secret
     connections = ConnectorConnectionService(
         storage.sessions,
-        connector_adapters,
+        connector_providers,
         internal_secrets,
         correlation_secret=(correlation_secret.get_secret_value().encode() if correlation_secret is not None else None),
         public_origin=public_origin,
@@ -208,7 +209,7 @@ def _build_connector_control(
     instance_id = settings.service_instance_id or new_object_id("svc")
     catalog = ConnectorCatalogService(
         storage.sessions,
-        connector_adapters,
+        connector_providers,
         internal_secrets,
         ConnectorCatalogObjectStore(storage.objects),
         instance_id=instance_id,
@@ -217,7 +218,7 @@ def _build_connector_control(
     )
     reconciler = ConnectorReconciler(
         storage.sessions,
-        connector_adapters,
+        connector_providers,
         connections.setup_coordinator,
         connections,
         catalog,

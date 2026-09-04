@@ -5,9 +5,7 @@ from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
-CONNECTIVITY_PARENT_REVISION = "93f7e255236d"
 TABLES = {"mcp_connections", "mcp_oauth_sessions", "mcp_tool_catalogs"}
-CONNECTIVITY_PARENT_REVISION = "93f7e255236d"
 
 
 def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
@@ -32,13 +30,12 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         assert {"state_digest", "setup_secret_id", "claim_generation", "expires_at"} <= session_columns
     finally:
         engine.dispose()
-    migrator.downgrade(CONNECTIVITY_PARENT_REVISION)
+    migrator.downgrade("base")
     engine = create_engine(sync_database_url(config))
     try:
         assert TABLES.isdisjoint(inspect(engine).get_table_names())
     finally:
         engine.dispose()
-    migrator.downgrade("base")
 
 
 def test_mcp_schema_migrates_on_sqlite(tmp_path: Path) -> None:

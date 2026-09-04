@@ -1,5 +1,5 @@
-"""Composio Connector provider."""
+"""Composio Connector Provider implementation."""
 
-from .adapter import ComposioAdapter, ComposioConfig, ComposioSetup
+from .runtime import ComposioProvider
 
-__all__ = ["ComposioAdapter", "ComposioConfig", "ComposioSetup"]
+__all__ = ["ComposioProvider"]

@@ -24,7 +24,7 @@ def test_registry_rejects_unbound_provider_api_combinations() -> None:
 
 
 def test_provider_config_does_not_select_a_calling_api() -> None:
-    schema = built_in_provider_registry().definition("azure_openai").config_schema
+    schema = built_in_provider_registry().definition("azure_openai").configuration_schema
 
     assert "api_protocol" not in schema["properties"]
 
@@ -37,7 +37,7 @@ def test_openai_compatible_auth_mode_controls_credential_requirement() -> None:
         {"base_url": "https://models.example/v1", "auth_mode": "none"},
         credential_configured=False,
     )
-    assert validated.config["auth_mode"] == "none"
+    assert validated.configuration["auth_mode"] == "none"
 
     with pytest.raises(ValueError, match="requires a credential"):
         registry.validate_provider(

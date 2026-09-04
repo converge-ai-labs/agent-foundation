@@ -8,10 +8,10 @@ from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
 from ..credentials import parse_google_service_account
 from .base import ProviderIntegration, require_credential
-from .types import CredentialFormat, ProviderConfig, RuntimeProvider
+from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider
 
 
-class Config(ProviderConfig):
+class Config(ProviderConfiguration):
     project_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
     location: Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")]
 
@@ -23,16 +23,16 @@ def _build_provider(
 ) -> GoogleCloudProvider:
     return GoogleCloudProvider(
         credentials=parse_google_service_account(require_credential(provider)),
-        project=str(provider.config["project_id"]),
-        location=str(provider.config["location"]),
+        project=str(provider.configuration["project_id"]),
+        location=str(provider.configuration["location"]),
         http_client=http_client,
     )
 
 
 INTEGRATION = ProviderIntegration(
-    key="google_vertex",
+    type="google_vertex",
     display_name="Google Vertex AI",
-    config_model=Config,
+    configuration_model=Config,
     supported_model_apis=("google.generate_content",),
     build_provider=_build_provider,
     credential_format=CredentialFormat.google_service_account_json,

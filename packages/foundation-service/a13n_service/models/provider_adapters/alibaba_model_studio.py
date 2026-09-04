@@ -10,7 +10,7 @@ from pydantic_ai.providers.alibaba import AlibabaProvider
 
 from . import openai_provider
 from .base import ProviderIntegration, bearer_models_request, openai_style_discovery
-from .types import ProviderConfig, RuntimeProvider
+from .types import ProviderConfiguration, RuntimeProvider
 
 
 class DomainType(StrEnum):
@@ -26,7 +26,7 @@ class Region(StrEnum):
     virginia = "us-east-1"
 
 
-class Config(ProviderConfig):
+class Config(ProviderConfiguration):
     region: Region
     domain_type: DomainType
     alibaba_workspace_id: (
@@ -52,9 +52,9 @@ def _build_provider(
     return openai_provider.build(provider, http_client, pydantic_provider_name, AlibabaProvider)
 
 
-def _endpoint(config: Mapping[str, object]) -> str:
-    region = Region(str(config["region"]))
-    workspace_id = config.get("alibaba_workspace_id")
+def _endpoint(configuration: Mapping[str, object]) -> str:
+    region = Region(str(configuration["region"]))
+    workspace_id = configuration.get("alibaba_workspace_id")
     if workspace_id is not None:
         return f"https://{workspace_id}.{region.value}.maas.aliyuncs.com/compatible-mode/v1"
     if region is Region.beijing:
@@ -67,9 +67,9 @@ def _endpoint(config: Mapping[str, object]) -> str:
 
 
 INTEGRATION = ProviderIntegration(
-    key="alibaba_model_studio",
+    type="alibaba_model_studio",
     display_name="Alibaba Model Studio / Qwen",
-    config_model=Config,
+    configuration_model=Config,
     supported_model_apis=("openai.chat_completions",),
     build_provider=_build_provider,
     endpoint=_endpoint,

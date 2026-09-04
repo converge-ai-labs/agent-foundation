@@ -15,6 +15,8 @@ Backend selection happens once during process startup. A failed network backend 
 
 Control-plane and all-in-one roles expose the accepted Model Management API at `/api/v1`. The service includes trusted OpenAI, Anthropic, Gemini, Vertex AI, Azure OpenAI, Bedrock, OpenRouter, Ollama, Alibaba Model Studio, DeepSeek, Moonshot, Zhipu, and generic OpenAI-compatible Provider types. A Workspace can create multiple configured Providers of the same type. Provider-scoped discovery is advisory; an unknown bounded upstream model name remains valid.
 
+`GET /api/v1/model-provider-types` returns definitions with `type`, `configuration_schema`, and a separate write-only `credential_schema`. Provider create, update, and read use `configuration`; the implementation-owned Pydantic model supplies both the schema and server validation.
+
 Provider create and update accept a write-only credential value and persist only authenticated ciphertext. Configure an exact 32-byte master key as standard base64 together with its non-secret key identifier:
 
 ```bash
@@ -32,11 +34,19 @@ Run acceptance resolves the latest Model and freezes its upstream identity and e
 
 The shared executable exposes Connectivity according to its process role:
 
-- `control` and `all` expose authenticated Ingress, Route, Connector, ConnectorConnection, and MCPConnection management below `/api/v1` and run their fenced setup, catalog, OAuth, and cleanup reconcilers.
+- `control` and `all` expose authenticated Ingress, Route, Connector Provider, ConnectorConnection, and MCPConnection management below `/api/v1` and run their fenced setup, catalog, OAuth, and cleanup reconcilers.
 - `connectivity` and `all` expose provider-authenticated event delivery at `POST /connectivity/v1/ingresses/{ingress_id}/events`, run durable admission processing, and retain no browser or product API surface.
 - `worker` loads no Ingress or Connector adapters. It has no Connectivity management or provider-event routes.
 
 Control and Connectivity replicas share relational and object-storage facts; they do not call a private cross-pod Foundation API. The `all` role installs the union once. During shutdown readiness fails before new requests receive `503`, and background reconcilers stop under the application lifespan.
+
+Connector Provider types are explicitly registered through `ServiceComponents.connector_provider_registry`. `GET /api/v1/connector-provider-types` returns safe configuration and credential schemas without upstream requests. Configured accounts live at `/api/v1/workspaces/{workspace_id}/connector-providers` and `/api/v1/connector-providers/{connector_provider_id}`. Create accepts `type`, `configuration` (including its endpoint), and separate write-only `credentials`. Type and configuration are immutable; name, credentials, and administrative status retain management-version preconditions. Credentials are stored as one encrypted, Provider-owned bundle.
+
+`POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors` reads the exact account's current directory under `connector_provider.read`. It creates no connections and publishes no tool catalog. Discovery and setup revalidation share a 30-second deadline and bounds of 128 pages, 2,048 directory entries, and 16 MiB across toolkit and auth-config responses. Composio v3.1 combines `/toolkits` with project `/auth_configs`; OpenConnector native v1 combines `/toolkits` cursor pagination with `/auth_configs` offset pagination. Explicit configured allowlists filter the results. Only hosted OAuth supported by both the toolkit and current account is advertised; third-party credential input and upstream secret fields are excluded.
+
+Connection setup selects `connector_provider_id` and `connector_key`. Each operation constructs a fresh Provider runtime and binds the verified external account plus its opaque user correlation before inspection, catalog discovery, execution, or revocation. Construction and close never create or revoke accounts, and close does not dispose the process-owned HTTP client. Composio pins dated versions in tool-list, tool-detail, and execute requests. OpenConnector retains each tool's version and checks its current detail before execution; its native API cannot atomically pin a version across that check and dispatch. The a13n MCP execution bridge and full SDK/UI management surfaces remain separate implementation work.
+
+Upstream wire contracts are verified against the [OpenConnector native OpenAPI](https://api.openconnector.dev/api/v1/spec.json) and [Composio v3.1 reference](https://docs.composio.dev/reference). The service does not expose an unfenced public tool-execute endpoint.
 
 Set `FOUNDATION_CONNECTIVITY_PUBLIC_ORIGIN` to the exact externally reachable control-plane origin used by Connector and MCP OAuth callbacks. HTTP origins and private endpoint destinations are denied unless explicitly allowed by `FOUNDATION_CONNECTIVITY_HTTP_ORIGINS`, `FOUNDATION_CONNECTIVITY_PRIVATE_ENDPOINT_DOMAINS`, or `FOUNDATION_CONNECTIVITY_PRIVATE_ENDPOINT_CIDRS`. Provider source-origin allowlists use `FOUNDATION_CONNECTIVITY_PROVIDER_ORIGINS`; provider signatures or tokens remain mandatory.
 
@@ -158,6 +168,8 @@ Each operation gets a short session. Never retain a session or transaction acros
 PostgreSQL is the distributed-service backend. SQLite is intended for a single-process, zero-service profile and must not be placed on NFS.
 
 ## Relational Schema and Migrations
+
+The OSS schema starts at the generated `01929f3846a5` baseline. Development databases created with the former revision history must be recreated; do not stamp an old database to this head. For the repository-managed disposable development stack, `make dev-down` removes its volumes and `make dev` creates the current schema. Use a new database for any separately managed development instance. The baseline preserves terminal Run/RunAttempt and lifecycle-fact immutability, Hook revision guards, and deferred cyclic foreign keys. Migration tests compare the PostgreSQL baseline with current metadata and verify both SQLite and PostgreSQL upgrade/downgrade behavior.
 
 Generic relational storage and service schema ownership are deliberately separate. For the OSS distribution in this repository:
 

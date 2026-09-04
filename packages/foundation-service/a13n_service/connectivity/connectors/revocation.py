@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import aclosing
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.adapters import ConnectorAdapter, ConnectorAdapterError
+from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.management import canonical_digest, record_command
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
@@ -18,6 +19,7 @@ from a13n_service.temporal import Clock, utc_now
 
 from .connection_access import (
     authorize_connection,
+    connection_binding,
     connection_resource,
     external_error,
     idempotency_digest,
@@ -28,10 +30,10 @@ from .domain import ConnectorConnectionStatus, ConnectorConnectionStatusReason, 
 from .errors import ConnectorError
 from .management import (
     audit,
+    configure_provider,
     decode_credentials,
-    require_adapter,
     require_connection,
-    require_connector,
+    require_connector_provider,
     secret_context,
 )
 from .models import ConnectorOperationRecord
@@ -41,7 +43,7 @@ class ConnectorRevocationService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: AdapterRegistry[ConnectorAdapter],
+        adapters: ConnectorProviderRegistry,
         secrets: InternalSecretService,
         *,
         clock: Clock = utc_now,
@@ -120,7 +122,9 @@ class ConnectorRevocationService:
         async with short_session(self._sessions) as session:
             operation = await session.get(ConnectorOperationRecord, operation_id)
             if operation is None:
-                raise ConnectorError("operation_unavailable", "Connector operation is unavailable.", status_code=404)
+                raise ConnectorError(
+                    "operation_unavailable", "ConnectorProvider operation is unavailable.", status_code=404
+                )
             return ConnectorOperationReceipt.model_validate(
                 {
                     "operation_id": operation_id,
@@ -201,31 +205,26 @@ class ConnectorRevocationService:
             if operation is None:
                 return
             connection = await require_connection(session, operation.connector_connection_id)
-            connector = await require_connector(session, connection.connector_id)
+            connector = await require_connector_provider(session, connection.connector_provider_id)
             if connection.external_ref is None:
                 raise ConnectorError("setup_incomplete", "ConnectorConnection setup is incomplete.", status_code=409)
-            external_ref = connection.external_ref
+            binding = await connection_binding(session, connection)
         try:
             raw = await self._secrets.resolve(secret_context(connector, operation=SecretOperation.reconciliation))
-            adapter = require_adapter(self._adapters, connector.driver_key, connector.config_version)
-            await adapter.revoke_connection(
-                endpoint=connector.endpoint,
-                connector_config=connector.config_json,
-                credentials=decode_credentials(raw),
-                external_ref=external_ref,
-                operation_id=operation_id,
-            )
-        except (ConnectorAdapterError, InternalSecretError) as error:
+            runtime = configure_provider(self._adapters, connector, decode_credentials(raw))
+            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
+                await connection_runtime.revoke(operation_id=operation_id)
+        except (ConnectorProviderError, InternalSecretError) as error:
             await self._record_failure(
                 operation_id,
                 error,
                 claim_owner=claim_owner,
                 claim_generation=claim_generation,
             )
-            if isinstance(error, ConnectorAdapterError):
+            if isinstance(error, ConnectorProviderError):
                 raise external_error(error) from error
             raise ConnectorError(
-                "credential_unavailable", "Connector credentials are unavailable.", status_code=503
+                "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
             ) from error
         await self._record_success(
             operation_id,
@@ -236,12 +235,12 @@ class ConnectorRevocationService:
     async def _record_failure(
         self,
         operation_id: str,
-        error: ConnectorAdapterError | InternalSecretError,
+        error: ConnectorProviderError | InternalSecretError,
         *,
         claim_owner: str | None,
         claim_generation: int | None,
     ) -> None:
-        adapter_error = error if isinstance(error, ConnectorAdapterError) else None
+        adapter_error = error if isinstance(error, ConnectorProviderError) else None
         code = adapter_error.code if adapter_error is not None else "credential_unavailable"
         if adapter_error is not None and adapter_error.outcome_unknown:
             status = "unknown"

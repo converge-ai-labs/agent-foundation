@@ -15,7 +15,6 @@ TABLES = {
     "ingress_routes",
     "ingresses",
 }
-CONNECTIVITY_PARENT_REVISION = "93f7e255236d"
 
 
 def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
@@ -33,13 +32,12 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         assert {"provider_context_json", "mapping_digest", "dedup_expires_at"} <= admission_columns
     finally:
         engine.dispose()
-    migrator.downgrade(CONNECTIVITY_PARENT_REVISION)
+    migrator.downgrade("base")
     engine = create_engine(sync_database_url(config))
     try:
         assert TABLES.isdisjoint(inspect(engine).get_table_names())
     finally:
         engine.dispose()
-    migrator.downgrade("base")
 
 
 def test_ingress_schema_migrates_on_sqlite(tmp_path: Path) -> None:

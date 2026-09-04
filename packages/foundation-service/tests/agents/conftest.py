@@ -194,7 +194,7 @@ async def agent_sessions(
                     type="openai",
                     name="OpenAI",
                     normalized_name="openai",
-                    config={},
+                    configuration={},
                     credential_version=1,
                     ciphertext=b"encrypted",
                     nonce=b"123456789012",
