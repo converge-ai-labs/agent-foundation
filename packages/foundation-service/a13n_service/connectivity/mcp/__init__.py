@@ -7,15 +7,11 @@ from .domain import (
     MCPConnectionStatusReason,
     MCPTool,
 )
-from .protocol import MCPDiscovery, MCPProtocolClient, MCPProtocolError
 
 __all__ = [
     "MCPAuthMode",
     "MCPConnection",
     "MCPConnectionStatus",
     "MCPConnectionStatusReason",
-    "MCPDiscovery",
-    "MCPProtocolClient",
-    "MCPProtocolError",
     "MCPTool",
 ]

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from a13n_environment_provider import Environment
 from a13n_harness import (
@@ -39,6 +39,9 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
+
+if TYPE_CHECKING:
+    from a13n_service.connectivity.execution import ExternalToolRuntime
 
 from .attempts import AttemptPreparationAccepted
 from .environment_observation import EnvironmentHookObservation, observe_environment_entry
@@ -196,9 +199,11 @@ class HarnessDriver:
         *,
         control: RunControlPort,
         projector: HarnessEventProjector,
+        external_tools: ExternalToolRuntime | None = None,
     ) -> None:
         if not isinstance(builder, HarnessBuilder):
             raise TypeError("Harness driver requires a HarnessBuilder")
+        self._external_tools = external_tools
         self._builder = builder
         self._control = control
         self._projector = projector
@@ -222,6 +227,30 @@ class HarnessDriver:
                 code="foundation_driver_reused",
             )
         self._used = True
+        try:
+            async with AsyncExitStack() as stack:
+                if self._external_tools is not None:
+                    capabilities = await stack.enter_async_context(
+                        self._external_tools.capabilities(lambda: self._control.current_context)
+                    )
+                    invocation = replace(
+                        invocation,
+                        collaborators=replace(
+                            invocation.collaborators,
+                            capabilities=(*invocation.collaborators.capabilities, *capabilities),
+                        ),
+                    )
+                else:
+                    config = self._control.current_state.envelope.effective_agent_config
+                    if config.connector_tools or config.mcp_tools:
+                        raise RunError("External tool runtime is unavailable.", code="external_tools_unavailable")
+                return await self._run(invocation, preparation=preparation)
+        finally:
+            await self._close_live_projection()
+
+    async def _run[OutputT](
+        self, invocation: FoundationHarnessInvocation[OutputT], *, preparation: AttemptPreparationAccepted
+    ) -> HarnessRunResult[OutputT]:
         state = self._control.current_state.envelope
         input_source, deferred_resume = _select_attempt_input(invocation, state)
         definition = compose_run_control(invocation.definition, self._control, self)
@@ -237,20 +266,17 @@ class HarnessDriver:
             usage=invocation.usage,
             usage_limits=invocation.usage_limits,
         )
-        try:
-            async with stream as entered:
-                self._attach(entered, invocation.collaborators.instance, state.thread_id)
-                try:
-                    await self._control.enter_harness(
-                        HarnessRunIdentity(thread_id=entered.thread_id, run_id=entered.run_id),
-                        preparation,
-                    )
-                    await self._control.after_stream_entry()
-                    return await self._consume(entered)
-                finally:
-                    self._detach()
-        finally:
-            await self._close_live_projection()
+        async with stream as entered:
+            self._attach(entered, invocation.collaborators.instance, state.thread_id)
+            try:
+                await self._control.enter_harness(
+                    HarnessRunIdentity(thread_id=entered.thread_id, run_id=entered.run_id),
+                    preparation,
+                )
+                await self._control.after_stream_entry()
+                return await self._consume(entered)
+            finally:
+                self._detach()
 
     def bind_model_attempt(self, ctx: RunContext[AgentContext]) -> HarnessContextBinding:
         self._require_context(ctx)

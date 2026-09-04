@@ -92,6 +92,7 @@ async def open_service_runtime(
                     environment_catalog,
                     components.environment_keepalive_source_resolver,
                     stack,
+                    components.connector_provider_registry,
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()

@@ -10,10 +10,10 @@ from typing import Literal
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
 
+from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_json
 
-from ..catalog_validation import MAX_CATALOG_BYTES, MAX_PAGES, MAX_TOOLS
 from ..contracts import ConnectorProviderError, DiscoveredConnector
 from ..http import ConnectorHttpClient
 from ..validation import optional_string, required_object
@@ -30,7 +30,7 @@ class DirectoryBudget:
         self.pages += 1
         self.items += item_count
         self.bytes += len(canonical_json(value).encode())
-        if self.pages > MAX_PAGES or self.items > MAX_TOOLS or self.bytes > MAX_CATALOG_BYTES:
+        if self.pages > DISCOVERY_MAX_PAGES or self.items > DISCOVERY_MAX_TOOLS or self.bytes > DISCOVERY_MAX_BYTES:
             raise ConnectorProviderError("directory_too_large")
 
 
@@ -48,7 +48,7 @@ async def directory_items(
     seen_cursors: set[str] = set()
     cursor: str | None = None
     expected_total: int | None = None
-    for _ in range(MAX_PAGES):
+    for _ in range(DISCOVERY_MAX_PAGES):
         params = {"limit": str(page_size)}
         if pagination == "offset":
             params["offset"] = str(len(items))
@@ -68,7 +68,7 @@ async def directory_items(
         items.extend(required_object(item) for item in page)
         if pagination == "offset":
             total = value.get("total")
-            if type(total) is not int or not len(items) <= total <= MAX_TOOLS:
+            if type(total) is not int or not len(items) <= total <= DISCOVERY_MAX_TOOLS:
                 raise ConnectorProviderError("invalid_provider_response")
             if expected_total is not None and expected_total != total:
                 raise ConnectorProviderError("directory_changed")

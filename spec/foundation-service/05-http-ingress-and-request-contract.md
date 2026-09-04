@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation Service exposes one HTTP ingress for Native product APIs, Hosted AG-UI, A2A, the optional browser application, streaming delivery, provider events, the Agent-facing a13n MCP, and operational probes. This contract owns process-role exposure, request context, proxy and browser trust, authentication boundaries, protocol-aware error enforcement, streaming resource safety, and drain behavior.
+Foundation Service exposes one HTTP ingress for Native product APIs, Hosted AG-UI, A2A, the optional browser application, streaming delivery, provider events, and operational probes. This contract owns process-role exposure, request context, proxy and browser trust, authentication boundaries, protocol-aware error enforcement, streaming resource safety, and drain behavior.
 
 Resource routes, fields, commands, and authorization actions remain owned by their domains. Shared JSON, status, pagination, error-envelope, version, and idempotency wire semantics remain owned by [Platform API Conventions](../api-conventions.md). HTTP middleware carries transport context; it does not become a database transaction, resource authorizer, or business workflow engine.
 
@@ -16,12 +16,11 @@ Resource routes, fields, commands, and authorization actions remain owned by the
 | OpenAPI and interactive API documentation              |       Yes |       No |             No |   Yes |
 | Browser application and static assets                  |       Yes |       No |             No |   Yes |
 | Authorized SSE or WebSocket delivery                   |       Yes |       No |             No |   Yes |
-| `/mcp` Agent-facing a13n MCP                           |        No |       No |            Yes |   Yes |
 | Provider-specific event ingress                        |        No |       No |            Yes |   Yes |
 | `/internal/v1` control operator routes when configured |       Yes |       No |             No |   Yes |
 | `/healthz` and `/readyz`                               |       Yes |      Yes |            Yes |   Yes |
 
-A Worker-only process returns no product route, product OpenAPI document, browser fallback, static application, authenticated product stream, provider-event route, or MCP server. A Connectivity-only process exposes only provider event ingress, the a13n MCP, and operational surfaces; it exposes no `/api/v1`, AG-UI, A2A, browser, or product stream route. Unknown `/api`, `/ag-ui`, `/a2a`, `/mcp`, and well-known protocol paths are never rewritten to browser HTML. Operational paths are outside the product namespaces, unversioned, bounded, and excluded from product OpenAPI.
+A Worker-only process returns no product route, product OpenAPI document, browser fallback, static application, authenticated product stream, provider-event route, or network MCP listener. Its in-process a13n MCP tool groups belong to Run execution and expose no HTTP route. A Connectivity-only process exposes only provider event ingress and operational surfaces; it exposes no `/api/v1`, AG-UI, A2A, browser, or product stream route. Unknown `/api`, `/ag-ui`, `/a2a`, and well-known protocol paths are never rewritten to browser HTML. Operational paths are outside the product namespaces, unversioned, bounded, and excluded from product OpenAPI.
 
 The internal operator surface is excluded from the public product OpenAPI, SDKs, browser application, and tenant IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
 
@@ -57,7 +56,7 @@ Static browser assets use immutable cache policy where their content identity pe
 
 Authentication validates the exact presented credential and constructs an immutable Principal reference plus safe credential context. Resource authorization occurs after route parsing, against the selected stored Organization, Workspace, or resource, through the common IAM authorizer.
 
-The a13n MCP authenticates an unpredictable RunAttempt-scoped grant and rechecks the current Attempt fence and unexpired lease, accepted tool snapshot, selected ConnectorConnection or Ingress context, and current resource authority. Provider event ingress authenticates the exact provider source before its Ingress adapter applies deterministic admission policy and durably admits every eligible normalized event. The provider credential and external actor do not create another Principal or durable session; accepted Agent input reauthorizes the Ingress's configured Service Account. Connectivity replicas invoke the same application operations and durable stores as other Foundation roles; they do not call a private cross-pod Foundation API.
+Provider event ingress authenticates the exact provider source before its Ingress adapter applies deterministic admission policy and durably admits every eligible normalized event. The provider credential and external actor do not create another Principal or durable session; accepted Agent input reauthorizes the Ingress's configured Service Account. Connectivity replicas invoke the same application operations and durable stores as other Foundation roles; they do not call a private cross-pod Foundation API.
 
 Authorization is not a generic pre-routing database middleware. The owning application use case opens a short session, loads current authority and resource state, authorizes the explicit action, and commits or returns a detached result. No request-scoped session survives into agent execution, an external call, background work, sleep, or streaming response.
 
@@ -67,7 +66,7 @@ Authentication establishment routes such as login, invitation acceptance, and pa
 
 Every Native `/api` failure, including framework validation, unknown API routes, authentication failures, domain errors, dependency failures, and unexpected exceptions, uses the shared bounded error envelope from Platform API Conventions. Framework-native `detail` responses never escape the `/api` boundary. Hosted AG-UI and A2A failures use the bounded error representation owned by their selected protocol contracts while preserving the same request ID and non-disclosure rules.
 
-a13n MCP transport and JSON-RPC failures use the negotiated MCP protocol shape while preserving the same safe request correlation and non-disclosure rules. Provider event ingress returns only its bounded acknowledgement or safe protocol rejection and never returns provider payload or Run execution output.
+Provider event ingress returns only its bounded acknowledgement or safe protocol rejection and never returns provider payload or Run execution output.
 
 The stable error code and safe details come from the owning boundary. Unexpected failures use a generic code and message, retain the request ID, and log the exception once at the boundary that handles it. Responses and diagnostics never contain traceback text, SQL, credentials, authorization headers, cookies, private paths, raw prompts, model output, tool payloads, or provider-native secret data.
 
@@ -108,7 +107,7 @@ A new common ingress check can be added when it rejects only requests outside th
 
 ## Invariants
 
-01. Only `control` and `all` expose `/api/v1`, browser assets, and product streams; only `connectivity` and `all` expose the a13n MCP and provider event data-plane surfaces.
+01. Only `control` and `all` expose `/api/v1`, browser assets, and product streams; only `connectivity` and `all` expose provider event data-plane surfaces. In-process a13n MCP adds no HTTP surface.
 02. Every product request receives one service-owned request ID.
 03. Untrusted forwarded headers never change client, host, or scheme identity.
 04. Production browser access is same-origin unless an exact cross-origin policy is selected.

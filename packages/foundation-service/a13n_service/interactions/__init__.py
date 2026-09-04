@@ -61,7 +61,6 @@ from .control_domain import (
 )
 from .domain import (
     EncryptedRunConfigPayloadRef,
-    MCPToolSnapshotRef,
     PendingCallKind,
     PendingCallSummary,
     RecoveryBudget,
@@ -275,7 +274,6 @@ __all__ = [
     "InputAdapter",
     "InterruptRequest",
     "LeaseMonitor",
-    "MCPToolSnapshotRef",
     "MaterializedHarnessInput",
     "MountedHarnessEnvironments",
     "NoHarnessEnvironment",

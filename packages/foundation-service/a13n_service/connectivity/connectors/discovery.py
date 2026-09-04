@@ -1,8 +1,9 @@
 """Validate safe transient Connector directories at the application boundary."""
 
+from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_TOOLS, TOOL_SCHEMA_MAX_BYTES
 from a13n_service.connectivity.management import canonical_json
+from a13n_service.connectivity.tool_validation import require_depth, validate_schema
 
-from .catalog_validation import MAX_CATALOG_BYTES, MAX_SCHEMAS_BYTES, MAX_TOOLS, check_schema, require_depth
 from .contracts import ConnectorProviderError, DiscoveredConnector
 
 _CREDENTIAL_FIELDS = frozenset(
@@ -22,7 +23,7 @@ _CREDENTIAL_FIELDS = frozenset(
 
 
 def validate_connectors(items: tuple[DiscoveredConnector, ...]) -> None:
-    if len(items) > MAX_TOOLS:
+    if len(items) > DISCOVERY_MAX_TOOLS:
         raise ConnectorProviderError("directory_too_large")
     seen: set[str] = set()
     size = 0
@@ -31,7 +32,7 @@ def validate_connectors(items: tuple[DiscoveredConnector, ...]) -> None:
             raise ConnectorProviderError("invalid_provider_response")
         seen.add(item.key)
         require_depth(item.setup_schema)
-        if len(canonical_json(item.setup_schema).encode()) > MAX_SCHEMAS_BYTES:
+        if len(canonical_json(item.setup_schema).encode()) > TOOL_SCHEMA_MAX_BYTES:
             raise ConnectorProviderError("directory_schema_too_large")
         pending: list[object] = [item.setup_schema]
         while pending:
@@ -49,7 +50,7 @@ def validate_connectors(items: tuple[DiscoveredConnector, ...]) -> None:
                 pending.extend(value.values())
             elif isinstance(value, list):
                 pending.extend(value)
-        check_schema(item.setup_schema)
+        validate_schema(item.setup_schema, require_object=False)
         size += len(item.model_dump_json().encode())
-        if size > MAX_CATALOG_BYTES:
+        if size > DISCOVERY_MAX_BYTES:
             raise ConnectorProviderError("directory_too_large")

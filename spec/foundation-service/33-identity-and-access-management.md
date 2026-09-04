@@ -298,7 +298,7 @@ API key state is derived rather than stored: an unrevoked key before its optiona
 
 Removing a User's access to a key boundary permanently revokes that boundary's Personal API Keys. Removing a Service Account's Workspace binding or deleting the Service Account revokes all of its keys. Role changes do not rotate or revoke a key; the next request observes the new effective permissions.
 
-An OSS API Key carries no per-key capability or permission toggles. It authenticates its existing User or Service Account Principal and narrows only to its credential boundary; every management or direct Agent invocation authorizes the current RoleBindings and target resource again. Agent-facing a13n MCP calls instead require the current RunAttempt grant and do not reuse a product API key.
+An OSS API Key carries no per-key capability or permission toggles. It authenticates its existing User or Service Account Principal and narrows only to its credential boundary; every management or direct Agent invocation authorizes the current RoleBindings and target resource again. Agent-facing in-process a13n MCP handlers bind the current RunAttempt authority and reauthorize each external action; they require neither a product API key nor a separate internal MCP credential.
 
 ### `security_audit_events`
 
@@ -364,7 +364,7 @@ Self-service actions such as editing one's own profile, managing one's own brows
 
 Every protected public route declares exactly one primary action from this registry when the route is registered. A command that reads or binds other protected resources also declares its additional actions. For example, Run continuation requires `run.continue` on the source Thread or Run plus `agent.invoke` on the selected Agent; binding a Workspace Secret while creating a Agent Revision additionally requires `secrets.bind`. One allow never implies an unlisted cross-resource allow.
 
-Unknown action strings, a protected route without a registered primary action, an action without a built-in or exact-subject mapping, and an unsupported resource/action pair fail closed. Distribution assembly validates that every protected Management API, Native stream, native provider ingress, a13n MCP, Hosted AG-UI, and A2A operation selects a registered action before the surface becomes ready. Login, bootstrap, password-reset-token use, and invitation-token acceptance authenticate their exact pre-Principal credentials rather than inventing anonymous roles. Worker lifecycle writes and Connectivity dispatch use internal capabilities and still reauthorize any persisted product Principal required by the owning operation.
+Unknown action strings, a protected route without a registered primary action, an action without a built-in or exact-subject mapping, and an unsupported resource/action pair fail closed. Distribution assembly validates that every protected Management API, Native stream, native provider ingress, Hosted AG-UI, and A2A operation selects a registered action before the surface becomes ready. Login, bootstrap, password-reset-token use, and invitation-token acceptance authenticate their exact pre-Principal credentials rather than inventing anonymous roles. Worker lifecycle writes and outbound tool dispatch use trusted in-process capabilities and still reauthorize any persisted product Principal required by the owning operation.
 
 The tenant, identity, and operator actions are:
 
@@ -500,7 +500,7 @@ Product RBAC decides whether a User or Service Account may invoke an Agent. Ever
 
 An Ingress-triggered Run uses the Ingress's immutable same-Workspace Service Account as its invoking Principal. The authenticated external provider actor is retained only as bounded audit and input context. Ingress admission and every replacement RunAttempt reauthorize the Service Account's current Agent invocation and capability grants; disabling it or removing its required RoleBinding blocks new work and external dispatch immediately.
 
-The [External Connectivity subsystem](40-connectivity/README.md) defines Ingress, Route, ConnectorProvider, ConnectorConnection, MCPConnection, and Agent-facing tool authority. Workspace roles map those actions explicitly. Ingress-triggered and external-tool-backed Agent work reauthorizes current resource eligibility and the required Run grants; no role snapshot or role name enters Harness.
+The [External Connectivity subsystem](40-connectivity/README.md) defines Ingress, Route, ConnectorProvider, ConnectorConnection, MCPConnection, and Agent-facing tool authority. Workspace roles map those actions explicitly. Ingress-triggered and external-tool-backed Agent work reauthorizes current resource eligibility and the current RunAttempt authority; no role snapshot or role name enters Harness.
 
 ## Lifecycle and Revocation
 

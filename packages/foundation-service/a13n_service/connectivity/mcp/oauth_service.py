@@ -39,7 +39,7 @@ from .errors import MCPConnectionError
 from .management import (
     audit,
     authorize_connection,
-    invalidate_catalog_claim,
+    invalidate_refresh_claim,
     map_management_error,
     require_connection,
     require_version,
@@ -57,7 +57,7 @@ from .oauth_bundles import (
     with_expiration,
 )
 from .oauth_client import MCPOAuthClient, MCPOAuthError, OAuthPreparation, authorization_url
-from .service import CatalogRefresher
+from .service import ConnectionDiscovery
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +85,7 @@ class MCPOAuthService:
         sessions: async_sessionmaker[AsyncSession],
         oauth: MCPOAuthClient,
         secrets: InternalSecretService,
-        catalog: CatalogRefresher,
+        discovery: ConnectionDiscovery,
         *,
         public_origin: str,
         client_name: str,
@@ -97,7 +97,7 @@ class MCPOAuthService:
         self._sessions = sessions
         self._oauth = oauth
         self._secrets = secrets
-        self._catalog = catalog
+        self._discovery = discovery
         self._public_origin = public_origin.rstrip("/")
         self._client_name = client_name
         self._instance_id = instance_id
@@ -214,7 +214,7 @@ class MCPOAuthService:
                 "Remote MCP authorization is temporarily unavailable.",
                 status_code=503,
             ) from error
-        await self._catalog.refresh(source.connection.id)
+        await self._discovery.discover(source.connection.id)
         async with transaction(self._sessions) as session:
             record = await require_connection(session, source.connection.id)
             await authorize_connection(session, actor, record, mode="read")
@@ -247,14 +247,11 @@ class MCPOAuthService:
                 canonical_json(candidate),
             )
             current.credential_generation = secret_ref.version
-            current.status = "pending"
-            current.status_reason = None
-            current.catalog_claim_owner = None
-            current.catalog_claim_expires_at = None
-            current.catalog_available_at = self._clock()
-            current.catalog_last_error_code = None
-            current.updated_at = current.catalog_available_at
-        await self._catalog.refresh(connection_id)
+            current.refresh_claim_owner = None
+            current.refresh_claim_expires_at = None
+            current.refresh_available_at = self._clock()
+            current.refresh_last_error_code = None
+            current.updated_at = current.refresh_available_at
         return True
 
     async def refresh_if_due(self, connection_id: str, *, skew_seconds: int = 60) -> bool | None:
@@ -273,8 +270,20 @@ class MCPOAuthService:
             )
             expires_at = optional_expiration(decode_oauth_bundle(raw).get("expires_at"))
         except (InternalSecretError, ValueError):
+            async with transaction(self._sessions) as session:
+                current = await require_connection(session, connection_id, lock=True)
+                if current.credential_generation == generation:
+                    current.refresh_available_at = self._clock() + timedelta(seconds=60)
             return False
         if expires_at is None or expires_at > self._clock() + timedelta(seconds=skew_seconds):
+            async with transaction(self._sessions) as session:
+                current = await require_connection(session, connection_id, lock=True)
+                if current.credential_generation == generation:
+                    current.refresh_available_at = (
+                        (expires_at - timedelta(seconds=skew_seconds))
+                        if expires_at
+                        else self._clock() + timedelta(hours=1)
+                    )
             return None
         return await self.refresh_credentials(connection_id)
 
@@ -472,7 +481,7 @@ class MCPOAuthService:
             connection.status_reason = None
             connection.version += 1
             connection.updated_at = now
-            invalidate_catalog_claim(connection, now=now)
+            invalidate_refresh_claim(connection, now=now)
             record_command(
                 session,
                 actor=actor,
@@ -621,7 +630,7 @@ class MCPOAuthService:
             connection.status = "pending"
             connection.status_reason = None
             connection.updated_at = now
-            invalidate_catalog_claim(connection, now=now)
+            invalidate_refresh_claim(connection, now=now)
             oauth_session.status = "completed"
             oauth_session.consumed_at = now
             oauth_session.claim_owner = None
@@ -674,20 +683,20 @@ class MCPOAuthService:
                 or connection.credential_secret_id is None
                 or connection.status == "disabled"
                 or (
-                    connection.catalog_claim_expires_at is not None
-                    and assume_utc(connection.catalog_claim_expires_at) > now
+                    connection.refresh_claim_expires_at is not None
+                    and assume_utc(connection.refresh_claim_expires_at) > now
                 )
             ):
                 return None
-            connection.catalog_claim_generation += 1
-            connection.catalog_claim_owner = self._instance_id
-            connection.catalog_claim_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
+            connection.refresh_claim_generation += 1
+            connection.refresh_claim_owner = self._instance_id
+            connection.refresh_claim_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
             return RefreshSource(
                 connection_id=connection.id,
                 organization_id=connection.organization_id,
                 workspace_id=connection.workspace_id,
                 credential_generation=connection.credential_generation,
-                claim_generation=connection.catalog_claim_generation,
+                claim_generation=connection.refresh_claim_generation,
                 claim_owner=self._instance_id,
             )
 
@@ -703,10 +712,10 @@ class MCPOAuthService:
             connection = await require_connection(session, source.connection_id, lock=True)
             if not _refresh_claim_matches(connection, source):
                 return
-            connection.catalog_claim_owner = None
-            connection.catalog_claim_expires_at = None
-            connection.catalog_available_at = now + timedelta(seconds=60)
-            connection.catalog_last_error_code = error_code[:128]
+            connection.refresh_claim_owner = None
+            connection.refresh_claim_expires_at = None
+            connection.refresh_available_at = now + timedelta(seconds=60)
+            connection.refresh_last_error_code = error_code[:128]
             if action_required:
                 connection.status = "action_required"
                 connection.status_reason = "reauthorization_required"
@@ -745,8 +754,8 @@ def _refresh_claim_matches(connection: MCPConnectionRecord, source: RefreshSourc
         and connection.status != "disabled"
         and connection.auth_mode == "oauth"
         and connection.credential_generation == source.credential_generation
-        and connection.catalog_claim_generation == source.claim_generation
-        and connection.catalog_claim_owner == source.claim_owner
+        and connection.refresh_claim_generation == source.claim_generation
+        and connection.refresh_claim_owner == source.claim_owner
     )
 
 

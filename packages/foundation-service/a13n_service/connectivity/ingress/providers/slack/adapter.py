@@ -34,6 +34,8 @@ from a13n_service.connectivity.ingress.provider import (
 from ..common.mapping import default_event_mapping
 from ..common.messaging import MessagingPolicy
 
+CONTEXT_VERSION = "slack_event_v1"
+
 _CONFIG_VERSION = "slack_http_v1"
 _REQUEST_MAX_BYTES = 1024 * 1024
 _SIGNATURE_MAX_AGE_SECONDS = 5 * 60
@@ -314,7 +316,7 @@ def _normalize_event(
     return InboundEvent(
         identity_kind="slack.delivery",
         external_event_id=event_id,
-        normalization_version="slack_event_v1",
+        normalization_version=CONTEXT_VERSION,
         type=f"slack.{event_kind}",
         occurred_at=_slack_timestamp(message_ts),
         received_at=received_at,
@@ -366,6 +368,7 @@ def _provider_context(event: InboundEvent, config: SlackIngressConfig) -> JsonOb
         "channel_id": event.context["channel_id"],
         "message_ts": event.context["message_ts"],
         "root_thread_ts": event.context["root_thread_ts"],
+        "conversation_kind": event.context["conversation_kind"],
     }
 
 

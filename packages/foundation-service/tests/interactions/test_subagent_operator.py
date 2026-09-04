@@ -265,7 +265,6 @@ async def _operator(
                 effective_config=effective_agent_config(),
                 connector_connection_selections=(),
                 mcp_connection_selections=(),
-                mcp_tool_snapshot=running_parent.mcp_tool_snapshot,
                 recovery_budget=running_parent.recovery_budget,
             )
         },

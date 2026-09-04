@@ -15,9 +15,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.connectivity.bounds import (
-    CATALOG_MAX_BYTES,
-    CATALOG_MAX_PAGES,
-    CATALOG_MAX_TOOLS,
     MAX_REDIRECTS,
     PROVIDER_REQUEST_MAX_BYTES,
     TOOL_RESULT_MAX_BYTES,
@@ -210,9 +207,6 @@ class ServiceSettings(BaseSettings):
     connectivity_read_timeout_seconds: float = Field(default=30, gt=0, le=300)
     connectivity_total_timeout_seconds: float = Field(default=60, gt=0, le=600)
     connectivity_response_max_bytes: int = Field(default=1024 * 1024, ge=1, le=8 * 1024 * 1024)
-    connectivity_catalog_max_pages: int = Field(default=CATALOG_MAX_PAGES, ge=1, le=CATALOG_MAX_PAGES)
-    connectivity_catalog_max_tools: int = Field(default=CATALOG_MAX_TOOLS, ge=1, le=CATALOG_MAX_TOOLS)
-    connectivity_catalog_max_bytes: int = Field(default=CATALOG_MAX_BYTES, ge=1, le=CATALOG_MAX_BYTES)
     connectivity_tool_result_max_bytes: int = Field(
         default=TOOL_RESULT_MAX_BYTES,
         ge=1,
@@ -235,11 +229,6 @@ class ServiceSettings(BaseSettings):
     )
     connectivity_connector_reconcile_poll_interval_seconds: float = Field(default=2, gt=0, le=300)
     connectivity_connector_reconcile_lease_seconds: int = Field(default=60, ge=10, le=600)
-    connectivity_catalog_retention_seconds: int = Field(
-        default=30 * 24 * 3600,
-        ge=30 * 24 * 3600,
-        le=10 * 365 * 24 * 3600,
-    )
     connectivity_retention_poll_interval_seconds: float = Field(default=60, gt=0, le=3600)
     connectivity_retention_lease_seconds: float = Field(default=60, ge=10, le=600)
     connectivity_object_cleanup_grace_seconds: float = Field(default=3600, ge=60, le=24 * 3600)

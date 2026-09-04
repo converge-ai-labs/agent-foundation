@@ -10,8 +10,6 @@ import httpx2
 
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.catalog import ConnectorCatalogService
-from a13n_service.connectivity.connectors.catalog_objects import ConnectorCatalogObjectStore
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
@@ -27,14 +25,12 @@ from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconci
 from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
-from a13n_service.connectivity.mcp.catalog_objects import MCPCatalogObjectStore
-from a13n_service.connectivity.mcp.catalog_service import MCPCatalogService
+from a13n_service.connectivity.mcp.discovery import MCPDiscoveryService
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
-from a13n_service.connectivity.mcp.protocol import MCPProtocolClient
 from a13n_service.connectivity.mcp.reconciler import MCPReconciler
 from a13n_service.connectivity.mcp.service import MCPConnectionService
-from a13n_service.connectivity.retention import CatalogRetentionReconciler
+from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.connectivity.runtime import (
     ConnectivityControlRuntime,
     ConnectivityDataRuntime,
@@ -55,13 +51,12 @@ logger = logging.getLogger("a13n_service.process.connectivity")
 class _ConnectorControl:
     service: ConnectorProviderService
     connections: ConnectorConnectionService
-    catalog: ConnectorCatalogService
     reconciler: ConnectorReconciler
 
 
 @dataclass(frozen=True, slots=True)
 class _MCPControl:
-    catalog: MCPCatalogService
+    discovery: MCPDiscoveryService
     oauth_client: MCPOAuthClient
     connections: MCPConnectionService
     oauth: MCPOAuthService
@@ -136,7 +131,7 @@ async def _build_control_runtime(
             endpoint_policy,
             response_max_bytes=settings.connectivity_response_max_bytes,
         )
-    selection_resolver = ConnectivitySelectionResolver(storage.sessions, storage.objects)
+    selection_resolver = ConnectivitySelectionResolver(storage.sessions)
     connector = _build_connector_control(
         settings,
         storage,
@@ -158,15 +153,6 @@ async def _build_control_runtime(
         public_origin,
         mcp_http_client,
     )
-    catalog_retention = CatalogRetentionReconciler(
-        storage.sessions,
-        storage.objects,
-        instance_id=settings.service_instance_id or new_object_id("svc"),
-        poll_interval_seconds=settings.connectivity_retention_poll_interval_seconds,
-        lease_seconds=settings.connectivity_retention_lease_seconds,
-        object_grace_seconds=settings.connectivity_object_cleanup_grace_seconds,
-        batch_size=settings.connectivity_retention_batch_size,
-    )
     runtime = ConnectivityControlRuntime(
         public_origin=public_origin,
         ingresses=IngressService(storage.sessions, ingress_adapters, internal_secrets),
@@ -182,7 +168,6 @@ async def _build_control_runtime(
         mcp_oauth=mcp.oauth,
     )
     background_components = (
-        BackgroundTask("catalog retention reconciler", catalog_retention.run),
         BackgroundTask("connector reconciler", connector.reconciler.run),
         BackgroundTask("MCP reconciler", mcp.reconciler.run),
     )
@@ -207,26 +192,16 @@ def _build_connector_control(
         setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
     )
     instance_id = settings.service_instance_id or new_object_id("svc")
-    catalog = ConnectorCatalogService(
-        storage.sessions,
-        connector_providers,
-        internal_secrets,
-        ConnectorCatalogObjectStore(storage.objects),
-        instance_id=instance_id,
-        lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
-        retention_seconds=settings.connectivity_catalog_retention_seconds,
-    )
     reconciler = ConnectorReconciler(
         storage.sessions,
         connector_providers,
         connections.setup_coordinator,
         connections,
-        catalog,
         instance_id=instance_id,
         poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
         lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
     )
-    return _ConnectorControl(service=service, connections=connections, catalog=catalog, reconciler=reconciler)
+    return _ConnectorControl(service=service, connections=connections, reconciler=reconciler)
 
 
 def _build_mcp_control(
@@ -238,20 +213,7 @@ def _build_mcp_control(
     http_client: httpx2.AsyncClient,
 ) -> _MCPControl:
     instance_id = settings.service_instance_id or new_object_id("svc")
-    catalog = MCPCatalogService(
-        storage.sessions,
-        MCPProtocolClient(
-            http_client,
-            endpoint_policy,
-            response_max_bytes=settings.connectivity_catalog_max_bytes,
-            max_redirects=settings.connectivity_max_redirects,
-        ),
-        internal_secrets,
-        MCPCatalogObjectStore(storage.objects),
-        instance_id=instance_id,
-        lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
-        retention_seconds=settings.connectivity_catalog_retention_seconds,
-    )
+    discovery = MCPDiscoveryService(storage.sessions, RemoteTransport(endpoint_policy), internal_secrets)
     oauth_client = MCPOAuthClient(
         http_client,
         endpoint_policy,
@@ -262,14 +224,14 @@ def _build_mcp_control(
         storage.sessions,
         endpoint_policy,
         internal_secrets,
-        catalog,
+        discovery,
         registration_cleaner=oauth_client,
     )
     oauth = MCPOAuthService(
         storage.sessions,
         oauth_client,
         internal_secrets,
-        catalog,
+        discovery,
         public_origin=public_origin,
         client_name=settings.connectivity_oauth_client_name,
         instance_id=instance_id,
@@ -280,12 +242,11 @@ def _build_mcp_control(
         storage.sessions,
         connections,
         oauth,
-        catalog,
         poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
         refresh_skew_seconds=settings.connectivity_provider_token_expiry_skew_seconds,
     )
     return _MCPControl(
-        catalog=catalog,
+        discovery=discovery,
         oauth_client=oauth_client,
         connections=connections,
         oauth=oauth,

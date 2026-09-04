@@ -72,15 +72,13 @@ CHILD_DEFINITION_ID = f"agent-config-{'3' * 24}"
 CONNECTOR_SELECTION = ConnectorConnectionRunSelection(
     connector_connection_id="cconn_2222222222222222",
     connector_provider_id="cprv_2222222222222222",
-    exposure="direct",
-    allowed_tool_keys=("find_order",),
-    tool_catalog_digest="4" * 64,
+    defer_loading=False,
+    tools=("find_order",),
 )
 MCP_SELECTION = MCPConnectionRunSelection(
     mcp_connection_id="mcpc_2222222222222222",
-    exposure="catalog",
-    allowed_tool_keys=("search_docs",),
-    tool_catalog_digest="5" * 64,
+    defer_loading=True,
+    tools=("search_docs",),
 )
 
 
@@ -402,7 +400,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         source_state=source_state.envelope,
         child_run_id="run_eeeeeeeeeeeeeeee",
         relationship_id="crr_eeeeeeeeeeeeeeee",
-        mcp_tool_snapshot=running_parent.mcp_tool_snapshot,
         recovery_budget=running_parent.recovery_budget,
         created_at=NOW + timedelta(seconds=5),
     )
@@ -502,7 +499,6 @@ def _prepared_child(
         child_thread_id=f"thread-{suffix * 32}",
         child_run_id=f"run_{suffix * 16}",
         relationship_id=f"crr_{suffix * 16}",
-        mcp_tool_snapshot=parent.mcp_tool_snapshot,
         recovery_budget=parent.recovery_budget,
         created_at=NOW + timedelta(seconds=2),
         cancellation_policy=cancellation_policy,

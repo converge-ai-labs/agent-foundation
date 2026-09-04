@@ -168,53 +168,26 @@ def test_shared_root_child_accepts_narrower_access_to_the_exact_target() -> None
     assert incompatible.value.details == {"reason": "subagent_environment_incompatible"}
 
 
-def test_connection_tool_patches_are_name_keyed() -> None:
+def test_connection_tool_overrides_replace_complete_lists() -> None:
     base = agent_config(
-        connector_tools={
-            "orders": {
-                "connector_connection_id": "cconn_1234567890abcdef",
-                "tools": ["orders.lookup"],
-            },
-            "legacy": {"connector_connection_id": "cconn_abcdef1234567890"},
-        },
-        mcp_tools={
-            "docs": {"mcp_connection_id": "mcpc_1234567890abcdef", "tools": ["search"]},
-        },
+        connector_tools=({"connector_connection_id": "cconn_1234567890abcdef", "tools": ["lookup"]},),
+        mcp_tools=({"mcp_connection_id": "mcpc_1234567890abcdef"},),
     )
     override = AgentRunOverride.model_validate(
         {
-            "connector_tools": {
-                "orders": {"tools": None, "exposure": "catalog"},
-                "legacy": None,
-                "billing": {"connector_connection_id": "cconn_1111111111111111", "tools": []},
-            },
-            "mcp_tools": {},
+            "connector_tools": [
+                {"connector_connection_id": "cconn_1111111111111111", "tools": [], "defer_loading": True}
+            ],
+            "mcp_tools": [],
         }
     )
-
     merged = merge_agent_run_override(base, override)
-
-    assert tuple(merged.config.connector_tools) == ("orders", "billing")
-    assert merged.config.connector_tools["orders"].connector_connection_id == "cconn_1234567890abcdef"
-    assert merged.config.connector_tools["orders"].tools is None
-    assert merged.config.connector_tools["orders"].exposure == "catalog"
-    assert merged.config.connector_tools["billing"].tools == ()
-    assert merged.config.mcp_tools == base.mcp_tools
-
-
-def test_null_connection_tool_map_clears_all_entries() -> None:
-    base = agent_config(
-        connector_tools={"orders": {"connector_connection_id": "cconn_1234567890abcdef"}},
-        mcp_tools={"docs": {"mcp_connection_id": "mcpc_1234567890abcdef"}},
-    )
-
-    merged = merge_agent_run_override(
-        base,
-        AgentRunOverride.model_validate({"connector_tools": None, "mcp_tools": None}),
-    )
-
-    assert merged.config.connector_tools == {}
-    assert merged.config.mcp_tools == {}
+    assert len(merged.config.connector_tools) == 1
+    assert merged.config.connector_tools[0].connector_connection_id == "cconn_1111111111111111"
+    assert merged.config.connector_tools[0].tools == ()
+    assert merged.config.connector_tools[0].defer_loading
+    assert merged.config.mcp_tools == ()
+    assert merge_agent_run_override(base, AgentRunOverride()).config.connector_tools == base.connector_tools
 
 
 @pytest.mark.parametrize(
@@ -227,12 +200,8 @@ def test_null_connection_tool_map_clears_all_entries() -> None:
         ({"model": {"settings": None}}, "model.settings", "null_not_allowed"),
         ({"retries": {"tools": None}}, "retries.tools", "null_not_allowed"),
         ({"subagents": {"new": {}}}, "subagents.new.agent_id", "required"),
-        (
-            {"connector_tools": {"new": {}}},
-            "connector_tools.new.connector_connection_id",
-            "required",
-        ),
-        ({"mcp_tools": {"new": {}}}, "mcp_tools.new.mcp_connection_id", "required"),
+        ({"connector_tools": None}, "connector_tools", "null_not_allowed"),
+        ({"mcp_tools": None}, "mcp_tools", "null_not_allowed"),
     ],
 )
 def test_invalid_null_or_incomplete_overrides_are_bounded(payload: dict[str, object], path: str, reason: str) -> None:
@@ -306,11 +275,11 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
     ("override", "reason"),
     [
         (
-            {"connector_tools": {"orders": {"connector_connection_id": "cconn_1234567890abcdef"}}},
+            {"connector_tools": [{"connector_connection_id": "cconn_1234567890abcdef"}]},
             "connector_tool_resolution_unavailable",
         ),
         (
-            {"mcp_tools": {"docs": {"mcp_connection_id": "mcpc_1234567890abcdef"}}},
+            {"mcp_tools": [{"mcp_connection_id": "mcpc_1234567890abcdef"}]},
             "mcp_tool_resolution_unavailable",
         ),
     ],

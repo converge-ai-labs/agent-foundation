@@ -107,27 +107,27 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 
 `control`, `worker`, and `connectivity` are independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs `WorkerExecutionLoop`, its claimed `RunAttemptExecutor` tasks, and a separately capacity-bounded `EnvironmentKeepaliveLoop` in the Worker process. The execution loop owns Run scan, compatibility preflight, bounded capacity admission, claim, and takeover; each successful Run claim starts one executor async task that owns lease renewal, control watching, plugin and Agent reconstruction, and Harness execution. The keepalive loop independently scans and claims due global Environment targets and never consumes an Agent execution slot. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; each lock-scoped Runner child owns its execution loop, executor tasks, and compatible target-keepalive loop. Neither profile creates one OS thread per Attempt or target.
 
-The `connectivity` role owns provider event webhooks and long connections, the a13n MCP, Ingress native action adapters, ConnectorProvider runtime dispatch, and durable external-event admission processing. Control owns Ingress, Route, ConnectorProvider, ConnectorConnection, and MCPConnection management, loads explicitly registered ConnectorProvider client adapters for their setup, discovery, revocation, and reconciliation operations, handles MCP OAuth setup callbacks, and owns durable Run acceptance. Control and Connectivity use the same durable resource facts and never call a private cross-pod Foundation API. Worker is the MCP client for the a13n MCP and selected user Remote MCP servers; it never loads or calls Ingress or Connector Provider adapter code. The complete boundary is defined by [External Connectivity](40-connectivity/README.md).
+The `connectivity` role owns provider event webhooks, long connections, polling, and durable external-event admission processing. Control owns Ingress, Route, ConnectorProvider, ConnectorConnection, and MCPConnection management, including connection setup, advisory discovery, revocation, reconciliation, and MCP OAuth callbacks. The executing Worker or Runner loads trusted native-action and ConnectorProvider runtime adapters, constructs per-Attempt in-process a13n MCP tool groups, and directly connects selected Remote MCP servers through Harness clients. These roles share Foundation application operations and durable stores; none uses a private cross-pod Foundation API for this work. [External Connectivity](40-connectivity/README.md) owns the complete boundary.
 
-| Capability                                      | `control` | `worker` | `connectivity` |    `all` |
-| ----------------------------------------------- | --------: | -------: | -------------: | -------: |
-| Product API and browser application             |       Yes |       No |             No |      Yes |
-| Native and Hosted AG-UI Gateway surfaces        |       Yes |       No |             No |      Yes |
-| A2A Gateway surface when enabled                |       Yes |       No |             No |      Yes |
-| Control authentication and authorization        |       Yes |       No |             No |      Yes |
-| a13n MCP authentication and policy              |        No |       No |            Yes |      Yes |
-| Domain-owned control reconcilers                |       Yes |       No |             No |      Yes |
-| Outbox publication                              |       Yes |       No |             No |      Yes |
-| a13n MCP and native event ingress               |        No |       No |            Yes |      Yes |
-| ConnectorProvider management adapter operations |       Yes |       No |             No |      Yes |
-| Ingress and ConnectorProvider runtime adapters  |        No |       No |            Yes |      Yes |
-| Profile-selected Worker execution runtime       |        No |      Yes |             No |      Yes |
-| Run scan, capacity, claim, and takeover         |        No |     Loop |             No |     Loop |
-| Attempt lease and control watcher               |        No | Executor |             No | Executor |
-| Harness and Environment invocation              |        No | Executor |             No | Executor |
-| Environment target keepalive and lease          |        No |     Loop |             No |     Loop |
-| Operational liveness and readiness probes       |       Yes |      Yes |            Yes |      Yes |
-| Automatic migration when enabled                |       Yes |    Never |          Never |      Yes |
+| Capability                                                                            | `control` | `worker` | `connectivity` |    `all` |
+| ------------------------------------------------------------------------------------- | --------: | -------: | -------------: | -------: |
+| Product API and browser application                                                   |       Yes |       No |             No |      Yes |
+| Native and Hosted AG-UI Gateway surfaces                                              |       Yes |       No |             No |      Yes |
+| A2A Gateway surface when enabled                                                      |       Yes |       No |             No |      Yes |
+| Control authentication and authorization                                              |       Yes |       No |             No |      Yes |
+| External tool Attempt and resource authorization                                      |        No | Executor |             No | Executor |
+| Domain-owned control reconcilers                                                      |       Yes |       No |             No |      Yes |
+| Outbox publication                                                                    |       Yes |       No |             No |      Yes |
+| Native event ingress and polling                                                      |        No |       No |            Yes |      Yes |
+| ConnectorProvider management adapter operations                                       |       Yes |       No |             No |      Yes |
+| In-process a13n MCP, native-action and Connector runtime adapters, Remote MCP clients |        No | Executor |             No | Executor |
+| Profile-selected Worker execution runtime                                             |        No |      Yes |             No |      Yes |
+| Run scan, capacity, claim, and takeover                                               |        No |     Loop |             No |     Loop |
+| Attempt lease and control watcher                                                     |        No | Executor |             No | Executor |
+| Harness and Environment invocation                                                    |        No | Executor |             No | Executor |
+| Environment target keepalive and lease                                                |        No |     Loop |             No |     Loop |
+| Operational liveness and readiness probes                                             |       Yes |      Yes |            Yes |      Yes |
+| Automatic migration when enabled                                                      |       Yes |    Never |          Never |      Yes |
 
 Every background component has exactly one role owner. `all` installs the union once; it does not start a second application, duplicate a router, or construct another copy of shared process resources. Rolling overlap is safe only when the owning domain makes the component leased, fenced, or idempotent.
 
@@ -169,8 +169,8 @@ Startup performs these ordered gates:
 05. construct required storage and external clients;
 06. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
 07. start the selected role components under one supervised lifespan;
-08. for a Worker role, start the on-demand execution and Environment-keepalive loops or the runner Supervisor and active-lock Runners selected by the persisted deployment mode;
-09. for a Connectivity role, load the distribution's explicit Ingress and Connector Provider adapter registries and start the a13n MCP and event data-plane components; and
+08. for a Worker role, register trusted outbound tool adapters and start the on-demand execution and Environment-keepalive loops or the runner Supervisor and active-lock Runners selected by the persisted deployment mode;
+09. for a Connectivity role, load the distribution's explicit inbound Ingress adapters and start event data-plane components; and
 10. report readiness only after every preceding gate succeeds.
 
 A container entrypoint delegates to this lifecycle and does not own another migration, role, or fallback policy. Worker-only and Connectivity-only processes verify the expected schema head and never mutate it. A control or all-in-one process can apply migrations under the schema contract when automatic migration is enabled; a deployment using a dedicated migration job disables replica migration.
@@ -190,7 +190,7 @@ Readiness succeeds only when:
 - the selected object store and required filesystem roots passed their bounded capability checks;
 - every selected critical role component started successfully;
 - a selected Worker can scan Run work and Environment keepalive candidates through healthy on-demand loops or the healthy Runners required by its configured profile; and
-- a selected Connectivity process loaded every registered Ingress and Connector Provider adapter and can serve its required authenticated a13n MCP and event boundaries.
+- selected execution processes can construct their registered outbound tool adapters, and a selected Connectivity process can serve its registered inbound event boundaries. Individual remote connection failures affect their selected Runs rather than process readiness.
 
 An enabled A2A surface contributes its required push and delivery components to readiness. A disabled A2A surface contributes no route, component, or readiness dependency.
 
@@ -212,7 +212,7 @@ An Attempt stops renewal only after `yielded`, an ordinary outcome, cancellation
 
 Rolling deployment starts and readies compatible new capacity before old capacity is terminated. After a service-drain yield, a different compatible `worker_build_id` may claim the Run immediately; old-build replicas defer for the bounded `handoff_preference_window` and then become fallback capacity. Same-image restart therefore still recovers after the window. An incompatible upgrade must retain compatible old capacity or use a separately reviewed state or lock migration; handoff itself does not relax compatibility. Runner rotation uses its exact historical Runtime lock and does not apply this build-preference delay.
 
-A Connectivity process rejects new a13n MCP calls, event deliveries, polling claims, and adapter operations before draining active bounded external calls. Shutdown cancellation is best effort and never reports an unknown external side effect as rolled back or automatically replays it on another replica.
+A Connectivity process rejects new event deliveries and polling claims before draining active bounded inbound operations. Worker or Runner Attempt cleanup closes local MCP groups and remote clients under the ordinary fenced drain contract. Shutdown cancellation is best effort and never reports an unknown external side effect as rolled back or automatically replays it on another replica.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 

@@ -7,24 +7,22 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx2
 import pytest
-from a13n_service.connectivity.mcp.catalog_objects import MCPCatalogObjectStore
-from a13n_service.connectivity.mcp.catalog_service import MCPCatalogService
+from a13n_service.connectivity.mcp.discovery import MCPDiscoveryService
 from a13n_service.connectivity.mcp.domain import (
     CreateMCPConnectionRequest,
     MCPAuthMode,
     ReplaceMCPCredentialsRequest,
 )
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
-from a13n_service.connectivity.mcp.management import invalidate_catalog_claim, require_connection, secret_context
+from a13n_service.connectivity.mcp.management import invalidate_refresh_claim, require_connection, secret_context
 from a13n_service.connectivity.mcp.models import (
     MCPConnectionRecord,
     MCPOAuthSessionRecord,
-    MCPToolCatalogRecord,
 )
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
-from a13n_service.connectivity.mcp.protocol import MCPProtocolClient
 from a13n_service.connectivity.mcp.service import MCPConnectionService
+from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
@@ -187,19 +185,14 @@ async def mcp_services(
     policy = EndpointPolicy()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(remote), follow_redirects=False) as http_client:
         oauth_client = MCPOAuthClient(http_client, policy)
-        catalog = MCPCatalogService(
-            connectivity_sessions,
-            MCPProtocolClient(http_client, policy),
-            connectivity_secrets,
-            MCPCatalogObjectStore(connectivity_objects),
-            instance_id="mcp-test",
-            clock=lambda: NOW,
+        discovery = MCPDiscoveryService(
+            connectivity_sessions, RemoteTransport(policy, transport=httpx2.MockTransport(remote)), connectivity_secrets
         )
         connections = MCPConnectionService(
             connectivity_sessions,
             policy,
             connectivity_secrets,
-            catalog,
+            discovery,
             registration_cleaner=oauth_client,
             clock=lambda: NOW,
         )
@@ -207,7 +200,7 @@ async def mcp_services(
             connectivity_sessions,
             oauth_client,
             connectivity_secrets,
-            catalog,
+            discovery,
             public_origin=PUBLIC_ORIGIN,
             client_name="Foundation Test",
             instance_id="mcp-test",
@@ -217,7 +210,7 @@ async def mcp_services(
 
 
 @pytest.mark.anyio
-async def test_bearer_connection_is_pending_until_credentials_then_publishes_catalog(mcp_services) -> None:
+async def test_bearer_connection_is_pending_until_credentials_then_becomes_ready(mcp_services) -> None:
     connections, _oauth, _remote = mcp_services
     created = await connections.create(
         actor=actor(),
@@ -241,7 +234,6 @@ async def test_bearer_connection_is_pending_until_credentials_then_publishes_cat
     )
     assert ready.status == "ready"
     assert ready.credential_configured is True
-    assert ready.catalog_digest is not None
     assert "bearer-secret" not in repr(ready)
 
     replay = await connections.replace_credentials(
@@ -449,7 +441,7 @@ async def test_static_headers_require_the_complete_immutable_name_set(mcp_servic
 
 
 @pytest.mark.anyio
-async def test_oauth_state_is_bound_single_use_and_callback_publishes_catalog(mcp_services) -> None:
+async def test_oauth_state_is_bound_single_use_and_callback_validates_connection(mcp_services) -> None:
     connections, oauth, _remote = mcp_services
     created = await connections.create(
         actor=actor(),
@@ -572,7 +564,7 @@ async def test_delete_fences_connection_and_cleans_exact_dcr_registration(
 
 
 @pytest.mark.anyio
-async def test_oauth_refresh_rotates_bundle_and_republishes_catalog(mcp_services) -> None:
+async def test_oauth_refresh_rotates_bundle_without_coupling_readiness_to_discovery(mcp_services) -> None:
     connections, oauth, remote = mcp_services
     created = await connections.create(
         actor=actor(),
@@ -593,10 +585,15 @@ async def test_oauth_refresh_rotates_bundle_and_republishes_catalog(mcp_services
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
     ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
 
+    requests_before = len(remote.requests)
     assert await oauth.refresh_if_due(ready.id, skew_seconds=60) is True
     refreshed = await connections.get(actor=actor(), connection_id=ready.id)
     assert refreshed.status == "ready"
     assert refreshed.credential_generation == ready.credential_generation + 1
+    assert all(request.url.path == "/token" for request in remote.requests[requests_before:])
+    await connections.reconnect(
+        actor=actor(), connection_id=ready.id, expected_version=refreshed.version, idempotency_key="reconnect-refreshed"
+    )
     assert any(request.headers.get("authorization") == "Bearer refreshed-oauth-secret" for request in remote.requests)
 
 
@@ -682,7 +679,7 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
             ),
         )
         connection.credential_generation = secret_ref.version
-        invalidate_catalog_claim(connection, now=NOW)
+        invalidate_refresh_claim(connection, now=NOW)
     proceed.set()
 
     assert await refresh_task is False
@@ -734,67 +731,3 @@ async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
     state = parse_qs(urlsplit(first.authorization_url).query)["state"][0]
     with pytest.raises(MCPConnectionError, match="unavailable"):
         await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
-
-
-@pytest.mark.anyio
-async def test_catalogs_are_identity_isolated_and_prior_catalogs_remain_immutable(
-    mcp_services,
-    connectivity_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    connections, _oauth, remote = mcp_services
-    first = await connections.create(
-        actor=actor(),
-        workspace_id=WORKSPACE_ID,
-        idempotency_key="first-identity",
-        request=CreateMCPConnectionRequest(
-            name="First Identity",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.bearer,
-            owner_user_id=USER_ID,
-        ),
-    )
-    second = await connections.create(
-        actor=actor(),
-        workspace_id=WORKSPACE_ID,
-        idempotency_key="second-identity",
-        request=CreateMCPConnectionRequest(
-            name="Second Identity",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.bearer,
-            owner_user_id=USER_ID,
-        ),
-    )
-    first_ready = await connections.replace_credentials(
-        actor=actor(),
-        connection_id=first.id,
-        idempotency_key="first-secret",
-        request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
-    )
-    second_ready = await connections.replace_credentials(
-        actor=actor(),
-        connection_id=second.id,
-        idempotency_key="second-secret",
-        request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
-    )
-    assert first_ready.catalog_digest != second_ready.catalog_digest
-
-    remote.tool_name = "lookup"
-    refreshed = await connections.reconnect(
-        actor=actor(),
-        connection_id=first.id,
-        idempotency_key="refresh-first",
-        expected_version=2,
-    )
-    assert refreshed.catalog_digest != first_ready.catalog_digest
-    async with connectivity_sessions() as session:
-        catalogs = tuple(
-            (
-                await session.scalars(
-                    select(MCPToolCatalogRecord).where(MCPToolCatalogRecord.mcp_connection_id == first.id)
-                )
-            ).all()
-        )
-    assert {catalog.digest_sha256 for catalog in catalogs} == {
-        first_ready.catalog_digest,
-        refreshed.catalog_digest,
-    }

@@ -196,12 +196,8 @@ class AgentInvocationFreezer:
             "resolved_plugin_versions": plugins,
             "runtime_lock_digest": runtime_lock.digest,
             "skills": skills,
-            "connector_tools": tuple(
-                prepared.merged.config.connector_tools[name] for name in sorted(prepared.merged.config.connector_tools)
-            ),
-            "mcp_tools": tuple(
-                prepared.merged.config.mcp_tools[name] for name in sorted(prepared.merged.config.mcp_tools)
-            ),
+            "connector_tools": prepared.merged.config.connector_tools,
+            "mcp_tools": prepared.merged.config.mcp_tools,
             "resolved_environment": environment,
             "resolved_subagents": resolved_subagents,
             "instructions": prepared.merged.config.instructions,
@@ -237,5 +233,4 @@ class AgentInvocationFreezer:
                 connectivity.connector_connection_selections if connectivity is not None else ()
             ),
             mcp_connection_selections=(connectivity.mcp_connection_selections if connectivity is not None else ()),
-            mcp_tool_snapshot=(connectivity.mcp_tool_snapshot.reference if connectivity is not None else None),
         )

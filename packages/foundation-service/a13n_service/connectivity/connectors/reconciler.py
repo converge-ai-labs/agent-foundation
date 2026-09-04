@@ -1,4 +1,4 @@
-"""Lease-based ConnectorProvider setup, revoke, and catalog reconciliation."""
+"""Lease-based ConnectorProvider setup, revoke, and connection reconciliation."""
 
 from __future__ import annotations
 
@@ -18,14 +18,13 @@ from a13n_service.secrets import SecretOperation
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .catalog import ConnectorCatalogService
 from .connection_access import apply_inspection, verify_inspection
 from .connections import ConnectorConnectionService
 from .contracts import ConnectionBinding
 from .domain import ConnectorConnectionStatus, ConnectorConnectionStatusReason
 from .errors import ConnectorError
 from .management import configure_provider, require_active_provider, require_connection
-from .models import ConnectorConnectionRecord, ConnectorOperationRecord, ConnectorSetupAttemptRecord
+from .models import ConnectorOperationRecord, ConnectorSetupAttemptRecord
 from .setup import ConnectorSetupCoordinator
 
 
@@ -36,7 +35,6 @@ class ConnectorReconciler:
         adapters: ConnectorProviderRegistry,
         setup: ConnectorSetupCoordinator,
         connections: ConnectorConnectionService,
-        catalogs: ConnectorCatalogService,
         *,
         instance_id: str,
         poll_interval_seconds: float,
@@ -47,7 +45,6 @@ class ConnectorReconciler:
         self._adapters = adapters
         self._setup = setup
         self._connections = connections
-        self._catalogs = catalogs
         self._instance_id = instance_id
         self._poll_interval_seconds = poll_interval_seconds
         self._lease_seconds = lease_seconds
@@ -68,13 +65,6 @@ class ConnectorReconciler:
         operation = await self._claim_operation()
         if operation is not None:
             await self._reconcile_operation(*operation)
-            return True
-        connection_id = await self._catalog_candidate()
-        if connection_id is not None:
-            try:
-                await self._catalogs.refresh(connection_id)
-            except ConnectorError:
-                await self._record_catalog_failure(connection_id)
             return True
         return False
 
@@ -265,30 +255,6 @@ class ConnectorReconciler:
             operation.completed_at = now
             operation.updated_at = now
         return True
-
-    async def _catalog_candidate(self) -> str | None:
-        now = self._clock()
-        async with short_session(self._sessions) as session:
-            return await session.scalar(
-                select(ConnectorConnectionRecord.id)
-                .where(
-                    ConnectorConnectionRecord.status == "ready",
-                    ConnectorConnectionRecord.deleted_at.is_(None),
-                    ConnectorConnectionRecord.catalog_available_at <= now,
-                )
-                .order_by(ConnectorConnectionRecord.catalog_available_at, ConnectorConnectionRecord.id)
-                .limit(1)
-            )
-
-    async def _record_catalog_failure(self, connection_id: str) -> None:
-        async with transaction(self._sessions) as session:
-            connection = await require_connection(session, connection_id, lock=True)
-            connection.catalog_attempt_count += 1
-            connection.catalog_last_error_code = "catalog_refresh_failed"
-            connection.catalog_available_at = self._clock() + timedelta(seconds=30)
-            if connection.catalog_claim_owner == self._instance_id:
-                connection.catalog_claim_owner = None
-                connection.catalog_claim_expires_at = None
 
     async def _defer_attempt(
         self,

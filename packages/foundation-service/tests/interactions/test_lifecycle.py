@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import anyio
 import pytest
 from a13n_service.interactions import (
-    MCPToolSnapshotRef,
     RecoveryBudget,
     RecoveryUsage,
     Run,
@@ -171,12 +170,6 @@ async def _seed_run(sessions: async_sessionmaker[AsyncSession]) -> None:
         effective_agent_config_digest="a" * 64,
         runtime_lock_digest="b" * 64,
         model_execution_observation=effective_agent_config().resolved_model.execution.observation(),
-        mcp_tool_snapshot=MCPToolSnapshotRef(
-            digest_sha256="c" * 64,
-            size_bytes=2,
-            content_type="application/vnd.a13n.mcp-tool-snapshot+json",
-            schema_version="1",
-        ),
         priority=0,
         queue_name="default",
         available_at=NOW,

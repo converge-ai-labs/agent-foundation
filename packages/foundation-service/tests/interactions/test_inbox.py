@@ -380,7 +380,6 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
             "connector_connection_selections": source.connector_connection_selections,
             "mcp_connection_selections": source.mcp_connection_selections,
             "ingress_context": source.ingress_context,
-            "mcp_tool_snapshot": source.mcp_tool_snapshot,
             "parent_run_id": source.id,
             "lineage_kind": RunLineageKind.continue_,
             "input_kind": RunInputKind.waiting_feedback,

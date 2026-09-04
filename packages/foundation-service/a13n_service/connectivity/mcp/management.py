@@ -139,13 +139,13 @@ def require_version(current: int, expected: int) -> None:
         raise MCPConnectionError("version_conflict", "MCPConnection changed concurrently.", status_code=409)
 
 
-def invalidate_catalog_claim(connection: MCPConnectionRecord, *, now: datetime) -> None:
-    """Fence in-flight discovery before an authorization-affecting change."""
+def invalidate_refresh_claim(connection: MCPConnectionRecord, *, now: datetime) -> None:
+    """Fence in-flight credential refresh before an authorization-affecting change."""
 
-    connection.catalog_claim_generation += 1
-    connection.catalog_claim_owner = None
-    connection.catalog_claim_expires_at = None
-    connection.catalog_available_at = now
+    connection.refresh_claim_generation += 1
+    connection.refresh_claim_owner = None
+    connection.refresh_claim_expires_at = None
+    connection.refresh_available_at = now
 
 
 def not_found() -> MCPConnectionError:

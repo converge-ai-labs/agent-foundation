@@ -26,6 +26,8 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequestError,
 )
 
+CONTEXT_VERSION = "lark_message_v1"
+
 _SIGNATURE_MAX_AGE_SECONDS = 5 * 60
 _MESSAGE_EVENT = "im.message.receive_v1"
 _ATTACHMENT_TYPES = frozenset({"image", "file", "audio", "video"})
@@ -176,7 +178,7 @@ def _normalize_message(
     return InboundEvent(
         identity_kind="lark.event",
         external_event_id=event_id,
-        normalization_version="lark_message_v1",
+        normalization_version=CONTEXT_VERSION,
         type="lark.message",
         occurred_at=datetime.fromtimestamp(int(create_time) / 1000, tz=UTC),
         received_at=received_at,

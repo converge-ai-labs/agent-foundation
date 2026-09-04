@@ -23,6 +23,8 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequestError,
 )
 
+CONTEXT_VERSION = "github_app_event_v1"
+
 _EVENT_ACTIONS = frozenset(
     {
         "issues.opened",
@@ -187,7 +189,7 @@ def _normalize_event(
     return InboundEvent(
         identity_kind="github.delivery",
         external_event_id=delivery_id,
-        normalization_version="github_app_event_v1",
+        normalization_version=CONTEXT_VERSION,
         type=f"github.{event_name}",
         occurred_at=occurred_at,
         received_at=received_at,

@@ -19,7 +19,6 @@ from a13n_service.connectivity.selection_domain import (
 )
 from a13n_service.interactions import (
     EncryptedRunConfigPayloadRef,
-    MCPToolSnapshotRef,
     RecoveryBudget,
     Run,
     RunStateStore,
@@ -55,7 +54,6 @@ class ChildRunAdmissionProfile:
     effective_config: EffectiveAgentConfig
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
-    mcp_tool_snapshot: MCPToolSnapshotRef
     recovery_budget: RecoveryBudget
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent
@@ -119,7 +117,6 @@ class FoundationChildRunAdmissionPreparer:
             child_thread_id=self._thread_id_factory(),
             child_run_id=self._run_id_factory(),
             relationship_id=self._relationship_id_factory(),
-            mcp_tool_snapshot=profile.mcp_tool_snapshot,
             recovery_budget=profile.recovery_budget,
             created_at=assume_utc(self._clock()),
             encrypted_config_payload=profile.encrypted_config_payload,
@@ -168,7 +165,6 @@ class FoundationChildRunAdmissionPreparer:
             source_state=source_state.envelope,
             child_run_id=self._run_id_factory(),
             relationship_id=self._relationship_id_factory(),
-            mcp_tool_snapshot=profile.mcp_tool_snapshot,
             recovery_budget=profile.recovery_budget,
             created_at=assume_utc(self._clock()),
             encrypted_config_payload=profile.encrypted_config_payload,

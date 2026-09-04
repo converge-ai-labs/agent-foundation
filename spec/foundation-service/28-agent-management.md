@@ -95,14 +95,14 @@ class EffectiveAgentModel:
 
 class ConnectorConnectionToolSelection:
     connector_connection_id: ConnectorConnectionId
-    tools: tuple[str, ...] | None
-    exposure: MCPExposureMode = "direct"
+    tools: tuple[str, ...] | None = None
+    defer_loading: bool = False
 
 
 class MCPConnectionToolSelection:
     mcp_connection_id: MCPConnectionId
-    tools: tuple[str, ...] | None
-    exposure: MCPExposureMode = "direct"
+    tools: tuple[str, ...] | None = None
+    defer_loading: bool = False
 
 
 class EnvironmentSelection:
@@ -172,8 +172,8 @@ class AgentConfig:
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
     skills: tuple[SkillSelection, ...]
-    connector_tools: dict[str, ConnectorConnectionToolSelection]
-    mcp_tools: dict[str, MCPConnectionToolSelection]
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
+    mcp_tools: tuple[MCPConnectionToolSelection, ...]
     environment: EnvironmentSelection | None
     subagents: dict[str, SubagentSelection]
     client_tools: tuple[ClientToolDefinition, ...]
@@ -184,7 +184,9 @@ class AgentConfig:
     protocol: ProtocolConfig
 ```
 
-The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key and one explicit calling API, and the primary Environment selects at most one exact EnvironmentRevision. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Connector-tool, MCP-tool, and subagent map keys are stable local names within the Agent.
+The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key and one explicit calling API, and the primary Environment selects at most one exact EnvironmentRevision. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Subagent map keys are stable local names within the Agent.
+
+`connector_tools` and `mcp_tools` are ordered lists keyed semantically by their managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within either category are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
 
 `OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
@@ -196,7 +198,7 @@ When `asset_publication` is present, the trusted Foundation `AssetCapability` ex
 
 ## Run Capability Overlay
 
-Agent authoring defines the default model-visible managed capability surface. A direct invocation or trusted input owner such as an Ingress Route can supply one bounded overlay without mutating the AgentRevision:
+Agent authoring defines the default model-visible managed capability surface. After applying `AgentRunOverride`, a direct invocation or trusted input owner such as an Ingress Route can supply one bounded overlay without mutating the AgentRevision:
 
 ```python
 class RunCapabilityOverlay:
@@ -205,16 +207,16 @@ class RunCapabilityOverlay:
     exclude: tuple[CapabilityKey, ...] = ()
 ```
 
-`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, ConnectorConnection tool, or native Ingress action contract. A ConnectorConnection or MCPConnection selection includes its `direct` or `catalog` exposure and exact tool allowlist; an Ingress native action is always direct. Every selection has one stable `CapabilityKey`, exact configuration or managed-resource references, and all required compatibility evidence. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or unversioned remote schema.
+`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, ConnectorConnection tool, or native Ingress action contract. ConnectorConnection and MCPConnection entries reuse the tool-selection types above, including `tools` and `defer_loading`; native Ingress actions remain directly visible. `CapabilityKey` is derived from capability kind and managed source identity, not a caller-defined connection alias. Every selection retains its managed-resource references and compatibility evidence required by its owning contract; external tool schemas are discovered at execution. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or remote schema. Native action selection can only narrow the protected action set supplied by trusted Ingress admission; a direct caller cannot create an Ingress target.
 
 ```text
-candidate = (Agent defaults when inherit_agent else empty) + include - exclude
+candidate = (overridden Agent selections when inherit_agent else empty) + include - exclude
 effective = candidate intersect current authorization and deployment policy
 ```
 
 `include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, instructions, output contract, Plugins, subagents, Runtime lock, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
 
-The accepted Run retains the complete effective selection and exact [`MCPToolSnapshot`](40-connectivity/04-agent-facing-tools.md#mcp-toolsnapshot), digests, or revision locks produced from it. Replacement RunAttempts reconstruct that same surface with fresh authority and fail closed instead of silently changing capabilities. Model input and tool output cannot create or modify an overlay.
+The accepted Run retains the complete effective selections and the revision locks required by each capability owner. Connection selections retain source identity, tool scope, and deferred-loading policy; [external tool discovery](40-connectivity/04-agent-facing-tools.md#discovery-and-recovery) supplies current schemas without a durable tool snapshot. Replacement RunAttempts preserve those selections and locks while revalidating authority and discovering current external tools. Model input and tool output cannot create or modify an overlay.
 
 ## Protocol Configuration
 
@@ -247,18 +249,6 @@ class ModelOverride:
     characteristics: HarnessModelCharacteristics | None
 
 
-class ConnectorConnectionToolOverride:
-    connector_connection_id: ConnectorConnectionId | None
-    tools: tuple[str, ...] | None
-    exposure: MCPExposureMode | None
-
-
-class MCPConnectionToolOverride:
-    mcp_connection_id: MCPConnectionId | None
-    tools: tuple[str, ...] | None
-    exposure: MCPExposureMode | None
-
-
 class SubagentOverride:
     agent_id: AgentId | None
     version: int | None
@@ -278,8 +268,8 @@ class AgentRunOverride:
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
     skills: tuple[SkillSelection, ...] | None
-    connector_tools: dict[str, ConnectorConnectionToolOverride | None] | None
-    mcp_tools: dict[str, MCPConnectionToolOverride | None] | None
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...]  # May be absent.
+    mcp_tools: tuple[MCPConnectionToolSelection, ...]  # May be absent.
     environment: EnvironmentOverride | None
     subagents: dict[str, SubagentOverride | None] | None
     client_tools: tuple[ClientToolDefinition, ...] | None
@@ -289,7 +279,9 @@ class AgentRunOverride:
 
 The wire schema preserves absent fields separately from explicit nulls. Top-level absence inherits the selected Revision. Scalar and string fields replace; list fields replace as a whole and an empty list clears them. `output_spec` and `environment` can be explicitly cleared. `retries` patches only explicitly present children.
 
-`connector_tools`, `mcp_tools`, and `subagents` are name-keyed patches. An absent map inherits, explicit null clears all entries, and an empty object changes nothing. A mapped null deletes one entry. Tool changes can replace only a managed ConnectorConnection, exposure, or exact allowlist; they cannot supply endpoints, credentials, external integration services, or arbitrary headers. Subagent entries select managed Agents only.
+`connector_tools` and `mcp_tools` each replace their complete category when present. Absence inherits, `[]` clears, and null for the whole category is invalid. Entries use the same complete selection types as Agent configuration; there is no per-alias patch or mapped deletion. Overrides can select existing authorized connections, tool scopes, and deferred loading, but cannot supply endpoints, credentials, external integration services, arbitrary headers, or native Ingress targets.
+
+`subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 
 Plugin override replacement and resolution follow the [managed Plugin selection contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Typed sensitive leaves are extracted into a Run-owned encrypted payload and excluded from ordinary config projections.
 
@@ -416,7 +408,7 @@ Durable acceptance:
 
 Historical AgentRevisions remain invocable under the stable Agent's current lifecycle gate. Their pinned Skill selections remain exact; their unpinned selections resolve current Revisions within the `skill_id` bindings frozen in that historical AgentRevision. Ingress and Schedule definitions store the stable Agent identity and resolve the current AgentRevision for each occurrence. Retry, waiting feedback, and other successor operations preserve source Skill locks where required but still pass current Skill lifecycle gates before a new Run is accepted. Recovery and Worker replacement of an already accepted Run use its exact Revision and effective configuration.
 
-For each outbound model request, the Worker or Runner rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes mutable authorities required by their owning contracts, constructs fresh Models, Plugins, `RunBindings`, and an attach-only Environment adapter, and enters the Harness only after the current attempt fence authorizes effects. An accepted Run's exact Skill package locks remain internally readable even if the Skill is later deleted. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, model profile/limits, Plugin code, dependencies, other managed-resource Revisions, child graph, tool surface, output contract, Environment connection, provider target, or retry budgets.
+For each outbound model request, the Worker or Runner rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker or Runner verifies the exact Runtime lock, records bounded compatibility identities, reauthorizes mutable authorities required by their owning contracts, constructs fresh Models, Plugins, `RunBindings`, and an attach-only Environment adapter, and enters the Harness only after the current attempt fence authorizes effects. An accepted Run's exact Skill package locks remain internally readable even if the Skill is later deleted. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, model profile/limits, Plugin code, dependencies, other managed-resource Revisions, child graph, external tool source selections and scopes, output contract, Environment connection, provider target, or retry budgets.
 
 ## Managed Harness Plugin Reference
 

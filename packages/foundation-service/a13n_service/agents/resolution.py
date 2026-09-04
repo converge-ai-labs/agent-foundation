@@ -232,10 +232,8 @@ class AgentResolver:
             resolved_plugin_versions=plugins,
             runtime_lock_digest=runtime_lock.digest,
             resolved_skills=skills,
-            connector_tools=tuple(
-                prepared.config.connector_tools[name] for name in sorted(prepared.config.connector_tools)
-            ),
-            mcp_tools=tuple(prepared.config.mcp_tools[name] for name in sorted(prepared.config.mcp_tools)),
+            connector_tools=prepared.config.connector_tools,
+            mcp_tools=prepared.config.mcp_tools,
             resolved_environment=environment,
             resolved_subagents=subagents,
         )

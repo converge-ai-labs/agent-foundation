@@ -111,7 +111,6 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         assert accepted.effective_agent_config_digest == completed_parent.effective_agent_config_digest
         assert accepted.connector_connection_selections == completed_parent.connector_connection_selections
         assert accepted.mcp_connection_selections == completed_parent.mcp_connection_selections
-        assert accepted.mcp_tool_snapshot == completed_parent.mcp_tool_snapshot
         assert successor_state.envelope.checkpoint_seq == 0
         assert (
             entry.status,
@@ -366,7 +365,6 @@ async def _accept_another_child(
         child_thread_id="thread-12121212121212121212121212121212",
         child_run_id="run_1212121212121212",
         relationship_id="crr_1212121212121212",
-        mcp_tool_snapshot=parent.mcp_tool_snapshot,
         recovery_budget=parent.recovery_budget,
         created_at=NOW + timedelta(seconds=2),
     )

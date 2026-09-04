@@ -20,9 +20,9 @@ The common Ingress contract defines ordered per-Agent-Thread input batching and 
 
 ## Source Tool Compatibility
 
-An accepted Run retains one exact [`MCPToolSnapshot`](04-agent-facing-tools.md#mcp-toolsnapshot). Its source adapters own schema validation and compatibility evidence; Foundation defines no semantic equivalence algorithm across Connector Providers or unrelated Remote MCP servers.
+An accepted Run retains source identity, tool scope, and loading policy under [Agent-Facing External Tools](04-agent-facing-tools.md#discovery-and-recovery). Runtime discovery supplies current definitions; Foundation promises neither schema equality across Attempts nor semantic equivalence across Connector Providers or unrelated Remote MCP servers.
 
-No contract promises that changing ConnectorProvider or MCPConnection preserves tool names, schemas, effects, receipts, or results. Foundation guarantees only collision-free names and references inside one frozen Run snapshot; it does not claim that similarly named source tools are interchangeable.
+No contract promises that changing ConnectorProvider or MCPConnection preserves tool names, schemas, effects, receipts, or results. Foundation guarantees only collision-free names and references across the composed Run tool surface; it does not claim that similarly named source tools are interchangeable.
 
 ## Management and User Interface
 

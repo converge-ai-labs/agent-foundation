@@ -112,7 +112,9 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     assert connectivity.ingress_adapter_registry is not None
     assert connectivity.ingress_adapter_registry.keys() == ("fake",)
     assert connectivity.connector_provider_registry is None
-    assert worker is components
+    assert worker.ingress_adapter_registry is None
+    assert worker.connector_provider_registry is not None
+    assert tuple(item.type for item in worker.connector_provider_registry.definitions()) == ("fake_connector",)
 
 
 @pytest.mark.anyio
@@ -123,6 +125,9 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         runtime = app.state.runtime
         assert runtime.control is not None
         assert runtime.worker is not None
+        from a13n_service.connectivity.execution import ExternalToolRuntime
+
+        assert isinstance(runtime.worker.external_tools, ExternalToolRuntime)
         assert isinstance(runtime.worker.skill_runtime, SkillRuntimePreparer)
         assert runtime.control.plugins is not None
         assert isinstance(runtime.worker.plugin_materializer, PluginRuntimeMaterializer)

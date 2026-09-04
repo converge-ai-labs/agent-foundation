@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Connectivity is Foundation-owned configuration and authorization around provider-specific adapters. It preserves provider-native behavior at the edge and standardizes only the minimum concepts required to admit external input, select one Agent, freeze a safe tool surface, and dispatch authorized external actions.
+Connectivity is Foundation-owned configuration and authorization around provider-specific adapters. It preserves provider-native behavior at the edge and standardizes only the minimum concepts required to admit external input, select one Agent, select an authorized tool scope, and dispatch authorized external actions.
 
 Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Ingress can receive and reply as its Bot identity without a second OpenConnector or Composio ConnectorConnection. A separate ConnectorConnection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `MCPConnection`.
 
@@ -18,8 +18,8 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 | General outbound connector service               | ConnectorProvider                               | Configures one OpenConnector, Composio, or another installed Connector Provider adapter |
 | Safe externally managed account reference        | ConnectorConnection                             | Refers to one account whose real credentials remain in its external integration service |
 | User-configured remote MCP access                | MCPConnection                                   | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle    |
-| Foundation-owned Agent tool server               | a13n MCP                                        | Serves authorized Ingress native actions and Connector tools for the current RunAttempt |
-| Model-facing aggregation                         | Foundation Worker                               | Exposes selected Connector and Remote MCP tools directly or through three catalog tools |
+| Foundation-owned in-process tool groups          | a13n MCP                                        | Serves authorized Ingress native actions and Connector tools for the current RunAttempt |
+| Model-facing discovery and loading               | Harness                                         | Discovers selected sources and uses native capability loading                           |
 | Provider and remote tool names, schemas, result  | Their adapter, ConnectorProvider, or MCP server | Retain source-specific meaning; Foundation creates no universal action vocabulary       |
 
 ## Core Concepts
@@ -42,25 +42,24 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 
 Connectivity allocates these Foundation object-ID prefixes under the shared [Platform Data Conventions](../../data-conventions.md#object-identity):
 
-| Object kind                        | Prefix   | Addressability            |
-| ---------------------------------- | -------- | ------------------------- |
-| Ingress                            | `ing_`   | Public resource           |
-| Route                              | `rte_`   | Public resource           |
-| ConnectorProvider                  | `cnr_`   | Public resource           |
-| ConnectorConnection                | `cconn_` | Public resource           |
-| MCPConnection                      | `mcpc_`  | Public resource           |
-| AgentThreadBinding                 | `atb_`   | Internal durable object   |
-| Inbound event admission            | `iadm_`  | Internal durable object   |
-| Input batch                        | `ibat_`  | Internal durable object   |
-| Validated tool catalog             | `tcat_`  | Internal immutable object |
-| Connector Connection setup attempt | `csa_`   | Internal expiring object  |
-| MCP OAuth authorization session    | `mos_`   | Internal expiring object  |
+| Object kind                        | Prefix   | Addressability           |
+| ---------------------------------- | -------- | ------------------------ |
+| Ingress                            | `ing_`   | Public resource          |
+| Route                              | `rte_`   | Public resource          |
+| ConnectorProvider                  | `cnr_`   | Public resource          |
+| ConnectorConnection                | `cconn_` | Public resource          |
+| MCPConnection                      | `mcpc_`  | Public resource          |
+| AgentThreadBinding                 | `atb_`   | Internal durable object  |
+| Inbound event admission            | `iadm_`  | Internal durable object  |
+| Input batch                        | `ibat_`  | Internal durable object  |
+| Connector Connection setup attempt | `csa_`   | Internal expiring object |
+| MCP OAuth authorization session    | `mos_`   | Internal expiring object |
 
 An allocated prefix identifies the object kind only. It conveys no provider, tenant, owner, lifecycle, routing, or authority fact. Connector Provider resources retain the allocated `cnr_` prefix; discovered Connector catalog values have no Foundation object ID.
 
 ## Outbound Endpoint Policy
 
-Every ConnectorProvider and Remote MCP request uses one Connectivity-owned outbound endpoint policy. Production endpoints use HTTPS. Plain HTTP is accepted only for an exact operator-allowed development or private self-hosted origin. DNS is resolved and every resulting address is checked before each request; loopback, link-local, multicast, unspecified, cloud-metadata, and private addresses are denied unless the exact origin or network is operator-allowed for Connectivity. Model endpoint allowlists and their management permissions do not apply.
+Every ConnectorProvider and Remote MCP request uses one Connectivity-subsystem-owned outbound endpoint policy in whichever role performs the request, including Control, Worker, and Runner. Production endpoints use HTTPS. Plain HTTP is accepted only for an exact operator-allowed development or private self-hosted origin. DNS is resolved and every resulting address is checked before each request; loopback, link-local, multicast, unspecified, cloud-metadata, and private addresses are denied unless the exact origin or network is operator-allowed under this policy. Model endpoint allowlists and their management permissions do not apply.
 
 Redirects are followed manually for at most three hops. Every destination is normalized, resolved, and checked independently; an HTTPS-to-HTTP downgrade is denied. A bearer value, static application header, ConnectorProvider API key, cookie, or other credential is sent only to the exact origin for which it was resolved and is never forwarded after an origin-changing redirect. Standards-discovered MCP authorization endpoints and operator-configured Lark or GitHub Enterprise origins are subject to the same checks. Endpoint query strings, discovery headers, redirect locations, and remote bodies remain bounded and are omitted from ordinary diagnostics.
 
@@ -78,20 +77,21 @@ flowchart LR
 
     Input --> Run[Agent Thread and Run]
 
-    subgraph AgentTools[Agent-facing tools]
+    subgraph AgentTools[Worker or Runner tool execution]
         Toolset[Effective Toolset]
-        A13nMCP[a13n MCP]
-        RemoteMCP[User Remote MCP]
+        A13nMCP[Per-source in-process a13n MCP groups]
+        RemoteClient[Harness Remote MCP client]
         Toolset --> A13nMCP
-        Toolset --> RemoteMCP
+        Toolset --> RemoteClient
     end
 
     Run --> Toolset
-    A13nMCP --> NativeAdapter[Ingress adapter] --> Provider
-    A13nMCP --> ConnectorAdapter[Connector Provider adapter] --> ConnectorService[external integration service] --> SaaS[External SaaS]
+    RemoteClient --> RemoteMCP[User Remote MCP server]
+    A13nMCP -->|Native provider API| Provider
+    A13nMCP -->|Connector adapter| ConnectorService[External integration service] --> SaaS[External SaaS]
 ```
 
-The `connectivity` process role receives provider traffic, operates the a13n MCP, dispatches ConnectorProvider calls, and invokes the same Foundation application operations used by the control role. It does not call another Foundation pod's private API, execute Agents, or own Run lifecycle. The current `RunAttemptExecutor` in the Worker role invokes Harness and constructs the effective Toolset from the accepted Run selections.
+The `connectivity` process role receives provider traffic and invokes shared application operations for durable admission. The current `RunAttemptExecutor` in a Worker or Runner invokes Harness, constructs per-source MCP capabilities, and executes outbound native and Connector actions. Remote clients connect directly to selected MCP endpoints. These roles share durable authority without a private cross-pod Foundation API; Connectivity does not execute Agents or own a parallel Run lifecycle.
 
 Inbound completion means that an event was rejected safely, ignored by policy, or durably admitted for Foundation input processing. It never waits for Agent execution. Outbound completion is one independently authorized tool outcome.
 
@@ -102,6 +102,6 @@ Inbound completion means that an event was rejected safely, ignored by policy, o
 3. Raw external data never creates an Agent, Tool, ConnectorConnection, MCPConnection, Secret, Principal, Route, or Run grant.
 4. One Ingress can route to several allowed Agents; one inbound event activates at most one.
 5. Agent selection and effective Skills, Tools, MCPConnections, ConnectorConnections, and native actions are independent decisions.
-6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected Ingress context, ConnectorConnection choices, MCPConnection choices, and exact tool snapshot. Recovery never silently substitutes another Agent, target, account, endpoint, or tool contract.
+6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected Ingress context, ConnectorConnection choices, MCPConnection choices, and tool scopes. Recovery preserves those choices while discovering current external tool definitions.
 7. Connectivity retains only bounded event-admission, deduplication, correlation, and external-resource facts; it persists no transcript, Agent inbox, or execution state beside Foundation Threads, Runs, and the Thread inbox.
 8. Provider credentials are typed and owned at the edge; the common model never forces Slack, Lark, GitHub, Gmail, ConnectorProvider, and MCP authorization into one credential schema.

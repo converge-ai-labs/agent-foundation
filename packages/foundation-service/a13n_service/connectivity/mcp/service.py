@@ -39,6 +39,7 @@ from .domain import (
     MCPConnection,
     MCPConnectionCollection,
     MCPConnectionStatus,
+    MCPTool,
     ReplaceMCPCredentialsRequest,
     UpdateMCPConnectionRequest,
 )
@@ -48,7 +49,7 @@ from .management import (
     authorize_connection,
     authorize_workspace_action,
     has_admin_access,
-    invalidate_catalog_claim,
+    invalidate_refresh_claim,
     map_management_error,
     not_found,
     require_connection,
@@ -58,8 +59,8 @@ from .management import (
 from .models import MCPConnectionRecord, MCPOAuthSessionRecord
 
 
-class CatalogRefresher(Protocol):
-    async def refresh(self, connection_id: str) -> str: ...
+class ConnectionDiscovery(Protocol):
+    async def discover(self, connection_id: str) -> tuple[MCPTool, ...]: ...
 
 
 class RegistrationCleaner(Protocol):
@@ -72,7 +73,7 @@ class MCPConnectionService:
         sessions: async_sessionmaker[AsyncSession],
         endpoint_policy: EndpointPolicy,
         secrets: InternalSecretService,
-        catalog: CatalogRefresher,
+        discovery: ConnectionDiscovery,
         *,
         registration_cleaner: RegistrationCleaner | None = None,
         clock: Clock = utc_now,
@@ -80,7 +81,7 @@ class MCPConnectionService:
         self._sessions = sessions
         self._endpoint_policy = endpoint_policy
         self._secrets = secrets
-        self._catalog = catalog
+        self._discovery = discovery
         self._registration_cleaner = registration_cleaner
         self._clock = clock
 
@@ -150,13 +151,11 @@ class MCPConnectionService:
                     version=1,
                     credential_secret_id=None,
                     credential_generation=0,
-                    catalog_generation=0,
-                    current_catalog_digest=None,
-                    catalog_claim_generation=0,
-                    catalog_claim_owner=None,
-                    catalog_claim_expires_at=None,
-                    catalog_available_at=now,
-                    catalog_last_error_code=None,
+                    refresh_claim_generation=0,
+                    refresh_claim_owner=None,
+                    refresh_claim_expires_at=None,
+                    refresh_available_at=now,
+                    refresh_last_error_code=None,
                     cleanup_pending=False,
                     cleanup_attempt_count=0,
                     cleanup_available_at=now,
@@ -191,7 +190,7 @@ class MCPConnectionService:
                 status_code=409,
             ) from error
         if request.auth_mode is MCPAuthMode.none:
-            await self._catalog.refresh(connection_id)
+            await self._discovery.discover(connection_id)
         return await self.get(actor=actor, connection_id=connection_id)
 
     async def list(
@@ -327,7 +326,7 @@ class MCPConnectionService:
             record.status_reason = None
             record.version += 1
             record.updated_at = self._clock()
-            invalidate_catalog_claim(record, now=record.updated_at)
+            invalidate_refresh_claim(record, now=record.updated_at)
             self._record(
                 session,
                 actor=actor,
@@ -336,7 +335,7 @@ class MCPConnectionService:
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
             )
-        await self._catalog.refresh(connection_id)
+        await self._discovery.discover(connection_id)
         return await self.get(actor=actor, connection_id=connection_id)
 
     async def reconnect(
@@ -369,7 +368,7 @@ class MCPConnectionService:
             record.status_reason = None
             record.version += 1
             record.updated_at = self._clock()
-            invalidate_catalog_claim(record, now=record.updated_at)
+            invalidate_refresh_claim(record, now=record.updated_at)
             self._record(
                 session,
                 actor=actor,
@@ -378,7 +377,7 @@ class MCPConnectionService:
                 key_digest=key_digest,
                 request_fingerprint=request_fingerprint,
             )
-        await self._catalog.refresh(connection_id)
+        await self._discovery.discover(connection_id)
         return await self.get(actor=actor, connection_id=connection_id)
 
     async def set_enabled(
@@ -412,17 +411,16 @@ class MCPConnectionService:
             if not replay:
                 require_version(record.version, expected_version)
                 if enabled:
-                    digest = record.current_catalog_digest
-                    if digest is None or (record.auth_mode != "none" and record.credential_secret_id is None):
+                    if record.auth_mode != "none" and record.credential_secret_id is None:
                         raise MCPConnectionError(
                             "connection_not_ready",
-                            "MCPConnection has no compatible credentials and catalog.",
+                            "MCPConnection has no eligible credentials.",
                             status_code=409,
                         )
                     record.status = "ready"
                 else:
                     record.status = "disabled"
-                    invalidate_catalog_claim(record, now=self._clock())
+                    invalidate_refresh_claim(record, now=self._clock())
                 record.status_reason = None
                 record.version += 1
                 record.updated_at = self._clock()
@@ -475,7 +473,7 @@ class MCPConnectionService:
             record.deleted_at = deleted_at
             record.version += 1
             record.updated_at = deleted_at
-            invalidate_catalog_claim(record, now=deleted_at)
+            invalidate_refresh_claim(record, now=deleted_at)
             oauth_sessions = await session.scalars(
                 select(MCPOAuthSessionRecord).where(
                     MCPOAuthSessionRecord.mcp_connection_id == record.id,

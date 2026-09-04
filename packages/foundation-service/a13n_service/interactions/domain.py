@@ -115,13 +115,6 @@ class RunPayloadObjectRef(StrictModel):
     schema_version: SchemaVersion
 
 
-class MCPToolSnapshotRef(StrictModel):
-    digest_sha256: Sha256Digest
-    size_bytes: int = Field(ge=1)
-    content_type: Literal["application/vnd.a13n.mcp-tool-snapshot+json"]
-    schema_version: SchemaVersion
-
-
 class EncryptedRunConfigPayloadRef(StrictModel):
     object_key: Annotated[str, StringConstraints(min_length=1, max_length=1024)]
     ciphertext_digest_sha256: Sha256Digest
@@ -287,7 +280,6 @@ class Run(StrictModel):
     connector_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     mcp_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     ingress_context: JsonObject | None = None
-    mcp_tool_snapshot: MCPToolSnapshotRef
     priority: int
     queue_name: BoundedName
     available_at: UtcDateTime
@@ -463,7 +455,6 @@ __all__ = [
     "BoundedKey",
     "EncryptedRunConfigPayloadRef",
     "JsonObject",
-    "MCPToolSnapshotRef",
     "ObjectId",
     "PendingCallKind",
     "PendingCallSummary",

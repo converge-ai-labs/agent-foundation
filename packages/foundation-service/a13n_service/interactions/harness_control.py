@@ -18,7 +18,7 @@ from pydantic_ai.capabilities import (
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import ModelRequestContext
 
-from .attempts import AttemptPreparationAccepted
+from .attempts import AttemptContext, AttemptPreparationAccepted
 from .objects import StoredRunState
 
 FOUNDATION_RUN_CONTROL_CAPABILITY_ID = "a13n.foundation.run-control"
@@ -81,6 +81,9 @@ class HarnessControlDriver(Protocol):
 
 class RunControlPort(Protocol):
     """Attempt-scoped Foundation operations awaited by the driver and Capability."""
+
+    @property
+    def current_context(self) -> AttemptContext: ...
 
     @property
     def current_state(self) -> StoredRunState: ...

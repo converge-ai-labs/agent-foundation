@@ -500,7 +500,7 @@ async def test_malformed_setup_response_retains_unknown_outcome(make_provider, m
 async def test_directory_budget_covers_catalog_and_auth_config_reads(monkeypatch) -> None:
     from a13n_service.connectivity.connectors.providers import discovery
 
-    monkeypatch.setattr(discovery, "MAX_TOOLS", 2)
+    monkeypatch.setattr(discovery, "DISCOVERY_MAX_TOOLS", 2)
     responses = iter(
         [
             httpx2.Response(200, json={"items": [{}], "total_items": 1}),

@@ -324,16 +324,16 @@ def test_reconstruction_preserves_root_and_child_connectivity_selections() -> No
     connector = ConnectorConnectionToolSelection(
         connector_connection_id="cconn_1234567890abcdef",
         tools=("lookup_order",),
-        exposure="direct",
+        defer_loading=False,
     )
     mcp = MCPConnectionToolSelection(
         mcp_connection_id="mcpc_1234567890abcdef",
         tools=("search", "fetch"),
-        exposure="catalog",
+        defer_loading=True,
     )
     child_config = _config(
-        connector_tools={"orders": connector},
-        mcp_tools={"knowledge": mcp},
+        connector_tools=(connector,),
+        mcp_tools=(mcp,),
     )
     child = _revision(
         config=child_config,
@@ -341,8 +341,8 @@ def test_reconstruction_preserves_root_and_child_connectivity_selections() -> No
         mcp_tools=(mcp,),
     )
     root_config = _config(
-        connector_tools={"orders": connector},
-        mcp_tools={"knowledge": mcp},
+        connector_tools=(connector,),
+        mcp_tools=(mcp,),
     )
     effective = _effective(
         root_config,

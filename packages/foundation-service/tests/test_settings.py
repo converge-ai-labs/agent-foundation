@@ -38,10 +38,6 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.plugin_runner_shutdown_timeout_seconds == 30
     assert settings.plugin_runner_max_processes == 8
     assert settings.observability_query_provider == "none"
-    assert settings.connectivity_catalog_max_pages == 128
-    assert settings.connectivity_catalog_max_tools == 2_048
-    assert settings.connectivity_catalog_max_bytes == 16 * 1024 * 1024
-    assert settings.connectivity_catalog_retention_seconds == 30 * 24 * 60 * 60
     assert settings.connectivity_object_cleanup_grace_seconds == 3600
     assert settings.connectivity_retention_batch_size == 25
     assert settings.connectivity_tool_result_max_bytes == 1024 * 1024
@@ -233,8 +229,6 @@ def test_connectivity_bounds_and_public_origin_fail_closed() -> None:
             connectivity_admission_poll_interval_seconds=10,
             connectivity_admission_lease_seconds=10,
         )
-    with pytest.raises(ValueError, match="greater than or equal to 2592000"):
-        ServiceSettings(_env_file=None, connectivity_catalog_retention_seconds=3600)
     with pytest.raises(ValueError, match="cleanup grace"):
         ServiceSettings(
             _env_file=None,

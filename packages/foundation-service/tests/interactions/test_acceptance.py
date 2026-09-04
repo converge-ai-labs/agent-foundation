@@ -11,7 +11,6 @@ from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator,
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions import (
-    MCPToolSnapshotRef,
     RecoveryBudget,
     RecoveryUsage,
     Run,
@@ -90,12 +89,6 @@ def _accepted_run(
         runtime_lock_digest=config.runtime_lock_digest,
         model_execution_observation=config.resolved_model.execution.observation(),
         connector_connection_selections=({"connector_connection_id": "cconn_1234567890abcdef"},),
-        mcp_tool_snapshot=MCPToolSnapshotRef(
-            digest_sha256="d" * 64,
-            size_bytes=2,
-            content_type="application/vnd.a13n.mcp-tool-snapshot+json",
-            schema_version="1",
-        ),
         priority=0,
         queue_name="default",
         available_at=NOW,

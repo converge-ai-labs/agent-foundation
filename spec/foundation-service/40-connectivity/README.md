@@ -20,7 +20,7 @@ These paths can appear together in one Agent Run but retain separate identity, c
 | [01 Ingress and Routing](01-ingress-and-routing.md)                                               | Ingress identity, provider event normalization, durable admission, input mapping, routing, and Agent Thread binding                     |
 | [02 Messaging Ingress](02-messaging-ingress.md)                                                   | Slack, Lark, Discord, and Teams Agent selection, discussion continuation, capability selection, and native messaging boundaries         |
 | [03 Connector Providers, Connectors, and Connector Connections](03-connectors-and-connections.md) | Provider definitions and configuration, Connector discovery, connection identity, external credential custody, assignment, and dispatch |
-| [04 Agent-Facing Tools](04-agent-facing-tools.md)                                                 | a13n MCP, native actions, direct and catalog exposure, Run tool snapshots, invocation grants, dispatch, and provider receipts           |
+| [04 Agent-Facing Tools](04-agent-facing-tools.md)                                                 | In-process a13n MCP, per-source capabilities, Harness loading and discovery, current authority, dispatch, and provider receipts         |
 | [05 Contract Limits](05-contract-limits.md)                                                       | Explicit provider and product boundaries for which the common contract defines no portable behavior                                     |
 | [06 Remote MCP Connections](06-remote-mcp-connections.md)                                         | User-configured Streamable HTTP MCP endpoints, ownership, authentication, OAuth client behavior, lifecycle, and runtime eligibility     |
 | [07 Built-in Ingress Adapters](07-built-in-ingress-adapters.md)                                   | Exact Slack, Lark/Feishu, and GitHub App HTTP identities, wire validation, routing, acknowledgements, and native actions                |
@@ -35,9 +35,9 @@ Read `00` first. Read `01` for every inbound provider, `02` only for conversatio
 - Every Ingress binds one same-Workspace Service Account as its immutable execution Principal. Provider actors remain untrusted external context. Admission and every RunAttempt reauthorize that Service Account, the selected Agent, the exact Route and capability selections, and current shared or exactly Principal-owned external resources.
 - Foundation Service owns durable Run acceptance, Thread advancement, and active-Run steering. Ingress routing accepts a Run for an idle Agent Thread or Steers one compatible current accepted or running Run or current/head waiting Run, never creates a queued submission, and owns no parallel Agent inbox.
 - One inbound messaging event selects at most one Agent. Connectivity never creates implicit multi-Agent fan-out.
-- The a13n MCP is the single Foundation-owned MCP server surface for Ingress native actions and Connector tools. User-configured Remote MCP servers remain separate MCP sources selected through `MCPConnection`.
-- Ingress native actions are directly model-visible whenever the accepted Run has an authorized native action set. Connector and user Remote MCP tools can use direct or catalog exposure.
-- Every Run fixes its exact effective capability selections and MCP tool snapshot. Every RunAttempt resolves fresh credentials and revalidates current authority without changing that accepted surface.
+- The a13n MCP supplies Ingress native actions and Connector tools through per-source in-process groups inside the executing Worker or Runner. User-configured Remote MCP servers remain separate MCP sources selected through `MCPConnection`.
+- Ingress native actions are directly model-visible whenever the accepted Run has an authorized native action set. Connector and user Remote MCP selections independently choose Harness deferred capability loading.
+- Every Run fixes effective source selections, tool scopes, and protected native context. Every RunAttempt discovers current external tool definitions, resolves eligible credentials, and revalidates current authority under those selections.
 - Inbound receipt and outbound action dispatch are independent completion boundaries. Receiving an event never implies that an Agent replied or that an external action succeeded.
 
 ## Authorization

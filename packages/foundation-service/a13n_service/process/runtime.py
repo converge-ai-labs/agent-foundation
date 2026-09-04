@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from a13n_service.agents.application import AgentManagement
     from a13n_service.assets.service import AssetService
+    from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
     from a13n_service.environments.service import EnvironmentManagementService
@@ -63,6 +64,7 @@ class ControlRuntime:
 class WorkerRuntime:
     """Worker-owned execution components."""
 
+    external_tools: ExternalToolRuntime
     plugin_materializer: PluginRuntimeMaterializer
     plugin_runtime: OnDemandPluginRuntime | PluginRunnerSupervisor
     native_model_factory: NativeModelFactory

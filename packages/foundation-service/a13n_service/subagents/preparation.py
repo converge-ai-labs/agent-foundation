@@ -19,7 +19,6 @@ from a13n_service.connectivity.selection_domain import (
 )
 from a13n_service.interactions.domain import (
     EncryptedRunConfigPayloadRef,
-    MCPToolSnapshotRef,
     RecoveryBudget,
     RecoveryUsage,
     Run,
@@ -90,7 +89,6 @@ def prepare_child_run(
     child_thread_id: str,
     child_run_id: str,
     relationship_id: str,
-    mcp_tool_snapshot: MCPToolSnapshotRef,
     recovery_budget: RecoveryBudget,
     created_at: datetime,
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None,
@@ -176,7 +174,6 @@ def prepare_child_run(
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,
         encrypted_config_payload=encrypted_config_payload,
-        mcp_tool_snapshot=mcp_tool_snapshot,
         recovery_budget=recovery_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
@@ -214,7 +211,6 @@ def prepare_child_resume(
     source_state: RunStateEnvelope,
     child_run_id: str,
     relationship_id: str,
-    mcp_tool_snapshot: MCPToolSnapshotRef,
     recovery_budget: RecoveryBudget,
     created_at: datetime,
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None,
@@ -297,7 +293,6 @@ def prepare_child_resume(
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,
         encrypted_config_payload=encrypted_config_payload,
-        mcp_tool_snapshot=mcp_tool_snapshot,
         recovery_budget=recovery_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
@@ -365,7 +360,6 @@ def _child_run(
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None,
-    mcp_tool_snapshot: MCPToolSnapshotRef,
     recovery_budget: RecoveryBudget,
     request_fingerprint: str,
     input_payload: JsonValue,
@@ -398,7 +392,6 @@ def _child_run(
         mcp_connection_selections=tuple(
             item.model_dump(mode="json", by_alias=True) for item in mcp_connection_selections
         ),
-        mcp_tool_snapshot=mcp_tool_snapshot,
         priority=parent_run.priority,
         queue_name=parent_run.queue_name,
         available_at=created_at,

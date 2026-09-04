@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,10 +21,10 @@ from .errors import agent_revision_create_failed, agent_revision_not_executable
 
 class _ConnectivityConfig(Protocol):
     @property
-    def connector_tools(self) -> Mapping[str, ConnectorConnectionToolSelection]: ...
+    def connector_tools(self) -> tuple[ConnectorConnectionToolSelection, ...]: ...
 
     @property
-    def mcp_tools(self) -> Mapping[str, MCPConnectionToolSelection]: ...
+    def mcp_tools(self) -> tuple[MCPConnectionToolSelection, ...]: ...
 
 
 async def prepare_revision_connectivity(

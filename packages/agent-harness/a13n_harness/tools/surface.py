@@ -9,6 +9,7 @@ from typing import cast
 from pydantic import JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ToolSearch
+from pydantic_ai.capabilities._deferred_capability_loader import DeferredCapabilityLoader
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness.context import AgentContext
@@ -38,7 +39,7 @@ class ToolSurfaceCapability(AbstractCapability[AgentContext]):
 
         return CapabilityOrdering(
             position="outermost",
-            wraps=(ToolSearch,),
+            wraps=(ToolSearch, DeferredCapabilityLoader),
             wrapped_by=(ToolExecutionBoundaryCapability, CodeActCapability),
         )
 

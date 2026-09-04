@@ -395,7 +395,7 @@ agent_spec = AgentSpec.from_dict(
 )
 ```
 
-The default `a13n-harness` installation includes Pydantic AI's MCP client runtime, so local URL and stdio transports need no separate Harness extra. For richer process-local inputs such as an in-process server, transport, script path, or prebuilt `MCPToolset`, construct `pydantic_ai.capabilities.MCP` in trusted code and pass it through definition Capability composition. Use `native=True, local=False` when the selected model provider should execute a URL MCP server natively.
+The default `a13n-harness` installation includes Pydantic AI's MCP client runtime, so local URL and stdio transports need no separate Harness extra. For richer process-local inputs such as an in-process server, transport, script path, or prebuilt `MCPToolset`, construct `pydantic_ai.capabilities.MCP` in trusted code and pass it through definition Capability composition. A host that owns fresh authenticated clients or toolsets for one execution can instead attach an exact upstream `MCP` instance to `RunBindings.capabilities`; never reuse that authenticated instance across runs. `defer_loading=True` uses upstream `load_capability` under the same Harness tool boundaries. Use `native=True, local=False` when the selected model provider should execute a URL MCP server natively.
 
 ### Run-scoped headers with `ContextualMCP`
 

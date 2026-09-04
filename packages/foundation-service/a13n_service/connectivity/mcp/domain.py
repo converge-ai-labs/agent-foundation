@@ -53,7 +53,6 @@ class MCPConnection(StrictModel):
     version: int = Field(ge=1)
     credential_configured: bool
     credential_generation: int = Field(ge=0)
-    catalog_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     created_by: PrincipalRef
     created_at: datetime
     updated_at: datetime

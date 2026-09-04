@@ -5,7 +5,7 @@ from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
-TABLES = {"mcp_connections", "mcp_oauth_sessions", "mcp_tool_catalogs"}
+TABLES = {"mcp_connections", "mcp_oauth_sessions"}
 
 
 def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
@@ -15,6 +15,7 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
     engine = create_engine(sync_database_url(config))
     try:
         inspector = inspect(engine)
+        assert "mcp_tool_catalogs" not in inspector.get_table_names()
         assert TABLES <= set(inspector.get_table_names())
         connection_columns = {column["name"] for column in inspector.get_columns("mcp_connections")}
         assert {
@@ -22,8 +23,6 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
             "auth_mode",
             "owner_user_id",
             "credential_generation",
-            "catalog_generation",
-            "current_catalog_digest",
             "deleted_at",
         } <= connection_columns
         session_columns = {column["name"] for column in inspector.get_columns("mcp_oauth_sessions")}

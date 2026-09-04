@@ -27,9 +27,9 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
     connectivity_sessions: async_sessionmaker[AsyncSession],
     connectivity_objects: LocalObjectStore,
 ) -> None:
-    await seed_selection_sources(connectivity_sessions, connectivity_objects)
+    await seed_selection_sources(connectivity_sessions)
     await _seed_model(connectivity_sessions)
-    connectivity = ConnectivitySelectionResolver(connectivity_sessions, connectivity_objects)
+    connectivity = ConnectivitySelectionResolver(connectivity_sessions)
     models = AcceptedModelSelector(
         connectivity_sessions,
         built_in_provider_registry(),
@@ -61,10 +61,8 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
                 "characteristics": {"context_window": 128000},
             },
             "input_adapter": {"adapter_key": "native"},
-            "connector_tools": {
-                "orders": {"connector_connection_id": CONNECTOR_CONNECTION_ID, "tools": ["find_order"]}
-            },
-            "mcp_tools": {"docs": {"mcp_connection_id": MCP_CONNECTION_ID, "exposure": "catalog"}},
+            "connector_tools": [{"connector_connection_id": CONNECTOR_CONNECTION_ID, "tools": ["find_order"]}],
+            "mcp_tools": [{"mcp_connection_id": MCP_CONNECTION_ID, "defer_loading": True}],
             "protocol": {"public_name": "Selection test"},
         }
     )
@@ -91,9 +89,8 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
         frozen = await invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
     assert created.revision.connector_tools[0].connector_connection_id == CONNECTOR_CONNECTION_ID
-    assert frozen.connector_connection_selections[0].allowed_tool_keys == ("find_order",)
-    assert frozen.mcp_connection_selections[0].allowed_tool_keys == ("search_docs",)
-    assert frozen.mcp_tool_snapshot is not None
+    assert frozen.connector_connection_selections[0].tools == ("find_order",)
+    assert frozen.mcp_connection_selections[0].tools is None
 
 
 async def _seed_model(sessions: async_sessionmaker[AsyncSession]) -> None:

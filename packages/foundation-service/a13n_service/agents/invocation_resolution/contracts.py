@@ -16,7 +16,6 @@ from a13n_service.connectivity.selection_resolution import (
 from a13n_service.iam import (
     AuthenticatedActor,
 )
-from a13n_service.interactions import MCPToolSnapshotRef
 from a13n_service.models.runtime import PreparedModelExecution
 
 from ..domain import (
@@ -87,7 +86,6 @@ class FrozenAgentInvocation:
     sensitive_values_digest: str
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
-    mcp_tool_snapshot: MCPToolSnapshotRef | None
 
 
 @dataclass(frozen=True, slots=True)

@@ -794,7 +794,6 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
         source.connector_connection_selections,
         source.mcp_connection_selections,
         source.ingress_context,
-        source.mcp_tool_snapshot,
     )
     candidate_authority = (
         candidate.authority_principal,
@@ -807,7 +806,6 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
         candidate.connector_connection_selections,
         candidate.mcp_connection_selections,
         candidate.ingress_context,
-        candidate.mcp_tool_snapshot,
     )
     if candidate_authority != source_authority:
         raise RunAcceptanceError(

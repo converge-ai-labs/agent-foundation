@@ -35,7 +35,7 @@ flowchart TB
         Lifecycle[Durable Runs and RunAttempts]
         Worker[Worker]
         Reconstruct[Trusted reconstruction adapters]
-        A13nMCP[a13n MCP]
+        A13nMCP[Worker-local a13n MCP groups]
     end
 
     subgraph LocalUI[agent-ui]
@@ -182,7 +182,7 @@ Provider-defined portable data enters only `HarnessState.environment_states`, a 
 
 ## Foundation Client Surfaces
 
-Foundation Service SDKs, the remote CLI, and the browser management application operate only through the public `/api` namespace. The Agent-facing a13n MCP is a RunAttempt-authorized tool surface, not a Foundation SDK or general product API. The language SDKs own typed management transport and service-contract mapping. The `agent-foundation` executable is a user-facing composition layer above the Rust SDK and does not duplicate HTTP serialization, authentication transport, retries, or service models.
+Foundation Service SDKs, the remote CLI, and the browser management application operate only through the public `/api` namespace. The Agent-facing a13n MCP consists of in-process RunAttempt-bound tool groups and exposes no Foundation SDK or network product API. The language SDKs own typed management transport and service-contract mapping. The `agent-foundation` executable is a user-facing composition layer above the Rust SDK and does not duplicate HTTP serialization, authentication transport, retries, or service models.
 
 Standard AG-UI clients and A2A peers use the Foundation Service Protocol Gateway directly and require no Foundation SDK. Their wire versions, errors, streaming, and external identities remain distinct from Native `/api/v1`, while all three adapters call the same Foundation application and authorization authority.
 
@@ -258,7 +258,7 @@ Foundation-owned resource-oriented JSON APIs and their first-party SDKs follow [
 
 Foundation Service additionally exposes the [Protocol Gateway](foundation-service/15-protocol-gateway.md): Native APIs and streams, Hosted AG-UI, and A2A are separate public protocols over common application authority. Upstream AG-UI and A2A wire contracts do not inherit Foundation JSON naming or `/api/v1` error semantics.
 
-Foundation Service also exposes the Agent-facing a13n MCP defined by [Agent-Facing Tools](foundation-service/40-connectivity/04-agent-facing-tools.md). It uses MCP's protocol and error contract, authenticates one current RunAttempt grant, and does not become a resource-oriented `/api/v1` operation. User Remote MCP endpoints remain separate sources configured through [`MCPConnection`](foundation-service/40-connectivity/06-remote-mcp-connections.md).
+Foundation composes the [Agent-facing a13n MCP](foundation-service/40-connectivity/04-agent-facing-tools.md) as per-source in-process tool groups for native Ingress actions and Connector tools. They bind existing RunAttempt authority and require no network listener or internal MCP credential. Harness clients in the executing process directly connect user Remote MCP endpoints selected through [`MCPConnection`](foundation-service/40-connectivity/06-remote-mcp-connections.md). Harness owns MCP discovery and loading; Foundation retains source selections and permissions rather than frozen external tool schemas.
 
 ## Extension Model
 

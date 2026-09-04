@@ -44,7 +44,6 @@ PluginKey = Annotated[
     StringConstraints(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", min_length=3, max_length=128),
 ]
 JsonObject = dict[str, JsonValue]
-ToolKey = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 _MODEL_SETTING_KEYS = frozenset(ModelSettings.__annotations__)
 
 
@@ -53,19 +52,6 @@ def _validate_model_settings(value: JsonObject) -> JsonObject:
     if unknown:
         raise ValueError(f"unsupported ModelSettings fields: {', '.join(unknown)}")
     return value
-
-
-def _validate_unique_tool_keys(value: tuple[str, ...] | None) -> tuple[str, ...] | None:
-    if value is not None and len(value) != len(set(value)):
-        raise ValueError("tool names must be unique")
-    return value
-
-
-ToolSelection = Annotated[
-    tuple[ToolKey, ...] | None,
-    Field(max_length=512),
-    AfterValidator(_validate_unique_tool_keys),
-]
 
 
 def new_agent_id() -> str:
@@ -142,16 +128,30 @@ class SkillSelection(StrictModel):
     version: int | None = Field(default=None, ge=1)
 
 
-class ConnectorConnectionToolSelection(StrictModel):
+ToolKey = Annotated[str, StringConstraints(min_length=1, max_length=128)]
+
+
+def _unique_tool_keys(value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+    if value is not None and len(value) != len(set(value)):
+        raise ValueError("tool names must be unique")
+    return value
+
+
+ToolSelection = Annotated[tuple[ToolKey, ...] | None, Field(max_length=2048), AfterValidator(_unique_tool_keys)]
+
+
+class ConnectorConnectionToolSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
     connector_connection_id: ObjectId
     tools: ToolSelection = None
-    exposure: Literal["direct", "catalog"] = "direct"
+    defer_loading: bool = False
 
 
-class MCPConnectionToolSelection(StrictModel):
+class MCPConnectionToolSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
     mcp_connection_id: ObjectId
     tools: ToolSelection = None
-    exposure: Literal["direct", "catalog"] = "direct"
+    defer_loading: bool = False
 
 
 class EnvironmentSelection(StrictModel):
@@ -276,8 +276,8 @@ class AgentConfig(StrictModel):
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
-    connector_tools: dict[BoundedKey, ConnectorConnectionToolSelection] = Field(default_factory=dict, max_length=128)
-    mcp_tools: dict[BoundedKey, MCPConnectionToolSelection] = Field(default_factory=dict, max_length=128)
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = Field(default=(), max_length=128)
+    mcp_tools: tuple[MCPConnectionToolSelection, ...] = Field(default=(), max_length=128)
     environment: EnvironmentSelection | None = None
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
@@ -298,6 +298,8 @@ class AgentConfig(StrictModel):
             ("Skill keys", skill_keys),
             ("client tool names", client_tool_names),
             ("Secret requirement keys", secret_keys),
+            ("Connector connections", tuple(item.connector_connection_id for item in self.connector_tools)),
+            ("MCP connections", tuple(item.mcp_connection_id for item in self.mcp_tools)),
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
@@ -325,18 +327,6 @@ class ModelOverride(StrictModel):
         return None if value is None else _validate_model_settings(value)
 
 
-class ConnectorConnectionToolOverride(StrictModel):
-    connector_connection_id: ObjectId | None = None
-    tools: ToolSelection = None
-    exposure: Literal["direct", "catalog"] | None = None
-
-
-class MCPConnectionToolOverride(StrictModel):
-    mcp_connection_id: ObjectId | None = None
-    tools: ToolSelection = None
-    exposure: Literal["direct", "catalog"] | None = None
-
-
 class SubagentOverride(StrictModel):
     agent_id: ObjectId | None = None
     version: int | None = Field(default=None, ge=1)
@@ -356,11 +346,11 @@ class AgentRunOverride(StrictModel):
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
-    connector_tools: dict[BoundedKey, ConnectorConnectionToolOverride | None] | None = Field(
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...] | None = Field(
         default=None,
         max_length=128,
     )
-    mcp_tools: dict[BoundedKey, MCPConnectionToolOverride | None] | None = Field(default=None, max_length=128)
+    mcp_tools: tuple[MCPConnectionToolSelection, ...] | None = Field(default=None, max_length=128)
     environment: EnvironmentOverride | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)

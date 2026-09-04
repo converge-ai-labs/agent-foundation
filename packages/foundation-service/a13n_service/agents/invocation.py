@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from pydantic import Field, model_validator
 
 from .domain import (
@@ -13,11 +11,9 @@ from .domain import (
     AssetPublicationConfig,
     BoundedKey,
     ClientToolDefinition,
-    ConnectorConnectionToolOverride,
     ConnectorConnectionToolSelection,
     EnvironmentOverride,
     InputAdapterConfig,
-    MCPConnectionToolOverride,
     MCPConnectionToolSelection,
     OutputSpec,
     PluginSelection,
@@ -39,8 +35,8 @@ class MergedAgentRunConfig(StrictModel):
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
-    connector_tools: dict[BoundedKey, ConnectorConnectionToolSelection] = Field(default_factory=dict, max_length=128)
-    mcp_tools: dict[BoundedKey, MCPConnectionToolSelection] = Field(default_factory=dict, max_length=128)
+    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = Field(default=(), max_length=128)
+    mcp_tools: tuple[MCPConnectionToolSelection, ...] = Field(default=(), max_length=128)
     environment: EnvironmentOverride | None = None
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
@@ -56,6 +52,8 @@ class MergedAgentRunConfig(StrictModel):
             ("plugins", tuple(item.instance_name for item in self.plugins)),
             ("skills", tuple(item.skill_key for item in self.skills)),
             ("client_tools", tuple(item.name for item in self.client_tools)),
+            ("connector_tools", tuple(item.connector_connection_id for item in self.connector_tools)),
+            ("mcp_tools", tuple(item.mcp_connection_id for item in self.mcp_tools)),
         ):
             if len(values) != len(set(values)):
                 raise invalid_run_override(path, "duplicate_selection")
@@ -140,15 +138,17 @@ def merge_agent_run_override(
         present="skills" in fields,
         path="skills",
     )
-    connector_tools = _patch_connector_tools(
+    connector_tools = _replace_list(
         inherited=base.connector_tools,
-        patches=override.connector_tools,
+        value=override.connector_tools,
         present="connector_tools" in fields,
+        path="connector_tools",
     )
-    mcp_tools = _patch_mcp_tools(
+    mcp_tools = _replace_list(
         inherited=base.mcp_tools,
-        patches=override.mcp_tools,
+        value=override.mcp_tools,
         present="mcp_tools" in fields,
+        path="mcp_tools",
     )
     client_tools = _replace_list(
         inherited=base.client_tools,
@@ -264,82 +264,6 @@ def _replace_list(*, inherited: tuple, value: tuple | None, present: bool, path:
     if value is None:
         raise invalid_run_override(path, "null_not_allowed")
     return value
-
-
-def _patch_connector_tools(
-    *,
-    inherited: dict[BoundedKey, ConnectorConnectionToolSelection],
-    patches: Mapping[BoundedKey, ConnectorConnectionToolOverride | None] | None,
-    present: bool,
-) -> dict[BoundedKey, ConnectorConnectionToolSelection]:
-    if not present:
-        return inherited
-    if patches is None:
-        return {}
-    result = dict(inherited)
-    for name, patch in patches.items():
-        if patch is None:
-            result.pop(name, None)
-            continue
-        current = result.get(name)
-        patch_fields = patch.model_fields_set
-        identifier = _required_patch_value(
-            patch.connector_connection_id,
-            present="connector_connection_id" in patch_fields,
-            inherited=current.connector_connection_id if current is not None else None,
-            path=f"connector_tools.{name}.connector_connection_id",
-        )
-        tools = patch.tools if "tools" in patch_fields else (current.tools if current is not None else None)
-        if "exposure" in patch_fields:
-            if patch.exposure is None:
-                raise invalid_run_override(f"connector_tools.{name}.exposure", "null_not_allowed")
-            exposure = patch.exposure
-        else:
-            exposure = current.exposure if current is not None else "direct"
-        result[name] = ConnectorConnectionToolSelection(
-            connector_connection_id=identifier,
-            tools=tools,
-            exposure=exposure,
-        )
-    return result
-
-
-def _patch_mcp_tools(
-    *,
-    inherited: dict[BoundedKey, MCPConnectionToolSelection],
-    patches: Mapping[BoundedKey, MCPConnectionToolOverride | None] | None,
-    present: bool,
-) -> dict[BoundedKey, MCPConnectionToolSelection]:
-    if not present:
-        return inherited
-    if patches is None:
-        return {}
-    result = dict(inherited)
-    for name, patch in patches.items():
-        if patch is None:
-            result.pop(name, None)
-            continue
-        current = result.get(name)
-        patch_fields = patch.model_fields_set
-        identifier = _required_patch_value(
-            patch.mcp_connection_id,
-            present="mcp_connection_id" in patch_fields,
-            inherited=current.mcp_connection_id if current is not None else None,
-            path=f"mcp_tools.{name}.mcp_connection_id",
-        )
-        tools = patch.tools if "tools" in patch_fields else (current.tools if current is not None else None)
-        if "exposure" in patch_fields:
-            if patch.exposure is None:
-                raise invalid_run_override(f"mcp_tools.{name}.exposure", "null_not_allowed")
-            exposure = patch.exposure
-        else:
-            exposure = current.exposure if current is not None else "direct"
-        result[name] = MCPConnectionToolSelection(
-            mcp_connection_id=identifier,
-            tools=tools,
-            exposure=exposure,
-        )
-    return result
 
 
 def _required_patch_value(

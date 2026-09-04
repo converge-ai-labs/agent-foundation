@@ -453,7 +453,6 @@ def _operator_for_parent(
                 effective_config=effective_agent_config(),
                 connector_connection_selections=(),
                 mcp_connection_selections=(),
-                mcp_tool_snapshot=parent.mcp_tool_snapshot,
                 recovery_budget=parent.recovery_budget,
             )
         },

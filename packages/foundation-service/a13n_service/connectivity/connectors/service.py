@@ -5,7 +5,7 @@ from __future__ import annotations
 from asyncio import timeout
 from contextlib import aclosing
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -53,7 +53,7 @@ from .management import (
     require_implementation,
     secret_context,
 )
-from .models import ConnectorConnectionRecord, ConnectorProviderRecord
+from .models import ConnectorProviderRecord
 from .registry import ConnectorProviderDefinitionCollection
 
 
@@ -370,19 +370,6 @@ class ConnectorProviderService:
             record.credential_generation = secret_ref.version
             record.version += 1
             record.updated_at = self._clock()
-            await session.execute(
-                update(ConnectorConnectionRecord)
-                .where(
-                    ConnectorConnectionRecord.connector_provider_id == record.id,
-                    ConnectorConnectionRecord.status == "ready",
-                    ConnectorConnectionRecord.deleted_at.is_(None),
-                )
-                .values(
-                    catalog_generation=ConnectorConnectionRecord.catalog_generation + 1,
-                    current_catalog_digest=None,
-                    catalog_available_at=record.updated_at,
-                )
-            )
             record_command(
                 session,
                 actor=actor,

@@ -88,7 +88,6 @@ def prepare_async_result_successor(
         connector_connection_selections=selected_parent.connector_connection_selections,
         mcp_connection_selections=selected_parent.mcp_connection_selections,
         ingress_context=selected_parent.ingress_context,
-        mcp_tool_snapshot=selected_parent.mcp_tool_snapshot,
         priority=selected_parent.priority,
         queue_name=selected_parent.queue_name,
         available_at=created_at,

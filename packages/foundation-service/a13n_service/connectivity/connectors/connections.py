@@ -145,14 +145,6 @@ class ConnectorConnectionService:
                     version=1,
                     setup_generation=1,
                     revoke_generation=0,
-                    catalog_generation=0,
-                    current_catalog_digest=None,
-                    catalog_attempt_count=0,
-                    catalog_claim_generation=0,
-                    catalog_claim_owner=None,
-                    catalog_claim_expires_at=None,
-                    catalog_available_at=now,
-                    catalog_last_error_code=None,
                     deleted_at=None,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
@@ -417,10 +409,10 @@ class ConnectorConnectionService:
             if replay is not None:
                 return await connection_resource(session, record.id)
             require_version(record.version, expected_version)
-            if enabled and (record.external_ref is None or record.current_catalog_digest is None):
+            if enabled and record.external_ref is None:
                 raise ConnectorError(
                     "connection_not_ready",
-                    "ConnectorConnection has no compatible setup and catalog.",
+                    "ConnectorConnection has no verified setup.",
                     status_code=409,
                 )
             target = ConnectorConnectionStatus.ready.value if enabled else ConnectorConnectionStatus.disabled.value
@@ -429,7 +421,6 @@ class ConnectorConnectionService:
             else:
                 record.status = target
                 record.status_reason = None
-                record.catalog_available_at = self._clock()
                 record.version += 1
                 record.updated_at = self._clock()
                 result = await connection_resource(session, record.id)

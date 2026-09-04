@@ -19,7 +19,6 @@ from a13n_service.interactions import (
     CompletedOutcomeCandidate,
     DeferredContinuationState,
     HostContinuationState,
-    MCPToolSnapshotRef,
     PendingCallKind,
     PendingCallSummary,
     RecoveryBudget,
@@ -645,12 +644,6 @@ async def _accept_root(
         effective_agent_config_digest=config.content_digest,
         runtime_lock_digest=config.runtime_lock_digest,
         model_execution_observation=config.resolved_model.execution.observation(),
-        mcp_tool_snapshot=MCPToolSnapshotRef(
-            digest_sha256="d" * 64,
-            size_bytes=2,
-            content_type="application/vnd.a13n.mcp-tool-snapshot+json",
-            schema_version="1",
-        ),
         priority=0,
         queue_name="default",
         available_at=NOW,
@@ -810,3 +803,87 @@ def _waiting_state(previous: RunStateEnvelope, run_attempt_id: str, fence: int) 
         },
     )
     return RunStateEnvelope.model_validate(payload)
+
+
+@pytest.mark.parametrize("revocation", ["lease_expired", "replaced", "cancelled", "iam_revoked"])
+async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
+    interaction_sessions,
+    interaction_object_store,
+    monkeypatch,
+    revocation,
+):
+    from a13n_service.connectivity import execution
+    from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+    from a13n_service.connectivity.execution import ExternalToolRuntime
+    from a13n_service.connectivity.mcp.transport import RemoteTransport
+    from a13n_service.iam import AuthorizationError
+    from a13n_service.iam.models import RoleBindingRecord, UserRecord
+    from a13n_service.secrets import InternalSecretService, SecretProtector
+    from a13n_service.storage import transaction
+
+    states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    async with transaction(interaction_sessions) as database:
+        database.add(
+            UserRecord(
+                id=USER_ID,
+                email="tool@example.com",
+                normalized_email="tool@example.com",
+                name="Tool User",
+                status="active",
+                email_verified_at=NOW,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await database.flush()
+        for kind, identifier, role in (("organization", TENANT_ID, "member"), ("workspace", WORKSPACE_ID, "admin")):
+            database.add(
+                RoleBindingRecord(
+                    id=f"rb_tools_{kind}",
+                    organization_id=TENANT_ID,
+                    workspace_id=WORKSPACE_ID if kind == "workspace" else None,
+                    principal_type="user",
+                    principal_id=USER_ID,
+                    resource_type=kind,
+                    resource_id=identifier,
+                    role_key=role,
+                    created_by_user_id=USER_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW).claim(run.id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+    context = _authority(claim)
+    monkeypatch.setattr(execution, "utc_now", lambda: NOW)
+    policy = EndpointPolicy()
+    runtime = ExternalToolRuntime(
+        interaction_sessions,
+        InternalSecretService(interaction_sessions, SecretProtector(key=b"k" * 32, encryption_key_id="test")),
+        ConnectorProviderRegistry(()),
+        RemoteTransport(policy),
+        policy,
+    )
+    scope = await runtime._scope(context)
+    assert scope.actor.principal.principal_id == USER_ID
+    async with transaction(interaction_sessions) as database:
+        attempt = await database.get(RunAttemptRecord, claim.attempt.id)
+        if revocation == "lease_expired":
+            monkeypatch.setattr(execution, "utc_now", lambda: context.lease_expires_at)
+        elif revocation == "replaced":
+            attempt.fence += 1
+        elif revocation == "iam_revoked":
+            user = await database.get(UserRecord, USER_ID)
+            user.status = "disabled"
+    if revocation == "cancelled":
+        async with short_session(interaction_sessions) as database:
+            thread = await database.get(ThreadRecord, THREAD_ID)
+        await RunOutcomeService(interaction_sessions, states, clock=lambda: NOW).cancel(
+            tenant_id=TENANT_ID,
+            run_id=run.id,
+            expected_run_version=context.expected_run_version,
+            expected_thread_version=thread.version,
+            failure=SafeFailure(code="cancelled", message="Cancelled by user."),
+        )
+    with pytest.raises((AttemptAuthorityError, AuthorizationError)):
+        await runtime._scope(context)

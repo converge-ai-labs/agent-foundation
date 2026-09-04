@@ -8,8 +8,8 @@ This file explains the engineering choices shared by deployable Python services.
 
 - `all`: control, worker, and connectivity capabilities in one process;
 - `control`: APIs, scheduling, and control-plane maintenance;
-- `worker`: Run workers and MCP clients only;
-- `connectivity`: provider event ingress, the a13n MCP, and Connector runtime dispatch only.
+- `worker`: Run workers, in-process a13n MCP tool groups, native-action and Connector runtime adapters, and remote MCP clients;
+- `connectivity`: provider event ingress, polling, and durable inbound admission only.
 
 A role is a process ownership and scaling boundary, not a separate product, schema, tenant, or authorization boundary. Every background loop must have one explicit owning role, and overlap during rolling deployment must be safe through durable leases, fencing, or idempotency.
 
@@ -21,7 +21,7 @@ Organize business code by feature and add layers only for a real capability; do 
 - Application services own use-case orchestration and short transaction boundaries. They do not import FastAPI or encode HTTP status.
 - Repositories own SQLAlchemy queries, may flush, and never commit. ORM objects stay inside the persistence boundary and are not API responses or Harness contracts.
 - Durable asynchronous lifecycles use idempotent reconcilers and fenced workers. Model, tool, queue, and stream waits happen outside database transactions.
-- Process-role wiring selects routers, reconcilers, and workers; `control`, `worker`, and `connectivity` do not duplicate feature or domain models. Only `connectivity` and `all` load trusted Ingress and Connector runtime adapter code.
+- Process-role wiring selects routers, reconcilers, and workers; `control`, `worker`, and `connectivity` do not duplicate feature or domain models. Connectivity loads trusted inbound Ingress adapters; the executing Worker or Runner loads trusted native-action and Connector runtime adapters for in-process MCP tool groups. Control loads ConnectorProvider clients for management operations; `all` composes these role contributions without duplicating shared resources.
 
 ### Naming
 

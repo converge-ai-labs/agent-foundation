@@ -4,7 +4,7 @@
 
 OpenConnector and Composio are independent built-in Connector Provider adapters. They implement one common Foundation application boundary for account setup, safe inspection, revocation, validated catalog discovery, and bound tool execution, while preserving different upstream resources, statuses, endpoints, and compatibility profiles. Neither adapter becomes a Foundation Agent runtime or exposes an unfenced public execute route.
 
-The external integration service owns every third-party account credential. Foundation stores only the credential used to call that ConnectorProvider, an opaque external account reference, a safe account projection, immutable catalog objects, and bounded operation evidence. Responses are parsed through explicit safe allowlists; credential-shaped or undocumented fields are discarded before a value reaches logging, persistence, audit, or a public response.
+The external integration service owns every third-party account credential. Foundation stores only the credential used to call that ConnectorProvider, an opaque external account reference, a safe account projection and bounded operation evidence. Responses are parsed through explicit safe allowlists; credential-shaped or undocumented fields are discarded before a value reaches logging, persistence, audit, or a public response.
 
 ## Common Setup and Correlation
 
@@ -36,11 +36,11 @@ Both implementations expose `discover_connectors` for one exact configured Conne
 
 Provider type definitions come from trusted code and describe backend configuration; Connector discovery describes that backend account's available integrations. Neither is the per-Connection tool catalog. A discovered GitHub Connector under one Composio account cannot authorize setup or dispatch under a second account, even when both Providers have `type="composio"`.
 
-## Catalog Contract
+## Tool Discovery Contract
 
-Every validated catalog belongs to one exact ConnectorConnection, even when an upstream API exposes a project-wide tool list. Refresh claims the source and freezes the ConnectorProvider, ConnectorConnection, credential generation, implementation profile, Connector/toolkit identity, and previous catalog before external I/O. It follows bounded pagination, validates every tool and JSON Schema, canonicalizes the complete catalog, stores one immutable `tcat_` object, and publishes it only after rechecking the frozen facts in a short transaction.
+Every discovery binds one exact ConnectorConnection and its authorized ConnectorProvider, implementation profile, Connector/toolkit identity, and current credential generation, even if the upstream API offers project-wide tools. The adapter validates bounded pagination, names, schemas, and results under the common [discovery bounds](04-agent-facing-tools.md#discovery-and-result-bounds). A changed or unauthorized binding invalidates the result rather than publishing it for another account.
 
-The common [catalog safety bounds](04-agent-facing-tools.md#catalog-safety-bounds) govern pagination, tool count, schema shape, canonical bytes, result bytes, and retention. This adapter adds the implementation and API profiles plus Connector/toolkit version to the catalog digest. The latest compatible catalog is selected for new Runs.
+Control uses discovery for setup checks and advisory management projections. The executing Worker or Runner uses it to populate the connection's in-process MCP tool group. Session caches are scoped to the exact authorized binding. There is no immutable catalog object, catalog digest in Run selections, or retained-Run catalog cleanup dependency. Provider versions needed for execution belong to the current discovered runtime binding.
 
 ## OpenConnector native v1
 
@@ -48,7 +48,7 @@ The common [catalog safety bounds](04-agent-facing-tools.md#catalog-safety-bound
 
 OAuth setup calls `POST /api/v1/connectors/{slug}/initiate` with the selected auth configuration and opaque external-user correlation, and accepts only a bounded `connectionId` and external-service-hosted `redirectUrl`. Safe inspection, list, refresh, and deletion use the native connected-account routes for that exact ID. Direct server-side `/connect` is unsupported because its credential body would cross Foundation. A ConnectorProvider without a hosted form for its required non-OAuth credential is incompatible with this profile.
 
-Catalog discovery uses the native tool list plus exact tool-detail endpoints and pins the returned stable tool slug and schema under the ConnectorConnection. Execution uses `POST /api/v1/tools/{slug}/execute` with only the hidden bound `connectedAccountId` and validated model arguments. The adapter treats HTTP success as transport success only: the body must also report `successful = true` and a compatible nested status. Unknown lowercase status values are `incompatible`; casing is never normalized into a guessed known state.
+Catalog discovery uses the native tool list plus exact tool-detail endpoints and binds the returned stable tool slug and current schema to the ConnectorConnection runtime. Execution uses `POST /api/v1/tools/{slug}/execute` with only the hidden bound `connectedAccountId` and validated model arguments. The adapter treats HTTP success as transport success only: the body must also report `successful = true` and a compatible nested status. Unknown lowercase status values are `incompatible`; casing is never normalized into a guessed known state.
 
 OpenConnector retains provider OAuth callbacks and tokens in its own vault. Foundation exposes neither its external connection ID nor the upstream account credential to the model.
 
@@ -58,7 +58,7 @@ OpenConnector retains provider OAuth callbacks and tokens in its own vault. Foun
 
 Hosted setup uses `POST /api/v3.1/connected_accounts/link` with the intended auth configuration and opaque external-user correlation. Safe inspection, refresh, status change, revocation, and deletion use only the `/api/v3.1/connected_accounts` resources for the returned account. The project must configure Foundation's callback as its identity verifier. After the browser returns, Foundation posts the single-use `session_uri` and exact expected external-user correlation to `POST /api/v3.1/connected_accounts/complete_auth`; the session is accepted for no more than ten minutes. Completion must return the intended connected-account ID and toolkit before the ConnectorConnection can become ready.
 
-The adapter does not use Composio Sessions or Tool Router as a Foundation Session, Run, or selection authority. It does not expose proxy execute. Catalog calls use `/api/v3.1/tools` and `/api/v3.1/tools/{tool_slug}` with an explicit dated toolkit version such as `YYYYMMDD_NN`; every manual execution uses `POST /api/v3.1/tools/execute/{tool_slug}` with that same retained version and the hidden connected-account binding. The v3.1 default of `latest` is never relied on.
+The adapter does not use Composio Sessions or Tool Router as a Foundation Session, Run, or selection authority. It does not expose proxy execute. Catalog calls use `/api/v3.1/tools` and `/api/v3.1/tools/{tool_slug}` with an explicit dated toolkit version such as `YYYYMMDD_NN`; every manual execution uses `POST /api/v3.1/tools/execute/{tool_slug}` with that same version from the current discovery and the hidden connected-account binding. A fresh runtime resolves its current toolkit version before discovery rather than reusing a Run-owned version lock. The v3.1 default of `latest` is never relied on for an individual execute call.
 
 Connected Account responses are accepted through a safe projection of ID, owner correlation, toolkit, finite status, timestamps, and non-sensitive display metadata. Credential, token, auth-config secret, state, and masked-secret fields are not part of the adapter response type and are discarded. Provider status values map explicitly; an unknown value is incompatible rather than ready.
 
@@ -73,7 +73,7 @@ Connected Account responses are accepted through a safe projection of ID, owner 
 | Setup or revoke response is lost after possible dispatch             | Preserve unknown outcome and reconcile the same attempt or external reference                                   |
 | Upstream account needs interaction                                   | Set `action_required(reauthorization_required)` only on authoritative evidence                                  |
 | Unknown upstream status or incompatible schema/profile               | Set `action_required(incompatible)` and never guess readiness                                                   |
-| Catalog exceeds a count, byte, page, or schema bound                 | Reject the candidate; retain the last compatible immutable catalog                                              |
+| Catalog exceeds a count, byte, page, or schema bound                 | Reject discovery explicitly; do not publish a partial or unauthorized tool group                                |
 | Tool write response is lost                                          | Return `outcome_unknown` unless the ConnectorProvider supplies authoritative receipt or reconciliation evidence |
 
 ## Invariants
@@ -82,5 +82,5 @@ Connected Account responses are accepted through a safe projection of ID, owner 
 2. OpenConnector and Composio remain separate implementations and never impersonate one another through compatibility endpoints.
 3. Setup, callback, inspection, catalog, revoke, and execution bind one immutable ConnectorConnection and one opaque external account reference.
 4. Catalog refresh and external operations hold no database transaction open.
-5. A retained Run uses an exact immutable catalog and provider-owned version; no execution resolves `latest`.
+5. Each execution uses the provider version associated with its current discovered definition; recovery may rediscover a newer version under the same accepted tool scope.
 6. No Connector Provider adapter exposes a public execute endpoint or becomes a second Agent Session, Run, or authorization system.

@@ -70,7 +70,7 @@ Installed implementation discovery, Connector discovery, existing Connector Conn
 
 The selected implementation validates and safely projects upstream catalog metadata. `setup_schema` describes only non-secret setup options, such as a supported authentication configuration selector. It never solicits third-party passwords, API keys, cookies, or OAuth tokens. Authentication-method keys retain Provider-specific semantics, and a method is advertised as usable only when the external service offers the required hosted authorization or credential form. Generic JSON Schema form rendering does not replace the authorization ceremony.
 
-Discovery uses bounded pagination, entry counts, schema size, and total bytes under the [catalog safety rules](04-agent-facing-tools.md#catalog-safety-bounds). Cache entries are scoped to the exact Provider and credential generation and are advisory only. Setup revalidates current Provider eligibility, selected Connector, and setup options. A discovery failure reports a bounded error without modifying saved connections or treating an incomplete result as a complete catalog.
+Discovery uses bounded pagination, entry counts, schema size, and total bytes under the [discovery safety bounds](04-agent-facing-tools.md#discovery-and-result-bounds). Cache entries are scoped to the exact Provider and credential generation and are advisory only. Setup revalidates current Provider eligibility, selected Connector, and setup options. A discovery failure reports a bounded error without modifying saved connections or treating an incomplete result as a complete catalog.
 
 ## ConnectorConnection
 
@@ -118,7 +118,7 @@ ConnectorConnection status is Foundation's safe eligibility projection, not a co
 
 Connector Connection setup begins by committing the pending Foundation resource and its bounded setup attempt before external I/O. The attempt fixes the configured Provider ID, Connector key, intended owner, initiating Principal, and validated non-secret setup options. The external integration service owns the authorization ceremony. Foundation later attaches a verified external reference and safe account metadata and marks the connection ready only on authoritative completion. A timeout retains the same setup identity for inspection or reconciliation rather than blindly creating another account. Interactive setup uses only an external-service-hosted authorization or credential form; no third-party password, API key, cookie, access token, or refresh token passes through a Foundation request.
 
-The control role loads the explicitly registered ConnectorProvider client adapter for setup, safe discovery, revocation, and reconciliation. The connectivity role loads the same registered adapter contract for Agent-facing dispatch. Both operate the same durable ConnectorProvider and ConnectorConnection facts; they do not call one another through a private Foundation API or introduce a durable operation queue merely to cross process roles.
+The control role loads the explicitly registered ConnectorProvider client adapter for setup, safe discovery, revocation, and reconciliation. The executing Worker or Runner loads the same registered adapter contract for in-process MCP tool discovery and Agent-facing dispatch. Both operate the same durable ConnectorProvider and ConnectorConnection facts; they do not call one another through a private Foundation API or introduce a durable operation queue merely to cross process roles.
 
 Foundation does not receive, encrypt, proxy, log, or copy the external account's access token, refresh token, cookie, password, or provider API key. OAuth callback state and token refresh remain private to the external integration service. A redirect or setup handle grants no Foundation authority by possession. An implementation that supports verified callback completion uses the exact browser-User and single-use setup-attempt boundary in [Built-in Connector Provider Adapters](08-built-in-connector-adapters.md#common-setup-and-correlation); a polling implementation inspects the same immutable external reference. Neither path accepts account identity from an unverified browser parameter.
 
@@ -149,9 +149,9 @@ Agent-wide configuration makes a ConnectorConnection eligible wherever that Agen
 - the current Route when the Run originated from an Ingress;
 - current Principal, Workspace, ConnectorConnection, and ConnectorProvider authorization;
 - current ConnectorConnection and ConnectorProvider status; and
-- the exact model-tool and credential-use grants for the call.
+- the accepted tool scope and current credential-use authority for the call.
 
-The model cannot supply or override a ConnectorProvider ID, external ConnectorConnection reference, or Foundation ConnectorConnection ID in ordinary tool arguments. When two authorized ConnectorConnections expose similar actions, a user-managed safe name or alias can be visible so the Agent can distinguish them without seeing either external reference.
+The model cannot supply or override a ConnectorProvider ID, external ConnectorConnection reference, or Foundation ConnectorConnection ID in ordinary tool arguments. When two authorized ConnectorConnections expose similar actions, a safe connection display name can be visible so the Agent can distinguish them without seeing either external reference.
 
 The exact ConnectorConnection facts retained by a Run use this conceptual shape:
 
@@ -159,12 +159,11 @@ The exact ConnectorConnection facts retained by a Run use this conceptual shape:
 class ConnectorConnectionRunSelection:
     connector_connection_id: ConnectorConnectionId
     connector_provider_id: ConnectorProviderId
-    exposure: MCPExposureMode
-    allowed_tool_keys: tuple[str, ...]
-    tool_catalog_digest: str
+    tools: tuple[str, ...] | None
+    defer_loading: bool
 ```
 
-This selection is the authorization authority for the exact ConnectorProvider, ConnectorConnection, exposure mode, and allowlist accepted by the Run. ConnectorProvider and ConnectorConnection IDs identify immutable external binding semantics; their mutable management CAS versions are not Run compatibility inputs. `tool_catalog_digest` identifies the validated local source catalog from which the model-facing bindings are derived; it is compatibility evidence, not a credential. The [Run persistence contract](../12-run-persistence.md) owns its durable placement, while [`MCPToolSnapshot`](04-agent-facing-tools.md#mcp-toolsnapshot) is only the immutable model projection derived from this selection.
+This accepted selection is the authorization authority for the exact ConnectorProvider, ConnectorConnection, tool scope, and deferred-loading policy. `tools` retains the all-tools or explicit-name semantics of [Agent selection](../28-agent-management.md#agentconfig); it is not expanded into a frozen discovered list. The Provider ID is resolved from the connection, never independently overridden. Their identities fix external binding semantics; mutable management CAS versions are not Run compatibility inputs. [Run Persistence](../12-run-persistence.md) owns durable placement. [Runtime discovery](04-agent-facing-tools.md#discovery-and-recovery) supplies current definitions without a retained catalog digest.
 
 ## a13n MCP Boundary
 
@@ -173,13 +172,13 @@ All Connector tools enter the Agent through the Foundation-owned a13n MCP surfac
 ```mermaid
 sequenceDiagram
     participant Agent
-    participant MCP as a13n MCP
+    participant MCP as In-process a13n MCP
     participant Adapter as Connector Provider adapter
     participant Service as External integration service
     participant Provider as SaaS provider
 
     Agent->>MCP: call visible a13n MCP tool
-    MCP->>MCP: authenticate invocation and resolve fixed tool/ConnectorConnection binding
+    MCP->>MCP: check current Attempt and bound tool/connection authority
     MCP->>Adapter: bound tool identity and provider-native arguments
     Adapter->>Service: authenticated request for the bound connection
     Service->>Provider: provider-specific action
@@ -191,9 +190,9 @@ sequenceDiagram
 
 Foundation preserves each ConnectorProvider's provider coverage, action names, argument schemas, result schemas, and feature limits. It applies collision-safe model-visible naming, authorization, bounded results, audit, and safe errors but does not translate every ConnectorProvider into one common action vocabulary.
 
-Each MCP call uses the [RunAttempt-bound invocation grant](04-agent-facing-tools.md#mcp-invocation-grant) and one pre-resolved tool and ConnectorConnection binding. Authentication and hidden routing context are not model arguments. A caller-supplied Run ID, ConnectorConnection ID, header, or external reference never grants tool authority by itself.
+Each local MCP handler binds the [current Attempt context](04-agent-facing-tools.md#runtime-composition-and-authority) and one selected ConnectorConnection inside the executing Worker or Runner. It checks current authority before external dispatch without a network MCP service or invocation credential. Authentication and hidden routing context are not model arguments. Caller-supplied IDs, headers, and external references never grant tool authority.
 
-Run acceptance fixes the effective tool snapshot and Foundation ConnectorConnection choices used by that Run. A replacement RunAttempt reuses those choices and fails closed if the ConnectorProvider, ConnectorConnection, authorization, or tool contract is no longer compatible. It never discovers a substitute account during recovery.
+Run acceptance fixes ConnectorConnection choices, tool scopes, and deferred-loading policy. A replacement RunAttempt discovers current tools under the same choices and fails explicitly when a required tool or authority is unavailable. It never discovers a substitute account during recovery.
 
 ## Management API
 
@@ -222,7 +221,7 @@ Connector Connection collections remain `/workspaces/{workspace_id}/connector-co
 | ConnectorProvider unavailable before setup or dispatch              | Operation fails safely; no fallback ConnectorProvider is chosen                                               |
 | ConnectorProvider response is lost after possible external dispatch | Tool outcome is unknown unless the ConnectorProvider supplies stable receipt or reconciliation evidence       |
 | ConnectorConnection requires renewed authorization                  | ConnectorConnection becomes `action_required` with `reauthorization_required`; new calls fail before dispatch |
-| Connector tool disappears or its schema is incompatible             | New discovery reflects the ConnectorProvider; an already accepted incompatible Run fails closed               |
+| Connector tool disappears or its schema is incompatible             | Current discovery reflects the source; unavailable selected tools or invalid arguments fail explicitly        |
 | ConnectorConnection or ConnectorProvider is disabled                | New discovery, Run acceptance, and dispatch through it are denied                                             |
 | ConnectorProvider reports revocation                                | ConnectorConnection becomes `action_required`; reconnect must preserve its immutable identity                 |
 
@@ -237,5 +236,5 @@ Connector Provider adapters and provider tool contracts version independently fr
 5. All Connector tools reach the Agent through the a13n MCP authorization and result-safety boundary.
 6. Foundation standardizes safe Connector discovery, MCP exposure, and authorization, not cross-Provider equivalence of Connectors or action schemas.
 7. Recovery never substitutes another ConnectorConnection or ConnectorProvider for an accepted Run.
-8. Connector discovery never creates a connection, authorizes an account, or replaces a retained tool catalog.
+8. Connector discovery never creates a connection, authorizes an account, or changes an accepted Run selection.
 9. Provider type selects implementation code; only the configured Provider ID selects the account and configuration.

@@ -19,7 +19,6 @@ def _connection(**changes: object) -> ConnectorConnection:
         "status": "pending",
         "status_reason": None,
         "version": 1,
-        "catalog_digest": None,
         "created_by": PrincipalRef(principal_type="user", principal_id="usr_abcdef1234567890"),
         "created_at": datetime(2026, 9, 3, tzinfo=UTC),
         "updated_at": datetime(2026, 9, 3, tzinfo=UTC),
