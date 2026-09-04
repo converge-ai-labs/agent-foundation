@@ -15,10 +15,10 @@ from .base import (
     join_url,
     require_endpoint,
 )
-from .types import ProviderConfig, RuntimeProvider
+from .types import ProviderConfiguration, RuntimeProvider
 
 
-class Config(ProviderConfig):
+class Config(ProviderConfiguration):
     base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
 
 
@@ -27,7 +27,7 @@ def _build_provider(
     http_client: httpx2.AsyncClient,
     _pydantic_provider_name: str,
 ) -> OllamaProvider:
-    return OllamaProvider(base_url=str(provider.config["base_url"]), http_client=http_client)
+    return OllamaProvider(base_url=str(provider.configuration["base_url"]), http_client=http_client)
 
 
 def _request(provider: RuntimeProvider) -> ModelListRequest:
@@ -35,20 +35,20 @@ def _request(provider: RuntimeProvider) -> ModelListRequest:
     return ModelListRequest(url=join_url(endpoint, "api/tags"), headers={})
 
 
-def _endpoint(config: Mapping[str, object]) -> str:
-    return str(config["base_url"])
+def _endpoint(configuration: Mapping[str, object]) -> str:
+    return str(configuration["base_url"])
 
 
 INTEGRATION = ProviderIntegration(
-    key="ollama",
+    type="ollama",
     display_name="Ollama",
-    config_model=Config,
+    configuration_model=Config,
     supported_model_apis=("ollama.chat_completions",),
     build_provider=_build_provider,
     credential_format=None,
     credential_required=False,
     endpoint=_endpoint,
-    endpoint_config_field="base_url",
+    endpoint_configuration_field="base_url",
     model_discovery=JsonModelDiscoveryAdapter(
         request_builder=_request,
         schema=ModelListSchema(collection_field="models", identifier_field="name"),

@@ -16,7 +16,7 @@ from .base import (
     openai_style_discovery,
     require_endpoint,
 )
-from .types import ProviderConfig, RuntimeProvider
+from .types import ProviderConfiguration, RuntimeProvider
 
 _RESERVED_HEADERS = {
     "connection",
@@ -38,7 +38,7 @@ class AuthMode(StrEnum):
     api_key_header = "api_key_header"
 
 
-class Config(ProviderConfig):
+class Config(ProviderConfiguration):
     base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
     auth_mode: AuthMode = AuthMode.bearer
     api_key_header_name: Annotated[str, StringConstraints(pattern=r"^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$")] | None = None
@@ -59,14 +59,14 @@ def _build_provider(
     http_client: httpx2.AsyncClient,
     _pydantic_provider_name: str,
 ) -> OpenAIProvider:
-    config = provider.config
+    configuration = provider.configuration
     credential = provider.credential or ""
     default_headers = None
-    if config["auth_mode"] == "api_key_header":
-        default_headers = {str(config["api_key_header_name"]): credential}
+    if configuration["auth_mode"] == "api_key_header":
+        default_headers = {str(configuration["api_key_header_name"]): credential}
     client = AsyncOpenAI(
         api_key=credential,
-        base_url=str(config["base_url"]),
+        base_url=str(configuration["base_url"]),
         default_headers=default_headers,
         http_client=http_client,
         _enforce_credentials=False,
@@ -77,19 +77,19 @@ def _build_provider(
 def _request(provider: RuntimeProvider) -> ModelListRequest:
     headers: dict[str, str] = {}
     if provider.credential:
-        if provider.config.get("auth_mode") == "api_key_header":
-            headers[str(provider.config["api_key_header_name"])] = provider.credential
+        if provider.configuration.get("auth_mode") == "api_key_header":
+            headers[str(provider.configuration["api_key_header_name"])] = provider.credential
         else:
             headers["authorization"] = f"Bearer {provider.credential}"
     return ModelListRequest(url=join_url(require_endpoint(provider), "models"), headers=headers)
 
 
-def _endpoint(config: Mapping[str, object]) -> str:
-    return str(config["base_url"])
+def _endpoint(configuration: Mapping[str, object]) -> str:
+    return str(configuration["base_url"])
 
 
-def _validate_credential(config: Mapping[str, object], configured: bool) -> None:
-    unauthenticated = config["auth_mode"] == AuthMode.none.value
+def _validate_credential(configuration: Mapping[str, object], configured: bool) -> None:
+    unauthenticated = configuration["auth_mode"] == AuthMode.none.value
     if unauthenticated and configured:
         raise ValueError("the unauthenticated mode does not accept a credential")
     if not unauthenticated and not configured:
@@ -97,14 +97,14 @@ def _validate_credential(config: Mapping[str, object], configured: bool) -> None
 
 
 INTEGRATION = ProviderIntegration(
-    key="openai_compatible",
+    type="openai_compatible",
     display_name="OpenAI-Compatible",
-    config_model=Config,
+    configuration_model=Config,
     supported_model_apis=("openai.responses", "openai.chat_completions"),
     build_provider=_build_provider,
     credential_required=False,
     endpoint=_endpoint,
-    endpoint_config_field="base_url",
+    endpoint_configuration_field="base_url",
     credential_validator=_validate_credential,
     model_discovery=openai_style_discovery(_request),
 )

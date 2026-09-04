@@ -148,7 +148,7 @@ async def test_factory_uses_explicit_calling_api_binding() -> None:
             for definition in built_in_provider_registry().definitions():
                 for model_api in definition.supported_model_apis:
                     assert isinstance(
-                        factory.build(_snapshot(model_api), providers[definition.key]), expected_types[model_api]
+                        factory.build(_snapshot(model_api), providers[definition.type]), expected_types[model_api]
                     )
 
 

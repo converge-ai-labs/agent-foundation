@@ -71,6 +71,15 @@ class ResolvedRunExtensionRecipe(CompositionModel):
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class ResolvedContentPlugin(CompositionModel):
+    plugin_id: str = Field(min_length=8, max_length=128)
+    version: str = Field(min_length=1, max_length=128)
+    commit: str = Field(pattern=r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
+    content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    path: str = Field(min_length=1, max_length=4096)
+    skills_path: str | None = Field(default=None, min_length=1, max_length=4096)
+
+
 class ResolvedEnvironmentProfile(CompositionModel):
     profile_id: str = Field(min_length=1, max_length=128)
     behavior_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -125,6 +134,7 @@ class ResolvedRunComposition(CompositionModel):
     thread_configuration_version: int = Field(ge=1)
     project_id: str = Field(min_length=1, max_length=128)
     project_roots: tuple[str, ...] = Field(min_length=1, max_length=64)
+    content_plugins: tuple[ResolvedContentPlugin, ...] = Field(default=(), max_length=256)
     root: ResolvedAgentNode
     environment_profile: ResolvedEnvironmentProfile
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
@@ -144,6 +154,7 @@ __all__ = [
     "DependencyProvenance",
     "ResolvedAgentNode",
     "ResolvedCapabilityRecipe",
+    "ResolvedContentPlugin",
     "ResolvedEnvironmentProfile",
     "ResolvedMcpRecipe",
     "ResolvedModelRecipe",

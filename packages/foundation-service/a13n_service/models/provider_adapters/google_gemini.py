@@ -12,7 +12,7 @@ from .base import (
     require_credential,
     require_endpoint,
 )
-from .types import EmptyProviderConfig, RuntimeProvider
+from .types import EmptyProviderConfiguration, RuntimeProvider
 
 
 def _build_provider(
@@ -35,9 +35,9 @@ def _request(provider: RuntimeProvider) -> ModelListRequest:
 
 
 INTEGRATION = ProviderIntegration(
-    key="google_gemini",
+    type="google_gemini",
     display_name="Google Gemini",
-    config_model=EmptyProviderConfig,
+    configuration_model=EmptyProviderConfiguration,
     supported_model_apis=("google.generate_content",),
     build_provider=_build_provider,
     endpoint="https://generativelanguage.googleapis.com",

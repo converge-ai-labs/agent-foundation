@@ -40,7 +40,7 @@ class SecretOwnerType(StrEnum):
     workspace = "workspace"
     user = "user"
     ingress = "ingress"
-    connector = "connector"
+    connector_provider = "connector_provider"
     mcp_connection = "mcp_connection"
     a2a_push_configuration = "a2a_push_configuration"
 

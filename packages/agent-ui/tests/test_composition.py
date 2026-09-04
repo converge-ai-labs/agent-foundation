@@ -356,6 +356,7 @@ def test_environment_path_layout_keeps_virtual_mount_aliases() -> None:
 
     assert layout.project_mounts == ("/workspace", "/environment/workspace-2")
     assert layout.user_skills == "/environment/user-skills"
+    assert layout.content_plugin_skills == ()
 
 
 def test_skills_capability_builds_deterministic_multi_mount_sources() -> None:
@@ -378,12 +379,18 @@ def test_skills_capability_builds_deterministic_multi_mount_sources() -> None:
                 "/environment/workspace-3",
             ),
             user_skills="/environment/user-skills",
+            content_plugin_skills=(
+                ("plugin-alpha", "/environment/content-plugin-1"),
+                ("plugin-zeta", "/environment/content-plugin-2"),
+            ),
         ),
     )[0]
 
     assert isinstance(selected.capability, SkillsCapability)
     assert selected.capability.manager.roots == (
         "/environment/user-skills",
+        "/environment/content-plugin-1",
+        "/environment/content-plugin-2",
         "/environment/workspace-3/.agents/skills",
         "/environment/workspace-2/.agents/skills",
         "/workspace/.agents/skills",

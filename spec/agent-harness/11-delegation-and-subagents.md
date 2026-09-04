@@ -105,6 +105,12 @@ class SubagentOperatorContext:
 
 
 @dataclass(frozen=True, slots=True)
+class SubagentToolCallContext:
+    tool_call_id: str | None
+    tool_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedDelegationContext:
     input: RunInputValue
     policy: DelegationContextPolicy
@@ -127,6 +133,8 @@ The replacement uses the plan's already-resolved child input and context policy.
 
 Neither the plan nor operator context contains a live `AgentContext`, `RunContext`, entered `BoundEnvironment`, mutable parent state coordinator, model client, credential, or Run-scoped callback. Accepted async work therefore does not retain parent Run authority after parent closure. `host_refs` are immutable correlation selected by the Host; they are not authorization by themselves.
 
+Each standard async tool also projects its originating Pydantic tool-call correlation into a detached `SubagentToolCallContext` supplied separately to the operator method. Harness forwards the available `tool_call_id` and assembled `tool_name` without generating an idempotency key, defining a replay scope, or assigning persistence meaning. An operator may combine that correlation with the plan, request, and its own Host authority to implement idempotency or diagnostics. A missing call ID remains `None`; Harness does not synthesize one. The correlation grants no authority and does not become parent or child state.
+
 `BuiltSubagent` is a process-local invocation reference. A durable or remote operator persists its own exact definition revision and reconstructs the authorized child rather than serializing the executable object.
 
 ## Host Operator Contract
@@ -139,36 +147,48 @@ class SubagentOperator(ABC):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncDelegateRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView: ...
 
     async def info(
         self,
         context: SubagentOperatorContext,
         request: SubagentInfoRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentInfoResult: ...
 
     async def wait(
         self,
         context: SubagentOperatorContext,
         request: SubagentWaitRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentWaitResult: ...
 
     async def steer(
         self,
         context: SubagentOperatorContext,
         request: SubagentSteerRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentSteerResult: ...
 
     async def cancel(
         self,
         context: SubagentOperatorContext,
         request: SubagentCancelRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentCancelResult: ...
 
     async def resume(
         self,
         plan: SubagentDelegationPlan,
         request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView: ...
 ```
 

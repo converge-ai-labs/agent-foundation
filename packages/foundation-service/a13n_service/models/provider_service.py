@@ -30,9 +30,9 @@ from .domain import (
 from .models import ModelProviderRecord
 from .providers import (
     DiscoveredModelCollection,
-    ModelProviderTypeDefinitionCollection,
+    ModelProviderDefinitionCollection,
     ProviderRegistry,
-    ValidatedProviderConfig,
+    ValidatedProviderConfiguration,
 )
 from .service_common import ModelError, audit_record, authorize_models, require_etag
 
@@ -67,7 +67,7 @@ class ModelProviderService:
         self._operations = operations
         self._command_timeout_seconds = command_timeout_seconds
 
-    async def type_definitions(self, *, actor: AuthenticatedActor) -> ModelProviderTypeDefinitionCollection:
+    async def type_definitions(self, *, actor: AuthenticatedActor) -> ModelProviderDefinitionCollection:
         async with transaction(self._sessions) as session:
             await authorize_models(
                 session,
@@ -75,7 +75,7 @@ class ModelProviderService:
                 workspace_id=actor.boundary_workspace_id,
                 action=WorkspaceAction.models_read,
             )
-        return ModelProviderTypeDefinitionCollection(items=self._registry.definitions())
+        return ModelProviderDefinitionCollection(items=self._registry.definitions())
 
     async def create(
         self,
@@ -85,7 +85,9 @@ class ModelProviderService:
         request: CreateModelProviderRequest,
     ) -> ModelProvider:
         credential = request.credential.get_secret_value() if request.credential is not None else None
-        validated = await self._validate(request.type, request.config, credential_configured=credential is not None)
+        validated = await self._validate(
+            request.type, request.configuration, credential_configured=credential is not None
+        )
         self._validate_credential(request.type, credential)
         now = self._clock()
         try:
@@ -100,7 +102,7 @@ class ModelProviderService:
                     type=request.type,
                     name=request.name,
                     normalized_name=request.name.casefold(),
-                    config=validated.config,
+                    configuration=validated.configuration,
                     credential_version=0,
                     ciphertext=None,
                     nonce=None,
@@ -238,8 +240,8 @@ class ModelProviderService:
         credential_configured = (
             credential is not None if "credential" in request.model_fields_set else current.credential_configured
         )
-        config = request.config if request.config is not None else current.config
-        validated = await self._validate(current.type, config, credential_configured=credential_configured)
+        configuration = request.configuration if request.configuration is not None else current.configuration
+        validated = await self._validate(current.type, configuration, credential_configured=credential_configured)
         async with transaction(self._sessions) as session:
             workspace = await authorize_models(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_manage
@@ -256,7 +258,7 @@ class ModelProviderService:
                 assert request.name is not None
                 record.name = request.name
                 record.normalized_name = request.name.casefold()
-            record.config = validated.config
+            record.configuration = validated.configuration
             if "credential" in request.model_fields_set:
                 try:
                     replace_provider_credential(record, credential, self._protector)
@@ -394,11 +396,11 @@ class ModelProviderService:
             ).to_resource()
 
     async def _validate(
-        self, provider_type: str, config: dict[str, object], *, credential_configured: bool
-    ) -> ValidatedProviderConfig:
+        self, provider_type: str, configuration: dict[str, object], *, credential_configured: bool
+    ) -> ValidatedProviderConfiguration:
         try:
             validated = self._registry.validate_provider(
-                provider_type, config, credential_configured=credential_configured
+                provider_type, configuration, credential_configured=credential_configured
             )
             if validated.endpoint is None:
                 return validated

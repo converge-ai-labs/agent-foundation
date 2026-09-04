@@ -1,4 +1,4 @@
-"""Bounded authenticated HTTP transport shared by built-in Connector drivers."""
+"""Bounded authenticated HTTP transport shared by built-in ConnectorProvider drivers."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from a13n_service.connectivity.http import (
     retry_after_seconds,
 )
 
-from .adapters import ConnectorAdapterError
+from .contracts import ConnectorProviderError
 
 _JSON_VALUE = TypeAdapter(JsonValue)
 
@@ -30,7 +30,7 @@ class ConnectorHttpClient:
         response_max_bytes: int,
     ) -> None:
         if response_max_bytes <= 0:
-            raise ValueError("Connector response byte limit is invalid")
+            raise ValueError("ConnectorProvider response byte limit is invalid")
         self._http_client = http_client
         self._endpoint_validator = endpoint_validator
         self._response_max_bytes = response_max_bytes
@@ -48,11 +48,11 @@ class ConnectorHttpClient:
         extra_headers: dict[str, str] | None = None,
     ) -> JsonValue:
         if not 1 <= len(api_key) <= 4096:
-            raise ConnectorAdapterError("credential_unavailable")
+            raise ConnectorProviderError("credential_unavailable")
         try:
             base = await self._endpoint_validator.validate(endpoint, resolve_dns=True)
         except ValueError as error:
-            raise ConnectorAdapterError("endpoint_denied") from error
+            raise ConnectorProviderError("endpoint_denied") from error
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
@@ -70,13 +70,13 @@ class ConnectorHttpClient:
                 follow_redirects=False,
             ) as response:
                 return await _read_response(response, max_bytes=self._response_max_bytes)
-        except ConnectorAdapterError as error:
+        except ConnectorProviderError as error:
             if write and error.code in {
                 "invalid_provider_response",
                 "provider_unavailable",
                 "response_too_large",
             }:
-                raise ConnectorAdapterError(
+                raise ConnectorProviderError(
                     error.code,
                     retryable=error.retryable,
                     outcome_unknown=True,
@@ -85,7 +85,7 @@ class ConnectorHttpClient:
             raise
         except (ConnectivityHttpError, httpx2.HTTPError) as error:
             code = error.code if isinstance(error, ConnectivityHttpError) else "provider_unavailable"
-            raise ConnectorAdapterError(
+            raise ConnectorProviderError(
                 code,
                 retryable=True,
                 outcome_unknown=write,
@@ -100,25 +100,18 @@ async def _read_response(response: httpx2.Response, *, max_bytes: int) -> JsonVa
     except ConnectivityHttpError:
         raise
     if response.status_code == 429:
-        raise ConnectorAdapterError(
+        raise ConnectorProviderError(
             "rate_limited",
             retryable=True,
             retry_after_seconds=retry_after,
         )
     if response.status_code >= 500:
-        raise ConnectorAdapterError("provider_unavailable", retryable=True)
+        raise ConnectorProviderError("provider_unavailable", retryable=True)
     if response.status_code < 200 or response.status_code >= 300:
-        raise ConnectorAdapterError("provider_rejected")
+        raise ConnectorProviderError("provider_rejected")
     if not body:
         return None
     try:
         return _JSON_VALUE.validate_python(json.loads(body))
     except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, RecursionError) as error:
-        raise ConnectorAdapterError("invalid_provider_response") from error
-
-
-def required_api_key(credentials: JsonObject) -> str:
-    value = credentials.get("api_key")
-    if not isinstance(value, str) or not value:
-        raise ConnectorAdapterError("credential_unavailable")
-    return value
+        raise ConnectorProviderError("invalid_provider_response") from error

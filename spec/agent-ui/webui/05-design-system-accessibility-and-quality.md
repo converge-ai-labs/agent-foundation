@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The WebUI is a simple, progressively disclosed local workstation, not a marketing page and not a generic administration template. Its design system gives ordinary work, detailed Debug inspection, and source configuration distinct visual contexts within one coherent shell. Visual polish cannot blur authority: retained versus live content, persisted versus process-local state, accepted versus draft configuration, and available versus unavailable control remain distinguishable without relying on color alone.
+The WebUI is a simple, progressively disclosed local workstation, not a marketing page and not a generic administration template. Its design system keeps conversation primary, reveals activity detail only on demand, and gives guided Settings management a distinct but coherent context. Visual polish cannot blur authority: retained versus live content, persisted versus process-local state, accepted versus draft configuration, and available versus unavailable control remain distinguishable without relying on color alone.
 
 Radix UI primitives own accessible interaction behavior for dialogs, menus, popovers, tabs, tooltips, selects, switches, and related controls. Tailwind CSS consumes a small repository-owned semantic token layer. Feature components compose these primitives but do not bypass them with incompatible keyboard or focus behavior.
 
@@ -16,7 +16,7 @@ Components are organized by responsibility rather than page-specific duplication
 | Primitives        | Buttons, inputs, badges, panels, scroll areas, disclosures, dialogs, menus, and feedback composed from Radix where behavior is nontrivial |
 | Data display      | Timeline blocks, code, structured JSON/YAML, diffs, status facets, pagination, empty states, and diagnostic callouts                      |
 | Domain components | Thread composer, decision batch, child execution card, configuration selectors, resource editor, account status, and catalog reference    |
-| Feature layouts   | Workbench, Focus, Debug ledger/detail, configuration collection/editor, account area, and responsive shell                                |
+| Feature layouts   | Sidebar, conversation, optional context panel, activity log/detail, Settings collection/editor, account area, and responsive shell        |
 
 A component can render a detached domain projection but cannot issue an HTTP request implicitly. Route feature boundaries own queries and commands and pass explicit values and callbacks downward. A component does not infer an App action from a color, label, or prior event.
 
@@ -40,22 +40,23 @@ The production asset tree includes all fonts and icons it requires. System fonts
 
 ## Workstation Layout
 
-The shell exposes one stable global rail for Threads, Configure, and Debug, but each area uses only the regions its job requires:
+The ordinary shell has a persistent sidebar, one dominant conversation, and one optional context panel. It has no global product-area rail:
 
-| Area      | Wide layout                                                                  | Detail behavior                                                            |
-| --------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Workbench | Project selector, attention-ranked filtered list, and one bounded preview    | Preview answers what needs the user; exact technical detail links to Debug |
-| Focus     | Project context, optional filtered Thread collection, and one conversation   | Thread sheets are transient; there is no permanent debug inspector         |
-| Configure | Resource-kind navigation, one collection, and one editor or conflict surface | Guided and exact source remain views of one draft                          |
-| Debug     | Diagnostic navigation, one primary ledger/view, and optional selected detail | Detail is closed by default and no composer is present                     |
+| Region        | Wide layout                                                                | Narrow behavior                                                                 |
+| ------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Sidebar       | New Thread, Recent, expandable Projects and root Threads, search, Settings | Becomes a separate navigation panel with explicit return to the selected Thread |
+| Conversation  | Header, semantic timeline, deferred interactions, and one composer         | Remains the primary panel                                                       |
+| Context panel | Closed by default; Environment context or one selected activity detail     | Becomes a drawer or separate route-preserving panel                             |
+| Activity log  | Replaces the conversation body only after an explicit inspection action    | Uses one primary panel and separate selected detail                             |
+| Settings      | Section navigation plus one collection, guided editor, or diagnostic view  | Section list, collection, and editor become explicit sequential panels          |
 
-Area-specific composition keeps each primary surface visually dominant. Medium layouts reduce each area to the primary surface plus one drawer or tab. Narrow layouts show one primary region at a time with explicit accessible navigation. The same canonical route and focused controller survive pure layout transitions.
+Settings replaces the conversation region instead of remaining mounted beside it. Guided fields are visually primary. Advanced source, diffs, and conflict controls load only when requested, while guided and exact-source editing remain views over one draft.
 
-No critical action exists only on hover. Project collections and editors provide keyboard reordering for Projects and roots and announce the resulting order. Resizable Debug and Configure panes expose keyboard alternatives and bounded minimum/maximum sizes. User resizing is browser-session presentation state and does not enter App configuration.
+No critical action exists only on hover. Project collections and editors provide keyboard reordering for Projects and roots and announce the resulting order. Resizable context and Settings panes expose keyboard alternatives and bounded minimum/maximum sizes. User resizing is browser-session presentation state and does not enter App configuration.
 
-Tables become labeled card rows or controlled horizontal regions on narrow screens rather than clipping actions. Dialogs that cannot fit become full-viewport sheets with preserved focus and dismissal semantics. The Threads composer remains reachable without covering the decision set or active control status; Debug never adds a second composer.
+Tables become labeled card rows or controlled horizontal regions on narrow screens rather than clipping actions. Dialogs that cannot fit become full-viewport sheets with preserved focus and dismissal semantics. The conversation composer remains reachable without covering the decision set or active control status; activity and Settings never add a second composer.
 
-The workstation is desktop-first because it manages local roots, source text, and long-running agent activity, but every query, decision, control, debug selection, and conflict resolution remains operable at a narrow browser width. Responsive support does not imply native mobile installation or offline behavior.
+The workstation is desktop-first because it manages local roots, source text, and long-running agent activity, but every query, decision, control, activity selection, Settings mutation, and conflict resolution remains operable at a narrow browser width. Responsive support does not imply native mobile installation or offline behavior.
 
 ## Accessibility
 
@@ -74,7 +75,7 @@ The WebUI targets WCAG 2.2 AA for its supported browser profile. In particular:
 
 Streaming assistant deltas are not announced token by token. A polite live region announces meaningful boundaries such as response completion, pending decision, failed operation, or child completion. Steering and cancellation confirmations name the exact target in accessible text.
 
-Keyboard shortcuts are discoverable, scoped, and never shadow ordinary browser or editor behavior. At minimum, focus composer, open command palette, return to Workbench, open the selected work detail, and move between Threads and the corresponding Debug view have configurable or documented bindings. A shortcut never approves, denies, deletes, logs out, or bypasses a confirmation through one unmodified keystroke.
+Keyboard shortcuts are discoverable, scoped, and never shadow ordinary browser or editor behavior. At minimum, focus composer, open command palette, toggle the sidebar, open Settings, return to conversation, toggle Environment context, and open the selected activity detail have configurable or documented bindings. A shortcut never approves, denies, deletes, logs out, or bypasses a confirmation through one unmodified keystroke.
 
 ## Forms and Editors
 
@@ -117,9 +118,9 @@ The application registers no service worker. A stale open tab detects incompatib
 
 ## Performance and Resource Discipline
 
-The Threads shell, Project selector, Workbench, and Focus interaction path form the initial bundle. Debug ledgers and payload viewers, Project and other configuration editors, diff support, catalog management, account flows, and other heavy routes load on demand. CodeMirror and language support do not enter the initial Threads bundle.
+The sidebar, new-Thread flow, selected conversation, inline activity summaries, composer, and deferred interactions form the initial bundle. Activity ledgers and payload viewers, Settings collections and editors, diff support, catalog management, account flows, and other heavy routes load on demand. CodeMirror and language support do not enter the initial conversation bundle.
 
-Long Thread, resource, catalog, and child collections use server keyset pagination. Long timelines and structured views use virtualization or bounded expansion while preserving keyboard navigation and copy semantics. The browser never fetches every Thread or mounts every transcript to calculate Project recency or attention.
+Long Thread, resource, catalog, and child collections use server keyset pagination. Long timelines and structured views use virtualization or bounded expansion while preserving keyboard navigation and copy semantics. The browser never fetches every Thread or mounts every transcript to calculate Project recency or navigation status.
 
 Detailed stream deltas are reduced in order and committed to React at most once per animation frame under sustained output. Summary invalidations for the same query family are coalesced. Rendering performance optimizations cannot reorder events, drop a terminal boundary, or delay authority-bearing controls behind a visually batched stale projection.
 
@@ -131,7 +132,7 @@ Vitest owns pure browser boundaries: access bootstrap, normalized query and inva
 
 MSW uses fixtures validated by the generated runtime schemas to exercise the generated client across finite queries, commands, authentication, conflicts, validation failures, unknown outcomes, and stream reconnection. These tests do not substitute for Python tests that mount the actual Web adapter and verify access enforcement, static routing, OpenAPI bodies, error mapping, fresh-watch snapshot cutover, resumable event replay, explicit cursor and subscriber-gap resets, disconnect cleanup, and `AgentUiApp` method correlation.
 
-Playwright runs the built static application against a real local Web adapter and disposable Agent UI data and configuration roots. Its critical journeys cross access bootstrap and direct navigation; Project creation, Project and root ordering, Project-filter switching, source-digest conflict, and deletion without rewriting retained Threads; Workbench-to-Focus supervision; root and child interaction with live-to-retained reconciliation and exact controls; complete deferred decisions; Threads-to-Debug correlation without a second composer or stream; digest-protected resource management and rebase; accepted-generation diagnostics; compatible account actions; restart and stream recovery; and keyboard-only accessibility. End-to-end assertions target semantic state and authority boundaries rather than pixel snapshots alone. Visual regression can cover the shell and core states, but it does not replace interaction, accessibility, or protocol assertions.
+Playwright runs the built static application against a real local Web adapter and disposable Agent UI data and configuration roots. Its critical journeys cross access bootstrap and direct navigation; New Thread, Recent, Project-grouped navigation, search, archive, and unresolved Project references; root and child interaction with live-to-retained reconciliation and exact controls; complete deferred decisions; conversation-to-activity disclosure without a second composer or stream; Environment context; guided Project, Agent, Model, Environment, Plugin, MCP, and default management; advanced source editing, digest conflict, and reviewed rebase; accepted-generation diagnostics; compatible account actions; restart and stream recovery; and keyboard-only accessibility. End-to-end assertions target semantic state and authority boundaries rather than pixel snapshots alone. Visual regression can cover the shell and core states, but it does not replace interaction, accessibility, or protocol assertions.
 
 ## Browser Compatibility
 
@@ -152,12 +153,12 @@ Radix plus Tailwind requires the repository to own more composition and visual d
 ## Invariants
 
 01. Visual treatment never collapses retained/live, persisted/local, accepted/draft, or available/unavailable distinctions.
-02. The Threads area remains Project-filtered, simple, and action-oriented; Debug remains detailed and read-only; Configure remains the desired-resource management surface.
+02. The ordinary shell remains a simple Project-and-Thread sidebar, one conversation, and one optional context panel; Settings remains the complete desired-resource management surface.
 03. Radix primitives and semantic tokens provide one accessible component foundation.
 04. Every critical operation remains keyboard operable and understandable without color or motion.
 05. Untrusted content is rendered as inert text or bounded structured data.
 06. The production application loads no remote executable, font, style, or configuration asset.
-07. Route splitting keeps heavy Debug, management, and editor code out of the initial Threads route.
+07. Route splitting keeps heavy activity, Settings, and editor code out of the initial conversation route.
 08. Performance batching preserves event order and never delays control authority behind stale visual state.
 09. Pure, adapter, and real-browser tests cover different boundaries and do not substitute for one another.
 10. The supported browser must provide authenticated fetch streaming; the UI does not invent polling semantics.

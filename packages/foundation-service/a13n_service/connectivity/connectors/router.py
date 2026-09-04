@@ -1,4 +1,4 @@
-"""Connector management and verified setup callback routes."""
+"""ConnectorProvider management and verified setup callback routes."""
 
 from __future__ import annotations
 
@@ -13,72 +13,88 @@ from a13n_service.request_runtime import get_connectivity_control_runtime
 
 from .connections import ConnectorConnectionService
 from .domain import (
-    Connector,
     ConnectorCollection,
-    ConnectorCommandRequest,
     ConnectorConnection,
     ConnectorConnectionCollection,
     ConnectorConnectionCommandRequest,
     ConnectorOperationReceipt,
+    ConnectorProvider,
+    ConnectorProviderCollection,
+    ConnectorProviderCommandRequest,
+    ConnectorProviderStatus,
+    ConnectorProviderTestResult,
     ConnectorSetupLaunch,
-    ConnectorStatus,
-    ConnectorTestResult,
     CreateConnectorConnectionRequest,
-    CreateConnectorRequest,
+    CreateConnectorProviderRequest,
     ReconnectConnectorConnectionRequest,
-    ReplaceConnectorCredentialsRequest,
+    ReplaceConnectorProviderCredentialsRequest,
     StartConnectorConnectionSetupRequest,
     UpdateConnectorConnectionRequest,
-    UpdateConnectorRequest,
+    UpdateConnectorProviderRequest,
 )
 from .errors import ConnectorError
-from .service import ConnectorService
+from .registry import ConnectorProviderDefinitionCollection
+from .service import ConnectorProviderService
 
 router = APIRouter(tags=["connectivity-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
 
 
-def _connectors(request: Request) -> ConnectorService:
+def _connector_providers(request: Request) -> ConnectorProviderService:
     runtime = get_connectivity_control_runtime(request)
     if runtime is None:
         raise ConnectorError(
-            "connector_management_unavailable",
-            "Connector Management is unavailable.",
+            "connector_provider_management_unavailable",
+            "ConnectorProvider Management is unavailable.",
             status_code=503,
         )
-    return runtime.connectors
+    return runtime.connector_providers
 
 
 def _connections(request: Request) -> ConnectorConnectionService:
     runtime = get_connectivity_control_runtime(request)
     if runtime is None:
         raise ConnectorError(
-            "connector_management_unavailable",
-            "Connector Management is unavailable.",
+            "connector_provider_management_unavailable",
+            "ConnectorProvider Management is unavailable.",
             status_code=503,
         )
     return runtime.connector_connections
 
 
-def _etag(response: Response, resource: Connector | ConnectorConnection) -> None:
+def _etag(response: Response, resource: ConnectorProvider | ConnectorConnection) -> None:
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
 
 
+@router.get("/api/v1/connector-provider-types", response_model=ConnectorProviderDefinitionCollection)
+async def list_connector_provider_types(request: Request, actor: Actor) -> ConnectorProviderDefinitionCollection:
+    return await _connector_providers(request).type_definitions(actor=actor)
+
+
 @router.post(
-    "/api/v1/workspaces/{workspace_id}/connectors",
-    response_model=Connector,
+    "/api/v1/connector-providers/{connector_provider_id}/discover-connectors", response_model=ConnectorCollection
+)
+async def discover_connectors(request: Request, actor: Actor, connector_provider_id: str) -> ConnectorCollection:
+    return await _connector_providers(request).discover_connectors(
+        actor=actor, connector_provider_id=connector_provider_id
+    )
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/connector-providers",
+    response_model=ConnectorProvider,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_connector(
+async def create_connector_provider(
     request: Request,
     response: Response,
     actor: Actor,
     workspace_id: str,
-    body: CreateConnectorRequest,
+    body: CreateConnectorProviderRequest,
     idempotency_key: IdempotencyKey,
-) -> Connector:
-    resource = await _connectors(request).create(
+) -> ConnectorProvider:
+    resource = await _connector_providers(request).create(
         actor=actor,
         workspace_id=workspace_id,
         idempotency_key=idempotency_key,
@@ -88,15 +104,15 @@ async def create_connector(
     return resource
 
 
-@router.get("/api/v1/workspaces/{workspace_id}/connectors", response_model=ConnectorCollection)
-async def list_connectors(
+@router.get("/api/v1/workspaces/{workspace_id}/connector-providers", response_model=ConnectorProviderCollection)
+async def list_connector_providers(
     request: Request,
     actor: Actor,
     workspace_id: str,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
-) -> ConnectorCollection:
-    return await _connectors(request).list(
+) -> ConnectorProviderCollection:
+    return await _connector_providers(request).list(
         actor=actor,
         workspace_id=workspace_id,
         limit=limit,
@@ -104,43 +120,45 @@ async def list_connectors(
     )
 
 
-@router.get("/api/v1/connectors/{connector_id}", response_model=Connector)
-async def get_connector(
+@router.get("/api/v1/connector-providers/{connector_provider_id}", response_model=ConnectorProvider)
+async def get_connector_provider(
     request: Request,
     response: Response,
     actor: Actor,
-    connector_id: str,
-) -> Connector:
-    resource = await _connectors(request).get(actor=actor, connector_id=connector_id)
+    connector_provider_id: str,
+) -> ConnectorProvider:
+    resource = await _connector_providers(request).get(actor=actor, connector_provider_id=connector_provider_id)
     _etag(response, resource)
     return resource
 
 
-@router.patch("/api/v1/connectors/{connector_id}", response_model=Connector)
-async def update_connector(
+@router.patch("/api/v1/connector-providers/{connector_provider_id}", response_model=ConnectorProvider)
+async def update_connector_provider(
     request: Request,
     response: Response,
     actor: Actor,
-    connector_id: str,
-    body: UpdateConnectorRequest,
-) -> Connector:
-    resource = await _connectors(request).update(actor=actor, connector_id=connector_id, request=body)
+    connector_provider_id: str,
+    body: UpdateConnectorProviderRequest,
+) -> ConnectorProvider:
+    resource = await _connector_providers(request).update(
+        actor=actor, connector_provider_id=connector_provider_id, request=body
+    )
     _etag(response, resource)
     return resource
 
 
-@router.post("/api/v1/connectors/{connector_id}/credentials", response_model=Connector)
-async def replace_connector_credentials(
+@router.post("/api/v1/connector-providers/{connector_provider_id}/credentials", response_model=ConnectorProvider)
+async def replace_connector_provider_credentials(
     request: Request,
     response: Response,
     actor: Actor,
-    connector_id: str,
-    body: ReplaceConnectorCredentialsRequest,
+    connector_provider_id: str,
+    body: ReplaceConnectorProviderCredentialsRequest,
     idempotency_key: IdempotencyKey,
-) -> Connector:
-    resource = await _connectors(request).replace_credentials(
+) -> ConnectorProvider:
+    resource = await _connector_providers(request).replace_credentials(
         actor=actor,
-        connector_id=connector_id,
+        connector_provider_id=connector_provider_id,
         idempotency_key=idempotency_key,
         request=body,
     )
@@ -148,36 +166,36 @@ async def replace_connector_credentials(
     return resource
 
 
-@router.post("/api/v1/connectors/{connector_id}/test", response_model=ConnectorTestResult)
-async def test_connector(
+@router.post("/api/v1/connector-providers/{connector_provider_id}/test", response_model=ConnectorProviderTestResult)
+async def test_connector_provider(
     request: Request,
     actor: Actor,
-    connector_id: str,
-    body: ConnectorCommandRequest,
+    connector_provider_id: str,
+    body: ConnectorProviderCommandRequest,
     idempotency_key: IdempotencyKey,
-) -> ConnectorTestResult:
-    return await _connectors(request).test(
+) -> ConnectorProviderTestResult:
+    return await _connector_providers(request).test(
         actor=actor,
-        connector_id=connector_id,
+        connector_provider_id=connector_provider_id,
         expected_version=body.expected_version,
         idempotency_key=idempotency_key,
     )
 
 
-@router.post("/api/v1/connectors/{connector_id}/{action}", response_model=Connector)
-async def change_connector_lifecycle(
+@router.post("/api/v1/connector-providers/{connector_provider_id}/{action}", response_model=ConnectorProvider)
+async def change_connector_provider_lifecycle(
     request: Request,
     response: Response,
     actor: Actor,
-    connector_id: str,
+    connector_provider_id: str,
     action: Literal["enable", "disable"],
-    body: ConnectorCommandRequest,
+    body: ConnectorProviderCommandRequest,
     idempotency_key: IdempotencyKey,
-) -> Connector:
-    resource = await _connectors(request).set_status(
+) -> ConnectorProvider:
+    resource = await _connector_providers(request).set_status(
         actor=actor,
-        connector_id=connector_id,
-        status=ConnectorStatus.active if action == "enable" else ConnectorStatus.disabled,
+        connector_provider_id=connector_provider_id,
+        status=ConnectorProviderStatus.active if action == "enable" else ConnectorProviderStatus.disabled,
         expected_version=body.expected_version,
         idempotency_key=idempotency_key,
     )
@@ -369,5 +387,5 @@ async def connector_setup_callback(
     return_path = await _connections(request).complete_callback(actor=actor, session_uri=session_uri)
     runtime = get_connectivity_control_runtime(request)
     if runtime is None:
-        raise ConnectorError("callback_unavailable", "Connector callback is unavailable.", status_code=503)
+        raise ConnectorError("callback_unavailable", "ConnectorProvider callback is unavailable.", status_code=503)
     return RedirectResponse(f"{runtime.public_origin.rstrip('/')}{return_path}", status_code=303)

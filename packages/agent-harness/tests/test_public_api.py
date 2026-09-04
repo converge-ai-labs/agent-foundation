@@ -137,6 +137,7 @@ def test_feature_facades_export_documented_families() -> None:
         "SubagentInfoResult",
         "SubagentOperator",
         "SubagentOperatorContext",
+        "SubagentToolCallContext",
         "SubagentStatus",
         "SubagentSteerRequest",
         "SubagentSteerResult",

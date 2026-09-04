@@ -5,20 +5,20 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.adapters import (
+from a13n_service.connectivity.connectors.contracts import (
     ConnectionInspection,
-    ConnectorAdapter,
-    ConnectorAdapterError,
+    ConnectorProviderError,
     SetupContext,
     SetupStarted,
 )
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_digest
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
@@ -36,19 +36,20 @@ from .domain import ConnectorSetupLaunch
 from .errors import ConnectorError
 from .management import (
     audit,
+    configure_provider,
     decode_credentials,
-    require_adapter,
+    require_active_provider,
     require_connection,
-    require_connector,
+    require_connector_provider,
     secret_context,
 )
-from .models import ConnectorConnectionRecord, ConnectorRecord, ConnectorSetupAttemptRecord
+from .models import ConnectorConnectionRecord, ConnectorProviderRecord, ConnectorSetupAttemptRecord
 
 
 @dataclass(frozen=True, slots=True)
 class AttemptSnapshot:
     attempt: ConnectorSetupAttemptRecord
-    connector: ConnectorRecord
+    connector: ConnectorProviderRecord
     credentials: JsonObject
 
 
@@ -56,7 +57,7 @@ class ConnectorSetupCoordinator:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: AdapterRegistry[ConnectorAdapter],
+        adapters: ConnectorProviderRegistry,
         secrets: InternalSecretService,
         *,
         correlation_secret: bytes | None,
@@ -65,7 +66,7 @@ class ConnectorSetupCoordinator:
         clock: Clock = utc_now,
     ) -> None:
         if correlation_secret is not None and len(correlation_secret) < 32:
-            raise ValueError("Connector setup correlation secret must be at least 32 bytes")
+            raise ValueError("ConnectorProvider setup correlation secret must be at least 32 bytes")
         self._sessions = sessions
         self._adapters = adapters
         self._secrets = secrets
@@ -78,7 +79,7 @@ class ConnectorSetupCoordinator:
         self,
         connection: ConnectorConnectionRecord,
         *,
-        connector: ConnectorRecord,
+        connector: ConnectorProviderRecord,
         actor: AuthenticatedActor,
         attempt_id: str,
         setup: JsonObject,
@@ -96,8 +97,8 @@ class ConnectorSetupCoordinator:
             initiating_principal_id=actor.principal.principal_id,
             owner_type=connection.owner_type,
             owner_id=connection.owner_id,
-            driver_key=connector.driver_key,
-            provider_key=connection.provider_key,
+            type=connector.type,
+            connector_key=connection.connector_key,
             external_user_correlation=correlation,
             state_digest=canonical_digest({"attempt_id": attempt_id, "correlation": correlation}),
             return_path=return_path,
@@ -123,14 +124,14 @@ class ConnectorSetupCoordinator:
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
-                raise ConnectorError("setup_unavailable", "Connector setup is unavailable.", status_code=404)
+                raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
             if attempt.status in {"completed", "failed", "expired"}:
                 return await self._receipt(session, attempt, connection_id=connection_id, redirect_url=None)
         started = await self.start_attempt(attempt_id)
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
-                raise ConnectorError("setup_unavailable", "Connector setup is unavailable.", status_code=404)
+                raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
             return await self._receipt(
                 session,
                 attempt,
@@ -161,7 +162,7 @@ class ConnectorSetupCoordinator:
         if actor.principal.principal_type is not PrincipalType.user:
             raise ConnectorError("interactive_user_required", "Interactive setup requires a User.", status_code=403)
         if not 1 <= len(session_uri) <= 4096:
-            raise ConnectorError("invalid_callback", "Connector setup callback is invalid.", status_code=400)
+            raise ConnectorError("invalid_callback", "ConnectorProvider setup callback is invalid.", status_code=400)
         digest = canonical_digest(session_uri)
         now = self._clock()
         async with transaction(self._sessions) as session:
@@ -180,14 +181,16 @@ class ConnectorSetupCoordinator:
                 or not attempt.supports_verified_callback
                 or attempt.external_ref is None
             ):
-                raise ConnectorError("invalid_callback", "Connector setup callback is invalid.", status_code=400)
+                raise ConnectorError(
+                    "invalid_callback", "ConnectorProvider setup callback is invalid.", status_code=400
+                )
             attempt.status = "reserved"
             attempt.reserved_at = now
             attempt.updated_at = now
             attempt_id = attempt.id
         try:
             inspection = await self._complete_attempt(attempt_id, session_uri=session_uri)
-        except ConnectorAdapterError as error:
+        except (ConnectorProviderError, ConnectorError) as error:
             async with transaction(self._sessions) as session:
                 attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id, with_for_update=True)
                 if attempt is not None and attempt.status == "reserved":
@@ -195,6 +198,8 @@ class ConnectorSetupCoordinator:
                     attempt.reserved_at = None
                     attempt.last_error_code = error.code
                     attempt.updated_at = self._clock()
+            if isinstance(error, ConnectorError):
+                raise
             raise external_error(error) from error
         try:
             await self.finish_attempt(attempt_id, inspection, actor=actor)
@@ -210,7 +215,9 @@ class ConnectorSetupCoordinator:
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
-                raise ConnectorError("invalid_callback", "Connector setup callback is invalid.", status_code=400)
+                raise ConnectorError(
+                    "invalid_callback", "ConnectorProvider setup callback is invalid.", status_code=400
+                )
             return attempt.return_path
 
     async def start_attempt(
@@ -221,16 +228,15 @@ class ConnectorSetupCoordinator:
         claim_generation: int | None = None,
     ) -> SetupStarted:
         snapshot = await self.attempt_snapshot(attempt_id, operation=SecretOperation.setup)
-        adapter = require_adapter(self._adapters, snapshot.connector.driver_key, snapshot.connector.config_version)
+        require_active_provider(snapshot.connector)
+        runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
         try:
-            started = await adapter.start_setup(
-                endpoint=snapshot.connector.endpoint,
-                connector_config=snapshot.connector.config_json,
-                credentials=snapshot.credentials,
-                setup=snapshot.attempt.setup_json,
-                context=_setup_context(snapshot.attempt, callback_url=self.callback_url()),
-            )
-        except ConnectorAdapterError as error:
+            async with aclosing(runtime):
+                started = await runtime.start_setup(
+                    setup=snapshot.attempt.setup_json,
+                    context=_setup_context(snapshot.attempt, callback_url=self.callback_url()),
+                )
+        except ConnectorProviderError as error:
             await self.record_attempt_failure(
                 attempt_id,
                 error,
@@ -245,16 +251,20 @@ class ConnectorSetupCoordinator:
                 or attempt.status not in {"pending", "attached"}
                 or not _claim_matches(attempt, claim_owner, claim_generation)
             ):
-                raise ConnectorError("setup_lost_race", "Connector setup changed concurrently.", status_code=409)
+                raise ConnectorError(
+                    "setup_lost_race", "ConnectorProvider setup changed concurrently.", status_code=409
+                )
             connection = await require_connection(session, attempt.connector_connection_id, lock=True)
             if connection.setup_generation != attempt.generation:
-                raise ConnectorError("setup_lost_race", "Connector setup changed concurrently.", status_code=409)
+                raise ConnectorError(
+                    "setup_lost_race", "ConnectorProvider setup changed concurrently.", status_code=409
+                )
             if connection.external_ref is not None and connection.external_ref != started.external_ref:
                 attempt.status = "failed"
                 attempt.last_error_code = "connection_substitution"
                 raise ConnectorError(
                     "connection_substitution",
-                    "Connector returned another external account.",
+                    "ConnectorProvider returned another external account.",
                     status_code=409,
                 )
             now = self._clock()
@@ -289,6 +299,7 @@ class ConnectorSetupCoordinator:
             ):
                 return
             connection = await require_connection(session, attempt.connector_connection_id, lock=True)
+            require_active_provider(await require_connector_provider(session, connection.connector_provider_id))
             verify_inspection(attempt, connection, inspection)
             apply_inspection(connection, inspection, now=now)
             attempt.status = "completed"
@@ -313,21 +324,21 @@ class ConnectorSetupCoordinator:
         async with short_session(self._sessions) as session:
             attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
             if attempt is None:
-                raise ConnectorError("setup_unavailable", "Connector setup is unavailable.", status_code=404)
+                raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
             connection = await require_connection(session, attempt.connector_connection_id)
-            connector = await require_connector(session, connection.connector_id)
+            connector = await require_connector_provider(session, connection.connector_provider_id)
         try:
             raw = await self._secrets.resolve(secret_context(connector, operation=operation))
         except InternalSecretError as error:
             raise ConnectorError(
-                "credential_unavailable", "Connector credentials are unavailable.", status_code=503
+                "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
             ) from error
         return AttemptSnapshot(attempt=attempt, connector=connector, credentials=decode_credentials(raw))
 
     async def record_attempt_failure(
         self,
         attempt_id: str,
-        error: ConnectorAdapterError,
+        error: ConnectorProviderError,
         *,
         claim_owner: str | None,
         claim_generation: int | None,
@@ -358,11 +369,11 @@ class ConnectorSetupCoordinator:
             attempt.last_error_code = code
             attempt.updated_at = self._clock()
 
-    def correlation(self, connector: ConnectorRecord, owner: PrincipalRef | None) -> str:
+    def correlation(self, connector: ConnectorProviderRecord, owner: PrincipalRef | None) -> str:
         if self._correlation_secret is None:
             raise ConnectorError(
                 "setup_unavailable",
-                "Connector setup correlation is not configured.",
+                "ConnectorProvider setup correlation is not configured.",
                 status_code=503,
             )
         owner_kind = owner.principal_type.value if owner is not None else "workspace"
@@ -388,23 +399,22 @@ class ConnectorSetupCoordinator:
     async def _complete_attempt(self, attempt_id: str, *, session_uri: str) -> ConnectionInspection:
         snapshot = await self.attempt_snapshot(attempt_id, operation=SecretOperation.callback)
         if snapshot.attempt.external_ref is None:
-            raise ConnectorAdapterError("setup_incomplete")
-        adapter = require_adapter(self._adapters, snapshot.connector.driver_key, snapshot.connector.config_version)
-        return await adapter.complete_setup(
-            endpoint=snapshot.connector.endpoint,
-            connector_config=snapshot.connector.config_json,
-            credentials=snapshot.credentials,
-            session_uri=session_uri,
-            context=_setup_context(snapshot.attempt, callback_url=self.callback_url()),
-            expected_external_ref=snapshot.attempt.external_ref,
-        )
+            raise ConnectorProviderError("setup_incomplete")
+        require_active_provider(snapshot.connector)
+        runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
+        async with aclosing(runtime):
+            return await runtime.complete_setup(
+                session_uri=session_uri,
+                context=_setup_context(snapshot.attempt, callback_url=self.callback_url()),
+                expected_external_ref=snapshot.attempt.external_ref,
+            )
 
 
 def _setup_context(attempt: ConnectorSetupAttemptRecord, *, callback_url: str | None) -> SetupContext:
     return SetupContext(
         attempt_id=attempt.id,
         generation=attempt.generation,
-        provider_key=attempt.provider_key,
+        connector_key=attempt.connector_key,
         external_user_correlation=attempt.external_user_correlation,
         callback_url=callback_url,
     )

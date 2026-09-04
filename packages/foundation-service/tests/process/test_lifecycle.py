@@ -1,10 +1,11 @@
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
-from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
+from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.domain import EnvironmentTargetRetentionBehavior
@@ -21,6 +22,7 @@ from a13n_service.settings import ServiceRole, ServiceSettings
 from a13n_service.skills import SkillRuntimePreparer
 from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 
+from ..connectivity.connector_helpers import FakeConnectorBackend, fake_registry
 from .support import local_settings
 
 
@@ -66,19 +68,11 @@ async def test_worker_requires_a_source_resolver_for_retaining_environment_provi
 def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     class Adapter:
         provider_key = "fake"
-        driver_key = "fake"
         config_versions = frozenset({"fake_v1"})
 
     ingress_registry = AdapterRegistry[IngressAdapter]()
-    connector_registry = AdapterRegistry[ConnectorAdapter]()
+    connector_registry = fake_registry(FakeConnectorBackend())
     ingress_registry.register(
-        AdapterDefinition(
-            key="fake",
-            config_versions=frozenset({"fake_v1"}),
-            factory=Adapter,
-        )
-    )
-    connector_registry.register(
         AdapterDefinition(
             key="fake",
             config_versions=frozenset({"fake_v1"}),
@@ -87,7 +81,7 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     )
     components = ServiceComponents(
         ingress_adapter_registry=ingress_registry,
-        connector_adapter_registry=connector_registry,
+        connector_provider_registry=connector_registry,
     )
 
     control = snapshot_service_components(
@@ -109,21 +103,15 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
             factory=Adapter,
         )
     )
-    connector_registry.register(
-        AdapterDefinition(
-            key="later",
-            config_versions=frozenset({"fake_v1"}),
-            factory=Adapter,
-        )
-    )
+    connector_registry.register(replace(connector_registry.require("fake_connector"), type="later"))
 
     assert control.ingress_adapter_registry is not None
     assert control.ingress_adapter_registry.keys() == ("fake",)
-    assert control.connector_adapter_registry is not None
-    assert control.connector_adapter_registry.keys() == ("fake",)
+    assert control.connector_provider_registry is not None
+    assert tuple(item.type for item in control.connector_provider_registry.definitions()) == ("fake_connector",)
     assert connectivity.ingress_adapter_registry is not None
     assert connectivity.ingress_adapter_registry.keys() == ("fake",)
-    assert connectivity.connector_adapter_registry is None
+    assert connectivity.connector_provider_registry is None
     assert worker is components
 
 
@@ -182,7 +170,7 @@ async def test_connectivity_role_does_not_build_control_adapters(
         raise AssertionError("data-plane role built control-plane adapters")
 
     monkeypatch.setattr(
-        "a13n_service.process.connectivity.built_in_connector_adapter_registry",
+        "a13n_service.process.connectivity.built_in_connector_provider_registry",
         fail_if_called,
     )
     app = create_app(local_settings(tmp_path, role=ServiceRole.connectivity))

@@ -107,13 +107,17 @@ async def preview_external_subagent_import(
     scope: ExternalSubagentScope | str,
     project_root: Path | None = None,
     user_home: Path | None = None,
+    content_plugin_root: Path | None = None,
 ) -> ExternalSubagentImportPreview:
     """Scan one explicitly selected external product/scope and render a preview."""
 
     selected_product = _parse_product(product)
     selected_scope = _parse_scope(scope)
     selected_configuration = await to_thread.run_sync(lambda: configuration_path.expanduser().resolve(strict=False))
-    loaded = await load_agent_ui_configuration(selected_configuration)
+    loaded = await load_agent_ui_configuration(
+        selected_configuration,
+        content_plugin_root=content_plugin_root,
+    )
     source_root, definitions = await to_thread.run_sync(
         _scan_external_definitions,
         selected_product,
@@ -145,6 +149,7 @@ async def apply_external_subagent_import(
     candidate: ExternalSubagentImportCandidate,
     *,
     validate_candidate: CandidateValidator | None = None,
+    content_plugin_root: Path | None = None,
 ) -> ConfigurationMutationResult:
     """Apply an explicit preview without overwriting or renaming any target."""
 
@@ -170,7 +175,10 @@ async def apply_external_subagent_import(
         )
 
     await to_thread.run_sync(_verify_external_sources, candidate.source_facts)
-    current = await load_agent_ui_configuration(selected)
+    current = await load_agent_ui_configuration(
+        selected,
+        content_plugin_root=content_plugin_root,
+    )
     _verify_preview_target(current, candidate)
 
     if candidate.status == "unchanged":
@@ -187,6 +195,7 @@ async def apply_external_subagent_import(
         candidate.target_relative_path,
         ResourceMutationRequest(expected_source_digest=None, content=candidate.canonical_content),
         validate_candidate=validate_candidate,
+        content_plugin_root=content_plugin_root,
     )
     # Detect a cooperative source edit that happened during apply. The imported
     # target is still never used until the mutation's generation reload succeeds.

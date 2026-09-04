@@ -10,13 +10,13 @@ def test_workspace_roles_grant_connectivity_actions_explicitly() -> None:
     read_actions = {
         WorkspaceAction.ingress_read,
         WorkspaceAction.route_read,
-        WorkspaceAction.connector_read,
+        WorkspaceAction.connector_provider_read,
         WorkspaceAction.connector_connection_read,
         WorkspaceAction.mcp_connection_read,
     }
     admin_only = {
         WorkspaceAction.ingress_manage,
-        WorkspaceAction.connector_manage,
+        WorkspaceAction.connector_provider_manage,
         WorkspaceAction.connector_connection_manage,
         WorkspaceAction.mcp_connection_manage,
     }

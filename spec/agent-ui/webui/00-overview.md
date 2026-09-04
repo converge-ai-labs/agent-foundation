@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The WebUI is the complete browser surface for one local `AgentUiApp`. It separates ordinary Thread interaction, detailed inspection, and desired-resource management without reproducing App behavior in JavaScript. The browser renders detached projections, prepares typed commands, reduces provisional live events, and manages unsaved drafts. The Web adapter authenticates and translates those operations but remains thinner than the App.
+The WebUI is the complete browser surface for one local `AgentUiApp`. Its default experience is a conversation browser rather than a dashboard: one sidebar selects or creates root Threads, one primary region presents the selected conversation, and one optional context panel exposes current Environment information or exact activity detail. Settings provides complete guided management without reproducing App behavior in JavaScript or requiring routine direct-file editing.
 
 The application is a client-rendered single-page application. Production serves one static application tree and relative `/api` requests from the same origin. Entry HTML revalidates while content-hashed assets are immutable. There is no server-side rendering, browser-owned backend, Node.js runtime, service worker, offline command queue, or independent frontend deployment.
 
@@ -14,9 +14,9 @@ The application is a client-rendered single-page application. Production serves 
 | Build                  | Vite produces the immutable static asset tree consumed by `a13n-ui` packaging                                                                        |
 | Routing                | TanStack Router owns typed History API routes, path parameters, search parameters, and route-level code splitting                                    |
 | Server projections     | TanStack Query owns query caching, request cancellation, invalidation, and explicit refetch                                                          |
-| Focused live state     | One small pure reducer per focused root Thread folds ordered generated stream frames outside the query cache                                         |
+| Focused live state     | One small pure reducer per open root Thread folds ordered generated stream frames outside the query cache                                            |
 | Components and styling | Radix UI primitives provide accessible behavior; Tailwind CSS and repository-owned semantic tokens provide visual styling                            |
-| Resource editing       | CodeMirror 6 is loaded only on configuration routes and edits the same exact YAML or Markdown draft used by guided controls                          |
+| Resource editing       | Guided forms are primary; CodeMirror 6 loads only for advanced exact-source editing and conflict recovery                                            |
 | Contract access        | A generated TypeScript client and schemas derive from the Web adapter's versioned OpenAPI document; handwritten request types do not compete with it |
 | Testing                | Vitest, Testing Library, and MSW cover browser units and HTTP integration; Playwright covers critical real-browser flows                             |
 
@@ -24,18 +24,18 @@ The npm lockfile owns exact package versions. These families are architectural c
 
 ## Boundaries
 
-| Concern                                                           | Owner                                         | WebUI relationship                                                    |
-| ----------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------- |
-| Agent, Thread, Run, child, continuation, and Environment behavior | `AgentUiApp` and its owning specifications    | Issues typed commands and renders detached projections                |
-| HTTP listener and API-key enforcement                             | Web adapter                                   | Supplies the authenticated same-origin browser boundary               |
-| HTTP schemas and status mapping                                   | Web adapter OpenAPI contract                  | Generates the browser client and runtime decoders                     |
-| Retained server state                                             | Agent UI files, SQLite, and immutable objects | Cached temporarily by TanStack Query without browser persistence      |
-| Detailed live delivery                                            | Agent UI focused watch and Web adapter SSE    | Reduced into one resettable provisional live layer                    |
-| Summary invalidation                                              | Agent UI summary hub                          | Invalidates exact query families and never supplies replacement truth |
-| Route and selection state                                         | TanStack Router                               | Makes current feature, resource, Thread, filters, and panels linkable |
-| Unsaved form and source state                                     | Focused React feature boundary                | Discardable until an exact mutation succeeds                          |
-| Component behavior and appearance                                 | WebUI design system                           | Preserves domain semantics and accessibility across layouts           |
-| Native filesystem and credentials                                 | Host process and compatible account stores    | Never exposed as browser authority or raw secret material             |
+| Concern                                                           | Owner                                         | WebUI relationship                                                               |
+| ----------------------------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
+| Agent, Thread, Run, child, continuation, and Environment behavior | `AgentUiApp` and its owning specifications    | Issues typed commands and renders detached projections                           |
+| HTTP listener and API-key enforcement                             | Web adapter                                   | Supplies the authenticated same-origin browser boundary                          |
+| HTTP schemas and status mapping                                   | Web adapter OpenAPI contract                  | Generates the browser client and runtime decoders                                |
+| Retained server state                                             | Agent UI files, SQLite, and immutable objects | Cached temporarily by TanStack Query without browser persistence                 |
+| Detailed live delivery                                            | Agent UI focused watch and Web adapter SSE    | Reduced into one resettable provisional live layer                               |
+| Summary invalidation                                              | Agent UI summary hub                          | Invalidates exact query families and never supplies replacement truth            |
+| Route and selection state                                         | TanStack Router                               | Makes Thread, Settings section, Settings filters, and contextual detail linkable |
+| Unsaved form and source state                                     | Focused React feature boundary                | Discardable until an exact mutation succeeds                                     |
+| Component behavior and appearance                                 | WebUI design system                           | Preserves domain semantics and accessibility across layouts                      |
+| Native filesystem and credentials                                 | Host process and compatible account stores    | Never exposed as browser authority or raw secret material                        |
 
 ## Browser Architecture
 
@@ -44,14 +44,14 @@ flowchart TB
     Static[Bundled immutable assets]
     Bootstrap[Access bootstrap]
     Router[TanStack Router]
-    Shell[Workstation shell]
+    Shell[Conversation and Settings shell]
 
     subgraph Client[Browser runtime]
         Query[TanStack Query cache]
         Commands[Generated command client]
         Summary[Summary stream controller]
-        Focus[Focused Thread controller]
-        Drafts[Unsaved source and form drafts]
+        Focused[Focused Thread controller]
+        Drafts[Unsaved form and source drafts]
         Components[Radix-based feature components]
     end
 
@@ -65,54 +65,55 @@ flowchart TB
 
     Static --> Bootstrap --> Router --> Shell
     Shell --> Query & Commands & Drafts & Components
-    Query & Commands & Summary & Focus --> Adapter
+    Query & Commands & Summary & Focused --> Adapter
     Adapter --> App
     App --> Files & Store & Live
     Live --> Adapter
     Summary --> Query
-    Focus --> Components
+    Focused --> Components
 ```
 
 The generated client handles bounded request and response documents. Summary and focused stream controllers use authenticated `fetch` streaming rather than native `EventSource`, because every `/api` connection carries the Bearer API key. Feature components do not construct raw endpoint URLs or parse SSE frames directly.
 
-## Workstation Information Architecture
+## Browser Information Architecture
 
-The workstation has three durable areas with different jobs:
+The ordinary shell has two persistent regions and one optional region:
 
-1. **Threads** supports the ordinary interaction loop. Workbench supervises attention-ranked root Threads across All Projects or one selected Project; Focus presents one Thread's conversation, current semantic activity, decisions, and controls.
-2. **Configure** provides the browser-only complete management surface for Projects, Models, Agents, canonical subagents, MCP servers, configured extensions, defaults, installed catalogs, compatible Model accounts, exact sources, and configuration diagnostics.
-3. **Debug** provides read-only authenticated App status and current-App-lifetime Thread, Run, child, task, state, payload, and timing inspection without an ordinary composer.
+1. **Sidebar** provides New Thread, bounded Recent Threads, Projects with their root Threads, search and archive entry, and the Settings trigger. It is navigation rather than a separate work surface.
+2. **Conversation** is the only ordinary execution surface. It presents one root Thread, retained messages, progressively disclosed live activity, deferred decisions, exact controls, and one composer.
+3. **Context panel** is closed by default. It can present current Project and Environment context or one selected activity detail without reducing the conversation to a dashboard.
 
-The Threads area follows the same Focus/Workbench product model as the TUI while using browser-native Project navigation. The WebUI can show All Projects or one selected Project and can create, edit, reorder, or delete Project resources through Configure. The selector is a direct Project filter and creates no separate grouping, root, membership, or binding model.
+Project is the only root-Thread grouping. A Project row can create a Thread under that Project and expand a bounded child list. Recent Threads is a derived cross-Project index ordered by authoritative Thread recency; it does not own membership, acknowledgement, or another saved view. A Thread whose Project no longer resolves remains reachable through Recent, search, archive, or a bounded unresolved section supplied by the App.
 
-The ordinary Threads area does not permanently surround conversation with receipts, raw events, task tables, configuration source, or timing panels. Current activity is progressively disclosed: active reasoning, tools, tasks, and child work remain understandable while running; settled intermediate work folds into a compact semantic summary while the final answer remains primary. An exact activity or failure can deep-link to its corresponding Debug selection.
+The selected Thread opens directly as the ordinary conversation without an intermediate dashboard. Current reasoning, tools, tasks, and child work remain understandable while active. Settled intermediate work folds into concise inline summaries, and selecting a summary opens exact read-only detail on demand. A header or overflow action can replace the primary conversation with the complete activity log for that same root lineage; returning restores the conversation and its draft.
 
-The shell composes an area-specific layout around one dominant primary surface. Threads uses the global rail, an All Projects/Project selector, an optional Project-filtered Thread collection, and one primary Workbench or Focus surface. Configure uses resource-kind navigation, a collection, and one editor or conflict surface, including complete Project source management. Debug can use navigation, one diagnostic view, and one selected detail pane. Detail panes are closed by default and never reduce the primary surface below its usable width.
+The optional Environment context presents only App-projected facts relevant to the selected Thread, such as Project, current root or working path, Environment profile and mode, active local processes, and available source or Asset references. A profile whose projection sets `canonical_host_paths=true` shows canonical local paths; other layouts show their applicable virtual Environment paths. Low-level mount aliases appear only in advanced detail when needed to explain a mapping.
 
-The application does not mount every Thread or detailed subscription in the background. One selected Focus or Debug Thread route owns one focused controller. Workbench and collection sidebars use bounded Project-filtered query projections and the App-wide summary stream.
+Settings opens from the bottom of the sidebar and replaces the ordinary conversation region with a dedicated management shell. It uses section navigation plus one collection, guided editor, account flow, catalog, or diagnostic view. It is not a second global application area and does not remain mounted beside a conversation. Leaving Settings returns to the prior Thread or new-Thread draft when that destination remains valid.
+
+The application does not mount every Thread or detailed subscription in the background. One open root Thread owns one focused controller shared by its conversation, activity log, and context detail. Sidebar collections use bounded recent or Project-scoped query projections plus the App-wide summary stream.
 
 ## Canonical Routes
 
-| Route                      | Meaning                                                                                         |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| `/`                        | Select the most relevant available workstation destination without creating data                |
-| `/threads`                 | Attention-ranked Workbench; optional `project` search parameter filters by one exact Project    |
-| `/threads/new`             | Browser-local new root-Thread draft; optional Project origin initializes its explicit selection |
-| `/threads/$threadId`       | Focus for one root Thread; mutable Project selection is not embedded in the Thread identity     |
-| `/configure/projects`      | Project resource collection and editor                                                          |
-| `/configure/models`        | Model resource collection and editor                                                            |
-| `/configure/agents`        | Agent resource collection and editor                                                            |
-| `/configure/subagents`     | Canonical Markdown subagent collection and editor                                               |
-| `/configure/mcp`           | MCP server collection and editor                                                                |
-| `/configure/extensions`    | Harness Plugin, Environment profile, and Environment Run Extension management                   |
-| `/configure/defaults`      | Root process settings and global Thread defaults, excluding Web listener access                 |
-| `/configure/catalog`       | Installed Capability and extension availability and ambiguity                                   |
-| `/configure/accounts`      | Compatible Model account status and explicit account operations                                 |
-| `/configure/diagnostics`   | Accepted and candidate source diagnostics with exact editor navigation                          |
-| `/debug`                   | Authenticated App, API-schema, listener, and access-mode status                                 |
-| `/debug/threads/$threadId` | Read-only detailed inspection for one root Thread and its descendant lineage                    |
+| Route                    | Meaning                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `/`                      | Open the most recently updated non-archived root Thread, or an empty new-Thread draft when none exists |
+| `/threads/new`           | Browser-local new root-Thread draft; optional Project origin initializes its explicit selection        |
+| `/threads/$threadId`     | One root Thread conversation; optional typed search state selects activity or contextual detail        |
+| `/settings`              | Stable Settings entry that selects the default section without changing App state                      |
+| `/settings/projects`     | Project collection and guided root editor                                                              |
+| `/settings/agents`       | Agent collection and guided composition editor                                                         |
+| `/settings/subagents`    | Canonical Markdown subagent collection and editor                                                      |
+| `/settings/models`       | Model collection and guided authentication-reference editor                                            |
+| `/settings/accounts`     | Compatible Model account status and explicit account operations                                        |
+| `/settings/environments` | Full Control, Sandbox, and custom Environment profile management                                       |
+| `/settings/plugins`      | Harness Plugin and Environment Run Extension management as distinct resource kinds                     |
+| `/settings/mcp`          | MCP server collection and guided transport editor                                                      |
+| `/settings/defaults`     | Root process settings and global new-Thread defaults, excluding Web listener access                    |
+| `/settings/catalog`      | Installed Capability and extension availability, provenance, ambiguity, and configuration entry        |
+| `/settings/diagnostics`  | Accepted and candidate source diagnostics, App/listener status, and advanced exact-source navigation   |
 
-A single-kind resource editor appends `/$resourceId` to its collection route. The combined Extensions area uses `/configure/extensions/$extensionKind/$resourceId` so Harness Plugin, Environment profile, and Environment Run Extension IDs cannot collide in one route namespace. Search parameters own collection filters, selected Debug views, optional exact detail correlation, and an optional originating Project on canonical Thread routes when those values must survive sharing or reload. That origin controls return navigation and collection filtering only; it never changes the Thread's Project. Ephemeral dialogs, disclosure state, scroll position, and unsaved values stay outside the URL.
+A single-kind resource editor appends `/$resourceId` to its collection route. The combined Plugins section uses `/settings/plugins/$pluginKind/$resourceId` so Harness Plugin and Environment Run Extension IDs cannot collide in one route namespace. Search parameters on the canonical Thread route own conversation versus activity selection, optional context-panel mode, and exact detail correlation. Search parameters on Settings collection routes own shareable filters. Sidebar search, archive selection, Project expansion, and pagination are shell-local navigation state; selecting a result always enters its canonical Thread route. Ephemeral disclosures, scroll position, and unsaved values stay outside the URL.
 
 Client routes use the History API. The Web adapter serves `index.html` for a recognized non-API navigation path so a reload or direct link enters the same router. An unknown `/api` or health path never falls back to browser HTML.
 
@@ -161,13 +162,14 @@ The selected stack favors a mature interaction and testing ecosystem over the sm
 ## Invariants
 
 01. The WebUI is one static same-origin SPA over one authenticated Web adapter and one `AgentUiApp`.
-02. Project is the only local-root and root-Thread organization concept; the WebUI adds no second grouping model.
-03. React renders detached values and owns no duplicate Agent, Project, or Thread domain model.
-04. TanStack Query, Router, focused live state, and unsaved drafts have separate responsibilities.
-05. Only one selected Focus or Debug Thread route owns detailed live reduction.
-06. Threads and Debug remain distinct: the former owns ordinary interaction and control, while the latter owns detailed read-only inspection.
-07. Canonical Thread URLs use stable Thread identity rather than mutable Project identity.
-08. Configure owns complete desired-resource management that the TUI intentionally does not reproduce.
-09. Every complete workstation operation remains available without server rendering or a Node.js runtime.
-10. A direct client-route navigation loads the SPA, while unknown API and health routes remain explicit failures.
-11. Browser assets are local and released only inside `a13n-ui`; entry HTML revalidates and content-hashed assets are immutable.
+02. Project is the only local-root and root-Thread organization concept; Recent Threads is derived navigation only.
+03. The ordinary shell is a sidebar, one conversation, and one optional context panel; it has no global product-area rail.
+04. The conversation is the only ordinary execution and composer surface.
+05. One open root Thread owns at most one focused live controller across conversation, activity, and contextual detail.
+06. Settings owns complete guided desired-resource management that the TUI intentionally does not reproduce.
+07. React renders detached values and owns no duplicate Agent, Project, or Thread domain model.
+08. TanStack Query, Router, focused live state, and unsaved drafts have separate responsibilities.
+09. Canonical Thread URLs use stable Thread identity rather than mutable Project identity.
+10. Every complete browser operation remains available without server rendering or a Node.js runtime.
+11. A direct client-route navigation loads the SPA, while unknown API and health routes remain explicit failures.
+12. Browser assets are local and released only inside `a13n-ui`; entry HTML revalidates and content-hashed assets are immutable.

@@ -19,6 +19,7 @@ from pydantic import (
     model_validator,
 )
 
+from a13n_ui.content_plugins import InstalledContentPlugin
 from a13n_ui.environment_profiles import built_in_environment_profile
 
 _RESOURCE_ID = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
@@ -415,6 +416,7 @@ class LoadedAgentUiConfiguration(StrictModel):
     root_digest: SourceDigest
     source_digest: SourceDigest
     sources: tuple[SourceDocument, ...]
+    content_plugins: tuple[InstalledContentPlugin, ...] = Field(default=(), max_length=256)
     models: dict[ResourceId, ModelResource] = Field(default_factory=dict)
     harness_plugins: dict[ResourceId, HarnessPluginResource] = Field(default_factory=dict)
     environment_profiles: dict[ResourceId, EnvironmentProfileResource] = Field(default_factory=dict)

@@ -19,7 +19,7 @@ class SecretRecord(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint(
-            "owner_type IN ('workspace', 'user', 'ingress', 'connector', 'mcp_connection', 'a2a_push_configuration')",
+            "owner_type IN ('workspace', 'user', 'ingress', 'connector_provider', 'mcp_connection', 'a2a_push_configuration')",
             name="owner_type_valid",
         ),
         CheckConstraint("version >= 1", name="version_positive"),

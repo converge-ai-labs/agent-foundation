@@ -4,28 +4,30 @@
 
 Agent UI keeps persistence continuation-oriented:
 
-1. editable YAML and Markdown files own desired resources and global defaults;
-2. SQLite owns accepted-generation indexes, Project/resource lookup projections, sticky Thread configurations, execution heads, and selected references;
-3. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
-4. live runtime objects remain in process memory.
+1. editable YAML and local Markdown files own desired resources and global defaults;
+2. data-root Content Plugin registrations select immutable Git-derived content objects;
+3. SQLite owns accepted-generation indexes, Project/resource lookup projections, sticky Thread configurations, execution heads, and selected references;
+4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
+5. live runtime objects remain in process memory.
 
 The store supports local restart and inspection, not durable work scheduling. Agent UI does not persist a root input queue, Run-attempt ledger, renewable execution claim, worker assignment, effect journal, shell-process record, or delivery ledger.
 
 ## Persisted Values
 
-| Value                                                                                             | Storage                      | Authority                                                         |
-| ------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------- |
-| Desired resource definitions and global defaults                                                  | YAML and Markdown files      | Human-editable desired behavior                                   |
-| Accepted configuration generation and resource indexes                                            | SQLite plus immutable object | Current complete validated file generation                        |
-| Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                       | Identity, mutable presentation, defaults, and first-Run bootstrap |
-| Empty initial `HarnessState`                                                                      | Immutable object             | Harness-generated Thread identity before any selected Run         |
-| Resolved Run composition                                                                          | Immutable object             | Exact behavior and dependency provenance captured for one Run     |
-| Root or child continuation bundle                                                                 | Immutable object             | Exact selected `HarnessState` resume authority                    |
-| Child execution heads                                                                             | SQLite                       | Segment correlation, saved status, and selected checkpoint        |
-| Compact child display                                                                             | Immutable child checkpoint   | Inspection history only                                           |
-| Environment-state references                                                                      | SQLite plus immutable files  | Current Host-authoritative state                                  |
-| Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory               | Current App only                                                  |
-| Logs and OpenTelemetry                                                                            | Configured process outputs   | Diagnostics only                                                  |
+| Value                                                                                             | Storage                       | Authority                                                              |
+| ------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------- |
+| Desired resource definitions and global defaults                                                  | YAML and local Markdown files | Human-editable desired behavior                                        |
+| Installed Content Plugin registrations and payloads                                               | Data-root files               | Current declarative plugin availability and retained immutable content |
+| Accepted configuration generation and resource indexes                                            | SQLite plus immutable object  | Current complete validated file and plugin generation                  |
+| Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                        | Identity, mutable presentation, defaults, and first-Run bootstrap      |
+| Empty initial `HarnessState`                                                                      | Immutable object              | Harness-generated Thread identity before any selected Run              |
+| Resolved Run composition                                                                          | Immutable object              | Exact behavior and dependency provenance captured for one Run          |
+| Root or child continuation bundle                                                                 | Immutable object              | Exact selected `HarnessState` resume authority                         |
+| Child execution heads                                                                             | SQLite                        | Segment correlation, saved status, and selected checkpoint             |
+| Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                                |
+| Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                       |
+| Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                       |
+| Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                       |
 
 ## SQLite Contract
 
@@ -96,7 +98,7 @@ class StoredContinuation(BaseModel):
     created_at: datetime
 ```
 
-The composition reference explains which Agent, Project roots, Capability, Plugin, MCP, Provider, and Run Extension behavior produced the checkpoint. It does not constrain the next Run to use the same composition.
+The composition reference explains which Agent, Project roots, Capability, Harness Plugin, Content Plugin snapshot, MCP, Provider, and Run Extension behavior produced the checkpoint. It does not constrain the next Run to use the same composition.
 
 Deferred requests are stored only as part of the complete suspended continuation. Surface projections use the selected continuation digest as an opaque continuation ID and never expose the object reference or native request value. A deferred response compares that exact selected reference and reconstructs its complete native request/result pair in memory.
 
@@ -155,7 +157,7 @@ The profile digest reuses the accepted generation's canonical normalized content
 
 ## Recovery
 
-Startup validates retained values lazily and reloads the file configuration independently. It does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display.
+Startup validates retained values lazily and reloads the file configuration together with current Content Plugin registrations. It does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display.
 
 A Thread resumes from its selected continuation using its current sticky configuration unless the next admission applies a patch. A Thread with no selected continuation starts its first Run from the immutable empty `HarnessState` created with `HarnessState.new()` when the Thread was inserted. The generated Harness `thread_id` is the Agent UI Thread ID. If selected resources are missing from the current accepted generation or cannot reconstruct against installed dependencies, the Run fails before dispatch; recovery does not fall back to the composition that produced the prior continuation.
 

@@ -26,7 +26,12 @@ from a13n_harness.capabilities import SkillsCapability, SubagentCancelResult, Su
 from a13n_harness.environment import EnvironmentError
 from a13n_harness.model_auth import GrokCredentials
 from a13n_ui.app import AgentUiIntegrations, AppState, open_agent_ui_app
-from a13n_ui.composition import AgentReconstructor, ReconstructedAgent, ThreadCompositionSelection
+from a13n_ui.composition import (
+    AgentReconstructor,
+    ReconstructedAgent,
+    ResolvedContentPlugin,
+    ThreadCompositionSelection,
+)
 from a13n_ui.configuration import load_agent_ui_configuration
 from a13n_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_ui.environment_runtime import EnvironmentRunService
@@ -283,10 +288,10 @@ async def test_configuration_observer_reloads_only_after_metadata_fingerprint_ch
     calls = 0
     original = app_module.load_agent_ui_configuration
 
-    async def counted(path: Path):
+    async def counted(path: Path, *, content_plugin_root: Path | None = None):
         nonlocal calls
         calls += 1
-        return await original(path)
+        return await original(path, content_plugin_root=content_plugin_root)
 
     monkeypatch.setattr(app_module, "load_agent_ui_configuration", counted)
     async with open_agent_ui_app(
@@ -629,6 +634,68 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
     assert finalization.cleanup_errors == ()
     assert len(finalization.state_publications) == 1
     assert finalization.state_publications[0].status == "unchanged"
+
+
+async def test_environment_run_service_mounts_captured_content_plugin_skills_read_only(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
+    plugin_skills = tmp_path / "state" / "content-plugins" / "objects" / ("1" * 64) / "skills"
+    plugin_skills.mkdir(parents=True)
+    user_skills = tmp_path / "home" / ".agents" / "skills"
+
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        created = await app.create_thread()
+        stored = await app._threads.get(created.thread_id)
+        source = await app.current_configuration()
+        assert source is not None
+        executor = app._root_runs._executor
+        assert isinstance(executor._environments, EnvironmentRunService)
+        executor._environments._user_skills_root = user_skills
+        selection = ThreadCompositionSelection(
+            thread_id=stored.thread_id,
+            version=stored.configuration.version,
+            project_id=stored.configuration.project_id,
+            agent_source_kind=stored.configuration.agent_source.kind,
+            agent_source_id=stored.configuration.agent_source.id,
+            environment_profile_id=stored.configuration.environment_profile_id,
+            harness_plugin_ids=stored.configuration.harness_plugin_ids,
+            environment_run_extension_ids=stored.configuration.environment_run_extension_ids,
+            mcp_server_ids=stored.configuration.mcp_server_ids,
+        )
+        published = await executor._compositions.publish(source, selection)
+        composition = published.value.model_copy(
+            update={
+                "content_plugins": (
+                    ResolvedContentPlugin(
+                        plugin_id="plugin-reviewer",
+                        version="1.0.0",
+                        commit="2" * 40,
+                        content_digest="1" * 64,
+                        path=plugin_skills.parent.as_posix(),
+                        skills_path=plugin_skills.as_posix(),
+                    ),
+                )
+            }
+        )
+
+        plan = await executor._environments.prepare(composition)
+
+        assert tuple(plan.environments) == ("workspace", "content-plugin-1", "user-skills")
+        assert tuple(item.mount_path for item in plan._mounts) == (
+            (tmp_path / "workspace").resolve().as_posix(),
+            plugin_skills.resolve().as_posix(),
+            user_skills.resolve().as_posix(),
+        )
+        plugin_mount = plan._mounts[1]
+        assert all("write" not in action.value for action in plugin_mount.permission_ceiling.operations)
+        assert all("remove" not in action.value for action in plugin_mount.permission_ceiling.operations)
+        finalization = await plan.finalize(timeout_seconds=1)
+
+    assert finalization.cleanup_errors == ()
 
 
 async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(tmp_path: Path) -> None:

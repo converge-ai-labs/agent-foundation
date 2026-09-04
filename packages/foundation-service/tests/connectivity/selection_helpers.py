@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from a13n_service.connectivity.connectors.models import (
     ConnectorConnectionRecord,
-    ConnectorRecord,
+    ConnectorProviderRecord,
     ConnectorToolCatalogRecord,
 )
 from a13n_service.connectivity.management import canonical_json
@@ -93,7 +93,7 @@ async def seed_selection_sources(
                 id=CONNECTOR_SECRET_ID,
                 organization_id=ORG_ID,
                 workspace_id=WORKSPACE_ID,
-                owner_type="connector",
+                owner_type="connector_provider",
                 owner_id=CONNECTOR_ID,
                 key="credential_bundle",
                 version=1,
@@ -107,16 +107,14 @@ async def seed_selection_sources(
         )
         await session.flush()
         session.add(
-            ConnectorRecord(
+            ConnectorProviderRecord(
                 id=CONNECTOR_ID,
                 organization_id=ORG_ID,
                 workspace_id=WORKSPACE_ID,
                 name="Orders",
                 normalized_name="orders",
-                driver_key="fake_connector",
-                config_version="fake_v1",
-                endpoint="https://connector.example",
-                config_json={},
+                type="fake_connector",
+                configuration_json={"endpoint": "https://connector.example"},
                 status="active",
                 version=1,
                 credential_secret_id=CONNECTOR_SECRET_ID,
@@ -133,12 +131,12 @@ async def seed_selection_sources(
                 id=CONNECTOR_CONNECTION_ID,
                 organization_id=ORG_ID,
                 workspace_id=WORKSPACE_ID,
-                connector_id=CONNECTOR_ID,
+                connector_provider_id=CONNECTOR_ID,
                 owner_type="user" if connector_owner_id is not None else None,
                 owner_id=connector_owner_id,
                 name="Orders account",
                 normalized_name="orders account",
-                provider_key="orders",
+                connector_key="orders",
                 external_ref="external-account",
                 safe_metadata_json={},
                 status="ready",

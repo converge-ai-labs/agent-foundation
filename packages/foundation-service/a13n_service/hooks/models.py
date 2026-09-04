@@ -120,6 +120,10 @@ class HookSubscriptionRevisionRecord(Base):
             ("runs.tenant_id", "runs.id"),
             ondelete="RESTRICT",
         ),
+        CheckConstraint(
+            "jsonb_typeof(hook_names) = 'array' AND jsonb_array_length(hook_names) BETWEEN 1 AND 128",
+            name="hook_names_bounded",
+        ).ddl_if(dialect="postgresql"),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("signature_profile = 'hmac_sha256_v1'", name="signature_profile_valid"),
         CheckConstraint("length(endpoint_url) BETWEEN 1 AND 8192", name="endpoint_url_bounded"),
