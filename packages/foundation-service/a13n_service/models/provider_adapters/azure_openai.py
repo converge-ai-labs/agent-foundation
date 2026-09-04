@@ -16,10 +16,10 @@ from .base import (
     require_credential,
     require_endpoint,
 )
-from .types import ProviderConfig, RuntimeProvider
+from .types import ProviderConfiguration, RuntimeProvider
 
 
-class Config(ProviderConfig):
+class Config(ProviderConfiguration):
     resource_endpoint: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
     api_version: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)] | None = None
 
@@ -35,8 +35,8 @@ def _build_provider(
     _pydantic_provider_name: str,
 ) -> AzureProvider:
     return AzureProvider(
-        azure_endpoint=str(provider.config["resource_endpoint"]),
-        api_version=cast(str | None, provider.config.get("api_version")),
+        azure_endpoint=str(provider.configuration["resource_endpoint"]),
+        api_version=cast(str | None, provider.configuration.get("api_version")),
         api_key=require_credential(provider),
         http_client=http_client,
     )
@@ -49,8 +49,8 @@ def _request(provider: RuntimeProvider) -> ModelListRequest:
     )
 
 
-def _endpoint(config: Mapping[str, object]) -> str:
-    return str(config["resource_endpoint"])
+def _endpoint(configuration: Mapping[str, object]) -> str:
+    return str(configuration["resource_endpoint"])
 
 
 def _official_endpoint(value: str) -> str:
@@ -80,12 +80,12 @@ def _official_endpoint(value: str) -> str:
 
 
 INTEGRATION = ProviderIntegration(
-    key="azure_openai",
+    type="azure_openai",
     display_name="Azure OpenAI",
-    config_model=Config,
+    configuration_model=Config,
     supported_model_apis=("openai.responses", "openai.chat_completions"),
     build_provider=_build_provider,
     endpoint=_endpoint,
-    endpoint_config_field="resource_endpoint",
+    endpoint_configuration_field="resource_endpoint",
     model_discovery=openai_style_discovery(_request),
 )

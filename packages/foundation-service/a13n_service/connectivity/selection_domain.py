@@ -34,7 +34,7 @@ class StrictModel(BaseModel):
 
 class ConnectorConnectionRunSelection(StrictModel):
     connector_connection_id: ObjectId
-    connector_id: ObjectId
+    connector_provider_id: ObjectId
     exposure: ExposureMode
     allowed_tool_keys: AllowedToolKeys
     tool_catalog_digest: Sha256Digest

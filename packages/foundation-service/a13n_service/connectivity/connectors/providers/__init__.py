@@ -1,37 +1,48 @@
-"""Built-in Connector adapter registration."""
+"""Built-in Connector Providers registered explicitly by the distribution."""
 
-from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
-from a13n_service.connectivity.connectors.adapters import ConnectorAdapter
+import httpx2
+
+from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from a13n_service.connectivity.http import EndpointValidator
 
-from .composio import ComposioAdapter
-from .openconnector import OpenConnectorAdapter
+from ..http import ConnectorHttpClient
+from ..registry import ConnectorProviderImplementation, ConnectorProviderRegistry
+from .composio.configuration import ComposioConfiguration
+from .composio.configuration import validate_setup as composio_setup
+from .composio.runtime import ComposioProvider
+from .openconnector.configuration import OpenConnectorConfiguration
+from .openconnector.configuration import validate_setup as openconnector_setup
+from .openconnector.runtime import OpenConnectorProvider
 
 
-def built_in_connector_adapter_registry(
-    http_client,
-    endpoint_validator: EndpointValidator,
-    *,
-    response_max_bytes: int,
-) -> AdapterRegistry[ConnectorAdapter]:
-    return AdapterRegistry(
+def built_in_connector_provider_registry(
+    http_client: httpx2.AsyncClient, endpoint_validator: EndpointValidator, *, response_max_bytes: int
+) -> ConnectorProviderRegistry:
+    http = ConnectorHttpClient(http_client, endpoint_validator, response_max_bytes=response_max_bytes)
+    return ConnectorProviderRegistry(
         (
-            AdapterDefinition[ConnectorAdapter](
-                key=OpenConnectorAdapter.driver_key,
-                config_versions=OpenConnectorAdapter.config_versions,
-                factory=lambda: OpenConnectorAdapter(
-                    http_client,
-                    endpoint_validator,
-                    response_max_bytes=response_max_bytes,
+            ConnectorProviderImplementation(
+                type="openconnector",
+                display_name="OpenConnector",
+                configuration_model=OpenConnectorConfiguration,
+                credential_model=ApiKeyCredentials,
+                setup_validator=openconnector_setup,
+                factory=lambda configuration, credentials: OpenConnectorProvider(
+                    http,
+                    OpenConnectorConfiguration.model_validate(configuration),
+                    ApiKeyCredentials.model_validate(credentials),
                 ),
             ),
-            AdapterDefinition[ConnectorAdapter](
-                key=ComposioAdapter.driver_key,
-                config_versions=ComposioAdapter.config_versions,
-                factory=lambda: ComposioAdapter(
-                    http_client,
-                    endpoint_validator,
-                    response_max_bytes=response_max_bytes,
+            ConnectorProviderImplementation(
+                type="composio",
+                display_name="Composio",
+                configuration_model=ComposioConfiguration,
+                credential_model=ApiKeyCredentials,
+                setup_validator=composio_setup,
+                factory=lambda configuration, credentials: ComposioProvider(
+                    http,
+                    ComposioConfiguration.model_validate(configuration),
+                    ApiKeyCredentials.model_validate(credentials),
                 ),
             ),
         )

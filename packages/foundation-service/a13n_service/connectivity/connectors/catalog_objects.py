@@ -1,4 +1,4 @@
-"""Immutable protected Connector tool-catalog storage."""
+"""Immutable protected ConnectorProvider tool-catalog storage."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class ConnectorCatalogObjectStore:
         except (ObjectStoreError, ValueError) as error:
             raise ConnectorError(
                 "catalog_storage_unavailable",
-                "Connector tool catalog could not be retained.",
+                "ConnectorProvider tool catalog could not be retained.",
                 status_code=503,
             ) from error
         return key, digest, created

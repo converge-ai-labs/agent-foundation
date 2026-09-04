@@ -166,18 +166,18 @@ Linked resume is permitted from a successful terminal execution whose exact sele
 
 All Thread, root-operation, child-execution, and presentation command results, query results, and stream items are strict, frozen, bounded, serializable values. A returned collection is immutable and every nested mutable payload is copied. Opaque digests or IDs can correlate a later command, but a surface never receives an immutable-object path, object kind, or storage read authority.
 
-A root-Thread Workbench query accepts an optional exact Project ID. Omission includes every Project; a supplied ID filters by each root Thread's current sticky Project. Project filtering changes presentation membership only and never mutates Thread configuration.
+A root-Thread summary query accepts one Project selector: all root Threads, one exact Project ID, or unresolved Project references. The all selector includes every root Thread even when its current Project no longer resolves; an exact selector matches the current sticky Project ID; the unresolved selector matches Threads whose current Project ID is absent from the accepted generation. It also accepts an explicit archived selector and optional normalized search text. Search matches an exact Thread ID or a case-insensitive title substring; empty search is omission. These selectors change presentation membership only and never mutate Thread metadata or configuration.
 
 Thread queries provide:
 
 - a summary containing identity, parent identity, metadata version, title, archive state, timestamps, sticky configuration, selected-continuation state, and current-process root activity;
-- a Workbench summary containing the root summary plus pending-decision kind and count, current-process terminal outcome when retained, child persisted-status counts, the current-process `active` or `unavailable` partition of persisted-running children, latest safe activity and time, and exact available actions;
+- a navigation summary containing the root summary plus pending-decision kind and count, current-process terminal outcome when retained, child persisted-status counts, the current-process `active` or `unavailable` partition of persisted-running children, latest safe activity and time, and exact available actions;
 - a detail containing the summary, selected continuation ID, deferred request projection, and available actions;
 - a transcript page of typed presentation entries rather than serialized native Pydantic AI messages;
 - a bounded Working State task summary and page projected from the selected continuation without exposing the raw Capability namespace;
 - a child execution page whose durable status and current-process control availability are distinct.
 
-A Workbench page computes its bounded summaries without requiring the surface to issue one detail or child query per returned root Thread. Child persisted-status counts cover `running`, `succeeded`, `failed`, `cancelled`, and `lost` across the root's descendant tree. Separate `active` and `unavailable` counts partition only persisted-running children and are not added to the persisted total. The page excludes archived Threads unless requested and contains no durable read or acknowledgement state. A surface may rank or acknowledge current-process completion locally, but that presentation state does not mutate Thread or execution truth.
+A root-Thread summary page computes its bounded summaries without requiring the surface to issue one detail or child query per returned root Thread. Child persisted-status counts cover `running`, `succeeded`, `failed`, `cancelled`, and `lost` across the root's descendant tree. Separate `active` and `unavailable` counts partition only persisted-running children and are not added to the persisted total. The page excludes archived Threads unless requested and contains no durable read or acknowledgement state. A surface may rank or acknowledge current-process completion locally, but that presentation state does not mutate Thread or execution truth.
 
 A current-directory Project query accepts one absolute local directory and applies the [first-root matching contract](04-projects-threads-and-environments.md#current-directory-resolution). It returns a discriminated selected, unmatched, or ambiguous projection; a selected result contains the detached Project summary used for new-Thread creation. It does not create a Project, return filesystem authority, or reorder the configured roots.
 
@@ -211,7 +211,7 @@ class ConfigurationSourceView:
 
 This conceptual App projection can expose an invalid candidate's exact text and safe diagnostics so a surface can repair it. `relative_path` is an App-approved configuration-tree identity, not a caller-selected filesystem path. The view grants no directory traversal, arbitrary file read, immutable-object access, or write authority. Create, update, and delete still use the expected-digest mutation contract owned by [Configuration and Resource Catalog](01-configuration-and-resource-catalog.md#file-mutation-and-compare-and-set).
 
-Thread and transcript pages use opaque keyset cursors bound to the query shape and deterministic sort key. Workbench pages additionally bind the optional Project filter. Thread ordering is descending `(updated_at, thread_id)`. Transcript entries always appear in ascending immutable message position within a page; a focused initial query returns the latest bounded page and a backward cursor pages older entries for prepend. A transcript cursor binds the Thread, selected continuation, direction, and boundary, so a changed continuation fails or resets rather than combining histories. A newer insertion does not shift unaffected entries across an existing page boundary. Updating a Thread can move it across that boundary, so summary invalidation prompts a fresh first-page query. Invalid, mismatched, or expired cursors fail explicitly. Project recency is aggregated over all associated non-archived Threads in storage rather than a bounded Thread page.
+Thread and transcript pages use opaque keyset cursors bound to the query shape and deterministic sort key. Root-Thread summary pages additionally bind the Project, archived, and search selectors. Thread ordering is descending `(updated_at, thread_id)`. Transcript entries always appear in ascending immutable message position within a page; a focused initial query returns the latest bounded page and a backward cursor pages older entries for prepend. A transcript cursor binds the Thread, selected continuation, direction, and boundary, so a changed continuation fails or resets rather than combining histories. A newer insertion does not shift unaffected entries across an existing page boundary. Updating a Thread can move it across that boundary, so summary invalidation prompts a fresh first-page query. Invalid, mismatched, or expired cursors fail explicitly. Project recency is aggregated over all associated non-archived Threads in storage rather than a bounded Thread page.
 
 A bounded Project-path completion query searches only logical paths beneath the selected Project roots and returns the mount label, logical relative path, kind, and display value. It does not return file bytes, follow paths outside the configured roots, mutate Project configuration, or grant filesystem authority. Surfaces use it for completion only; the selected Agent's tools retain file-read authority.
 
@@ -349,11 +349,12 @@ A fresh focused stream never reads a snapshot before installing its subscription
 
 Every authenticated JSON, OpenAPI, and SSE response uses `Cache-Control: no-store`; stream responses also disable intermediary buffering where the deployment path supports it. Recognized browser navigation paths serve `index.html` with mandatory revalidation so History API routes survive direct load, refresh, and package replacement. Content-hashed JavaScript, CSS, font, icon, editor, and worker assets use long-lived immutable caching. Asset misses, unknown `/api` routes, and unknown health routes remain explicit HTTP failures and never fall back to browser HTML.
 
-The complete browser architecture and experience are owned by [WebUI Specifications](webui/README.md). The WebUI separates:
+The complete browser architecture and experience are owned by [WebUI Specifications](webui/README.md). The WebUI provides:
 
-- all-Project or selected-Project Workbench supervision and focused root/child interaction, decisions, cancellation, steering, and live updates;
-- read-only Debug views for detailed App, Thread, Run, child, task, state, payload, and timing inspection; and
-- Configure management for source-tree diagnostics, Capability and extension discovery, expected-digest resource editing, Project, Agent, Plugin, Environment, MCP, compatible account, and global-default management.
+- one Project-and-Thread sidebar with New Thread, Recent, search, archive, and Project-scoped navigation;
+- one selected root-Thread conversation with decisions, exact controls, live updates, progressive activity disclosure, and optional Environment or activity context;
+- on-demand read-only activity for detailed Thread, Run, child, task, state, payload, and timing inspection; and
+- guided Settings management for source-tree diagnostics, Capability and extension discovery, expected-digest resource editing, Project, Agent, Plugin, Environment, MCP, compatible account, and global-default management.
 
 Every editable response includes its current source digest. A stale mutation conflicts instead of knowingly replacing a newer manual or browser edit. The browser receives no native filesystem capability or arbitrary Host path API; Project paths enter only through validated resource mutations.
 
@@ -384,7 +385,7 @@ Every editable response includes its current source digest. A stale mutation con
 08. A child can resume with a different current composition while retaining the same Harness Thread history.
 09. Saved nonterminal status never proves liveness or authorizes takeover.
 10. Root-lineage live delivery and summary invalidation never become continuation authority.
-11. The browser cannot use Project filtering to bypass Project, Thread, or expected-digest file authority.
+11. The browser cannot use Project or derived recent navigation to bypass Project, Thread, or expected-digest file authority.
 12. Web API access requires the process-local key unless the exact dangerous bypass is present at startup.
 13. Summary SSE carries only invalidations; a fresh focused SSE watch begins with one high-water-bound snapshot, while a valid resume preserves the existing controller and replays only that root lineage's later sparse event sequence.
 14. Authenticated HTTP data is never cacheable; entry HTML revalidates and only content-hashed assets are immutable.

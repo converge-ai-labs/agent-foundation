@@ -11,7 +11,7 @@ from .domain import BoundedName, ModelApiConfig, UpstreamModel
 from .model_apis import BUILT_IN_MODEL_APIS
 from .provider_adapters.base import ProviderIntegration
 from .provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
-from .provider_adapters.types import CredentialFormat, ValidatedProviderConfig
+from .provider_adapters.types import CredentialFormat, ValidatedProviderConfiguration
 
 
 class DiscoveredModel(BaseModel):
@@ -28,21 +28,21 @@ class DiscoveredModelCollection(BaseModel):
     items: tuple[DiscoveredModel, ...]
 
 
-class ModelProviderTypeDefinition(BaseModel):
+class ModelProviderDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    key: str
+    type: str
     display_name: str
-    config_schema: dict[str, object]
+    configuration_schema: dict[str, object]
     credential_schema: dict[str, object]
     supported_model_apis: tuple[str, ...]
     supports_model_discovery: bool
 
 
-class ModelProviderTypeDefinitionCollection(BaseModel):
+class ModelProviderDefinitionCollection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    items: tuple[ModelProviderTypeDefinition, ...]
+    items: tuple[ModelProviderDefinition, ...]
     next_cursor: None = None
 
 
@@ -52,27 +52,29 @@ class ProviderRegistry:
     def __init__(self, integrations: Iterable[ProviderIntegration]) -> None:
         indexed: dict[str, ProviderIntegration] = {}
         for integration in integrations:
-            if integration.key in indexed:
-                raise ValueError(f"duplicate provider type {integration.key!r}")
+            if integration.type in indexed:
+                raise ValueError(f"duplicate provider type {integration.type!r}")
             unknown_apis = sorted(set(integration.supported_model_apis) - BUILT_IN_MODEL_APIS.keys())
             if unknown_apis:
-                raise ValueError(f"unknown model APIs for {integration.key!r}: {', '.join(unknown_apis)}")
-            indexed[integration.key] = integration
+                raise ValueError(f"unknown model APIs for {integration.type!r}: {', '.join(unknown_apis)}")
+            indexed[integration.type] = integration
         self._integrations = MappingProxyType(indexed)
 
-    def definitions(self) -> tuple[ModelProviderTypeDefinition, ...]:
+    def definitions(self) -> tuple[ModelProviderDefinition, ...]:
         return tuple(_definition(item) for item in self._integrations.values())
 
-    def definition(self, provider_type: str) -> ModelProviderTypeDefinition:
+    def definition(self, provider_type: str) -> ModelProviderDefinition:
         return _definition(self._require(provider_type))
 
     def integration(self, provider_type: str) -> ProviderIntegration:
         return self._require(provider_type)
 
     def validate_provider(
-        self, provider_type: str, config: Mapping[str, object], *, credential_configured: bool
-    ) -> ValidatedProviderConfig:
-        return self._require(provider_type).validate_config(config, credential_configured=credential_configured)
+        self, provider_type: str, configuration: Mapping[str, object], *, credential_configured: bool
+    ) -> ValidatedProviderConfiguration:
+        return self._require(provider_type).validate_configuration(
+            configuration, credential_configured=credential_configured
+        )
 
     def validate_model_apis(self, provider_type: str, model_apis: Sequence[ModelApiConfig]) -> None:
         allowed = set(self._require(provider_type).supported_model_apis)
@@ -91,9 +93,9 @@ class ProviderRegistry:
     def with_validated_endpoint(
         self,
         provider_type: str,
-        validated: ValidatedProviderConfig,
+        validated: ValidatedProviderConfiguration,
         endpoint: str,
-    ) -> ValidatedProviderConfig:
+    ) -> ValidatedProviderConfiguration:
         return self._require(provider_type).with_validated_endpoint(validated, endpoint)
 
     def _require(self, provider_type: str) -> ProviderIntegration:
@@ -107,7 +109,7 @@ def built_in_provider_registry() -> ProviderRegistry:
     return ProviderRegistry(BUILT_IN_PROVIDER_INTEGRATIONS)
 
 
-def _definition(integration: ProviderIntegration) -> ModelProviderTypeDefinition:
+def _definition(integration: ProviderIntegration) -> ModelProviderDefinition:
     credential_schema: dict[str, object] = {"type": "null"}
     if integration.credential_format is not None:
         credential_schema = {
@@ -116,10 +118,10 @@ def _definition(integration: ProviderIntegration) -> ModelProviderTypeDefinition
             "writeOnly": True,
             "x-a13n-credential-format": integration.credential_format.value,
         }
-    return ModelProviderTypeDefinition(
-        key=integration.key,
+    return ModelProviderDefinition(
+        type=integration.type,
         display_name=integration.display_name,
-        config_schema=integration.config_model.model_json_schema(),
+        configuration_schema=integration.configuration_model.model_json_schema(),
         credential_schema=credential_schema,
         supported_model_apis=integration.supported_model_apis,
         supports_model_discovery=integration.model_discovery is not None,

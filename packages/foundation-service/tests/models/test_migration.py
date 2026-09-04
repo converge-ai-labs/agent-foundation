@@ -8,8 +8,8 @@ from sqlalchemy import create_engine, inspect
 MODEL_TABLES = {"model_providers", "models"}
 
 
-def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
-    engine = create_engine(sync_database_url(config))
+def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
+    engine = create_engine(sync_database_url(configuration))
     try:
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
@@ -17,7 +17,7 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             assert MODEL_TABLES <= tables
             assert "model_revisions" not in tables
             provider_columns = {item["name"] for item in inspector.get_columns("model_providers")}
-            assert {"type", "config", "credential_version", "ciphertext", "enabled"} <= provider_columns
+            assert {"type", "configuration", "credential_version", "ciphertext", "enabled"} <= provider_columns
             model_columns = {item["name"] for item in inspector.get_columns("models")}
             assert {"key", "provider_id", "upstream_model", "model_apis", "enabled"} <= model_columns
             assert {"version", "current_revision_id"}.isdisjoint(model_columns)
@@ -27,13 +27,13 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         engine.dispose()
 
 
-def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
-    migrator = DatabaseMigrator(config)
+def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
+    migrator = DatabaseMigrator(configuration)
     migrator.upgrade()
     migrator.current(check_heads=True, verbose=False)
-    _assert_schema(config, present=True)
+    _assert_schema(configuration, present=True)
     migrator.downgrade("base")
-    _assert_schema(config, present=False)
+    _assert_schema(configuration, present=False)
 
 
 def test_model_schema_migrates_up_and_down_on_sqlite(tmp_path: Path) -> None:

@@ -7,8 +7,9 @@ from dataclasses import dataclass, replace
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.agents.resolution import AgentResolver
-from a13n_service.connectivity.adapters import ConnectorAdapter, IngressAdapter
+from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.ingress.admission_domain import FoundationInputAcceptor
 from a13n_service.connectivity.ingress.providers import built_in_ingress_adapter_registry
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
@@ -50,7 +51,7 @@ class ServiceComponents:
     trace_access_authorizer: TraceAccessAuthorizer | None = None
     trace_query_provider_registry: TraceQueryProviderRegistry | None = None
     ingress_adapter_registry: AdapterRegistry[IngressAdapter] | None = None
-    connector_adapter_registry: AdapterRegistry[ConnectorAdapter] | None = None
+    connector_provider_registry: ConnectorProviderRegistry | None = None
     foundation_input_acceptor: FoundationInputAcceptor | None = None
     builtin_plugin_artifacts: tuple[BuiltinPluginArtifact, ...] = ()
 
@@ -64,15 +65,15 @@ def snapshot_service_components(settings: ServiceSettings, components: ServiceCo
         components.ingress_adapter_registry
         or built_in_ingress_adapter_registry(allowed_provider_origins=settings.connectivity_provider_origins)
     ).copy()
-    connector_adapters = components.connector_adapter_registry
-    if not owns_control(settings.role) or connector_adapters is None:
-        connector_adapters = None
+    connector_providers = components.connector_provider_registry
+    if not owns_control(settings.role) or connector_providers is None:
+        connector_providers = None
     else:
-        connector_adapters = connector_adapters.copy()
+        connector_providers = connector_providers.copy()
     return replace(
         components,
         ingress_adapter_registry=ingress_adapters,
-        connector_adapter_registry=connector_adapters,
+        connector_provider_registry=connector_providers,
     )
 
 

@@ -1,4 +1,4 @@
-"""Shared Connector persistence, IAM, credential, and audit helpers."""
+"""Shared ConnectorProvider persistence, IAM, credential, and audit helpers."""
 
 from __future__ import annotations
 
@@ -9,8 +9,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.adapters import ConnectorAdapter
+from a13n_service.connectivity.connectors.registry import ConnectorProviderImplementation, ConnectorProviderRegistry
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import ConnectivityManagementValueError
 from a13n_service.iam.audit import security_audit_record
@@ -24,22 +23,31 @@ from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretOperation, SecretOwnerType, SecretUseContext
 
+from .contracts import ConnectorProviderRuntime
 from .errors import ConnectorError
-from .models import ConnectorConnectionRecord, ConnectorRecord
+from .models import ConnectorConnectionRecord, ConnectorProviderRecord
 
 _JSON_OBJECT = TypeAdapter(JsonObject)
 
 
-def require_adapter(
-    adapters: AdapterRegistry[ConnectorAdapter], driver_key: str, config_version: str
-) -> ConnectorAdapter:
+def require_implementation(registry: ConnectorProviderRegistry, provider_type: str) -> ConnectorProviderImplementation:
     try:
-        return adapters.create(driver_key, config_version=config_version)
+        return registry.require(provider_type)
     except ValueError as error:
         raise ConnectorError(
-            "unsupported_connector_adapter",
-            "Connector adapter is not registered.",
-            status_code=400,
+            "unsupported_connector_provider_type", "Connector Provider type is not registered.", status_code=400
+        ) from error
+
+
+def configure_provider(
+    registry: ConnectorProviderRegistry, record: ConnectorProviderRecord, credentials: JsonObject
+) -> ConnectorProviderRuntime:
+    implementation = require_implementation(registry, record.type)
+    try:
+        return implementation.configure(record.configuration_json, credentials)
+    except ValueError as error:
+        raise ConnectorError(
+            "invalid_connector_provider_configuration", "Connector Provider configuration is invalid.", status_code=409
         ) from error
 
 
@@ -59,8 +67,10 @@ async def authorize(
         ) from error
 
 
-async def require_connector(session: AsyncSession, connector_id: str, *, lock: bool = False) -> ConnectorRecord:
-    query = select(ConnectorRecord).where(ConnectorRecord.id == connector_id)
+async def require_connector_provider(
+    session: AsyncSession, connector_provider_id: str, *, lock: bool = False
+) -> ConnectorProviderRecord:
+    query = select(ConnectorProviderRecord).where(ConnectorProviderRecord.id == connector_provider_id)
     if lock:
         query = query.with_for_update()
     record = await session.scalar(query)
@@ -88,7 +98,7 @@ async def require_connection(
 
 
 def secret_context(
-    connector: ConnectorRecord,
+    connector: ConnectorProviderRecord,
     *,
     operation: SecretOperation,
     generation: int | None = None,
@@ -96,9 +106,9 @@ def secret_context(
     return SecretUseContext(
         organization_id=connector.organization_id,
         workspace_id=connector.workspace_id,
-        owner_type=SecretOwnerType.connector,
+        owner_type=SecretOwnerType.connector_provider,
         owner_id=connector.id,
-        key="api_key",
+        key="credentials",
         operation=operation,
         credential_generation=generation or connector.credential_generation,
     )
@@ -109,7 +119,7 @@ def decode_credentials(value: str) -> JsonObject:
         return _JSON_OBJECT.validate_python(json.loads(value))
     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as error:
         raise ConnectorError(
-            "credential_unavailable", "Connector credentials are unavailable.", status_code=503
+            "credential_unavailable", "ConnectorProvider credentials are unavailable.", status_code=503
         ) from error
 
 
@@ -145,3 +155,8 @@ def map_management_value_error(error: ConnectivityManagementValueError) -> Conne
             status_code=409,
         )
     return ConnectorError("invalid_request", "Idempotency-Key is invalid.", status_code=400)
+
+
+def require_active_provider(record: ConnectorProviderRecord) -> None:
+    if record.status != "active":
+        raise ConnectorError("connector_provider_disabled", "Connector Provider is disabled.", status_code=409)

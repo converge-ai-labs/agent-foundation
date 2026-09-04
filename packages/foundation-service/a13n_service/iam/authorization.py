@@ -73,8 +73,8 @@ class WorkspaceAction(StrEnum):
     ingress_manage = "ingress.manage"
     route_read = "route.read"
     route_manage = "route.manage"
-    connector_read = "connector.read"
-    connector_manage = "connector.manage"
+    connector_provider_read = "connector_provider.read"
+    connector_provider_manage = "connector_provider.manage"
     connector_connection_read = "connector_connection.read"
     connector_connection_manage = "connector_connection.manage"
     mcp_connection_read = "mcp_connection.read"
@@ -102,7 +102,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.queued_submission_read,
         WorkspaceAction.ingress_read,
         WorkspaceAction.route_read,
-        WorkspaceAction.connector_read,
+        WorkspaceAction.connector_provider_read,
         WorkspaceAction.connector_connection_read,
         WorkspaceAction.mcp_connection_read,
     }
@@ -139,7 +139,7 @@ _PLUGIN_OPERATOR_ACTIONS = frozenset(
 _CONNECTIVITY_ADMIN_ACTIONS = frozenset(
     {
         WorkspaceAction.ingress_manage,
-        WorkspaceAction.connector_manage,
+        WorkspaceAction.connector_provider_manage,
         WorkspaceAction.connector_connection_manage,
         WorkspaceAction.mcp_connection_manage,
     }

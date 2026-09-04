@@ -1,4 +1,4 @@
-"""Public Connector and ConnectorConnection resource contracts."""
+"""Public ConnectorProvider and ConnectorConnection resource contracts."""
 
 from __future__ import annotations
 
@@ -8,18 +8,17 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
-from a13n_service.connectivity.domain import AdapterKey, BoundedName, ConfigVersion, JsonObject
+from a13n_service.connectivity.domain import AdapterKey, BoundedName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
-Endpoint = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
-ProviderKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9._-]{0,127}$")]
+ConnectorKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9._-]{0,127}$")]
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class ConnectorStatus(StrEnum):
+class ConnectorProviderStatus(StrEnum):
     active = "active"
     disabled = "disabled"
 
@@ -36,16 +35,14 @@ class ConnectorConnectionStatusReason(StrEnum):
     incompatible = "incompatible"
 
 
-class Connector(StrictModel):
+class ConnectorProvider(StrictModel):
     id: str
     organization_id: str
     workspace_id: str
     name: BoundedName
-    driver_key: AdapterKey
-    config_version: ConfigVersion
-    endpoint: Endpoint
-    config: JsonObject
-    status: ConnectorStatus
+    type: AdapterKey
+    configuration: JsonObject
+    status: ConnectorProviderStatus
     version: int = Field(ge=1)
     credential_configured: bool
     credential_generation: int = Field(ge=1)
@@ -54,8 +51,8 @@ class Connector(StrictModel):
     updated_at: datetime
 
 
-class ConnectorCollection(StrictModel):
-    items: tuple[Connector, ...]
+class ConnectorProviderCollection(StrictModel):
+    items: tuple[ConnectorProvider, ...]
     next_cursor: str | None = None
 
 
@@ -63,10 +60,10 @@ class ConnectorConnection(StrictModel):
     id: str
     organization_id: str
     workspace_id: str
-    connector_id: str
+    connector_provider_id: str
     owner_principal_ref: PrincipalRef | None
     name: BoundedName
-    provider_key: ProviderKey
+    connector_key: ConnectorKey
     safe_metadata: JsonObject
     status: ConnectorConnectionStatus
     status_reason: ConnectorConnectionStatusReason | None
@@ -88,12 +85,10 @@ class ConnectorConnectionCollection(StrictModel):
     next_cursor: str | None = None
 
 
-class CreateConnectorRequest(StrictModel):
+class CreateConnectorProviderRequest(StrictModel):
     name: BoundedName
-    driver_key: AdapterKey
-    config_version: ConfigVersion
-    endpoint: Endpoint
-    config: JsonObject
+    type: AdapterKey
+    configuration: JsonObject
     credentials: dict[str, SecretStr] = Field(
         min_length=1,
         max_length=8,
@@ -102,18 +97,18 @@ class CreateConnectorRequest(StrictModel):
     )
 
 
-class UpdateConnectorRequest(StrictModel):
+class UpdateConnectorProviderRequest(StrictModel):
     expected_version: int = Field(ge=1)
     name: BoundedName | None = None
 
     @model_validator(mode="after")
-    def validate_change(self) -> UpdateConnectorRequest:
+    def validate_change(self) -> UpdateConnectorProviderRequest:
         if self.name is None:
-            raise ValueError("Connector update must change at least one field")
+            raise ValueError("ConnectorProvider update must change at least one field")
         return self
 
 
-class ReplaceConnectorCredentialsRequest(StrictModel):
+class ReplaceConnectorProviderCredentialsRequest(StrictModel):
     expected_version: int = Field(ge=1)
     credentials: dict[str, SecretStr] = Field(
         min_length=1,
@@ -123,14 +118,14 @@ class ReplaceConnectorCredentialsRequest(StrictModel):
     )
 
 
-class ConnectorCommandRequest(StrictModel):
+class ConnectorProviderCommandRequest(StrictModel):
     expected_version: int = Field(ge=1)
 
 
 class CreateConnectorConnectionRequest(StrictModel):
-    connector_id: str = Field(min_length=1, max_length=72)
+    connector_provider_id: str = Field(min_length=1, max_length=72)
     name: BoundedName
-    provider_key: ProviderKey
+    connector_key: ConnectorKey
     owner_principal_ref: PrincipalRef | None = None
 
 
@@ -172,8 +167,22 @@ class ConnectorOperationReceipt(StrictModel):
     connection: ConnectorConnection
 
 
-class ConnectorTestResult(StrictModel):
-    connector_id: str
+class ConnectorProviderTestResult(StrictModel):
+    connector_provider_id: str
     status: Literal["succeeded"] = "succeeded"
-    connector_version: int = Field(ge=1)
+    connector_provider_version: int = Field(ge=1)
     tested_at: datetime
+
+
+class Connector(StrictModel):
+    connector_provider_id: str
+    key: ConnectorKey
+    name: BoundedName
+    description: str | None = Field(default=None, max_length=16_384)
+    setup_schema: JsonObject
+    authentication_methods: tuple[str, ...] = Field(max_length=32)
+
+
+class ConnectorCollection(StrictModel):
+    items: tuple[Connector, ...] = Field(max_length=2_048)
+    next_cursor: None = None

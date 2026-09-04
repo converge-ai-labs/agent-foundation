@@ -24,7 +24,7 @@ from .providers import ProviderRegistry
 class _StoredProvider:
     id: str
     type: str
-    config: dict[str, object]
+    configuration: dict[str, object]
     enabled: bool
     credential: EncryptedProviderCredential | None
 
@@ -103,7 +103,7 @@ class LiveProviderResolver:
                 self._registry.validate_model_api(provider.type, model_api)
             validated = self._registry.validate_provider(
                 provider.type,
-                provider.config,
+                provider.configuration,
                 credential_configured=provider.credential is not None,
             )
             if validated.endpoint is not None:
@@ -117,7 +117,7 @@ class LiveProviderResolver:
             ) from error
         return RuntimeProvider(
             type=provider.type,
-            config=validated.config,
+            configuration=validated.configuration,
             endpoint=validated.endpoint,
             credential=credential,
         )
@@ -127,7 +127,7 @@ def _stored_provider(provider: ModelProviderRecord) -> _StoredProvider:
     return _StoredProvider(
         id=provider.id,
         type=provider.type,
-        config=dict(provider.config),
+        configuration=dict(provider.configuration),
         enabled=provider.enabled,
         credential=EncryptedProviderCredential.from_record(provider),
     )

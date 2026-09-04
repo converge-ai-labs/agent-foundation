@@ -1,43 +1,40 @@
-# Project-scoped Thread Interaction
+# Thread Navigation and Conversation
 
 ## Design Position
 
-The Threads area presents attention-ranked root Threads and one continuation-backed focused conversation together with understandable current-process activity. It deliberately shows retained and live facts as two layers. A smooth interaction experience never hides whether content is selected continuation history, provisional stream output, a saved child checkpoint, or a control that is available only in the current App process.
+The WebUI opens one continuation-backed root Thread directly as a conversation with understandable current-process activity. It deliberately shows retained and live facts as two layers. A smooth interaction experience never hides whether content is selected continuation history, provisional stream output, a saved child checkpoint, or a control that is available only in the current App process.
 
-The canonical detail route names only the stable root Thread ID. Project origin, Agent, Environment profile, Plugin, Run Extension, and MCP selections are not route identity. Project and the other resources are visible mutable Thread configuration; an originating Project filter only preserves collection and return context. A root Thread remains inspectable when one of those references is missing; only the next Run is blocked by App validation.
+The canonical detail route names only the stable root Thread ID. Project, Agent, Environment profile, Plugin, Run Extension, and MCP selections are not route identity. They are visible mutable Thread configuration. A root Thread remains inspectable when one of those references is missing; only the next Run is blocked by App validation.
 
-## Project Navigation
+## Sidebar Navigation
 
-The Threads area always provides All Projects and the accepted Projects in their configured order. Selecting one Project queries root Threads whose current sticky `project_id` equals that exact ID; All Projects omits the filter. Changing the selector starts a fresh first-page query and selects a valid row only after the new result arrives. It never mutates any Thread.
+The sidebar presents:
 
-Project creation, source editing, reordering, and deletion remain in Configure and use the ordinary expected-digest desired-resource boundary. The Threads area links there for Project management rather than introducing another grouping identity, membership, or route.
+- one global New Thread action;
+- a bounded Recent list across Projects;
+- accepted Projects in configured order, each with a bounded expandable root-Thread list and a Project-scoped New Thread action;
+- search and archive entry points;
+- a bottom-pinned Settings action.
 
-A new-Thread draft opened under one selected Project initializes its explicit Project selection from that filter. A draft opened through All Projects applies ordinary root-Thread creation defaults. The create command always carries the resolved explicit Project selection and no separate view identity.
+Project is the only root-Thread grouping. A Project list query includes root Threads whose current sticky `project_id` equals that exact ID. Recent is an App-projected cross-Project index ordered by authoritative recency; it does not own membership, acknowledgement, or another saved grouping. A Thread row shows only concise state relevant to navigation, such as active, awaiting input, failed, or idle. It never claims liveness from retained status alone.
 
-## Interaction Modes
+The global New Thread action applies ordinary root-Thread creation defaults. A Project-scoped action initializes the draft with that exact Project. The create command always carries one resolved explicit Project selection. Project creation, guided editing, reordering, and deletion remain in Settings and use the ordinary expected-digest desired-resource boundary.
 
-The Threads area has two mutually exclusive primary modes:
+The sidebar never subscribes to every Thread. Its bounded recent, Project, and unresolved-Project pages consume detached summaries plus the App-wide invalidation stream. Opening a row selects its canonical Thread route; changing an expanded Project, search, archive filter, or page never mutates a Thread.
 
-- **Workbench** supervises bounded root-Thread summaries, attention order, and one selected human-readable preview without mounting full conversations.
-- **Focus** presents one root Thread's timeline, current semantic activity, decisions, and mode-aware composer.
+A retained Thread whose Project no longer resolves remains reachable through Recent, search, archive, or a bounded unresolved section supplied by the App. Reassignment is an explicit Thread configuration mutation; the browser never silently applies a similarly named Project.
 
-A wide Workbench uses an attention-ranked list and one bounded preview. A wide Focus uses an optional Project/Thread collection beside the primary conversation. Neither mode permanently displays raw events, receipts, task tables, source configuration, timing, or protocol payloads. Context-valid sheets can show Thread selection, child, task, review, or configuration detail without turning the ordinary work surface into Debug.
+## Conversation Shell
 
-Selecting a child from Focus opens a bounded child work view under its owning root lineage; child Threads do not enter the root collection as peers. Exact child correlations and process-local status detail link to the dedicated [Debugging and Diagnostics](04-debugging-and-diagnostics.md) area. On narrow layouts, collections, previews, and work details become separate panels with explicit back navigation.
+The selected root Thread occupies the primary region. Its header presents the Thread title, Project context, current state, Environment-panel toggle, activity entry, and a bounded overflow menu. Its body presents the semantic conversation and current activity. Its footer contains the only ordinary composer.
 
-Workbench never subscribes to every Thread. It uses bounded Workbench summaries for the exact current Project filter plus the App-wide invalidation stream. Its pagination key and cursor include the Project ID or its omission for All Projects. Attention categories are derived from current projections in this order:
+A selected root Thread opens directly as the ordinary conversation without an intermediate dashboard. Selecting a child, task, tool, review, or other activity opens a bounded contextual view under the owning root lineage; child Threads do not enter the root collection as peers. Exact child and operation correlations reuse the on-demand [Activity and Diagnostics](04-debugging-and-diagnostics.md) views rather than creating a permanent inspector.
 
-1. selected continuation awaiting a decision;
-2. current-process root failure or cancellation, or lost/failed child work requiring inspection;
-3. current-process completed work not yet acknowledged in this browser lifetime;
-4. current-process active root or child work;
-5. idle Threads.
-
-Within one category, rows use descending relevant update time and stable Thread ID. A selected row preview answers what the work is doing, what needs the user, and which context-valid action is available; it does not expose a diagnostic ledger. Taking over opens Focus. A completion acknowledgement is browser-local presentation state, disappears on reload, and never mutates Thread metadata, continuation, or execution truth. Pending decisions and retained child failures remain visible because their App projections remain authoritative. Attention ordering does not change stored recency or schedule work.
+Wide layouts keep the sidebar beside the conversation and can add one optional context panel. Narrow layouts show sidebar, conversation or activity, and selected context as separate panels with explicit back navigation. Layout changes preserve the same canonical Thread route, focused controller, draft, and selection.
 
 ## Opening a Thread
 
-Opening `/threads/$threadId` establishes the focused watch before rendering detail. An optional originating Project search parameter is validated independently and controls only the surrounding collection and return destination; an invalid or deleted origin falls back to All Projects without affecting Thread access. The first snapshot supplies Thread detail, current root operation, selected deferred request set, bounded task and child projections, selected continuation, epoch, and sequence cutover. The latest retained transcript page loads concurrently through a cursor bound to that selected continuation; a concurrent continuation change resets the query rather than combining histories.
+Opening `/threads/$threadId` establishes the focused watch before rendering detail. The first snapshot supplies Thread detail, current root operation, selected deferred request set, bounded task and child projections, selected continuation, epoch, and sequence cutover. The latest retained transcript page loads concurrently through a cursor bound to that selected continuation; a concurrent continuation change resets the query rather than combining histories.
 
 The UI renders a stable shell immediately, then one of:
 
@@ -52,23 +49,23 @@ A stream outage does not erase retained history or imply that a process-local Ru
 
 The timeline is a sequence of semantic blocks rather than raw protocol events:
 
-| Block              | Source and behavior                                                                                               |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| User message       | Retained transcript request part; plain selectable text with media references when supplied                       |
-| Assistant message  | Retained or closed live text rendered as safe Markdown                                                            |
-| Thinking           | Non-encrypted retained or live reasoning, collapsed by default and clearly labeled                                |
-| Tool activity      | Correlated call and status with a concise human-readable summary; exact safe detail links to Debug when available |
-| Working State task | Bounded task progress and changed item; focused work detail remains inspection-only, never a second scheduler     |
-| Child activity     | Child name, task, activity, saved/local distinction, and available work controls under the owning root            |
-| Decision           | Exact pending approval or external result request from the selected suspended continuation                        |
-| Run outcome        | Human-readable execution, continuation, Environment-state, cleanup, usage, and failure facets                     |
-| Neutral activity   | Bounded generic presentation for an understood safe namespace or unknown validated event with optional Debug link |
+| Block              | Source and behavior                                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| User message       | Retained transcript request part; plain selectable text with media references when supplied                                         |
+| Assistant message  | Retained or closed live text rendered as safe Markdown                                                                              |
+| Thinking           | Non-encrypted retained or live reasoning, collapsed by default and clearly labeled                                                  |
+| Tool activity      | Correlated call and status with a concise human-readable summary; exact safe detail opens contextual activity detail when available |
+| Working State task | Bounded task progress and changed item; focused task detail remains inspection-only, never a second scheduler                       |
+| Child activity     | Child name, task, activity, saved/local distinction, and available work controls under the owning root                              |
+| Decision           | Exact pending approval or external result request from the selected suspended continuation                                          |
+| Run outcome        | Human-readable execution, continuation, Environment-state, cleanup, usage, and failure facets                                       |
+| Neutral activity   | Bounded generic presentation for an understood safe namespace or unknown validated event with optional activity detail              |
 
 Multipart stream events fold into one open live block and close only on the matching event. An interrupted or reset stream marks an unfinished provisional block as incomplete and then replaces the complete live layer through a new snapshot; it does not append guessed text to retained history.
 
-While a turn is active, current reasoning, tools, task changes, and child launches remain visible enough to explain progress. After a successful closed boundary, intermediate activity folds into a compact summary such as duration, tool count, task count, and child count only when those facts are complete. The final assistant answer remains primary. Failed, denied, interrupted, or still-running work stays expanded enough to explain its state. Debug owns raw payload, exact correlation, schema, and timing detail.
+While a turn is active, current reasoning, tools, task changes, and child launches remain visible enough to explain progress. After a successful closed boundary, intermediate activity folds into a compact summary such as duration, tool count, task count, and child count only when those facts are complete. The final assistant answer remains primary. Failed, denied, interrupted, or still-running work stays expanded enough to explain its state. The on-demand activity view owns raw payload, exact correlation, schema, and timing detail.
 
-Retained timeline order follows transcript positions. Provisional root and child blocks follow focused stream sequence and retain their producing Thread, Run, receipt, and execution correlation internally. Thread interaction presents those correlations only when needed for control or an explicit Debug link. Timestamp display never substitutes for the ordering authorities.
+Retained timeline order follows transcript positions. Provisional root and child blocks follow focused stream sequence and retain their producing Thread, Run, receipt, and execution correlation internally. Thread interaction presents those correlations only when needed for control or an explicit activity-detail action. Timestamp display never substitutes for the ordering authorities.
 
 Long transcripts use incremental keyset pagination toward older history and visual virtualization. Loading older pages preserves the reader's visible anchor. New live deltas follow the viewport only when the user is already near the end; otherwise a new-activity affordance appears without stealing position.
 
@@ -76,11 +73,11 @@ Long transcripts use incremental keyset pagination toward older history and visu
 
 Assistant and thinking text support CommonMark, GitHub-flavored tables and task lists, fenced code, syntax highlighting, and copy actions. Returned HTML is disabled rather than trusted. Links expose their destination, use safe protocols, and open external origins with opener isolation. Images or media render only from App-projected safe references or explicit data already allowed by the surface contract; Markdown cannot cause arbitrary credential-bearing fetches.
 
-Tool arguments, results, failures, and custom payloads use bounded structured viewers in a selected work detail or Debug. Thread interaction defaults to semantic summaries and never injects keys as HTML or component names. Large or omitted values show the App's omission fact rather than a browser claim that the value was empty.
+Tool arguments, results, failures, and custom payloads use bounded structured viewers in a selected context detail or activity view. Thread interaction defaults to semantic summaries and never injects keys as HTML or component names. Large or omitted values show the App's omission fact rather than a browser claim that the value was empty.
 
 ## Thread Creation
 
-A new-Thread route begins as a browser-local draft with Project, Agent, Environment profile, ordered Harness Plugins, ordered Environment Run Extensions, ordered MCP servers, optional title, and prompt. A valid originating Project initializes that explicit selection; All Projects applies the ordinary root-Thread creation defaults. Defaults initialize the controls but do not create a Thread.
+A new-Thread route begins as a browser-local draft with Project, Agent, Environment profile, ordered Harness Plugins, ordered Environment Run Extensions, ordered MCP servers, optional title, and prompt. A Project-scoped origin initializes that explicit selection; the global action applies ordinary root-Thread creation defaults. Defaults initialize the controls but do not create a Thread.
 
 On first submission, the browser calls `create_thread()` and then submits the prompt to the returned Thread. These are two explicit App operations rather than an invented atomic create-and-run contract. If creation succeeds and prompt admission fails or has unknown outcome, the created Thread remains visible at its canonical route and the prompt draft is restored for reconciliation. The browser never creates another Thread automatically to hide that boundary.
 
@@ -134,7 +131,7 @@ Approval is never inferred from dismissing a dialog, pressing Escape, navigating
 
 ## Child Work
 
-A focused child-work sheet lists child executions under their root lineage with:
+A selected child-work context lists child executions under their root lineage with:
 
 - child and parent Thread identities;
 - subagent name and selected definition;
@@ -165,7 +162,7 @@ The UI does not collapse a root terminal outcome into one green or red label. It
 - cleanup failures;
 - composition and usage summary when available.
 
-Thread interaction presents these as concise human-readable qualifications. Exact continuation identity, receipt correlation, detailed usage, state counts, and timing remain available through the corresponding Debug view.
+Thread interaction presents these as concise human-readable qualifications. Exact continuation identity, receipt correlation, detailed usage, state counts, and timing remain available through the corresponding activity view.
 
 A completed execution whose cleanup or state publication reports a problem remains visibly qualified. A failed continuation selection means the produced output cannot be represented as retained conversation truth. The timeline may show the provisional output for inspection, but a later reload follows the prior selected continuation.
 
@@ -179,7 +176,7 @@ Archived Threads leave the ordinary collection but remain queryable through the 
 
 | Failure                                     | Presentation and recovery                                                                        |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Originating Project missing or deleted      | Fall back to All Projects without changing the opened Thread or its stored Project               |
+| Thread Project missing or deleted           | Keep the Thread reachable through derived navigation and require explicit reassignment           |
 | Thread or selected resource missing         | Preserve inspectable history, identify the missing selection, and link to explicit reassignment  |
 | Root admission rejected                     | Retain prompt and configuration draft; refresh exact Thread and operation projections            |
 | Admission outcome unknown                   | Retain draft, refetch current root activity, and require user confirmation before another submit |
@@ -191,9 +188,9 @@ Archived Threads leave the ordinary collection but remain queryable through the 
 
 ## Invariants
 
-01. Project is the only root-Thread grouping; the Threads area filters by one Project or shows All Projects without adding another model.
-02. Workbench and Focus are modes of the Threads area over the same App facts, not separate runtimes.
-03. Project-filtered visibility of a root Thread is derived from its current sticky Project.
+01. Project is the only root-Thread grouping; Recent, search, archive, and unresolved navigation remain derived indexes.
+02. The selected root Thread opens directly as the one ordinary conversation and composer surface.
+03. Project-grouped visibility of a root Thread is derived from its current sticky Project.
 04. A focused root Thread route renders one high-water-bound snapshot and one complete descendant live lineage.
 05. Creating a Thread and admitting its first prompt remain two App operations; partial success preserves the created Thread and recoverable prompt draft.
 06. Retained timeline, saved child display, and provisional live activity remain visually and semantically distinct.
@@ -203,6 +200,6 @@ Archived Threads leave the ordinary collection but remain queryable through the 
 10. Deferred decisions submit one complete response batch against one exact continuation.
 11. Saved child status never proves current-process activity.
 12. Live terminal events never substitute for selected continuation, Environment-state, cleanup, or checkpoint facts.
-13. Settled activity can fold for clarity, but exact available detail remains linked to Debug and is never reconstructed in the Threads area.
+13. Settled activity can fold for clarity, but exact available detail remains linked to the on-demand activity view and is never reconstructed from summary text.
 14. Stream reset discards provisional reduction without damaging retained history or unsent drafts.
 15. Safe rendering never executes model, tool, source, or custom-event content.

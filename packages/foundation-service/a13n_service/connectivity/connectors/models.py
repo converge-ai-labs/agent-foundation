@@ -1,4 +1,4 @@
-"""Relational Connector, ConnectorConnection, setup, operation, and catalog facts."""
+"""Relational ConnectorProvider, ConnectorConnection, setup, operation, and catalog facts."""
 
 from __future__ import annotations
 
@@ -23,16 +23,16 @@ from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
 
 from .domain import (
-    Connector,
     ConnectorConnection,
     ConnectorConnectionStatus,
     ConnectorConnectionStatusReason,
-    ConnectorStatus,
+    ConnectorProvider,
+    ConnectorProviderStatus,
 )
 
 
-class ConnectorRecord(Base):
-    __tablename__ = "connectors"
+class ConnectorProviderRecord(Base):
+    __tablename__ = "connector_providers"
     __table_args__ = (
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
@@ -44,10 +44,10 @@ class ConnectorRecord(Base):
         CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
-        Index("uq_connectors_id_tenant", "id", "organization_id", "workspace_id", unique=True),
-        Index("uq_connectors_workspace_name", "workspace_id", "normalized_name", unique=True),
-        Index("ix_connectors_workspace_updated", "workspace_id", "updated_at", "id"),
-        Index("ix_connectors_driver_status", "driver_key", "status", "id"),
+        Index("uq_connector_providers_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_connector_providers_workspace_name", "workspace_id", "normalized_name", unique=True),
+        Index("ix_connector_providers_workspace_updated", "workspace_id", "updated_at", "id"),
+        Index("ix_connector_providers_driver_status", "type", "status", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -55,10 +55,8 @@ class ConnectorRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    driver_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    config_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    endpoint: Mapped[str] = mapped_column(String(2048), nullable=False)
-    config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    configuration_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     credential_secret_id: Mapped[str] = mapped_column(
@@ -70,17 +68,15 @@ class ConnectorRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    def to_resource(self) -> Connector:
-        return Connector(
+    def to_resource(self) -> ConnectorProvider:
+        return ConnectorProvider(
             id=self.id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
             name=self.name,
-            driver_key=self.driver_key,
-            config_version=self.config_version,
-            endpoint=self.endpoint,
-            config=self.config_json,
-            status=ConnectorStatus(self.status),
+            type=self.type,
+            configuration=self.configuration_json,
+            status=ConnectorProviderStatus(self.status),
             version=self.version,
             credential_configured=True,
             credential_generation=self.credential_generation,
@@ -94,8 +90,8 @@ class ConnectorConnectionRecord(Base):
     __tablename__ = "connector_connections"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("connector_id", "organization_id", "workspace_id"),
-            ("connectors.id", "connectors.organization_id", "connectors.workspace_id"),
+            ("connector_provider_id", "organization_id", "workspace_id"),
+            ("connector_providers.id", "connector_providers.organization_id", "connector_providers.workspace_id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint(
@@ -133,24 +129,24 @@ class ConnectorConnectionRecord(Base):
         ),
         Index(
             "uq_connector_connections_external_ref",
-            "connector_id",
+            "connector_provider_id",
             "external_ref",
             unique=True,
         ),
         Index("ix_connector_connections_workspace_updated", "workspace_id", "updated_at", "id"),
-        Index("ix_connector_connections_connector_status", "connector_id", "status", "id"),
+        Index("ix_connector_connections_connector_status", "connector_provider_id", "status", "id"),
         Index("ix_connector_connections_owner", "workspace_id", "owner_type", "owner_id", "status", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    connector_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    connector_provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
     owner_type: Mapped[str | None] = mapped_column(String(32))
     owner_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    provider_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    connector_key: Mapped[str] = mapped_column(String(128), nullable=False)
     external_ref: Mapped[str | None] = mapped_column(String(2048))
     safe_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -178,10 +174,10 @@ class ConnectorConnectionRecord(Base):
             id=self.id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
-            connector_id=self.connector_id,
+            connector_provider_id=self.connector_provider_id,
             owner_principal_ref=owner,
             name=self.name,
-            provider_key=self.provider_key,
+            connector_key=self.connector_key,
             safe_metadata=self.safe_metadata_json,
             status=ConnectorConnectionStatus(self.status),
             status_reason=(
@@ -228,8 +224,8 @@ class ConnectorSetupAttemptRecord(Base):
     initiating_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)
     owner_type: Mapped[str | None] = mapped_column(String(32))
     owner_id: Mapped[str | None] = mapped_column(String(72))
-    driver_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    provider_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    connector_key: Mapped[str] = mapped_column(String(128), nullable=False)
     external_user_correlation: Mapped[str] = mapped_column(String(128), nullable=False)
     state_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     return_path: Mapped[str] = mapped_column(String(2048), nullable=False)

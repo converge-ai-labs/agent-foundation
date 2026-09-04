@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
-from a13n_service.connectivity.connectors.service import ConnectorService
+from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.routes import RouteService
 from a13n_service.connectivity.ingress.service import IngressService
@@ -20,7 +20,7 @@ class ConnectivityControlRuntime:
     public_origin: str
     ingresses: IngressService
     routes: RouteService
-    connectors: ConnectorService
+    connector_providers: ConnectorProviderService
     connector_connections: ConnectorConnectionService
     mcp_connections: MCPConnectionService
     mcp_oauth: MCPOAuthService

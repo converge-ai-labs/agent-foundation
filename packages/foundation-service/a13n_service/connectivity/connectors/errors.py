@@ -1,4 +1,4 @@
-"""Safe Connector management errors."""
+"""Safe ConnectorProvider management errors."""
 
 from a13n_service.public_errors import PublicError
 

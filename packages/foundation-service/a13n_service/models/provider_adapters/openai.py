@@ -9,7 +9,7 @@ from .base import (
     openai_style_discovery,
     require_credential,
 )
-from .types import EmptyProviderConfig, RuntimeProvider
+from .types import EmptyProviderConfiguration, RuntimeProvider
 
 
 def _build_provider(
@@ -25,9 +25,9 @@ def _build_provider(
 
 
 INTEGRATION = ProviderIntegration(
-    key="openai",
+    type="openai",
     display_name="OpenAI",
-    config_model=EmptyProviderConfig,
+    configuration_model=EmptyProviderConfiguration,
     supported_model_apis=("openai.responses", "openai.chat_completions"),
     build_provider=_build_provider,
     endpoint="https://api.openai.com/v1",

@@ -11,10 +11,10 @@ def _connection(**changes: object) -> ConnectorConnection:
         "id": "cconn_abcdef1234567890",
         "organization_id": "org_abcdef1234567890",
         "workspace_id": "ws_abcdef1234567890",
-        "connector_id": "cnr_abcdef1234567890",
+        "connector_provider_id": "cnr_abcdef1234567890",
         "owner_principal_ref": None,
         "name": "GitHub",
-        "provider_key": "github",
+        "connector_key": "github",
         "safe_metadata": {},
         "status": "pending",
         "status_reason": None,
@@ -39,3 +39,36 @@ def test_connector_connection_status_reason_is_discriminated() -> None:
 def test_connector_connection_public_shape_excludes_external_reference() -> None:
     schema = ConnectorConnection.model_json_schema()
     assert "external_ref" not in schema["properties"]
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    [
+        {"driver_key": "openconnector"},
+        {"config_version": "native_v1"},
+        {"endpoint": "https://other.example"},
+        {"config": {}},
+    ],
+)
+def test_provider_creation_rejects_removed_fields(legacy) -> None:
+    from a13n_service.connectivity.connectors.domain import CreateConnectorProviderRequest
+
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        CreateConnectorProviderRequest.model_validate(
+            {
+                "name": "Work",
+                "type": "openconnector",
+                "configuration": {"deployment": "cloud", "enabled_provider_slugs": ["github"]},
+                "credentials": {"api_key": "secret"},
+                **legacy,
+            }
+        )
+
+
+def test_model_provider_rejects_old_configuration_field() -> None:
+    from a13n_service.models.domain import CreateModelProviderRequest
+
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        CreateModelProviderRequest.model_validate(
+            {"name": "Work", "type": "openai", "config": {}, "credential": "secret"}
+        )

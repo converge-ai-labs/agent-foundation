@@ -60,7 +60,7 @@ async def open_service_runtime(
                 shared.secret_protector,
                 stack,
                 ingress_adapters=components.ingress_adapter_registry,
-                connector_adapters=components.connector_adapter_registry,
+                connector_providers=components.connector_provider_registry,
                 input_acceptor=components.foundation_input_acceptor,
                 control_plane=owns_control(settings.role),
                 data_plane=owns_connectivity_data(settings.role),

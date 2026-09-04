@@ -1,4 +1,4 @@
-"""Typed application boundary implemented by Connector drivers."""
+"""Typed application boundary implemented by ConnectorProvider drivers."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class AdapterStatusReason(StrEnum):
 class SetupContext(StrictModel):
     attempt_id: str
     generation: int = Field(ge=1)
-    provider_key: str = Field(min_length=1, max_length=128)
+    connector_key: str = Field(min_length=1, max_length=128)
     external_user_correlation: str = Field(min_length=1, max_length=128, repr=False)
     callback_url: str | None = Field(default=None, max_length=4096, repr=False)
 
@@ -43,7 +43,7 @@ class SetupStarted(StrictModel):
 
 class ConnectionInspection(StrictModel):
     external_ref: str = Field(min_length=1, max_length=2048, repr=False)
-    provider_key: str = Field(min_length=1, max_length=128)
+    connector_key: str = Field(min_length=1, max_length=128)
     external_user_correlation: str = Field(min_length=1, max_length=128, repr=False)
     status: AdapterConnectionStatus
     status_reason: AdapterStatusReason | None = None
@@ -58,6 +58,7 @@ class ConnectionInspection(StrictModel):
 
 
 class ConnectorTool(StrictModel):
+    provider_version: str = Field(min_length=1, max_length=128)
     key: str = Field(min_length=1, max_length=128)
     description: str = Field(max_length=16_384)
     input_schema: JsonObject
@@ -77,7 +78,7 @@ class ConnectorToolOutcome(StrictModel):
     request_id: str | None = Field(default=None, max_length=128)
 
 
-class ConnectorAdapterError(Exception):
+class ConnectorProviderError(Exception):
     def __init__(
         self,
         code: str,
@@ -93,95 +94,49 @@ class ConnectorAdapterError(Exception):
         self.retry_after_seconds = retry_after_seconds
 
 
-class ConnectorAdapter(Protocol):
-    driver_key: str
-    config_versions: frozenset[str]
+class ConnectionBinding(StrictModel):
+    external_user_correlation: str = Field(min_length=1, max_length=128, repr=False)
+    external_ref: str = Field(min_length=1, max_length=2048, repr=False)
+    connector_key: str = Field(min_length=1, max_length=128)
 
-    def validate_config(self, value: object, *, config_version: str) -> JsonObject: ...
 
-    def normalize_endpoint(self, value: str, *, connector_config: JsonObject) -> str: ...
+class ConnectorConnectionRuntime(Protocol):
+    """One verified external account; construction and close have no remote effects."""
 
-    def validate_credentials(self, value: dict[str, str], *, config_version: str) -> JsonObject: ...
+    async def inspect(self) -> ConnectionInspection: ...
 
-    def validate_setup(
-        self,
-        value: object,
-        *,
-        provider_key: str,
-        connector_config: JsonObject,
-        config_version: str,
-    ) -> JsonObject: ...
-
-    async def test_connector(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-    ) -> None: ...
-
-    async def start_setup(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        setup: JsonObject,
-        context: SetupContext,
-    ) -> SetupStarted: ...
-
-    async def complete_setup(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        session_uri: str,
-        context: SetupContext,
-        expected_external_ref: str,
-    ) -> ConnectionInspection: ...
-
-    async def inspect_connection(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        external_ref: str,
-        expected_provider_key: str,
-        expected_external_user_correlation: str,
-    ) -> ConnectionInspection: ...
-
-    async def revoke_connection(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        external_ref: str,
-        operation_id: str,
-    ) -> None: ...
-
-    async def list_tools(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        external_ref: str,
-        provider_key: str,
-        cursor: str | None,
-    ) -> ConnectorToolPage: ...
+    async def discover_tools(self, *, cursor: str | None) -> ConnectorToolPage: ...
 
     async def execute_tool(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        external_ref: str,
-        tool_key: str,
-        provider_version: str,
-        arguments: JsonObject,
-        request_id: str,
+        self, *, tool_key: str, provider_version: str, arguments: JsonObject, request_id: str
     ) -> ConnectorToolOutcome: ...
+
+    async def revoke(self, *, operation_id: str) -> None: ...
+
+    async def aclose(self) -> None: ...
+
+
+class ConnectorProviderRuntime(Protocol):
+    compatibility_profile: str
+
+    async def test(self) -> None: ...
+
+    async def discover_connectors(self) -> tuple[DiscoveredConnector, ...]: ...
+
+    async def start_setup(self, *, setup: JsonObject, context: SetupContext) -> SetupStarted: ...
+
+    async def complete_setup(
+        self, *, session_uri: str, context: SetupContext, expected_external_ref: str
+    ) -> ConnectionInspection: ...
+
+    def connect(self, binding: ConnectionBinding) -> ConnectorConnectionRuntime: ...
+
+    async def aclose(self) -> None: ...
+
+
+class DiscoveredConnector(StrictModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")
+    name: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=16_384)
+    setup_schema: JsonObject
+    authentication_methods: tuple[str, ...] = Field(max_length=32)
