@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from a13n_harness.capabilities import (
     AsyncDelegateRequest,
@@ -14,6 +13,10 @@ from a13n_harness.capabilities import (
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents import EffectiveAgentConfig
+from a13n_service.connectivity.selection_domain import (
+    ConnectorConnectionRunSelection,
+    MCPConnectionRunSelection,
+)
 from a13n_service.interactions import (
     EncryptedRunConfigPayloadRef,
     MCPToolSnapshotRef,
@@ -26,6 +29,7 @@ from a13n_service.interactions import (
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.interactions.state import RunStateEnvelope
 from a13n_service.storage import short_session
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import (
     ChildCancellationPolicy,
@@ -49,6 +53,8 @@ class ChildRunAdmissionProfile:
     agent_revision_id: str
     definition_id: str
     effective_config: EffectiveAgentConfig
+    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
+    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
     mcp_tool_snapshot: MCPToolSnapshotRef
     recovery_budget: RecoveryBudget
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None
@@ -68,7 +74,7 @@ class FoundationChildRunAdmissionPreparer:
         thread_id_factory: Callable[[], str] = new_thread_id,
         run_id_factory: Callable[[], str] = new_run_id,
         relationship_id_factory: Callable[[], str] = new_child_run_relationship_id,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         if not profiles:
             raise ValueError("child admission profile catalog must not be empty")
@@ -108,12 +114,14 @@ class FoundationChildRunAdmissionPreparer:
             child_agent_id=profile.agent_id,
             child_agent_revision_id=profile.agent_revision_id,
             child_effective_config=profile.effective_config,
+            connector_connection_selections=profile.connector_connection_selections,
+            mcp_connection_selections=profile.mcp_connection_selections,
             child_thread_id=self._thread_id_factory(),
             child_run_id=self._run_id_factory(),
             relationship_id=self._relationship_id_factory(),
             mcp_tool_snapshot=profile.mcp_tool_snapshot,
             recovery_budget=profile.recovery_budget,
-            created_at=_utc(self._clock()),
+            created_at=assume_utc(self._clock()),
             encrypted_config_payload=profile.encrypted_config_payload,
             cancellation_policy=profile.cancellation_policy,
             result_visibility=profile.result_visibility,
@@ -151,6 +159,8 @@ class FoundationChildRunAdmissionPreparer:
             child_agent_id=profile.agent_id,
             child_agent_revision_id=profile.agent_revision_id,
             child_effective_config=profile.effective_config,
+            connector_connection_selections=profile.connector_connection_selections,
+            mcp_connection_selections=profile.mcp_connection_selections,
             source_relationship=source.relationship,
             source_parent_run=source.parent_run,
             source_thread=source.thread,
@@ -160,7 +170,7 @@ class FoundationChildRunAdmissionPreparer:
             relationship_id=self._relationship_id_factory(),
             mcp_tool_snapshot=profile.mcp_tool_snapshot,
             recovery_budget=profile.recovery_budget,
-            created_at=_utc(self._clock()),
+            created_at=assume_utc(self._clock()),
             encrypted_config_payload=profile.encrypted_config_payload,
             cancellation_policy=profile.cancellation_policy,
             result_visibility=profile.result_visibility,
@@ -183,7 +193,7 @@ class FoundationChildRunAdmissionPreparer:
 
     async def _parent(self, authority: AttemptContext) -> tuple[Run, RunStateEnvelope]:
         async with short_session(self._sessions) as database:
-            parent, _, _ = await read_attempt_authority(database, authority, _utc(self._clock()))
+            parent, _, _ = await read_attempt_authority(database, authority, assume_utc(self._clock()))
             parent_resource = parent.to_resource()
         stored = await self._states.read(
             authority.tenant_id,
@@ -191,12 +201,6 @@ class FoundationChildRunAdmissionPreparer:
             expected_thread_id=authority.thread_id,
         )
         return parent_resource, stored.envelope
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [

@@ -78,12 +78,12 @@ class RecordingRuntimeDispatcher:
         return self.receipts[operation_id]
 
 
-def actor(user_id: str = ADMIN_ID) -> AuthenticatedActor:
+def actor(user_id: str = ADMIN_ID, *, workspace_id: str = WORKSPACE_ID) -> AuthenticatedActor:
     return AuthenticatedActor(
         principal=PrincipalRef(principal_type="user", principal_id=user_id),
         auth_method="session",
         credential_id="ses_plugin1234567890",
-        boundary_workspace_id=WORKSPACE_ID,
+        boundary_workspace_id=workspace_id,
         request_id="req-plugin-test",
     )
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import utc_now
 
 from .control_domain import (
     QueuedSubmissionConsumptionReceipt,
@@ -63,7 +62,7 @@ class RunAcceptanceService:
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def accept_new_thread(
         self,
@@ -721,7 +720,7 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
         source.encrypted_config_payload,
         source.runtime_lock_digest,
         source.model_execution_observation,
-        source.connection_selections,
+        source.connector_connection_selections,
         source.mcp_connection_selections,
         source.ingress_context,
         source.mcp_tool_snapshot,
@@ -734,7 +733,7 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
         candidate.encrypted_config_payload,
         candidate.runtime_lock_digest,
         candidate.model_execution_observation,
-        candidate.connection_selections,
+        candidate.connector_connection_selections,
         candidate.mcp_connection_selections,
         candidate.ingress_context,
         candidate.mcp_tool_snapshot,

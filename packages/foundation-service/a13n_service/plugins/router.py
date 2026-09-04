@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.request_runtime import get_control_runtime, get_service_runtime
 
 from .domain import (
     Plugin,
@@ -26,10 +27,10 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, ma
 
 
 def _plugins(request: Request) -> PluginService:
-    service: PluginService | None = getattr(request.app.state, "plugin_service", None)
-    if service is None:
+    control = get_control_runtime(request)
+    if control is None:
         raise PluginError("plugin_management_unavailable", "Plugin Management is unavailable.", status_code=503)
-    return service
+    return control.plugins
 
 
 @router.post("/plugins", response_model=PluginVersion, status_code=status.HTTP_201_CREATED)
@@ -191,7 +192,10 @@ def _content_length(request: Request) -> int | None:
         raise PluginError("invalid_request", "Content-Length is invalid.", status_code=400) from error
     if parsed < 0:
         raise PluginError("invalid_request", "Content-Length is invalid.", status_code=400)
-    settings = request.app.state.settings
+    runtime = get_service_runtime(request)
+    if runtime is None:
+        raise PluginError("plugin_management_unavailable", "Plugin Management is unavailable.", status_code=503)
+    settings = runtime.settings
     if parsed > settings.plugin_max_wheel_bytes:
         raise plugin_artifact_limit()
     return parsed

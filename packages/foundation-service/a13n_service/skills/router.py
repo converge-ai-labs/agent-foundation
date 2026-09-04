@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.request_runtime import get_control_runtime
 
 from .catalog import SkillCatalogService
 from .domain import (
@@ -37,36 +38,36 @@ _CONTENT_CHUNK_BYTES = 1024 * 1024
 
 
 def _uploads(request: Request) -> SkillUploadService:
-    service: SkillUploadService | None = getattr(request.app.state, "skill_upload_service", None)
-    if service is None:
+    control = get_control_runtime(request)
+    if control is None:
         raise SkillError(
             "skill_management_unavailable",
             "Skill Management is unavailable.",
             status_code=503,
         )
-    return service
+    return control.skill_uploads
 
 
 def _catalog(request: Request) -> SkillCatalogService:
-    service: SkillCatalogService | None = getattr(request.app.state, "skill_catalog_service", None)
-    if service is None:
+    control = get_control_runtime(request)
+    if control is None:
         raise SkillError(
             "skill_management_unavailable",
             "Skill Management is unavailable.",
             status_code=503,
         )
-    return service
+    return control.skill_catalog
 
 
 def _publication(request: Request) -> SkillPublicationService:
-    service: SkillPublicationService | None = getattr(request.app.state, "skill_publication_service", None)
-    if service is None:
+    control = get_control_runtime(request)
+    if control is None:
         raise SkillError(
             "skill_management_unavailable",
             "Skill Management is unavailable.",
             status_code=503,
         )
-    return service
+    return control.skill_publication
 
 
 @router.post(

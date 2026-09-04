@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.iam.authorization import AuthenticatedActor
+from a13n_service.temporal import assume_utc
 
 from .domain import SkillPackageManifest
 from .errors import SkillError, skill_not_found
@@ -44,7 +45,7 @@ async def require_owned_upload(
             "The staged Skill upload was not found.",
             status_code=404,
         )
-    if _as_utc(upload.expires_at) <= _as_utc(now):
+    if assume_utc(upload.expires_at) <= assume_utc(now):
         raise SkillError(
             "skill_upload_expired",
             "The staged Skill upload has expired.",
@@ -127,7 +128,3 @@ async def require_revision(
 
 def require_upload_manifest(upload: SkillUploadRecord) -> SkillPackageManifest:
     return SkillPackageManifest.model_validate(upload.manifest)
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

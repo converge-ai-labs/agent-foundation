@@ -8,14 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from a13n_service.agents import AgentError
-from a13n_service.assets.errors import AssetError
-from a13n_service.environments import EnvironmentManagementError
 from a13n_service.iam import AuthenticationError
-from a13n_service.models.service import ModelError
-from a13n_service.plugins import PluginError
-from a13n_service.skills.errors import SkillError
-from a13n_service.trace_query import TraceQueryError
+from a13n_service.public_errors import PublicError
 
 
 def install_api_conventions(app: FastAPI) -> None:
@@ -32,39 +26,16 @@ def install_api_conventions(app: FastAPI) -> None:
     async def authentication_error(request: Request, _error: AuthenticationError) -> JSONResponse:
         return _error_response(request, 401, "authentication_required", "Authentication is required.")
 
-    @app.exception_handler(AgentError)
-    async def agent_error_handler(request: Request, error: AgentError) -> JSONResponse:
-        return _error_response(request, error.status_code, error.code, error.message, error.details)
-
-    @app.exception_handler(AssetError)
-    async def asset_error_handler(request: Request, error: AssetError) -> JSONResponse:
-        return _error_response(request, error.status_code, error.code, error.message, error.details)
-
-    @app.exception_handler(ModelError)
-    async def model_config_error_handler(request: Request, error: ModelError) -> JSONResponse:
-        return _error_response(request, error.status_code, error.code, error.message, error.details)
-
-    @app.exception_handler(EnvironmentManagementError)
-    async def environment_management_error_handler(
-        request: Request,
-        error: EnvironmentManagementError,
-    ) -> JSONResponse:
-        return _error_response(request, error.status_code, error.code, error.message, error.details)
-
-    @app.exception_handler(PluginError)
-    async def plugin_error_handler(request: Request, error: PluginError) -> JSONResponse:
-        return _error_response(request, error.status_code, error.code, error.message, error.details)
-
-    @app.exception_handler(SkillError)
-    async def skill_error_handler(request: Request, error: SkillError) -> JSONResponse:
-        response = _error_response(request, error.status_code, error.code, error.message, error.details)
-        if error.retry_after_seconds is not None:
-            response.headers["Retry-After"] = str(error.retry_after_seconds)
-        return response
-
-    @app.exception_handler(TraceQueryError)
-    async def trace_query_error_handler(request: Request, error: TraceQueryError) -> JSONResponse:
-        return _error_response(request, error.status_code, error.code, error.message, error.details)
+    @app.exception_handler(PublicError)
+    async def public_error_handler(request: Request, error: PublicError) -> JSONResponse:
+        return _error_response(
+            request,
+            error.status_code,
+            error.code,
+            error.message,
+            error.details,
+            headers=error.headers,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:
@@ -89,9 +60,12 @@ def _error_response(
     code: str,
     message: str,
     details: dict[str, object] | None = None,
+    *,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
+        headers=headers,
         content={
             "error": {
                 "code": code,

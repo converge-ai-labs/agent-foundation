@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import datetime
+
+from a13n_service.temporal import assume_utc
 
 
 def resource_etag(resource_id: str, updated_at: datetime) -> str:
     """Return a strong ETag for one committed resource-head representation."""
 
-    normalized = updated_at.replace(tzinfo=UTC) if updated_at.tzinfo is None else updated_at.astimezone(UTC)
+    normalized = assume_utc(updated_at)
     evidence = f"{resource_id}\0{normalized.isoformat(timespec='microseconds')}".encode()
     return f'"{hashlib.sha256(evidence).hexdigest()}"'
 

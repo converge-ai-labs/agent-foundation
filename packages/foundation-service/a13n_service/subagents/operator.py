@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from collections.abc import Mapping
 from typing import Protocol
 
 from a13n_harness import SafeFailure
@@ -33,6 +32,7 @@ from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
+from a13n_service.temporal import Clock, utc_now
 
 from .acceptance import ChildRunAcceptanceReceipt, ChildRunAcceptanceService
 from .execution_store import (
@@ -90,7 +90,7 @@ class FoundationSubagentOperator(SubagentOperator):
         default_wait_timeout_seconds: float = 30.0,
         max_wait_timeout_seconds: float = 300.0,
         wait_poll_interval_seconds: float = 0.1,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         if not 0 < default_wait_timeout_seconds <= max_wait_timeout_seconds:
             raise ValueError("default subagent wait timeout must fit the maximum")

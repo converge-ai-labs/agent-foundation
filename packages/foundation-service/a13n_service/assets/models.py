@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKeyConstraint, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import Asset, RunOutputAssetSource, UploadedAssetSource
 
@@ -127,14 +128,6 @@ class AssetRecord(Base):
             size_bytes=self.size_bytes,
             content_sha256=self.content_sha256,
             source=source,
-            created_at=_as_utc(self.created_at),
-            deleted_at=_optional_utc(self.deleted_at),
+            created_at=assume_utc(self.created_at),
+            deleted_at=optional_assume_utc(self.deleted_at),
         )
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _optional_utc(value: datetime | None) -> datetime | None:
-    return None if value is None else _as_utc(value)

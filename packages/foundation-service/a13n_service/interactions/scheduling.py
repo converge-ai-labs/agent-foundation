@@ -6,7 +6,7 @@ import hashlib
 import secrets
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from a13n_harness import SafeFailure
 from sqlalchemy import and_, or_, select
@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
@@ -67,7 +68,7 @@ class AttemptScheduler:
         self,
         sessions: async_sessionmaker[AsyncSession],
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
         token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
         attempt_id_factory: Callable[[], str] = new_run_attempt_id,
     ) -> None:
@@ -83,7 +84,7 @@ class AttemptScheduler:
             raise ValueError("scan limit must be between 1 and 1024")
         if claim.draining:
             return ()
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         predecessor = aliased(RunAttemptRecord)
         same_build_service_drain_ready = and_(
             predecessor.yield_reason == "service_drain",
@@ -149,7 +150,7 @@ class AttemptScheduler:
 
         if claim.draining:
             return None
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             scope = await database.scalar(
                 select(RunRecord.thread_id).where(
@@ -279,7 +280,7 @@ def _classify_candidate(
     now: datetime,
 ) -> str | None:
     if run.status == RunStatus.accepted.value:
-        if run.current_run_attempt_id is not None or run.attempts_started != 0 or _utc(run.available_at) > now:
+        if run.current_run_attempt_id is not None or run.attempts_started != 0 or assume_utc(run.available_at) > now:
             return None
         return "initial"
     if run.status != RunStatus.running.value:
@@ -290,18 +291,18 @@ def _classify_candidate(
         if (
             predecessor.id != run.current_run_attempt_id
             or predecessor.status not in {RunAttemptStatus.leased.value, RunAttemptStatus.running.value}
-            or _utc(predecessor.lease_expires_at) > now
+            or assume_utc(predecessor.lease_expires_at) > now
         ):
             return None
         return "lease_expired"
-    if _utc(run.available_at) > now:
+    if assume_utc(run.available_at) > now:
         return None
     if predecessor.status == RunAttemptStatus.failed.value:
         return "attempt_failed"
     if predecessor.status != RunAttemptStatus.yielded.value or predecessor.finished_at is None:
         return None
     if predecessor.yield_reason == "service_drain" and predecessor.worker_build_id == claim.worker_build_id:
-        eligible_at = _utc(predecessor.finished_at) + claim.handoff_preference_window
+        eligible_at = assume_utc(predecessor.finished_at) + claim.handoff_preference_window
         if now < eligible_at:
             return None
     return "planned_handoff"
@@ -310,7 +311,7 @@ def _classify_candidate(
 def _claim_budget_failure(run: RunRecord, classification: str, now: datetime) -> SafeFailure | None:
     if run.recovery_policy_version != "1":
         return _failure("recovery_policy_unsupported", "The Run recovery policy version is unsupported.")
-    if run.recovery_deadline_at is not None and now >= _utc(run.recovery_deadline_at):
+    if run.recovery_deadline_at is not None and now >= assume_utc(run.recovery_deadline_at):
         return _failure("recovery_deadline_exhausted", "The Run recovery deadline was exhausted.")
     resource = run.to_resource()
     if resource.recovery_budget.max_usage is not None and not resource.recovery_budget.max_usage.permits(
@@ -332,12 +333,6 @@ def _failure(code: str, message: str) -> SafeFailure:
 
 def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [

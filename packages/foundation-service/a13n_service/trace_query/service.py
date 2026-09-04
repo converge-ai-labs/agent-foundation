@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -11,6 +11,7 @@ from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
 from a13n_service.iam import AuthenticatedActor
+from a13n_service.temporal import Clock, utc_now
 
 from .cursors import TraceCursorError, decode_trace_cursor, encode_trace_cursor
 from .domain import (
@@ -83,12 +84,12 @@ class TraceQueryService:
         provider_key: str,
         provider: TraceQueryProvider | None,
         authorizer: TraceAccessAuthorizer | None,
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._provider_key = provider_key
         self._provider = provider
         self._authorizer = authorizer
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def list(
         self,

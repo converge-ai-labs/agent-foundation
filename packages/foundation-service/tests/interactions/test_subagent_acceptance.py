@@ -12,6 +12,10 @@ from a13n_service.agents.domain import (
     canonical_digest,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.connectivity.selection_domain import (
+    ConnectorConnectionRunSelection,
+    MCPConnectionRunSelection,
+)
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions import (
     AttemptExecutionService,
@@ -62,6 +66,19 @@ pytestmark = pytest.mark.anyio
 CHILD_AGENT_ID = "agt_2222222222222222"
 CHILD_REVISION_ID = "agtr_2222222222222222"
 CHILD_DEFINITION_ID = f"agent-config-{'3' * 24}"
+CONNECTOR_SELECTION = ConnectorConnectionRunSelection(
+    connector_connection_id="cconn_2222222222222222",
+    connector_id="cnr_2222222222222222",
+    exposure="direct",
+    allowed_tool_keys=("find_order",),
+    tool_catalog_digest="4" * 64,
+)
+MCP_SELECTION = MCPConnectionRunSelection(
+    mcp_connection_id="mcpc_2222222222222222",
+    exposure="catalog",
+    allowed_tool_keys=("search_docs",),
+    tool_catalog_digest="5" * 64,
+)
 
 
 async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
@@ -111,6 +128,8 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         authority.fence,
         child_config,
         suffix="3",
+        connector_connection_selections=(CONNECTOR_SELECTION,),
+        mcp_connection_selections=(MCP_SELECTION,),
     )
     service = ChildRunAcceptanceService(
         interaction_sessions,
@@ -144,7 +163,10 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
             select(func.count()).select_from(ThreadRecord).where(ThreadRecord.role == "child")
         )
         assert child is not None and child_thread is not None
-        assert child.to_resource().authority_principal == running_parent.authority_principal
+        child_resource = child.to_resource()
+        assert child_resource.authority_principal == running_parent.authority_principal
+        assert child_resource.connector_connection_selections == (CONNECTOR_SELECTION.model_dump(mode="json"),)
+        assert child_resource.mcp_connection_selections == (MCP_SELECTION.model_dump(mode="json"),)
         assert (child.agent_id, child.agent_revision_id) == (CHILD_AGENT_ID, CHILD_REVISION_ID)
         assert (child_thread.session_id, child_thread.origin_run_id) == (SESSION_ID, running_parent.id)
         assert relationships == 2
@@ -320,6 +342,8 @@ async def test_completed_child_can_resume_as_linked_continuation(
         parent_authority.fence,
         child_config,
         suffix="d",
+        connector_connection_selections=(CONNECTOR_SELECTION,),
+        mcp_connection_selections=(MCP_SELECTION,),
     )
     service = ChildRunAcceptanceService(
         interaction_sessions,
@@ -362,6 +386,8 @@ async def test_completed_child_can_resume_as_linked_continuation(
         child_agent_id=CHILD_AGENT_ID,
         child_agent_revision_id=CHILD_REVISION_ID,
         child_effective_config=child_config,
+        connector_connection_selections=(CONNECTOR_SELECTION,),
+        mcp_connection_selections=(MCP_SELECTION,),
         source_relationship=source_relationship,
         source_parent_run=running_parent,
         source_thread=source_thread,
@@ -392,6 +418,9 @@ async def test_completed_child_can_resume_as_linked_continuation(
         )
         assert child_run.parent_run_id == completed_child.id
         assert child_run.lineage_kind == "continue"
+        child_resource = child_run.to_resource()
+        assert child_resource.connector_connection_selections == (CONNECTOR_SELECTION.model_dump(mode="json"),)
+        assert child_resource.mcp_connection_selections == (MCP_SELECTION.model_dump(mode="json"),)
 
 
 async def _complete_run(
@@ -446,6 +475,8 @@ def _prepared_child(
     *,
     suffix: str,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
+    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = (),
+    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...] = (),
 ):
     return prepare_child_run(
         parent_run=parent,
@@ -459,6 +490,8 @@ def _prepared_child(
         child_agent_id=CHILD_AGENT_ID,
         child_agent_revision_id=CHILD_REVISION_ID,
         child_effective_config=child_config,
+        connector_connection_selections=connector_connection_selections,
+        mcp_connection_selections=mcp_connection_selections,
         child_thread_id=f"thread-{suffix * 32}",
         child_run_id=f"run_{suffix * 16}",
         relationship_id=f"crr_{suffix * 16}",

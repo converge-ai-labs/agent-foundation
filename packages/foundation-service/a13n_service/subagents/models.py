@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKeyConstraint, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
+from a13n_service.temporal import assume_utc
 
 from .domain import (
     ChildCancellationPolicy,
@@ -93,12 +94,8 @@ class ChildRunRelationshipRecord(Base):
             child_thread_id=self.child_thread_id,
             cancellation_policy=ChildCancellationPolicy(self.cancellation_policy),
             result_visibility=ChildResultVisibility(self.result_visibility),
-            created_at=_as_utc(self.created_at),
+            created_at=assume_utc(self.created_at),
         )
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 __all__ = ["ChildRunRelationshipRecord"]

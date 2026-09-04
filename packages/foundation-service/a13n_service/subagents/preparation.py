@@ -13,6 +13,10 @@ from a13n_service.agents.domain import (
     ResolvedSubagentEdge,
     canonical_digest,
 )
+from a13n_service.connectivity.selection_domain import (
+    ConnectorConnectionRunSelection,
+    MCPConnectionRunSelection,
+)
 from a13n_service.interactions.domain import (
     EncryptedRunConfigPayloadRef,
     MCPToolSnapshotRef,
@@ -81,6 +85,8 @@ def prepare_child_run(
     child_agent_id: str,
     child_agent_revision_id: str,
     child_effective_config: EffectiveAgentConfig,
+    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
+    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
     child_thread_id: str,
     child_run_id: str,
     relationship_id: str,
@@ -167,6 +173,8 @@ def prepare_child_run(
         child_agent_id=child_agent_id,
         child_agent_revision_id=child_agent_revision_id,
         child_effective_config=child_effective_config,
+        connector_connection_selections=connector_connection_selections,
+        mcp_connection_selections=mcp_connection_selections,
         encrypted_config_payload=encrypted_config_payload,
         mcp_tool_snapshot=mcp_tool_snapshot,
         recovery_budget=recovery_budget,
@@ -197,6 +205,8 @@ def prepare_child_resume(
     child_agent_id: str,
     child_agent_revision_id: str,
     child_effective_config: EffectiveAgentConfig,
+    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
+    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
     source_relationship: ChildRunRelationship,
     source_parent_run: Run,
     source_thread: Thread,
@@ -284,6 +294,8 @@ def prepare_child_resume(
         child_agent_id=child_agent_id,
         child_agent_revision_id=child_agent_revision_id,
         child_effective_config=child_effective_config,
+        connector_connection_selections=connector_connection_selections,
+        mcp_connection_selections=mcp_connection_selections,
         encrypted_config_payload=encrypted_config_payload,
         mcp_tool_snapshot=mcp_tool_snapshot,
         recovery_budget=recovery_budget,
@@ -350,6 +362,8 @@ def _child_run(
     child_agent_id: str,
     child_agent_revision_id: str,
     child_effective_config: EffectiveAgentConfig,
+    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
+    mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None,
     mcp_tool_snapshot: MCPToolSnapshotRef,
     recovery_budget: RecoveryBudget,
@@ -378,11 +392,11 @@ def _child_run(
         encrypted_config_payload=encrypted_config_payload,
         runtime_lock_digest=child_effective_config.runtime_lock_digest,
         model_execution_observation=child_effective_config.resolved_model.execution.observation(),
-        connection_selections=tuple(
-            item.model_dump(mode="json", by_alias=True) for item in child_effective_config.connector_tools
+        connector_connection_selections=tuple(
+            item.model_dump(mode="json", by_alias=True) for item in connector_connection_selections
         ),
         mcp_connection_selections=tuple(
-            item.model_dump(mode="json", by_alias=True) for item in child_effective_config.mcp_tools
+            item.model_dump(mode="json", by_alias=True) for item in mcp_connection_selections
         ),
         mcp_tool_snapshot=mcp_tool_snapshot,
         priority=parent_run.priority,

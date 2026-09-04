@@ -41,6 +41,7 @@ from a13n_harness.identity import AgentInstanceContext
 from anyio import CancelScope, move_on_after, to_thread
 
 from a13n_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
+from a13n_ui.environment_paths import EnvironmentPathLayout
 from a13n_ui.errors import CompositionError, EnvironmentLifecycleError, StoreError
 from a13n_ui.extensions import (
     LOCAL_ENVD_PROVIDER_KEY,
@@ -88,6 +89,7 @@ class _PreparedMount:
     supplied_state: EnvironmentState | None
     environment: Environment
     permission_ceiling: EnvironmentPermissionSet
+    mount_path: str | None
 
 
 class _EnvironmentBinding(EnvironmentProviderBinding):
@@ -385,6 +387,11 @@ class EnvironmentRunService:
         profile = composition.environment_profile
         reconstructed = self._reconstructor.reconstruct(profile)
         roots = await normalize_project_roots(composition.project_roots)
+        path_layout = EnvironmentPathLayout.resolve(
+            native=profile.provider_key == NATIVE_PROVIDER_KEY,
+            project_roots=roots,
+            user_skills_root=self._user_skills_root,
+        )
         mounts: list[_PreparedMount] = []
         try:
             for index, root in enumerate(roots, start=1):
@@ -411,10 +418,21 @@ class EnvironmentRunService:
                         supplied_state=state,
                         environment=environment,
                         permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                        mount_path=(
+                            path_layout.project_mounts[index - 1]
+                            if profile.provider_key == NATIVE_PROVIDER_KEY
+                            else None
+                        ),
                     )
                 )
-            if _root_selects_skills(composition):
-                mounts.append(await self._prepare_user_skills_mount())
+            if _root_selects_skills(composition) and not (
+                profile.provider_key == NATIVE_PROVIDER_KEY and Path(path_layout.user_skills) in roots
+            ):
+                mounts.append(
+                    await self._prepare_user_skills_mount(
+                        mount_path=(path_layout.user_skills if profile.provider_key == NATIVE_PROVIDER_KEY else None)
+                    )
+                )
             extensions = await self._reconstructor.create_extensions(composition)
             runtime = create_environment_runtime(
                 mounts={
@@ -422,6 +440,7 @@ class EnvironmentRunService:
                         binding=_EnvironmentBinding(item.environment),
                         permission_ceiling=item.permission_ceiling,
                         working_directory="/",
+                        mount_path=item.mount_path,
                     )
                     for item in mounts
                 },
@@ -442,7 +461,7 @@ class EnvironmentRunService:
             runtime=runtime,
         )
 
-    async def _prepare_user_skills_mount(self) -> _PreparedMount:
+    async def _prepare_user_skills_mount(self, *, mount_path: str | None) -> _PreparedMount:
         root = self._user_skills_root or Path.home() / ".agents" / "skills"
         try:
             normalized = await to_thread.run_sync(_prepare_user_skills_root, root)
@@ -477,6 +496,7 @@ class EnvironmentRunService:
             supplied_state=None,
             environment=environment,
             permission_ceiling=EnvironmentPermissionSet(operations=file_actions),
+            mount_path=mount_path,
         )
 
     async def _load_state(

@@ -77,6 +77,7 @@ def _accepted_run(
         effective_agent_config_digest=config.content_digest,
         runtime_lock_digest=config.runtime_lock_digest,
         model_execution_observation=config.resolved_model.execution.observation(),
+        connector_connection_selections=({"connector_connection_id": "cconn_1234567890abcdef"},),
         mcp_tool_snapshot=MCPToolSnapshotRef(
             digest_sha256="d" * 64,
             size_bytes=2,

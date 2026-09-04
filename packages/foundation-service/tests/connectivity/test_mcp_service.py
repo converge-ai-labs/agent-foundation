@@ -1,0 +1,800 @@
+from __future__ import annotations
+
+import json
+from asyncio import create_task
+from collections.abc import AsyncIterator
+from urllib.parse import parse_qs, urlsplit
+
+import httpx2
+import pytest
+from a13n_service.connectivity.mcp.catalog_objects import MCPCatalogObjectStore
+from a13n_service.connectivity.mcp.catalog_service import MCPCatalogService
+from a13n_service.connectivity.mcp.domain import (
+    CreateMCPConnectionRequest,
+    MCPAuthMode,
+    ReplaceMCPCredentialsRequest,
+)
+from a13n_service.connectivity.mcp.errors import MCPConnectionError
+from a13n_service.connectivity.mcp.management import invalidate_catalog_claim, require_connection, secret_context
+from a13n_service.connectivity.mcp.models import (
+    MCPConnectionRecord,
+    MCPOAuthSessionRecord,
+    MCPToolCatalogRecord,
+)
+from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
+from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
+from a13n_service.connectivity.mcp.protocol import MCPProtocolClient
+from a13n_service.connectivity.mcp.service import MCPConnectionService
+from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.iam import AuthenticatedActor, PrincipalRef
+from a13n_service.iam.models import RoleBindingRecord, UserRecord
+from a13n_service.secrets import SecretOperation
+from a13n_service.storage import transaction
+from a13n_service.storage.object_store import LocalObjectStore
+from anyio import Event
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from .conftest import NOW, ORG_ID, SERVICE_ACCOUNT_ID, USER_ID, WORKSPACE_ID, actor
+
+MCP_ENDPOINT = "https://8.8.8.8/mcp"
+ISSUER = "https://8.8.4.4"
+PUBLIC_ORIGIN = "https://1.1.1.1"
+
+
+class RemoteServer:
+    def __init__(self) -> None:
+        self.requests: list[httpx2.Request] = []
+        self.allow_anonymous = False
+        self.tool_name = "search"
+        self.use_dcr = False
+        self.registration_deleted = False
+        self.refresh_error: str | None = None
+
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        self.requests.append(request)
+        path = request.url.path
+        if request.method == "GET" and path == "/resource-metadata":
+            return httpx2.Response(
+                200,
+                headers={"content-type": "application/json"},
+                json={"resource": MCP_ENDPOINT, "authorization_servers": [ISSUER], "scopes_supported": ["tools"]},
+            )
+        if request.method == "GET" and path == "/.well-known/oauth-authorization-server":
+            client_registration = (
+                {"registration_endpoint": f"{ISSUER}/register"}
+                if self.use_dcr
+                else {"client_id_metadata_document_supported": True}
+            )
+            return httpx2.Response(
+                200,
+                headers={"content-type": "application/json"},
+                json={
+                    "issuer": ISSUER,
+                    "authorization_endpoint": f"{ISSUER}/authorize",
+                    "token_endpoint": f"{ISSUER}/token",
+                    "code_challenge_methods_supported": ["S256"],
+                    **client_registration,
+                },
+            )
+        if request.method == "POST" and path == "/register":
+            return httpx2.Response(
+                201,
+                headers={"content-type": "application/json"},
+                json={
+                    "client_id": "dynamic-client",
+                    "client_secret": "dynamic-secret",
+                    "token_endpoint_auth_method": "client_secret_post",
+                    "registration_access_token": "registration-token",
+                    "registration_client_uri": f"{ISSUER}/register/dynamic-client",
+                },
+            )
+        if request.method == "DELETE" and path == "/register/dynamic-client":
+            assert request.headers["authorization"] == "Bearer registration-token"
+            self.registration_deleted = True
+            return httpx2.Response(204)
+        if request.method == "POST" and path == "/token":
+            values = parse_qs(request.content.decode())
+            assert values["resource"] == [MCP_ENDPOINT]
+            if values["grant_type"] == ["refresh_token"]:
+                assert values["refresh_token"] == ["refresh-secret"]
+                if self.refresh_error is not None:
+                    return httpx2.Response(
+                        400,
+                        headers={"content-type": "application/json"},
+                        json={"error": self.refresh_error},
+                    )
+                return httpx2.Response(
+                    200,
+                    headers={"content-type": "application/json"},
+                    json={
+                        "access_token": "refreshed-oauth-secret",
+                        "refresh_token": "rotated-refresh-secret",
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                    },
+                )
+            assert values["code_verifier"][0]
+            if self.use_dcr:
+                assert values["client_secret"] == ["dynamic-secret"]
+            return httpx2.Response(
+                200,
+                headers={"content-type": "application/json"},
+                json={
+                    "access_token": "oauth-secret",
+                    "refresh_token": "refresh-secret",
+                    "token_type": "Bearer",
+                    "expires_in": 1,
+                },
+            )
+        if request.method == "DELETE":
+            return httpx2.Response(204)
+        body = json.loads(request.content)
+        has_credentials = "authorization" in request.headers or "x-api-key" in request.headers
+        if body["method"] == "initialize" and not has_credentials and not self.allow_anonymous:
+            return httpx2.Response(
+                401,
+                headers={
+                    "www-authenticate": (
+                        f'Bearer resource_metadata="{MCP_ENDPOINT.removesuffix("/mcp")}/resource-metadata", '
+                        'scope="tools"'
+                    )
+                },
+            )
+        if body["method"] == "initialize":
+            if not self.allow_anonymous:
+                assert (
+                    request.headers.get("authorization")
+                    in {
+                        "Bearer bearer-secret",
+                        "Bearer oauth-secret",
+                        "Bearer refreshed-oauth-secret",
+                    }
+                    or request.headers.get("x-api-key") == "static-secret"
+                )
+            return _rpc(
+                body["id"],
+                {
+                    "protocolVersion": "2025-11-25",
+                    "serverInfo": {"name": "test", "version": "1"},
+                    "capabilities": {"tools": {}},
+                },
+                headers={"mcp-session-id": "session"},
+            )
+        if body["method"] == "notifications/initialized":
+            return httpx2.Response(202)
+        return _rpc(
+            body["id"],
+            {"tools": [{"name": self.tool_name, "inputSchema": {"type": "object"}}]},
+        )
+
+
+def _rpc(identifier: int, result: dict[str, object], *, headers: dict[str, str] | None = None) -> httpx2.Response:
+    return httpx2.Response(
+        200,
+        headers={"content-type": "application/json", **(headers or {})},
+        json={"jsonrpc": "2.0", "id": identifier, "result": result},
+    )
+
+
+@pytest.fixture
+async def mcp_services(
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+    connectivity_secrets,
+    connectivity_objects: LocalObjectStore,
+) -> AsyncIterator[tuple[MCPConnectionService, MCPOAuthService, RemoteServer]]:
+    remote = RemoteServer()
+    policy = EndpointPolicy()
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(remote), follow_redirects=False) as http_client:
+        oauth_client = MCPOAuthClient(http_client, policy)
+        catalog = MCPCatalogService(
+            connectivity_sessions,
+            MCPProtocolClient(http_client, policy),
+            connectivity_secrets,
+            MCPCatalogObjectStore(connectivity_objects),
+            instance_id="mcp-test",
+            clock=lambda: NOW,
+        )
+        connections = MCPConnectionService(
+            connectivity_sessions,
+            policy,
+            connectivity_secrets,
+            catalog,
+            registration_cleaner=oauth_client,
+            clock=lambda: NOW,
+        )
+        oauth = MCPOAuthService(
+            connectivity_sessions,
+            oauth_client,
+            connectivity_secrets,
+            catalog,
+            public_origin=PUBLIC_ORIGIN,
+            client_name="Foundation Test",
+            instance_id="mcp-test",
+            clock=lambda: NOW,
+        )
+        yield connections, oauth, remote
+
+
+@pytest.mark.anyio
+async def test_bearer_connection_is_pending_until_credentials_then_publishes_catalog(mcp_services) -> None:
+    connections, _oauth, _remote = mcp_services
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-bearer",
+        request=CreateMCPConnectionRequest(
+            name="Bearer MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.bearer,
+            owner_user_id=USER_ID,
+        ),
+    )
+    assert created.status == "pending"
+    assert created.credential_configured is False
+
+    ready = await connections.replace_credentials(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="bearer-credentials",
+        request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
+    )
+    assert ready.status == "ready"
+    assert ready.credential_configured is True
+    assert ready.catalog_digest is not None
+    assert "bearer-secret" not in repr(ready)
+
+    replay = await connections.replace_credentials(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="bearer-credentials",
+        request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
+    )
+    assert replay == ready
+
+
+@pytest.mark.anyio
+async def test_personal_connection_is_concealed_from_another_principal(mcp_services) -> None:
+    connections, _oauth, _remote = mcp_services
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-private",
+        request=CreateMCPConnectionRequest(
+            name="Private MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.bearer,
+            owner_user_id=USER_ID,
+        ),
+    )
+    other = AuthenticatedActor(
+        principal=PrincipalRef(principal_type="service_account", principal_id=SERVICE_ACCOUNT_ID),
+        auth_method="bearer",
+        credential_id="token-test",
+        boundary_workspace_id=WORKSPACE_ID,
+    )
+    with pytest.raises(MCPConnectionError, match="requested resource"):
+        await connections.get(actor=other, connection_id=created.id)
+
+
+@pytest.mark.anyio
+async def test_personal_owner_can_manage_without_workspace_admin(
+    mcp_services,
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    connections, _oauth, _remote = mcp_services
+    async with transaction(connectivity_sessions) as session:
+        await session.execute(
+            update(RoleBindingRecord).where(RoleBindingRecord.id == "rb_connectivity_admin").values(role_key="viewer")
+        )
+
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="personal-owner-create",
+        request=CreateMCPConnectionRequest(
+            name="Personal Owner MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.bearer,
+            owner_user_id=USER_ID,
+        ),
+    )
+    ready = await connections.replace_credentials(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="personal-owner-credentials",
+        request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
+    )
+    assert ready.status == "ready"
+    with pytest.raises(MCPConnectionError, match="requested resource"):
+        await connections.create(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="viewer-shared-create",
+            request=CreateMCPConnectionRequest(
+                name="Disallowed Shared MCP",
+                endpoint_url=MCP_ENDPOINT,
+                auth_mode=MCPAuthMode.none,
+            ),
+        )
+
+
+@pytest.mark.anyio
+async def test_admin_can_inspect_and_disable_but_not_recredential_personal_connection(
+    mcp_services,
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    connections, _oauth, _remote = mcp_services
+    owner_id = "usr_1111222233334444"
+    owner = AuthenticatedActor(
+        principal=PrincipalRef(principal_type="user", principal_id=owner_id),
+        auth_method="session",
+        credential_id="owner-session",
+        boundary_workspace_id=WORKSPACE_ID,
+    )
+    async with transaction(connectivity_sessions) as session:
+        session.add(
+            UserRecord(
+                id=owner_id,
+                email="mcp-owner@example.com",
+                normalized_email="mcp-owner@example.com",
+                name="MCP Owner",
+                status="active",
+                email_verified_at=NOW,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await session.flush()
+        session.add_all(
+            (
+                RoleBindingRecord(
+                    id="rb_mcp_owner_org",
+                    organization_id=ORG_ID,
+                    workspace_id=None,
+                    principal_type="user",
+                    principal_id=owner_id,
+                    resource_type="organization",
+                    resource_id=ORG_ID,
+                    role_key="member",
+                    created_by_user_id=USER_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                ),
+                RoleBindingRecord(
+                    id="rb_mcp_owner_workspace",
+                    organization_id=ORG_ID,
+                    workspace_id=WORKSPACE_ID,
+                    principal_type="user",
+                    principal_id=owner_id,
+                    resource_type="workspace",
+                    resource_id=WORKSPACE_ID,
+                    role_key="viewer",
+                    created_by_user_id=USER_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                ),
+            )
+        )
+    created = await connections.create(
+        actor=owner,
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="other-owner-create",
+        request=CreateMCPConnectionRequest(
+            name="Other Personal MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.bearer,
+            owner_user_id=owner_id,
+        ),
+    )
+
+    assert (await connections.get(actor=actor(), connection_id=created.id)).id == created.id
+    assert created.id in {
+        item.id
+        for item in (await connections.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=100, cursor=None)).items
+    }
+    with pytest.raises(MCPConnectionError, match="requested resource"):
+        await connections.replace_credentials(
+            actor=actor(),
+            connection_id=created.id,
+            idempotency_key="admin-personal-credentials",
+            request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
+        )
+    disabled = await connections.set_enabled(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="admin-disable-personal",
+        expected_version=1,
+        enabled=False,
+    )
+    assert disabled.status == "disabled"
+
+
+@pytest.mark.anyio
+async def test_static_headers_require_the_complete_immutable_name_set(mcp_services) -> None:
+    connections, _oauth, remote = mcp_services
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-static",
+        request=CreateMCPConnectionRequest(
+            name="Static MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.static_headers,
+            static_header_names=("X-API-Key",),
+        ),
+    )
+    with pytest.raises(MCPConnectionError, match="invalid"):
+        await connections.replace_credentials(
+            actor=actor(),
+            connection_id=created.id,
+            idempotency_key="invalid-static",
+            request=ReplaceMCPCredentialsRequest(
+                expected_version=1,
+                static_headers={"X-Other": "static-secret"},
+            ),
+        )
+    ready = await connections.replace_credentials(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="valid-static",
+        request=ReplaceMCPCredentialsRequest(
+            expected_version=1,
+            static_headers={"x-api-key": "static-secret"},
+        ),
+    )
+    assert ready.status == "ready"
+    assert any(request.headers.get("x-api-key") == "static-secret" for request in remote.requests)
+    assert "static-secret" not in repr(ready)
+
+
+@pytest.mark.anyio
+async def test_oauth_state_is_bound_single_use_and_callback_publishes_catalog(mcp_services) -> None:
+    connections, oauth, _remote = mcp_services
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-oauth",
+        request=CreateMCPConnectionRequest(
+            name="OAuth MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.oauth,
+            owner_user_id=USER_ID,
+        ),
+    )
+    launch = await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-oauth",
+        expected_version=1,
+    )
+    replay = await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-oauth",
+        expected_version=1,
+    )
+    assert replay == launch
+    query = parse_qs(urlsplit(launch.authorization_url).query)
+    assert query["resource"] == [MCP_ENDPOINT]
+    assert query["code_challenge_method"] == ["S256"]
+    assert query["client_id"] == [f"{PUBLIC_ORIGIN}/api/v1/oauth/mcp/client-metadata.json"]
+
+    other_user = AuthenticatedActor(
+        principal=PrincipalRef(principal_type="user", principal_id="usr_0123456789abcdef"),
+        auth_method="session",
+        credential_id="other-session",
+        boundary_workspace_id=WORKSPACE_ID,
+    )
+    with pytest.raises(MCPConnectionError, match="state is invalid"):
+        await oauth.callback(actor=other_user, state=query["state"][0], code="code", issuer=ISSUER)
+
+    ready = await oauth.callback(actor=actor(), state=query["state"][0], code="code", issuer=ISSUER)
+    assert ready.status == "ready"
+    assert ready.credential_configured is True
+    with pytest.raises(MCPConnectionError, match="already used"):
+        await oauth.callback(actor=actor(), state=query["state"][0], code="code", issuer=ISSUER)
+
+
+@pytest.mark.anyio
+async def test_none_connection_discovers_immediately_and_lifecycle_is_versioned(mcp_services) -> None:
+    connections, _oauth, remote = mcp_services
+    remote.allow_anonymous = True
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-none",
+        request=CreateMCPConnectionRequest(
+            name="Anonymous MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.none,
+        ),
+    )
+    assert created.status == "ready"
+    disabled = await connections.set_enabled(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="disable-none",
+        expected_version=1,
+        enabled=False,
+    )
+    assert disabled.status == "disabled"
+    enabled = await connections.set_enabled(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="enable-none",
+        expected_version=2,
+        enabled=True,
+    )
+    assert enabled.status == "ready"
+
+
+@pytest.mark.anyio
+async def test_delete_fences_connection_and_cleans_exact_dcr_registration(
+    mcp_services,
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    connections, oauth, remote = mcp_services
+    remote.use_dcr = True
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-dcr",
+        request=CreateMCPConnectionRequest(
+            name="DCR MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.oauth,
+        ),
+    )
+    launch = await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-dcr",
+        expected_version=1,
+    )
+    state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
+    ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+    await connections.delete(
+        actor=actor(),
+        connection_id=ready.id,
+        idempotency_key="delete-dcr",
+        expected_version=2,
+    )
+
+    assert remote.registration_deleted is True
+    with pytest.raises(MCPConnectionError, match="requested resource"):
+        await connections.get(actor=actor(), connection_id=ready.id)
+    async with connectivity_sessions() as session:
+        deleted = await session.get(MCPConnectionRecord, ready.id)
+    assert deleted is not None
+    assert deleted.cleanup_pending is False
+    assert deleted.deleted_at is not None
+
+
+@pytest.mark.anyio
+async def test_oauth_refresh_rotates_bundle_and_republishes_catalog(mcp_services) -> None:
+    connections, oauth, remote = mcp_services
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-refresh",
+        request=CreateMCPConnectionRequest(
+            name="Refresh MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.oauth,
+        ),
+    )
+    launch = await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-refresh",
+        expected_version=1,
+    )
+    state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
+    ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+
+    assert await oauth.refresh_if_due(ready.id, skew_seconds=60) is True
+    refreshed = await connections.get(actor=actor(), connection_id=ready.id)
+    assert refreshed.status == "ready"
+    assert refreshed.credential_generation == ready.credential_generation + 1
+    assert any(request.headers.get("authorization") == "Bearer refreshed-oauth-secret" for request in remote.requests)
+
+
+@pytest.mark.anyio
+async def test_oauth_invalid_grant_requires_reauthorization(mcp_services) -> None:
+    connections, oauth, remote = mcp_services
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-invalid-grant",
+        request=CreateMCPConnectionRequest(
+            name="Invalid Grant MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.oauth,
+        ),
+    )
+    launch = await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-invalid-grant",
+        expected_version=1,
+    )
+    state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
+    ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+    remote.refresh_error = "invalid_grant"
+
+    assert await oauth.refresh_credentials(ready.id) is False
+    failed = await connections.get(actor=actor(), connection_id=ready.id)
+    assert failed.status == "action_required"
+    assert failed.status_reason == "reauthorization_required"
+    assert failed.credential_generation == ready.credential_generation
+
+
+@pytest.mark.anyio
+async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
+    mcp_services,
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+    connectivity_secrets,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections, oauth, _remote = mcp_services
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-refresh-race",
+        request=CreateMCPConnectionRequest(
+            name="Refresh Race MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.oauth,
+        ),
+    )
+    launch = await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-refresh-race",
+        expected_version=1,
+    )
+    state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
+    ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+    started = Event()
+    proceed = Event()
+
+    async def delayed_refresh(bundle: dict[str, object]) -> dict[str, object]:
+        started.set()
+        await proceed.wait()
+        return {**bundle, "access_token": "stale-candidate", "expires_in": 3600}
+
+    monkeypatch.setattr(oauth._oauth, "refresh", delayed_refresh)
+    refresh_task = create_task(oauth.refresh_credentials(ready.id))
+    await started.wait()
+    async with transaction(connectivity_sessions) as session:
+        connection = await require_connection(session, ready.id, lock=True)
+        secret_ref = await connectivity_secrets.replace_in_transaction(
+            session,
+            secret_context(connection, operation=SecretOperation.management),
+            json.dumps(
+                {
+                    "kind": "oauth",
+                    "access_token": "newer-token",
+                    "refresh_token": "newer-refresh",
+                    "token_type": "Bearer",
+                }
+            ),
+        )
+        connection.credential_generation = secret_ref.version
+        invalidate_catalog_claim(connection, now=NOW)
+    proceed.set()
+
+    assert await refresh_task is False
+    current = await connections.get(actor=actor(), connection_id=ready.id)
+    assert current.credential_generation == ready.credential_generation + 1
+
+
+@pytest.mark.anyio
+async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
+    mcp_services,
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    connections, oauth, remote = mcp_services
+    remote.use_dcr = True
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-oauth-restart",
+        request=CreateMCPConnectionRequest(
+            name="OAuth Restart MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.oauth,
+        ),
+    )
+    first = await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-first",
+        expected_version=1,
+    )
+    await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-second",
+        expected_version=2,
+    )
+    async with connectivity_sessions() as session:
+        expired = await session.scalar(
+            select(MCPOAuthSessionRecord)
+            .where(
+                MCPOAuthSessionRecord.mcp_connection_id == created.id,
+                MCPOAuthSessionRecord.status == "expired",
+            )
+            .order_by(MCPOAuthSessionRecord.created_at, MCPOAuthSessionRecord.id)
+        )
+    assert expired is not None
+    assert await oauth.cleanup_expired_session(expired.id) is True
+    assert remote.registration_deleted is True
+    state = parse_qs(urlsplit(first.authorization_url).query)["state"][0]
+    with pytest.raises(MCPConnectionError, match="unavailable"):
+        await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+
+
+@pytest.mark.anyio
+async def test_catalogs_are_identity_isolated_and_prior_catalogs_remain_immutable(
+    mcp_services,
+    connectivity_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    connections, _oauth, remote = mcp_services
+    first = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="first-identity",
+        request=CreateMCPConnectionRequest(
+            name="First Identity",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.bearer,
+            owner_user_id=USER_ID,
+        ),
+    )
+    second = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="second-identity",
+        request=CreateMCPConnectionRequest(
+            name="Second Identity",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.bearer,
+            owner_user_id=USER_ID,
+        ),
+    )
+    first_ready = await connections.replace_credentials(
+        actor=actor(),
+        connection_id=first.id,
+        idempotency_key="first-secret",
+        request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
+    )
+    second_ready = await connections.replace_credentials(
+        actor=actor(),
+        connection_id=second.id,
+        idempotency_key="second-secret",
+        request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
+    )
+    assert first_ready.catalog_digest != second_ready.catalog_digest
+
+    remote.tool_name = "lookup"
+    refreshed = await connections.reconnect(
+        actor=actor(),
+        connection_id=first.id,
+        idempotency_key="refresh-first",
+        expected_version=2,
+    )
+    assert refreshed.catalog_digest != first_ready.catalog_digest
+    async with connectivity_sessions() as session:
+        catalogs = tuple(
+            (
+                await session.scalars(
+                    select(MCPToolCatalogRecord).where(MCPToolCatalogRecord.mcp_connection_id == first.id)
+                )
+            ).all()
+        )
+    assert {catalog.digest_sha256 for catalog in catalogs} == {
+        first_ready.catalog_digest,
+        refreshed.catalog_digest,
+    }

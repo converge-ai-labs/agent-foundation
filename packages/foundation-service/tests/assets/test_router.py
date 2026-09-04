@@ -10,8 +10,10 @@ from pathlib import Path
 import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
+from a13n_service.assets.cleanup import AssetCleanupReconciler
 from a13n_service.assets.models import AssetRecord
-from a13n_service.assets.objects import asset_content_key, asset_object_metadata
+from a13n_service.assets.objects import AssetObjectStore, asset_content_key, asset_object_metadata
+from a13n_service.assets.staging import AssetStaging
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord, OutboxRecord
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.domain import PrincipalRef
@@ -68,6 +70,8 @@ def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
         model_resolve_dns_on_save=False,
         secret_master_key_base64=b64encode(b"0123456789abcdef0123456789abcdef").decode(),
         secret_encryption_key_id="asset-management-test-key",
+        connectivity_public_origin="http://testserver",
+        connectivity_http_origins=("http://testserver",),
     )
 
 
@@ -218,7 +222,7 @@ async def test_asset_http_lifecycle_idempotency_and_cleanup(api: Api) -> None:
     assert (await api.client.get(f"/api/v1/assets/{created['id']}/content")).status_code == 404
     assert (await api.client.delete(f"/api/v1/assets/{created['id']}")).status_code == 404
 
-    sessions = api.app.state.db_session_factory
+    sessions = api.app.state.runtime.shared.storage.sessions
     async with transaction(sessions) as session:
         evidence = tuple((await session.scalars(select(IdempotencyEvidenceRecord))).all())
         outbox = await session.scalar(select(OutboxRecord).where(OutboxRecord.source_id == created["id"]))
@@ -231,13 +235,16 @@ async def test_asset_http_lifecycle_idempotency_and_cleanup(api: Api) -> None:
     }
     assert all(set(item.details or {}) <= {"source_kind"} for item in audits)
 
-    assert await api.app.state.asset_cleanup_reconciler.reconcile_once() == 1
+    storage = api.app.state.runtime.shared.storage
+    staging = await AssetStaging.create(storage.files_root, limiter=storage.file_limiter)
+    cleanup = AssetCleanupReconciler(sessions, AssetObjectStore(storage.objects, staging))
+    assert await cleanup.reconcile_once() == 1
     async with transaction(sessions) as session:
         outbox = await session.scalar(select(OutboxRecord).where(OutboxRecord.source_id == created["id"]))
     assert outbox is not None and outbox.status == "published"
     key = asset_content_key(organization_id=ORG_ID, workspace_id=WORKSPACE_ID, asset_id=created["id"])
     with pytest.raises(ObjectNotFound):
-        await api.app.state.storage.objects.stat(key)
+        await api.app.state.runtime.shared.storage.objects.stat(key)
 
 
 @pytest.mark.anyio
@@ -249,10 +256,10 @@ async def test_concurrent_same_key_uploads_reconcile_one_asset_and_object(api: A
 
     assert first.status_code == second.status_code == 201
     assert first.json()["id"] == second.json()["id"]
-    async with transaction(api.app.state.db_session_factory) as session:
+    async with transaction(api.app.state.runtime.shared.storage.sessions) as session:
         records = tuple((await session.scalars(select(AssetRecord))).all())
     assert [record.id for record in records] == [first.json()["id"]]
-    objects = await api.app.state.storage.objects.list(
+    objects = await api.app.state.runtime.shared.storage.objects.list(
         prefix=f"tenants/{ORG_ID}/workspaces/{WORKSPACE_ID}/assets/version-1/"
     )
     assert [item.key for item in objects.items] == [
@@ -286,7 +293,7 @@ async def test_asset_upload_rejects_unsafe_inputs_limits_and_denied_callers(api:
 
     denied = await upload(api.client, key="viewer-create", actor="viewer")
     assert denied.status_code == 404
-    async with transaction(api.app.state.db_session_factory) as session:
+    async with transaction(api.app.state.runtime.shared.storage.sessions) as session:
         audit = await session.scalar(
             select(SecurityAuditRecord).where(
                 SecurityAuditRecord.actor_id == VIEWER_ID,
@@ -306,7 +313,7 @@ async def test_content_integrity_failure_returns_safe_typed_error(api: Api) -> N
         size_bytes=len(PDF),
         content_sha256=created["content_sha256"],
     )
-    await api.app.state.storage.objects.put(
+    await api.app.state.runtime.shared.storage.objects.put(
         key,
         b"corrupt",
         content_type="application/octet-stream",

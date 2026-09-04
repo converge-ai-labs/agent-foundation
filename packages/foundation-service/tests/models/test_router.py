@@ -45,6 +45,8 @@ def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
         model_resolve_dns_on_save=False,
         secret_master_key_base64=b64encode(b"0123456789abcdef0123456789abcdef").decode(),
         secret_encryption_key_id="model-management-test-key",
+        connectivity_public_origin="http://testserver",
+        connectivity_http_origins=("http://testserver",),
     )
 
 

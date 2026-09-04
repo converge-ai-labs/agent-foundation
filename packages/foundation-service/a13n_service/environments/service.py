@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import utc_now
 
 from .access import (
     authorize_environment_workspace as _authorize,
@@ -66,9 +67,6 @@ from .persistence import (
     evidence_record as _evidence,
 )
 from .persistence import (
-    is_idempotency_race as _is_idempotency_race,
-)
-from .persistence import (
     load_replay as _load_replay,
 )
 from .persistence import (
@@ -104,7 +102,7 @@ class EnvironmentManagementService:
     ) -> None:
         self._sessions = sessions
         self._catalog = catalog
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
         self._attachment_tester = attachment_tester
 
     async def list_provider_catalog(
@@ -341,7 +339,7 @@ class EnvironmentManagementService:
                 await session.flush()
                 return environment.to_resource()
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 return await replay_environment_create(
                     self._sessions,
                     actor=actor,
@@ -623,7 +621,7 @@ class EnvironmentManagementService:
                 await session.flush()
                 return EnvironmentRevisionMutationResult(revision=revision.to_resource(), created=created)
         except IntegrityError as error:
-            if _is_idempotency_race(error):
+            if is_evidence_unique_race(error):
                 revision, created = await replay_environment_revision_create(
                     self._sessions,
                     actor=actor,

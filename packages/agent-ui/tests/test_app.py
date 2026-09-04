@@ -6,11 +6,18 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder
-from a13n_harness.capabilities import SubagentCancelResult, SubagentSteerResult, WebCapability
+from a13n_harness import (
+    AgentDefinition,
+    AgentIdentityRef,
+    AgentInstanceContext,
+    AgentSpec,
+    HarnessBuilder,
+)
+from a13n_harness.capabilities import SkillsCapability, SubagentCancelResult, SubagentSteerResult, WebCapability
+from a13n_harness.environment import EnvironmentError
 from a13n_harness.model_auth import GrokCredentials
 from a13n_ui.app import AgentUiIntegrations, AppState, open_agent_ui_app
-from a13n_ui.composition import ReconstructedAgent, ThreadCompositionSelection
+from a13n_ui.composition import AgentReconstructor, ReconstructedAgent, ThreadCompositionSelection
 from a13n_ui.configuration import load_agent_ui_configuration
 from a13n_ui.environment_runtime import EnvironmentRunService
 from a13n_ui.errors import AppStateError, StoreConflictError
@@ -468,6 +475,21 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
         )
         published = await executor._compositions.publish(source, selection)
         plan = await executor._environments.prepare(published.value)
+        project_root = Path(published.value.project_roots[0]).as_posix()
+        async with plan.runtime.bind(
+            thread_id=stored.thread_id,
+            run_id="run-native-paths",
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="agent-ui"),
+                agent_instance_id="agent-native-paths",
+            ),
+            host_refs={},
+        ) as environment:
+            assert environment.snapshot.mounts[0].mount_path == project_root
+            assert environment.resolve_path(f"{project_root}/readme.md").path == "/readme.md"
+            with pytest.raises(EnvironmentError) as legacy:
+                environment.resolve_path("/workspace/readme.md")
+            assert legacy.value.code == "environment_selection_invalid"
         finalization = await plan.finalize(timeout_seconds=1)
 
     assert finalization.cleanup_errors == ()
@@ -509,11 +531,101 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
         assert tuple(plan.environments) == ("workspace", "user-skills")
         assert plan.default_environment == "workspace"
         assert user_skills.is_dir()
+        async with plan.runtime.bind(
+            thread_id=stored.thread_id,
+            run_id="run-native-skills",
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="agent-ui"),
+                agent_instance_id="agent-native-skills",
+            ),
+            host_refs={},
+        ) as environment:
+            assert tuple(item.mount_path for item in environment.snapshot.mounts) == (
+                Path(published.value.project_roots[0]).as_posix(),
+                user_skills.resolve().as_posix(),
+            )
         finalization = await plan.finalize(timeout_seconds=1)
 
     assert finalization.cleanup_errors == ()
     assert len(finalization.state_publications) == 1
     assert finalization.state_publications[0].status == "unchanged"
+
+
+@pytest.mark.parametrize("project_position", ["first", "later"])
+async def test_native_skills_reuse_a_project_mount_at_the_user_skill_root(
+    tmp_path: Path,
+    project_position: str,
+) -> None:
+    root = _write_configuration(tmp_path)
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
+    user_skills = tmp_path / "home" / ".agents" / "skills"
+    user_skills.mkdir(parents=True)
+
+    async with open_agent_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=root,
+    ) as app:
+        created = await app.create_thread()
+        stored = await app._threads.get(created.thread_id)
+        source = await app.current_configuration()
+        assert source is not None
+        executor = app._root_runs._executor
+        assert isinstance(executor._environments, EnvironmentRunService)
+        executor._environments._user_skills_root = user_skills
+        selection = ThreadCompositionSelection(
+            thread_id=stored.thread_id,
+            version=stored.configuration.version,
+            project_id=stored.configuration.project_id,
+            agent_source_kind=stored.configuration.agent_source.kind,
+            agent_source_id=stored.configuration.agent_source.id,
+            environment_profile_id=stored.configuration.environment_profile_id,
+            harness_plugin_ids=stored.configuration.harness_plugin_ids,
+            environment_run_extension_ids=stored.configuration.environment_run_extension_ids,
+            mcp_server_ids=stored.configuration.mcp_server_ids,
+        )
+        published = await executor._compositions.publish(source, selection)
+        project_roots = (
+            (user_skills.as_posix(),)
+            if project_position == "first"
+            else (*published.value.project_roots, user_skills.as_posix())
+        )
+        composition = published.value.model_copy(update={"project_roots": project_roots})
+        plan = await executor._environments.prepare(composition)
+
+        expected_aliases = ("workspace",) if project_position == "first" else ("workspace", "workspace-2")
+        assert tuple(plan.environments) == expected_aliases
+        reconstructed = AgentReconstructor(user_skills_root=user_skills).reconstruct(
+            composition,
+            subagent_operator=None,
+        )
+        skills = next(
+            capability
+            for capability in reconstructed.executable.definition.capabilities
+            if isinstance(capability, SkillsCapability)
+        )
+        assert user_skills.as_posix() in skills.manager.roots
+        assert f"{user_skills.as_posix()}/.agents/skills" in skills.manager.roots
+
+        async with plan.runtime.bind(
+            thread_id=stored.thread_id,
+            run_id=f"run-native-user-skills-{project_position}",
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="agent-ui"),
+                agent_instance_id=f"agent-native-user-skills-{project_position}",
+            ),
+            host_refs={},
+        ) as environment:
+            mount_paths = tuple(item.mount_path for item in environment.snapshot.mounts)
+            assert len(mount_paths) == len(set(mount_paths))
+            selected = environment.resolve_path(user_skills.as_posix())
+            expected_name = "workspace" if project_position == "first" else "workspace-2"
+            expected_mount = next(item for item in environment.snapshot.mounts if item.name == expected_name)
+            assert selected.path == "/"
+            assert expected_mount.mount_path == user_skills.as_posix()
+        finalization = await plan.finalize(timeout_seconds=1)
+
+    assert finalization.cleanup_errors == ()
 
 
 async def test_application_creates_and_runs_root_thread(tmp_path: Path) -> None:

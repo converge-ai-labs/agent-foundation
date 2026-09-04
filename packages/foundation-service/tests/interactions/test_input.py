@@ -8,6 +8,7 @@ import pytest
 from a13n_harness import HarnessModelCharacteristics, ModelCapability, RunInputValue
 from a13n_service.agents.domain import InputAdapterConfig, JsonObject
 from a13n_service.assets.domain import Asset, UploadedAssetSource
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions.input import (
     AcceptedAgentInput,
@@ -27,7 +28,6 @@ from a13n_service.interactions.input import (
     materialized_input_path,
     native_input_adapter,
 )
-from a13n_service.models.endpoint_policy import EndpointPolicy
 from pydantic import JsonValue, ValidationError
 from pydantic_ai import BinaryContent as NativeBinaryContent
 from pydantic_ai.messages import UserContent

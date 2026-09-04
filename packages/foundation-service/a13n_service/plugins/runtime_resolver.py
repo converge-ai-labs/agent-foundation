@@ -13,7 +13,6 @@ import tempfile
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Protocol
@@ -35,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.filesystem import prepare_root
+from a13n_service.temporal import utc_now
 
 from .artifact import inspect_distribution_wheel
 from .commands import (
@@ -486,7 +486,7 @@ class FoundationPluginRuntimeCandidateResolver:
         self._compatible_tags = frozenset(compatible_tags or sys_tags())
         self._python_version = python_version or Version(platform.python_version())
         self._marker_environment = {key: str(value) for key, value in default_environment().items()}
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def resolve_candidate(
         self,

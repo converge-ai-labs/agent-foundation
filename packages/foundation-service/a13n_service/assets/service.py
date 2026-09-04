@@ -6,14 +6,25 @@ import hashlib
 import json
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord, OutboxRecord
+from a13n_service.durable_operations.idempotency import (
+    EvidenceScope,
+    IdempotencyConflict,
+    IdempotencyIdentity,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
+    is_evidence_unique_race,
+    load_evidence,
+    new_evidence,
+)
+from a13n_service.durable_operations.models import OutboxRecord
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
     AuthorizationError,
@@ -23,6 +34,7 @@ from a13n_service.iam.authorization import (
 from a13n_service.iam.models import SecurityAuditRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import utc_now
 
 from .cursors import AssetCursorError, decode_asset_cursor, encode_asset_cursor
 from .domain import (
@@ -44,9 +56,7 @@ from .models import AssetRecord
 from .objects import ASSET_OBJECT_DESTINATION, AssetObjectStore
 from .staging import AssetStaging, StagedAssetContent
 
-IDEMPOTENCY_LIFETIME = timedelta(hours=24)
 _UPLOAD_OPERATION = "asset.upload"
-_MAX_IDEMPOTENCY_KEY_BYTES = 512
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,12 +69,6 @@ class AssetUploadResult:
 class PreparedAssetContent:
     asset: Asset
     content: StagedAssetContent
-
-
-@dataclass(frozen=True, slots=True)
-class _UploadIdentity:
-    key_digest: str
-    request_digest: str
 
 
 class AssetService:
@@ -81,7 +85,7 @@ class AssetService:
         self._objects = objects
         self._staging = staging
         self._max_size_bytes = max_size_bytes
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def upload(
         self,
@@ -110,7 +114,7 @@ class AssetService:
                 and staged.detected_media_type != normalized_media_type
             ):
                 raise asset_media_type_invalid()
-            identity = _UploadIdentity(
+            identity = IdempotencyIdentity(
                 key_digest=key_digest,
                 request_digest=_canonical_upload_digest(
                     workspace_id=workspace_id,
@@ -355,7 +359,7 @@ class AssetService:
         actor: AuthenticatedActor,
         organization_id: str,
         workspace_id: str,
-        identity: _UploadIdentity,
+        identity: IdempotencyIdentity,
     ) -> Asset | None:
         try:
             async with transaction(self._sessions) as session:
@@ -394,7 +398,7 @@ class AssetService:
         filename: str,
         media_type: str,
         content: StagedAssetContent,
-        identity: _UploadIdentity,
+        identity: IdempotencyIdentity,
     ) -> AssetUploadResult:
         now = self._clock()
         candidate_is_authoritative = False
@@ -438,20 +442,19 @@ class AssetService:
                         )
                         session.add(record)
                         session.add(
-                            IdempotencyEvidenceRecord(
-                                id=new_object_id("idem"),
+                            new_evidence(
                                 organization_id=organization_id,
-                                workspace_id=workspace_id,
-                                actor_type=actor.principal.principal_type.value,
-                                actor_id=actor.principal.principal_id,
-                                operation=_UPLOAD_OPERATION,
-                                scope_id=workspace_id,
-                                key_digest=identity.key_digest,
-                                request_digest=identity.request_digest,
+                                scope=EvidenceScope(
+                                    workspace_id=workspace_id,
+                                    actor_type=actor.principal.principal_type.value,
+                                    actor_id=actor.principal.principal_id,
+                                    operation=_UPLOAD_OPERATION,
+                                    scope_id=workspace_id,
+                                ),
+                                identity=identity,
                                 result_kind="asset",
                                 result_ref=asset_id,
-                                created_at=now,
-                                expires_at=now + IDEMPOTENCY_LIFETIME,
+                                now=now,
                             )
                         )
                         session.add(
@@ -470,7 +473,7 @@ class AssetService:
                 candidate_is_authoritative = result.asset.id == asset_id
                 return result
             except IntegrityError as error:
-                if not _is_idempotency_race(error):
+                if not is_evidence_unique_race(error):
                     raise
                 replay = await self._load_authorized_upload_replay(
                     actor=actor,
@@ -553,28 +556,26 @@ async def _load_upload_replay(
     actor: AuthenticatedActor,
     organization_id: str,
     workspace_id: str,
-    identity: _UploadIdentity,
+    identity: IdempotencyIdentity,
     now: datetime,
 ) -> Asset | None:
-    evidence = await session.scalar(
-        select(IdempotencyEvidenceRecord).where(
-            IdempotencyEvidenceRecord.organization_id == organization_id,
-            IdempotencyEvidenceRecord.workspace_id == workspace_id,
-            IdempotencyEvidenceRecord.actor_type == actor.principal.principal_type.value,
-            IdempotencyEvidenceRecord.actor_id == actor.principal.principal_id,
-            IdempotencyEvidenceRecord.operation == _UPLOAD_OPERATION,
-            IdempotencyEvidenceRecord.scope_id == workspace_id,
-            IdempotencyEvidenceRecord.key_digest == identity.key_digest,
+    try:
+        evidence = await load_evidence(
+            session,
+            scope=EvidenceScope(
+                workspace_id=workspace_id,
+                actor_type=actor.principal.principal_type.value,
+                actor_id=actor.principal.principal_id,
+                operation=_UPLOAD_OPERATION,
+                scope_id=workspace_id,
+            ),
+            identity=identity,
+            now=now,
         )
-    )
+    except IdempotencyConflict as error:
+        raise asset_idempotency_conflict() from error
     if evidence is None:
         return None
-    if _as_utc(evidence.expires_at) <= _as_utc(now):
-        await session.delete(evidence)
-        await session.flush()
-        return None
-    if evidence.request_digest != identity.request_digest:
-        raise asset_idempotency_conflict()
     if evidence.result_kind != "asset":
         raise asset_idempotency_conflict()
     record = await session.scalar(
@@ -623,32 +624,25 @@ def _asset_audit_record(
     now: datetime,
     outcome: Literal["success", "failure"] = "success",
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("aud"),
+    return security_audit_record(
+        audit_id=new_object_id("aud"),
+        actor=actor,
         organization_id=organization_id,
         workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
         action=action,
         resource_type="asset",
         resource_id=asset_id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
         outcome=outcome,
         occurred_at=now,
-        request_id=actor.request_id,
         details={"source_kind": source_kind},
     )
 
 
 def _idempotency_key_digest(key: str) -> str:
     try:
-        encoded = key.encode("ascii")
-    except UnicodeEncodeError as error:
+        return digest_visible_ascii_key(key)
+    except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
-    if not 1 <= len(encoded) <= _MAX_IDEMPOTENCY_KEY_BYTES or any(byte < 0x21 or byte > 0x7E for byte in encoded):
-        raise _invalid_idempotency_key()
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _invalid_idempotency_key() -> AssetError:
@@ -694,15 +688,3 @@ def _canonical_upload_digest(
         ensure_ascii=True,
     ).encode()
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _is_idempotency_race(error: IntegrityError) -> bool:
-    diagnostic = getattr(getattr(error, "orig", None), "diag", None)
-    if diagnostic is not None:
-        return getattr(diagnostic, "constraint_name", None) == "uq_idempotency_evidence_replay_scope"
-    message = str(error.orig).casefold()
-    return "unique constraint failed" in message and "idempotency_evidence.actor_type" in message
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

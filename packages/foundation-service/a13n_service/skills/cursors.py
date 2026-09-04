@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import json
+from a13n_service.collection_cursors import (
+    CollectionCursorMismatchError,
+    InvalidCollectionCursorError,
+    decode_collection_cursor,
+    encode_collection_cursor,
+)
 
 
 class SkillCursorError(ValueError):
@@ -12,14 +15,13 @@ class SkillCursorError(ValueError):
 
 
 def encode_skill_cursor(*, name: str, skill_id: str, scope: dict[str, object]) -> str:
-    return _encode(
+    return encode_collection_cursor(
         {
-            "v": "1",
-            "kind": "skills",
             "name": name,
             "id": skill_id,
-            "scope": _scope_digest(scope),
-        }
+        },
+        kind="skills",
+        scope=scope,
     )
 
 
@@ -33,14 +35,13 @@ def decode_skill_cursor(value: str, *, scope: dict[str, object]) -> tuple[str, s
 
 
 def encode_revision_cursor(*, version: int, revision_id: str, scope: dict[str, object]) -> str:
-    return _encode(
+    return encode_collection_cursor(
         {
-            "v": "1",
-            "kind": "revisions",
             "version": version,
             "id": revision_id,
-            "scope": _scope_digest(scope),
-        }
+        },
+        kind="revisions",
+        scope=scope,
     )
 
 
@@ -60,14 +61,13 @@ def decode_revision_cursor(value: str, *, scope: dict[str, object]) -> tuple[int
 
 
 def encode_reference_cursor(*, agent_name: str, agent_id: str, scope: dict[str, object]) -> str:
-    return _encode(
+    return encode_collection_cursor(
         {
-            "v": "1",
-            "kind": "skill-references",
             "name": agent_name,
             "id": agent_id,
-            "scope": _scope_digest(scope),
-        }
+        },
+        kind="skill-references",
+        scope=scope,
     )
 
 
@@ -80,29 +80,10 @@ def decode_reference_cursor(value: str, *, scope: dict[str, object]) -> tuple[st
     return agent_name, agent_id
 
 
-def _encode(payload: dict[str, object]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return base64.urlsafe_b64encode(encoded).rstrip(b"=").decode()
-
-
 def _decode(value: str, *, kind: str, scope: dict[str, object]) -> dict[str, object]:
-    if not value or len(value) > 2048:
-        raise SkillCursorError("invalid cursor")
     try:
-        padded = value + "=" * (-len(value) % 4)
-        payload = json.loads(base64.b64decode(padded, altchars=b"-_", validate=True))
-    except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+        return decode_collection_cursor(value, kind=kind, scope=scope)
+    except CollectionCursorMismatchError as error:
+        raise SkillCursorError("cursor does not match this query") from error
+    except InvalidCollectionCursorError as error:
         raise SkillCursorError("invalid cursor") from error
-    if (
-        not isinstance(payload, dict)
-        or payload.get("v") != "1"
-        or payload.get("kind") != kind
-        or payload.get("scope") != _scope_digest(scope)
-    ):
-        raise SkillCursorError("cursor does not match this query")
-    return payload
-
-
-def _scope_digest(scope: dict[str, object]) -> str:
-    encoded = json.dumps(scope, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return hashlib.sha256(encoded).hexdigest()

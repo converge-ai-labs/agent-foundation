@@ -13,16 +13,18 @@ from .conftest import WORKSPACE_ID, actor, agent_config
 
 
 @pytest.fixture
-async def api_client(agent_service: AgentService) -> AsyncIterator[httpx2.AsyncClient]:
+async def api_client(agent_service: AgentService, service_runtime_factory) -> AsyncIterator[httpx2.AsyncClient]:
     app = FastAPI()
     install_api_conventions(app)
     app.include_router(router)
-    app.state.agent_service = agent_service
 
     async def authenticate(_request: Request):
         return actor()
 
-    app.state.request_authenticator = authenticate
+    app.state.runtime = service_runtime_factory(
+        request_authenticator=authenticate,
+        agents=agent_service,
+    )
     transport = httpx2.ASGITransport(app=app)
     async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client

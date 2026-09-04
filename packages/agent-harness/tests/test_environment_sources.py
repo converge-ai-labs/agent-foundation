@@ -152,6 +152,34 @@ async def test_environment_input_is_entered_as_workspace_and_closed_non_destruct
     assert host_refs == {"attempt": "attempt-1"}
 
 
+async def test_environment_mount_exposes_an_explicit_aggregate_path(tmp_path: Path) -> None:
+    native_root = tmp_path.as_posix()
+
+    async def prepare(context) -> str:
+        snapshot = context.environment.snapshot
+        assert snapshot.mounts[0].mount_path == native_root
+        await context.environment.files.write_text(
+            f"{native_root}/value.txt",
+            "preserved",
+            mode="create",
+        )
+        with pytest.raises(EnvironmentError) as legacy:
+            context.environment.resolve_path("/workspace/value.txt")
+        assert legacy.value.code == "environment_selection_invalid"
+        return "use direct environment"
+
+    result = await _executable().run(
+        input_factory=prepare,
+        environment=EnvironmentMount(
+            _environment(tmp_path, "direct-environment"),
+            mount_path=native_root,
+        ),
+    )
+
+    assert result.output_or_raise() == "ok"
+    assert (tmp_path / "value.txt").read_text() == "preserved"
+
+
 async def test_multiple_environments_apply_access_and_explicit_default(tmp_path: Path) -> None:
     build_root = tmp_path / "build"
     data_root = tmp_path / "data"
@@ -244,6 +272,21 @@ def test_one_environment_instance_cannot_be_mounted_twice(tmp_path: Path) -> Non
         )
 
     assert exc_info.value.code == "environment_request_invalid"
+
+
+@pytest.mark.parametrize(
+    "mount_path",
+    ["relative", "/with/../parent", "/double//slash", "/trailing/", "C:\\native\\path"],
+)
+def test_environment_mount_rejects_noncanonical_mount_path(
+    tmp_path: Path,
+    mount_path: str,
+) -> None:
+    with pytest.raises(ValueError, match="mount_path"):
+        EnvironmentMount(
+            _environment(tmp_path, "invalid-mount-path"),
+            mount_path=mount_path,
+        )
 
 
 @pytest.mark.parametrize("working_directory", ["relative", "/with/../parent", "/double//slash", "/trailing/"])

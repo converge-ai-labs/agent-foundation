@@ -1,0 +1,610 @@
+"""Short-transaction ConnectorConnection lifecycle orchestration."""
+
+from __future__ import annotations
+
+from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.connectors.adapters import (
+    ConnectorAdapter,
+)
+from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
+from a13n_service.connectivity.domain import JsonObject
+from a13n_service.connectivity.management import (
+    ConnectivityManagementValueError,
+    canonical_digest,
+    fingerprint,
+    record_command,
+    replay_command,
+)
+from a13n_service.iam import AuthenticatedActor, PrincipalType
+from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.ids import new_object_id
+from a13n_service.secrets import InternalSecretService
+from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, utc_now
+
+from .connection_access import (
+    authorize_connection,
+    authorize_owner_change,
+    connection_resource,
+    has_admin_access,
+    idempotency_digest,
+    replay_connection_command,
+    require_version,
+)
+from .domain import (
+    ConnectorConnection,
+    ConnectorConnectionCollection,
+    ConnectorConnectionStatus,
+    ConnectorOperationReceipt,
+    ConnectorSetupLaunch,
+    CreateConnectorConnectionRequest,
+    UpdateConnectorConnectionRequest,
+)
+from .errors import ConnectorError
+from .management import (
+    audit,
+    authorize,
+    map_management_value_error,
+    require_adapter,
+    require_connection,
+    require_connector,
+)
+from .models import (
+    ConnectorConnectionRecord,
+    ConnectorSetupAttemptRecord,
+)
+from .revocation import ConnectorRevocationService
+from .setup import ConnectorSetupCoordinator
+
+
+class ConnectorConnectionService:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        adapters: AdapterRegistry[ConnectorAdapter],
+        secrets: InternalSecretService,
+        *,
+        correlation_secret: bytes | None,
+        public_origin: str | None,
+        setup_ttl_seconds: int,
+        clock: Clock = utc_now,
+    ) -> None:
+        self._sessions = sessions
+        self._adapters = adapters
+        self._secrets = secrets
+        self._clock = clock
+        self._setup = ConnectorSetupCoordinator(
+            sessions,
+            adapters,
+            secrets,
+            correlation_secret=correlation_secret,
+            public_origin=public_origin,
+            setup_ttl_seconds=setup_ttl_seconds,
+            clock=clock,
+        )
+        self._revocation = ConnectorRevocationService(sessions, adapters, secrets, clock=clock)
+
+    @property
+    def setup_coordinator(self) -> ConnectorSetupCoordinator:
+        return self._setup
+
+    async def create(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        idempotency_key: str,
+        request: CreateConnectorConnectionRequest,
+    ) -> ConnectorConnection:
+        key_digest = idempotency_digest(idempotency_key)
+        connection_id = new_object_id("cconn")
+        now = self._clock()
+        try:
+            async with transaction(self._sessions) as session:
+                connector = await require_connector(session, request.connector_id)
+                if connector.workspace_id != workspace_id:
+                    raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
+                await authorize_owner_change(session, actor, connector, request.owner_principal_ref)
+                require_adapter(self._adapters, connector.driver_key, connector.config_version)
+                request_fingerprint = fingerprint(request)
+                try:
+                    replay = await replay_command(
+                        session,
+                        actor=actor,
+                        workspace_id=workspace_id,
+                        operation="connector_connection.create",
+                        scope_id=workspace_id,
+                        idempotency_key_digest=key_digest,
+                        fingerprint=request_fingerprint,
+                    )
+                except ConnectivityManagementValueError as error:
+                    raise map_management_value_error(error) from error
+                if replay is not None:
+                    return await connection_resource(session, replay.resource_id)
+                connection = ConnectorConnectionRecord(
+                    id=connection_id,
+                    organization_id=connector.organization_id,
+                    workspace_id=connector.workspace_id,
+                    connector_id=connector.id,
+                    owner_type=(
+                        request.owner_principal_ref.principal_type.value
+                        if request.owner_principal_ref is not None
+                        else None
+                    ),
+                    owner_id=(
+                        request.owner_principal_ref.principal_id if request.owner_principal_ref is not None else None
+                    ),
+                    name=request.name,
+                    normalized_name=request.name.casefold(),
+                    provider_key=request.provider_key,
+                    external_ref=None,
+                    safe_metadata_json={},
+                    status=ConnectorConnectionStatus.pending.value,
+                    status_reason=None,
+                    version=1,
+                    setup_generation=1,
+                    revoke_generation=0,
+                    catalog_generation=0,
+                    current_catalog_digest=None,
+                    catalog_attempt_count=0,
+                    catalog_claim_generation=0,
+                    catalog_claim_owner=None,
+                    catalog_claim_expires_at=None,
+                    catalog_available_at=now,
+                    catalog_last_error_code=None,
+                    deleted_at=None,
+                    created_by_type=actor.principal.principal_type.value,
+                    created_by_id=actor.principal.principal_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(connection)
+                record_command(
+                    session,
+                    actor=actor,
+                    organization_id=connector.organization_id,
+                    workspace_id=connector.workspace_id,
+                    operation="connector_connection.create",
+                    scope_id=workspace_id,
+                    idempotency_key_digest=key_digest,
+                    fingerprint=request_fingerprint,
+                    resource_type="connector_connection",
+                    resource_id=connection.id,
+                    result_version=1,
+                    now=now,
+                )
+                session.add(
+                    audit(
+                        actor,
+                        organization_id=connector.organization_id,
+                        workspace_id=connector.workspace_id,
+                        action="connector_connection.create",
+                        resource_type="connector_connection",
+                        resource_id=connection.id,
+                        now=now,
+                    )
+                )
+                await session.flush()
+                return await connection_resource(session, connection.id)
+        except IntegrityError as error:
+            raise ConnectorError(
+                "connector_connection_conflict",
+                "ConnectorConnection identity or name already exists.",
+                status_code=409,
+            ) from error
+
+    async def start_setup(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        connection_id: str,
+        idempotency_key: str,
+        expected_version: int,
+        setup: JsonObject,
+        return_path: str,
+    ) -> ConnectorSetupLaunch:
+        if actor.principal.principal_type is not PrincipalType.user:
+            raise ConnectorError("interactive_user_required", "Interactive setup requires a User.", status_code=403)
+        key_digest = idempotency_digest(idempotency_key)
+        request_fingerprint = canonical_digest(
+            {"expected_version": expected_version, "setup": setup, "return_path": return_path}
+        )
+        attempt_id = new_object_id("csa")
+        now = self._clock()
+        async with transaction(self._sessions) as session:
+            connection = await require_connection(session, connection_id, lock=True)
+            await authorize_connection(session, actor, connection, mode="owner_manage")
+            replay = await replay_connection_command(
+                session,
+                actor=actor,
+                connection=connection,
+                operation="connector_connection.setup",
+                key_digest=key_digest,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                attempt = await session.get(ConnectorSetupAttemptRecord, replay.resource_id)
+                if attempt is None:
+                    raise ConnectorError("setup_unavailable", "Connector setup is unavailable.", status_code=404)
+                attempt_id = attempt.id
+            else:
+                require_version(connection.version, expected_version)
+                connector = await require_connector(session, connection.connector_id)
+                if connector.status != "active":
+                    raise ConnectorError("connector_disabled", "Connector is disabled.", status_code=409)
+                adapter = require_adapter(self._adapters, connector.driver_key, connector.config_version)
+                try:
+                    validated_setup = adapter.validate_setup(
+                        setup,
+                        provider_key=connection.provider_key,
+                        connector_config=connector.config_json,
+                        config_version=connector.config_version,
+                    )
+                except ValueError as error:
+                    raise ConnectorError(
+                        "invalid_connector_setup", "Connector setup is invalid.", status_code=400
+                    ) from error
+                session.add(
+                    self._setup.new_attempt(
+                        connection,
+                        connector=connector,
+                        actor=actor,
+                        attempt_id=attempt_id,
+                        setup=validated_setup,
+                        return_path=return_path,
+                        now=now,
+                    )
+                )
+                record_command(
+                    session,
+                    actor=actor,
+                    organization_id=connection.organization_id,
+                    workspace_id=connection.workspace_id,
+                    operation="connector_connection.setup",
+                    scope_id=connection.id,
+                    idempotency_key_digest=key_digest,
+                    fingerprint=request_fingerprint,
+                    resource_type="connector_setup_attempt",
+                    resource_id=attempt_id,
+                    result_version=connection.version,
+                    now=now,
+                )
+                session.add(
+                    audit(
+                        actor,
+                        organization_id=connection.organization_id,
+                        workspace_id=connection.workspace_id,
+                        action="connector_connection.setup",
+                        resource_type="connector_connection",
+                        resource_id=connection.id,
+                        now=now,
+                    )
+                )
+        return await self._setup.launch(attempt_id, connection_id)
+
+    async def list(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        limit: int,
+        cursor: str | None,
+    ) -> ConnectorConnectionCollection:
+        if not 1 <= limit <= 100:
+            raise ConnectorError("invalid_request", "Collection limit is invalid.", status_code=400)
+        scope = {"workspace_id": workspace_id, "actor": actor.principal.model_dump(mode="json")}
+        try:
+            position = decode_cursor(cursor, scope=scope, id_prefix="cconn") if cursor else None
+        except CursorError as error:
+            raise ConnectorError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
+        async with transaction(self._sessions) as session:
+            await authorize(session, actor, workspace_id, WorkspaceAction.connector_connection_read)
+            admin = await has_admin_access(session, actor, workspace_id)
+            query = select(ConnectorConnectionRecord).where(
+                ConnectorConnectionRecord.workspace_id == workspace_id,
+                ConnectorConnectionRecord.deleted_at.is_(None),
+            )
+            if not admin:
+                query = query.where(
+                    or_(
+                        ConnectorConnectionRecord.owner_type.is_(None),
+                        and_(
+                            ConnectorConnectionRecord.owner_type == actor.principal.principal_type.value,
+                            ConnectorConnectionRecord.owner_id == actor.principal.principal_id,
+                        ),
+                    )
+                )
+            if position is not None:
+                query = query.where(
+                    or_(
+                        ConnectorConnectionRecord.updated_at < position[0],
+                        and_(
+                            ConnectorConnectionRecord.updated_at == position[0],
+                            ConnectorConnectionRecord.id < position[1],
+                        ),
+                    )
+                )
+            records = tuple(
+                (
+                    await session.scalars(
+                        query.order_by(
+                            ConnectorConnectionRecord.updated_at.desc(),
+                            ConnectorConnectionRecord.id.desc(),
+                        ).limit(limit + 1)
+                    )
+                ).all()
+            )
+            page = records[:limit]
+            items = tuple([await connection_resource(session, record.id) for record in page])
+            next_cursor = None
+            if len(records) > limit:
+                last = page[-1]
+                next_cursor = encode_cursor(updated_at=last.updated_at, object_id=last.id, scope=scope)
+            return ConnectorConnectionCollection(items=items, next_cursor=next_cursor)
+
+    async def get(self, *, actor: AuthenticatedActor, connection_id: str) -> ConnectorConnection:
+        async with transaction(self._sessions) as session:
+            record = await require_connection(session, connection_id)
+            await authorize_connection(session, actor, record, mode="read")
+            return await connection_resource(session, connection_id)
+
+    async def update(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        connection_id: str,
+        request: UpdateConnectorConnectionRequest,
+    ) -> ConnectorConnection:
+        try:
+            async with transaction(self._sessions) as session:
+                record = await require_connection(session, connection_id, lock=True)
+                await authorize_connection(session, actor, record, mode="owner_manage")
+                require_version(record.version, request.expected_version)
+                if request.name is not None:
+                    record.name = request.name
+                    record.normalized_name = request.name.casefold()
+                record.version += 1
+                record.updated_at = self._clock()
+                session.add(
+                    audit(
+                        actor,
+                        organization_id=record.organization_id,
+                        workspace_id=record.workspace_id,
+                        action="connector_connection.update",
+                        resource_type="connector_connection",
+                        resource_id=record.id,
+                        now=record.updated_at,
+                    )
+                )
+                return await connection_resource(session, record.id)
+        except IntegrityError as error:
+            raise ConnectorError(
+                "connector_connection_conflict",
+                "ConnectorConnection name already exists.",
+                status_code=409,
+            ) from error
+
+    async def set_enabled(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        connection_id: str,
+        enabled: bool,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> ConnectorConnection:
+        key_digest = idempotency_digest(idempotency_key)
+        request_fingerprint = canonical_digest({"expected_version": expected_version, "enabled": enabled})
+        operation = "connector_connection.enable" if enabled else "connector_connection.disable"
+        async with transaction(self._sessions) as session:
+            record = await require_connection(session, connection_id, lock=True)
+            await authorize_connection(
+                session,
+                actor,
+                record,
+                mode="owner_manage" if enabled else "administrative",
+            )
+            replay = await replay_connection_command(
+                session,
+                actor=actor,
+                connection=record,
+                operation=operation,
+                key_digest=key_digest,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                return await connection_resource(session, record.id)
+            require_version(record.version, expected_version)
+            if enabled and (record.external_ref is None or record.current_catalog_digest is None):
+                raise ConnectorError(
+                    "connection_not_ready",
+                    "ConnectorConnection has no compatible setup and catalog.",
+                    status_code=409,
+                )
+            target = ConnectorConnectionStatus.ready.value if enabled else ConnectorConnectionStatus.disabled.value
+            if record.status == target or (enabled and record.status != ConnectorConnectionStatus.disabled.value):
+                result = await connection_resource(session, record.id)
+            else:
+                record.status = target
+                record.status_reason = None
+                record.catalog_available_at = self._clock()
+                record.version += 1
+                record.updated_at = self._clock()
+                result = await connection_resource(session, record.id)
+            record_command(
+                session,
+                actor=actor,
+                organization_id=record.organization_id,
+                workspace_id=record.workspace_id,
+                operation=operation,
+                scope_id=record.id,
+                idempotency_key_digest=key_digest,
+                fingerprint=request_fingerprint,
+                resource_type="connector_connection",
+                resource_id=record.id,
+                result_version=record.version,
+                now=self._clock(),
+            )
+            session.add(
+                audit(
+                    actor,
+                    organization_id=record.organization_id,
+                    workspace_id=record.workspace_id,
+                    action=operation,
+                    resource_type="connector_connection",
+                    resource_id=record.id,
+                    now=record.updated_at,
+                )
+            )
+            return result
+
+    async def reconnect(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        connection_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        setup: JsonObject,
+        return_path: str,
+    ) -> ConnectorSetupLaunch:
+        if actor.principal.principal_type is not PrincipalType.user:
+            raise ConnectorError("interactive_user_required", "Interactive setup requires a User.", status_code=403)
+        key_digest = idempotency_digest(idempotency_key)
+        request_fingerprint = canonical_digest(
+            {"expected_version": expected_version, "setup": setup, "return_path": return_path}
+        )
+        attempt_id = new_object_id("csa")
+        now = self._clock()
+        async with transaction(self._sessions) as session:
+            connection = await require_connection(session, connection_id, lock=True)
+            await authorize_connection(session, actor, connection, mode="owner_manage")
+            replay = await replay_connection_command(
+                session,
+                actor=actor,
+                connection=connection,
+                operation="connector_connection.reconnect",
+                key_digest=key_digest,
+                request_fingerprint=request_fingerprint,
+            )
+            if replay is not None:
+                attempt_id = replay.resource_id
+            else:
+                require_version(connection.version, expected_version)
+                if connection.status not in {
+                    ConnectorConnectionStatus.action_required.value,
+                    ConnectorConnectionStatus.pending.value,
+                }:
+                    raise ConnectorError(
+                        "invalid_connection_state", "ConnectorConnection cannot reconnect.", status_code=409
+                    )
+                connector = await require_connector(session, connection.connector_id)
+                adapter = require_adapter(self._adapters, connector.driver_key, connector.config_version)
+                try:
+                    validated_setup = adapter.validate_setup(
+                        setup,
+                        provider_key=connection.provider_key,
+                        connector_config=connector.config_json,
+                        config_version=connector.config_version,
+                    )
+                except ValueError as error:
+                    raise ConnectorError(
+                        "invalid_connector_setup", "Connector setup is invalid.", status_code=400
+                    ) from error
+                connection.setup_generation += 1
+                connection.status = ConnectorConnectionStatus.pending.value
+                connection.status_reason = None
+                connection.version += 1
+                connection.updated_at = now
+                session.add(
+                    self._setup.new_attempt(
+                        connection,
+                        connector=connector,
+                        actor=actor,
+                        attempt_id=attempt_id,
+                        setup=validated_setup,
+                        return_path=return_path,
+                        now=now,
+                    )
+                )
+                record_command(
+                    session,
+                    actor=actor,
+                    organization_id=connection.organization_id,
+                    workspace_id=connection.workspace_id,
+                    operation="connector_connection.reconnect",
+                    scope_id=connection.id,
+                    idempotency_key_digest=key_digest,
+                    fingerprint=request_fingerprint,
+                    resource_type="connector_setup_attempt",
+                    resource_id=attempt_id,
+                    result_version=connection.version,
+                    now=now,
+                )
+                session.add(
+                    audit(
+                        actor,
+                        organization_id=connection.organization_id,
+                        workspace_id=connection.workspace_id,
+                        action="connector_connection.reconnect",
+                        resource_type="connector_connection",
+                        resource_id=connection.id,
+                        now=now,
+                    )
+                )
+        return await self._setup.launch(attempt_id, connection_id)
+
+    async def revoke(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        connection_id: str,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> ConnectorOperationReceipt:
+        return await self._revocation.revoke(
+            actor=actor,
+            connection_id=connection_id,
+            expected_version=expected_version,
+            idempotency_key=idempotency_key,
+        )
+
+    async def delete(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        connection_id: str,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> None:
+        await self._revocation.delete(
+            actor=actor,
+            connection_id=connection_id,
+            expected_version=expected_version,
+            idempotency_key=idempotency_key,
+        )
+
+    async def complete_callback(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        session_uri: str,
+    ) -> str:
+        return await self._setup.complete_callback(actor=actor, session_uri=session_uri)
+
+    async def run_revoke(
+        self,
+        operation_id: str,
+        *,
+        claim_owner: str | None = None,
+        claim_generation: int | None = None,
+    ) -> None:
+        await self._revocation.run(
+            operation_id,
+            claim_owner=claim_owner,
+            claim_generation=claim_generation,
+        )

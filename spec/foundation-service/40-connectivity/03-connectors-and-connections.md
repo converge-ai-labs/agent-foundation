@@ -1,4 +1,4 @@
-# Connectors and Connector Connections
+# Connectors and ConnectorConnections
 
 ## Design Position
 
@@ -79,11 +79,11 @@ ConnectorConnection status is Foundation's safe eligibility projection, not a co
 
 ## Credential Custody and Setup
 
-ConnectorConnection setup can begin in Foundation, but the Connector service owns the provider authorization ceremony. Foundation passes only Connector-scoped setup correlation, receives an opaque external connection reference plus safe account metadata, and commits the Foundation ConnectorConnection after Connector success.
+ConnectorConnection setup can begin in Foundation, but the Connector service owns the provider authorization ceremony. Foundation passes only Connector-scoped setup correlation, receives an opaque external connection reference plus safe account metadata, and commits the Foundation ConnectorConnection after Connector success. Interactive setup uses only a Connector-hosted authorization or credential form; no third-party password, API key, cookie, access token, or refresh token passes through a Foundation request.
 
 The control role loads the explicitly registered Connector client adapter for setup, safe discovery, revocation, and reconciliation. The connectivity role loads the same registered adapter contract for Agent-facing dispatch. Both operate the same durable Connector and ConnectorConnection facts; they do not call one another through a private Foundation API or introduce a durable operation queue merely to cross process roles.
 
-Foundation does not receive, encrypt, proxy, log, or copy the external account's access token, refresh token, cookie, password, or provider API key. Provider OAuth callback state and token refresh remain Connector state. A Connector redirect or setup handle grants no Foundation authority by possession.
+Foundation does not receive, encrypt, proxy, log, or copy the external account's access token, refresh token, cookie, password, or provider API key. Provider OAuth callback state and token refresh remain Connector state. A Connector redirect or setup handle grants no Foundation authority by possession. A driver that supports verified callback completion uses the exact browser-User and single-use setup-attempt boundary in [Built-in Connector Adapters](08-built-in-connector-adapters.md#common-setup-and-correlation); a polling driver inspects the same immutable external reference. Neither path accepts account identity from an unverified browser parameter.
 
 Revocation first makes the Foundation ConnectorConnection unusable, then requests Connector cleanup under a stable operation identity. Confirmed external revocation leaves the ConnectorConnection in `action_required` with `reauthorization_required` until an identity-preserving reconnect succeeds or the ConnectorConnection is deleted. A lost or unknown Connector response never restores local eligibility. Reconciliation inspects that same external reference instead of creating another ConnectorConnection blindly.
 

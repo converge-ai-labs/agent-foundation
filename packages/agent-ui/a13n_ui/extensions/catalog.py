@@ -35,6 +35,7 @@ from a13n_harness.plugin_factories import (
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator, validate_call
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability
 
+from a13n_ui.environment_paths import EnvironmentPathLayout
 from a13n_ui.errors import CompositionError
 
 from .environment_adapters import (
@@ -180,7 +181,7 @@ class AgentUiExtensionCatalog:
         self,
         selections: tuple[tuple[str, dict[str, JsonValue]], ...],
         *,
-        project_mount_count: int = 1,
+        path_layout: EnvironmentPathLayout | None = None,
     ) -> tuple[SelectedCapability, ...]:
         result: list[SelectedCapability] = []
         custom_types: list[type[AbstractCapability[Any]]] = []
@@ -226,7 +227,7 @@ class AgentUiExtensionCatalog:
                 capability = _construct_capability(
                     capability_type,
                     configuration,
-                    project_mount_count=project_mount_count,
+                    path_layout=path_layout,
                 )
             except (TypeError, ValidationError, ValueError) as exc:
                 raise CompositionError(
@@ -418,7 +419,7 @@ def _construct_capability(
     capability_type: type[AbstractCapability[Any]],
     configuration: dict[str, JsonValue],
     *,
-    project_mount_count: int,
+    path_layout: EnvironmentPathLayout | None,
 ) -> AbstractCapability[Any]:
     if capability_type is DynamicEnvironmentCapability:
         return DynamicEnvironmentCapability(DynamicEnvironmentConfiguration.model_validate(configuration, strict=True))
@@ -427,7 +428,14 @@ def _construct_capability(
     if capability_type is WebCapability:
         return WebCapability(WebConfiguration.model_validate(configuration, strict=True))
     if capability_type is SkillsCapability:
-        return _construct_skills_capability(configuration, project_mount_count=project_mount_count)
+        return _construct_skills_capability(
+            configuration,
+            path_layout=path_layout
+            or EnvironmentPathLayout(
+                project_mounts=("/workspace",),
+                user_skills="/environment/user-skills",
+            ),
+        )
 
     initializer = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True))(capability_type.__init__)
     capability = capability_type.__new__(capability_type)
@@ -438,30 +446,30 @@ def _construct_capability(
 def _construct_skills_capability(
     configuration: dict[str, JsonValue],
     *,
-    project_mount_count: int,
+    path_layout: EnvironmentPathLayout,
 ) -> SkillsCapability:
-    if project_mount_count < 1 or project_mount_count > 64:
-        raise ValueError("project_mount_count must be between one and 64")
+    if not path_layout.project_mounts or len(path_layout.project_mounts) > 64:
+        raise ValueError("path_layout must contain between one and 64 Project mounts")
     parsed = SkillsConfiguration.model_validate(configuration, strict=True)
     sources = [
         FileSkillSource(
             "agent-ui:user-skills",
-            ("/environment/user-skills",),
+            (path_layout.user_skills,),
             required=False,
         )
     ]
-    for index in range(project_mount_count, 1, -1):
+    for index in range(len(path_layout.project_mounts), 1, -1):
         sources.append(
             FileSkillSource(
                 f"agent-ui:project:workspace-{index}",
-                (f"/environment/workspace-{index}/.agents/skills",),
+                (_join_mount_path(path_layout.project_mounts[index - 1], ".agents/skills"),),
                 required=False,
             )
         )
     sources.append(
         FileSkillSource(
             "agent-ui:project:workspace",
-            ("/workspace/.agents/skills",),
+            (_join_mount_path(path_layout.project_mounts[0], ".agents/skills"),),
             required=False,
         )
     )
@@ -479,6 +487,11 @@ def _construct_skills_capability(
             policy=SkillsPolicy(conflict="prefer_later"),
         )
     )
+
+
+def _join_mount_path(root: str, suffix: str) -> str:
+    separator = "" if root.endswith("/") else "/"
+    return f"{root}{separator}{suffix}"
 
 
 def _capability_entry_points() -> dict[str, tuple[importlib.metadata.EntryPoint, ...]]:

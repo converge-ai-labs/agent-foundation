@@ -95,7 +95,7 @@ The outer fields have common meaning; `actor`, `context`, `data`, and protected 
 
 Users cannot redefine these security or correlation facts from arbitrary raw JSON. `refs` contains only stable references the adapter declares, such as a Slack discussion, Gmail thread, GitHub pull request, or repository. Missing stable provider identity remains missing; Foundation does not hash mutable display text or ask a model to invent one.
 
-Raw provider data is never included in Agent input by default. When policy retains it, it is bounded protected evidence with independent access and retention; logs, errors, metrics, and ordinary event reads omit it.
+Raw provider data is never included in Agent input by default. Foundation does not retain it in the default production profile. An operator can enable provider-specific protected raw retention for incident diagnosis with a maximum lifetime of 24 hours. That evidence has no tenant management or plaintext-read API; only an explicit deployment break-glass procedure can read it. Logs, errors, metrics, ordinary event reads, and Agent input omit it. The adapter rejects an oversized body before parsing or storage; [built-in adapters](07-built-in-ingress-adapters.md) define their tighter byte limits.
 
 ## Input Mapping
 
@@ -205,23 +205,41 @@ After routing, the Ingress delegates completely to Foundation Service:
 
 If a Steer loses the race with a Run transition, routing rereads the Thread: it Steers the then-current compatible accepted or running Run or current/head waiting Run, or accepts an ordinary successor Run when the Thread is inactive. The original external event identity makes this retry idempotent.
 
+## Provider Data-Plane HTTP
+
+Every HTTP webhook adapter is mounted by `connectivity` and `all` at one external protocol route:
+
+```http
+POST /connectivity/v1/ingresses/{ingress_id}/events
+```
+
+The path version owns Foundation's provider-ingress envelope and operational behavior, not the upstream provider payload version. `ingress_id` locates typed configuration and credentials but is not authentication. The adapter still authenticates the exact raw request and verifies the provider installation, application, tenant, or account identity carried by the payload. Missing, concealed, or cross-tenant identifiers return the same bounded `404 ingress_not_found`; authentication failures disclose no configured identity. Provider-specific challenge and acknowledgement bodies remain owned by the adapter. Other errors use bounded provider-compatible responses and one safe Foundation request ID.
+
+During drain the process stops accepting new webhook requests, permits requests that have begun authentication or admission to finish within the common shutdown bound, and then releases admission claims. It never starts Agent work while draining. `control` and `worker` do not mount this route.
+
+## Input Acceptor Availability
+
+The `connectivity` role can be ready before the canonical Run and Steer input acceptor is composed. In that state it authenticates, normalizes, routes, and durably admits eligible events, publishes the safe observation `input_bridge_unavailable`, and leaves admissions pending for later processing. It never acknowledges an eligible event held only in memory. Once the Workspace or Ingress pending-count or pending-byte budget is full, the adapter applies its provider-specific backpressure and does not acknowledge another eligible event.
+
+Readiness therefore requires durable admission and every enabled adapter dependency, but not the Agent input bridge. This is a bounded degraded mode, not a second execution path. When the canonical acceptor becomes available it drains the same durable admissions through ordinary Run or Steer acceptance. No fallback Run creator, transient queue, or direct Worker call is permitted.
+
 ## Failure Semantics
 
-| Condition                                                      | Outcome                                                                                                 |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Invalid signature, gateway identity, or payload bounds         | Event is rejected before routing and no Run authority is created                                        |
-| Duplicate external event                                       | Prior pending state or terminal admission result is reused                                              |
-| Ingress or Route disabled                                      | Event is safely ignored or rejected according to provider acknowledgement policy; no Run is accepted    |
-| Execution Service Account is inactive or unauthorized          | Event remains unaccepted; no external actor or creator authority is substituted                         |
-| More than one Route matches                                    | Routing fails closed and no Run is accepted                                                             |
-| No allowed Agent can be selected                               | Routing fails safely and creates no AgentThreadBinding                                                  |
-| Correlation reference is absent or incompatible                | Existing-thread routing fails; no fuzzy or fallback Binding is created                                  |
-| Active Run is incompatible with the Ingress context            | Event remains durably admitted and is retried after the Thread can accept a compatible Run              |
-| Frozen routing decision is no longer authorized or compatible  | Admission becomes `rejected`; no current Route or Agent is substituted                                  |
-| Frozen Input Mapping or resulting AgentInput is invalid        | Admission becomes `rejected`; deterministic input is not retried                                        |
-| Eligible event exceeds current durable admission capacity      | Adapter applies provider-specific backpressure and does not acknowledge or advance a replayable cursor  |
-| Foundation input acceptance unavailable before acknowledgement | Adapter fails the delivery so the provider retries, unless an independent durable spool already owns it |
-| Acknowledgement is lost after durable acceptance               | Provider retry resolves through the same external event identity                                        |
+| Condition                                                     | Outcome                                                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Invalid signature, gateway identity, or payload bounds        | Event is rejected before routing and no Run authority is created                                       |
+| Duplicate external event                                      | Prior pending state or terminal admission result is reused                                             |
+| Ingress or Route disabled                                     | Event is safely ignored or rejected according to provider acknowledgement policy; no Run is accepted   |
+| Execution Service Account is inactive or unauthorized         | Event remains unaccepted; no external actor or creator authority is substituted                        |
+| More than one Route matches                                   | Routing fails closed and no Run is accepted                                                            |
+| No allowed Agent can be selected                              | Routing fails safely and creates no AgentThreadBinding                                                 |
+| Correlation reference is absent or incompatible               | Existing-thread routing fails; no fuzzy or fallback Binding is created                                 |
+| Active Run is incompatible with the Ingress context           | Event remains durably admitted and is retried after the Thread can accept a compatible Run             |
+| Frozen routing decision is no longer authorized or compatible | Admission becomes `rejected`; no current Route or Agent is substituted                                 |
+| Frozen Input Mapping or resulting AgentInput is invalid       | Admission becomes `rejected`; deterministic input is not retried                                       |
+| Eligible event exceeds current durable admission capacity     | Adapter applies provider-specific backpressure and does not acknowledge or advance a replayable cursor |
+| Foundation input acceptor unavailable after durable admission | Admission remains pending and the adapter can acknowledge it; bounded capacity still applies           |
+| Acknowledgement is lost after durable acceptance              | Provider retry resolves through the same external event identity                                       |
 
 ## Invariants
 

@@ -6,7 +6,7 @@ import hashlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -28,6 +28,7 @@ from a13n_service.interactions.objects import (
 )
 from a13n_service.presentation import RetainedItem, RunReplayStore
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .result_payload import (
     AsyncSubagentResultAuthority,
@@ -72,7 +73,7 @@ class AsyncSubagentSuccessorReconciler:
         *,
         signals: ThreadControlSignalPublisher | None = None,
         run_id_factory: Callable[[str, str, str], str] | None = None,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._states = states
@@ -87,7 +88,7 @@ class AsyncSubagentSuccessorReconciler:
         tenant_id: str,
         thread_id: str,
     ) -> AsyncSubagentSuccessorReceipt:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         selected = await self._select_or_route(tenant_id=tenant_id, thread_id=thread_id, now=now)
         if isinstance(selected, AsyncSubagentSuccessorReceipt):
             await self._signal_if_bound(tenant_id=tenant_id, receipt=selected)
@@ -422,12 +423,6 @@ def _verify_selected_parent_state(parent: Run, state: StoredRunState) -> None:
 def _successor_run_id(tenant_id: str, entry_id: str, parent_run_id: str) -> str:
     digest = hashlib.sha256(f"{tenant_id}:{entry_id}:{parent_run_id}".encode()).hexdigest()
     return f"run_{digest[:24]}"
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [

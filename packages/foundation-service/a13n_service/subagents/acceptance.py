@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
-
 from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -33,6 +30,7 @@ from a13n_service.interactions.objects import (
 from a13n_service.interactions.records import thread_record
 from a13n_service.interactions.state import RunStateEnvelope
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .authorization import ChildRunAuthorizationError, authorize_parent_child_action
 from .domain import ChildRunRelationship, child_relationship_is_visible
@@ -66,7 +64,7 @@ class ChildRunAcceptanceService:
         states: RunStateStore,
         payloads: RunPayloadStore,
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._states = states
@@ -80,7 +78,7 @@ class ChildRunAcceptanceService:
     ) -> ChildRunAcceptanceReceipt:
         _validate_bundle(prepared)
         async with short_session(self._sessions) as database:
-            parent, _, thread = await read_attempt_authority(database, authority, _utc(self._clock()))
+            parent, _, thread = await read_attempt_authority(database, authority, assume_utc(self._clock()))
             session = await _require_session(database, parent)
             parent_resource = parent.to_resource()
             thread_resource = thread.to_resource()
@@ -116,7 +114,7 @@ class ChildRunAcceptanceService:
                 parent, _, parent_thread = await lock_attempt_authority(
                     database,
                     authority,
-                    _utc(self._clock()),
+                    assume_utc(self._clock()),
                     lock_inbox_origins=True,
                 )
                 session = await _require_session(database, parent)
@@ -160,7 +158,7 @@ class ChildRunAcceptanceService:
 
         _validate_resume_bundle(prepared)
         async with short_session(self._sessions) as database:
-            parent, _, parent_thread = await read_attempt_authority(database, authority, _utc(self._clock()))
+            parent, _, parent_thread = await read_attempt_authority(database, authority, assume_utc(self._clock()))
             session = await _require_session(database, parent)
             parent_resource = parent.to_resource()
             await _reauthorize(
@@ -207,7 +205,7 @@ class ChildRunAcceptanceService:
                 parent, _, parent_thread = await lock_attempt_authority(
                     database,
                     authority,
-                    _utc(self._clock()),
+                    assume_utc(self._clock()),
                     lock_inbox_origins=True,
                 )
                 session = await _require_session(database, parent)
@@ -287,7 +285,7 @@ class ChildRunAcceptanceService:
                 assert child_thread is not None
                 child_thread.version += 1
                 child_thread.current_run_id = prepared.run.id
-                child_thread.updated_at = _utc(self._clock())
+                child_thread.updated_at = assume_utc(self._clock())
                 await database.flush()
         except IntegrityError as error:
             raise ChildRunAcceptanceError(
@@ -572,12 +570,6 @@ def _receipt(relationship: ChildRunRelationship, session_id: str) -> ChildRunAcc
         child_thread_id=relationship.child_thread_id,
         child_run_id=relationship.child_run_id,
     )
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [

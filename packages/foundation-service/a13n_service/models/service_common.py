@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.etags import etag_matches, resource_etag
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
     AuthorizationError,
@@ -15,24 +16,11 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
+from a13n_service.public_errors import PublicError
 
 
-class ModelError(Exception):
+class ModelError(PublicError):
     """Safe stable error raised by the Model Management application layer."""
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        *,
-        status_code: int,
-        details: dict[str, object] | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-        self.details = details or {}
 
 
 async def authorize_models(
@@ -74,19 +62,15 @@ def audit_record(
     now: datetime,
     outcome: str = "success",
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("aud"),
+    return security_audit_record(
+        audit_id=new_object_id("aud"),
+        actor=actor,
         organization_id=organization_id,
         workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
         outcome=outcome,
         occurred_at=now,
-        request_id=actor.request_id,
         details=None,
     )

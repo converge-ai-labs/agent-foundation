@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import exists, or_, select
@@ -12,6 +10,7 @@ from sqlalchemy.orm import aliased
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .control_domain import (
     QueuedSubmission,
@@ -48,7 +47,7 @@ class QueuedSubmissionStore:
         sessions: async_sessionmaker[AsyncSession],
         *,
         max_queued: int = 256,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         if max_queued < 1:
             raise ValueError("max_queued must be positive")
@@ -66,7 +65,7 @@ class QueuedSubmissionStore:
         submission: ThreadRunSubmissionIntent,
         queued_submission_id: str | None = None,
     ) -> QueuedSubmissionMutationReceipt:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=thread_id)
             if thread.version != expected_thread_version:
@@ -205,7 +204,7 @@ class QueuedSubmissionStore:
         actor_principal: PrincipalRef,
         submission: ThreadRunSubmissionIntent,
     ) -> QueuedSubmissionMutationReceipt:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             scope = await _scope(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=scope)
@@ -234,7 +233,7 @@ class QueuedSubmissionStore:
         queued_submission_id: str,
         expected_version: int,
     ) -> ThreadQueueMutationReceipt:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             scope = await _scope(database, tenant_id=tenant_id, queued_submission_id=queued_submission_id)
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=scope)
@@ -274,7 +273,7 @@ class QueuedSubmissionStore:
         expected_queue_version: int,
         queued_submission_ids: tuple[str, ...],
     ) -> ThreadQueueMutationReceipt:
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
             thread = await _lock_thread(database, tenant_id=tenant_id, thread_id=thread_id)
             rows = await _lock_live(database, tenant_id=tenant_id, thread_id=thread_id)
@@ -418,12 +417,6 @@ async def _lock_entry(
     if row is None:
         raise QueuedSubmissionConflict("queued submission was not found")
     return row
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [

@@ -677,6 +677,21 @@ def test_file_skill_source_rejects_relative_file_operator_root() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "root",
+    (
+        "C:/Users/example/.agents/skills",
+        "c:/",
+        "//server/share/skills",
+        "//server/share/",
+    ),
+)
+def test_file_skill_source_accepts_canonical_windows_aggregate_roots(root: str) -> None:
+    source = FileSkillSource("windows", (root,), required=False)
+
+    assert source.roots == (root,)
+
+
 @pytest.mark.parametrize("root", ("missing/skills", "/skills/../escape", "/skills/"))
 def test_skill_manager_rejects_invalid_custom_source_root(root: str) -> None:
     source = _StaticSource("invalid", (root,), ())

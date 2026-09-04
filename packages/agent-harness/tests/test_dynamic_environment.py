@@ -275,6 +275,7 @@ def _local_mount(
     environment_id: str = "dynamic-environment-test",
     operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
     process_output: bool = False,
+    mount_path: str | None = None,
 ) -> EnvironmentRuntimeMount:
     return EnvironmentRuntimeMount(
         binding=DirectLocalEnvironmentProviderBinding(
@@ -291,6 +292,7 @@ def _local_mount(
         ),
         permission_ceiling=EnvironmentPermissionSet(operations=operations),
         working_directory="/",
+        mount_path=mount_path,
     )
 
 
@@ -299,9 +301,17 @@ def _local_binding(
     *,
     operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
     process_output: bool = False,
+    mount_path: str | None = None,
 ):
     return create_environment_runtime(
-        mounts={"local": _local_mount(root, operations=operations, process_output=process_output)},
+        mounts={
+            "local": _local_mount(
+                root,
+                operations=operations,
+                process_output=process_output,
+                mount_path=mount_path,
+            )
+        },
         default_mount="local",
     )
 
@@ -538,7 +548,13 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snap
     )
     result = await executable.run(
         "inspect",
-        bindings=RunBindings.embedded(environment=_local_binding(tmp_path, process_output=True)),
+        bindings=RunBindings.embedded(
+            environment=_local_binding(
+                tmp_path,
+                process_output=True,
+                mount_path=tmp_path.as_posix(),
+            )
+        ),
     )
 
     assert result.output_or_raise() == "done"
@@ -581,6 +597,8 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snap
     assert len(mount_parts) == 1
     assert '"default_mount":"local"' in mount_parts[0]
     assert '"name":"local"' in mount_parts[0]
+    assert f'"root":"{tmp_path.as_posix()}"' in mount_parts[0]
+    assert "/workspace" not in mount_parts[0]
     assert len(mount_parts[0].encode()) < 64 * 1024
     assert executable.definition.agent.tool_timeout is None
 
@@ -1744,6 +1762,88 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
     assert observed["error"]["code"] == "environment_stale_mount"
 
 
+async def test_managed_resources_follow_direct_mount_aliases_and_absolute_path_flavors(tmp_path: Path) -> None:
+    roots = {
+        "posix": tmp_path / "posix",
+        "drive": tmp_path / "drive",
+        "unc": tmp_path / "unc",
+    }
+    for root in roots.values():
+        root.mkdir()
+    runtime = create_environment_runtime(
+        mounts={
+            "posix": _local_mount(
+                roots["posix"],
+                environment_id="managed-resource-posix",
+                mount_path="/native/project",
+            ),
+            "drive": _local_mount(
+                roots["drive"],
+                environment_id="managed-resource-drive",
+                mount_path="C:/Users/Example/Project",
+            ),
+            "unc": _local_mount(
+                roots["unc"],
+                environment_id="managed-resource-unc",
+                mount_path="//server/share/project",
+            ),
+        },
+        default_mount="posix",
+    )
+    run_bindings = RunBindings.embedded(environment=runtime)
+
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=run_bindings.instance,
+        host_refs={},
+    ) as environment:
+        await runtime._activate()
+        capability = _DynamicEnvironmentRunCapability(
+            _configuration(),
+            run_id="run-1",
+            environment=environment,
+        )
+        context = cast(Any, SimpleNamespace(environment=environment))
+        shell_resources = capability._resource_resolver("environment.shell_exec")
+        port_resources = capability._resource_resolver("environment.port_inspect")
+        drive_mount_id = environment.resolve_path("C:/Users/Example/Project").mount_id
+        unc_mount_id = environment.resolve_path("//server/share/project").mount_id
+
+        drive_binding = await shell_resources({"alias": "drive"}, context=context)
+        drive_relative = await shell_resources(
+            {"alias": "drive", "cwd": "src"},
+            context=context,
+        )
+        drive_absolute = await shell_resources(
+            {"alias": "drive", "cwd": "c:/users/example/project/src"},
+            context=context,
+        )
+        unc_absolute = await shell_resources(
+            {"alias": "unc", "cwd": "//SERVER/SHARE/project/src"},
+            context=context,
+        )
+        unc_port = await port_resources({"alias": "unc"}, context=context)
+
+        assert drive_binding[0].kind == "mount"
+        assert drive_binding[0].identifier.startswith(f"{drive_mount_id}:")
+        assert drive_relative[0].identifier.startswith(f"{drive_mount_id}:")
+        assert drive_relative[0].identifier.endswith(":/src")
+        assert drive_absolute == drive_relative
+        assert unc_absolute[0].identifier.startswith(f"{unc_mount_id}:")
+        assert unc_absolute[0].identifier.endswith(":/src")
+        assert unc_port[0].kind == "mount"
+        assert unc_port[0].identifier.startswith(f"{unc_mount_id}:")
+        mismatch = await shell_resources(
+            {"alias": "drive", "cwd": "//server/share/project/src"},
+            context=context,
+        )
+        assert mismatch == ()
+        with pytest.raises(EnvironmentError) as mismatch_error:
+            environment.resolve_path("//server/share/project/src", alias="drive")
+        assert mismatch_error.value.code == "environment_selection_invalid"
+
+
 async def test_managed_authorization_is_fenced_by_mount_incarnation(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path)
     run_bindings = RunBindings.embedded(environment=aggregate)
@@ -1819,9 +1919,8 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
         assert isinstance(result, dict)
         assert result["hint"] == "keep-this-field"
         observed_path = cast(str, content["output_file_path"])
-        relative = observed_path.removeprefix("/workspace/")
-        spilled = tmp_path / relative
-        assert json.loads(spilled.read_text(encoding="utf-8")) == produce()
+        assert observed_path.startswith(f"{tmp_path.as_posix()}/.a13n/tmp/tool-results/")
+        assert json.loads(Path(observed_path).read_text(encoding="utf-8")) == produce()
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -1835,12 +1934,15 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
     )
     result = await executable.run(
         "produce",
-        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, mount_path=tmp_path.as_posix()),
+            capabilities=(_policy(),),
+        ),
     )
 
     assert result.output_or_raise() == "done"
     assert observed_path is not None
-    assert not (tmp_path / observed_path.removeprefix("/workspace/")).exists()
+    assert not Path(observed_path).exists()
 
 
 async def test_unmanaged_large_json_result_uses_default_truncation(tmp_path: Path) -> None:
@@ -2714,6 +2816,38 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
     assert not edit_task.done()
     result = await edit_task
     assert result["ok"] is True
+
+
+@requires_posix_process_groups
+async def test_direct_mount_path_translates_shell_working_directory(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    working_directory = project / "nested"
+    working_directory.mkdir(parents=True)
+    runtime = _local_binding(
+        project,
+        process_output=True,
+        mount_path=project.as_posix(),
+    )
+    bindings = RunBindings.embedded(environment=runtime)
+
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=bindings.instance,
+        host_refs={},
+    ) as environment:
+        await runtime._activate()
+        toolset = ShellToolset(environment, process_capable=False)
+        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace()))
+
+        result = await toolset.shell_exec_foreground(
+            ctx,
+            "pwd",
+            cwd=working_directory.as_posix(),
+        )
+
+        assert result["ok"] is True
+        assert result["stdout"]["text"].strip() == working_directory.resolve().as_posix()
 
 
 @requires_posix_process_groups

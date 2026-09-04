@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .control_domain import (
     InboxPayloadObjectRef,
@@ -229,9 +230,9 @@ class ThreadInboxRecord(Base):
             consumed_by_run_id=self.consumed_by_run_id,
             consumed_state_digest_sha256=self.consumed_state_digest_sha256,
             consumed_checkpoint_seq=self.consumed_checkpoint_seq,
-            expires_at=_optional_utc(self.expires_at),
-            created_at=_as_utc(self.created_at),
-            finalized_at=_optional_utc(self.finalized_at),
+            expires_at=optional_assume_utc(self.expires_at),
+            created_at=assume_utc(self.created_at),
+            finalized_at=optional_assume_utc(self.finalized_at),
             **payload,
         )
 
@@ -349,10 +350,10 @@ class QueuedSubmissionRecord(Base):
             ),
             consumed_run_id=self.consumed_run_id,
             failure=None if self.failure_json is None else _QUEUED_FAILURE_ADAPTER.validate_python(self.failure_json),
-            created_at=_as_utc(self.created_at),
-            updated_at=_as_utc(self.updated_at),
-            consumed_at=_optional_utc(self.consumed_at),
-            failed_at=_optional_utc(self.failed_at),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
+            consumed_at=optional_assume_utc(self.consumed_at),
+            failed_at=optional_assume_utc(self.failed_at),
         )
 
 
@@ -364,14 +365,6 @@ def _required[T](value: T | None) -> T:
     if value is None:
         raise ValueError("relational payload reference is incomplete")
     return value
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _optional_utc(value: datetime | None) -> datetime | None:
-    return None if value is None else _as_utc(value)
 
 
 __all__ = ["QueuedSubmissionRecord", "ThreadInboxCounterRecord", "ThreadInboxRecord"]

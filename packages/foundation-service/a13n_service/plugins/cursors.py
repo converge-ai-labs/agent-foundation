@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import json
-from datetime import UTC, datetime
+from datetime import datetime
+
+from a13n_service.collection_cursors import (
+    CollectionCursorMismatchError,
+    InvalidCollectionCursorError,
+    decode_collection_cursor,
+    encode_collection_cursor,
+)
+from a13n_service.temporal import assume_utc, require_aware_utc
 
 
 class PluginCursorError(ValueError):
@@ -13,7 +18,11 @@ class PluginCursorError(ValueError):
 
 
 def encode_plugin_cursor(*, updated_at: datetime, plugin_id: str, scope: dict[str, object]) -> str:
-    return _encode({"v": "1", "kind": "plugin", "time": _time(updated_at), "id": plugin_id, "scope": _scope(scope)})
+    return encode_collection_cursor(
+        {"time": _time(updated_at), "id": plugin_id},
+        kind="plugin",
+        scope=scope,
+    )
 
 
 def decode_plugin_cursor(value: str, *, scope: dict[str, object]) -> tuple[datetime, str]:
@@ -25,8 +34,10 @@ def decode_plugin_cursor(value: str, *, scope: dict[str, object]) -> tuple[datet
 
 
 def encode_plugin_version_cursor(*, created_at: datetime, version_id: str, scope: dict[str, object]) -> str:
-    return _encode(
-        {"v": "1", "kind": "plugin-version", "time": _time(created_at), "id": version_id, "scope": _scope(scope)}
+    return encode_collection_cursor(
+        {"time": _time(created_at), "id": version_id},
+        kind="plugin-version",
+        scope=scope,
     )
 
 
@@ -38,42 +49,22 @@ def decode_plugin_version_cursor(value: str, *, scope: dict[str, object]) -> tup
     return _parse_time(payload), version_id
 
 
-def _encode(payload: dict[str, object]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return base64.urlsafe_b64encode(encoded).rstrip(b"=").decode()
-
-
 def _decode(value: str, *, kind: str, scope: dict[str, object]) -> dict[str, object]:
-    if not value or len(value) > 2048:
-        raise PluginCursorError("invalid cursor")
     try:
-        padded = value + "=" * (-len(value) % 4)
-        payload = json.loads(base64.b64decode(padded, altchars=b"-_", validate=True))
-    except (ValueError, json.JSONDecodeError) as error:
+        return decode_collection_cursor(value, kind=kind, scope=scope)
+    except CollectionCursorMismatchError as error:
+        raise PluginCursorError("cursor does not match this query") from error
+    except InvalidCollectionCursorError as error:
         raise PluginCursorError("invalid cursor") from error
-    if (
-        not isinstance(payload, dict)
-        or payload.get("v") != "1"
-        or payload.get("kind") != kind
-        or payload.get("scope") != _scope(scope)
-    ):
-        raise PluginCursorError("cursor does not match this query")
-    return payload
-
-
-def _scope(value: dict[str, object]) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _time(value: datetime) -> str:
-    normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-    return normalized.isoformat().replace("+00:00", "Z")
+    return assume_utc(value).isoformat().replace("+00:00", "Z")
 
 
 def _parse_time(payload: dict[str, object]) -> datetime:
     try:
         value = datetime.fromisoformat(str(payload["time"]).replace("Z", "+00:00"))
+        return require_aware_utc(value)
     except (KeyError, ValueError) as error:
         raise PluginCursorError("invalid cursor") from error
-    return value.astimezone(UTC)

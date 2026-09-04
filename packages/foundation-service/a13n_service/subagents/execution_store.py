@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Protocol
 
 from a13n_harness.capabilities import (
@@ -27,6 +26,7 @@ from a13n_service.interactions.domain import Run, RunStatus, Thread
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.storage import short_session
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .authorization import ChildRunAuthorizationError, authorize_parent_child_action
 from .domain import ChildRunRelationship
@@ -83,7 +83,7 @@ class SubagentExecutionStore:
         *,
         parent_agent_instance_id: str,
         host_refs: Mapping[str, str],
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         if not parent_agent_instance_id:
             raise ValueError("parent Agent instance ID must not be empty")
@@ -139,7 +139,7 @@ class SubagentExecutionStore:
         authority = self.require_context(context)
         query_offset = 0 if execution_id is not None else offset
         async with short_session(self._sessions) as database:
-            parent, _, _ = await read_attempt_authority(database, authority, _utc(self._clock()))
+            parent, _, _ = await read_attempt_authority(database, authority, assume_utc(self._clock()))
             session = await _require_session(database, parent)
             origin_parent = aliased(RunRecord)
             filters = [
@@ -424,12 +424,6 @@ def _activity(run: Run) -> SubagentActivitySnapshot | None:
         output_preview=output_preview,
         output_truncated=len(run.output_text) > len(output_preview),
     )
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import cast
 
 from a13n_harness import SafeFailure
@@ -16,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.durable_operations.idempotency import IdempotencyConflict, is_evidence_unique_race
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -24,10 +23,12 @@ from a13n_service.iam import (
     PrincipalType,
     authorize_workspace,
 )
+from a13n_service.iam.audit import SystemAuditActor, security_audit_record
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .commands import (
     PluginRuntimeCandidateResolver,
@@ -39,6 +40,12 @@ from .commands import (
 )
 from .domain import Plugin, PluginTaskReceipt, PluginTaskStatus, PluginVersion
 from .errors import PluginError, plugin_not_found, plugin_state_conflict, plugin_version_not_found
+from .idempotency import (
+    load_plugin_evidence,
+    new_plugin_evidence,
+    plugin_key_digest,
+    plugin_request_digest,
+)
 from .models import (
     PluginRecord,
     PluginRuntimeStateRecord,
@@ -48,9 +55,6 @@ from .models import (
 from .runtime import PluginRuntimeLock, PluginRuntimeLockError
 
 logger = logging.getLogger("a13n_service.plugins.runtime_commands")
-
-_IDEMPOTENCY_LIFETIME = timedelta(hours=24)
-_MAX_IDEMPOTENCY_KEY_BYTES = 512
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +78,7 @@ class PluginRuntimeCommandCoordinator:
         *,
         poll_interval_seconds: float = 1,
         lease_seconds: float = 300,
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         if poll_interval_seconds <= 0:
             raise ValueError("poll_interval_seconds must be positive")
@@ -85,7 +89,7 @@ class PluginRuntimeCommandCoordinator:
         self._staging_authority = staging_authority
         self._poll_interval_seconds = poll_interval_seconds
         self._lease_seconds = lease_seconds
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def activate(
         self,
@@ -227,8 +231,8 @@ class PluginRuntimeCommandCoordinator:
         plugin_version_id: str | None,
         idempotency_key: str,
     ) -> PluginTaskReceipt:
-        key_digest = _idempotency_key_digest(idempotency_key)
-        request_digest = _request_digest(
+        key_digest = plugin_key_digest(idempotency_key)
+        request_digest = plugin_request_digest(
             {"command": command, "plugin_id": plugin_id, "plugin_version_id": plugin_version_id}
         )
         operation = f"plugin_runtime.{command}"
@@ -247,10 +251,10 @@ class PluginRuntimeCommandCoordinator:
                     operation=operation,
                     scope_id=plugin_id,
                     key_digest=key_digest,
+                    request_digest=request_digest,
+                    now=now,
                 )
                 if replay is not None:
-                    if replay.request_digest != request_digest:
-                        raise _idempotency_conflict()
                     task = await session.get(PluginRuntimeTaskRecord, replay.result_ref)
                     if task is None:
                         raise _idempotency_conflict()
@@ -302,37 +306,29 @@ class PluginRuntimeCommandCoordinator:
                 )
                 session.add(task)
                 session.add(
-                    IdempotencyEvidenceRecord(
-                        id=new_object_id("idem"),
+                    new_plugin_evidence(
+                        actor=actor,
                         organization_id=workspace.organization_id,
-                        workspace_id=workspace.workspace_id,
-                        actor_type=actor.principal.principal_type.value,
-                        actor_id=actor.principal.principal_id,
                         operation=operation,
                         scope_id=plugin_id,
                         key_digest=key_digest,
                         request_digest=request_digest,
                         result_kind="plugin_task",
                         result_ref=operation_id,
-                        created_at=now,
-                        expires_at=now + _IDEMPOTENCY_LIFETIME,
+                        now=now,
                     )
                 )
                 session.add(
-                    SecurityAuditRecord(
-                        id=new_object_id("audit"),
+                    security_audit_record(
+                        audit_id=new_object_id("audit"),
+                        actor=actor,
                         organization_id=workspace.organization_id,
                         workspace_id=workspace.workspace_id,
-                        actor_type=actor.principal.principal_type.value,
-                        actor_id=actor.principal.principal_id,
                         action=f"plugin_runtime.{command}.accepted",
                         resource_type="plugin",
                         resource_id=plugin_id,
-                        auth_method=actor.auth_method,
-                        credential_id=actor.credential_id,
                         outcome="success",
                         occurred_at=now,
-                        request_id=actor.request_id,
                         details={"operation_id": operation_id},
                     )
                 )
@@ -340,7 +336,9 @@ class PluginRuntimeCommandCoordinator:
                 return _receipt(task)
         except AuthorizationError as error:
             raise PluginError("forbidden", "The operation is not allowed.", status_code=403) from error
-        except IntegrityError:
+        except IntegrityError as error:
+            if not is_evidence_unique_race(error):
+                raise
             replay = await self._replay_after_race(
                 actor=actor,
                 organization_id=organization_id,
@@ -378,11 +376,11 @@ class PluginRuntimeCommandCoordinator:
                 operation=operation,
                 scope_id=scope_id,
                 key_digest=key_digest,
+                request_digest=request_digest,
+                now=self._clock(),
             )
             if replay is None:
                 return None
-            if replay.request_digest != request_digest:
-                raise _idempotency_conflict()
             task = await session.get(PluginRuntimeTaskRecord, replay.result_ref)
             return _receipt(task) if task is not None else None
 
@@ -396,7 +394,7 @@ class PluginRuntimeCommandCoordinator:
             if state.command_operation_id is not None:
                 task = await session.get(PluginRuntimeTaskRecord, state.command_operation_id, with_for_update=True)
                 if task is not None and task.status == PluginTaskStatus.running.value:
-                    if state.command_lease_expires_at is not None and _as_utc(state.command_lease_expires_at) > now:
+                    if state.command_lease_expires_at is not None and assume_utc(state.command_lease_expires_at) > now:
                         return None
                 else:
                     state.command_operation_id = None
@@ -736,7 +734,7 @@ class PluginRuntimeCommandCoordinator:
             or state.command_operation_id != claim.operation_id
             or state.command_claim_generation != claim.generation
             or state.command_lease_expires_at is None
-            or _as_utc(state.command_lease_expires_at) <= _as_utc(self._clock())
+            or assume_utc(state.command_lease_expires_at) <= assume_utc(self._clock())
         ):
             raise _RuntimeTaskLeaseLost
         task = await session.get(PluginRuntimeTaskRecord, claim.operation_id, with_for_update=True)
@@ -889,20 +887,16 @@ def _terminal_audit(
     now: datetime,
     details: dict[str, object],
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("audit"),
+    return security_audit_record(
+        audit_id=new_object_id("audit"),
+        actor=SystemAuditActor(request_id=task.id),
         organization_id=task.organization_id,
         workspace_id=task.workspace_id,
-        actor_type="system",
-        actor_id=None,
         action=f"plugin_runtime.{task.command}.{status}",
         resource_type="plugin",
         resource_id=task.plugin_id,
-        auth_method="internal",
-        credential_id=None,
         outcome=outcome,
         occurred_at=now,
-        request_id=task.id,
         details={"operation_id": task.id, **details},
     )
 
@@ -923,10 +917,6 @@ def _clear_claim(state: PluginRuntimeStateRecord, *, now: datetime) -> None:
     state.updated_at = now
 
 
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
 async def _load_replay(
     session: AsyncSession,
     *,
@@ -934,31 +924,21 @@ async def _load_replay(
     operation: str,
     scope_id: str,
     key_digest: str,
+    request_digest: str,
+    now: datetime,
 ) -> IdempotencyEvidenceRecord | None:
-    return await session.scalar(
-        select(IdempotencyEvidenceRecord).where(
-            IdempotencyEvidenceRecord.actor_type == actor.principal.principal_type.value,
-            IdempotencyEvidenceRecord.actor_id == actor.principal.principal_id,
-            IdempotencyEvidenceRecord.operation == operation,
-            IdempotencyEvidenceRecord.scope_id == scope_id,
-            IdempotencyEvidenceRecord.key_digest == key_digest,
-        )
-    )
-
-
-def _idempotency_key_digest(value: str) -> str:
     try:
-        encoded = value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise PluginError("invalid_request", "Idempotency-Key is invalid.", status_code=400) from error
-    if not encoded or len(encoded) > _MAX_IDEMPOTENCY_KEY_BYTES:
-        raise PluginError("invalid_request", "Idempotency-Key is invalid.", status_code=400)
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _request_digest(value: dict[str, object]) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    return hashlib.sha256(encoded).hexdigest()
+        return await load_plugin_evidence(
+            session,
+            actor=actor,
+            operation=operation,
+            scope_id=scope_id,
+            key_digest=key_digest,
+            request_digest=request_digest,
+            now=now,
+        )
+    except IdempotencyConflict as error:
+        raise _idempotency_conflict() from error
 
 
 def _idempotency_conflict() -> PluginError:

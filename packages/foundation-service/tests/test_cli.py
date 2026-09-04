@@ -1,8 +1,10 @@
+import asyncio
 from pathlib import Path
 
+import httpx2
 import pytest
 from a13n_service.cli import main
-from a13n_service.settings import ServiceRole, get_settings
+from a13n_service.settings import get_settings
 from click.testing import CliRunner
 from fastapi import FastAPI
 
@@ -29,7 +31,13 @@ def test_serve_role_override_does_not_construct_environment_app(
 
     assert result.exit_code == 0, result.output
     assert len(served_apps) == 1
-    assert served_apps[0].state.settings.role is ServiceRole.worker
+
+    async def read_health() -> httpx2.Response:
+        transport = httpx2.ASGITransport(app=served_apps[0])
+        async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.get("/healthz")
+
+    assert asyncio.run(read_health()).json() == {"status": "ok", "role": "worker"}
 
 
 def test_database_cli_delegates_to_service_migrator(monkeypatch: pytest.MonkeyPatch) -> None:

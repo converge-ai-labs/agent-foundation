@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
-from a13n_service.models.endpoint_policy import EndpointPolicy
 from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service import ModelService

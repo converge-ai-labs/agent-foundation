@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam.models import RoleBindingRecord, SecurityAuditRecord, UserRecord
 from a13n_service.plugins.commands import (
     PluginRuntimeCatalogSnapshot,
@@ -484,6 +485,72 @@ async def test_runtime_command_authorization_and_idempotency_conflict(
 
     assert conflict.value.code == "plugin_idempotency_conflict"
     assert forbidden.value.code == "forbidden"
+
+
+@pytest.mark.anyio
+async def test_runtime_command_preserves_utf8_idempotency_keys(
+    runner_plugin_service: PluginService,
+    runtime_coordinator: tuple[PluginRuntimeCommandCoordinator, _CandidateResolver, _StagingAuthority],
+) -> None:
+    coordinator, _resolver, _authority = runtime_coordinator
+    uploaded, first = await _activate(
+        runner_plugin_service,
+        coordinator,
+        version="1.0.0",
+        key="运行-🔁",
+    )
+    plugin = await runner_plugin_service.get(actor=actor(), plugin_id=uploaded.version.plugin_id)
+
+    replay = await coordinator.activate(
+        actor=actor(),
+        organization_id="org_1234567890abcdef",
+        workspace_id="ws_1234567890abcdef",
+        plugin=plugin,
+        plugin_version=uploaded.version,
+        idempotency_key="运行-🔁",
+    )
+
+    assert replay == first
+
+
+@pytest.mark.anyio
+async def test_runtime_command_evidence_expires_at_the_exact_ttl_boundary(
+    runner_plugin_service: PluginService,
+    runtime_coordinator: tuple[PluginRuntimeCommandCoordinator, _CandidateResolver, _StagingAuthority],
+    plugin_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    coordinator, _resolver, _authority = runtime_coordinator
+    first_version, first = await _activate(
+        runner_plugin_service,
+        coordinator,
+        version="1.0.0",
+        key="runtime-expiry-boundary",
+    )
+    second_version = await _upload(
+        runner_plugin_service,
+        build_wheel(version="2.0.0"),
+        key="upload-runtime-expiry-second",
+        plugin_id=first_version.version.plugin_id,
+    )
+    async with transaction(plugin_sessions) as session:
+        evidence = await session.scalar(
+            select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "plugin_runtime.activate")
+        )
+        assert evidence is not None
+        evidence.created_at = NOW - timedelta(hours=24)
+        evidence.expires_at = NOW
+
+    plugin = await runner_plugin_service.get(actor=actor(), plugin_id=first_version.version.plugin_id)
+    second = await coordinator.activate(
+        actor=actor(),
+        organization_id="org_1234567890abcdef",
+        workspace_id="ws_1234567890abcdef",
+        plugin=plugin,
+        plugin_version=second_version.version,
+        idempotency_key="runtime-expiry-boundary",
+    )
+
+    assert second.operation_id != first.operation_id
 
 
 @pytest.mark.anyio

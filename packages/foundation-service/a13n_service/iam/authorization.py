@@ -64,6 +64,16 @@ class WorkspaceAction(StrEnum):
     queued_submission_delete = "queued_submission.delete"
     queued_submission_reorder = "queued_submission.reorder"
     queued_submission_consume = "queued_submission.consume"
+    ingress_read = "ingress.read"
+    ingress_manage = "ingress.manage"
+    route_read = "route.read"
+    route_manage = "route.manage"
+    connector_read = "connector.read"
+    connector_manage = "connector.manage"
+    connector_connection_read = "connector_connection.read"
+    connector_connection_manage = "connector_connection.manage"
+    mcp_connection_read = "mcp_connection.read"
+    mcp_connection_manage = "mcp_connection.manage"
 
 
 _READ_ACTIONS = frozenset(
@@ -84,6 +94,11 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.usage_read,
         WorkspaceAction.trace_read,
         WorkspaceAction.queued_submission_read,
+        WorkspaceAction.ingress_read,
+        WorkspaceAction.route_read,
+        WorkspaceAction.connector_read,
+        WorkspaceAction.connector_connection_read,
+        WorkspaceAction.mcp_connection_read,
     }
 )
 
@@ -107,11 +122,30 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
     }
 )
 
+_PLUGIN_OPERATOR_ACTIONS = frozenset(
+    {
+        WorkspaceAction.plugin_manage,
+        WorkspaceAction.plugin_runtime_manage,
+    }
+)
+
+_CONNECTIVITY_ADMIN_ACTIONS = frozenset(
+    {
+        WorkspaceAction.ingress_manage,
+        WorkspaceAction.connector_manage,
+        WorkspaceAction.connector_connection_manage,
+        WorkspaceAction.mcp_connection_manage,
+    }
+)
+
+_BUILDER_ACTIONS = frozenset(WorkspaceAction) - _PLUGIN_OPERATOR_ACTIONS - _CONNECTIVITY_ADMIN_ACTIONS
+_ADMIN_ACTIONS = frozenset(WorkspaceAction) - _PLUGIN_OPERATOR_ACTIONS
+
 _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
     "viewer": _READ_ACTIONS,
     "runner": _RUNNER_ACTIONS,
-    "builder": frozenset(WorkspaceAction) - {WorkspaceAction.plugin_manage, WorkspaceAction.plugin_runtime_manage},
-    "admin": frozenset(WorkspaceAction) - {WorkspaceAction.plugin_manage, WorkspaceAction.plugin_runtime_manage},
+    "builder": _BUILDER_ACTIONS,
+    "admin": _ADMIN_ACTIONS,
 }
 
 _DIRECT_AGENT_VIEWER_ACTIONS = frozenset(

@@ -85,7 +85,7 @@ def prepare_async_result_successor(
         encrypted_config_payload=selected_parent.encrypted_config_payload,
         runtime_lock_digest=selected_parent.runtime_lock_digest,
         model_execution_observation=selected_parent.model_execution_observation,
-        connection_selections=selected_parent.connection_selections,
+        connector_connection_selections=selected_parent.connector_connection_selections,
         mcp_connection_selections=selected_parent.mcp_connection_selections,
         ingress_context=selected_parent.ingress_context,
         mcp_tool_snapshot=selected_parent.mcp_tool_snapshot,

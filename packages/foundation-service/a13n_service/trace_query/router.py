@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Request
 
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.request_runtime import get_control_runtime
 
 from .domain import SearchIn, TraceCollection, TraceDetail, TraceView
 from .errors import TraceQueryError
@@ -18,10 +19,10 @@ Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 
 
 def _traces(request: Request) -> TraceQueryService:
-    service: TraceQueryService | None = getattr(request.app.state, "trace_query_service", None)
-    if service is None:
+    control = get_control_runtime(request)
+    if control is None:
         raise TraceQueryError("trace_query_unavailable", "Trace Query is unavailable.", status_code=503)
-    return service
+    return control.trace_queries
 
 
 @router.get("/workspaces/{workspace_id}/traces", response_model=TraceCollection)

@@ -12,6 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.durable_operations.idempotency import (
+    IdempotencyIdentity,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
+)
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
     AuthorizationError,
@@ -22,18 +28,12 @@ from a13n_service.iam.authorization import (
 from a13n_service.iam.models import SecurityAuditRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
+from a13n_service.temporal import assume_utc
 
 from .errors import SkillError
 from .models import SkillIdempotencyRecord
 
 IDEMPOTENCY_LIFETIME = timedelta(hours=24)
-_MAX_IDEMPOTENCY_KEY_BYTES = 512
-
-
-@dataclass(frozen=True, slots=True)
-class IdempotencyIdentity:
-    key_digest: str
-    request_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,18 +54,12 @@ class ReplayResult[Result: BaseModel]:
 
 def idempotency_identity(key: str, request: bytes | BaseModel) -> IdempotencyIdentity:
     try:
-        encoded_key = key.encode("ascii")
-    except UnicodeEncodeError as error:
+        key_digest = digest_visible_ascii_key(key)
+    except InvalidIdempotencyKey as error:
         raise _invalid_idempotency_key() from error
-    if (
-        not encoded_key
-        or len(encoded_key) > _MAX_IDEMPOTENCY_KEY_BYTES
-        or any(byte < 0x21 or byte > 0x7E for byte in encoded_key)
-    ):
-        raise _invalid_idempotency_key()
     request_bytes = request if isinstance(request, bytes) else _canonical_json(request.model_dump(mode="json"))
     return IdempotencyIdentity(
-        key_digest=hashlib.sha256(encoded_key).hexdigest(),
+        key_digest=key_digest,
         request_digest=hashlib.sha256(request_bytes).hexdigest(),
     )
 
@@ -90,7 +84,7 @@ async def load_replay[ResponseModel: BaseModel](
     )
     if record is None:
         return None
-    if _as_utc(record.expires_at) <= _as_utc(now):
+    if assume_utc(record.expires_at) <= assume_utc(now):
         await session.delete(record)
         await session.flush()
         return None
@@ -159,20 +153,16 @@ def skill_audit_record(
     outcome: str = "success",
     details: dict[str, object] | None = None,
 ) -> SecurityAuditRecord:
-    return SecurityAuditRecord(
-        id=new_object_id("aud"),
+    return security_audit_record(
+        audit_id=new_object_id("aud"),
+        actor=actor,
         organization_id=organization_id,
         workspace_id=workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
         action=action,
         resource_type="skill",
         resource_id=skill_id,
-        auth_method=actor.auth_method,
-        credential_id=actor.credential_id,
         outcome=outcome,
         occurred_at=now,
-        request_id=actor.request_id,
         details=details,
     )
 
@@ -235,9 +225,3 @@ def _invalid_idempotency_key() -> SkillError:
         "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
         status_code=400,
     )
-
-
-def _as_utc(value: datetime) -> datetime:
-    from datetime import UTC
-
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

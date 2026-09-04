@@ -8,7 +8,6 @@ import platform
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from functools import cache
 from importlib.metadata import PackageNotFoundError, distributions, packages_distributions, version
 from typing import Literal, Protocol
@@ -21,6 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from a13n_service.temporal import utc_now
 
 from .models import PluginRuntimeLockRecord
 
@@ -169,7 +170,7 @@ class PluginRuntimeLockStore:
         clock=None,
     ) -> None:
         self.manifest = manifest
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or utc_now
 
     async def build_and_persist(
         self,

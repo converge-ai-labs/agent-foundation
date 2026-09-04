@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -28,6 +27,7 @@ from a13n_service.interactions.inbox_persistence import (
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.presentation import RunReplayStore
 from a13n_service.storage import short_session, transaction
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import ChildRunRelationship
 from .models import ChildRunRelationshipRecord
@@ -61,7 +61,7 @@ class AsyncSubagentResultPublisher:
         max_pending_count: int = 256,
         max_pending_bytes: int = 8 * 1024 * 1024,
         entry_id_factory: Callable[[], str] = new_thread_inbox_entry_id,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Clock = utc_now,
     ) -> None:
         if max_pending_count < 1 or max_pending_bytes < 1:
             raise ValueError("Thread inbox admission limits must be positive")
@@ -89,7 +89,7 @@ class AsyncSubagentResultPublisher:
             child=authority.child,
             expected_item_id=None,
         )
-        now = _utc(self._clock())
+        now = assume_utc(self._clock())
         created = False
         try:
             async with transaction(self._sessions) as database:
@@ -385,12 +385,6 @@ async def _initial_binding(
         if head.status == RunStatus.waiting.value:
             return None, head.id
     return None, None
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 __all__ = [
