@@ -14,8 +14,14 @@ from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAc
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.reconciliation import load_owning_run
 from a13n_service.public_errors import PublicError
-from a13n_service.run_stream import RedisRunStream, RunReplayStore, RunStreamEntry, RunStreamReplayGap
-from a13n_service.storage import ObjectNotFound, short_session
+from a13n_service.run_stream import (
+    RedisRunStream,
+    RetainedReplayUnavailable,
+    RunReplayStore,
+    RunStreamEntry,
+    RunStreamReplayGap,
+)
+from a13n_service.storage import short_session
 
 
 class NativeStreamError(PublicError):
@@ -234,7 +240,7 @@ class NativeRunStreamService:
     ) -> RunStreamAttachment | None:
         try:
             snapshot = await self._replay.read(tenant_id, run_id)
-        except ObjectNotFound:
+        except RetainedReplayUnavailable:
             return None
         events = snapshot.events
         start = 0

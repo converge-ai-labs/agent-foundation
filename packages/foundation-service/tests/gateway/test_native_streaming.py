@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from datetime import timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_service.gateway.native_streaming import NativeRunStreamService, NativeStreamError
@@ -97,3 +98,17 @@ async def test_run_sse_conceals_unauthorized_resource(
         await service.attach(actor=actor, run_id=RUN_ID, after_stream_id=None)
 
     assert captured.value.code == "resource_not_found"
+
+
+async def test_terminal_run_without_retained_replay_reports_gap(
+    native_stream_service: tuple[NativeRunStreamService, RedisRunStream],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _stream = native_stream_service
+    monkeypatch.setattr(service, "_authorize", AsyncMock(return_value=(TENANT_ID, True)))
+
+    with pytest.raises(NativeStreamError) as captured:
+        await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=None)
+
+    assert captured.value.code == "run_stream_replay_gap"
+    assert captured.value.status_code == 409

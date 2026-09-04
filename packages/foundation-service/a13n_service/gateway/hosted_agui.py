@@ -939,14 +939,21 @@ class HostedAguiService:
                 if page.closed and cursor == page.high_watermark:
                     break
         except RunStreamReplayGap:
-            retained = await self._replay.read(organization_id, run_id)
+            try:
+                retained = await self._replay.read(organization_id, run_id)
+            except RunStreamError as error:
+                raise HostedAguiError(
+                    "agui_history_unavailable",
+                    "The retained AG-UI message history is unavailable.",
+                    status_code=409,
+                ) from error
             return tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
         return tuple(values)
 
     async def _retained_entries(self, binding: HostedAguiBinding) -> tuple[RunStreamEntry, ...] | None:
         try:
             retained = await self._replay.read(binding.organization_id, binding.run_id)
-        except ObjectNotFound:
+        except RunStreamError:
             return None
         return tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
 
