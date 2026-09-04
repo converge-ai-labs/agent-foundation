@@ -106,7 +106,7 @@ async def _seed_model(sessions: async_sessionmaker[AsyncSession]) -> None:
                 type="openai",
                 name="Selection Provider",
                 normalized_name="selection provider",
-                config={},
+                configuration={},
                 credential_version=1,
                 ciphertext=b"encrypted",
                 nonce=b"123456789012",

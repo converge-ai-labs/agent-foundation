@@ -1,5 +1,6 @@
-"""Connector and ConnectorConnection management."""
+"""ConnectorProvider and ConnectorConnection management."""
 
+from .contracts import ConnectorConnectionRuntime, ConnectorProviderRuntime
 from .domain import (
     Connector,
     ConnectorCollection,
@@ -7,15 +8,25 @@ from .domain import (
     ConnectorConnectionCollection,
     ConnectorConnectionStatus,
     ConnectorConnectionStatusReason,
-    ConnectorStatus,
+    ConnectorProvider,
+    ConnectorProviderCollection,
+    ConnectorProviderStatus,
 )
+from .registry import ConnectorProviderDefinition, ConnectorProviderImplementation, ConnectorProviderRegistry
 
 __all__ = [
     "Connector",
     "ConnectorCollection",
     "ConnectorConnection",
     "ConnectorConnectionCollection",
+    "ConnectorConnectionRuntime",
     "ConnectorConnectionStatus",
     "ConnectorConnectionStatusReason",
-    "ConnectorStatus",
+    "ConnectorProvider",
+    "ConnectorProviderCollection",
+    "ConnectorProviderDefinition",
+    "ConnectorProviderImplementation",
+    "ConnectorProviderRegistry",
+    "ConnectorProviderRuntime",
+    "ConnectorProviderStatus",
 ]

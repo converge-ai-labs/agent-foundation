@@ -76,6 +76,14 @@ The deterministic source IDs continue to use `workspace`, `workspace-2`, and lat
 
 The catalog is prepared after initial Environment entry and frozen for the logical Harness Run. A mount added, replaced, or removed after preparation does not silently change it. Harness mount-incarnation checks reject a selected Skill whose route changes while it is being prepared or read. A later root or child Run reconstructs and rescans its own current source set.
 
+## Interactive Skill References
+
+`AgentUiApp` exposes a bounded, credential-free Skill catalog projection for interactive completion. A draft or idle Thread preview uses its effective next-Run Agent, Project roots, and Environment selection and invokes the same ordered Environment-routed source composition used for Run preparation. Preview does not create a Thread, persist a catalog, mutate a source, or claim that its observed provider generation will remain current. An active root operation instead projects only the catalog already frozen for that Run.
+
+The Textual TUI uses `$` completion and its static `/skills` picker to create an exact Skill reference as defined by [Project Path and Skill References](tui/01-interaction-model.md#project-path-and-skill-references). The visible `$<skill-name>` marker remains user prompt text, while the detached input also identifies the exact conflict-resolved catalog item selected by the user. Before accepting a prompt or steering action, the App resolves every typed Skill reference against the applicable fresh or active catalog. A missing, ambiguous, stale, or newly unavailable item rejects that input without stripping the visible marker or losing the draft.
+
+A validated reference is an explicit request to use the named Skill for the current input. It does not replace or narrow the run-frozen catalog, suppress implicit routing to another available Skill, capture Skill bytes, mutate Capability configuration, or grant Environment authority. The root Agent receives the exact request through the Skills Capability's ordinary model-facing routing and reads `SKILL.md` through the existing Environment file path only when applying that Skill. Raw dollar-prefixed text that has no resolved reference remains ordinary prompt text.
+
 ## Dedicated User Skill Mount
 
 When the root Agent for an independent Run selects `skills`, Agent UI resolves `~/.agents/skills` and creates that exact directory when absent. It ordinarily binds the directory as the non-default `user-skills` mount. A Host-path-preserving adapter assigns that mount's canonical resolved Host path as its aggregate root, so `<resolved-user-skills-root>/<name>/SKILL.md` uses the same address inside and outside the Agent. A virtual-layout adapter retains `/environment/user-skills/<name>/SKILL.md` as the aggregate route.
@@ -111,6 +119,7 @@ A root Run injects the user Skill mount only when its root Agent selects `skills
 | Duplicate Skill name                                         | The deterministic source precedence selects one winner                    |
 | Selected mount incarnation changes during preparation or use | Harness reports a stale Skill catalog                                     |
 | Skill document changes after the catalog is frozen           | The active Run retains its frozen catalog provenance; a later Run rescans |
+| Interactive Skill reference is stale or unavailable          | Input admission rejects it and preserves the user's complete draft        |
 
 ## Compatibility
 
@@ -125,3 +134,4 @@ A root Run injects the user Skill mount only when its root Agent selects `skills
 5. Capability omission creates no Skill catalog and no dedicated user Skill mount.
 6. One logical Run observes one frozen, deterministically ordered Skill catalog.
 7. Root and child Runs prepare independent Skill sources and mount incarnations.
+8. An interactive Skill reference is an exact current-input request over the applicable catalog, not a source mutation, catalog filter, content attachment, or authority grant.

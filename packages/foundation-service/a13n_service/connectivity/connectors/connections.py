@@ -6,10 +6,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.adapters import (
-    ConnectorAdapter,
-)
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import (
@@ -49,9 +46,9 @@ from .management import (
     audit,
     authorize,
     map_management_value_error,
-    require_adapter,
     require_connection,
-    require_connector,
+    require_connector_provider,
+    require_implementation,
 )
 from .models import (
     ConnectorConnectionRecord,
@@ -65,7 +62,7 @@ class ConnectorConnectionService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: AdapterRegistry[ConnectorAdapter],
+        adapters: ConnectorProviderRegistry,
         secrets: InternalSecretService,
         *,
         correlation_secret: bytes | None,
@@ -105,11 +102,11 @@ class ConnectorConnectionService:
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
-                connector = await require_connector(session, request.connector_id)
+                connector = await require_connector_provider(session, request.connector_provider_id)
                 if connector.workspace_id != workspace_id:
                     raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
                 await authorize_owner_change(session, actor, connector, request.owner_principal_ref)
-                require_adapter(self._adapters, connector.driver_key, connector.config_version)
+                require_implementation(self._adapters, connector.type)
                 request_fingerprint = fingerprint(request)
                 try:
                     replay = await replay_command(
@@ -129,7 +126,7 @@ class ConnectorConnectionService:
                     id=connection_id,
                     organization_id=connector.organization_id,
                     workspace_id=connector.workspace_id,
-                    connector_id=connector.id,
+                    connector_provider_id=connector.id,
                     owner_type=(
                         request.owner_principal_ref.principal_type.value
                         if request.owner_principal_ref is not None
@@ -140,7 +137,7 @@ class ConnectorConnectionService:
                     ),
                     name=request.name,
                     normalized_name=request.name.casefold(),
-                    provider_key=request.provider_key,
+                    connector_key=request.connector_key,
                     external_ref=None,
                     safe_metadata_json={},
                     status=ConnectorConnectionStatus.pending.value,
@@ -229,24 +226,25 @@ class ConnectorConnectionService:
             if replay is not None:
                 attempt = await session.get(ConnectorSetupAttemptRecord, replay.resource_id)
                 if attempt is None:
-                    raise ConnectorError("setup_unavailable", "Connector setup is unavailable.", status_code=404)
+                    raise ConnectorError(
+                        "setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404
+                    )
                 attempt_id = attempt.id
             else:
                 require_version(connection.version, expected_version)
-                connector = await require_connector(session, connection.connector_id)
+                connector = await require_connector_provider(session, connection.connector_provider_id)
                 if connector.status != "active":
-                    raise ConnectorError("connector_disabled", "Connector is disabled.", status_code=409)
-                adapter = require_adapter(self._adapters, connector.driver_key, connector.config_version)
+                    raise ConnectorError("connector_disabled", "ConnectorProvider is disabled.", status_code=409)
+                adapter = require_implementation(self._adapters, connector.type)
                 try:
                     validated_setup = adapter.validate_setup(
                         setup,
-                        provider_key=connection.provider_key,
-                        connector_config=connector.config_json,
-                        config_version=connector.config_version,
+                        connector_key=connection.connector_key,
+                        configuration=connector.configuration_json,
                     )
                 except ValueError as error:
                     raise ConnectorError(
-                        "invalid_connector_setup", "Connector setup is invalid.", status_code=400
+                        "invalid_connector_setup", "ConnectorProvider setup is invalid.", status_code=400
                     ) from error
                 session.add(
                     self._setup.new_attempt(
@@ -502,18 +500,17 @@ class ConnectorConnectionService:
                     raise ConnectorError(
                         "invalid_connection_state", "ConnectorConnection cannot reconnect.", status_code=409
                     )
-                connector = await require_connector(session, connection.connector_id)
-                adapter = require_adapter(self._adapters, connector.driver_key, connector.config_version)
+                connector = await require_connector_provider(session, connection.connector_provider_id)
+                adapter = require_implementation(self._adapters, connector.type)
                 try:
                     validated_setup = adapter.validate_setup(
                         setup,
-                        provider_key=connection.provider_key,
-                        connector_config=connector.config_json,
-                        config_version=connector.config_version,
+                        connector_key=connection.connector_key,
+                        configuration=connector.configuration_json,
                     )
                 except ValueError as error:
                     raise ConnectorError(
-                        "invalid_connector_setup", "Connector setup is invalid.", status_code=400
+                        "invalid_connector_setup", "ConnectorProvider setup is invalid.", status_code=400
                     ) from error
                 connection.setup_generation += 1
                 connection.status = ConnectorConnectionStatus.pending.value

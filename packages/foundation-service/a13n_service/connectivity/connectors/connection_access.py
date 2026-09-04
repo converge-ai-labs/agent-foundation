@@ -8,10 +8,11 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.connectivity.connectors.adapters import (
+from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
+    ConnectionBinding,
     ConnectionInspection,
-    ConnectorAdapterError,
+    ConnectorProviderError,
 )
 from a13n_service.connectivity.management import (
     ConnectivityManagementValueError,
@@ -29,13 +30,13 @@ from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord, Use
 from .domain import ConnectorConnection
 from .errors import ConnectorError
 from .management import authorize, map_management_value_error, require_connection
-from .models import ConnectorConnectionRecord, ConnectorRecord, ConnectorSetupAttemptRecord
+from .models import ConnectorConnectionRecord, ConnectorProviderRecord, ConnectorSetupAttemptRecord
 
 
 async def authorize_owner_change(
     session: AsyncSession,
     actor: AuthenticatedActor,
-    connector: ConnectorRecord,
+    connector: ConnectorProviderRecord,
     owner: PrincipalRef | None,
 ) -> None:
     if (
@@ -131,13 +132,13 @@ def verify_inspection(
     if (
         inspection.external_ref != attempt.external_ref
         or inspection.external_ref != connection.external_ref
-        or inspection.provider_key != attempt.provider_key
-        or inspection.provider_key != connection.provider_key
+        or inspection.connector_key != attempt.connector_key
+        or inspection.connector_key != connection.connector_key
         or inspection.external_user_correlation != attempt.external_user_correlation
     ):
         raise ConnectorError(
             "connection_substitution",
-            "Connector returned another external account.",
+            "ConnectorProvider returned another external account.",
             status_code=409,
         )
 
@@ -194,7 +195,24 @@ async def replay_connection_command(
         raise map_management_value_error(error) from error
 
 
-def external_error(error: ConnectorAdapterError) -> ConnectorError:
+def external_error(error: ConnectorProviderError) -> ConnectorError:
     if error.retryable or error.outcome_unknown:
-        return ConnectorError("connector_unavailable", "Connector is unavailable.", status_code=503)
-    return ConnectorError("connector_rejected", "Connector rejected the operation.", status_code=409)
+        return ConnectorError("connector_unavailable", "ConnectorProvider is unavailable.", status_code=503)
+    return ConnectorError("connector_rejected", "ConnectorProvider rejected the operation.", status_code=409)
+
+
+async def connection_binding(session: AsyncSession, connection: ConnectorConnectionRecord) -> ConnectionBinding:
+    attempt = await session.scalar(
+        select(ConnectorSetupAttemptRecord).where(
+            ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
+            ConnectorSetupAttemptRecord.generation == connection.setup_generation,
+            ConnectorSetupAttemptRecord.external_ref == connection.external_ref,
+        )
+    )
+    if attempt is None or connection.external_ref is None:
+        raise ConnectorError("setup_unavailable", "Verified connection binding is unavailable.", status_code=409)
+    return ConnectionBinding(
+        external_ref=connection.external_ref,
+        connector_key=connection.connector_key,
+        external_user_correlation=attempt.external_user_correlation,
+    )

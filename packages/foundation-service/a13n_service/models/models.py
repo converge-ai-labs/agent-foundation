@@ -52,7 +52,7 @@ class ModelProviderRecord(Base):
     type: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
     normalized_name: Mapped[str] = mapped_column(String(128))
-    config: Mapped[dict[str, object]] = mapped_column(JSON)
+    configuration: Mapped[dict[str, object]] = mapped_column(JSON)
     credential_version: Mapped[int] = mapped_column(BigInteger)
     ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
     nonce: Mapped[bytes | None] = mapped_column(LargeBinary(12))
@@ -72,7 +72,7 @@ class ModelProviderRecord(Base):
             workspace_id=self.workspace_id,
             type=self.type,
             name=self.name,
-            config=self.config,
+            configuration=self.configuration,
             credential_configured=self.ciphertext is not None,
             enabled=self.enabled,
             created_by=_principal(self.created_by_type, self.created_by_id),

@@ -50,8 +50,8 @@ def settings(tmp_path: Path, database_path: Path) -> ServiceSettings:
     )
 
 
-async def seed_database(config: ServiceSettings) -> None:
-    engine = create_sql_engine(config.database_config())
+async def seed_database(configuration: ServiceSettings) -> None:
+    engine = create_sql_engine(configuration.database_config())
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
@@ -119,10 +119,10 @@ async def api_client(
     tmp_path: Path,
     service_sqlite_database: Path,
 ) -> AsyncIterator[httpx2.AsyncClient]:
-    config = settings(tmp_path, service_sqlite_database)
-    await seed_database(config)
+    configuration = settings(tmp_path, service_sqlite_database)
+    await seed_database(configuration)
     app = create_app(
-        config,
+        configuration,
         components=ServiceComponents(
             request_authenticator=authenticate,
             model_connection_tester=successful_model_test,
@@ -151,7 +151,7 @@ async def test_provider_type_and_multiple_provider_http_lifecycle(api_client: ht
     second = await create_provider(api_client, "OpenAI Personal")
 
     assert definitions.status_code == 200
-    assert {item["key"] for item in definitions.json()["items"]} >= {"openai", "openrouter", "ollama"}
+    assert {item["type"] for item in definitions.json()["items"]} >= {"openai", "openrouter", "ollama"}
     assert first["type"] == second["type"] == "openai"
     assert first["id"] != second["id"]
     assert first["credential_configured"] and "credential" not in first
@@ -225,9 +225,9 @@ async def test_missing_authenticator_returns_401(
     tmp_path: Path,
     service_sqlite_database: Path,
 ) -> None:
-    config = settings(tmp_path, service_sqlite_database)
-    await seed_database(config)
-    app = create_app(config)
+    configuration = settings(tmp_path, service_sqlite_database)
+    await seed_database(configuration)
+    app = create_app(configuration)
     async with app.router.lifespan_context(app):
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:

@@ -23,7 +23,7 @@ from .domain import (
     UpdateModelRequest,
 )
 from .provider_service import ModelProviderService
-from .providers import DiscoveredModelCollection, ModelProviderTypeDefinitionCollection
+from .providers import DiscoveredModelCollection, ModelProviderDefinitionCollection
 from .service import ModelService
 from .service_common import ModelError
 
@@ -50,8 +50,8 @@ def _set_etag(response: Response, resource: Model | ModelProvider) -> None:
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
 
 
-@router.get("/model-provider-types", response_model=ModelProviderTypeDefinitionCollection)
-async def list_model_provider_types(request: Request, actor: Actor) -> ModelProviderTypeDefinitionCollection:
+@router.get("/model-provider-types", response_model=ModelProviderDefinitionCollection)
+async def list_model_provider_types(request: Request, actor: Actor) -> ModelProviderDefinitionCollection:
     return await _provider_service(request).type_definitions(actor=actor)
 
 

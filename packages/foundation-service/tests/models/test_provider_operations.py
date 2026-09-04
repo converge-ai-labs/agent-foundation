@@ -19,7 +19,9 @@ def test_provider_registry_projects_integration_discovery_support() -> None:
     registry = built_in_provider_registry()
 
     for definition in registry.definitions():
-        assert definition.supports_model_discovery is (registry.integration(definition.key).model_discovery is not None)
+        assert definition.supports_model_discovery is (
+            registry.integration(definition.type).model_discovery is not None
+        )
 
 
 @pytest.mark.anyio
@@ -29,7 +31,7 @@ def test_provider_registry_projects_integration_discovery_support() -> None:
         (
             RuntimeProvider(
                 type="openrouter",
-                config={},
+                configuration={},
                 endpoint="https://openrouter.ai/api/v1",
                 credential="secret",
             ),
@@ -42,7 +44,7 @@ def test_provider_registry_projects_integration_discovery_support() -> None:
         (
             RuntimeProvider(
                 type="ollama",
-                config={"base_url": "http://ollama.example/v1"},
+                configuration={"base_url": "http://ollama.example/v1"},
                 endpoint="http://ollama.example/v1",
                 credential=None,
             ),
@@ -55,7 +57,7 @@ def test_provider_registry_projects_integration_discovery_support() -> None:
         (
             RuntimeProvider(
                 type="openai",
-                config={},
+                configuration={},
                 endpoint="https://api.openai.com/v1",
                 credential="secret",
             ),

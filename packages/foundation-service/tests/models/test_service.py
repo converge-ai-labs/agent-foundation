@@ -66,7 +66,7 @@ async def test_provider_credential_is_encrypted_write_only_and_rotatable(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("provider_type", "config", "credential"),
+    ("provider_type", "configuration", "credential"),
     [
         ("openai", {}, ""),
         ("aws_bedrock", {"region": "us-east-1"}, "{}"),
@@ -76,7 +76,7 @@ async def test_provider_credential_is_encrypted_write_only_and_rotatable(
 async def test_provider_rejects_invalid_credential_before_storage(
     provider_service: ModelProviderService,
     provider_type: str,
-    config: dict[str, object],
+    configuration: dict[str, object],
     credential: str,
 ) -> None:
     with pytest.raises(ModelError) as rejected:
@@ -86,7 +86,7 @@ async def test_provider_rejects_invalid_credential_before_storage(
             request=CreateModelProviderRequest(
                 type=provider_type,
                 name=f"Invalid {provider_type}",
-                config=config,
+                configuration=configuration,
                 credential=credential,
             ),
         )

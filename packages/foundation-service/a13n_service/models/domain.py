@@ -89,7 +89,7 @@ class CreateModelProviderRequest(BaseModel):
 
     type: ProviderType
     name: BoundedName
-    config: dict[str, object] = Field(default_factory=dict)
+    configuration: dict[str, object] = Field(default_factory=dict)
     credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
     enabled: bool = True
 
@@ -98,7 +98,7 @@ class UpdateModelProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: BoundedName | None = None
-    config: dict[str, object] | None = None
+    configuration: dict[str, object] | None = None
     credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
     enabled: bool | None = None
 
@@ -120,7 +120,7 @@ class ModelProvider(BaseModel):
     workspace_id: ObjectId
     type: str
     name: str
-    config: dict[str, object]
+    configuration: dict[str, object]
     credential_configured: bool
     enabled: bool
     created_by: PrincipalRef

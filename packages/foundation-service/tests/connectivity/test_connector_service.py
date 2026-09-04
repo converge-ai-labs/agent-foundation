@@ -4,25 +4,18 @@ from collections.abc import AsyncIterator
 from datetime import timedelta
 
 import pytest
-from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
-from a13n_service.connectivity.connectors.adapters import (
-    AdapterConnectionStatus,
-    AdapterStatusReason,
-    ConnectionInspection,
-    ConnectorAdapterError,
-    ConnectorTool,
-    ConnectorToolOutcome,
-    ConnectorToolPage,
-    SetupContext,
-    SetupStarted,
-)
 from a13n_service.connectivity.connectors.catalog import ConnectorCatalogService, validate_catalog_tools
 from a13n_service.connectivity.connectors.catalog_objects import ConnectorCatalogObjectStore
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
+from a13n_service.connectivity.connectors.contracts import (
+    AdapterConnectionStatus,
+    ConnectorTool,
+    ConnectorToolPage,
+)
 from a13n_service.connectivity.connectors.domain import (
     CreateConnectorConnectionRequest,
-    CreateConnectorRequest,
-    ReplaceConnectorCredentialsRequest,
+    CreateConnectorProviderRequest,
+    ReplaceConnectorProviderCredentialsRequest,
 )
 from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.connectors.models import (
@@ -32,176 +25,25 @@ from a13n_service.connectivity.connectors.models import (
     ConnectorToolCatalogRecord,
 )
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
-from a13n_service.connectivity.connectors.service import ConnectorService
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.ingress.domain import JsonObject
 from a13n_service.iam import PrincipalRef
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW, USER_ID, WORKSPACE_ID, actor
-
-
-class FakeConnectorAdapter:
-    driver_key = "fake_connector"
-    config_versions = frozenset({"fake_v1"})
-
-    def __init__(self) -> None:
-        self.started = 0
-        self.revoked: list[tuple[str, str]] = []
-        self.inspection_status = AdapterConnectionStatus.ready
-        self.fail_revoke = False
-        self.supports_callback = True
-
-    def validate_config(self, value: object, *, config_version: str) -> JsonObject:
-        if config_version != "fake_v1" or value != {"tenant": "tenant-1"}:
-            raise ValueError("invalid config")
-        return {"tenant": "tenant-1"}
-
-    def normalize_endpoint(self, value: str, *, connector_config: JsonObject) -> str:
-        del connector_config
-        if value != "https://connector.example":
-            raise ValueError("invalid endpoint")
-        return value
-
-    def validate_credentials(self, value: dict[str, str], *, config_version: str) -> JsonObject:
-        if config_version != "fake_v1" or value != {"api_key": "secret"}:
-            raise ValueError("invalid credentials")
-        return dict(value)
-
-    def validate_setup(
-        self,
-        value: object,
-        *,
-        provider_key: str,
-        connector_config: JsonObject,
-        config_version: str,
-    ) -> JsonObject:
-        del connector_config
-        if value != {"scopes": ["read"]} or provider_key != "github" or config_version != "fake_v1":
-            raise ValueError("invalid setup")
-        return {"scopes": ["read"]}
-
-    async def test_connector(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-    ) -> None:
-        del endpoint, connector_config, credentials
-
-    async def start_setup(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        setup: JsonObject,
-        context: SetupContext,
-    ) -> SetupStarted:
-        del endpoint, connector_config, credentials, setup
-        self.started += 1
-        return SetupStarted(
-            external_ref="external-1",
-            redirect_url="https://connector.example/authorize",
-            external_handle=f"session://{context.attempt_id}",
-            supports_verified_callback=self.supports_callback,
-        )
-
-    async def complete_setup(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        session_uri: str,
-        context: SetupContext,
-        expected_external_ref: str,
-    ) -> ConnectionInspection:
-        del endpoint, connector_config, credentials, session_uri
-        return ConnectionInspection(
-            external_ref=expected_external_ref,
-            provider_key=context.provider_key,
-            external_user_correlation=context.external_user_correlation,
-            status=AdapterConnectionStatus.ready,
-            safe_metadata={"account": "safe"},
-            provider_version="fake-1",
-        )
-
-    async def inspect_connection(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        external_ref: str,
-        expected_provider_key: str,
-        expected_external_user_correlation: str,
-    ) -> ConnectionInspection:
-        del endpoint, connector_config, credentials
-        reason = (
-            AdapterStatusReason.reauthorization_required
-            if self.inspection_status is AdapterConnectionStatus.action_required
-            else None
-        )
-        return ConnectionInspection(
-            external_ref=external_ref,
-            provider_key=expected_provider_key,
-            external_user_correlation=expected_external_user_correlation,
-            status=self.inspection_status,
-            status_reason=reason,
-            safe_metadata={"account": "safe"},
-            provider_version="fake-1",
-        )
-
-    async def revoke_connection(
-        self,
-        *,
-        endpoint: str,
-        connector_config: JsonObject,
-        credentials: JsonObject,
-        external_ref: str,
-        operation_id: str,
-    ) -> None:
-        del endpoint, connector_config, credentials
-        self.revoked.append((external_ref, operation_id))
-        if self.fail_revoke:
-            raise ConnectorAdapterError("timeout", retryable=True, outcome_unknown=True)
-
-    async def list_tools(self, **kwargs) -> ConnectorToolPage:
-        del kwargs
-        return ConnectorToolPage(
-            items=(
-                ConnectorTool(
-                    key="issues.create",
-                    description="Create an issue",
-                    input_schema={"type": "object", "properties": {"title": {"type": "string"}}},
-                    output_schema={"type": "object"},
-                ),
-            ),
-            provider_version="fake-1",
-        )
-
-    async def execute_tool(self, **kwargs) -> ConnectorToolOutcome:
-        raise NotImplementedError
+from .connector_helpers import FakeConnectorBackend, fake_registry
 
 
 @pytest.fixture
-def connector_adapter() -> FakeConnectorAdapter:
-    return FakeConnectorAdapter()
+def connector_backend() -> FakeConnectorBackend:
+    return FakeConnectorBackend()
 
 
 @pytest.fixture
-def connector_registry(connector_adapter: FakeConnectorAdapter) -> AdapterRegistry[FakeConnectorAdapter]:
-    return AdapterRegistry(
-        (
-            AdapterDefinition(
-                key=connector_adapter.driver_key,
-                config_versions=connector_adapter.config_versions,
-                factory=lambda: connector_adapter,
-            ),
-        )
-    )
+def connector_registry(connector_backend: FakeConnectorBackend) -> ConnectorProviderRegistry:
+    return fake_registry(connector_backend)
 
 
 @pytest.fixture
@@ -209,9 +51,9 @@ async def connector_services(
     connectivity_sessions: async_sessionmaker[AsyncSession],
     connectivity_secrets,
     connector_registry,
-) -> AsyncIterator[tuple[ConnectorService, ConnectorConnectionService]]:
+) -> AsyncIterator[tuple[ConnectorProviderService, ConnectorConnectionService]]:
     yield (
-        ConnectorService(connectivity_sessions, connector_registry, connectivity_secrets, clock=lambda: NOW),
+        ConnectorProviderService(connectivity_sessions, connector_registry, connectivity_secrets, clock=lambda: NOW),
         ConnectorConnectionService(
             connectivity_sessions,
             connector_registry,
@@ -224,18 +66,16 @@ async def connector_services(
     )
 
 
-def connector_request() -> CreateConnectorRequest:
-    return CreateConnectorRequest(
-        name="Managed Connector",
-        driver_key="fake_connector",
-        config_version="fake_v1",
-        endpoint="https://connector.example",
-        config={"tenant": "tenant-1"},
+def connector_request() -> CreateConnectorProviderRequest:
+    return CreateConnectorProviderRequest(
+        name="Managed ConnectorProvider",
+        type="fake_connector",
+        configuration={"tenant": "tenant-1", "endpoint": "https://connector.example"},
         credentials={"api_key": "secret"},
     )
 
 
-async def create_connector(service: ConnectorService):
+async def create_connector(service: ConnectorProviderService):
     return await service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -247,7 +87,7 @@ async def create_connector(service: ConnectorService):
 async def create_connection(
     service: ConnectorConnectionService,
     *,
-    connector_id: str,
+    connector_provider_id: str,
     idempotency_key: str,
 ):
     return await service.create(
@@ -255,16 +95,16 @@ async def create_connection(
         workspace_id=WORKSPACE_ID,
         idempotency_key=idempotency_key,
         request=CreateConnectorConnectionRequest(
-            connector_id=connector_id,
+            connector_provider_id=connector_provider_id,
             name="GitHub",
-            provider_key="github",
+            connector_key="github",
             owner_principal_ref=PrincipalRef(principal_type="user", principal_id=USER_ID),
         ),
     )
 
 
 @pytest.mark.anyio
-async def test_connector_management_is_idempotent_and_keeps_credentials_private(
+async def test_connector_provider_management_is_idempotent_and_keeps_credentials_private(
     connector_services,
     connectivity_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -277,7 +117,7 @@ async def test_connector_management_is_idempotent_and_keeps_credentials_private(
     assert "secret" not in repr(created)
     tested = await connectors.test(
         actor=actor(),
-        connector_id=created.id,
+        connector_provider_id=created.id,
         expected_version=created.version,
         idempotency_key="test-connector",
     )
@@ -285,7 +125,7 @@ async def test_connector_management_is_idempotent_and_keeps_credentials_private(
     assert (
         await connectors.test(
             actor=actor(),
-            connector_id=created.id,
+            connector_provider_id=created.id,
             expected_version=created.version,
             idempotency_key="test-connector",
         )
@@ -294,9 +134,9 @@ async def test_connector_management_is_idempotent_and_keeps_credentials_private(
     with pytest.raises(ConnectorError) as invalid_rotation:
         await connectors.replace_credentials(
             actor=actor(),
-            connector_id=created.id,
+            connector_provider_id=created.id,
             idempotency_key="invalid-rotation",
-            request=ReplaceConnectorCredentialsRequest(
+            request=ReplaceConnectorProviderCredentialsRequest(
                 expected_version=created.version,
                 credentials={"api_key": "wrong"},
             ),
@@ -311,18 +151,18 @@ async def test_connector_management_is_idempotent_and_keeps_credentials_private(
 @pytest.mark.anyio
 async def test_connection_setup_is_durable_before_external_work_and_callback_is_single_use(
     connector_services,
-    connector_adapter: FakeConnectorAdapter,
+    connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     connectors, connections = connector_services
     connector = await create_connector(connectors)
     connection = await create_connection(
         connections,
-        connector_id=connector.id,
+        connector_provider_id=connector.id,
         idempotency_key="create-connection",
     )
     assert connection.status == "pending"
-    assert connector_adapter.started == 0
+    assert connector_backend.started == 0
     launch = await connections.start_setup(
         actor=actor(),
         connection_id=connection.id,
@@ -333,7 +173,7 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
     )
     assert launch.connection.status == "pending"
     assert launch.redirect_url == "https://connector.example/authorize"
-    assert connector_adapter.started == 1
+    assert connector_backend.started == 1
     assert "external-1" not in repr(launch.connection)
 
     async with connectivity_sessions() as session:
@@ -365,14 +205,14 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
 @pytest.mark.anyio
 async def test_connection_revoke_precedes_tombstone(
     connector_services,
-    connector_adapter: FakeConnectorAdapter,
+    connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     connectors, connections = connector_services
     connector = await create_connector(connectors)
     connection = await create_connection(
         connections,
-        connector_id=connector.id,
+        connector_provider_id=connector.id,
         idempotency_key="connection-for-revoke",
     )
     launch = await connections.start_setup(
@@ -401,7 +241,7 @@ async def test_connection_revoke_precedes_tombstone(
     assert revoked.status == "succeeded"
     assert revoked.connection.status == "action_required"
     assert revoked.connection.status_reason == "reauthorization_required"
-    assert len(connector_adapter.revoked) == 1
+    assert len(connector_backend.revoked) == 1
     await connections.delete(
         actor=actor(),
         connection_id=revoked.connection.id,
@@ -420,7 +260,7 @@ async def test_connection_revoke_precedes_tombstone(
 @pytest.mark.anyio
 async def test_ready_connection_catalog_is_validated_and_published_immutably(
     connector_services,
-    connector_adapter: FakeConnectorAdapter,
+    connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
     connectivity_secrets,
     connectivity_objects,
@@ -429,7 +269,7 @@ async def test_ready_connection_catalog_is_validated_and_published_immutably(
     connector = await create_connector(connectors)
     connection = await create_connection(
         connections,
-        connector_id=connector.id,
+        connector_provider_id=connector.id,
         idempotency_key="connection-for-catalog",
     )
     launch = await connections.start_setup(
@@ -446,15 +286,7 @@ async def test_ready_connection_catalog_is_validated_and_published_immutably(
     )
     catalog = ConnectorCatalogService(
         connectivity_sessions,
-        adapters=AdapterRegistry(
-            (
-                AdapterDefinition(
-                    key=connector_adapter.driver_key,
-                    config_versions=connector_adapter.config_versions,
-                    factory=lambda: connector_adapter,
-                ),
-            )
-        ),
+        adapters=fake_registry(connector_backend),
         secrets=connectivity_secrets,
         objects=ConnectorCatalogObjectStore(connectivity_objects),
         clock=lambda: NOW,
@@ -471,9 +303,9 @@ async def test_ready_connection_catalog_is_validated_and_published_immutably(
 
     await connectors.replace_credentials(
         actor=actor(),
-        connector_id=connector.id,
+        connector_provider_id=connector.id,
         idempotency_key="rotate-catalog-credential",
-        request=ReplaceConnectorCredentialsRequest(
+        request=ReplaceConnectorProviderCredentialsRequest(
             expected_version=connector.version,
             credentials={"api_key": "secret"},
         ),
@@ -493,7 +325,7 @@ async def test_ready_connection_catalog_is_validated_and_published_immutably(
 @pytest.mark.anyio
 async def test_catalog_discovery_cannot_publish_after_its_lease_expires(
     connector_services,
-    connector_adapter: FakeConnectorAdapter,
+    connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
     connectivity_secrets,
     connectivity_objects,
@@ -503,7 +335,7 @@ async def test_catalog_discovery_cannot_publish_after_its_lease_expires(
     connector = await create_connector(connectors)
     connection = await create_connection(
         connections,
-        connector_id=connector.id,
+        connector_provider_id=connector.id,
         idempotency_key="connection-for-expired-catalog",
     )
     launch = await connections.start_setup(
@@ -516,24 +348,16 @@ async def test_catalog_discovery_cannot_publish_after_its_lease_expires(
     )
     await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
     clock = [NOW]
-    original_list_tools = connector_adapter.list_tools
+    original_discover_tools = connector_backend.discover_tools
 
     async def expire_lease(**kwargs) -> ConnectorToolPage:
         clock[0] = NOW + timedelta(seconds=2)
-        return await original_list_tools(**kwargs)
+        return await original_discover_tools(**kwargs)
 
-    monkeypatch.setattr(connector_adapter, "list_tools", expire_lease)
+    monkeypatch.setattr(connector_backend, "discover_tools", expire_lease)
     catalog = ConnectorCatalogService(
         connectivity_sessions,
-        adapters=AdapterRegistry(
-            (
-                AdapterDefinition(
-                    key=connector_adapter.driver_key,
-                    config_versions=connector_adapter.config_versions,
-                    factory=lambda: connector_adapter,
-                ),
-            )
-        ),
+        adapters=fake_registry(connector_backend),
         secrets=connectivity_secrets,
         objects=ConnectorCatalogObjectStore(connectivity_objects),
         lease_seconds=1,
@@ -550,17 +374,17 @@ async def test_catalog_discovery_cannot_publish_after_its_lease_expires(
 @pytest.mark.anyio
 async def test_reconciler_completes_attached_setup_by_exact_external_reference(
     connector_services,
-    connector_adapter: FakeConnectorAdapter,
+    connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
     connectivity_secrets,
     connectivity_objects,
 ) -> None:
     connectors, connections = connector_services
-    connector_adapter.supports_callback = False
+    connector_backend.supports_callback = False
     connector = await create_connector(connectors)
     connection = await create_connection(
         connections,
-        connector_id=connector.id,
+        connector_provider_id=connector.id,
         idempotency_key="connection-for-reconcile",
     )
     await connections.start_setup(
@@ -571,15 +395,7 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
         setup={"scopes": ["read"]},
         return_path="/connections",
     )
-    registry = AdapterRegistry(
-        (
-            AdapterDefinition(
-                key=connector_adapter.driver_key,
-                config_versions=connector_adapter.config_versions,
-                factory=lambda: connector_adapter,
-            ),
-        )
-    )
+    registry = fake_registry(connector_backend)
     catalogs = ConnectorCatalogService(
         connectivity_sessions,
         registry,
@@ -608,7 +424,7 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
 @pytest.mark.anyio
 async def test_unknown_revoke_reconciles_only_from_same_external_reference(
     connector_services,
-    connector_adapter: FakeConnectorAdapter,
+    connector_backend: FakeConnectorBackend,
     connectivity_sessions: async_sessionmaker[AsyncSession],
     connectivity_secrets,
     connectivity_objects,
@@ -617,7 +433,7 @@ async def test_unknown_revoke_reconciles_only_from_same_external_reference(
     connector = await create_connector(connectors)
     connection = await create_connection(
         connections,
-        connector_id=connector.id,
+        connector_provider_id=connector.id,
         idempotency_key="connection-for-unknown-revoke",
     )
     launch = await connections.start_setup(
@@ -633,7 +449,7 @@ async def test_unknown_revoke_reconciles_only_from_same_external_reference(
         session_uri=f"session://{launch.attempt_id}",
     )
     ready = await connections.get(actor=actor(), connection_id=connection.id)
-    connector_adapter.fail_revoke = True
+    connector_backend.fail_revoke = True
     receipt = await connections.revoke(
         actor=actor(),
         connection_id=connection.id,
@@ -642,16 +458,8 @@ async def test_unknown_revoke_reconciles_only_from_same_external_reference(
     )
     assert receipt.status == "unknown"
 
-    connector_adapter.inspection_status = AdapterConnectionStatus.action_required
-    registry = AdapterRegistry(
-        (
-            AdapterDefinition(
-                key=connector_adapter.driver_key,
-                config_versions=connector_adapter.config_versions,
-                factory=lambda: connector_adapter,
-            ),
-        )
-    )
+    connector_backend.inspection_status = AdapterConnectionStatus.action_required
+    registry = fake_registry(connector_backend)
     catalogs = ConnectorCatalogService(
         connectivity_sessions,
         registry,
@@ -682,6 +490,7 @@ def test_catalog_rejects_invalid_schema_and_excessive_depth() -> None:
         validate_catalog_tools(
             [
                 ConnectorTool(
+                    provider_version="fake-1",
                     key="invalid",
                     description="Invalid schema",
                     input_schema={"type": "not-a-json-schema-type"},
@@ -694,5 +503,124 @@ def test_catalog_rejects_invalid_schema_and_excessive_depth() -> None:
     for _ in range(65):
         nested = {"nested": nested}
     with pytest.raises(ConnectorError) as deep:
-        validate_catalog_tools([ConnectorTool(key="deep", description="Deep schema", input_schema=nested)])
+        validate_catalog_tools(
+            [ConnectorTool(provider_version="fake-1", key="deep", description="Deep schema", input_schema=nested)]
+        )
     assert deep.value.code == "catalog_too_deep"
+
+
+@pytest.mark.anyio
+async def test_provider_metadata_and_discovery_use_new_routes_without_creating_connections(
+    connector_services, connectivity_sessions, monkeypatch
+) -> None:
+    import httpx2
+    from a13n_service.connectivity.connectors import router
+    from a13n_service.iam import authenticate_request
+    from fastapi import FastAPI
+
+    providers, _ = connector_services
+    provider = await create_connector(providers)
+    app = FastAPI()
+    app.include_router(router.router)
+    app.dependency_overrides[authenticate_request] = actor
+    monkeypatch.setattr(router, "_connector_providers", lambda request: providers)
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app), base_url="https://foundation.example") as client:
+        definitions = await client.get("/api/v1/connector-provider-types")
+        assert definitions.status_code == 200
+        definition = definitions.json()["items"][0]
+        assert definition["type"] == "fake_connector"
+        assert "endpoint" in definition["configuration_schema"]["properties"]
+        response = await client.post(f"/api/v1/connector-providers/{provider.id}/discover-connectors")
+        assert response.status_code == 200
+        assert response.json()["items"][0]["connector_provider_id"] == provider.id
+        assert (await client.get(f"/api/v1/connectors/{provider.id}")).status_code == 404
+    async with connectivity_sessions() as session:
+        assert await session.scalar(select(ConnectorConnectionRecord)) is None
+        assert await session.scalar(select(ConnectorSetupAttemptRecord)) is None
+        assert await session.scalar(select(ConnectorToolCatalogRecord)) is None
+    schema = app.openapi()
+    assert "ConnectorProvider" in schema["components"]["schemas"]
+    properties = schema["components"]["schemas"]["CreateConnectorProviderRequest"]["properties"]
+    assert {"type", "configuration", "credentials"} <= properties.keys()
+    assert {"driver_key", "endpoint", "config", "config_version"}.isdisjoint(properties)
+
+
+@pytest.mark.anyio
+async def test_connector_discovery_fences_credential_rotation(connector_services, monkeypatch) -> None:
+    from .connector_helpers import FakeConnectorProvider
+
+    providers, _ = connector_services
+    provider = await create_connector(providers)
+    original = FakeConnectorProvider.discover_connectors
+
+    async def rotate_during_discovery(runtime):
+        await providers.replace_credentials(
+            actor=actor(),
+            connector_provider_id=provider.id,
+            idempotency_key="discovery-rotation",
+            request=ReplaceConnectorProviderCredentialsRequest(
+                expected_version=provider.version, credentials={"api_key": "secret"}
+            ),
+        )
+        return await original(runtime)
+
+    monkeypatch.setattr(FakeConnectorProvider, "discover_connectors", rotate_during_discovery)
+    with pytest.raises(ConnectorError) as raised:
+        await providers.discover_connectors(actor=actor(), connector_provider_id=provider.id)
+    assert raised.value.code == "connector_provider_changed"
+
+
+@pytest.mark.anyio
+async def test_disabled_provider_blocks_discovery(connector_services) -> None:
+    from a13n_service.connectivity.connectors.domain import ConnectorProviderStatus
+
+    providers, _ = connector_services
+    provider = await create_connector(providers)
+    await providers.set_status(
+        actor=actor(),
+        connector_provider_id=provider.id,
+        status=ConnectorProviderStatus.disabled,
+        expected_version=provider.version,
+        idempotency_key="disable-discovery",
+    )
+    with pytest.raises(ConnectorError) as raised:
+        await providers.discover_connectors(actor=actor(), connector_provider_id=provider.id)
+    assert raised.value.code == "connector_provider_disabled"
+
+
+@pytest.mark.anyio
+async def test_disabled_provider_stops_setup_and_releases_callback_reservation(
+    connector_services, connector_backend, connectivity_sessions
+) -> None:
+    from a13n_service.connectivity.connectors.domain import ConnectorProviderStatus
+
+    providers, connections = connector_services
+    provider = await create_connector(providers)
+    connection = await create_connection(
+        connections, connector_provider_id=provider.id, idempotency_key="disabled-setup-connection"
+    )
+    launch = await connections.start_setup(
+        actor=actor(),
+        connection_id=connection.id,
+        idempotency_key="disabled-setup",
+        expected_version=connection.version,
+        setup={"scopes": ["read"]},
+        return_path="/connections",
+    )
+    await providers.set_status(
+        actor=actor(),
+        connector_provider_id=provider.id,
+        status=ConnectorProviderStatus.disabled,
+        expected_version=provider.version,
+        idempotency_key="disable-before-callback",
+    )
+    with pytest.raises(ConnectorError) as raised:
+        await connections.setup_coordinator.start_attempt(launch.attempt_id)
+    assert raised.value.code == "connector_provider_disabled"
+    assert connector_backend.started == 1
+    with pytest.raises(ConnectorError):
+        await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+    async with connectivity_sessions() as session:
+        attempt = await session.get(ConnectorSetupAttemptRecord, launch.attempt_id)
+        assert attempt is not None and attempt.status == "attached"
+        assert attempt.reserved_at is None

@@ -5,7 +5,7 @@ from pydantic_ai.providers.deepseek import DeepSeekProvider
 
 from . import openai_provider
 from .base import ProviderIntegration, bearer_models_request, openai_style_discovery
-from .types import EmptyProviderConfig, RuntimeProvider
+from .types import EmptyProviderConfiguration, RuntimeProvider
 
 
 def _build_provider(
@@ -17,9 +17,9 @@ def _build_provider(
 
 
 INTEGRATION = ProviderIntegration(
-    key="deepseek",
+    type="deepseek",
     display_name="DeepSeek",
-    config_model=EmptyProviderConfig,
+    configuration_model=EmptyProviderConfiguration,
     supported_model_apis=("openai.chat_completions",),
     build_provider=_build_provider,
     endpoint="https://api.deepseek.com",

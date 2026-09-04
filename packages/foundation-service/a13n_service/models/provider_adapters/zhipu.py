@@ -5,7 +5,7 @@ from pydantic_ai.providers.zai import ZaiProvider
 
 from . import openai_provider
 from .base import ProviderIntegration, bearer_models_request, openai_style_discovery
-from .types import EmptyProviderConfig, RuntimeProvider
+from .types import EmptyProviderConfiguration, RuntimeProvider
 
 
 def _build_provider(
@@ -17,9 +17,9 @@ def _build_provider(
 
 
 INTEGRATION = ProviderIntegration(
-    key="zhipu",
+    type="zhipu",
     display_name="Zhipu / GLM",
-    config_model=EmptyProviderConfig,
+    configuration_model=EmptyProviderConfiguration,
     supported_model_apis=("openai.chat_completions",),
     build_provider=_build_provider,
     endpoint="https://open.bigmodel.cn/api/paas/v4",

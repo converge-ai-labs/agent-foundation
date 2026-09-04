@@ -35,19 +35,19 @@ An endpoint owner and a wire format are independent facts. An OpenRouter Provide
 
 The distribution assembles a finite registry from trusted code. Public requests cannot register code, import a package, invent a calling API, or supply request transformations. Package installation alone grants no trust.
 
-Each safe `ModelProviderTypeDefinition` exposes:
+Each safe `ModelProviderDefinition` exposes:
 
 ```python
-class ModelProviderTypeDefinition:
-    key: str
+class ModelProviderDefinition:
+    type: str
     display_name: str
-    config_schema: JsonObject
+    configuration_schema: JsonObject
     credential_schema: JsonObject
     supported_model_apis: tuple[str, ...]
     supports_model_discovery: bool
 ```
 
-Schemas define accepted fields, bounds, defaults, and write-only credential input. They contain no credential values or operator-private configuration. Provider `type` selects one definition and is immutable after create.
+Each trusted Provider implementation owns one strongly typed configuration model and derives `configuration_schema` from it. The schema defines accepted non-secret fields, bounds, and defaults; `credential_schema` describes write-only credential input separately. Neither contains credential values or operator-private configuration. Provider `type` selects one definition and is immutable after create. Several Providers can select the same type while retaining independent configuration and credentials.
 
 The initial registry follows the native Model implementations supported and tested against the locked Pydantic AI release:
 
@@ -83,7 +83,7 @@ class ModelProvider:
     workspace_id: WorkspaceId
     type: str
     name: str
-    config: JsonObject
+    configuration: JsonObject
     credential_configured: bool
     enabled: bool
     created_by: PrincipalRef
@@ -98,7 +98,9 @@ Provider create and update accept a provider-schema-specific write-only `credent
 
 Foundation protects Provider credentials with the shared managed-secret encryption primitive and deployment key, but a Provider credential is not a public `Secret` resource. Model Provider and Environment Provider implementations can reuse that internal cryptographic storage boundary without exposing generic Secret selection in either resource API.
 
-Provider `config`, credential, name, and enabled state are mutable. Provider `type` is immutable. Every update is atomic, audited, and requires the current strong ETag. Provider configuration has no revision number, compatibility snapshot, or historical read API.
+Provider `configuration`, credential, name, and enabled state are mutable. Provider `type` is immutable. Every update is atomic, audited, and requires the current strong ETag. Provider configuration has no revision number, compatibility snapshot, or historical read API.
+
+Management surfaces select a Provider type, read its safe definition, render ordinary configuration fields, and submit `configuration` plus the separate credential input. The server validates with the implementation-owned model even when a client rendered the schema correctly. Unknown types, unknown configuration fields, and invalid values fail before persistence. A successful save proves configuration validity, not credential or endpoint availability; the explicit test operation performs that external check. Adding a registered type does not require another general-purpose form implementation, although interactive authentication keeps its own domain-specific flow.
 
 ## Model
 
@@ -164,7 +166,7 @@ class DiscoveredModel:
     suggested_model_apis: tuple[ModelApiConfig, ...]
 ```
 
-The adapter can implement `list_models` and optional model inspection using the Provider's current endpoint and credential. Results are transient, advisory, and may be briefly cached. They are not durable resources, do not create Models, do not update existing Models, and never become an allowlist.
+The adapter can implement `discover_models` and optional model inspection using the exact configured Provider's current endpoint and credential. This is separate from listing safe Provider-type definitions and from reading saved Workspace Models. Results are transient, advisory, and may be briefly cached per configured Provider; two Providers of the same type need not see the same models. They are not durable resources, do not create Models, do not update existing Models, and never become an allowlist.
 
 Callers choose discovered entries to create ordinary Models. They can also create a Model manually under any Provider by supplying an arbitrary bounded `upstream_model`, an explicit non-empty API set, and profile/limit metadata. Catalog or discovery suggestions are only prefill. Provider type validation still rejects unsupported calling APIs.
 
@@ -240,7 +242,7 @@ Every configurable or derived endpoint is validated immediately before dispatch:
 - DNS answers and redirects are revalidated; and
 - official Provider endpoints remain adapter-owned.
 
-Provider credentials and config are copied under authorization and database consistency, but no transaction or session remains open across decryption, DNS, provider discovery, testing, or model I/O.
+Provider credentials and configuration are copied under authorization and database consistency, but no transaction or session remains open across decryption, DNS, provider discovery, testing, or model I/O.
 
 ## Management API
 

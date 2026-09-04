@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.connectors.models import (
     ConnectorConnectionRecord,
-    ConnectorRecord,
+    ConnectorProviderRecord,
     ConnectorToolCatalogRecord,
 )
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord, MCPToolCatalogRecord
@@ -49,7 +49,7 @@ class _SourceIdentity:
     source_kind: SourceKind
     alias: str
     source_id: str
-    connector_id: str | None
+    connector_provider_id: str | None
     exposure: Literal["direct", "catalog"]
     catalog_digest: str
     catalog_object_key: str
@@ -147,7 +147,7 @@ class ConnectivitySelectionResolver:
         connector_selections = tuple(
             ConnectorConnectionRunSelection(
                 connector_connection_id=source.source_id,
-                connector_id=_required_connector_id(source),
+                connector_provider_id=_required_connector_provider_id(source),
                 exposure=source.exposure,
                 allowed_tool_keys=source.allowed_tool_keys,
                 tool_catalog_digest=source.catalog_digest,
@@ -300,13 +300,13 @@ class ConnectivitySelectionResolver:
         source_ids = tuple(selection.connector_connection_id for selection in selections.values())
         rows = (
             await session.execute(
-                select(ConnectorConnectionRecord, ConnectorRecord, ConnectorToolCatalogRecord)
+                select(ConnectorConnectionRecord, ConnectorProviderRecord, ConnectorToolCatalogRecord)
                 .join(
-                    ConnectorRecord,
+                    ConnectorProviderRecord,
                     and_(
-                        ConnectorRecord.id == ConnectorConnectionRecord.connector_id,
-                        ConnectorRecord.organization_id == ConnectorConnectionRecord.organization_id,
-                        ConnectorRecord.workspace_id == ConnectorConnectionRecord.workspace_id,
+                        ConnectorProviderRecord.id == ConnectorConnectionRecord.connector_provider_id,
+                        ConnectorProviderRecord.organization_id == ConnectorConnectionRecord.organization_id,
+                        ConnectorProviderRecord.workspace_id == ConnectorConnectionRecord.workspace_id,
                     ),
                 )
                 .join(
@@ -340,11 +340,10 @@ class ConnectivitySelectionResolver:
             )
             if connection.status != "ready" or connector.status != "active":
                 raise ConnectivitySelectionError("connector_connection_unavailable", path=path)
-            compatibility_profile = f"{connector.driver_key}@{connector.config_version}"
+            compatibility_profile = catalog.compatibility_profile
             if (
                 catalog.connection_setup_generation != connection.setup_generation
                 or catalog.connector_credential_generation != connector.credential_generation
-                or catalog.compatibility_profile != compatibility_profile
             ):
                 raise ConnectivitySelectionError("connector_catalog_incompatible", path=path)
             result.append(
@@ -352,7 +351,7 @@ class ConnectivitySelectionResolver:
                     source_kind="connector_connection",
                     alias=alias,
                     source_id=connection.id,
-                    connector_id=connector.id,
+                    connector_provider_id=connector.id,
                     exposure=selection.exposure,
                     catalog_digest=catalog.digest_sha256,
                     catalog_object_key=catalog.object_key,
@@ -425,7 +424,7 @@ class ConnectivitySelectionResolver:
                     source_kind="mcp_connection",
                     alias=alias,
                     source_id=connection.id,
-                    connector_id=None,
+                    connector_provider_id=None,
                     exposure=selection.exposure,
                     catalog_digest=catalog.digest_sha256,
                     catalog_object_key=catalog.object_key,
@@ -465,13 +464,13 @@ class ConnectivitySelectionResolver:
         )
         rows = (
             await session.execute(
-                select(ConnectorConnectionRecord, ConnectorRecord, ConnectorToolCatalogRecord)
+                select(ConnectorConnectionRecord, ConnectorProviderRecord, ConnectorToolCatalogRecord)
                 .join(
-                    ConnectorRecord,
+                    ConnectorProviderRecord,
                     and_(
-                        ConnectorRecord.id == ConnectorConnectionRecord.connector_id,
-                        ConnectorRecord.organization_id == ConnectorConnectionRecord.organization_id,
-                        ConnectorRecord.workspace_id == ConnectorConnectionRecord.workspace_id,
+                        ConnectorProviderRecord.id == ConnectorConnectionRecord.connector_provider_id,
+                        ConnectorProviderRecord.organization_id == ConnectorConnectionRecord.organization_id,
+                        ConnectorProviderRecord.workspace_id == ConnectorConnectionRecord.workspace_id,
                     ),
                 )
                 .join(
@@ -507,11 +506,10 @@ class ConnectivitySelectionResolver:
             if (
                 connection.status != "ready"
                 or connection.current_catalog_digest != source.catalog_digest
-                or connector.id != source.connector_id
+                or connector.id != source.connector_provider_id
                 or connector.status != "active"
                 or connector.credential_generation != source.credential_generation
                 or connection.setup_generation != source.source_generation
-                or f"{connector.driver_key}@{connector.config_version}" != source.compatibility_profile
                 or catalog.digest_sha256 != source.catalog_digest
                 or catalog.object_key != source.catalog_object_key
                 or catalog.size_bytes != source.catalog_size_bytes
@@ -629,7 +627,7 @@ def _replace_tools(source: _PreparedSource, tools: tuple[CatalogTool, ...]) -> _
         source_kind=source.source_kind,
         alias=source.alias,
         source_id=source.source_id,
-        connector_id=source.connector_id,
+        connector_provider_id=source.connector_provider_id,
         exposure=source.exposure,
         allowed_tool_keys=tuple(tool.key for tool in tools),
         catalog_digest=source.catalog_digest,
@@ -654,10 +652,10 @@ def _reject_duplicate_sources(
             raise ConnectivitySelectionError("connection_selected_more_than_once", path=path)
 
 
-def _required_connector_id(source: _SourceEvidence) -> str:
-    if source.connector_id is None:
+def _required_connector_provider_id(source: _SourceEvidence) -> str:
+    if source.connector_provider_id is None:
         raise AssertionError("Connector source is missing its Connector identity")
-    return source.connector_id
+    return source.connector_provider_id
 
 
 def _source_path(source: _SourceIdentity) -> str:

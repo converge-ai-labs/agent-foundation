@@ -20,7 +20,7 @@ from .connectors.models import ConnectorConnectionRecord, ConnectorToolCatalogRe
 from .mcp.models import MCPConnectionRecord, MCPToolCatalogRecord
 
 logger = logging.getLogger("a13n_service.connectivity.retention")
-CatalogKind = Literal["connector", "mcp"]
+CatalogKind = Literal["connector_provider", "mcp"]
 
 _CONNECTOR_CATALOG_KEY = re.compile(
     r"^tenants/[^/]+/workspaces/[^/]+/connectivity/catalogs/version-1/([^/]+)/([0-9a-f]{64})\.json$"
@@ -77,18 +77,18 @@ class CatalogRetentionReconciler:
             await anyio.sleep(self._poll_interval_seconds)
 
     async def reconcile_once(self) -> int:
-        cleaned = await self._clean_catalog("connector")
+        cleaned = await self._clean_catalog("connector_provider")
         cleaned += await self._clean_catalog("mcp")
         cleaned += await self._clean_orphan_objects()
         return cleaned
 
     async def _clean_catalog(self, kind: CatalogKind) -> int:
         now = self._clock()
-        catalog_model = ConnectorToolCatalogRecord if kind == "connector" else MCPToolCatalogRecord
-        source_model = ConnectorConnectionRecord if kind == "connector" else MCPConnectionRecord
+        catalog_model = ConnectorToolCatalogRecord if kind == "connector_provider" else MCPToolCatalogRecord
+        source_model = ConnectorConnectionRecord if kind == "connector_provider" else MCPConnectionRecord
         source_id_column = (
             ConnectorToolCatalogRecord.connector_connection_id
-            if kind == "connector"
+            if kind == "connector_provider"
             else MCPToolCatalogRecord.mcp_connection_id
         )
         claim: _SourceClaim | None = None
@@ -182,9 +182,11 @@ class CatalogRetentionReconciler:
         source_id: str,
         digest: str,
     ) -> bool:
-        source_key = "connector_connection_id" if kind == "connector" else "mcp_connection_id"
-        revision_column = "connector_tools" if kind == "connector" else "mcp_tools"
-        run_column = "connector_connection_selections_json" if kind == "connector" else "mcp_connection_selections_json"
+        source_key = "connector_connection_id" if kind == "connector_provider" else "mcp_connection_id"
+        revision_column = "connector_tools" if kind == "connector_provider" else "mcp_tools"
+        run_column = (
+            "connector_connection_selections_json" if kind == "connector_provider" else "mcp_connection_selections_json"
+        )
         dialect = session.bind.dialect.name if session.bind is not None else ""
         if dialect == "postgresql":
             query = text(
@@ -233,7 +235,7 @@ class CatalogRetentionReconciler:
         *,
         now: datetime,
     ) -> tuple[_SourceClaim | None, bool]:
-        model = ConnectorConnectionRecord if kind == "connector" else MCPConnectionRecord
+        model = ConnectorConnectionRecord if kind == "connector_provider" else MCPConnectionRecord
         source = await session.scalar(select(model).where(model.id == source_id).with_for_update())
         if source is None:
             return None, False
@@ -249,7 +251,7 @@ class CatalogRetentionReconciler:
             await self._release_claim_in_session(session, claim)
 
     async def _release_claim_in_session(self, session: AsyncSession, claim: _SourceClaim) -> None:
-        model = ConnectorConnectionRecord if claim.kind == "connector" else MCPConnectionRecord
+        model = ConnectorConnectionRecord if claim.kind == "connector_provider" else MCPConnectionRecord
         source = await session.scalar(select(model).where(model.id == claim.source_id).with_for_update())
         if (
             source is not None
@@ -260,10 +262,10 @@ class CatalogRetentionReconciler:
             source.catalog_claim_expires_at = None
 
     async def _catalog_row_exists(self, kind: CatalogKind, source_id: str, digest: str) -> bool:
-        model = ConnectorToolCatalogRecord if kind == "connector" else MCPToolCatalogRecord
+        model = ConnectorToolCatalogRecord if kind == "connector_provider" else MCPToolCatalogRecord
         source_column = (
             ConnectorToolCatalogRecord.connector_connection_id
-            if kind == "connector"
+            if kind == "connector_provider"
             else MCPToolCatalogRecord.mcp_connection_id
         )
         async with transaction(self._sessions) as session:
@@ -272,7 +274,7 @@ class CatalogRetentionReconciler:
             ) is not None
 
     async def _catalog_is_current(self, kind: CatalogKind, source_id: str, digest: str) -> bool:
-        model = ConnectorConnectionRecord if kind == "connector" else MCPConnectionRecord
+        model = ConnectorConnectionRecord if kind == "connector_provider" else MCPConnectionRecord
         async with transaction(self._sessions) as session:
             return (
                 await session.scalar(
@@ -305,5 +307,5 @@ class CatalogRetentionReconciler:
 def _catalog_match(key: str) -> tuple[CatalogKind, re.Match[str] | None]:
     connector = _CONNECTOR_CATALOG_KEY.fullmatch(key)
     if connector is not None:
-        return "connector", connector
+        return "connector_provider", connector
     return "mcp", _MCP_CATALOG_KEY.fullmatch(key)

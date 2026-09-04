@@ -3,7 +3,6 @@
 from datetime import datetime
 from typing import Protocol
 
-from a13n_service.connectivity.connectors.adapters import ConnectorAdapter as ConnectorAdapter
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,

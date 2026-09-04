@@ -137,15 +137,18 @@ async def test_orphan_snapshot_cleanup_observes_grace_and_uses_conditional_delet
         "runs/run_orphan1234567890/mcp-tool-snapshots/"
         f"{'d' * 64}.json"
     )
-    info = await connectivity_objects.put(key, b"{}", content_type="application/json")
+    stored = await connectivity_objects.put(key, b"{}", content_type="application/json")
+    now = stored.modified_at + timedelta(seconds=30)
     reconciler = CatalogRetentionReconciler(
         connectivity_sessions,
         connectivity_objects,
         instance_id="retention-test",
         object_grace_seconds=60,
-        clock=lambda: info.modified_at + timedelta(seconds=61),
+        clock=lambda: now,
     )
 
+    assert await reconciler.reconcile_once() == 0
+    now = stored.modified_at + timedelta(seconds=61)
     assert await reconciler.reconcile_once() == 1
     with pytest.raises(ObjectNotFound):
         await connectivity_objects.stat(key)

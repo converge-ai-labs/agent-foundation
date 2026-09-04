@@ -1,19 +1,19 @@
-"""Lease-based Connector setup, revoke, and catalog reconciliation."""
+"""Lease-based ConnectorProvider setup, revoke, and catalog reconciliation."""
 
 from __future__ import annotations
 
+from contextlib import aclosing
 from datetime import timedelta
 
 from anyio import sleep
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.adapters import (
+from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
-    ConnectorAdapter,
-    ConnectorAdapterError,
+    ConnectorProviderError,
 )
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.secrets import SecretOperation
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
@@ -21,9 +21,10 @@ from a13n_service.temporal import Clock, utc_now
 from .catalog import ConnectorCatalogService
 from .connection_access import apply_inspection, verify_inspection
 from .connections import ConnectorConnectionService
+from .contracts import ConnectionBinding
 from .domain import ConnectorConnectionStatus, ConnectorConnectionStatusReason
 from .errors import ConnectorError
-from .management import require_adapter, require_connection
+from .management import configure_provider, require_active_provider, require_connection
 from .models import ConnectorConnectionRecord, ConnectorOperationRecord, ConnectorSetupAttemptRecord
 from .setup import ConnectorSetupCoordinator
 
@@ -32,7 +33,7 @@ class ConnectorReconciler:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: AdapterRegistry[ConnectorAdapter],
+        adapters: ConnectorProviderRegistry,
         setup: ConnectorSetupCoordinator,
         connections: ConnectorConnectionService,
         catalogs: ConnectorCatalogService,
@@ -145,24 +146,20 @@ class ConnectorReconciler:
                     await self._defer_attempt(attempt_id, claim_generation, code=error.code, increment=False)
                 return
             snapshot = await self._setup.attempt_snapshot(attempt_id, operation=SecretOperation.reconciliation)
+            require_active_provider(snapshot.connector)
             if status == "attached" and snapshot.attempt.supports_verified_callback:
                 await self._defer_attempt(attempt_id, claim_generation, code=None, increment=False)
                 return
             if snapshot.attempt.external_ref is None:
                 return
-            adapter = require_adapter(
-                self._adapters,
-                snapshot.connector.driver_key,
-                snapshot.connector.config_version,
-            )
-            inspection = await adapter.inspect_connection(
-                endpoint=snapshot.connector.endpoint,
-                connector_config=snapshot.connector.config_json,
-                credentials=snapshot.credentials,
+            runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
+            binding = ConnectionBinding(
                 external_ref=snapshot.attempt.external_ref,
-                expected_provider_key=snapshot.attempt.provider_key,
-                expected_external_user_correlation=snapshot.attempt.external_user_correlation,
+                connector_key=snapshot.attempt.connector_key,
+                external_user_correlation=snapshot.attempt.external_user_correlation,
             )
+            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
+                inspection = await connection_runtime.inspect()
             if inspection.status is AdapterConnectionStatus.pending:
                 await self._defer_attempt(attempt_id, claim_generation, code=None)
             else:
@@ -172,7 +169,7 @@ class ConnectorReconciler:
                     claim_owner=self._instance_id,
                     claim_generation=claim_generation,
                 )
-        except ConnectorAdapterError as error:
+        except ConnectorProviderError as error:
             await self._defer_attempt(attempt_id, claim_generation, code=error.code)
         except ConnectorError as error:
             if error.code == "connection_substitution":
@@ -238,17 +235,16 @@ class ConnectorReconciler:
         if attempt is None or attempt.external_ref is None:
             return False
         snapshot = await self._setup.attempt_snapshot(attempt.id, operation=SecretOperation.reconciliation)
-        adapter = require_adapter(self._adapters, snapshot.connector.driver_key, snapshot.connector.config_version)
+        runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
         try:
-            inspection = await adapter.inspect_connection(
-                endpoint=snapshot.connector.endpoint,
-                connector_config=snapshot.connector.config_json,
-                credentials=snapshot.credentials,
+            binding = ConnectionBinding(
                 external_ref=attempt.external_ref,
-                expected_provider_key=attempt.provider_key,
-                expected_external_user_correlation=attempt.external_user_correlation,
+                connector_key=attempt.connector_key,
+                external_user_correlation=attempt.external_user_correlation,
             )
-        except ConnectorAdapterError:
+            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
+                inspection = await connection_runtime.inspect()
+        except ConnectorProviderError:
             return False
         if inspection.status is not AdapterConnectionStatus.action_required:
             return False

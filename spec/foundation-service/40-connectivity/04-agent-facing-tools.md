@@ -6,7 +6,7 @@ Foundation composes one exact external-tool surface for every accepted Run. The 
 
 Ingress native actions are always presented to the Agent as ordinary direct Tools when the Run has an authorized native action set. `direct` describes model-facing exposure, not process placement: the Worker dispatches every such Tool through the a13n MCP to the Connectivity-owned adapter. Connector tools and user Remote MCP tools can be exposed directly or through one small Foundation-owned catalog interface. Catalog exposure changes only the model-facing presentation; it does not create another MCP server or merge source credentials and authority.
 
-Foundation uses the existing Harness `RunBindings.capabilities` and [`ContextualMCP`](../../agent-harness/03-agent-definition-and-build.md#agentdefinition) seams. Harness owns no Ingress, Connector, MCPConnection, external identifier, credential, or routing rule. The Worker reconstructs a fresh Toolset from the accepted Run selection for every RunAttempt.
+Foundation uses the existing Harness `RunBindings.capabilities` and [`ContextualMCP`](../../agent-harness/03-agent-definition-and-build.md#agentdefinition) seams. Harness owns no Ingress, ConnectorProvider, MCPConnection, external identifier, credential, or routing rule. The Worker reconstructs a fresh Toolset from the accepted Run selection for every RunAttempt.
 
 ## Topology and Ownership
 
@@ -33,7 +33,7 @@ The Agent can therefore use zero or one logical a13n MCP source and zero or more
 | Fresh a13n MCP invocation authority   | Foundation Worker and a13n MCP                                       | Creates and validates one current RunAttempt-scoped opaque grant                                       |
 | User Remote MCP authentication        | [Remote MCP Connections](06-remote-mcp-connections.md)               | Resolves current authorized credentials for the exact selected MCPConnection                           |
 | Tool composition and catalog facade   | Foundation Worker                                                    | Presents direct tools or the three catalog tools without proxying arbitrary MCP through the a13n MCP   |
-| External action meaning and outcome   | Ingress adapter, Connector, or Remote MCP server                     | Supplies source-specific success, failure, receipt, task, input-required, or unknown-outcome semantics |
+| External action meaning and outcome   | Ingress adapter, ConnectorProvider, or Remote MCP server             | Supplies source-specific success, failure, receipt, task, input-required, or unknown-outcome semantics |
 
 ## IngressRunContext
 
@@ -60,7 +60,7 @@ An Ingress event can Steer a current accepted or running Run only when its Ingre
 
 ## MCP Invocation Grant
 
-Foundation creates an unpredictable opaque grant only after the RunAttempt owns the current fence and current IAM, Ingress, optional Route, Connector, ConnectorConnection, tool, and action authority have been checked. The protected server-side binding identifies the exact RunAttempt, Attempt fence, accepted tool snapshot, and optional Ingress context. For Ingress work, IAM uses the protected `execution_principal_ref`, never the external provider actor.
+Foundation creates an unpredictable opaque grant only after the RunAttempt owns the current fence and current IAM, Ingress, optional Route, ConnectorProvider, ConnectorConnection, tool, and action authority have been checked. The protected server-side binding identifies the exact RunAttempt, Attempt fence, accepted tool snapshot, and optional Ingress context. For Ingress work, IAM uses the protected `execution_principal_ref`, never the external provider actor.
 
 The Worker supplies the grant to the a13n MCP through trusted transport binding outside model input, `AgentContext.metadata`, caller-supplied Run identifiers, and model-settable headers. The grant has no client-readable claims and possession grants authority only after the a13n MCP resolves its protected binding, verifies that the exact Attempt remains current, leased, and effect-authorized, matches the accepted tool snapshot and optional Ingress context, and reauthorizes the requested bound action.
 
@@ -86,13 +86,13 @@ Each Connector tool selection and MCPConnection selection independently chooses 
 - `describe_mcp_tools` returns the exact frozen schemas and annotations for selected tool references; and
 - `call_mcp_tool` invokes one described or listed tool reference with its arguments.
 
-A catalog tool reference is scoped to the accepted Run and grants no authority by possession. `call_mcp_tool` accepts no endpoint URL, authorization header, Secret, Connector ID, ConnectorConnection ID, MCPConnection ID, Ingress ID, Route ID, Run ID, or arbitrary server selector. Dispatch resolves only the current Run's protected binding and reauthorizes it before external I/O.
+A catalog tool reference is scoped to the accepted Run and grants no authority by possession. `call_mcp_tool` accepts no endpoint URL, authorization header, Secret, ConnectorProvider ID, ConnectorConnection ID, MCPConnection ID, Ingress ID, Route ID, Run ID, or arbitrary server selector. Dispatch resolves only the current Run's protected binding and reauthorizes it before external I/O.
 
 The catalog facade belongs to Worker Toolset composition. The a13n MCP does not proxy arbitrary user MCP servers, and catalog exposure does not change the underlying source topology.
 
 ## MCPToolSnapshot
 
-Connector and MCPConnection setup, relevant configuration or credential changes, and bounded background reconciliation maintain each source's latest validated durable local tool catalog. They use source cache hints and change notifications when available, but a remote system is never on the Run-acceptance critical path. Run preparation reads those local catalogs, applies the authoritative accepted source selections and exact allowlists, normalizes collision-safe model names and run-scoped catalog references, and creates one protected immutable `MCPToolSnapshot`. A source without a current compatible catalog fails Run acceptance rather than triggering synchronous remote discovery.
+ConnectorConnection and MCPConnection setup, relevant configuration or credential changes, and bounded background reconciliation maintain each source's latest validated durable local tool catalog. They use source cache hints and change notifications when available, but a remote system is never on the Run-acceptance critical path. Run preparation reads those local catalogs, applies the authoritative accepted source selections and exact allowlists, normalizes collision-safe model names and run-scoped catalog references, and creates one protected immutable `MCPToolSnapshot`. A source without a current compatible catalog fails Run acceptance rather than triggering synchronous remote discovery.
 
 ```python
 class MCPToolSnapshotRef:
@@ -134,7 +134,7 @@ sequenceDiagram
     participant Agent
     participant Toolset as Foundation Toolset
     participant Source as a13n MCP or Remote MCP
-    participant External as Provider or Connector service
+    participant External as Provider or external integration service
     participant Store as Foundation durable store
 
     Agent->>Toolset: direct tool call or call_mcp_tool
@@ -147,22 +147,22 @@ sequenceDiagram
     Toolset-->>Agent: bounded tool result
 ```
 
-A native Ingress adapter returns a typed internal receipt when the provider supplies stable message, Discussion, thread, issue, pull-request, or mail references. Before reporting a continuity-establishing success, Foundation commits the exact `AgentThreadBinding` only when that action's contract explicitly establishes a new correlated external target. An ordinary messaging reply retains the inbound Binding; changing between threaded and main-flow placement never moves or replaces it. Other native actions record only the exact correlation their provider receipt supports. The model never parses an arbitrary tool result to establish Binding authority. Connector and user Remote MCP results do not create Ingress bindings merely because they contain similarly named fields.
+A native Ingress adapter returns a typed internal receipt when the provider supplies stable message, Discussion, thread, issue, pull-request, or mail references. Before reporting a continuity-establishing success, Foundation commits the exact `AgentThreadBinding` only when that action's contract explicitly establishes a new correlated external target. An ordinary messaging reply retains the inbound Binding; changing between threaded and main-flow placement never moves or replaces it. Other native actions record only the exact correlation their provider receipt supports. The model never parses an arbitrary tool result to establish Binding authority. ConnectorProvider and user Remote MCP results do not create Ingress bindings merely because they contain similarly named fields.
 
 If an external effect may have occurred but its response or subsequent correlation commit is unknown, the Tool result is unknown unless the source supports the same stable operation identity, idempotency key, outbound echo, task identity, or reconciliation evidence. Foundation never fabricates a receipt, automatically repeats a non-idempotent action, or reports rollback.
 
 ## Failure Semantics
 
-| Condition                                                                                   | Outcome                                                                                                |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| a13n MCP grant is absent, stale, forged, or names a non-current Attempt                     | Call is rejected before dispatch                                                                       |
-| Tool reference, source binding, or snapshot digest differs from the accepted Run            | Worker preparation or dispatch fails closed                                                            |
-| Model supplies a hidden routing or credential identifier                                    | The schema has no such field and validation rejects the call                                           |
-| Ingress, Connector, ConnectorConnection, MCPConnection, credential, or authority is invalid | Call fails before external dispatch                                                                    |
-| External tool changed incompatibly after the snapshot                                       | Current Run receives an explicit incompatibility failure; no new schema or substitute tool is selected |
-| Native adapter returns a typed stable receipt                                               | Correlation commits before continuity-establishing success is returned                                 |
-| External effect may exist without reliable evidence                                         | Tool reports an unknown outcome under the source's reconciliation contract                             |
-| Replacement RunAttempt starts                                                               | Old grants are invalid; the new Attempt reconstructs the same snapshot and resolves fresh credentials  |
+| Condition                                                                                           | Outcome                                                                                                |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| a13n MCP grant is absent, stale, forged, or names a non-current Attempt                             | Call is rejected before dispatch                                                                       |
+| Tool reference, source binding, or snapshot digest differs from the accepted Run                    | Worker preparation or dispatch fails closed                                                            |
+| Model supplies a hidden routing or credential identifier                                            | The schema has no such field and validation rejects the call                                           |
+| Ingress, ConnectorProvider, ConnectorConnection, MCPConnection, credential, or authority is invalid | Call fails before external dispatch                                                                    |
+| External tool changed incompatibly after the snapshot                                               | Current Run receives an explicit incompatibility failure; no new schema or substitute tool is selected |
+| Native adapter returns a typed stable receipt                                                       | Correlation commits before continuity-establishing success is returned                                 |
+| External effect may exist without reliable evidence                                                 | Tool reports an unknown outcome under the source's reconciliation contract                             |
+| Replacement RunAttempt starts                                                                       | Old grants are invalid; the new Attempt reconstructs the same snapshot and resolves fresh credentials  |
 
 ## Invariants
 

@@ -10,7 +10,7 @@ from pydantic_ai.providers.bedrock_mantle import BedrockMantleProvider
 
 from ..credentials import parse_aws_credentials
 from .base import ProviderIntegration, require_credential
-from .types import CredentialFormat, ProviderConfig, RuntimeProvider
+from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider
 
 
 def _build_provider(
@@ -20,7 +20,7 @@ def _build_provider(
 ) -> Provider[Any]:
     del http_client
     credentials = parse_aws_credentials(require_credential(provider))
-    region = str(provider.config["region"])
+    region = str(provider.configuration["region"])
     if pydantic_provider_name == "bedrock":
         return BedrockProvider(region_name=region, **credentials.model_dump())
     if pydantic_provider_name == "bedrock-mantle":
@@ -28,14 +28,14 @@ def _build_provider(
     raise ValueError(f"unsupported Pydantic Provider {pydantic_provider_name!r}")
 
 
-class Config(ProviderConfig):
+class Config(ProviderConfiguration):
     region: Annotated[str, StringConstraints(pattern=r"^[a-z]{2}(?:-gov)?-[a-z]+-\d$")]
 
 
 INTEGRATION = ProviderIntegration(
-    key="aws_bedrock",
+    type="aws_bedrock",
     display_name="AWS Bedrock",
-    config_model=Config,
+    configuration_model=Config,
     supported_model_apis=(
         "bedrock.converse",
         "bedrock_mantle.responses",

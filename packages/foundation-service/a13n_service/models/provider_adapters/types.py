@@ -14,24 +14,24 @@ class CredentialFormat(StrEnum):
     google_service_account_json = "google_service_account_json"
 
 
-class ProviderConfig(BaseModel):
+class ProviderConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class EmptyProviderConfig(ProviderConfig):
+class EmptyProviderConfiguration(ProviderConfiguration):
     pass
 
 
-class ValidatedProviderConfig(BaseModel):
+class ValidatedProviderConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    config: dict[str, object]
+    configuration: dict[str, object]
     endpoint: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class RuntimeProvider:
     type: str
-    config: dict[str, object]
+    configuration: dict[str, object]
     endpoint: str | None
     credential: str | None
