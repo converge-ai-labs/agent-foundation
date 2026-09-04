@@ -18,6 +18,7 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
 from a13n_harness.context import AgentContext, SkillPath
+from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.environment.files import (
     FileCopyResult,
     FileEntriesResult,
@@ -831,12 +832,10 @@ def _validate_identifier(value: str, field_name: str) -> str:
 
 
 def _validate_skill_root(value: str) -> str:
-    if not isinstance(value, str) or not value.startswith("/") or "\x00" in value:
-        raise ValueError("skill roots must be absolute FileOperator paths")
-    if value != "/" and (value.endswith("/") or "//" in value):
-        raise ValueError("skill roots must use canonical absolute paths")
-    if any(segment in {".", ".."} for segment in value.split("/")):
-        raise ValueError("skill roots must not contain traversal segments")
+    try:
+        parse_mount_path(value)
+    except ValueError as exc:
+        raise ValueError("skill roots must be absolute FileOperator paths with canonical aggregate spelling") from exc
     return value
 
 
@@ -845,11 +844,10 @@ def _join_logical_path(root: str, relative: str) -> str:
 
 
 def _is_path_within_root(candidate: str, root: str) -> bool:
-    if any(segment in {".", ".."} for segment in candidate.split("/")):
+    try:
+        return parse_mount_path(candidate).suffix_below(parse_mount_path(root)) is not None
+    except ValueError:
         return False
-    normalized_root = root.rstrip("/") or "/"
-    prefix = "/" if normalized_root == "/" else f"{normalized_root}/"
-    return candidate == normalized_root or candidate.startswith(prefix)
 
 
 def _is_within_root(candidate: EnvironmentPath, root: EnvironmentPath) -> bool:

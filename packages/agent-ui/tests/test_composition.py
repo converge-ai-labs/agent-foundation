@@ -375,6 +375,23 @@ def test_skills_capability_builds_deterministic_multi_mount_sources() -> None:
     assert selected.capability.manager.policy.conflict == "prefer_later"
 
 
+def test_skills_capability_accepts_windows_native_mount_paths() -> None:
+    selected = AgentUiExtensionCatalog().capabilities(
+        (("skills", {}),),
+        path_layout=EnvironmentPathLayout(
+            project_mounts=("D:/work/project", "//server/share/shared"),
+            user_skills="C:/Users/example/.agents/skills",
+        ),
+    )[0]
+
+    assert isinstance(selected.capability, SkillsCapability)
+    assert selected.capability.manager.roots == (
+        "C:/Users/example/.agents/skills",
+        "//server/share/shared/.agents/skills",
+        "D:/work/project/.agents/skills",
+    )
+
+
 def test_skills_capability_rejects_duplicate_explicit_roots() -> None:
     with pytest.raises(CompositionError) as invalid:
         AgentUiExtensionCatalog().capabilities(
