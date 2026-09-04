@@ -34,6 +34,7 @@ from a13n_service.run_stream import (
     CompleteRunStream,
     LifecycleRunStreamProjector,
     RedisRunStream,
+    RetainedReplayUnavailable,
     RunReplaySnapshot,
     RunReplayStore,
     RunStreamEvent,
@@ -41,7 +42,7 @@ from a13n_service.run_stream import (
     deterministic_item_id,
     deterministic_run_stream_event_id,
 )
-from a13n_service.storage import ObjectNotFound, ObjectStore, short_session, transaction
+from a13n_service.storage import ObjectStore, short_session, transaction
 from redis.asyncio import Redis
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -585,7 +586,7 @@ async def test_abandoned_projection_prevents_complete_snapshot_from_later_termin
 
     with pytest.raises(RunStreamReplayGap):
         await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
-    with pytest.raises(ObjectNotFound):
+    with pytest.raises(RetainedReplayUnavailable):
         await replay.read(TENANT_ID, RUN_ID)
     async with short_session(interaction_sessions) as database:
         states = tuple(
@@ -653,7 +654,7 @@ async def test_replay_publication_failure_preserves_complete_live_source(
     page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
     assert page.closed
     assert tuple(entry.event.event_type for entry in page.items) == ("run.accepted", "run.completed")
-    with pytest.raises(ObjectNotFound):
+    with pytest.raises(RetainedReplayUnavailable):
         await RunReplayStore(interaction_object_store).read(TENANT_ID, RUN_ID)
     async with short_session(interaction_sessions) as database:
         record = await database.get(LifecycleEventRecord, terminal.seq)

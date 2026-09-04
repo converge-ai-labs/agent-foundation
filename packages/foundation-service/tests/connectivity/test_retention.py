@@ -137,13 +137,13 @@ async def test_orphan_snapshot_cleanup_observes_grace_and_uses_conditional_delet
         "runs/run_orphan1234567890/mcp-tool-snapshots/"
         f"{'d' * 64}.json"
     )
-    await connectivity_objects.put(key, b"{}", content_type="application/json")
+    info = await connectivity_objects.put(key, b"{}", content_type="application/json")
     reconciler = CatalogRetentionReconciler(
         connectivity_sessions,
         connectivity_objects,
         instance_id="retention-test",
         object_grace_seconds=60,
-        clock=lambda: NOW + timedelta(days=1),
+        clock=lambda: info.modified_at + timedelta(seconds=61),
     )
 
     assert await reconciler.reconcile_once() == 1
