@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from types import SimpleNamespace
 
+import anyio
 import httpx2
 import pytest
 from a2a.types import a2a_pb2 as a2a
 from a13n_service.agents.models import AgentRevisionRecord
+from a13n_service.api import install_api_conventions
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
 from a13n_service.gateway.a2a_push import A2APushPublisher
+from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.models import (
     A2AContextBindingRecord,
     A2AMessageBindingRecord,
@@ -22,6 +26,7 @@ from a13n_service.secrets import InternalSecretService, SecretProtector
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
+from fastapi import FastAPI, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -55,6 +60,8 @@ def _request(
 async def _service(
     sessions: async_sessionmaker[AsyncSession],
     tmp_path,
+    *,
+    maximum_wait_seconds: float = 0.02,
 ) -> tuple[A2AService, LocalObjectStore]:
     objects = await LocalObjectStore.create(tmp_path / "a2a-objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
@@ -70,7 +77,7 @@ async def _service(
             secrets,
             EndpointPolicy(require_https=True),
             poll_interval_seconds=0.001,
-            maximum_wait_seconds=0.02,
+            maximum_wait_seconds=maximum_wait_seconds,
             clock=lambda: NOW,
         ),
         objects,
@@ -119,6 +126,22 @@ async def test_message_id_reuse_with_changed_content_conflicts(
     assert captured.value.code == "message_id_conflict"
 
 
+async def test_send_history_length_applies_to_acceptance_and_idempotent_replay(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    request = _request()
+    request.configuration.history_length = 0
+
+    first = await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+    repeated = await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+
+    assert not first.history
+    assert not repeated.history
+
+
 async def test_completed_task_projects_artifact_and_context_accepts_next_task(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
@@ -143,6 +166,167 @@ async def test_completed_task_projects_artifact_and_context_accepts_next_task(
     assert second.id != first.id
     assert second.context_id == first.context_id
     assert second.status.state == a2a.TASK_STATE_SUBMITTED
+
+
+async def test_list_tasks_pages_by_status_timestamp_and_applies_projection_options(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    first = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
+    async with short_session(lifecycle_interaction_sessions) as database:
+        first_binding = await database.get(A2ATaskBindingRecord, first.id)
+    assert first_binding is not None
+    await _complete_run(lifecycle_interaction_sessions, objects, run_id=first_binding.current_run_id)
+    second = await service.send(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        request=_request(message_id="message-2", text="again", context_id=first.context_id),
+    )
+
+    first_page = await service.list_tasks(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        context_id=first.context_id,
+        status=None,
+        page_size=1,
+        page_token=None,
+        history_length=0,
+        status_timestamp_after=None,
+        include_artifacts=False,
+    )
+    assert first_page.total_size == 2
+    assert first_page.tasks[0].id == first.id
+    assert not first_page.tasks[0].history
+    assert not first_page.tasks[0].artifacts
+    assert first_page.next_page_token is not None
+
+    second_page = await service.list_tasks(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        context_id=first.context_id,
+        status=None,
+        page_size=1,
+        page_token=first_page.next_page_token,
+        history_length=0,
+        status_timestamp_after=None,
+        include_artifacts=False,
+    )
+    assert second_page.total_size == 2
+    assert tuple(task.id for task in second_page.tasks) == (second.id,)
+    assert second_page.next_page_token is None
+
+    submitted = await service.list_tasks(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        context_id=None,
+        status=a2a.TASK_STATE_SUBMITTED,
+        page_size=50,
+        page_token=None,
+        history_length=1,
+        status_timestamp_after=NOW - timedelta(seconds=1),
+        include_artifacts=True,
+    )
+    assert tuple(task.id for task in submitted.tasks) == (second.id,)
+    assert tuple(message.message_id for message in submitted.tasks[0].history) == ("message-2",)
+    with pytest.raises(A2AError) as captured:
+        await service.list_tasks(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            context_id=first.context_id,
+            status=None,
+            page_size=1,
+            page_token=first_page.next_page_token,
+            history_length=0,
+            status_timestamp_after=None,
+            include_artifacts=True,
+        )
+    assert captured.value.code == "invalid_page_token"
+
+
+async def test_stream_delivers_complete_artifact_before_terminal_status(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, objects = await _service(lifecycle_interaction_sessions, tmp_path, maximum_wait_seconds=1)
+    task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
+    async with short_session(lifecycle_interaction_sessions) as database:
+        binding = await database.get(A2ATaskBindingRecord, task.id)
+    assert binding is not None
+    events: list[a2a.StreamResponse] = []
+
+    async def collect() -> None:
+        events.extend(
+            [event async for event in service.stream_task(actor=_actor(), agent_id=AGENT_ID, task_id=task.id)]
+        )
+
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(collect)
+        await anyio.sleep(0.01)
+        await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id)
+
+    kinds = tuple(event.WhichOneof("payload") for event in events)
+    assert kinds[0] == "task"
+    assert kinds[-2:] == ("artifact_update", "status_update")
+    assert events[-2].artifact_update.append is False
+    assert events[-2].artifact_update.last_chunk is True
+    assert events[-1].status_update.status.state == a2a.TASK_STATE_COMPLETED
+    final = await service.get_task(actor=_actor(), agent_id=AGENT_ID, task_id=task.id)
+    assert events[-2].artifact_update.artifact == final.artifacts[0]
+
+
+async def test_list_tasks_http_binding_preserves_empty_page_token_and_a2a_query_errors(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    service_runtime_factory,
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
+    app = FastAPI()
+    install_api_conventions(app)
+    app.include_router(a2a_router)
+
+    async def authenticate(_request: Request):
+        return _actor()
+
+    runtime = service_runtime_factory(
+        request_authenticator=authenticate,
+        gateway=SimpleNamespace(a2a=service),
+    )
+    app.state.runtime = runtime
+    app.state.settings = runtime.settings
+    transport = httpx2.ASGITransport(app=app)
+    async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get(
+            f"/a2a/v1/agents/{AGENT_ID}/tasks",
+            headers={"A2A-Version": "1.0"},
+            params={"pageSize": "1", "historyLength": "0", "includeArtifacts": "false"},
+        )
+        invalid = await client.get(
+            f"/a2a/v1/agents/{AGENT_ID}/tasks",
+            headers={"A2A-Version": "1.0"},
+            params={"includeArtifacts": "TRUE"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "tasks": [
+            {
+                "id": task.id,
+                "contextId": task.context_id,
+                "status": response.json()["tasks"][0]["status"],
+            }
+        ],
+        "pageSize": 1,
+        "totalSize": 1,
+        "nextPageToken": "",
+    }
+    assert invalid.status_code == 400
+    assert invalid.headers["content-type"].startswith("application/a2a+json")
+    assert invalid.json()["error"]["details"][0]["reason"] == "INVALID_QUERY_PARAMETER"
 
 
 async def test_cancel_task_uses_durable_interrupt(

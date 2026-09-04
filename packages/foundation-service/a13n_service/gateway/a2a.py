@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import datetime
 from time import monotonic
 from typing import Any
@@ -12,7 +13,7 @@ import anyio
 from a2a.types import a2a_pb2 as a2a
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Value
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentConfig, canonical_digest
@@ -33,7 +34,7 @@ from a13n_service.public_errors import PublicError
 from a13n_service.secrets import InternalSecretService
 from a13n_service.secrets.domain import SecretOperation, SecretOwnerType, SecretUseContext
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import Clock, assume_utc, utc_now
+from a13n_service.temporal import Clock, assume_utc, require_aware_utc, utc_now
 
 from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest, WaitingContinueRunRequest
 from .models import (
@@ -47,6 +48,13 @@ _TERMINAL = frozenset({RunStatus.completed.value, RunStatus.failed.value, RunSta
 _MAX_PUSH_CONFIGURATIONS = 10
 _PUSH_TOKEN_KEY = "token"
 _PUSH_CREDENTIALS_KEY = "authentication_credentials"
+
+
+@dataclass(frozen=True, slots=True)
+class A2ATaskPage:
+    tasks: tuple[a2a.Task, ...]
+    next_page_token: str | None
+    total_size: int
 
 
 class A2AError(PublicError):
@@ -175,6 +183,7 @@ class A2AService:
         request: a2a.SendMessageRequest,
     ) -> a2a.Task:
         _validate_send_request(request)
+        history_length = _send_history_length(request.configuration)
         request_json = MessageToDict(request, preserving_proto_field_name=False)
         request_digest = canonical_digest(request_json)
         replay = await self._message_replay(
@@ -184,7 +193,7 @@ class A2AService:
             request_digest=request_digest,
         )
         if replay is not None:
-            return replay
+            return _apply_history_length(replay, history_length)
 
         submitted = _agent_input(request.message)
         context = await self._load_context(
@@ -195,7 +204,7 @@ class A2AService:
         if context is None:
             if request.message.task_id:
                 raise A2AError("task_not_found", "The requested Task was not found.", status_code=404)
-            return await self._start_task(
+            task = await self._start_task(
                 actor=actor,
                 agent_id=agent_id,
                 submitted=submitted,
@@ -203,8 +212,8 @@ class A2AService:
                 request_json=request_json,
                 request_digest=request_digest,
             )
-        if request.message.task_id:
-            return await self._continue_waiting_task(
+        elif request.message.task_id:
+            task = await self._continue_waiting_task(
                 actor=actor,
                 context=context,
                 task_id=request.message.task_id,
@@ -213,14 +222,16 @@ class A2AService:
                 request_json=request_json,
                 request_digest=request_digest,
             )
-        return await self._start_context_task(
-            actor=actor,
-            context=context,
-            submitted=submitted,
-            request=request,
-            request_json=request_json,
-            request_digest=request_digest,
-        )
+        else:
+            task = await self._start_context_task(
+                actor=actor,
+                context=context,
+                submitted=submitted,
+                request=request,
+                request_json=request_json,
+                request_digest=request_digest,
+            )
+        return _apply_history_length(task, history_length)
 
     async def get_task(
         self,
@@ -228,9 +239,10 @@ class A2AService:
         actor: AuthenticatedActor,
         agent_id: str,
         task_id: str,
+        history_length: int | None = None,
     ) -> a2a.Task:
         task, run = await self._load_task(actor=actor, agent_id=agent_id, task_id=task_id)
-        return await self._project_task(task, run)
+        return await self._project_task(task, run, history_length=history_length)
 
     async def list_tasks(
         self,
@@ -238,10 +250,56 @@ class A2AService:
         actor: AuthenticatedActor,
         agent_id: str,
         context_id: str | None,
-        limit: int,
-    ) -> tuple[a2a.Task, ...]:
+        status: a2a.TaskState | None,
+        page_size: int,
+        page_token: str | None,
+        history_length: int | None,
+        status_timestamp_after: datetime | None,
+        include_artifacts: bool,
+    ) -> A2ATaskPage:
+        if page_size < 1 or page_size > 100:
+            raise A2AError("invalid_page_size", "pageSize must be between 1 and 100.", status_code=400)
+        if history_length is not None and history_length < 0:
+            raise A2AError("invalid_history_length", "historyLength must not be negative.", status_code=400)
+        status_filter = _task_state_filter(status)
+        try:
+            after_timestamp = None if status_timestamp_after is None else require_aware_utc(status_timestamp_after)
+        except ValueError as error:
+            raise A2AError(
+                "invalid_status_timestamp", "statusTimestampAfter must include a timezone offset.", status_code=400
+            ) from error
+        scope = _task_cursor_scope(
+            actor=actor,
+            agent_id=agent_id,
+            context_id=context_id,
+            status=status,
+            history_length=history_length,
+            status_timestamp_after=after_timestamp,
+            include_artifacts=include_artifacts,
+        )
+        after: tuple[datetime, str] | None = None
+        if page_token:
+            try:
+                payload = decode_collection_cursor(page_token, scope=scope, kind="a2a_tasks")
+                updated_at = payload.get("updated_at")
+                task_id = payload.get("task_id")
+                if not isinstance(updated_at, str) or not isinstance(task_id, str):
+                    raise InvalidCollectionCursorError
+                after = (require_aware_utc(datetime.fromisoformat(updated_at)), task_id)
+            except (CollectionCursorMismatchError, InvalidCollectionCursorError, ValueError) as error:
+                raise A2AError("invalid_page_token", "The page token is invalid.", status_code=400) from error
         async with short_session(self._sessions) as database:
-            statement = (
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=agent_id,
+                    action=WorkspaceAction.run_read,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            base = (
                 select(A2ATaskBindingRecord, RunRecord)
                 .join(
                     A2AContextBindingRecord,
@@ -260,23 +318,50 @@ class A2AService:
                     A2AContextBindingRecord.client_principal_type == actor.principal.principal_type.value,
                     A2AContextBindingRecord.client_principal_id == actor.principal.principal_id,
                 )
-                .order_by(A2ATaskBindingRecord.created_at.desc(), A2ATaskBindingRecord.id.desc())
-                .limit(limit)
             )
             if context_id is not None:
-                statement = statement.where(A2ATaskBindingRecord.context_id == context_id)
-            rows = tuple((await database.execute(statement)).all())
-            try:
-                await authorize_agent(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
-                    agent_id=agent_id,
-                    action=WorkspaceAction.run_read,
+                base = base.where(A2ATaskBindingRecord.context_id == context_id)
+            if status_filter is not None:
+                base = base.where(status_filter)
+            if after_timestamp is not None:
+                base = base.where(RunRecord.updated_at >= after_timestamp)
+            total_size = int((await database.scalar(select(func.count()).select_from(base.subquery()))) or 0)
+            if after is not None:
+                updated_at, task_id = after
+                base = base.where(
+                    or_(
+                        RunRecord.updated_at < updated_at,
+                        and_(RunRecord.updated_at == updated_at, A2ATaskBindingRecord.id < task_id),
+                    )
                 )
-            except AuthorizationError as error:
-                raise _not_found() from error
-        return tuple([await self._project_task(task, run) for task, run in rows])
+            rows = tuple(
+                (
+                    await database.execute(
+                        base.order_by(RunRecord.updated_at.desc(), A2ATaskBindingRecord.id.desc()).limit(page_size + 1)
+                    )
+                ).all()
+            )
+        page = rows[:page_size]
+        next_page_token = None
+        if len(rows) > page_size:
+            last_task, last_run = page[-1]
+            next_page_token = encode_collection_cursor(
+                {"updated_at": assume_utc(last_run.updated_at).isoformat(), "task_id": last_task.id},
+                scope=scope,
+                kind="a2a_tasks",
+            )
+        tasks = tuple(
+            [
+                await self._project_task(
+                    task,
+                    run,
+                    history_length=history_length,
+                    include_artifacts=include_artifacts,
+                )
+                for task, run in page
+            ]
+        )
+        return A2ATaskPage(tasks=tasks, next_page_token=next_page_token, total_size=total_size)
 
     async def cancel_task(
         self,
@@ -608,8 +693,14 @@ class A2AService:
         actor: AuthenticatedActor,
         agent_id: str,
         task_id: str,
+        history_length: int | None = None,
     ) -> AsyncIterator[a2a.StreamResponse]:
-        initial = await self.get_task(actor=actor, agent_id=agent_id, task_id=task_id)
+        initial = await self.get_task(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            history_length=history_length,
+        )
         yield a2a.StreamResponse(task=initial)
         initial_state = initial.status.state
         if initial_state in {
@@ -622,9 +713,29 @@ class A2AService:
             return
         started = monotonic()
         last_state = initial_state
+        delivered_artifacts = {_artifact_digest(artifact) for artifact in initial.artifacts}
         while monotonic() - started < self._maximum_wait_seconds:
             await anyio.sleep(self._poll_interval_seconds)
-            current = await self.get_task(actor=actor, agent_id=agent_id, task_id=task_id)
+            current = await self.get_task(
+                actor=actor,
+                agent_id=agent_id,
+                task_id=task_id,
+                history_length=history_length,
+            )
+            for artifact in current.artifacts:
+                digest = _artifact_digest(artifact)
+                if digest in delivered_artifacts:
+                    continue
+                delivered_artifacts.add(digest)
+                yield a2a.StreamResponse(
+                    artifact_update=a2a.TaskArtifactUpdateEvent(
+                        task_id=current.id,
+                        context_id=current.context_id,
+                        artifact=artifact,
+                        append=False,
+                        last_chunk=True,
+                    )
+                )
             if current.status.state == last_state:
                 continue
             last_state = current.status.state
@@ -649,10 +760,16 @@ class A2AService:
         actor: AuthenticatedActor,
         agent_id: str,
         task_id: str,
+        history_length: int | None = None,
     ) -> a2a.Task:
         started = monotonic()
         while True:
-            task = await self.get_task(actor=actor, agent_id=agent_id, task_id=task_id)
+            task = await self.get_task(
+                actor=actor,
+                agent_id=agent_id,
+                task_id=task_id,
+                history_length=history_length,
+            )
             if (
                 task.status.state
                 in {
@@ -1020,7 +1137,14 @@ class A2AService:
                 raise _not_found() from error
             return task, run, thread
 
-    async def _project_task(self, task: A2ATaskBindingRecord, run: RunRecord) -> a2a.Task:
+    async def _project_task(
+        self,
+        task: A2ATaskBindingRecord,
+        run: RunRecord,
+        *,
+        history_length: int | None = None,
+        include_artifacts: bool = True,
+    ) -> a2a.Task:
         history: list[a2a.Message] = []
         async with short_session(self._sessions) as database:
             messages = tuple(
@@ -1032,7 +1156,8 @@ class A2AService:
                     )
                 ).all()
             )
-        for binding in messages:
+        selected_messages = messages if history_length is None else messages[-history_length:] if history_length else ()
+        for binding in selected_messages:
             message = a2a.Message()
             message_data = binding.request_json.get("message")
             if isinstance(message_data, dict):
@@ -1041,7 +1166,7 @@ class A2AService:
                 ParseDict(message_data, message)
                 history.append(message)
         status = _task_status(run)
-        artifacts = _task_artifacts(task, run)
+        artifacts = _task_artifacts(task, run) if include_artifacts else []
         return a2a.Task(
             id=task.id,
             context_id=task.context_id,
@@ -1094,6 +1219,27 @@ def _validate_send_request(request: a2a.SendMessageRequest) -> None:
         raise A2AError("extension_not_supported", "A2A extensions are not supported.", status_code=400)
     if not message.parts:
         raise A2AError("message_invalid", "At least one Message Part is required.", status_code=400)
+    _send_history_length(request.configuration)
+
+
+def _send_history_length(configuration: a2a.SendMessageConfiguration) -> int | None:
+    if not configuration.HasField("history_length"):
+        return None
+    if configuration.history_length < 0:
+        raise A2AError("invalid_history_length", "historyLength must not be negative.", status_code=400)
+    return configuration.history_length
+
+
+def _apply_history_length(task: a2a.Task, history_length: int | None) -> a2a.Task:
+    if history_length is None:
+        return task
+    projected = a2a.Task()
+    projected.CopyFrom(task)
+    history = tuple(projected.history)
+    del projected.history[:]
+    if history_length:
+        projected.history.extend(history[-history_length:])
+    return projected
 
 
 def _agent_input(message: a2a.Message) -> AgentInput:
@@ -1244,6 +1390,58 @@ def _project_push_configuration(record: A2APushConfigurationRecord) -> a2a.TaskP
     return projected
 
 
+def _task_state_filter(status: a2a.TaskState | None) -> Any | None:
+    if status is None:
+        return None
+    filters = {
+        a2a.TASK_STATE_SUBMITTED: RunRecord.status == RunStatus.accepted.value,
+        a2a.TASK_STATE_WORKING: RunRecord.status == RunStatus.running.value,
+        a2a.TASK_STATE_COMPLETED: RunRecord.status == RunStatus.completed.value,
+        a2a.TASK_STATE_FAILED: RunRecord.status == RunStatus.failed.value,
+        a2a.TASK_STATE_CANCELED: RunRecord.status == RunStatus.cancelled.value,
+        a2a.TASK_STATE_INPUT_REQUIRED: and_(
+            RunRecord.status == RunStatus.waiting.value,
+            or_(RunRecord.wait_reason.is_(None), RunRecord.wait_reason != "authentication"),
+        ),
+        a2a.TASK_STATE_AUTH_REQUIRED: and_(
+            RunRecord.status == RunStatus.waiting.value,
+            RunRecord.wait_reason == "authentication",
+        ),
+        a2a.TASK_STATE_REJECTED: A2ATaskBindingRecord.id.is_(None),
+    }
+    selected = filters.get(status)
+    if selected is None:
+        raise A2AError("invalid_task_status", "The Task status filter is invalid.", status_code=400)
+    return selected
+
+
+def _task_cursor_scope(
+    *,
+    actor: AuthenticatedActor,
+    agent_id: str,
+    context_id: str | None,
+    status: a2a.TaskState | None,
+    history_length: int | None,
+    status_timestamp_after: datetime | None,
+    include_artifacts: bool,
+) -> dict[str, object]:
+    return {
+        "workspace_id": actor.boundary_workspace_id,
+        "principal_type": actor.principal.principal_type.value,
+        "principal_id": actor.principal.principal_id,
+        "agent_id": agent_id,
+        "context_id": context_id,
+        "status": status,
+        "history_length": history_length,
+        "status_timestamp_after": (None if status_timestamp_after is None else status_timestamp_after.isoformat()),
+        "include_artifacts": include_artifacts,
+    }
+
+
+def _artifact_digest(artifact: a2a.Artifact) -> str:
+    return canonical_digest(MessageToDict(artifact, preserving_proto_field_name=False))
+
+
 def _push_cursor_scope(*, actor: AuthenticatedActor, agent_id: str, task_id: str) -> dict[str, object]:
     return {
         "workspace_id": actor.boundary_workspace_id,
@@ -1258,4 +1456,4 @@ def _not_found() -> A2AError:
     return A2AError("resource_not_found", "The requested A2A resource was not found.", status_code=404)
 
 
-__all__ = ["A2AError", "A2AService"]
+__all__ = ["A2AError", "A2AService", "A2ATaskPage"]

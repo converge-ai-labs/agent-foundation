@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from datetime import datetime
+from typing import Annotated, Any, cast
 
 from a2a.types import a2a_pb2 as a2a
 from fastapi import APIRouter, Depends, Header, Query, Request
@@ -79,7 +80,12 @@ async def send_message(
         params = await _send_request(request, version=version, extensions=extensions)
         task = await _service(request).send(actor=actor, agent_id=agent_id, request=params)
         if not params.configuration.return_immediately:
-            task = await _service(request).wait_task(actor=actor, agent_id=agent_id, task_id=task.id)
+            task = await _service(request).wait_task(
+                actor=actor,
+                agent_id=agent_id,
+                task_id=task.id,
+                history_length=_configured_history_length(params.configuration),
+            )
         return _json(a2a.SendMessageResponse(task=task))
     except (A2AError, ParseError) as error:
         return _error(error)
@@ -98,7 +104,12 @@ async def stream_message(
         _require_sse(accept)
         params = await _send_request(request, version=version, extensions=extensions)
         task = await _service(request).send(actor=actor, agent_id=agent_id, request=params)
-        events = _service(request).stream_task(actor=actor, agent_id=agent_id, task_id=task.id)
+        events = _service(request).stream_task(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task.id,
+            history_length=_configured_history_length(params.configuration),
+        )
         return _stream(events)
     except (A2AError, ParseError) as error:
         return _error(error)
@@ -112,10 +123,16 @@ async def get_task(
     task_id: str,
     version: _VERSION = None,
     extensions: _EXTENSIONS = None,
+    history_length: Annotated[str | None, Query(alias="historyLength", max_length=10)] = None,
 ) -> Response:
     try:
         _validate_wire(version=version, extensions=extensions, content_type=None, body_required=False)
-        task = await _service(request).get_task(actor=actor, agent_id=agent_id, task_id=task_id)
+        task = await _service(request).get_task(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            history_length=_bounded_int(history_length, name="historyLength", minimum=0),
+        )
         return _json(task)
     except A2AError as error:
         return _error(error)
@@ -129,17 +146,37 @@ async def list_tasks(
     version: _VERSION = None,
     extensions: _EXTENSIONS = None,
     context_id: Annotated[str | None, Query(alias="contextId", max_length=512)] = None,
-    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 50,
+    status: Annotated[str | None, Query(max_length=64)] = None,
+    page_size: Annotated[str | None, Query(alias="pageSize", max_length=10)] = None,
+    page_token: Annotated[str | None, Query(alias="pageToken", max_length=2048)] = None,
+    history_length: Annotated[str | None, Query(alias="historyLength", max_length=10)] = None,
+    status_timestamp_after: Annotated[str | None, Query(alias="statusTimestampAfter", max_length=64)] = None,
+    include_artifacts: Annotated[str | None, Query(alias="includeArtifacts", max_length=5)] = None,
 ) -> Response:
     try:
         _validate_wire(version=version, extensions=extensions, content_type=None, body_required=False)
-        tasks = await _service(request).list_tasks(
+        selected_page_size = _bounded_int(page_size, name="pageSize", minimum=1, maximum=100, default=50)
+        assert selected_page_size is not None
+        page = await _service(request).list_tasks(
             actor=actor,
             agent_id=agent_id,
             context_id=context_id,
-            limit=page_size,
+            status=_task_state(status),
+            page_size=selected_page_size,
+            page_token=page_token,
+            history_length=_bounded_int(history_length, name="historyLength", minimum=0),
+            status_timestamp_after=_timestamp(status_timestamp_after),
+            include_artifacts=_boolean(include_artifacts, name="includeArtifacts", default=False),
         )
-        return _json(a2a.ListTasksResponse(tasks=tasks, page_size=page_size, total_size=len(tasks)))
+        response = a2a.ListTasksResponse(
+            tasks=page.tasks,
+            next_page_token=page.next_page_token or "",
+            page_size=selected_page_size,
+            total_size=page.total_size,
+        )
+        payload = MessageToDict(response, preserving_proto_field_name=False)
+        payload["nextPageToken"] = page.next_page_token or ""
+        return JSONResponse(payload, media_type="application/a2a+json")
     except A2AError as error:
         return _error(error)
 
@@ -336,6 +373,65 @@ def _require_sse(accept: str | None) -> None:
     media_types = {item.partition(";")[0].strip().lower() for item in (accept or "").split(",")}
     if "text/event-stream" not in media_types:
         raise A2AError("content_type_not_supported", "Accept must include text/event-stream.", status_code=406)
+
+
+def _bounded_int(
+    value: str | None,
+    *,
+    name: str,
+    minimum: int,
+    maximum: int | None = None,
+    default: int | None = None,
+) -> int | None:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise A2AError("invalid_query_parameter", f"{name} must be an integer.", status_code=400) from error
+    if parsed < minimum or (maximum is not None and parsed > maximum):
+        boundary = f"between {minimum} and {maximum}" if maximum is not None else f"at least {minimum}"
+        raise A2AError("invalid_query_parameter", f"{name} must be {boundary}.", status_code=400)
+    return parsed
+
+
+def _task_state(value: str | None) -> a2a.TaskState | None:
+    if value is None:
+        return None
+    try:
+        selected = a2a.TaskState.Value(value)
+    except ValueError as error:
+        raise A2AError("invalid_query_parameter", "status is not a valid TaskState.", status_code=400) from error
+    if selected == a2a.TASK_STATE_UNSPECIFIED:
+        raise A2AError("invalid_query_parameter", "status must select a concrete TaskState.", status_code=400)
+    return cast(a2a.TaskState, selected)
+
+
+def _timestamp(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise A2AError(
+            "invalid_query_parameter",
+            "statusTimestampAfter must be an ISO 8601 timestamp.",
+            status_code=400,
+        ) from error
+
+
+def _boolean(value: str | None, *, name: str, default: bool) -> bool:
+    if value is None:
+        return default
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    raise A2AError("invalid_query_parameter", f"{name} must be true or false.", status_code=400)
+
+
+def _configured_history_length(configuration: a2a.SendMessageConfiguration) -> int | None:
+    return configuration.history_length if configuration.HasField("history_length") else None
 
 
 def _json(message: Any, *, cache_control: str | None = None) -> JSONResponse:
