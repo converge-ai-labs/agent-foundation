@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Harness integrates already constructed `Environment` instances from `a13n-environment-provider`. It owns Run-local multi-mount routing, access ceilings, mount-incarnation fencing, readiness aggregation, model projection, portable state aggregation, and non-destructive cleanup. It does not discover Providers, construct provider targets, or choose backing-target retention and destruction policy.
+Harness integrates already constructed `Environment` instances from `a13n-environment-provider`. It owns Run-local multi-mount routing, access ceilings, mount-incarnation fencing, readiness aggregation, model projection, portable state aggregation, and non-destructive cleanup. It does not discover Providers, construct provider targets or connections, or choose preparation timing and backing-target retention policy. Hosts supply ready objects or objects that transparently prepare on first actual operation.
 
 The Environment Provider package owns the only shared lifecycle entities: `EnvironmentProvider`, `Environment`, and `EnvironmentState`. Harness adds only lightweight mount configuration and a process-local bound aggregate. Those Harness values are not provider lifecycle entities.
 
@@ -72,7 +72,7 @@ The rules are:
 
 A mount without `mount_path` retains the compatibility routes: every such mount is addressable at `/environment/{name}`, and the current default is also addressable at `/workspace`. Without a default, `/workspace` is unavailable. A mount with `mount_path` is addressable only at that explicit root; the Harness does not also expose `/workspace` or `/environment/{name}` for it. Relative paths still select the explicit alias or current default and begin at that mount's provider-local `working_directory`.
 
-A hosted worker normally constructs Environment instances from Host-authoritative configuration and state before invoking Harness. An embedded caller can construct them directly through a trusted Provider.
+A hosted worker constructs Environment instances from Host-authoritative configuration and state, and either prepares them before Harness execution or supplies Host-coordinated lazy preparation. An embedded caller can construct them directly through a trusted Provider.
 
 ## Ownership Boundary
 
@@ -151,12 +151,12 @@ The catalog does not select packages or read Host resource files. A Host decides
 
 ## Entry and Aggregate Lifecycle
 
-Harness validates the complete initial mapping before provider effects. Entry then proceeds:
+Harness validates the complete initial mapping before binding any local scope. The Host may already have prepared the supplied objects; Harness entry itself causes no target I/O. Entry then proceeds:
 
 01. normalize each raw Environment into an `EnvironmentMount`;
 02. allocate a fresh opaque mount ID per mount;
-03. call each adapter's `enter()` with ephemeral `thread_id`, `run_id`, `agent_instance_id`, mount ID, and bounded Host references;
-04. validate each immutable provider descriptor and derive effective actions;
+03. bind each adapter's local scope with `enter()` and ephemeral `thread_id`, `run_id`, `agent_instance_id`, mount ID, and bounded Host references;
+04. validate configured provider descriptors and derive bounded effective actions without forcing lazy preparation;
 05. if every mount entered successfully, publish one complete internal `EnvironmentSnapshot` and stable bound facade;
 06. enter Environment Run Extension scopes in supplied order;
 07. bind Environment-aware Capabilities and produce Agent input;
@@ -172,7 +172,7 @@ A successful Run, failed Run, cancellation, state-export failure, or close failu
 
 ## Internal Bound Facade
 
-The entered multi-mount aggregate is process-local and Harness-internal. `AgentContext.environment` exposes its provider-neutral operation facade to trusted Capabilities; it does not expose adapter construction, entry, close, destroy, Provider discovery, or Host state publication.
+The entered multi-mount aggregate is process-local and Harness-internal. `AgentContext.environment` exposes its provider-neutral operation facade to trusted Capabilities; it does not expose adapter construction, lifecycle preparation, entry, close, stop, keepalive, destroy, Provider discovery, or Host state publication.
 
 Conceptually it supports:
 
@@ -202,7 +202,7 @@ Mutations are linearizable:
 - `unmount(name)` removes the selected incarnation and clears default when needed;
 - `set_default(name | None)` changes routing only.
 
-Mount and replacement preparation enters the fresh Environment before commit. Preparation failure leaves the published snapshot unchanged and closes the candidate. Commit publishes one new snapshot and one `EnvironmentChange`; the retired adapter closes after its operation leases drain.
+Mount and replacement preparation binds the fresh Environment scope before commit without forcing target I/O for a lazy object. Preparation failure leaves the published snapshot unchanged and closes the candidate. Commit publishes one new snapshot and one `EnvironmentChange`; the retired adapter closes after its operation leases drain.
 
 Dynamic mutations are Run-local. They do not discover a Provider, persist desired mounts, mutate Host Thread association, invoke `destroy()`, or change another Run. A durable desired-mount change is a separate Host operation applied before constructing a later Run.
 
@@ -230,7 +230,7 @@ Compound file operations pin exact source and destination incarnations before I/
 
 ## Readiness
 
-Readiness is operation-family scoped. Entry establishes provider identity, descriptor, and minimum operation viability. More expensive preparation can remain lazy behind `ensure_ready()`.
+Readiness is operation-family scoped. Entry binds configured identity and descriptor; it does not establish a target connection or assert live viability for an unprepared object. An actual operation or explicit `ensure_ready()` invokes the object's coordinated preparation when necessary. Merely projecting descriptors or readiness summaries never does. A live descriptor can narrow configured capabilities but cannot broaden accepted access.
 
 Harness groups requirements by current mount incarnation, intersects requested operations with access ceilings and provider descriptors, and invokes readiness only for required families. Concurrent equivalent waits can share provider work. A replacement cannot satisfy a wait captured for an old incarnation.
 
@@ -259,6 +259,8 @@ The model-facing Toolset is standard:
 - an empty Environment exposes no Environment tools.
 
 The fixed schema is derived from the union of the initial effective mount actions. Every call re-authorizes the exact selected current mount incarnation and fails without provider effects when that mount lacks an action required by the requested operation. A foreground-only mount keeps completion-only `shell_exec`; a process-capable mount uses the same name with automatic bounded yield.
+
+Provider preparation and rebuild remain behind the operation object. When the backing target changes, the object supplies bounded change evidence and refreshed context; Harness fences stale operation leases/handles and publishes a new mount incarnation before later dispatch. No stale process reference or pending readiness observation can cross the change. Unknown outcomes from already dispatched operations are returned as explicit errors rather than replayed against a replacement target. Harness does not construct connections itself.
 
 ## Portable Environment State
 

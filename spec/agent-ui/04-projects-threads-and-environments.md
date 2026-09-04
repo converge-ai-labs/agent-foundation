@@ -164,7 +164,7 @@ For each captured Project root, the App:
 1. resolves the exact Provider and approved Host adapter;
 2. loads current Host-authoritative state under the complete binding key;
 3. asks the adapter to materialize root-specific validated Provider configuration;
-4. creates a fresh pre-entry-inert `Environment` adapter;
+4. creates a fresh inert `Environment` operation object and performs Agent UI Host-authorized preparation before passing it to Harness;
 5. constructs the deterministic Harness Project mount set;
 6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Host-path-preserving Project mount already owns that root; and
 7. creates fresh selected Environment Run Extensions around that aggregate.
@@ -182,6 +182,8 @@ An explicit shell `cwd` is an aggregate mount selector in both modes. It must re
 An approved custom adapter that explicitly preserves Host paths receives the same aggregate layout. Other adapters omit `mount_path`, so Harness compatibility routing presents the first root at `/workspace` and later roots at `/environment/workspace-N`. A canonical-looking aggregate route is presentation and routing metadata, never proof of Provider authority.
 
 The same adapter decision applies to the dedicated Direct Local user Skill mount. A Host-path-preserving profile exposes its canonical resolved `~/.agents/skills` path; a virtual-layout profile routes it as `/environment/user-skills`. When a Host-path-preserving Project mount already has that exact path, Agent UI omits the duplicate dedicated mount and routes the user Skill source through the Project mount. Otherwise internal mount aliases, opaque mount incarnations, permission ceilings, Environment-state keys, and source precedence are unchanged by presentation layout.
+
+Agent UI selects preparation under its own Host policy; Foundation Template preparation and retention settings are not Agent UI resources. Harness scope entry never performs a second provider connection.
 
 ## Host-authoritative Environment State
 
@@ -214,7 +216,7 @@ sequenceDiagram
     Caller->>App: input plus optional Thread configuration patch
     App->>Store: apply patch and load prior continuation
     App->>Project: capture current ordered roots
-    App->>Provider: load state and create fresh adapters
+    App->>Provider: load state, construct and prepare fresh operation objects
     App->>Harness: Run with captured mounts and extensions
     Harness-->>App: result and HarnessState
     App->>Provider: close and read final cached state
@@ -255,7 +257,7 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 | Stale Thread configuration version                                | Patch and admission are rejected without partial changes                    |
 | Provider, Host adapter, or required Sandbox isolation unavailable | Run capture or preparation fails; Full Control is not substituted           |
 | Current Environment state invalid                                 | Admission fails explicitly                                                  |
-| Adapter entry or extension entry fails                            | Harness reports Run failure; known changed cached state is still considered |
+| Provider preparation or extension entry fails                     | Harness reports Run failure; known changed cached state is still considered |
 | Cleanup or state publication fails                                | Failure is reported independently from continuation selection               |
 | Continuation publication conflicts                                | Prior or concurrent continuation remains current                            |
 

@@ -37,7 +37,7 @@ Read `01`, `01a`, `01b`, `02`, `02a`, and `02b`, then [Harness Capability Model]
 
 ### Integrate Environments
 
-Read `01a`, `02b`, and `04`, then [Provider Specifications and Catalog](../agent-environment-provider/01-provider-specs-and-catalog.md) and [Environment Re-entry Lifecycle](../agent-environment-provider/02-resource-management-and-attachments.md).
+Read `01a`, `02b`, and `04`, then [Provider Specifications and Catalog](../agent-environment-provider/01-provider-specs-and-catalog.md) and [Environment Re-entry Lifecycle](../agent-environment-provider/02-environment-lifecycle.md).
 
 ### Implement a Surface
 

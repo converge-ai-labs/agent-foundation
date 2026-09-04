@@ -6,7 +6,7 @@ Foundation persists every hosted `Thread` as an independent versioned relational
 
 The shared [Platform Interaction Model](../interaction-model.md) owns the cross-platform meaning of Thread. The Harness owns creation and preservation of the matching `HarnessState.thread_id`. Foundation stores that exact ID rather than generating a parallel Host Thread identity. [Durable Run State](12-run-persistence.md) owns Run fields, state objects, parent edges, and outcomes; this contract owns which Run is current for a Foundation Thread and which sealed Run is selected as its continuation head. Whether the current Run is active derives from its own status rather than another stored Thread pointer.
 
-Foundation never creates an empty Thread. Root, fork, and child acceptance each create one Thread together with its first Run, initial complete Run state, inbox counter authority, lifecycle facts, and outbox intents. Root and fork acceptance also retain their owning idempotency evidence; child acceptance instead retains its asynchronous-child relationship and assigns no spawn idempotency identity. Later immediate submission, queued-submission consumption, authenticated feedback, explicit waiting Continue, eligible asynchronous-result acceptance, and retry acceptance create another Run and advance the existing Thread under its current state version; queue-only admission, Thread-inbox acceptance, suppression, or active delivery do not.
+A root Thread can be created before its first Run. Creation records its Session, optional default Environment and inbox authority without provisioning a target. Combined root Run start, Fork and child acceptance create their Thread and first Run atomically. [Environment Management](29-environment-management.md#thread-defaults-and-run-selection) owns automatic allocation from a template and the mutable default selection.
 
 ## Boundaries
 
@@ -49,7 +49,8 @@ class Thread:
     origin_run_id: str | None
 
     head_run_id: str | None
-    current_run_id: str
+    current_run_id: str | None
+    default_environment_id: EnvironmentId | None
 
     created_at: datetime
     updated_at: datetime
@@ -59,7 +60,7 @@ class Thread:
 
 A previously committed or imported Thread whose valid Harness state uses the legacy Harness-generated `thread-<32 lowercase hex>` form retains that exact value in both the Thread row and every later state; Foundation never rewrites an existing identity. New Foundation-owned Threads use the shared Foundation object-ID generator rather than the legacy generated form.
 
-`version` is the positive Thread domain-object version. It starts at `1` when the Thread and first Run commit and increases by one for every accepted Thread advancement and every transition that seals the current Run. When an owning command defines idempotent replay, that replay resolves before comparing an expected version. Claim, execution, and worker recovery inside the same current Run use the Run's own version and do not change the Thread version. A state-first combined completion and queued successor acceptance applies both logically ordered changes in one transaction and therefore increments `version` by two.
+`version` is the positive Thread domain-object version. It starts at `1` when the Thread is created and increases by one for every accepted Thread advancement and every transition that seals the current Run. When an owning command defines idempotent replay, that replay resolves before comparing an expected version. Claim, execution, and worker recovery inside the same current Run use the Run's own version and do not change the Thread version. A state-first combined completion and queued successor acceptance applies both logically ordered changes in one transaction and therefore increments `version` by two.
 
 `queue_version` is a non-negative version of the Thread's queued-submission collection. It starts at `0` and increases for every add, edit, delete, reorder, consume, or terminal-failure mutation. Queue-only mutation, including failure after the current Run is terminal, does not change `version`, `current_run_id`, or `head_run_id`. Consuming an entry increments both `queue_version` and `version` because the same transaction changes the queue and accepts another Run. When consumption is combined with completion of the prior current Run, `queue_version` increments once while `version` increments twice: once for the seal and once for advancement. When permanent queue invalidity is instead combined with completion, `queue_version` increments once and `version` increments once for the seal; no successor is accepted.
 
@@ -82,11 +83,11 @@ The two Run references have distinct meanings:
 | Field            | Meaning                                                                                                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `head_run_id`    | Exact sealed `waiting` or `completed` Run whose frozen state is the currently selected continuation head; null until the Thread first selects such an outcome |
-| `current_run_id` | Most recently accepted Run, regardless of whether it is active, waiting, completed, failed, or cancelled; always present                                      |
+| `current_run_id` | Most recently accepted Run, regardless of status; null until the first Run is accepted                                                                        |
 
-Foundation never derives either value from timestamps, event order, object listings, or replay data. Both references name Runs with the same `tenant_id`, `session_id`, and `thread_id` as the Thread row.
+Foundation never derives either value from timestamps, event order, object listings, or replay data. When present, both references name Runs with the same `tenant_id`, `session_id`, and `thread_id` as the Thread row.
 
-The current Run's status supplies the Thread's current execution and latest outcome projection. A current Run in `accepted` or `running` is the Thread's sole active Run. A current Run in `waiting`, `completed`, `failed`, or `cancelled` is sealed and the Thread has no active Run. The Thread stores no separate status or active-Run pointer. Intermediate claim and recovery transitions remain Run lifecycle facts and do not advance the Thread state version.
+An empty Thread has no current outcome or active Run. Once present, the current Run's status supplies the Thread's current execution and latest outcome projection. A current Run in `accepted` or `running` is the Thread's sole active Run. A current Run in `waiting`, `completed`, `failed`, or `cancelled` is sealed and the Thread has no active Run. The Thread stores no separate status or active-Run pointer. Intermediate claim and recovery transitions remain Run lifecycle facts and do not advance the Thread state version.
 
 Thread mutations apply these resource-local effects. The linked operation contract owns eligibility, authorization, lineage, and the complete transaction flow.
 
@@ -111,6 +112,7 @@ The conceptual model materializes as one row in `threads`. Supported relational 
 | Identity and scope | `id`, `version`, `queue_version`, `tenant_id`, `session_id` | `id` is the primary key; advancement version is positive; queue version is non-negative; Session membership is immutable |
 | Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_run_id`  | Immutable validated provenance; origin references can cross Session only for an authorized Session fork                  |
 | Advancement        | `head_run_id`, `current_run_id`                             | Same-Thread Run references updated only by accepted advancement or outcome commit                                        |
+| Environment        | `default_environment_id`                                    | Mutable same-Workspace default; Run acceptance freezes its own selection and updates this field atomically               |
 | Time               | `created_at`, `updated_at`                                  | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                                    |
 
 The independent `thread_inbox_counters` row owned by [Active Execution](19-agent-control-active-execution.md#thread-inbox) is keyed by the same tenant and Thread. Its allocation and pending-budget updates do not change `version`, `queue_version`, `updated_at`, `current_run_id`, or `head_run_id`; it is delivery-order authority rather than another Thread resource field.
@@ -120,10 +122,10 @@ The relational contract preserves these constraints:
 1. `(tenant_id, id)` is unique, and every Run has a same-tenant foreign key to its Thread.
 2. `(tenant_id, session_id, id)` is unique, and every Thread references one persisted Session in the same tenant.
 3. A partial unique constraint on `(tenant_id, session_id)` for `role="root"` enforces one root Thread per Session.
-4. `current_run_id` is always present and names the most recently accepted same-Thread Run. `head_run_id` is null until a same-Thread Run seals as `waiting` or `completed`, and otherwise names only such a selected Run.
+4. `current_run_id` is null exactly before the first Run, and otherwise names the most recently accepted same-Thread Run. `head_run_id` is null until a same-Thread Run seals as `waiting` or `completed`, and otherwise names only such a selected Run.
 5. At most one Run per Thread is `accepted` or `running`; when such a Run exists it is `current_run_id`. The Run table's partial uniqueness constraint enforces the single-active rule.
 6. Origin reference combinations match `origin_kind`; malformed or cross-tenant origins are rejected.
-7. A committed Thread row and its first Run always exist together. Neither becomes independently visible without the other.
+7. A root Thread may exist before its first Run. Combined root start, Fork and child acceptance publish the Thread and first Run atomically.
 8. `queue_version` starts at zero, is non-negative, and changes only under the queued-submission mutation contract; consumption updates it in the same transaction that advances the Thread, while terminal failure can update it without accepting a Run.
 
 The accepted access paths are:
@@ -142,13 +144,13 @@ Run-table indexes for Worker claims, Run listing, search, and DAG traversal rema
 
 ## Thread Creation
 
-Thread creation is part of Run acceptance and has no standalone empty-resource operation. The owning root, fork, or child acceptance contract creates the complete initial Run state before one short relational transaction inserts the Thread and first Run together with the required facts, evidence, relationships, and outbox intents. The transaction sets `version=1`, `queue_version=0`, selects the first Run as current, and leaves the head null.
+`POST /workspaces/{workspace_id}/threads` creates an empty root Thread and selects or creates its Session under Session uniqueness and authorization. The request can select an Agent for its default template and an explicit environment choice. In one short transaction it allocates the Thread, optional Environment record and inbox counter, sets `version=1`, `queue_version=0`, and leaves both Run references null. No Harness execution or Provider preparation occurs. First Run acceptance creates `HarnessState.new(thread_id=thread.id)` and advances the existing Thread.
 
-The [input and continuation contract](18-agent-control-input-and-continuation.md) owns root and fork authorization, state transformation, and acceptance flow. [Async Subagents](34-async-subagents.md) owns child creation and its parent fence. This contract requires only that the committed Thread and first Run become visible together with valid Session membership, origin, and matching `thread_id`; a failed relational commit leaves any prepared objects non-authoritative.
+The combined root Run command uses the same allocation rules and commits the new Thread, selected Environment and first Run together. [Agent Control](18-agent-control-input-and-continuation.md) owns root/Fork authorization and [Async Subagents](34-async-subagents.md) owns child creation. An existing Thread's default changes only under authorized Run acceptance; accepted Runs retain their own fixed selection. Physical Thread deletion releases its default reference but never implicitly deletes a shared target.
 
 ## Reads and History Selection
 
-An exact Thread read comes from `threads` under current authorization. It returns safe identity, advancement and queue versions, Session, role, currently authorized origin references, the head and current Run references, and timestamps. A concealed origin reference is omitted rather than exposing another Session or Run by possession. A Session Thread listing pages authorized Thread rows directly and can join the exact current Run for bounded current-status and latest-outcome summaries. It never groups Run rows to invent a Thread resource. Continuation eligibility comes from the selected head, its status, and the owning operation contract; it is not inferred from the current Run summary alone.
+An exact Thread read comes from `threads` under current authorization. It returns safe identity, advancement and queue versions, Session, role, currently authorized origin references, the optional head/current Run references, safe default Environment identity, and timestamps. A concealed origin reference is omitted rather than exposing another Session or Run by possession. A Session Thread listing pages authorized Thread rows directly and can join the exact current Run for bounded current-status and latest-outcome summaries. It never groups Run rows to invent a Thread resource. Continuation eligibility comes from the selected head, its status, and the owning operation contract; it is not inferred from the current Run summary alone.
 
 Thread Run listing filters authorized Run rows by the selected durable Thread identity. Exact lineage still starts from an explicitly selected Run and follows `parent_run_id`; `head_run_id` is a continuation selector, not a replacement for an explicit lineage head. Item and event replay remain separate projections and cannot repair or advance Thread state.
 
@@ -191,10 +193,10 @@ The independent Thread row duplicates relationships that are also present on Run
 ## Invariants
 
 01. Every Foundation Thread is one independently versioned relational resource and belongs to exactly one persisted Session.
-02. A Thread is created atomically with its first Run and never exists as an empty resource.
+02. A root Thread can precede its first Run; combined root start, Fork and child acceptance are atomic.
 03. Thread ID equals the stable `HarnessState.thread_id` for every Run state in that Thread.
 04. Exactly one retained root Thread belongs to a Session; child and fork histories use distinct Thread IDs.
-05. `current_run_id` always names the most recently accepted Run and is never inferred from time or event order; it is the sole active Run exactly while its status is `accepted` or `running`.
+05. `current_run_id` is null before first acceptance and otherwise names the most recently accepted Run and is never inferred from time or event order; it is the sole active Run exactly while its status is `accepted` or `running`.
 06. `head_run_id` is null until the Thread selects a sealed waiting or completed Run and never names a failed or cancelled Run.
 07. Thread `version` changes once on accepted advancement and once whenever the current Run seals; a combined completed seal and queued acceptance applies both increments in one transaction, while a combined completed seal and queue failure applies only the seal increment. Claim, execution, worker recovery, and queue-only mutation do not change it.
 08. Accepted advancement and Run sealing update current, head, and Thread versions exactly as defined by this contract; the owning input, queue, or asynchronous-subagent contract determines operation eligibility and Run lineage.

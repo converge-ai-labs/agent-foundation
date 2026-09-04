@@ -11,17 +11,19 @@
 | `a13n.docker`       | One Docker container running envd                | EIP               |
 | `a13n.e2b`          | One E2B sandbox running envd                     | EIP               |
 
-Every built-in follows the same three-entity model: an inert `EnvironmentProvider`, a fresh process-local `Environment`, and optional `EnvironmentState`. Local Envd, Docker, and E2B use EIP for Agent file, shell, process, output, and port operations after entry. They do not bypass EIP through vendor filesystem, exec, log, or copy APIs.
+Every built-in follows the same three-entity model: an inert `EnvironmentProvider`, a fresh process-local `Environment`, and optional `EnvironmentState`. Local Envd, Docker, and E2B use EIP for Agent file, shell, process, output, and port operations after preparation. They do not bypass EIP through vendor filesystem, exec, log, or copy APIs.
 
 ## Shared Configuration Rules
 
 Each Provider owns an exact versioned Pydantic configuration model. Configuration is desired behavior and contains no API key, Docker socket, container/sandbox ID, PID, resolved endpoint, EIP credential, live client, or session.
 
-Provider discovery, configuration validation, Provider construction, and `create_environment()` are inert. They do not inspect the filesystem, invoke a subprocess, connect to Docker or E2B, allocate bootstrap material, or open EIP.
+Provider discovery, configuration validation, Provider construction, `create_environment()` and scope `enter()` are inert. They do not inspect the filesystem, invoke a subprocess, connect to Docker or E2B, allocate bootstrap material, or open EIP.
 
-Fresh Host runtime collaborators supply current credentials, SDK boundaries, executable selection, bootstrap storage, and private runtime allocation. Providers never discover ambient credentials or executables unless the Host explicitly invokes a separate convenience resolver and passes its result.
+Fresh Host runtime collaborators supply stable per-Environment creation/ownership correlation, current credentials, SDK boundaries, executable selection, bootstrap storage, and private runtime allocation. Providers never discover ambient credentials or executables unless the Host explicitly invokes a separate convenience resolver and passes its result.
 
-Each entered Environment exposes one immutable descriptor. Harness intersects its operation families with the Run-local access ceiling. Unsupported operations fail; no built-in emulates an operation through another backend.
+Each scoped Environment exposes a configured descriptor without target I/O; preparation validates the live descriptor before operations. Harness intersects its operation families with the Run-local access ceiling. Unsupported operations fail; no built-in emulates an operation through another backend.
+
+Stable environment identity is allocated by the Host per Environment and supplied through runtime collaborators, never frozen into a reusable template recipe. Providers may retain its non-secret target-ownership correlation in state/labels when needed to recover a dispatched creation.
 
 ## Direct Local
 
@@ -49,7 +51,6 @@ class DirectLocalShellProfile(BaseModel):
 class DirectLocalProviderConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    environment_id: str
     root: DirectLocalRootConfiguration
     shell_profiles: tuple[DirectLocalShellProfile, ...] = ()
     allowed_executables: frozenset[Path] = frozenset()
@@ -63,7 +64,7 @@ class DirectLocalProviderConfiguration(BaseModel):
     max_spool_bytes: int = 64 * 1024 * 1024 * 1024
 ```
 
-The root, shell executables, and allowed executables are absolute after user expansion. Identities are bounded and nonblank; profile IDs are unique; ports and limits are valid and positive. A read-only root cannot enable shell profiles or allowed executables because an allowed native process could mutate files through the embedding OS account.
+The root, shell executables, and allowed executables are absolute after user expansion. Host-supplied runtime identities are bounded and nonblank; profile IDs are unique; ports and limits are valid and positive. A read-only root cannot enable shell profiles or allowed executables because an allowed native process could mutate files through the embedding OS account.
 
 ### State and lifecycle
 
@@ -71,9 +72,9 @@ Direct Local denotes access to an existing Host-controlled directory. It does no
 
 Direct Local is stateless for re-entry and `dump_state()` returns `None`. The selected configuration remains the deterministic target. The Provider can compute an internal configuration fingerprint for validation and observation, but it does not require an `EnvironmentState` merely to repeat access to the same configured root.
 
-`enter()` validates that the configured root exists and is accessible, constructs fresh local file/process/output facets, and establishes Run-local process ownership. Inaccessibility is `unknown`/unavailable rather than authoritative target absence; Direct Local never creates the root automatically.
+`prepare()` validates that the configured root exists and is accessible, constructs fresh local file/process/output facets, and establishes Run-local process ownership. Inaccessibility is `unknown`/unavailable rather than authoritative target absence; Direct Local never creates the root automatically.
 
-`close()` terminates and releases only processes, streams, retained output, and local handles owned by that adapter. It does not change or delete the root. `destroy()` is a no-op for the backing directory and succeeds without filesystem mutation.
+`close()` terminates and releases only processes, streams, retained output, and local handles owned by that adapter. It does not change or delete the root. `stop()` and `destroy()` are unsupported for the caller-owned backing directory. Direct Local declares no keepalive requirement; retention policies must disable target stop/delete.
 
 Direct Local makes no sandbox, account isolation, network isolation, or race-free filesystem-broker claim. Its confinement is a provider operation policy over one Host-selected root. A hostile same-account process can race native filesystem changes.
 
@@ -109,7 +110,6 @@ class LocalEnvdShellProfile(BaseModel):
 class LocalEnvdProviderConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    environment_id: str
     workspace: LocalEnvdWorkspaceConfiguration
     execution_network: LocalEnvdNetworkMode = LocalEnvdNetworkMode.HOST
     trusted_executable_roots: tuple[Path, ...] = ()
@@ -132,7 +132,7 @@ Local Envd owns no durable provider target beyond the Host-selected workspace. E
 
 Raw PID, subprocess handle, process tree, pipes, private runtime path, EIP credential, endpoint, daemon generation, descriptor, and Session are process-local runtime data. They never enter `EnvironmentState` or Harness continuation.
 
-`enter()`:
+`prepare()`:
 
 1. validates the workspace and exact executable shape/version;
 2. runs the production-equivalent isolation probe;
@@ -143,7 +143,7 @@ Raw PID, subprocess handle, process tree, pipes, private runtime path, EIP crede
 
 A failure after process launch unconditionally terminates the owned process tree, closes carriers, and removes private runtime data. Cancellation does not leave a reusable daemon reference.
 
-`close()` fences new operations, closes EIP, terminates the complete owned daemon process tree under bounded grace, closes pipes, and removes its private runtime. It never deletes or mutates the shared workspace merely because the adapter closes. `destroy()` has no additional durable target to remove and follows the same non-workspace cleanup semantics.
+`close()` fences new operations, closes EIP, terminates the complete owned daemon process tree under bounded grace, closes pipes, and removes its private runtime. It never deletes or mutates the shared workspace merely because the adapter closes. There is no durable daemon target to stop or delete; these target actions are unsupported. Local Envd requires no target keepalive, and template stop/delete policies must be disabled for its caller-owned workspace.
 
 Because every independent Run creates a fresh daemon, Local Envd state does not preserve daemon identity across Runs. Filesystem continuity comes from the configured Host workspace.
 
@@ -179,7 +179,6 @@ class DockerMountConfiguration(BaseModel):
 class DockerProviderConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    environment_id: str
     image: str = "ghcr.io/converge-ai-labs/agent-foundation-sandbox:latest"
     pull_policy: DockerImagePullPolicy = DockerImagePullPolicy.IF_MISSING
     mounts: tuple[DockerMountConfiguration, ...]
@@ -241,9 +240,9 @@ class DockerEnvironmentStateData(BaseModel):
 
 The Provider applies bounded labels for provider key, state version, Environment identity, configuration fingerprint, bootstrap correlation, and create correlation. Before adopting, starting, stopping, or removing a container, it validates the exact ID, resolved image, all labels, fixed command/bootstrap mount, configured mounts and limits, non-root launch contract, EIP publication, and bootstrap evidence. An ID match with incompatible metadata is a conflict.
 
-### Entry and replacement
+### Preparation and replacement
 
-With no state, `enter()`:
+With no state, Host-authorized `prepare()`:
 
 1. validates local topology and mount sources;
 2. applies image pull policy and resolves an immutable image ID;
@@ -254,7 +253,7 @@ With no state, `enter()`:
 7. resolves only the authoritative loopback EIP route;
 8. opens a fresh EIP Session and completes initialization and readiness.
 
-With state, `enter()` inspects and validates the exact container:
+With state, `prepare()` inspects and validates the exact container:
 
 - a compatible running container is re-entered without replacement;
 - a compatible created or exited container can receive an atomic credential replacement and be started;
@@ -267,6 +266,8 @@ A failure after a create or replacement preserves the new state through `dump_st
 
 `destroy()` validates the exact represented target, stops it when necessary, removes only that container, confirms absence, then removes its exact bootstrap allocation. It never removes bind sources, external named volumes, or unrelated containers. Container absence with matching bootstrap cleanup failure is still cleanup failure. Unknown inspection or mutation outcome preserves state.
 
+`stop()` stops the exact validated container and retains its state and writable filesystem for later start. It does not promise to preserve process memory. Docker declares stop and destroy support and no Provider timeout-renewal requirement. Retention acts on the durable container independently of local scope close.
+
 ### Prune discovery
 
 Docker exposes bounded provider-specific discovery sufficient for an authorized Host to find targets carrying the exact provider labels and correlations. Discovery returns candidates or unknown evidence; it never adopts, starts, stops, removes, or repairs a container.
@@ -277,7 +278,7 @@ Prune policy, candidate persistence, grace periods, sharing checks, and destroy 
 
 ### Configuration and runtime
 
-`a13n.e2b` configuration schema version `1` contains desired sandbox behavior such as Environment identity, template, timeout/retention ceiling supported by E2B, strict envd bootstrap configuration, shell profiles, and bounded file/output limits. It contains no API key, sandbox ID, endpoint, EIP credential, or SDK client.
+`a13n.e2b` configuration schema version `1` contains desired sandbox behavior such as provider template, timeout/retention ceiling supported by E2B, strict envd bootstrap configuration, shell profiles, and bounded file/output limits. It contains no API key, sandbox ID, endpoint, EIP credential, or SDK client.
 
 A fresh `E2BProviderRuntime` supplies the current E2B client/credential source and protected bootstrap material needed to launch envd. Provider construction is inert.
 
@@ -285,15 +286,17 @@ A fresh `E2BProviderRuntime` supplies the current E2B client/credential source a
 
 E2B `EnvironmentState` uses `state_version="1"` and contains the provider sandbox identity, immutable template identity when available, configuration fingerprint, and bootstrap correlation needed to validate and reconnect. It contains no API key, endpoint bearer credential, client, live sandbox object, EIP Session, or daemon generation.
 
-`enter()` creates a sandbox when state is absent, reconnects to an exact compatible sandbox when it exists, and establishes fresh EIP bootstrap/readiness. It creates a replacement only when E2B provides authoritative absence for the selected sandbox and the selected policy allows replacement. Expired, inaccessible, rate-limited, or otherwise uncertain evidence fails without speculative create.
+`prepare()` creates a sandbox when state is absent, resumes a paused matching sandbox or reconnects to an exact compatible running sandbox, and establishes fresh EIP bootstrap/readiness. It creates a replacement only when E2B provides authoritative absence for the selected sandbox and the selected policy allows replacement. Inaccessible, rate-limited or otherwise uncertain evidence fails without speculative create; confirmed expiry/deletion is handled as authoritative absence.
 
 A successful create or replacement updates state before EIP readiness. `close()` releases process-local E2B and EIP clients without terminating the sandbox. `destroy()` explicitly terminates only the exact validated sandbox and cleans provider-owned bootstrap material. Sandbox expiry remains provider/Host policy rather than Harness close behavior.
+
+E2B declares stop, destroy and keepalive support. `stop()` maps to sandbox pause; `prepare()` resumes the same paused sandbox, and `destroy()` maps to kill. Stop preserves provider-supported recoverable state; whether memory is preserved is explicit provider configuration/capability, not a universal stop guarantee. Service-controlled delete deadlines remain effective while paused, even if E2B keeps paused sandboxes indefinitely. Renewal reports actual supported expiry and must not resume paused targets. E2B runtime limits and uncertain mutation outcomes remain explicit failures rather than unlimited retention promises.
 
 ## Harness Semantics
 
 Harness receives already constructed Direct Local, Local Envd, Docker, or E2B Environment instances. It never receives a Provider, discovers the catalog, acquires an attachment, or owns an ephemeral target lifetime.
 
-A singular Environment becomes mount `workspace`. Named mounts can combine built-ins. Harness supplies Run-local access ceilings and working directories, enters the adapters atomically, routes operations, snapshots each non-`None` state directly into `HarnessState.environment_states`, and closes adapters non-destructively.
+A singular Environment becomes mount `workspace`. Named mounts can combine built-ins. Harness supplies Run-local access ceilings and working directories, binds local scopes atomically without target I/O, routes operations through ready or lazy objects, snapshots each non-`None` state directly into `HarnessState.environment_states`, and closes adapters non-destructively.
 
 Direct Local and Local Envd normally contribute no state entry. Docker and E2B contribute their provider envelope under the selected mount name. Async child Runs receive fresh adapters selected from Host state; inline children borrow the current entered Harness facade.
 
@@ -331,7 +334,7 @@ It does not export Docker SDK models, E2B SDK models, EIP native sessions, Resou
 
 Provider keys, configuration schema versions, and state codec versions are stable explicit boundaries. Providers reject unsupported versions and incompatible fingerprints.
 
-The lifecycle is a direct pre-release cut. Built-ins expose no Provider factory, Resource, attachment, pause, resume, or ephemeral-scope compatibility API. Re-entry is always fresh Environment construction from state followed by `enter()`.
+Hosts construct fresh operation objects from authoritative state and choose eager or lazy preparation under the shared lifecycle contract. Backing resume/rebuild semantics remain separate from local scope entry and close.
 
 ## Invariants
 

@@ -66,7 +66,7 @@ Read `06`, `19`, `13`, and `15`. Read `12` separately for process-local events a
 - Concrete plugins and other native Python inputs are trusted in-process objects; the narrow Harness plugin document is an optional builder-local source, not an Agent definition format.
 - The Harness owns process-local code-first construction and logical-Run behavior.
 - A Host owns durable definition schemas, Presets, revisions, artifact locks, reconstruction adapters, Session/Run lifecycle, execution lifecycle, and delivery.
-- Environment Providers construct fresh adapters without I/O; entered Environments own provider effects and evidence, while Hosts own current state and lifecycle policy.
+- Environment Providers construct fresh adapters without I/O; Provider implementations own preparation, connections and effect evidence, while Hosts own current state and lifecycle policy.
 - A telemetry backend observes execution but never becomes lifecycle authority.
 
 ## Specification Conventions

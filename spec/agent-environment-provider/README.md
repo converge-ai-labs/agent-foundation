@@ -12,18 +12,18 @@ flowchart LR
     Environment <--> State[EnvironmentState]
 ```
 
-A Host selects a trusted Provider, desired configuration, current state, and fresh process-local collaborators. The Provider constructs a fresh `Environment`; the caller enters, uses, snapshots, and closes it. `close()` is non-destructive. Only explicit Host policy invokes `destroy()`.
+A Host selects a trusted Provider, desired configuration, current state, and fresh process-local collaborators. The Provider constructs a fresh `Environment`; the Host chooses eager or lazy preparation, and the caller binds, uses, snapshots and closes its local scope. Stop and keepalive are separate Host-directed operations. `close()` is non-destructive. Only explicit Host policy invokes `destroy()`.
 
 The package performs no durable storage and owns no Agent loop, model-facing Toolset, Thread relationship, retention policy, or Harness multi-mount aggregate.
 
 ## Document Catalog
 
-| Document                                                                               | Owns                                                                                                               |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| [00-overview.md](00-overview.md)                                                       | Package position, architecture, boundaries, end-to-end flow, dependency direction, and stable principles           |
-| [01-provider-specs-and-catalog.md](01-provider-specs-and-catalog.md)                   | Provider configuration schemas, inert factory contract, catalog, discovery, authorization, and evolution           |
-| [02-resource-management-and-attachments.md](02-resource-management-and-attachments.md) | `Environment`, `EnvironmentState`, re-entry lifecycle, close/destroy semantics, failure, concurrency, and security |
-| [03-built-in-providers.md](03-built-in-providers.md)                                   | Direct Local, Local Envd, Docker, and E2B configuration, state, entry, close, and destruction behavior             |
+| Document                                                             | Owns                                                                                                                    |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                     | Package position, architecture, boundaries, end-to-end flow, dependency direction, and stable principles                |
+| [01-provider-specs-and-catalog.md](01-provider-specs-and-catalog.md) | Provider configuration schemas, inert factory contract, catalog, discovery, authorization, and evolution                |
+| [02-environment-lifecycle.md](02-environment-lifecycle.md)           | `Environment`, `EnvironmentState`, eager/lazy preparation, stop/keepalive/destroy, local scope, failure and concurrency |
+| [03-built-in-providers.md](03-built-in-providers.md)                 | Direct Local, Local Envd, Docker, and E2B configuration, state, entry, close, and destruction behavior                  |
 
 ## Reading Paths
 
@@ -37,13 +37,13 @@ Read `00` and `02`, then [Harness Environment Integration](../agent-harness/08-e
 
 ### Implement a provider
 
-Read `01` and `02`. A third-party Provider registers one namespaced key, validates one versioned configuration schema, constructs Environment instances without I/O, validates its own state codec, and implements provider-neutral operations plus re-entry, state dump, non-destructive close, and explicit destroy.
+Read `01` and `02`. A third-party Provider registers one namespaced key, validates one versioned configuration schema, constructs Environment instances without I/O, validates its own state codec, and implements provider-neutral operations plus preparation, resume, state dump, non-destructive close, and supported stop, keepalive and destroy operations.
 
 ## Authority Rules
 
 - A Host authorizes Provider selection, supplies current credentials and runtime collaborators, owns current state, and chooses retention, destruction, and prune policy.
 - `EnvironmentProvider` validates desired configuration and constructs fresh Environment instances without external I/O.
-- `Environment` owns one provider's process-local operation implementation and re-entry lifecycle.
+- `Environment` exposes one provider's process-local operations and Host-directed target lifecycle; scope entry is independent from preparation.
 - `EnvironmentState` is portable provider data, not a credential, live client, durable lease, or proof of target existence.
 - Harness never discovers Providers or invokes backing-target destruction.
 - Provider state and configuration validity never authorize an Agent operation; Harness and provider operation policy still apply.

@@ -261,14 +261,15 @@ In `runner`, one Worker container contains a stable Supervisor and one or more l
 ```text
 Worker container
 └── Worker Supervisor
-    ├── Runner(active lock): execution loop + keepalive loop + executor tasks
-    ├── Runner(draining old lock): existing executor and keepalive calls only
+    ├── Environment maintenance (deployment-selected Providers)
+    ├── Runner(active lock): execution loop + executor tasks
+    ├── Runner(draining old lock): existing executor tasks only
     └── Runner(candidate lock during staging): claim-gated loops
 ```
 
 The Supervisor imports no Harness Plugin, Plugin dependency, or candidate Runtime path. It owns bounded process startup, liveness observation, claim gating, drain, shutdown, and exit handling. The Supervisor-to-Runner protocol carries lifecycle control only; Harness execution does not become a remote Plugin or Agent RPC contract.
 
-Each Runner starts in a clean Python interpreter from exactly one materialized lock. It owns one ordinary `WorkerExecutionLoop` for compatible Run work: periodic scan, exact-lock preflight, bounded local executor-capacity reservation, claim, and takeover. It also owns the separately bounded `EnvironmentKeepaliveLoop` for target operations whose selected active source binding requires that exact lock. Each successful Run claim starts exactly one `RunAttemptExecutor` async task in that Runner, not another OS thread. A target claim starts no executor and consumes no Agent execution slot. The executor owns lease renewal, control watching, fenced persistence, Agent reconstruction, Harness execution, and event production, and creates fresh Plugin instances for every reconstructed Agent definition. It never shares a concrete Plugin instance between definitions or executors.
+Each Runner starts in a clean Python interpreter from exactly one materialized lock. It owns one ordinary `WorkerExecutionLoop` for compatible Run work: periodic scan, exact-lock preflight, bounded local executor-capacity reservation, claim, and takeover. Each successful Run claim starts exactly one `RunAttemptExecutor` async task in that Runner, not another OS thread. Environment maintenance belongs to the Worker process independently of this Plugin lock and consumes no Agent execution slot. The executor owns lease renewal, control watching, fenced persistence, Agent reconstruction, Harness execution, and event production, and creates fresh Plugin instances for every reconstructed Agent definition. It never shares a concrete Plugin instance between definitions or executors.
 
 The Runner derives imports only from verified lock entry points. It verifies every artifact digest before publishing the immutable directory to the child process. It never unloads, reloads, or replaces modules in a live interpreter and never renames arbitrary Wheel modules or installs a custom multi-version importer.
 
@@ -309,7 +310,7 @@ A captured Worker that disappears before commit fails the command. A Worker that
 
 If any serviceable Worker fails staging, the command fails, candidate Runners exit, and the old selection remains active. After commit, future runner key resolution uses the new catalog. Existing Revisions, Runs that inherit them, and exact historical-Revision Runs retain their frozen locks. The receipt becomes `succeeded` only after every still-serviceable staged Supervisor observes the commit and enables its candidate Runner.
 
-An old Runner remains eligible for accepted and newly accepted work whose frozen Revision requires its exact lock and for Environment keepalive whose selected active source binding pins that lock; Activate alone does not put it into drain. The Supervisor may retire it later when neither eligible Run work nor a due or currently leased target operation needs the lock, and can reconstruct the same lock on demand if either need appears again.
+An old Runner remains eligible for accepted and newly accepted work whose frozen Revision requires its exact lock; Activate alone does not put it into drain. The Supervisor may retire it later when no eligible or executing Run work needs the lock, and can reconstruct the same lock on demand if eligible Run work appears again.
 
 If capacity policy retires a Runner while it still owns Attempts or target leases, it gates both claim loops and requests graceful handoff on each active executor's process-local control gate under the common contract. Each executor continues heartbeat and lease renewal while it reaches a complete Harness safe boundary, persists ordinary `state.json`, closes local Runtime resources, and commits `yield_reason="runner_rotation"`. An in-flight keepalive may finish within the drain deadline; otherwise its renewal stops and takeover waits for target-lease expiry. A successor reconstructs the exact Run- or source-binding-pinned historical lock; the current active lock is never substituted. Insufficient local capacity fails a later runtime command without terminating existing Attempts or keepalive calls.
 
@@ -319,11 +320,11 @@ A staged Worker that loses its liveness lease after commit leaves the serviceabl
 
 In both profiles, the selected AgentRevision already owns an immutable Runtime lock digest. A runner Plugin override is resolved and frozen before Run acceptance commits. The Run copies the resulting exact digest, and a RunAttempt never replaces it with another lock.
 
-An on-demand Worker preflights the lock against its registry before either Run or Environment-target claim. A Runner scans and claims only work whose digest equals its own, including a target whose selected active source binding pins that digest. The runner Supervisor can observe an eligible historical Run lock or due Environment keepalive source lock and start a compatible Runner on demand. Waiting Runs alone do not keep a process resident, but a due or currently leased keepalive does until its bounded call or handoff completes. An on-demand waiting Run similarly keeps no process or cache entry resident and waits for a compatible Worker when it becomes eligible.
+An on-demand Worker preflights the Plugin lock before Run claim. A Runner scans only Runs whose digest equals its own. The Supervisor can materialize an eligible historical Run lock on demand. Waiting Runs alone keep no Runner resident. Environment maintenance, including approval retention and stopped-target deletion, uses deployment-selected Provider implementations in the Worker and never keeps a Plugin-lock Runner alive. A later resumed Run again requires a compatible Worker or Runner.
 
 Claim-time code performs no package-index access or dependency solving. Missing artifacts, digest mismatch, target mismatch, dependency mismatch, import failure, or factory validation failure prevents claim or Harness entry without substituting another PluginVersion. A retained on-demand Run can become unserviceable after an incompatible Worker image upgrade; the deployment must retain or restore a Worker release compatible with the Run lock.
 
-Planned handoff changes only the Attempt and Harness Run generation. Recovery preflight reads the same latest complete Run state and exact lock digest. A different `worker_build_id` receives scheduling preference only after all Runtime-target, Harness, Plugin, Skill, Environment connection and attachment-capability, state-schema, codec, and artifact checks pass; build difference cannot make an incompatible historical lock serviceable.
+Planned handoff changes only the Attempt and Harness Run generation. Recovery preflight reads the same latest complete Run state and exact lock digest. A different `worker_build_id` receives scheduling preference only after all Runtime-target, Harness, Plugin, Skill, Environment Provider/state compatibility and host-affinity, state-schema, codec, and artifact checks pass; build difference cannot make an incompatible historical lock serviceable.
 
 ## Worker Cache
 
