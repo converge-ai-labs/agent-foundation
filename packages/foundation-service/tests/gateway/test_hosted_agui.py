@@ -688,7 +688,7 @@ async def test_hosted_cancel_resolves_binding_and_interrupts_foundation_run(
 ) -> None:
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     async with AsyncExitStack() as stack:
-        service, _stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        service, stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
         attachment = await service.accept(
             actor=_actor(),
             agent_id=AGENT_ID,
@@ -699,9 +699,19 @@ async def test_hosted_cancel_resolves_binding_and_interrupts_foundation_run(
 
         first = await service.cancel(actor=_actor(), agent_id=AGENT_ID, request=request)
         repeated = await service.cancel(actor=_actor(), agent_id=AGENT_ID, request=request)
+        await stream.close(
+            attachment.binding.organization_id,
+            attachment.binding.run_id,
+            closed_at=NOW + timedelta(seconds=1),
+        )
+        frames = [frame async for frame in service.events(attachment)]
 
     assert repeated == first
     assert first.status == "cancelled"
+    assert b'"type":"RUN_STARTED"' in frames[0]
+    assert b'"type":"RUN_ERROR"' in frames[-1]
+    assert b'"code":"run_cancelled"' in frames[-1]
+    assert all(b'"type":"RUN_FINISHED"' not in frame for frame in frames)
     async with short_session(lifecycle_interaction_sessions) as database:
         run = await database.scalar(select(RunRecord).where(RunRecord.id == attachment.binding.run_id))
     assert run is not None and run.status == "cancelled"

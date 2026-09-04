@@ -1435,7 +1435,11 @@ def _terminal_event(binding: HostedAguiBinding, run: RunRecord) -> dict[str, Any
         )
     if status is RunStatus.cancelled:
         return _standard_event(
-            {"type": "RUN_FINISHED", "threadId": binding.external_thread_id, "runId": binding.external_run_id}
+            {
+                "type": "RUN_ERROR",
+                "code": "run_cancelled",
+                "message": "The Agent Run was cancelled.",
+            }
         )
     return None
 
