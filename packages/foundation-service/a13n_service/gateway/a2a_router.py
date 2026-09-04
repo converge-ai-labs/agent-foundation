@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
@@ -47,7 +48,7 @@ async def default_agent_card(request: Request) -> Response:
 async def direct_agent_card(request: Request, agent_id: str) -> Response:
     try:
         card = await _service(request).public_agent_card(agent_id=agent_id, base_url=_base_url(request))
-        return _json(card, cache_control="public, max-age=300")
+        return _public_card(card, if_none_match=request.headers.get("if-none-match"))
     except A2AError as error:
         return _error(error)
 
@@ -195,6 +196,111 @@ async def subscribe_task(
         return _error(error)
 
 
+@router.post("/a2a/v1/agents/{agent_id}/tasks/{task_id}/pushNotificationConfigs")
+async def create_push_configuration(
+    request: Request,
+    actor: Actor,
+    agent_id: str,
+    task_id: str,
+    version: _VERSION = None,
+    extensions: _EXTENSIONS = None,
+) -> Response:
+    try:
+        _validate_wire(
+            version=version,
+            extensions=extensions,
+            content_type=request.headers.get("content-type"),
+            body_required=True,
+        )
+        requested = a2a.TaskPushNotificationConfig()
+        Parse(await request.body(), requested)
+        created = await _service(request).create_push_configuration(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            requested=requested,
+        )
+        return _json(created)
+    except (A2AError, ParseError) as error:
+        return _error(error)
+
+
+@router.get("/a2a/v1/agents/{agent_id}/tasks/{task_id}/pushNotificationConfigs/{config_id}")
+async def get_push_configuration(
+    request: Request,
+    actor: Actor,
+    agent_id: str,
+    task_id: str,
+    config_id: str,
+    version: _VERSION = None,
+    extensions: _EXTENSIONS = None,
+) -> Response:
+    try:
+        _validate_wire(version=version, extensions=extensions, content_type=None, body_required=False)
+        selected = await _service(request).get_push_configuration(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            config_id=config_id,
+        )
+        return _json(selected)
+    except A2AError as error:
+        return _error(error)
+
+
+@router.get("/a2a/v1/agents/{agent_id}/tasks/{task_id}/pushNotificationConfigs")
+async def list_push_configurations(
+    request: Request,
+    actor: Actor,
+    agent_id: str,
+    task_id: str,
+    version: _VERSION = None,
+    extensions: _EXTENSIONS = None,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 50,
+    page_token: Annotated[str | None, Query(alias="pageToken", max_length=2048)] = None,
+) -> Response:
+    try:
+        _validate_wire(version=version, extensions=extensions, content_type=None, body_required=False)
+        configs, next_page_token = await _service(request).list_push_configurations(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            page_size=page_size,
+            page_token=page_token,
+        )
+        return _json(
+            a2a.ListTaskPushNotificationConfigsResponse(
+                configs=configs,
+                next_page_token=next_page_token or "",
+            )
+        )
+    except A2AError as error:
+        return _error(error)
+
+
+@router.delete("/a2a/v1/agents/{agent_id}/tasks/{task_id}/pushNotificationConfigs/{config_id}")
+async def delete_push_configuration(
+    request: Request,
+    actor: Actor,
+    agent_id: str,
+    task_id: str,
+    config_id: str,
+    version: _VERSION = None,
+    extensions: _EXTENSIONS = None,
+) -> Response:
+    try:
+        _validate_wire(version=version, extensions=extensions, content_type=None, body_required=False)
+        await _service(request).delete_push_configuration(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            config_id=config_id,
+        )
+        return JSONResponse({}, media_type="application/a2a+json")
+    except A2AError as error:
+        return _error(error)
+
+
 async def _send_request(request: Request, *, version: str | None, extensions: str | None) -> a2a.SendMessageRequest:
     _validate_wire(
         version=version,
@@ -239,6 +345,16 @@ def _json(message: Any, *, cache_control: str | None = None) -> JSONResponse:
         media_type="application/a2a+json",
         headers=headers,
     )
+
+
+def _public_card(message: a2a.AgentCard, *, if_none_match: str | None) -> Response:
+    payload = MessageToDict(message, preserving_proto_field_name=False)
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    etag = f'"{hashlib.sha256(encoded).hexdigest()}"'
+    headers = {"Cache-Control": "public, max-age=300", "ETag": etag}
+    if if_none_match == etag:
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(payload, media_type="application/a2a+json", headers=headers)
 
 
 def _stream(events: AsyncIterator[a2a.StreamResponse]) -> StreamingResponse:

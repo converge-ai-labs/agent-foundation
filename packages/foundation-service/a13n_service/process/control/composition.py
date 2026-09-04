@@ -30,6 +30,7 @@ from a13n_service.process.components import ServiceComponents
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import ControlRuntime, SharedRuntime, WorkerRuntime
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
+from a13n_service.secrets import InternalSecretService
 from a13n_service.settings import ServiceSettings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
@@ -165,6 +166,8 @@ async def build_control_runtime(
             A2AService(
                 shared.storage.sessions,
                 gateway_commands,
+                InternalSecretService(shared.storage.sessions, shared.secret_protector),
+                EndpointPolicy(require_https=True),
                 poll_interval_seconds=settings.a2a_poll_interval_seconds,
                 maximum_wait_seconds=settings.a2a_maximum_wait_seconds,
             )

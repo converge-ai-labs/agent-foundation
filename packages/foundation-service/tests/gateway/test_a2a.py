@@ -3,9 +3,17 @@ from __future__ import annotations
 import pytest
 from a2a.types import a2a_pb2 as a2a
 from a13n_service.agents.models import AgentRevisionRecord
+from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
-from a13n_service.gateway.models import A2AContextBindingRecord, A2AMessageBindingRecord, A2ATaskBindingRecord
+from a13n_service.gateway.models import (
+    A2AContextBindingRecord,
+    A2AMessageBindingRecord,
+    A2APushConfigurationRecord,
+    A2ATaskBindingRecord,
+)
 from a13n_service.interactions.models import RunRecord
+from a13n_service.secrets import InternalSecretService, SecretProtector
+from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import select
@@ -44,10 +52,17 @@ async def _service(
 ) -> tuple[A2AService, LocalObjectStore]:
     objects = await LocalObjectStore.create(tmp_path / "a2a-objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    secrets = InternalSecretService(
+        sessions,
+        SecretProtector(key=b"a" * 32, encryption_key_id="test-key"),
+        clock=lambda: NOW,
+    )
     return (
         A2AService(
             sessions,
             commands,
+            secrets,
+            EndpointPolicy(require_https=True),
             poll_interval_seconds=0.001,
             maximum_wait_seconds=0.02,
             clock=lambda: NOW,
@@ -155,3 +170,75 @@ async def test_public_card_projects_current_agent_protocol(
     assert card.supported_interfaces[0].protocol_version == "1.0"
     assert card.capabilities.streaming
     assert card.capabilities.push_notifications
+
+
+async def test_push_configuration_secrets_are_write_only_and_delete_is_fenced(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
+
+    created = await service.create_push_configuration(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        requested=a2a.TaskPushNotificationConfig(
+            task_id=task.id,
+            url="https://8.8.8.8/a2a-events",
+            token="opaque-client-token",
+            authentication=a2a.AuthenticationInfo(scheme="Bearer", credentials="secret-credential"),
+        ),
+    )
+    selected = await service.get_push_configuration(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        config_id=created.id,
+    )
+    page, next_page_token = await service.list_push_configurations(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        page_size=1,
+        page_token=None,
+    )
+
+    assert selected == created
+    assert created.url == "https://8.8.8.8/a2a-events"
+    assert created.authentication.scheme == "Bearer"
+    assert not created.token
+    assert not created.authentication.credentials
+    assert page == (created,)
+    assert next_page_token is None
+    async with short_session(lifecycle_interaction_sessions) as database:
+        stored = await database.get(A2APushConfigurationRecord, created.id)
+        secrets = tuple((await database.scalars(select(SecretRecord))).all())
+    assert stored is not None
+    assert stored.token_secret_version == 1
+    assert stored.authentication_secret_version == 1
+    assert len(secrets) == 2
+    assert all(secret.ciphertext for secret in secrets)
+
+    await service.delete_push_configuration(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        config_id=created.id,
+    )
+
+    with pytest.raises(A2AError):
+        await service.get_push_configuration(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            task_id=task.id,
+            config_id=created.id,
+        )
+    async with short_session(lifecycle_interaction_sessions) as database:
+        stored = await database.get(A2APushConfigurationRecord, created.id)
+        secrets = tuple((await database.scalars(select(SecretRecord))).all())
+    assert stored is not None
+    assert stored.state == "disabled"
+    assert stored.delivery_generation == 2
+    assert all(secret.deleted_at is not None and secret.ciphertext is None for secret in secrets)

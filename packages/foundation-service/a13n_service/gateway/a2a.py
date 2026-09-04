@@ -12,23 +12,40 @@ import anyio
 from a2a.types import a2a_pb2 as a2a
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Value
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentConfig, canonical_digest
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.collection_cursors import (
+    CollectionCursorMismatchError,
+    InvalidCollectionCursorError,
+    decode_collection_cursor,
+    encode_collection_cursor,
+)
+from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions import AgentInput, InterruptRequest, RunAcceptanceReceipt, RunStatus
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.public_errors import PublicError
-from a13n_service.storage import short_session
+from a13n_service.secrets import InternalSecretService
+from a13n_service.secrets.domain import SecretOperation, SecretOwnerType, SecretUseContext
+from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest, WaitingContinueRunRequest
-from .models import A2AContextBindingRecord, A2AMessageBindingRecord, A2ATaskBindingRecord
+from .models import (
+    A2AContextBindingRecord,
+    A2AMessageBindingRecord,
+    A2APushConfigurationRecord,
+    A2ATaskBindingRecord,
+)
 
 _TERMINAL = frozenset({RunStatus.completed.value, RunStatus.failed.value, RunStatus.cancelled.value})
+_MAX_PUSH_CONFIGURATIONS = 10
+_PUSH_TOKEN_KEY = "token"
+_PUSH_CREDENTIALS_KEY = "authentication_credentials"
 
 
 class A2AError(PublicError):
@@ -42,6 +59,8 @@ class A2AService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         commands: NativeInteractionCommands,
+        secrets: InternalSecretService,
+        endpoint_policy: EndpointPolicy,
         *,
         poll_interval_seconds: float,
         maximum_wait_seconds: float,
@@ -49,6 +68,8 @@ class A2AService:
     ) -> None:
         self._sessions = sessions
         self._commands = commands
+        self._secrets = secrets
+        self._endpoint_policy = endpoint_policy
         self._poll_interval_seconds = poll_interval_seconds
         self._maximum_wait_seconds = maximum_wait_seconds
         self._clock = clock
@@ -273,6 +294,305 @@ class A2AService:
             request=InterruptRequest(expected_run_version=run.version, expected_thread_version=thread.version),
         )
         return await self.get_task(actor=actor, agent_id=agent_id, task_id=task_id)
+
+    async def create_push_configuration(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        task_id: str,
+        requested: a2a.TaskPushNotificationConfig,
+    ) -> a2a.TaskPushNotificationConfig:
+        """Create one future-only A2A push destination with write-only secrets."""
+
+        _validate_push_configuration(requested, task_id=task_id)
+        await self._authorize_task_action(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            action=WorkspaceAction.a2a_push_configuration_manage,
+        )
+        try:
+            endpoint_url = await self._endpoint_policy.validate(requested.url)
+        except EndpointPolicyError as error:
+            raise A2AError("invalid_push_destination", str(error), status_code=400) from error
+        config_id = new_object_id("a2apush")
+        now = assume_utc(self._clock())
+        principal_type = actor.principal.principal_type.value
+        principal_id = actor.principal.principal_id
+        token = requested.token or None
+        authentication_scheme = requested.authentication.scheme or None
+        credentials = requested.authentication.credentials or None
+        async with transaction(self._sessions) as database:
+            task = await database.scalar(
+                select(A2ATaskBindingRecord)
+                .where(
+                    A2ATaskBindingRecord.id == task_id,
+                    A2ATaskBindingRecord.workspace_id == actor.boundary_workspace_id,
+                    A2ATaskBindingRecord.agent_id == agent_id,
+                )
+                .with_for_update()
+            )
+            if task is None:
+                raise _not_found()
+            await self._authorize_agent_in_transaction(
+                database,
+                actor=actor,
+                agent_id=agent_id,
+                action=WorkspaceAction.a2a_push_configuration_manage,
+            )
+            rows = (
+                await database.scalars(
+                    select(A2APushConfigurationRecord.id)
+                    .where(
+                        A2APushConfigurationRecord.organization_id == task.organization_id,
+                        A2APushConfigurationRecord.task_id == task.id,
+                        A2APushConfigurationRecord.state == "active",
+                    )
+                    .limit(_MAX_PUSH_CONFIGURATIONS)
+                )
+            ).all()
+            if len(rows) >= _MAX_PUSH_CONFIGURATIONS:
+                raise A2AError(
+                    "push_configuration_limit",
+                    "The Task has reached its push configuration limit.",
+                    status_code=409,
+                )
+            token_version = None
+            authentication_version = None
+            if token is not None:
+                token_version = (
+                    await self._secrets.create_in_transaction(
+                        database,
+                        _push_secret_context(
+                            task=task,
+                            config_id=config_id,
+                            key=_PUSH_TOKEN_KEY,
+                            operation=SecretOperation.management,
+                        ),
+                        token,
+                    )
+                ).version
+            if credentials is not None:
+                authentication_version = (
+                    await self._secrets.create_in_transaction(
+                        database,
+                        _push_secret_context(
+                            task=task,
+                            config_id=config_id,
+                            key=_PUSH_CREDENTIALS_KEY,
+                            operation=SecretOperation.management,
+                        ),
+                        credentials,
+                    )
+                ).version
+            record = A2APushConfigurationRecord(
+                id=config_id,
+                organization_id=task.organization_id,
+                workspace_id=task.workspace_id,
+                task_id=task.id,
+                creator_principal_type=principal_type,
+                creator_principal_id=principal_id,
+                endpoint_url=endpoint_url,
+                authentication_scheme=authentication_scheme,
+                token_secret_version=token_version,
+                authentication_secret_version=authentication_version,
+                state="active",
+                protocol_version="1.0",
+                delivery_generation=1,
+                created_at=now,
+                updated_at=now,
+                deleted_at=None,
+            )
+            database.add(record)
+            await database.flush()
+        return _project_push_configuration(record)
+
+    async def get_push_configuration(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        task_id: str,
+        config_id: str,
+    ) -> a2a.TaskPushNotificationConfig:
+        await self._authorize_task_action(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            action=WorkspaceAction.a2a_push_configuration_read,
+        )
+        async with short_session(self._sessions) as database:
+            record = await database.scalar(
+                select(A2APushConfigurationRecord).where(
+                    A2APushConfigurationRecord.id == config_id,
+                    A2APushConfigurationRecord.workspace_id == actor.boundary_workspace_id,
+                    A2APushConfigurationRecord.task_id == task_id,
+                    A2APushConfigurationRecord.state == "active",
+                )
+            )
+        if record is None:
+            raise _not_found()
+        return _project_push_configuration(record)
+
+    async def list_push_configurations(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        task_id: str,
+        page_size: int,
+        page_token: str | None,
+    ) -> tuple[tuple[a2a.TaskPushNotificationConfig, ...], str | None]:
+        task, _run = await self._authorize_task_action(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            action=WorkspaceAction.a2a_push_configuration_read,
+        )
+        scope = _push_cursor_scope(actor=actor, agent_id=agent_id, task_id=task_id)
+        after: tuple[datetime, str] | None = None
+        if page_token:
+            try:
+                payload = decode_collection_cursor(page_token, scope=scope, kind="a2a_push")
+                created_at = payload.get("created_at")
+                config_id = payload.get("config_id")
+                if not isinstance(created_at, str) or not isinstance(config_id, str):
+                    raise InvalidCollectionCursorError
+                after = (datetime.fromisoformat(created_at), config_id)
+            except (CollectionCursorMismatchError, InvalidCollectionCursorError, ValueError) as error:
+                raise A2AError("invalid_page_token", "The page token is invalid.", status_code=400) from error
+        statement = select(A2APushConfigurationRecord).where(
+            A2APushConfigurationRecord.organization_id == task.organization_id,
+            A2APushConfigurationRecord.workspace_id == task.workspace_id,
+            A2APushConfigurationRecord.task_id == task.id,
+            A2APushConfigurationRecord.state == "active",
+        )
+        if after is not None:
+            created_at, config_id = after
+            statement = statement.where(
+                or_(
+                    A2APushConfigurationRecord.created_at < created_at,
+                    and_(
+                        A2APushConfigurationRecord.created_at == created_at,
+                        A2APushConfigurationRecord.id < config_id,
+                    ),
+                )
+            )
+        async with short_session(self._sessions) as database:
+            page = tuple(
+                (
+                    await database.scalars(
+                        statement.order_by(
+                            A2APushConfigurationRecord.created_at.desc(),
+                            A2APushConfigurationRecord.id.desc(),
+                        ).limit(page_size + 1)
+                    )
+                ).all()
+            )
+        records = page[:page_size]
+        next_page_token = None
+        if len(page) > page_size:
+            last = records[-1]
+            next_page_token = encode_collection_cursor(
+                {"created_at": last.created_at.isoformat(), "config_id": last.id},
+                scope=scope,
+                kind="a2a_push",
+            )
+        return tuple(_project_push_configuration(record) for record in records), next_page_token
+
+    async def delete_push_configuration(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        task_id: str,
+        config_id: str,
+    ) -> None:
+        await self._authorize_task_action(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=task_id,
+            action=WorkspaceAction.a2a_push_configuration_manage,
+        )
+        now = assume_utc(self._clock())
+        async with transaction(self._sessions) as database:
+            record = await database.scalar(
+                select(A2APushConfigurationRecord)
+                .where(
+                    A2APushConfigurationRecord.id == config_id,
+                    A2APushConfigurationRecord.workspace_id == actor.boundary_workspace_id,
+                    A2APushConfigurationRecord.task_id == task_id,
+                    A2APushConfigurationRecord.state == "active",
+                )
+                .with_for_update()
+            )
+            if record is None:
+                raise _not_found()
+            await self._authorize_agent_in_transaction(
+                database,
+                actor=actor,
+                agent_id=agent_id,
+                action=WorkspaceAction.a2a_push_configuration_manage,
+            )
+            for key, version in (
+                (_PUSH_TOKEN_KEY, record.token_secret_version),
+                (_PUSH_CREDENTIALS_KEY, record.authentication_secret_version),
+            ):
+                if version is not None:
+                    await self._secrets.tombstone_in_transaction(
+                        database,
+                        SecretUseContext(
+                            organization_id=record.organization_id,
+                            workspace_id=record.workspace_id,
+                            owner_type=SecretOwnerType.a2a_push_configuration,
+                            owner_id=record.id,
+                            key=key,
+                            operation=SecretOperation.management,
+                            credential_generation=version,
+                        ),
+                    )
+            record.state = "disabled"
+            record.delivery_generation += 1
+            record.updated_at = now
+            record.deleted_at = now
+
+    async def _authorize_task_action(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        task_id: str,
+        action: WorkspaceAction,
+    ) -> tuple[A2ATaskBindingRecord, RunRecord]:
+        task, run = await self._load_task(actor=actor, agent_id=agent_id, task_id=task_id)
+        async with short_session(self._sessions) as database:
+            await self._authorize_agent_in_transaction(
+                database,
+                actor=actor,
+                agent_id=agent_id,
+                action=action,
+            )
+        return task, run
+
+    @staticmethod
+    async def _authorize_agent_in_transaction(
+        database: AsyncSession,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        action: WorkspaceAction,
+    ) -> None:
+        try:
+            await authorize_agent(
+                database,
+                actor=actor,
+                workspace_id=actor.boundary_workspace_id,
+                agent_id=agent_id,
+                action=action,
+            )
+        except AuthorizationError as error:
+            raise _not_found() from error
 
     async def stream_task(
         self,
@@ -857,6 +1177,73 @@ def _task_artifacts(task: A2ATaskBindingRecord, run: RunRecord) -> list[a2a.Arti
             parts=parts,
         )
     ]
+
+
+def _validate_push_configuration(requested: a2a.TaskPushNotificationConfig, *, task_id: str) -> None:
+    if requested.tenant:
+        raise A2AError("tenant_not_supported", "A2A tenant selection is not supported.", status_code=400)
+    if requested.id:
+        raise A2AError("invalid_push_configuration", "The server assigns the push configuration ID.", status_code=400)
+    if requested.task_id and requested.task_id != task_id:
+        raise A2AError(
+            "invalid_push_configuration", "The push configuration Task does not match the route.", status_code=400
+        )
+    if not requested.url or len(requested.url) > 2048:
+        raise A2AError("invalid_push_configuration", "The push configuration URL is invalid.", status_code=400)
+    if len(requested.token.encode("utf-8")) > 65_536:
+        raise A2AError("invalid_push_configuration", "The push configuration token is too large.", status_code=400)
+    authentication = requested.authentication
+    if len(authentication.scheme) > 128 or len(authentication.credentials.encode("utf-8")) > 65_536:
+        raise A2AError(
+            "invalid_push_configuration",
+            "The push authentication configuration is invalid.",
+            status_code=400,
+        )
+    if authentication.credentials and not authentication.scheme:
+        raise A2AError(
+            "invalid_push_configuration",
+            "Push authentication credentials require a scheme.",
+            status_code=400,
+        )
+
+
+def _push_secret_context(
+    *,
+    task: A2ATaskBindingRecord,
+    config_id: str,
+    key: str,
+    operation: SecretOperation,
+) -> SecretUseContext:
+    return SecretUseContext(
+        organization_id=task.organization_id,
+        workspace_id=task.workspace_id,
+        owner_type=SecretOwnerType.a2a_push_configuration,
+        owner_id=config_id,
+        key=key,
+        operation=operation,
+        credential_generation=1,
+    )
+
+
+def _project_push_configuration(record: A2APushConfigurationRecord) -> a2a.TaskPushNotificationConfig:
+    projected = a2a.TaskPushNotificationConfig(
+        id=record.id,
+        task_id=record.task_id,
+        url=record.endpoint_url,
+    )
+    if record.authentication_scheme is not None:
+        projected.authentication.scheme = record.authentication_scheme
+    return projected
+
+
+def _push_cursor_scope(*, actor: AuthenticatedActor, agent_id: str, task_id: str) -> dict[str, object]:
+    return {
+        "workspace_id": actor.boundary_workspace_id,
+        "principal_type": actor.principal.principal_type.value,
+        "principal_id": actor.principal.principal_id,
+        "agent_id": agent_id,
+        "task_id": task_id,
+    }
 
 
 def _not_found() -> A2AError:

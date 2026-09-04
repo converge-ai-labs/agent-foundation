@@ -302,9 +302,65 @@ class A2AMessageBindingRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class A2APushConfigurationRecord(Base):
+    """One protected future-delivery configuration owned by an A2A Task."""
+
+    __tablename__ = "a2a_push_configurations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("task_id", "organization_id"),
+            ("a2a_task_bindings.id", "a2a_task_bindings.organization_id"),
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("creator_principal_type IN ('user', 'service_account')", name="creator_type_valid"),
+        CheckConstraint("state IN ('active', 'disabled')", name="state_valid"),
+        CheckConstraint("delivery_generation >= 1", name="delivery_generation_positive"),
+        CheckConstraint("token_secret_version IS NULL OR token_secret_version >= 1", name="token_version_positive"),
+        CheckConstraint(
+            "authentication_secret_version IS NULL OR authentication_secret_version >= 1",
+            name="authentication_version_positive",
+        ),
+        CheckConstraint(
+            "(authentication_scheme IS NULL AND authentication_secret_version IS NULL) OR "
+            "(authentication_scheme IS NOT NULL)",
+            name="authentication_shape_valid",
+        ),
+        CheckConstraint(
+            "(state = 'active' AND deleted_at IS NULL) OR (state = 'disabled' AND deleted_at IS NOT NULL)",
+            name="lifecycle_valid",
+        ),
+        UniqueConstraint("organization_id", "id", name="uq_a2a_push_configurations_tenant_id"),
+        Index(
+            "ix_a2a_push_configurations_task",
+            "organization_id",
+            "task_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    task_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    creator_principal_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    creator_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    endpoint_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    authentication_scheme: Mapped[str | None] = mapped_column(String(128))
+    token_secret_version: Mapped[int | None] = mapped_column(BigInteger)
+    authentication_secret_version: Mapped[int | None] = mapped_column(BigInteger)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    protocol_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    delivery_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 __all__ = [
     "A2AContextBindingRecord",
     "A2AMessageBindingRecord",
+    "A2APushConfigurationRecord",
     "A2ATaskBindingRecord",
     "AguiRunBindingRecord",
     "AguiThreadBindingRecord",

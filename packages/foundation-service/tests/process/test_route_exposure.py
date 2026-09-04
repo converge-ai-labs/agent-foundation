@@ -88,6 +88,8 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}" in document["paths"]
     assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}:cancel" in document["paths"]
     assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}:subscribe" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}/pushNotificationConfigs" in document["paths"]
+    assert "/a2a/v1/agents/{agent_id}/tasks/{task_id}/pushNotificationConfigs/{config_id}" in document["paths"]
     assert "/api/v1/runs/{run_id}/interrupt" in document["paths"]
     assert "/api/v1/runs/{run_id}/feedback" in document["paths"]
     assert "/api/v1/runs/{run_id}/fork" in document["paths"]
