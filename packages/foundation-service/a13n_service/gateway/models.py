@@ -138,4 +138,27 @@ class AguiRunBindingRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-__all__ = ["AguiRunBindingRecord", "AguiThreadBindingRecord"]
+class GatewayCommandReceiptRecord(Base):
+    """Immutable response snapshot for non-Run idempotent Gateway commands."""
+
+    __tablename__ = "gateway_command_receipts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("workspace_id", "organization_id"),
+            ("workspaces.id", "workspaces.organization_id"),
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("length(request_digest_sha256) = 64", name="request_digest_sha256"),
+        Index("ix_gateway_command_receipts_scope", "organization_id", "workspace_id", "created_at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    response_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+__all__ = ["AguiRunBindingRecord", "AguiThreadBindingRecord", "GatewayCommandReceiptRecord"]

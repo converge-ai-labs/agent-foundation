@@ -19,9 +19,16 @@ from a13n_service.ids import new_object_id
 from a13n_service.interactions import (
     AgentInput,
     InterruptRequest,
+    QueuedSubmission,
+    QueuedSubmissionCollection,
+    QueuedSubmissionMutationReceipt,
+    QueuedSubmissionState,
+    ReorderQueuedSubmissionsRequest,
     RunAcceptanceReceipt,
     SteerReceipt,
     SteerStatus,
+    ThreadQueueMutationReceipt,
+    UpdateQueuedSubmissionRequest,
     WaitingRunFeedbackRequest,
 )
 from a13n_service.process.runtime import ServiceRuntime
@@ -59,6 +66,7 @@ from .queries import (
     ThreadCollection,
     ThreadResource,
 )
+from .queue import DeleteQueuedSubmissionRequest, NativeQueuedSubmissionService
 
 NOTIFICATION_SUBPROTOCOL = "foundation.notifications.v1"
 
@@ -102,6 +110,17 @@ def _native_streams(request: Request) -> NativeRunStreamService:
             status_code=503,
         )
     return control.gateway.native_streams
+
+
+def _queued_submissions(request: Request) -> NativeQueuedSubmissionService:
+    control = get_control_runtime(request)
+    if control is None:
+        raise PublicError(
+            "gateway_unavailable",
+            "The Foundation Service Gateway is unavailable in this process role.",
+            status_code=503,
+        )
+    return control.gateway.queued_submissions
 
 
 def _queries(request: Request) -> NativeInteractionQueries:
@@ -278,6 +297,97 @@ async def feedback_run(
         run_id=run_id,
         idempotency_key=idempotency_key,
         request=body,
+    )
+
+
+@router.get(
+    "/api/v1/threads/{thread_id}/queued-submissions",
+    response_model=QueuedSubmissionCollection,
+)
+async def list_queued_submissions(
+    request: Request,
+    actor: Actor,
+    thread_id: str,
+    state: Annotated[QueuedSubmissionState, Query()] = QueuedSubmissionState.queued,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> QueuedSubmissionCollection:
+    return await _queued_submissions(request).list(
+        actor=actor,
+        thread_id=thread_id,
+        state=state,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/api/v1/queued-submissions/{queued_submission_id}",
+    response_model=QueuedSubmission,
+)
+async def get_queued_submission(
+    request: Request,
+    actor: Actor,
+    queued_submission_id: str,
+) -> QueuedSubmission:
+    return await _queued_submissions(request).get(
+        actor=actor,
+        queued_submission_id=queued_submission_id,
+    )
+
+
+@router.patch(
+    "/api/v1/queued-submissions/{queued_submission_id}",
+    response_model=QueuedSubmissionMutationReceipt,
+)
+async def update_queued_submission(
+    request: Request,
+    actor: Actor,
+    queued_submission_id: str,
+    body: UpdateQueuedSubmissionRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> QueuedSubmissionMutationReceipt:
+    return await _queued_submissions(request).update(
+        actor=actor,
+        queued_submission_id=queued_submission_id,
+        request=body,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.delete(
+    "/api/v1/queued-submissions/{queued_submission_id}",
+    response_model=ThreadQueueMutationReceipt,
+)
+async def delete_queued_submission(
+    request: Request,
+    actor: Actor,
+    queued_submission_id: str,
+    body: DeleteQueuedSubmissionRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> ThreadQueueMutationReceipt:
+    return await _queued_submissions(request).delete(
+        actor=actor,
+        queued_submission_id=queued_submission_id,
+        request=body,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(
+    "/api/v1/threads/{thread_id}/queued-submissions/reorder",
+    response_model=ThreadQueueMutationReceipt,
+)
+async def reorder_queued_submissions(
+    request: Request,
+    actor: Actor,
+    thread_id: str,
+    body: ReorderQueuedSubmissionsRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> ThreadQueueMutationReceipt:
+    return await _queued_submissions(request).reorder(
+        actor=actor,
+        thread_id=thread_id,
+        request=body,
+        idempotency_key=idempotency_key,
     )
 
 

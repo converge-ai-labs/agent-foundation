@@ -9,6 +9,7 @@ from .hosted_agui import HostedAguiService
 from .native_streaming import NativeRunStreamService
 from .notifications import NotificationService
 from .queries import NativeInteractionQueries
+from .queue import NativeQueuedSubmissionService
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,7 @@ class GatewayRuntime:
     native_streams: NativeRunStreamService
     notifications: NotificationService
     queries: NativeInteractionQueries
+    queued_submissions: NativeQueuedSubmissionService
 
 
 __all__ = ["GatewayRuntime"]

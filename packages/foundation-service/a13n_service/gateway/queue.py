@@ -1,0 +1,607 @@
+"""Authorized Native API for editable queued Run submissions."""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from a13n_service.agents.domain import canonical_digest
+from a13n_service.durable_operations.idempotency import (
+    EvidenceScope,
+    IdempotencyConflict,
+    IdempotencyIdentity,
+    InvalidIdempotencyKey,
+    digest_visible_ascii_key,
+    is_evidence_unique_race,
+    load_evidence,
+    new_evidence,
+)
+from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.ids import new_object_id
+from a13n_service.interactions import (
+    QueuedSubmission,
+    QueuedSubmissionCollection,
+    QueuedSubmissionConflict,
+    QueuedSubmissionMutationReceipt,
+    QueuedSubmissionState,
+    QueuedSubmissionStore,
+    ReorderQueuedSubmissionsRequest,
+    ThreadQueueMutationReceipt,
+    ThreadRunSubmissionIntent,
+    UpdateQueuedSubmissionRequest,
+)
+from a13n_service.interactions.control_models import QueuedSubmissionRecord
+from a13n_service.interactions.domain import StrictModel
+from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
+from a13n_service.storage import short_session
+from a13n_service.temporal import Clock, utc_now
+
+from .commands import GatewayCommandError
+from .models import GatewayCommandReceiptRecord
+
+
+class DeleteQueuedSubmissionRequest(StrictModel):
+    expected_version: int = Field(ge=1)
+
+
+@dataclass(frozen=True, slots=True)
+class _QueueScope:
+    organization_id: str
+    workspace_id: str
+    thread_id: str
+    agent_id: str
+
+
+class NativeQueuedSubmissionService:
+    """Apply queue IAM and durable idempotency around the core queue store."""
+
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        store: QueuedSubmissionStore,
+        *,
+        clock: Clock = utc_now,
+    ) -> None:
+        self._sessions = sessions
+        self._store = store
+        self._clock = clock
+
+    async def list(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        state: QueuedSubmissionState,
+        limit: int,
+    ) -> QueuedSubmissionCollection:
+        scope = await self._thread_scope(
+            actor=actor, thread_id=thread_id, action=WorkspaceAction.queued_submission_read
+        )
+        try:
+            return await self._store.list(
+                tenant_id=scope.organization_id,
+                thread_id=thread_id,
+                state=state,
+                limit=limit,
+            )
+        except (QueuedSubmissionConflict, ValueError) as error:
+            raise _queue_error(error) from error
+
+    async def get(self, *, actor: AuthenticatedActor, queued_submission_id: str) -> QueuedSubmission:
+        scope = await self._submission_scope(
+            actor=actor,
+            queued_submission_id=queued_submission_id,
+            action=WorkspaceAction.queued_submission_read,
+        )
+        try:
+            return await self._store.get(
+                tenant_id=scope.organization_id,
+                queued_submission_id=queued_submission_id,
+            )
+        except QueuedSubmissionConflict as error:
+            raise _queue_error(error) from error
+
+    async def enqueue(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        expected_thread_version: int,
+        submission: ThreadRunSubmissionIntent,
+        idempotency_key: str,
+    ) -> QueuedSubmissionMutationReceipt:
+        request = _EnqueueRequest(expected_thread_version=expected_thread_version, submission=submission)
+        if replayed := await self._pre_replay(
+            actor=actor,
+            operation="queue.enqueue",
+            scope_id=thread_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=QueuedSubmissionMutationReceipt,
+        ):
+            return replayed
+        target_agent_id = await self._target_agent_id(actor=actor, thread_id=thread_id, submission=submission)
+        scope = await self._thread_scope(
+            actor=actor,
+            thread_id=thread_id,
+            action=WorkspaceAction.queued_submission_create,
+            agent_id=target_agent_id,
+        )
+        await self._authorize(actor=actor, scope=scope, agent_id=target_agent_id, action=WorkspaceAction.agent_invoke)
+        return await self._mutate(
+            actor=actor,
+            scope=scope,
+            operation="queue.enqueue",
+            scope_id=thread_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=QueuedSubmissionMutationReceipt,
+            final_authorizations=(
+                (target_agent_id, WorkspaceAction.queued_submission_create),
+                (target_agent_id, WorkspaceAction.agent_invoke),
+            ),
+            invoke=lambda replay, commit: self._store.enqueue(
+                tenant_id=scope.organization_id,
+                thread_id=thread_id,
+                expected_thread_version=expected_thread_version,
+                authority_principal=actor.principal,
+                submission=submission,
+                replay=replay,
+                transaction_hook=commit,
+            ),
+        )
+
+    async def update(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        queued_submission_id: str,
+        request: UpdateQueuedSubmissionRequest,
+        idempotency_key: str,
+    ) -> QueuedSubmissionMutationReceipt:
+        if replayed := await self._pre_replay(
+            actor=actor,
+            operation="queue.update",
+            scope_id=queued_submission_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=QueuedSubmissionMutationReceipt,
+        ):
+            return replayed
+        scope = await self._submission_scope(
+            actor=actor,
+            queued_submission_id=queued_submission_id,
+            action=WorkspaceAction.queued_submission_update,
+        )
+        target_agent_id = request.submission.agent_id or scope.agent_id
+        await self._authorize(actor=actor, scope=scope, agent_id=target_agent_id, action=WorkspaceAction.agent_invoke)
+        return await self._mutate(
+            actor=actor,
+            scope=scope,
+            operation="queue.update",
+            scope_id=queued_submission_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=QueuedSubmissionMutationReceipt,
+            final_authorizations=(
+                (scope.agent_id, WorkspaceAction.queued_submission_update),
+                (target_agent_id, WorkspaceAction.agent_invoke),
+            ),
+            invoke=lambda replay, commit: self._store.update(
+                tenant_id=scope.organization_id,
+                queued_submission_id=queued_submission_id,
+                expected_version=request.expected_version,
+                actor_principal=actor.principal,
+                submission=request.submission,
+                replay=replay,
+                transaction_hook=commit,
+            ),
+        )
+
+    async def delete(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        queued_submission_id: str,
+        request: DeleteQueuedSubmissionRequest,
+        idempotency_key: str,
+    ) -> ThreadQueueMutationReceipt:
+        if replayed := await self._pre_replay(
+            actor=actor,
+            operation="queue.delete",
+            scope_id=queued_submission_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=ThreadQueueMutationReceipt,
+        ):
+            return replayed
+        scope = await self._submission_scope(
+            actor=actor,
+            queued_submission_id=queued_submission_id,
+            action=WorkspaceAction.queued_submission_delete,
+        )
+        return await self._mutate(
+            actor=actor,
+            scope=scope,
+            operation="queue.delete",
+            scope_id=queued_submission_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=ThreadQueueMutationReceipt,
+            final_authorizations=((scope.agent_id, WorkspaceAction.queued_submission_delete),),
+            invoke=lambda replay, commit: self._store.delete(
+                tenant_id=scope.organization_id,
+                queued_submission_id=queued_submission_id,
+                expected_version=request.expected_version,
+                replay=replay,
+                transaction_hook=commit,
+            ),
+        )
+
+    async def reorder(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        request: ReorderQueuedSubmissionsRequest,
+        idempotency_key: str,
+    ) -> ThreadQueueMutationReceipt:
+        if replayed := await self._pre_replay(
+            actor=actor,
+            operation="queue.reorder",
+            scope_id=thread_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=ThreadQueueMutationReceipt,
+        ):
+            return replayed
+        scope = await self._thread_scope(
+            actor=actor,
+            thread_id=thread_id,
+            action=WorkspaceAction.queued_submission_reorder,
+        )
+        return await self._mutate(
+            actor=actor,
+            scope=scope,
+            operation="queue.reorder",
+            scope_id=thread_id,
+            idempotency_key=idempotency_key,
+            request=request,
+            response_type=ThreadQueueMutationReceipt,
+            final_authorizations=((scope.agent_id, WorkspaceAction.queued_submission_reorder),),
+            invoke=lambda replay, commit: self._store.reorder(
+                tenant_id=scope.organization_id,
+                thread_id=thread_id,
+                expected_queue_version=request.expected_queue_version,
+                queued_submission_ids=request.queued_submission_ids,
+                replay=replay,
+                transaction_hook=commit,
+            ),
+        )
+
+    async def _mutate[ReceiptT: BaseModel](
+        self,
+        *,
+        actor: AuthenticatedActor,
+        scope: _QueueScope,
+        operation: str,
+        scope_id: str,
+        idempotency_key: str,
+        request: StrictModel,
+        response_type: type[ReceiptT],
+        final_authorizations: tuple[tuple[str, WorkspaceAction], ...],
+        invoke: Callable[
+            [
+                Callable[[AsyncSession], Awaitable[ReceiptT | None]],
+                Callable[[AsyncSession, ReceiptT], Awaitable[None]],
+            ],
+            Awaitable[ReceiptT],
+        ],
+    ) -> ReceiptT:
+        identity = _identity(idempotency_key, request)
+        evidence_scope = EvidenceScope(
+            workspace_id=scope.workspace_id,
+            actor_type=actor.principal.principal_type.value,
+            actor_id=actor.principal.principal_id,
+            operation=operation,
+            scope_id=scope_id,
+        )
+
+        async def replay(database: AsyncSession) -> ReceiptT | None:
+            return await _load_receipt(
+                database,
+                evidence_scope=evidence_scope,
+                identity=identity,
+                response_type=response_type,
+                now=self._clock(),
+            )
+
+        async def commit(database: AsyncSession, receipt: ReceiptT) -> None:
+            try:
+                for agent_id, action in final_authorizations:
+                    await authorize_agent(
+                        database,
+                        actor=actor,
+                        workspace_id=scope.workspace_id,
+                        agent_id=agent_id,
+                        action=action,
+                    )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            now = self._clock()
+            receipt_id = new_object_id("gwrcpt")
+            database.add(
+                GatewayCommandReceiptRecord(
+                    id=receipt_id,
+                    organization_id=scope.organization_id,
+                    workspace_id=scope.workspace_id,
+                    response_kind=response_type.__name__,
+                    request_digest_sha256=identity.request_digest,
+                    response_json=receipt.model_dump(mode="json", by_alias=True),
+                    created_at=now,
+                )
+            )
+            database.add(
+                new_evidence(
+                    organization_id=scope.organization_id,
+                    scope=evidence_scope,
+                    identity=identity,
+                    result_kind="gateway_receipt",
+                    result_ref=receipt_id,
+                    now=now,
+                )
+            )
+
+        try:
+            return await invoke(replay, commit)
+        except IdempotencyConflict as error:
+            raise _idempotency_conflict() from error
+        except QueuedSubmissionConflict as error:
+            raise _queue_error(error) from error
+        except IntegrityError as error:
+            if not is_evidence_unique_race(error):
+                raise
+            async with short_session(self._sessions) as database:
+                replayed = await replay(database)
+            if replayed is None:
+                raise GatewayCommandError(
+                    "idempotency_reconciliation_failed",
+                    "The queue command outcome could not be reconciled.",
+                    status_code=503,
+                ) from error
+            return replayed
+
+    async def _pre_replay[ReceiptT: BaseModel](
+        self,
+        *,
+        actor: AuthenticatedActor,
+        operation: str,
+        scope_id: str,
+        idempotency_key: str,
+        request: StrictModel,
+        response_type: type[ReceiptT],
+    ) -> ReceiptT | None:
+        identity = _identity(idempotency_key, request)
+        evidence_scope = EvidenceScope(
+            workspace_id=actor.boundary_workspace_id,
+            actor_type=actor.principal.principal_type.value,
+            actor_id=actor.principal.principal_id,
+            operation=operation,
+            scope_id=scope_id,
+        )
+        try:
+            async with short_session(self._sessions) as database:
+                return await _load_receipt(
+                    database,
+                    evidence_scope=evidence_scope,
+                    identity=identity,
+                    response_type=response_type,
+                    now=self._clock(),
+                )
+        except IdempotencyConflict as error:
+            raise _idempotency_conflict() from error
+
+    async def _thread_scope(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        action: WorkspaceAction,
+        agent_id: str | None = None,
+    ) -> _QueueScope:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(SessionRecord.tenant_id, SessionRecord.workspace_id, RunRecord.agent_id)
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.session_id == SessionRecord.id,
+                        ),
+                    )
+                    .join(
+                        RunRecord,
+                        and_(
+                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.id == ThreadRecord.current_run_id,
+                        ),
+                    )
+                    .where(
+                        ThreadRecord.id == thread_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            scope = _QueueScope(row[0], row[1], thread_id, row[2])
+            await self._authorize(
+                actor=actor,
+                scope=scope,
+                agent_id=agent_id or scope.agent_id,
+                action=action,
+                database=database,
+            )
+            return scope
+
+    async def _submission_scope(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        queued_submission_id: str,
+        action: WorkspaceAction,
+    ) -> _QueueScope:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(
+                        SessionRecord.tenant_id,
+                        SessionRecord.workspace_id,
+                        ThreadRecord.id,
+                        RunRecord.agent_id,
+                    )
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.session_id == SessionRecord.id,
+                        ),
+                    )
+                    .join(
+                        QueuedSubmissionRecord,
+                        and_(
+                            QueuedSubmissionRecord.tenant_id == ThreadRecord.tenant_id,
+                            QueuedSubmissionRecord.thread_id == ThreadRecord.id,
+                        ),
+                    )
+                    .join(
+                        RunRecord,
+                        and_(
+                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.id == ThreadRecord.current_run_id,
+                        ),
+                    )
+                    .where(
+                        QueuedSubmissionRecord.id == queued_submission_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            scope = _QueueScope(row[0], row[1], row[2], row[3])
+            await self._authorize(actor=actor, scope=scope, agent_id=scope.agent_id, action=action, database=database)
+            return scope
+
+    async def _target_agent_id(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        submission: ThreadRunSubmissionIntent,
+    ) -> str:
+        if submission.agent_id is not None:
+            return submission.agent_id
+        scope = await self._thread_scope(
+            actor=actor,
+            thread_id=thread_id,
+            action=WorkspaceAction.queued_submission_create,
+        )
+        return scope.agent_id
+
+    async def _authorize(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        scope: _QueueScope,
+        agent_id: str,
+        action: WorkspaceAction,
+        database: AsyncSession | None = None,
+    ) -> None:
+        try:
+            if database is not None:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=scope.workspace_id,
+                    agent_id=agent_id,
+                    action=action,
+                )
+                return
+            async with short_session(self._sessions) as opened:
+                await authorize_agent(
+                    opened,
+                    actor=actor,
+                    workspace_id=scope.workspace_id,
+                    agent_id=agent_id,
+                    action=action,
+                )
+        except AuthorizationError as error:
+            raise _not_found() from error
+
+
+class _EnqueueRequest(StrictModel):
+    expected_thread_version: int = Field(ge=1)
+    submission: ThreadRunSubmissionIntent
+
+
+async def _load_receipt[ReceiptT: BaseModel](
+    database: AsyncSession,
+    *,
+    evidence_scope: EvidenceScope,
+    identity: IdempotencyIdentity,
+    response_type: type[ReceiptT],
+    now: datetime,
+) -> ReceiptT | None:
+    evidence = await load_evidence(database, scope=evidence_scope, identity=identity, now=now)
+    if evidence is None:
+        return None
+    if evidence.result_kind != "gateway_receipt":
+        raise IdempotencyConflict
+    record = await database.get(GatewayCommandReceiptRecord, evidence.result_ref)
+    if (
+        record is None
+        or record.response_kind != response_type.__name__
+        or record.request_digest_sha256 != identity.request_digest
+    ):
+        raise IdempotencyConflict
+    return response_type.model_validate(record.response_json)
+
+
+def _identity(key: str, request: StrictModel) -> IdempotencyIdentity:
+    try:
+        key_digest = digest_visible_ascii_key(key)
+    except InvalidIdempotencyKey as error:
+        raise GatewayCommandError(
+            "invalid_request",
+            "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
+            status_code=400,
+        ) from error
+    return IdempotencyIdentity(key_digest=key_digest, request_digest=canonical_digest(request))
+
+
+def _not_found() -> GatewayCommandError:
+    return GatewayCommandError("resource_not_found", "The requested resource was not found.", status_code=404)
+
+
+def _idempotency_conflict() -> GatewayCommandError:
+    return GatewayCommandError(
+        "idempotency_conflict",
+        "The Idempotency-Key was already used with different request content.",
+        status_code=409,
+    )
+
+
+def _queue_error(error: Exception) -> GatewayCommandError:
+    status_code = 400 if isinstance(error, ValueError) else 409
+    return GatewayCommandError("queued_submission_conflict", str(error), status_code=status_code)
+
+
+__all__ = ["DeleteQueuedSubmissionRequest", "NativeQueuedSubmissionService"]

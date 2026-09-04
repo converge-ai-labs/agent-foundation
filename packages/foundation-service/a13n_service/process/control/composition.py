@@ -13,7 +13,9 @@ from a13n_service.gateway.hosted_agui import HostedAguiService
 from a13n_service.gateway.native_streaming import NativeRunStreamService
 from a13n_service.gateway.notifications import NotificationService
 from a13n_service.gateway.queries import NativeInteractionQueries
+from a13n_service.gateway.queue import NativeQueuedSubmissionService
 from a13n_service.interactions import (
+    QueuedSubmissionStore,
     RedisThreadControlSignals,
     RunAcceptanceService,
     RunOutcomeService,
@@ -153,6 +155,10 @@ async def build_control_runtime(
         ),
         notifications=NotificationService(shared.storage.sessions),
         queries=NativeInteractionQueries(shared.storage.sessions, gateway_replay),
+        queued_submissions=NativeQueuedSubmissionService(
+            shared.storage.sessions,
+            QueuedSubmissionStore(shared.storage.sessions, hooks.inline_validator),
+        ),
     )
     runtime = ControlRuntime(
         trace_queries=trace_queries,
