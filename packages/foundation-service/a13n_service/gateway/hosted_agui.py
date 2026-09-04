@@ -19,11 +19,13 @@ from ag_ui.core import (
     ToolMessage,
     UserMessage,
 )
+from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import canonical_digest
+from a13n_service.agents.domain import AgentConfig, AgentRunOverride, ClientToolDefinition, canonical_digest
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions import (
@@ -50,6 +52,7 @@ from .commands import (
 from .models import AguiRunBindingRecord, AguiThreadBindingRecord
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
+_JSON_VALUE = TypeAdapter(JsonValue)
 _EVENT = TypeAdapter(Event)
 _RESOLUTIONS = TypeAdapter(tuple[SubmittedPendingResolution, ...])
 _VISIBLE_EVENTS = frozenset(
@@ -109,6 +112,8 @@ class HostedAguiAttachment:
 class _MappedAguiInput:
     input: AgentInput | None
     resolutions: tuple[SubmittedPendingResolution, ...] | None
+    agent_revision_id: str
+    config_override: AgentRunOverride | None
 
 
 class _A13nForwardedProps(BaseModel):
@@ -192,6 +197,9 @@ class HostedAguiService:
         )
         latest: AguiRunBindingRecord | None = None
         selected_parent: AguiRunBindingRecord | None = None
+        source: RunRecord | None = None
+        foundation_thread: ThreadRecord | None = None
+        historical_parent = False
         if thread is not None:
             latest = await self._load_latest_run(thread.id)
             selected_parent = (
@@ -205,7 +213,46 @@ class HostedAguiService:
                     "The selected AG-UI parent Run is unavailable.",
                     status_code=409,
                 )
-        mapped = await self._validate_and_map_input(request, thread=thread, history=selected_parent)
+            historical_parent = selected_parent.id != latest.id
+            source, foundation_thread = await self._load_continuation_source(
+                selected_parent.run_id,
+                None if historical_parent else thread.active_thread_id,
+            )
+        reuse_waiting_surface = (
+            source is not None and not historical_parent and source.status == RunStatus.waiting.value
+        )
+        if reuse_waiting_surface:
+            assert selected_parent is not None and thread is not None
+            waiting_binding = _binding(selected_parent, thread)
+            await self._authorize_action(
+                actor=actor,
+                binding=waiting_binding,
+                action=WorkspaceAction.run_feedback,
+            )
+            if _forwarded_resolutions(request.forwarded_props) is None:
+                await self._authorize_action(
+                    actor=actor,
+                    binding=waiting_binding,
+                    action=WorkspaceAction.run_continue,
+                )
+        revision_id, config = await self._load_protocol_revision(
+            actor=actor,
+            agent_id=agent_id,
+            revision_id=selected_parent.agent_revision_id if reuse_waiting_surface and selected_parent else None,
+            authorize_invoke=not reuse_waiting_surface,
+            trusted_organization_id=(
+                selected_parent.organization_id if reuse_waiting_surface and selected_parent else None
+            ),
+        )
+        mapped = await self._validate_and_map_input(
+            request,
+            request_json=request_json,
+            thread=thread,
+            history=selected_parent,
+            revision_id=revision_id,
+            config=config,
+            reuse_waiting_surface=reuse_waiting_surface,
+        )
         thread_binding_id = new_object_id("aguitb") if thread is None else thread.id
         run_binding_id = new_object_id("aguirb")
         now = assume_utc(self._clock())
@@ -286,16 +333,17 @@ class HostedAguiService:
                 actor=actor,
                 workspace_id=actor.boundary_workspace_id,
                 idempotency_key=idempotency_key,
-                request=StartRunRequest(agent_id=agent_id, input=_require_agui_input(mapped)),
+                request=StartRunRequest(
+                    agent_id=agent_id,
+                    agent_revision_id=mapped.agent_revision_id,
+                    config_override=mapped.config_override,
+                    input=_require_agui_input(mapped),
+                ),
                 transaction_hook=bind,
             )
         else:
             assert latest is not None and selected_parent is not None
-            historical_parent = selected_parent.id != latest.id
-            source, foundation_thread = await self._load_continuation_source(
-                selected_parent.run_id,
-                None if historical_parent else thread.active_thread_id,
-            )
+            assert source is not None and foundation_thread is not None
             if historical_parent:
                 if mapped.resolutions is not None:
                     raise HostedAguiError(
@@ -313,7 +361,12 @@ class HostedAguiService:
                     actor=actor,
                     run_id=source.id,
                     idempotency_key=idempotency_key,
-                    request=ForkRunRequest(input=_require_agui_input(mapped), agent_id=agent_id),
+                    request=ForkRunRequest(
+                        input=_require_agui_input(mapped),
+                        agent_id=agent_id,
+                        agent_revision_id=mapped.agent_revision_id,
+                        config_override=mapped.config_override,
+                    ),
                     transaction_hook=bind,
                 )
             elif source.status == RunStatus.waiting.value:
@@ -362,6 +415,8 @@ class HostedAguiService:
                         expected_thread_version=foundation_thread.version,
                         input=_require_agui_input(mapped),
                         agent_id=agent_id,
+                        agent_revision_id=mapped.agent_revision_id,
+                        config_override=mapped.config_override,
                     ),
                     transaction_hook=bind,
                 )
@@ -502,15 +557,38 @@ class HostedAguiService:
         self,
         request: RunAgentInput,
         *,
+        request_json: dict[str, JsonValue],
         thread: AguiThreadBindingRecord | None,
         history: AguiRunBindingRecord | None,
+        revision_id: str,
+        config: AgentConfig,
+        reuse_waiting_surface: bool,
     ) -> _MappedAguiInput:
-        if not _empty(request.state) or request.context or request.tools:
-            raise HostedAguiError(
-                "agui_surface_not_allowed",
-                "This Agent does not accept AG-UI state, context, or tools.",
-                status_code=400,
-            )
+        _validate_request_size(request_json, maximum=config.protocol.limits.max_input_bytes)
+        _validate_protocol_value(
+            request.state,
+            schema=config.protocol.state_schema,
+            empty_is_valid=True,
+            name="state",
+        )
+        context = [item.model_dump(mode="json", by_alias=True, exclude_none=True) for item in request.context]
+        _validate_protocol_value(
+            context,
+            schema=config.protocol.context_schema,
+            empty_is_valid=True,
+            name="context",
+        )
+        client_tools = _validated_client_tools(request, config=config)
+        if reuse_waiting_surface:
+            if history is None or _request_tools(request) != history.request_json.get("tools", []):
+                raise HostedAguiError(
+                    "agui_tool_surface_changed",
+                    "A waiting AG-UI Run must reuse its exact client tool surface.",
+                    status_code=409,
+                )
+            config_override = None
+        else:
+            config_override = AgentRunOverride(client_tools=client_tools)
         if request.resume is not None:
             raise HostedAguiError(
                 "agui_resume_not_supported",
@@ -533,7 +611,12 @@ class HostedAguiService:
                     "The AG-UI message snapshot does not match the authorized history.",
                     status_code=409,
                 )
-            return _MappedAguiInput(input=None, resolutions=resolutions)
+            return _MappedAguiInput(
+                input=None,
+                resolutions=resolutions,
+                agent_revision_id=revision_id,
+                config_override=config_override,
+            )
         if not request.messages or not isinstance(request.messages[-1], UserMessage):
             raise HostedAguiError(
                 "agui_input_invalid",
@@ -558,7 +641,75 @@ class HostedAguiService:
                     "The AG-UI message snapshot does not match the authorized history.",
                     status_code=409,
                 )
-        return _MappedAguiInput(input=_user_input(request.messages[-1]), resolutions=None)
+        return _MappedAguiInput(
+            input=_user_input(request.messages[-1]),
+            resolutions=None,
+            agent_revision_id=revision_id,
+            config_override=config_override,
+        )
+
+    async def _load_protocol_revision(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        revision_id: str | None,
+        authorize_invoke: bool,
+        trusted_organization_id: str | None,
+    ) -> tuple[str, AgentConfig]:
+        async with short_session(self._sessions) as database:
+            organization_id = trusted_organization_id
+            if authorize_invoke:
+                try:
+                    authorized = await authorize_agent(
+                        database,
+                        actor=actor,
+                        workspace_id=actor.boundary_workspace_id,
+                        agent_id=agent_id,
+                        action=WorkspaceAction.agent_invoke,
+                    )
+                except AuthorizationError as error:
+                    raise HostedAguiError(
+                        "resource_not_found",
+                        "The requested resource was not found.",
+                        status_code=404,
+                    ) from error
+                organization_id = authorized.organization_id
+            if organization_id is None:
+                raise HostedAguiError(
+                    "resource_not_found",
+                    "The requested resource was not found.",
+                    status_code=404,
+                )
+            agent = await database.scalar(
+                select(AgentRecord).where(
+                    AgentRecord.id == agent_id,
+                    AgentRecord.workspace_id == actor.boundary_workspace_id,
+                    AgentRecord.organization_id == organization_id,
+                )
+            )
+            if agent is None:
+                raise HostedAguiError(
+                    "resource_not_found",
+                    "The requested resource was not found.",
+                    status_code=404,
+                )
+            selected_revision_id = revision_id or agent.current_revision_id
+            revision = await database.scalar(
+                select(AgentRevisionRecord).where(
+                    AgentRevisionRecord.id == selected_revision_id,
+                    AgentRevisionRecord.agent_id == agent_id,
+                    AgentRevisionRecord.organization_id == agent.organization_id,
+                    AgentRevisionRecord.workspace_id == actor.boundary_workspace_id,
+                )
+            )
+        if revision is None:
+            raise HostedAguiError(
+                "resource_not_found",
+                "The requested resource was not found.",
+                status_code=404,
+            )
+        return revision.id, AgentConfig.model_validate(revision.config)
 
     async def _expected_messages(self, latest: AguiRunBindingRecord) -> tuple[dict[str, JsonValue], ...]:
         raw_messages = latest.request_json.get("messages")
@@ -785,6 +936,103 @@ def _validate_external_id(value: str, *, name: str) -> None:
 
 def _empty(value: object) -> bool:
     return value is None or value == {} or value == []
+
+
+def _validate_request_size(value: dict[str, JsonValue], *, maximum: int) -> None:
+    encoded = json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    if len(encoded) > maximum:
+        raise HostedAguiError(
+            "agui_input_too_large",
+            "The AG-UI input exceeds this Agent's configured limit.",
+            status_code=413,
+        )
+
+
+def _validate_protocol_value(
+    value: object,
+    *,
+    schema: dict[str, JsonValue] | None,
+    empty_is_valid: bool,
+    name: Literal["state", "context"],
+) -> None:
+    if empty_is_valid and _empty(value):
+        return
+    try:
+        json_value = _JSON_VALUE.validate_python(value, strict=True)
+    except ValueError as error:
+        raise HostedAguiError(
+            f"agui_{name}_invalid",
+            f"AG-UI {name} is not a valid JSON value.",
+            status_code=400,
+        ) from error
+    if schema is None:
+        raise HostedAguiError(
+            f"agui_{name}_not_allowed",
+            f"This Agent does not accept AG-UI {name}.",
+            status_code=400,
+        )
+    if not Draft202012Validator(schema).is_valid(json_value):
+        raise HostedAguiError(
+            f"agui_{name}_invalid",
+            f"AG-UI {name} does not match the selected Agent Revision schema.",
+            status_code=400,
+        )
+
+
+def _validated_client_tools(
+    request: RunAgentInput,
+    *,
+    config: AgentConfig,
+) -> tuple[ClientToolDefinition, ...]:
+    policies = {item.name: item for item in config.protocol.client_tools}
+    definitions = {item.name: item for item in config.client_tools}
+    supplied_names = tuple(item.name for item in request.tools)
+    if len(supplied_names) != len(set(supplied_names)):
+        raise HostedAguiError(
+            "agui_tools_invalid",
+            "AG-UI client tool names must be unique.",
+            status_code=400,
+        )
+    unknown = set(supplied_names) - set(policies)
+    missing = {name for name, policy in policies.items() if policy.required} - set(supplied_names)
+    if unknown or missing:
+        raise HostedAguiError(
+            "agui_tools_not_allowed",
+            "AG-UI client tools do not match the selected Agent Revision policy.",
+            status_code=400,
+        )
+
+    normalized: list[ClientToolDefinition] = []
+    for tool in request.tools:
+        if tool.model_extra:
+            raise HostedAguiError(
+                "agui_tools_invalid",
+                "AG-UI client tool declarations contain unsupported fields.",
+                status_code=400,
+            )
+        declared = definitions.get(tool.name)
+        if (
+            declared is None
+            or tool.description != declared.description
+            or tool.parameters != declared.parameters_json_schema
+        ):
+            raise HostedAguiError(
+                "agui_tools_not_allowed",
+                "AG-UI client tools do not match the selected Agent Revision policy.",
+                status_code=400,
+            )
+        normalized.append(declared)
+    return tuple(normalized)
+
+
+def _request_tools(request: RunAgentInput) -> list[dict[str, JsonValue]]:
+    return [
+        _JSON_OBJECT.validate_python(
+            item.model_dump(mode="json", by_alias=True, exclude_none=True),
+            strict=True,
+        )
+        for item in request.tools
+    ]
 
 
 def _forwarded_resolutions(value: object) -> tuple[SubmittedPendingResolution, ...] | None:

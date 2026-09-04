@@ -81,11 +81,8 @@ def environment_execution_config() -> EnvironmentExecutionConfig:
     )
 
 
-def effective_agent_config(
-    *,
-    environment: EnvironmentExecutionConfig | None = None,
-) -> EffectiveAgentConfig:
-    base = AgentConfig.model_validate(
+def agent_config() -> AgentConfig:
+    return AgentConfig.model_validate(
         {
             "model": {
                 "model_key": MODEL_KEY,
@@ -103,6 +100,13 @@ def effective_agent_config(
             },
         }
     )
+
+
+def effective_agent_config(
+    *,
+    environment: EnvironmentExecutionConfig | None = None,
+) -> EffectiveAgentConfig:
+    base = agent_config()
     execution = ModelExecutionSnapshot(
         model_id=MODEL_ID,
         model_key=MODEL_KEY,
@@ -283,7 +287,7 @@ async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession])
                 agent_id=AGENT_ID,
                 version=1,
                 plugin_runtime_mode="on_demand",
-                config={},
+                config=agent_config().model_dump(mode="json", by_alias=True),
                 config_digest="b" * 64,
                 resolved_model={},
                 resolved_plugin_versions=[],

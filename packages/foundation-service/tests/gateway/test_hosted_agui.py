@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 from datetime import timedelta
+from typing import Any
 
 import pytest
+from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.gateway.hosted_agui import HostedAguiCancelRequest, HostedAguiError, HostedAguiService
 from a13n_service.gateway.models import AguiRunBindingRecord, AguiThreadBindingRecord
 from a13n_service.interactions.models import RunRecord
@@ -13,7 +15,7 @@ from a13n_service.run_stream import (
     RunStreamEvent,
     deterministic_run_stream_event_id,
 )
-from a13n_service.storage import short_session
+from a13n_service.storage import short_session, transaction
 from a13n_service.storage.config import RedisMemoryConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.redis import open_redis
@@ -23,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.gateway.test_commands import _commands, _complete_run, _frozen, _Preparation, _wait_run
 from tests.hooks.support import seed_hook_actor_access
-from tests.interactions.conftest import AGENT_ID, NOW
+from tests.interactions.conftest import AGENT_ID, NOW, agent_config
 
 pytestmark = pytest.mark.anyio
 
@@ -68,10 +70,202 @@ async def _service(
     )
 
 
+async def _set_protocol_surface(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    state_schema: dict[str, Any] | None = None,
+    context_schema: dict[str, Any] | None = None,
+    required_tool: bool = False,
+) -> None:
+    base = agent_config()
+    client_tools = (
+        {
+            "name": "lookup_order",
+            "description": "Look up one order.",
+            "parameters_json_schema": {
+                "type": "object",
+                "properties": {"order_id": {"type": "string"}},
+                "required": ["order_id"],
+                "additionalProperties": False,
+            },
+        },
+    )
+    payload = base.model_dump(mode="json", by_alias=True)
+    payload["client_tools"] = list(client_tools)
+    payload["protocol"].update(
+        {
+            "state_schema": state_schema,
+            "context_schema": context_schema,
+            "client_tools": [{"name": "lookup_order", "required": required_tool}],
+        }
+    )
+    configured = base.__class__.model_validate(payload)
+    async with transaction(sessions) as database:
+        revision = await database.get(AgentRevisionRecord, "agtr_1234567890abcdef")
+        assert revision is not None
+        revision.config = configured.model_dump(mode="json", by_alias=True)
+
+
+def _surface_request(*, state: object, context: list[dict[str, str]], tools: list[dict[str, object]]) -> RunAgentInput:
+    return RunAgentInput.model_validate(
+        {
+            "threadId": "external-thread-1",
+            "runId": "external-run-1",
+            "state": state,
+            "messages": [{"id": "message-external-run-1", "role": "user", "content": "hello"}],
+            "tools": tools,
+            "context": context,
+            "forwardedProps": {},
+        }
+    )
+
+
 def _frozen_resolver():
     from tests.gateway.test_commands import _Freezing
 
     return _Freezing([_frozen()])
+
+
+async def test_protocol_state_context_and_client_tools_are_validated_and_frozen(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    await _set_protocol_surface(
+        lifecycle_interaction_sessions,
+        state_schema={
+            "type": "object",
+            "properties": {"locale": {"type": "string"}},
+            "required": ["locale"],
+            "additionalProperties": False,
+        },
+        context_schema={
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"description": {"type": "string"}, "value": {"type": "string"}},
+                "required": ["description", "value"],
+                "additionalProperties": False,
+            },
+        },
+        required_tool=True,
+    )
+    request = _surface_request(
+        state={"locale": "zh-CN"},
+        context=[{"description": "Customer tier", "value": "enterprise"}],
+        tools=[
+            {
+                "name": "lookup_order",
+                "description": "Look up one order.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"order_id": {"type": "string"}},
+                    "required": ["order_id"],
+                    "additionalProperties": False,
+                },
+            }
+        ],
+    )
+
+    async with AsyncExitStack() as stack:
+        service, _stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        captured = []
+        original = service._commands.start
+
+        async def capture_start(**kwargs):
+            captured.append(kwargs["request"])
+            return await original(**kwargs)
+
+        service._commands.start = capture_start  # type: ignore[method-assign]
+        attachment = await service.accept(actor=_actor(), agent_id=AGENT_ID, request=request, last_event_id=None)
+
+    assert attachment.binding.agent_revision_id == "agtr_1234567890abcdef"
+    assert len(captured) == 1
+    override = captured[0].config_override
+    assert override is not None
+    assert [tool.name for tool in override.client_tools or ()] == ["lookup_order"]
+
+
+@pytest.mark.parametrize(
+    ("state", "context", "code"),
+    (
+        ({"locale": 1}, [], "agui_state_invalid"),
+        ({}, [{"description": "Customer tier", "value": "enterprise"}], "agui_context_not_allowed"),
+    ),
+)
+async def test_protocol_state_and_context_reject_values_outside_revision_policy(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+    state: object,
+    context: list[dict[str, str]],
+    code: str,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    await _set_protocol_surface(
+        lifecycle_interaction_sessions,
+        state_schema={
+            "type": "object",
+            "properties": {"locale": {"type": "string"}},
+            "required": ["locale"],
+        },
+    )
+    request = _surface_request(state=state, context=context, tools=[])
+
+    async with AsyncExitStack() as stack:
+        service, _stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        with pytest.raises(HostedAguiError) as captured:
+            await service.accept(actor=_actor(), agent_id=AGENT_ID, request=request, last_event_id=None)
+
+    assert captured.value.code == code
+
+
+async def test_waiting_run_cannot_change_optional_client_tool_surface(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    await _set_protocol_surface(lifecycle_interaction_sessions)
+    first_request = _surface_request(
+        state={},
+        context=[],
+        tools=[
+            {
+                "name": "lookup_order",
+                "description": "Look up one order.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"order_id": {"type": "string"}},
+                    "required": ["order_id"],
+                    "additionalProperties": False,
+                },
+            }
+        ],
+    )
+
+    async with AsyncExitStack() as stack:
+        service, _stream, objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        first = await service.accept(actor=_actor(), agent_id=AGENT_ID, request=first_request, last_event_id=None)
+        await _wait_run(lifecycle_interaction_sessions, objects, run_id=first.binding.run_id)
+        changed = RunAgentInput.model_validate(
+            {
+                "threadId": "external-thread-1",
+                "runId": "external-run-2",
+                "parentRunId": "external-run-1",
+                "state": {},
+                "messages": [
+                    {"id": "message-external-run-1", "role": "user", "content": "hello"},
+                    {"id": "message-external-run-2", "role": "user", "content": "continue"},
+                ],
+                "tools": [],
+                "context": [],
+                "forwardedProps": {},
+            }
+        )
+
+        with pytest.raises(HostedAguiError) as captured:
+            await service.accept(actor=_actor(), agent_id=AGENT_ID, request=changed, last_event_id=None)
+
+    assert captured.value.code == "agui_tool_surface_changed"
 
 
 async def test_initial_run_atomically_creates_external_bindings_and_replays(

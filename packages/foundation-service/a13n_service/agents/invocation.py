@@ -156,6 +156,23 @@ def merge_agent_run_override(
         present="client_tools" in fields,
         path="client_tools",
     )
+    protocol = base.protocol
+    if "client_tools" in fields:
+        selected_client_tool_names = {item.name for item in client_tools}
+        missing_required = tuple(
+            item.name
+            for item in base.protocol.client_tools
+            if item.required and item.name not in selected_client_tool_names
+        )
+        if missing_required:
+            raise invalid_run_override("client_tools", "required_protocol_tool_missing")
+        protocol = base.protocol.model_copy(
+            update={
+                "client_tools": tuple(
+                    item for item in base.protocol.client_tools if item.name in selected_client_tool_names
+                )
+            }
+        )
 
     environment: EnvironmentOverride | None = base.environment
     if "environment" in fields:
@@ -252,7 +269,7 @@ def merge_agent_run_override(
             retries=retries,
             secret_requirements=base.secret_requirements,
             asset_publication=base.asset_publication,
-            protocol=base.protocol,
+            protocol=protocol,
         ),
         sensitive_values=AgentRunSensitiveValues(),
     )
