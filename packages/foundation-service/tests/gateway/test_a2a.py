@@ -472,6 +472,67 @@ async def test_public_card_projects_current_agent_protocol(
     assert card.capabilities.push_notifications
 
 
+async def test_send_message_atomically_registers_push_configuration_and_replays_it(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    request = _request()
+    request.configuration.task_push_notification_config.CopyFrom(
+        a2a.TaskPushNotificationConfig(
+            url="https://8.8.8.8/a2a-events",
+            token="opaque-client-token",
+            authentication=a2a.AuthenticationInfo(scheme="Bearer", credentials="secret-credential"),
+        )
+    )
+
+    task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+    repeated = await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+    configurations, next_page_token = await service.list_push_configurations(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        page_size=10,
+        page_token=None,
+    )
+
+    assert repeated == task
+    assert len(configurations) == 1
+    assert configurations[0].task_id == task.id
+    assert configurations[0].url == "https://8.8.8.8/a2a-events"
+    assert configurations[0].authentication.scheme == "Bearer"
+    assert not configurations[0].token
+    assert not configurations[0].authentication.credentials
+    assert next_page_token is None
+    async with short_session(lifecycle_interaction_sessions) as database:
+        records = tuple((await database.scalars(select(A2APushConfigurationRecord))).all())
+        secrets = tuple((await database.scalars(select(SecretRecord))).all())
+    assert len(records) == 1
+    assert records[0].task_id == task.id
+    assert len(secrets) == 2
+
+
+async def test_send_message_rejects_push_configuration_for_existing_task(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
+    request = _request(message_id="feedback-1", context_id=task.context_id, task_id=task.id)
+    request.configuration.task_push_notification_config.CopyFrom(
+        a2a.TaskPushNotificationConfig(url="https://8.8.8.8/a2a-events")
+    )
+
+    with pytest.raises(A2AError) as captured:
+        await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+
+    assert captured.value.code == "push_configuration_not_allowed"
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assert await database.scalar(select(A2APushConfigurationRecord.id)) is None
+
+
 async def test_push_configuration_secrets_are_write_only_and_delete_is_fenced(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
