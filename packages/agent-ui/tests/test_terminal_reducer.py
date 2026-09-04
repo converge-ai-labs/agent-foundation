@@ -392,6 +392,26 @@ def test_live_tool_correlation_and_follow_latest_pending_output() -> None:
     assert followed.pending_output == 0
 
 
+def test_receipt_acceptance_does_not_regress_an_operation_observed_first() -> None:
+    running = _operation(RootOperationStatus.running)
+    state = _focused_state(operation=running)
+    receipt = RootRunReceipt(receipt_id="receipt-1", thread_id="thread-1", submitted_at=NOW)
+
+    state = reduce_terminal(
+        state,
+        RootReceiptAccepted(
+            receipt=receipt,
+            draft_key="thread-1",
+            submitted_text="steer later",
+        ),
+    ).state
+
+    view = state.thread_view("thread-1")
+    assert view is not None
+    assert view.root_operation is running
+    assert view.control_mode is ControlMode.RUNNING
+
+
 def test_receipt_acceptance_clears_draft_and_terminal_unretained_output_is_visible() -> None:
     state = reduce_terminal(
         _focused_state(),

@@ -7,6 +7,7 @@ import asyncio
 import json
 import sys
 from collections.abc import Mapping, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
@@ -269,13 +270,20 @@ async def _run(args: argparse.Namespace) -> int:
         and args.device_code
     )
 
-    async with open_agent_ui_app(
-        settings,
-        configuration_path=source.path,
-        configuration_error=source.candidate_error,
-        codex_login=_codex_cli_login,
-        grok_login=lambda request: _grok_cli_login(request, device_code=use_grok_device_code),
-    ) as app:
+    def app_factory() -> AbstractAsyncContextManager[AgentUiApp]:
+        return open_agent_ui_app(
+            settings,
+            configuration_path=source.path,
+            configuration_error=source.candidate_error,
+            codex_login=_codex_cli_login,
+            grok_login=lambda request: _grok_cli_login(request, device_code=use_grok_device_code),
+        )
+
+    if args.command in {None, "tui"}:
+        await run_tui(app_factory, launch=_tui_launch_options(args))
+        return 0
+
+    async with app_factory() as app:
         if args.command == "run":
             configuration = await app.current_configuration()
             if configuration is None:
@@ -284,15 +292,12 @@ async def _run(args: argparse.Namespace) -> int:
                     code="configuration_unavailable",
                 )
             return await _run_one_shot(app, configuration, args)
-        if args.command in {"config", "import", "project", "environment", "thread", "doctor", "auth"}:
-            return await _run_management(
-                app,
-                args,
-                configuration_path=source.path,
-                data_root=settings.storage.data_root,
-            )
-        await run_tui(app, launch=_tui_launch_options(args))
-    return 0
+        return await _run_management(
+            app,
+            args,
+            configuration_path=source.path,
+            data_root=settings.storage.data_root,
+        )
 
 
 async def _run_content_plugins(args: argparse.Namespace, data_root: Path) -> int:

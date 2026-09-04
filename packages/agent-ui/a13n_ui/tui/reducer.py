@@ -20,6 +20,7 @@ from a13n_ui.tui.events import (
     ClosingStarted,
     CompletionAcknowledged,
     DraftChanged,
+    DraftDefaultsChanged,
     DraftRestored,
     FocusLoaded,
     FollowLatestChanged,
@@ -36,6 +37,7 @@ from a13n_ui.tui.events import (
     RunHintEvent,
     StartupFailed,
     StartupReady,
+    StartupStarted,
     StreamPartEvent,
     TerminalEvent,
     TimelineSelectionChanged,
@@ -78,6 +80,13 @@ _TERMINAL_OPERATION_STATUSES = frozenset(
 
 def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
     """Apply one explicit fact without performing I/O or reading wall time."""
+
+    if isinstance(event, StartupStarted):
+        return _result(
+            replace(state, lifecycle=TerminalLifecycle.STARTING, notices=()),
+            "lifecycle",
+            "notice",
+        )
 
     if isinstance(event, StartupReady):
         launch_project_id = event.launch.project.project_id if isinstance(event.launch, LaunchProjectSelected) else None
@@ -131,6 +140,7 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         workbench = replace(
             state.workbench,
             page=ranked,
+            query=event.query,
             selected_thread_id=selected,
             projection_version=event.request_version,
         )
@@ -242,15 +252,20 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             provisional=True,
         )
         timeline = view.timeline if event.steering else _deduplicate((*view.timeline, block))
-        view = replace(
-            view,
-            root_operation=RootOperationView(
+        current_operation = view.root_operation
+        if current_operation is None or current_operation.receipt.receipt_id != event.receipt.receipt_id:
+            operation = RootOperationView(
                 receipt=event.receipt,
                 status=RootOperationStatus.preparing,
                 available_actions=("wait", "cancel"),
-            ),
+            )
+        else:
+            operation = current_operation
+        view = replace(
+            view,
+            root_operation=operation,
             timeline=_evict_timeline(timeline, view),
-            control_mode=ControlMode.PREPARING,
+            control_mode=_control_mode(view.detail, operation, view.decisions is not None),
             cancelling_receipt_id=None,
         )
         next_state = _with_view(state, view)
@@ -285,6 +300,9 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         next_state = _with_view(next_state, view)
         return _result(next_state, "focus", "composer")
 
+    if isinstance(event, DraftDefaultsChanged):
+        return _result(replace(state, draft_defaults=event.defaults), "composer")
+
     if isinstance(event, DraftChanged):
         references = tuple(item for item in event.skill_references if isinstance(item, SkillReference))
         next_state = _touch_draft(
@@ -308,7 +326,9 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         mode = TerminalMode(event.mode)
         focused = state.focused_thread_id
         previous = state.previous_focused_thread_id
-        if mode is TerminalMode.FOCUS and event.thread_id is not None:
+        if event.new_draft:
+            focused = None
+        elif mode is TerminalMode.FOCUS and event.thread_id is not None:
             focused = event.thread_id
             previous = event.thread_id
         return _result(
@@ -416,13 +436,13 @@ def _control_mode(
     operation: RootOperationView | None,
     has_decisions: bool,
 ) -> ControlMode:
-    if detail is None:
-        return ControlMode.UNAVAILABLE
     if operation is not None:
         if operation.status is RootOperationStatus.preparing:
             return ControlMode.PREPARING
         if operation.status is RootOperationStatus.running:
             return ControlMode.RUNNING
+    if detail is None:
+        return ControlMode.UNAVAILABLE
     if has_decisions or detail.deferred_requests:
         return ControlMode.AWAITING_DECISION
     return ControlMode.IDLE

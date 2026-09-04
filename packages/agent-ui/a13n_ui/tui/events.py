@@ -12,6 +12,7 @@ from a13n_ui.surfaces import (
     DecisionBatchView,
     FailureView,
     LaunchProjectResolution,
+    NewThreadDefaults,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
@@ -75,6 +76,11 @@ type NormalizedLiveEvent = StreamPartEvent | ToolEvent | RunHintEvent | UnknownL
 
 
 @dataclass(frozen=True, slots=True)
+class StartupStarted:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class StartupReady:
     launch: LaunchProjectResolution
     workbench: WorkbenchPage
@@ -96,6 +102,7 @@ class ClosingStarted:
 class WorkbenchLoaded:
     request_version: int
     page: WorkbenchPage
+    query: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +152,11 @@ class RootControlCompleted:
 
 
 @dataclass(frozen=True, slots=True)
+class DraftDefaultsChanged:
+    defaults: NewThreadDefaults
+
+
+@dataclass(frozen=True, slots=True)
 class DraftChanged:
     key: str
     text: str
@@ -165,6 +177,7 @@ class DraftRestored:
 class RouteChanged:
     mode: Literal["focus", "workbench"]
     thread_id: str | None = None
+    new_draft: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,7 +228,8 @@ class OperationFailed:
 
 
 type TerminalEvent = (
-    StartupReady
+    StartupStarted
+    | StartupReady
     | StartupFailed
     | ClosingStarted
     | WorkbenchLoaded
@@ -226,6 +240,7 @@ type TerminalEvent = (
     | RootReceiptAccepted
     | RootOperationUpdated
     | RootControlCompleted
+    | DraftDefaultsChanged
     | DraftChanged
     | DraftRestored
     | RouteChanged
@@ -338,6 +353,7 @@ __all__ = [
     "ClosingStarted",
     "CompletionAcknowledged",
     "DraftChanged",
+    "DraftDefaultsChanged",
     "DraftRestored",
     "FocusLoaded",
     "FollowLatestChanged",
@@ -355,6 +371,7 @@ __all__ = [
     "RunHintEvent",
     "StartupFailed",
     "StartupReady",
+    "StartupStarted",
     "StreamPartEvent",
     "TerminalEvent",
     "TimelineSelectionChanged",

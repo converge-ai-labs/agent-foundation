@@ -19,22 +19,24 @@ def test_module_entrypoint_exposes_cli_help() -> None:
 
 
 @pytest.mark.parametrize("command", [(), ("tui",)])
-def test_terminal_frontend_uses_process_local_app(tmp_path: Path, command: tuple[str, ...]) -> None:
+def test_terminal_frontend_requires_interactive_input_and_output(
+    tmp_path: Path,
+    command: tuple[str, ...],
+) -> None:
     settings = _write_settings(tmp_path)
 
     result = subprocess.run(
         [sys.executable, "-m", "a13n_ui", "--config", str(settings), *command],
-        input="/status\n/exit\n",
+        input="",
         check=False,
         capture_output=True,
         text=True,
         timeout=10,
     )
 
-    assert result.returncode == 0, result.stderr
-    assert "Agent UI TUI." in result.stdout
-    assert "ready objects=" in result.stdout
-    assert "runtime-" not in result.stdout
+    assert result.returncode == 1
+    assert "tui_tty_required" in result.stderr
+    assert "a13n-ui run <prompt>" in result.stderr
 
 
 def test_environment_list_exposes_release_owned_modes(tmp_path: Path) -> None:
