@@ -29,6 +29,7 @@ from a13n_harness.capabilities import (
     SubagentOperatorContext,
     SubagentSteerRequest,
     SubagentSteerResult,
+    SubagentToolCallContext,
     SubagentWaitRequest,
     SubagentWaitResult,
 )
@@ -58,6 +59,7 @@ class RecordingSubagentOperator(SubagentOperator):
         self.calls: list[str] = []
         self.plans: list[SubagentDelegationPlan] = []
         self.contexts: list[SubagentOperatorContext] = []
+        self.tool_calls: list[SubagentToolCallContext | None] = []
         self.requests: list[object] = []
 
     @staticmethod
@@ -85,10 +87,13 @@ class RecordingSubagentOperator(SubagentOperator):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncDelegateRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView:
         self.calls.append("delegate")
         self.plans.append(plan)
         self.requests.append(request)
+        self.tool_calls.append(tool_call)
         return AsyncExecutionView(
             execution_id="execution-1",
             subagent_name="reviewer",
@@ -100,10 +105,13 @@ class RecordingSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentInfoRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentInfoResult:
         self.calls.append("info")
         self.contexts.append(context)
         self.requests.append(request)
+        self.tool_calls.append(tool_call)
         return SubagentInfoResult(
             executions=(self._view(request.execution_id or "execution-1", status="succeeded", resumable=True),),
             execution_offset=request.execution_offset,
@@ -114,10 +122,13 @@ class RecordingSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentWaitRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentWaitResult:
         self.calls.append("wait")
         self.contexts.append(context)
         self.requests.append(request)
+        self.tool_calls.append(tool_call)
         return SubagentWaitResult(
             executions=(self._view(request.execution_id or "execution-1", status="succeeded", resumable=True),),
             execution_offset=request.execution_offset,
@@ -128,30 +139,39 @@ class RecordingSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentSteerRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentSteerResult:
         self.calls.append("steer")
         self.contexts.append(context)
         self.requests.append(request)
+        self.tool_calls.append(tool_call)
         return SubagentSteerResult(execution_id=request.execution_id, accepted=True, enqueue_id="enqueue-1")
 
     async def cancel(
         self,
         context: SubagentOperatorContext,
         request: SubagentCancelRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentCancelResult:
         self.calls.append("cancel")
         self.contexts.append(context)
         self.requests.append(request)
+        self.tool_calls.append(tool_call)
         return SubagentCancelResult(execution_id=request.execution_id, accepted=True, status="cancelled")
 
     async def resume(
         self,
         plan: SubagentDelegationPlan,
         request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView:
         self.calls.append("resume")
         self.plans.append(plan)
         self.requests.append(request)
+        self.tool_calls.append(tool_call)
         return AsyncExecutionView(
             execution_id="execution-2",
             subagent_name="reviewer",
@@ -322,6 +342,24 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
 
     assert result.output_or_raise() == "done"
     assert operator.calls == ["delegate", "info", "wait", "steer", "cancel", "info", "resume"]
+    assert [item.tool_call_id if item is not None else None for item in operator.tool_calls] == [
+        "call-1",
+        "call-2",
+        "call-3",
+        "call-4",
+        "call-5",
+        "call-6",
+        "call-6",
+    ]
+    assert [item.tool_name if item is not None else None for item in operator.tool_calls] == [
+        "delegate",
+        "subagent_info",
+        "wait_subagent",
+        "steer_subagent",
+        "cancel_subagent",
+        "resume_subagent",
+        "resume_subagent",
+    ]
     assert len(operator.plans) == 2
     first_plan, resume_plan = operator.plans
     assert first_plan.child.definition.definition_id == "child-v1"
@@ -392,8 +430,10 @@ async def test_async_operator_execution_identity_mismatch_is_rejected() -> None:
             self,
             plan: SubagentDelegationPlan,
             request: AsyncDelegateRequest,
+            *,
+            tool_call: SubagentToolCallContext | None = None,
         ) -> AsyncExecutionView:
-            del plan, request
+            del plan, request, tool_call
             return AsyncExecutionView(
                 execution_id="execution-1",
                 subagent_name="other",
@@ -430,8 +470,10 @@ async def test_async_operator_return_type_mismatch_is_rejected() -> None:
             self,
             plan: SubagentDelegationPlan,
             request: AsyncDelegateRequest,
+            *,
+            tool_call: SubagentToolCallContext | None = None,
         ) -> dict[str, str]:
-            del plan, request
+            del plan, request, tool_call
             return {"execution_id": "execution-1"}
 
     async def parent_model(

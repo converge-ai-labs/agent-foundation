@@ -24,6 +24,7 @@ from a13n_harness.capabilities.subagents import (
     SubagentOperatorContext,
     SubagentSteerRequest,
     SubagentSteerResult,
+    SubagentToolCallContext,
     SubagentWaitRequest,
     SubagentWaitResult,
 )
@@ -108,7 +109,10 @@ class AsyncSubagentToolset:
         child = self._require_child(subagent_name)
         request = AsyncDelegateRequest(subagent_name=subagent_name, prompt=prompt)
         plan = self._plan(ctx, child, prompt)
-        result = _validate_model(AsyncExecutionView, await self._operator.delegate(plan, request))
+        result = _validate_model(
+            AsyncExecutionView,
+            await self._operator.delegate(plan, request, tool_call=_tool_call_context(ctx)),
+        )
         _validate_execution(result, child, resumed_from=None)
         return result.model_dump(mode="json")
 
@@ -125,7 +129,10 @@ class AsyncSubagentToolset:
             execution_offset=execution_offset,
             execution_limit=execution_limit,
         )
-        result = _validate_model(SubagentInfoResult, await self._operator.info(self._operator_context(), request))
+        result = _validate_model(
+            SubagentInfoResult,
+            await self._operator.info(self._operator_context(), request, tool_call=_tool_call_context(ctx)),
+        )
         if execution_id is not None:
             _require_exact_execution(result.executions, execution_id)
         return result.model_dump(mode="json")
@@ -145,7 +152,10 @@ class AsyncSubagentToolset:
             execution_offset=execution_offset,
             execution_limit=execution_limit,
         )
-        result = _validate_model(SubagentWaitResult, await self._operator.wait(self._operator_context(), request))
+        result = _validate_model(
+            SubagentWaitResult,
+            await self._operator.wait(self._operator_context(), request, tool_call=_tool_call_context(ctx)),
+        )
         if execution_id is not None:
             _require_exact_execution(result.executions, execution_id)
         return result.model_dump(mode="json")
@@ -160,7 +170,7 @@ class AsyncSubagentToolset:
         request = SubagentSteerRequest(execution_id=execution_id, message=message)
         result = _validate_model(
             SubagentSteerResult,
-            await self._operator.steer(self._operator_context(), request),
+            await self._operator.steer(self._operator_context(), request, tool_call=_tool_call_context(ctx)),
         )
         if result.execution_id != execution_id:
             raise TypeError("subagent operator retargeted a steering request")
@@ -175,7 +185,7 @@ class AsyncSubagentToolset:
         request = SubagentCancelRequest(execution_id=execution_id)
         result = _validate_model(
             SubagentCancelResult,
-            await self._operator.cancel(self._operator_context(), request),
+            await self._operator.cancel(self._operator_context(), request, tool_call=_tool_call_context(ctx)),
         )
         if result.execution_id != execution_id:
             raise TypeError("subagent operator retargeted a cancellation request")
@@ -191,7 +201,7 @@ class AsyncSubagentToolset:
         info_request = SubagentInfoRequest(execution_id=execution_id)
         info = _validate_model(
             SubagentInfoResult,
-            await self._operator.info(self._operator_context(), info_request),
+            await self._operator.info(self._operator_context(), info_request, tool_call=_tool_call_context(ctx)),
         )
         previous = _require_exact_execution(info.executions, execution_id)
         child = self._require_child(previous.subagent_name)
@@ -200,7 +210,11 @@ class AsyncSubagentToolset:
         request = AsyncResumeRequest(execution_id=execution_id, prompt=prompt)
         result = _validate_model(
             AsyncExecutionView,
-            await self._operator.resume(self._plan(ctx, child, prompt), request),
+            await self._operator.resume(
+                self._plan(ctx, child, prompt),
+                request,
+                tool_call=_tool_call_context(ctx),
+            ),
         )
         _validate_execution(
             result,
@@ -287,6 +301,10 @@ def _validate_model(model_type, value):
     if not isinstance(value, model_type):
         raise TypeError(f"subagent operator must return {model_type.__name__}")
     return model_type.model_validate(value.model_dump(mode="python"))
+
+
+def _tool_call_context(ctx: RunContext[AgentContext]) -> SubagentToolCallContext:
+    return SubagentToolCallContext(tool_call_id=ctx.tool_call_id, tool_name=ctx.tool_name)
 
 
 def _require_exact_execution(executions, execution_id: str):
