@@ -11,6 +11,7 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.gateway import GatewayRuntime
 from a13n_service.gateway.a2a import A2AService
+from a13n_service.gateway.a2a_import import A2APartImporter
 from a13n_service.gateway.a2a_push import A2APushPublisher
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
 from a13n_service.gateway.commands import NativeInteractionCommands
@@ -120,7 +121,14 @@ async def build_control_runtime(
         await a2a_endpoint_policy.validate(str(request.url), resolve_dns=True)
 
     a2a_publisher = None
+    a2a_import_http_client = None
     if settings.a2a_enabled:
+        a2a_import_http_client = await stack.enter_async_context(
+            httpx2.AsyncClient(
+                follow_redirects=False,
+                timeout=settings.connectivity_total_timeout_seconds,
+            )
+        )
         a2a_http_client = await stack.enter_async_context(
             httpx2.AsyncClient(
                 follow_redirects=False,
@@ -169,6 +177,8 @@ async def build_control_runtime(
         queue_name=settings.gateway_run_queue_name,
         priority=settings.gateway_run_priority,
     )
+    if settings.a2a_enabled:
+        assert a2a_import_http_client is not None
     gateway = GatewayRuntime(
         commands=gateway_commands,
         hosted_agui=HostedAguiService(
@@ -210,6 +220,13 @@ async def build_control_runtime(
                 gateway_commands,
                 a2a_secrets,
                 a2a_endpoint_policy,
+                A2APartImporter(
+                    assets.service,
+                    a2a_import_http_client,
+                    EndpointPolicy(),
+                    max_redirects=settings.connectivity_max_redirects,
+                    timeout_seconds=settings.connectivity_total_timeout_seconds,
+                ),
                 poll_interval_seconds=settings.a2a_poll_interval_seconds,
                 maximum_wait_seconds=settings.a2a_maximum_wait_seconds,
             )

@@ -28,7 +28,7 @@ from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
-from a13n_service.interactions import AgentInput, InterruptRequest, RunAcceptanceReceipt, RunStatus
+from a13n_service.interactions import InterruptRequest, RunAcceptanceReceipt, RunStatus
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.public_errors import PublicError
 from a13n_service.secrets import InternalSecretService
@@ -36,6 +36,7 @@ from a13n_service.secrets.domain import SecretOperation, SecretOwnerType, Secret
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, require_aware_utc, utc_now
 
+from .a2a_import import A2APartImporter, A2APartImportError, PreparedA2AMessage
 from .commands import ContinueRunRequest, NativeInteractionCommands, StartRunRequest, WaitingContinueRunRequest
 from .models import (
     A2AContextBindingRecord,
@@ -70,6 +71,7 @@ class A2AService:
         commands: NativeInteractionCommands,
         secrets: InternalSecretService,
         endpoint_policy: EndpointPolicy,
+        part_importer: A2APartImporter,
         *,
         poll_interval_seconds: float,
         maximum_wait_seconds: float,
@@ -79,6 +81,7 @@ class A2AService:
         self._commands = commands
         self._secrets = secrets
         self._endpoint_policy = endpoint_policy
+        self._part_importer = part_importer
         self._poll_interval_seconds = poll_interval_seconds
         self._maximum_wait_seconds = maximum_wait_seconds
         self._clock = clock
@@ -195,43 +198,49 @@ class A2AService:
         if replay is not None:
             return _apply_history_length(replay, history_length)
 
-        submitted = _agent_input(request.message)
-        context = await self._load_context(
-            actor=actor,
-            agent_id=agent_id,
-            context_id=request.message.context_id or None,
-        )
-        if context is None:
-            if request.message.task_id:
-                raise A2AError("task_not_found", "The requested Task was not found.", status_code=404)
-            task = await self._start_task(
+        try:
+            prepared = await self._part_importer.prepare(actor=actor, message=request.message)
+        except A2APartImportError as error:
+            raise A2AError(error.code, str(error), status_code=error.status_code) from error
+        try:
+            context = await self._load_context(
                 actor=actor,
                 agent_id=agent_id,
-                submitted=submitted,
-                request=request,
-                request_json=request_json,
-                request_digest=request_digest,
+                context_id=request.message.context_id or None,
             )
-        elif request.message.task_id:
-            task = await self._continue_waiting_task(
-                actor=actor,
-                context=context,
-                task_id=request.message.task_id,
-                submitted=submitted,
-                request=request,
-                request_json=request_json,
-                request_digest=request_digest,
-            )
-        else:
-            task = await self._start_context_task(
-                actor=actor,
-                context=context,
-                submitted=submitted,
-                request=request,
-                request_json=request_json,
-                request_digest=request_digest,
-            )
-        return _apply_history_length(task, history_length)
+            if context is None:
+                if request.message.task_id:
+                    raise A2AError("task_not_found", "The requested Task was not found.", status_code=404)
+                task = await self._start_task(
+                    actor=actor,
+                    agent_id=agent_id,
+                    prepared=prepared,
+                    request=request,
+                    request_json=request_json,
+                    request_digest=request_digest,
+                )
+            elif request.message.task_id:
+                task = await self._continue_waiting_task(
+                    actor=actor,
+                    context=context,
+                    task_id=request.message.task_id,
+                    prepared=prepared,
+                    request=request,
+                    request_json=request_json,
+                    request_digest=request_digest,
+                )
+            else:
+                task = await self._start_context_task(
+                    actor=actor,
+                    context=context,
+                    prepared=prepared,
+                    request=request,
+                    request_json=request_json,
+                    request_digest=request_digest,
+                )
+            return _apply_history_length(task, history_length)
+        finally:
+            await self._part_importer.discard(prepared)
 
     async def get_task(
         self,
@@ -789,7 +798,7 @@ class A2AService:
         *,
         actor: AuthenticatedActor,
         agent_id: str,
-        submitted: AgentInput,
+        prepared: PreparedA2AMessage,
         request: a2a.SendMessageRequest,
         request_json: dict[str, Any],
         request_digest: str,
@@ -801,6 +810,7 @@ class A2AService:
         now = assume_utc(self._clock())
 
         async def bind(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
+            await self._part_importer.commit_in_transaction(database, actor=actor, prepared=prepared)
             run = await database.get(RunRecord, receipt.run_id)
             if run is None:
                 raise RuntimeError("accepted A2A Run is missing")
@@ -856,8 +866,9 @@ class A2AService:
             actor=actor,
             workspace_id=actor.boundary_workspace_id,
             idempotency_key=f"a2a:{agent_id}:{request.message.message_id}",
-            request=StartRunRequest(agent_id=agent_id, input=submitted),
+            request=StartRunRequest(agent_id=agent_id, input=prepared.input),
             transaction_hook=bind,
+            prepared_assets=prepared.prepared_assets,
         )
         return await self.get_task(actor=actor, agent_id=agent_id, task_id=task_id)
 
@@ -866,7 +877,7 @@ class A2AService:
         *,
         actor: AuthenticatedActor,
         context: A2AContextBindingRecord,
-        submitted: AgentInput,
+        prepared: PreparedA2AMessage,
         request: a2a.SendMessageRequest,
         request_json: dict[str, Any],
         request_digest: str,
@@ -878,6 +889,7 @@ class A2AService:
         now = assume_utc(self._clock())
 
         async def bind(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
+            await self._part_importer.commit_in_transaction(database, actor=actor, prepared=prepared)
             run = await database.get(RunRecord, receipt.run_id)
             if run is None:
                 raise RuntimeError("accepted A2A continuation Run is missing")
@@ -913,7 +925,7 @@ class A2AService:
                 )
             )
 
-        continuation = ContinueRunRequest(expected_thread_version=thread.version, input=submitted)
+        continuation = ContinueRunRequest(expected_thread_version=thread.version, input=prepared.input)
         if thread.head_run_id is None:
             receipt = await self._commands.continue_empty_thread(
                 actor=actor,
@@ -921,6 +933,7 @@ class A2AService:
                 idempotency_key=f"a2a:{context.agent_id}:{request.message.message_id}",
                 request=continuation,
                 transaction_hook=bind,
+                prepared_assets=prepared.prepared_assets,
             )
         else:
             receipt = await self._commands.continue_from(
@@ -929,6 +942,7 @@ class A2AService:
                 idempotency_key=f"a2a:{context.agent_id}:{request.message.message_id}",
                 request=continuation,
                 transaction_hook=bind,
+                prepared_assets=prepared.prepared_assets,
             )
         del receipt
         return await self.get_task(actor=actor, agent_id=context.agent_id, task_id=task_id)
@@ -939,7 +953,7 @@ class A2AService:
         actor: AuthenticatedActor,
         context: A2AContextBindingRecord,
         task_id: str,
-        submitted: AgentInput,
+        prepared: PreparedA2AMessage,
         request: a2a.SendMessageRequest,
         request_json: dict[str, Any],
         request_digest: str,
@@ -959,6 +973,7 @@ class A2AService:
         now = assume_utc(self._clock())
 
         async def bind(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
+            await self._part_importer.commit_in_transaction(database, actor=actor, prepared=prepared)
             selected = (
                 await database.execute(
                     select(A2ATaskBindingRecord).where(A2ATaskBindingRecord.id == task.id).with_for_update()
@@ -991,9 +1006,10 @@ class A2AService:
             request=WaitingContinueRunRequest(
                 expected_thread_version=thread.version,
                 sealed_state_digest_sha256=sealed_state_digest,
-                input=submitted,
+                input=prepared.input,
             ),
             transaction_hook=bind,
+            prepared_assets=prepared.prepared_assets,
         )
         return await self.get_task(actor=actor, agent_id=context.agent_id, task_id=task.id)
 
@@ -1240,35 +1256,6 @@ def _apply_history_length(task: a2a.Task, history_length: int | None) -> a2a.Tas
     if history_length:
         projected.history.extend(history[-history_length:])
     return projected
-
-
-def _agent_input(message: a2a.Message) -> AgentInput:
-    content: list[dict[str, str]] = []
-    data: list[Any] = []
-    for part in message.parts:
-        kind = part.WhichOneof("content")
-        if kind == "text":
-            if not part.text:
-                raise A2AError("message_invalid", "Text Parts cannot be empty.", status_code=400)
-            content.append({"type": "text", "text": part.text})
-        elif kind == "data":
-            data.append(MessageToDict(part)["data"])
-        elif kind in {"raw", "url"}:
-            raise A2AError(
-                "part_import_unavailable",
-                "Raw and URL Part import is not available for this request.",
-                status_code=422,
-            )
-        else:
-            raise A2AError("message_invalid", "The Message Part content is missing.", status_code=400)
-    structured: Any | None = None if not data else data[0] if len(data) == 1 else data
-    return AgentInput.model_validate(
-        {
-            "schema_version": "2",
-            "content": content,
-            "structured_content": structured,
-        }
-    )
 
 
 def _task_status(run: RunRecord) -> a2a.TaskStatus:

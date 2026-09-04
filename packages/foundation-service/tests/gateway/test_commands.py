@@ -119,6 +119,7 @@ def _commands(
     objects,
     preparation: _Preparation,
     freezing: _Freezing,
+    assets=None,
 ) -> NativeInteractionCommands:
     resolver = SimpleNamespace(preparation=preparation, freezing=freezing)
     payloads = RunPayloadStore(objects)
@@ -134,7 +135,7 @@ def _commands(
         resolver,
         acceptance,
         RunStateStore(objects),
-        AsyncMock(),
+        assets if assets is not None else AsyncMock(),
         EndpointPolicy(),
         outcomes=RunOutcomeService(sessions, payloads, clock=lambda: NOW),
         inbox=ThreadInboxStore(sessions, clock=lambda: NOW),

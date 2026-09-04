@@ -10,9 +10,14 @@ import pytest
 from a2a.types import a2a_pb2 as a2a
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.api import install_api_conventions
+from a13n_service.assets.models import AssetRecord
+from a13n_service.assets.objects import AssetObjectStore
+from a13n_service.assets.service import AssetService
+from a13n_service.assets.staging import AssetStaging
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
+from a13n_service.gateway.a2a_import import A2APartImporter
 from a13n_service.gateway.a2a_push import A2APushPublisher
 from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.models import (
@@ -62,9 +67,18 @@ async def _service(
     tmp_path,
     *,
     maximum_wait_seconds: float = 0.02,
+    import_http_client: httpx2.AsyncClient | None = None,
 ) -> tuple[A2AService, LocalObjectStore]:
     objects = await LocalObjectStore.create(tmp_path / "a2a-objects")
-    commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    staging = await AssetStaging.create(tmp_path / "a2a-files")
+    assets = AssetService(
+        sessions,
+        AssetObjectStore(objects, staging),
+        staging,
+        max_size_bytes=1024 * 1024,
+        clock=lambda: NOW,
+    )
+    commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]), assets=assets)
     secrets = InternalSecretService(
         sessions,
         SecretProtector(key=b"a" * 32, encryption_key_id="test-key"),
@@ -76,6 +90,13 @@ async def _service(
             commands,
             secrets,
             EndpointPolicy(require_https=True),
+            A2APartImporter(
+                assets,
+                import_http_client,
+                EndpointPolicy(),
+                max_redirects=2,
+                timeout_seconds=1,
+            ),
             poll_interval_seconds=0.001,
             maximum_wait_seconds=maximum_wait_seconds,
             clock=lambda: NOW,
@@ -140,6 +161,95 @@ async def test_send_history_length_applies_to_acceptance_and_idempotent_replay(
 
     assert not first.history
     assert not repeated.history
+
+
+async def test_raw_part_is_atomically_imported_as_asset_and_replayed_without_republication(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    request = _request()
+    request.message.parts.append(
+        a2a.Part(raw=b"%PDF-1.7\nA2A raw part\n", filename="brief.pdf", media_type="application/pdf")
+    )
+
+    first = await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+    repeated = await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+
+    assert repeated == first
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assets = tuple((await database.scalars(select(AssetRecord))).all())
+        task = await database.get(A2ATaskBindingRecord, first.id)
+        run = await database.get(RunRecord, task.current_run_id) if task is not None else None
+    assert len(assets) == 1
+    assert assets[0].filename == "brief.pdf"
+    assert assets[0].media_type == "application/pdf"
+    assert run is not None
+    assert run.input_json["content"][1] == {
+        "type": "binary",
+        "source": {"type": "asset", "asset_id": assets[0].id},
+        "delivery": "model_content",
+    }
+
+
+async def test_url_part_follows_bounded_redirect_and_is_not_refetched_on_replay(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if request.url.path == "/start":
+            return httpx2.Response(302, headers={"Location": "/content"})
+        return httpx2.Response(
+            200,
+            content=b"%PDF-1.7\nA2A URL part\n",
+            headers={"Content-Length": "22"},
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        service, _objects = await _service(
+            lifecycle_interaction_sessions,
+            tmp_path,
+            import_http_client=client,
+        )
+        request = _request()
+        request.message.ClearField("parts")
+        request.message.parts.append(
+            a2a.Part(url="https://8.8.8.8/start", filename="remote.pdf", media_type="application/pdf")
+        )
+        first = await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+        repeated = await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+
+    assert repeated == first
+    assert [request.url.path for request in requests] == ["/start", "/content"]
+    assert all("authorization" not in request.headers and "cookie" not in request.headers for request in requests)
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assets = tuple((await database.scalars(select(AssetRecord))).all())
+    assert len(assets) == 1
+    assert assets[0].filename == "remote.pdf"
+
+
+async def test_failed_raw_part_acceptance_removes_unowned_candidate(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    request = _request(task_id="missing-task")
+    request.message.ClearField("parts")
+    request.message.parts.append(a2a.Part(raw=b"candidate", filename="candidate.bin"))
+
+    with pytest.raises(A2AError) as captured:
+        await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+
+    assert captured.value.code == "task_not_found"
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assert await database.scalar(select(AssetRecord.id)) is None
+    assert not (await objects.list()).items
 
 
 async def test_completed_task_projects_artifact_and_context_accepts_next_task(

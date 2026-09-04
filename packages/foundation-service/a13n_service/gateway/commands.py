@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Literal
 
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentRunOverride, EffectiveAgentConfig, canonical_digest
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver, FrozenAgentInvocation
+from a13n_service.assets import Asset, UploadedAssetSource
 from a13n_service.assets.service import AssetService
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
@@ -185,6 +186,7 @@ class NativeInteractionCommands:
         idempotency_key: str,
         request: StartRunRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
         if workspace_id != actor.boundary_workspace_id:
             raise _not_found()
@@ -225,7 +227,11 @@ class NativeInteractionCommands:
             )
 
         accepted_input = await self._accept_input(
-            actor=actor, workspace_id=workspace_id, request=request, frozen=frozen
+            actor=actor,
+            workspace_id=workspace_id,
+            request=request,
+            frozen=frozen,
+            prepared_assets=prepared_assets,
         )
         session_id = request.session_id or new_session_id()
         session = None
@@ -349,6 +355,7 @@ class NativeInteractionCommands:
         idempotency_key: str,
         request: ContinueRunRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -396,6 +403,7 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=request.input,
             frozen=frozen,
+            prepared_assets=prepared_assets,
         )
         now = self._clock()
         state = initialize_completed_continuation_state(
@@ -497,6 +505,7 @@ class NativeInteractionCommands:
         idempotency_key: str,
         request: ContinueRunRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         stored_key = _scoped_idempotency_key(
@@ -539,6 +548,7 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=request.input,
             frozen=frozen,
+            prepared_assets=prepared_assets,
         )
         state = initialize_empty_thread_state(
             RunStateSeed(
@@ -1312,6 +1322,7 @@ class NativeInteractionCommands:
         idempotency_key: str,
         request: WaitingContinueRunRequest,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         source, thread = await self._load_feedback_source(
@@ -1335,6 +1346,7 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=request.input,
             effective=source_state.envelope.effective_agent_config,
+            prepared_assets=prepared_assets,
         )
         normalized = normalize_waiting_continue(
             waiting_run_id=source.id,
@@ -1928,20 +1940,31 @@ class NativeInteractionCommands:
         workspace_id: str,
         request: StartRunRequest,
         frozen: FrozenAgentInvocation,
+        prepared_assets: Mapping[str, Asset] | None = None,
     ):
         return await self._accept_input_value(
             actor=actor,
             workspace_id=workspace_id,
             submitted=request.input,
             frozen=frozen,
+            prepared_assets=prepared_assets,
         )
 
-    async def _accept_input_value(self, *, actor, workspace_id, submitted, frozen):
+    async def _accept_input_value(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        submitted: AgentInput,
+        frozen: FrozenAgentInvocation,
+        prepared_assets: Mapping[str, Asset] | None = None,
+    ):
         return await self._accept_input_for_effective(
             actor=actor,
             workspace_id=workspace_id,
             submitted=submitted,
             effective=frozen.effective_config,
+            prepared_assets=prepared_assets,
         )
 
     async def _accept_input_for_effective(
@@ -1951,8 +1974,18 @@ class NativeInteractionCommands:
         workspace_id: str,
         submitted: AgentInput,
         effective: EffectiveAgentConfig,
+        prepared_assets: Mapping[str, Asset] | None = None,
     ):
         async def authorize_asset(asset_id: str):
+            if prepared_assets is not None and (prepared := prepared_assets.get(asset_id)) is not None:
+                if (
+                    prepared.workspace_id != workspace_id
+                    or prepared.deleted_at is not None
+                    or not isinstance(prepared.source, UploadedAssetSource)
+                    or prepared.source.principal != actor.principal
+                ):
+                    raise AgentInputError("input_asset_unavailable", "Asset is not available for Agent input")
+                return prepared
             return await self._assets.require_for_use(actor=actor, asset_id=asset_id)
 
         environment = effective.resolved_environment
