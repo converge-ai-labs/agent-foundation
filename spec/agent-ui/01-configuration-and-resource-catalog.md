@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Agent UI uses a small multi-file configuration tree so people can configure and inspect the workstation with an ordinary editor when no browser is available. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes immutable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
+Agent UI uses a small multi-file configuration tree so people can configure and inspect the workstation with an ordinary editor when no browser is available. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes editable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
 
-A stable valid read of the complete tree and installed Content Plugin registrations produces one accepted configuration generation. A malformed, incomplete, or changing tree leaves the previous accepted generation active. Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
+A stable valid read of the complete tree and installed Content Plugin registrations and payloads produces one accepted configuration generation. A malformed, incomplete, or changing source leaves the previous accepted generation active. Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
 
 ## Configuration Tree
 
@@ -158,18 +158,18 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 
 ## Dynamic Values
 
-| Change                                               | Effect                                                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Valid resource file edit                             | Later Runs resolve the new accepted content; an active Run is unchanged                                            |
-| Invalid or partial multi-file edit                   | Previous accepted generation remains active                                                                        |
-| Global default edit                                  | Affects newly created root Threads only                                                                            |
-| Thread configuration patch                           | Affects the admitted Run and subsequent Runs; omitted axes retain prior Thread values                              |
-| Project root edit                                    | Affects later Runs of Threads selecting that Project                                                               |
-| Secret value behind an unchanged reference           | Later native construction resolves the current value                                                               |
-| Compatible Codex or Grok account-store change        | The next subscription-backed Model request resolves the current shared account                                     |
-| Newly installed extension or Capability contribution | Becomes available after catalog refresh and a successful generation; it is not auto-selected                       |
-| Content Plugin install or uninstall                  | Affects the next successful generation and later Runs; an admitted Run retains its captured immutable plugin paths |
-| Updated already imported Python extension code       | Requires a new App process                                                                                         |
+| Change                                               | Effect                                                                                                   |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Valid resource file edit                             | Later Runs resolve the new accepted content; an active Run is unchanged                                  |
+| Invalid or partial multi-file edit                   | Previous accepted generation remains active                                                              |
+| Global default edit                                  | Affects newly created root Threads only                                                                  |
+| Thread configuration patch                           | Affects the admitted Run and subsequent Runs; omitted axes retain prior Thread values                    |
+| Project root edit                                    | Affects later Runs of Threads selecting that Project                                                     |
+| Secret value behind an unchanged reference           | Later native construction resolves the current value                                                     |
+| Compatible Codex or Grok account-store change        | The next subscription-backed Model request resolves the current shared account                           |
+| Newly installed extension or Capability contribution | Becomes available after catalog refresh and a successful generation; it is not auto-selected             |
+| Content Plugin install or uninstall                  | Affects the next successful generation and later Runs; an admitted Run retains its captured plugin paths |
+| Updated already imported Python extension code       | Requires a new App process                                                                               |
 
 ## Failure Semantics
 

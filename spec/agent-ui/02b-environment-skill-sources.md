@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Agent UI exposes Harness file Skills as an Agent-selected Capability without creating a second managed Skill resource. A selected `skills` Capability discovers ordinary `SKILL.md` directories through the current Run's entered Environment. Project-local and user-local Skill files remain directly editable files; installed [Content Plugins](01b-content-plugin-repositories.md) contribute immutable managed Skill roots. Skills do not become Agent UI desired resources or SQLite rows.
+Agent UI exposes Harness file Skills as an Agent-selected Capability without creating a second managed Skill resource. A selected `skills` Capability discovers ordinary `SKILL.md` directories through the current Run's entered Environment. Project-local, user-local, and installed [Content Plugin](01b-content-plugin-repositories.md) Skill files are directly editable through their owning Environment mounts. Skills do not become Agent UI desired resources or SQLite rows.
 
 The [Harness Skills contract](../agent-harness/09-context-and-memory.md#skills) owns Skill document parsing, catalog freezing, selection, model-facing routing, and read observation. Agent UI owns only the Host source set, Environment routing, user Skill root exposure, and immutable source configuration captured for a Run.
 
@@ -13,13 +13,13 @@ The [Harness Skills contract](../agent-harness/09-context-and-memory.md#skills) 
 | Skill format, catalog limits, conflicts, and run-frozen model projection | Harness `SkillsCapability` | Supplies an explicit ordered `SkillManager` for each reconstructed Agent node                         |
 | Project Skill files                                                      | Project root owner         | Exposes each captured root through its existing Environment mount                                     |
 | User Skill files                                                         | User at `~/.agents/skills` | Exposes that directory through an exact Project mount or a dedicated read-write Environment mount     |
-| Content Plugin Skill files                                               | Installed plugin catalog   | Exposes each captured immutable Skill directory through a dedicated read-only Environment mount       |
+| Content Plugin Skill files                                               | Installed plugin catalog   | Exposes each captured Skill directory through a dedicated read-write Environment mount                |
 | Additional Skill roots                                                   | Agent resource             | Stores Environment-logical paths in `skills` Capability configuration                                 |
 | Environment path layout and authorization                                | Agent UI Host and Harness  | Uses Host-path-preserving or virtual roots, then resolves each source through the entered mount table |
 | Direct Skill authoring                                                   | User or Project owner      | Remains ordinary file editing                                                                         |
-| Content Plugin acquisition                                               | Agent UI CLI               | Installs Git-derived immutable bundles; TUI and WebUI do not manage them                              |
+| Content Plugin acquisition                                               | Agent UI CLI               | Installs Git-derived editable local bundles; TUI and WebUI do not manage them                         |
 
-A Skill is not an Agent UI configured resource. Agent UI surfaces can report the selected Capability configuration and bounded Run diagnostics. The CLI installs or uninstalls whole Content Plugins, not individual Skills; no surface edits or upgrades a plugin Skill in place.
+A Skill is not an Agent UI configured resource. Agent UI surfaces can report the selected Capability configuration and bounded Run diagnostics. The CLI installs or uninstalls whole Content Plugins rather than individual Skills; users edit installed files directly, and an Agent with the selected `skills` Capability can edit them through the plugin's file mount.
 
 ## Agent Configuration
 
@@ -77,7 +77,7 @@ For virtual-layout adapters, they retain the compatibility routes:
 
 The deterministic source IDs continue to use `workspace`, `workspace-2`, and later mount aliases in either layout; changing presentation paths does not change Skill precedence or provenance identity. A missing automatic directory contributes no Skills. An unavailable, unroutable, or unreadable explicit root fails catalog preparation. Harness per-root and total catalog bounds apply independently of the number of mounted Project roots; exceeding a bound fails rather than truncating an ambiguous catalog.
 
-Each plugin Skill root is mounted through a fresh Direct Local file-only adapter. Host-path-preserving layouts retain its captured immutable absolute path; virtual layouts assign deterministic `/environment/content-plugin-<position>` routes in ascending plugin-ID order. The mount is read-only and grants no shell, process, port, output, or sibling-path authority.
+Each plugin Skill root is mounted through a fresh Direct Local file-only adapter. Host-path-preserving layouts retain its captured absolute path; virtual layouts assign deterministic `/environment/content-plugin-<position>` routes in ascending plugin-ID order. The mount grants read and write file operations but no shell, process, port, output, or sibling-path authority.
 
 The catalog is prepared after initial Environment entry and frozen for the logical Harness Run. A mount added, replaced, or removed after preparation does not silently change it. Harness mount-incarnation checks reject a selected Skill whose route changes while it is being prepared or read. A later root or child Run reconstructs and rescans its own current source set.
 
@@ -107,10 +107,10 @@ The immutable Run composition captures:
 
 - the exact `skills` Capability configuration for every resolved Agent node;
 - the captured Project roots and their stable mount order;
-- the exact installed Content Plugin IDs, content digests, and immutable Skill paths; and
+- the exact installed Content Plugin IDs, content digests, and captured Skill paths; and
 - the selected Capability implementation provenance.
 
-It does not capture Skill document bytes or a discovered catalog. Fresh Agent reconstruction derives one deterministic aggregate-path source set from the captured Project, plugin, and user roots plus the selected Environment profile, and Harness freezes the observed catalog after Environment entry.
+It does not capture Skill document bytes or a discovered catalog. Fresh Agent reconstruction derives one deterministic aggregate-path source set from the captured Project, plugin, and user roots plus the selected Environment profile, and Harness freezes the observed catalog after Environment entry. Plugin file edits remain on the installed local path and are observed when a later Run reconstructs and rescans that source.
 
 A root Run injects the user Skill mount only when its root Agent selects `skills`. A delegated child receives a separately prepared Environment and applies the same rule to the child Run's root Agent. A nested roster entry selecting `skills` does not broaden the parent's Environment before that child is independently admitted.
 
@@ -137,7 +137,7 @@ A root Run injects the user Skill mount only when its root Agent selects `skills
 1. Skills are Environment-routed files, not Agent UI managed resources; whole Content Plugins are managed catalog bundles.
 2. Every explicit Skill root must resolve inside the current Run Environment.
 3. All captured Project mounts contribute their conventional `.agents/skills` directory.
-4. Every captured Content Plugin Skill root is exposed through a dedicated read-only file mount with deterministic provenance and ordering.
+4. Every captured Content Plugin Skill root is exposed through a dedicated read-write file mount with deterministic provenance and ordering.
 5. `~/.agents/skills` is exposed through an exact Host-path-preserving Project mount when one already owns that root, otherwise through a dedicated read-write file mount: by its canonical Host path for Full Control, Sandbox, and other Host-preserving adapters, or by `/environment/user-skills` for virtual-layout adapters, never through the ambient Host home.
 6. Capability omission creates no Skill catalog, plugin Skill mount, or dedicated user Skill mount.
 7. One logical Run observes one frozen, deterministically ordered Skill catalog.

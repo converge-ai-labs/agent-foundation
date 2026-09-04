@@ -95,7 +95,7 @@ class ContentPluginManifest(_PluginModel):
 
 
 class ContentPluginRegistration(_PluginModel):
-    """Durable registration for one published immutable plugin object."""
+    """Durable registration for one published editable plugin object."""
 
     schema_version: str = Field(pattern=r"^1$")
     plugin_id: str = Field(min_length=8, max_length=128, pattern=_PLUGIN_ID_PATTERN)
@@ -130,7 +130,7 @@ class UninstalledContentPlugin(_PluginModel):
 
 
 class ContentPluginStore:
-    """Manage per-plugin registrations and retained content-addressed objects."""
+    """Manage per-plugin registrations and retained editable objects."""
 
     def __init__(self, root: Path) -> None:
         self.root = Path(os.path.abspath(root.expanduser()))
@@ -154,7 +154,7 @@ class ContentPluginStore:
         return await to_thread.run_sync(self._uninstall, plugin_id)
 
     async def fingerprint(self) -> tuple[tuple[str, tuple[int, int, int, int]], ...]:
-        return await to_thread.run_sync(self._registration_fingerprint)
+        return await to_thread.run_sync(self._catalog_fingerprint)
 
     def _install(self, repository: str, plugin_id: str | None, ref: str | None) -> InstalledContentPlugin:
         selected_repository = _validate_repository(repository)
@@ -246,21 +246,7 @@ class ContentPluginStore:
         return tuple(registrations)
 
     def _load_registration(self, path: Path) -> InstalledContentPlugin:
-        raw = _read_regular_file(path, _MAX_REGISTRATION_BYTES)
-        try:
-            registration = ContentPluginRegistration.model_validate_json(raw, strict=True)
-        except (ValueError, ValidationError) as exc:
-            raise _error(
-                "content_plugin_store_invalid",
-                "An installed Content Plugin registration is invalid.",
-                path=os.fspath(path),
-            ) from exc
-        if path.name != f"{registration.plugin_id}.json":
-            raise _error(
-                "content_plugin_store_invalid",
-                "A Content Plugin registration filename does not match its ID.",
-                path=os.fspath(path),
-            )
+        registration = _read_registration(path)
         objects_metadata = _lstat(self.objects)
         if stat.S_ISLNK(objects_metadata.st_mode) or not stat.S_ISDIR(objects_metadata.st_mode):
             raise _error("content_plugin_store_invalid", "The Content Plugin object root is invalid.")
@@ -279,12 +265,7 @@ class ContentPluginStore:
                 "A Content Plugin object does not match its registration.",
                 plugin_id=registration.plugin_id,
             )
-        if _tree_digest(object_root) != registration.content_digest:
-            raise _error(
-                "content_plugin_store_invalid",
-                "A Content Plugin object does not match its content digest.",
-                plugin_id=registration.plugin_id,
-            )
+        _tree_digest(object_root)
         skills_path = _optional_content_directory(object_root, manifest.skills, kind="skills")
         subagents_root = _optional_content_directory(object_root, manifest.subagents, kind="subagents")
         if skills_path is not None:
@@ -387,24 +368,51 @@ class ContentPluginStore:
     def _registration_path(self, plugin_id: str) -> Path:
         return self.installed / f"{plugin_id}.json"
 
-    def _registration_fingerprint(self) -> tuple[tuple[str, tuple[int, int, int, int]], ...]:
+    def _catalog_fingerprint(self) -> tuple[tuple[str, tuple[int, int, int, int]], ...]:
         if not _store_directory_exists(self.root) or not _store_directory_exists(self.installed):
             return ()
         values: list[tuple[str, tuple[int, int, int, int]]] = []
         try:
             entries = sorted(self.installed.iterdir(), key=lambda path: path.name)
+            if len(entries) > _MAX_PLUGINS:
+                raise _error("content_plugin_limit", "The Content Plugin catalog contains too many registrations.")
             for item in entries:
                 if item.suffix != ".json":
                     continue
                 metadata = item.stat(follow_symlinks=False)
                 if not stat.S_ISREG(metadata.st_mode):
                     raise _error("content_plugin_store_invalid", "A Content Plugin registration is invalid.")
-                values.append((item.name, _fingerprint(metadata)))
+                registration = _read_registration(item)
+                values.append((f"installed/{item.name}", _fingerprint(metadata)))
+                object_root = self.objects / registration.content_digest
+                values.extend(
+                    (f"objects/{registration.content_digest}/{relative_path}", fingerprint)
+                    for relative_path, fingerprint in _tree_metadata_fingerprint(object_root)
+                )
         except ContentPluginError:
             raise
         except OSError as exc:
             raise _error("content_plugin_store_unavailable", "The Content Plugin catalog cannot be listed.") from exc
         return tuple(values)
+
+
+def _read_registration(path: Path) -> ContentPluginRegistration:
+    raw = _read_regular_file(path, _MAX_REGISTRATION_BYTES)
+    try:
+        registration = ContentPluginRegistration.model_validate_json(raw, strict=True)
+    except (ValueError, ValidationError) as exc:
+        raise _error(
+            "content_plugin_store_invalid",
+            "An installed Content Plugin registration is invalid.",
+            path=os.fspath(path),
+        ) from exc
+    if path.name != f"{registration.plugin_id}.json":
+        raise _error(
+            "content_plugin_store_invalid",
+            "A Content Plugin registration filename does not match its ID.",
+            path=os.fspath(path),
+        )
+    return registration
 
 
 def _load_candidate(repository_root: Path, relative_path: str) -> tuple[ContentPluginManifest, Path]:
@@ -517,6 +525,22 @@ def _validate_relative_path(value: str) -> None:
         raise ValueError("Content Plugin paths must be canonical")
 
 
+def _tree_metadata_fingerprint(root: Path) -> tuple[tuple[str, tuple[int, int, int, int]], ...]:
+    root_metadata = _lstat(root)
+    values = [(".", _fingerprint(root_metadata))]
+    for directory, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
+        directory_path = Path(directory)
+        directory_names.sort()
+        file_names.sort()
+        for name in directory_names:
+            path = directory_path / name
+            values.append((f"{path.relative_to(root).as_posix()}/", _fingerprint(_lstat(path))))
+        for name in file_names:
+            path = directory_path / name
+            values.append((path.relative_to(root).as_posix(), _fingerprint(_lstat(path))))
+    return tuple(values)
+
+
 def _tree_digest(root: Path) -> str:
     root_metadata = _lstat(root)
     if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
@@ -557,8 +581,7 @@ def _tree_digest(root: Path) -> str:
 
 def _publish_tree(source: Path, destination: Path, staging: Path) -> None:
     if destination.exists():
-        if _tree_digest(destination) != destination.name:
-            raise _error("content_plugin_store_invalid", "An existing Content Plugin object is invalid.")
+        _tree_digest(destination)
         return
     candidate = staging / f"object-{destination.name}-{uuid4().hex}"
     try:
@@ -567,8 +590,7 @@ def _publish_tree(source: Path, destination: Path, staging: Path) -> None:
         try:
             candidate.rename(destination)
         except FileExistsError:
-            if _tree_digest(destination) != destination.name:
-                raise _error("content_plugin_store_invalid", "An existing Content Plugin object is invalid.") from None
+            _tree_digest(destination)
     finally:
         shutil.rmtree(candidate, ignore_errors=True)
 

@@ -491,7 +491,7 @@ class EnvironmentRunService:
                 schema_version="1",
                 value={
                     "environment_id": f"content-plugin-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
-                    "root": {"path": os.fspath(normalized), "read_only": True},
+                    "root": {"path": os.fspath(normalized), "read_only": False},
                     "shell_profiles": [],
                     "allowed_executables": [],
                     "allowed_ports": [],
@@ -509,24 +509,14 @@ class EnvironmentRunService:
                 code="content_plugin_skills_mount_failed",
                 details={"plugin_id": plugin_id, "root": os.fspath(root)},
             ) from exc
-        read_actions = frozenset(
-            {
-                EnvironmentAction.FILE_STAT,
-                EnvironmentAction.FILE_READ_TEXT,
-                EnvironmentAction.FILE_READ_BYTES,
-                EnvironmentAction.FILE_LIST,
-                EnvironmentAction.FILE_QUERY,
-                EnvironmentAction.FILE_SEARCH_TEXT,
-                EnvironmentAction.FILE_COPY_SOURCE,
-            }
-        )
+        file_actions = frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
         return _PreparedMount(
             alias=alias,
             key=None,
             expected_state_ref=None,
             supplied_state=None,
             environment=environment,
-            permission_ceiling=EnvironmentPermissionSet(operations=read_actions),
+            permission_ceiling=EnvironmentPermissionSet(operations=file_actions),
             mount_path=mount_path,
         )
 

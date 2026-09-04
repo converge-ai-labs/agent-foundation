@@ -13,7 +13,7 @@ from a13n_ui.errors import ConfigurationError, ContentPluginError
 
 
 @pytest.mark.anyio
-async def test_install_list_and_uninstall_retains_immutable_content(tmp_path: Path) -> None:
+async def test_install_list_and_uninstall_retains_content(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
 
@@ -151,20 +151,67 @@ async def test_configuration_rejects_plugin_to_plugin_subagent_conflict(tmp_path
 
 
 @pytest.mark.anyio
-async def test_uninstall_recovers_from_a_corrupt_retained_object(tmp_path: Path) -> None:
+async def test_installed_content_can_be_edited_and_retained_on_uninstall(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
     store = ContentPluginStore(tmp_path / "data" / "content-plugins")
     installed = await store.install(os.fspath(repository))
-    (Path(installed.path) / "skills" / "review" / "SKILL.md").write_text("changed", encoding="utf-8")
+    fingerprint_before = await store.fingerprint()
+    plugin_root = Path(installed.path)
+    (plugin_root / "skills" / "review" / "SKILL.md").write_text(
+        "---\nname: review\ndescription: Review an edited change.\n---\n\nReview the local version.\n",
+        encoding="utf-8",
+    )
+    (plugin_root / "subagents" / "explorer.md").write_text(
+        "---\nname: explorer\ndescription: Explore the edited repository.\n---\n\nInspect local changes.\n",
+        encoding="utf-8",
+    )
+
+    fingerprint_after = await store.fingerprint()
+    listed = await store.list()
+    loaded = await load_agent_ui_configuration(
+        _configuration(tmp_path / "configuration"),
+        content_plugin_root=store.root,
+    )
+    removed = await store.uninstall("plugin-reviewer")
+
+    assert fingerprint_after != fingerprint_before
+    assert listed[0].content_digest == installed.content_digest
+    assert loaded.subagents["subagent-explorer"].description == "Explore the edited repository."
+    assert loaded.subagents["subagent-explorer"].body == "Inspect local changes."
+    assert removed.retained_path == installed.path
+    assert await store.list() == ()
+
+
+@pytest.mark.anyio
+async def test_reinstall_reuses_edited_retained_content(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+    store = ContentPluginStore(tmp_path / "data" / "content-plugins")
+    installed = await store.install(os.fspath(repository))
+    skill_document = Path(installed.path) / "skills" / "review" / "SKILL.md"
+    edited = "---\nname: review\ndescription: Locally edited.\n---\n\nKeep this edit.\n"
+    skill_document.write_text(edited, encoding="utf-8")
+    await store.uninstall("plugin-reviewer")
+
+    reinstalled = await store.install(os.fspath(repository))
+
+    assert reinstalled.path == installed.path
+    assert skill_document.read_text(encoding="utf-8") == edited
+
+
+@pytest.mark.anyio
+async def test_invalid_local_edit_rejects_installed_catalog(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "repository", ("plugin-reviewer",))
+    store = ContentPluginStore(tmp_path / "data" / "content-plugins")
+    installed = await store.install(os.fspath(repository))
+    (Path(installed.path) / "subagents" / "explorer.md").write_text(
+        "Missing frontmatter.\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(ContentPluginError) as invalid:
         await store.list()
-    assert invalid.value.code == "content_plugin_store_invalid"
 
-    removed = await store.uninstall("plugin-reviewer")
-
-    assert removed.retained_path == installed.path
-    assert await store.list() == ()
+    assert invalid.value.code == "content_plugin_invalid"
 
 
 @pytest.mark.anyio

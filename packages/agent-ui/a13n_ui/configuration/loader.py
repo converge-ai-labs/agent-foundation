@@ -81,8 +81,10 @@ async def load_agent_ui_configuration(
     if selected.suffix != ".yaml":
         raise _error("settings_path_invalid", "Agent UI configuration must use lower-case .yaml.", selected)
 
-    content_plugins = () if content_plugin_root is None else await ContentPluginStore(content_plugin_root).list()
+    plugin_store = None if content_plugin_root is None else ContentPluginStore(content_plugin_root)
     for _attempt in range(_STABLE_READ_ATTEMPTS):
+        plugin_before = () if plugin_store is None else await plugin_store.fingerprint()
+        content_plugins = () if plugin_store is None else await plugin_store.list()
         before = await to_thread.run_sync(_scan_tree, selected)
         captured: list[tuple[str, bytes, tuple[int, int, int, int]]] = []
         total_bytes = 0
@@ -109,7 +111,11 @@ async def load_agent_ui_configuration(
         after = await to_thread.run_sync(_scan_tree, selected)
         if before != after:
             continue
-        return _parse_complete_tree(selected, captured, content_plugins)
+        parsed = _parse_complete_tree(selected, captured, content_plugins)
+        plugin_after = () if plugin_store is None else await plugin_store.fingerprint()
+        if plugin_before != plugin_after:
+            continue
+        return parsed
 
     raise _error(
         "settings_source_unstable",
