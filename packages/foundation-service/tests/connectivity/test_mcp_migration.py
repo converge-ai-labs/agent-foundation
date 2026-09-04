@@ -5,6 +5,7 @@ from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
+CONNECTIVITY_PARENT_REVISION = "93f7e255236d"
 TABLES = {"mcp_connections", "mcp_oauth_sessions", "mcp_tool_catalogs"}
 CONNECTIVITY_PARENT_REVISION = "93f7e255236d"
 
