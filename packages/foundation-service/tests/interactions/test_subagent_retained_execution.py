@@ -98,7 +98,7 @@ async def test_later_parent_run_can_resume_retained_child_from_same_thread(
         SubagentInfoRequest(execution_id=delegated.execution_id),
     )
     resumed = await later_operator.resume(
-        _plan(later_context, operation_id="later-resume", delegated_input='{"delegated_task":"continue"}'),
+        _plan(later_context, delegated_input='{"delegated_task":"continue"}'),
         AsyncResumeRequest(execution_id=delegated.execution_id, prompt="continue"),
     )
     await _complete_delegated_child(
@@ -110,7 +110,7 @@ async def test_later_parent_run_can_resume_retained_child_from_same_thread(
         clock_seconds=9,
     )
     resumed_again = await later_operator.resume(
-        _plan(later_context, operation_id="later-resume-again", delegated_input='{"delegated_task":"finish"}'),
+        _plan(later_context, delegated_input='{"delegated_task":"finish"}'),
         AsyncResumeRequest(execution_id=resumed.execution_id, prompt="finish"),
     )
 
@@ -229,7 +229,6 @@ async def test_later_parent_roster_revision_can_resume_retained_child_checkpoint
     resumed = await later_operator.resume(
         _plan(
             later_context,
-            operation_id="replacement-resume",
             delegated_input='{"delegated_task":"continue"}',
             child_definition_id=REPLACEMENT_CHILD_DEFINITION_ID,
         ),

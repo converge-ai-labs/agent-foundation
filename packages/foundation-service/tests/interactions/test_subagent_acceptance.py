@@ -64,7 +64,7 @@ CHILD_REVISION_ID = "agtr_2222222222222222"
 CHILD_DEFINITION_ID = f"agent-config-{'3' * 24}"
 
 
-async def test_child_acceptance_is_fenced_atomic_and_idempotent(
+async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
@@ -120,6 +120,8 @@ async def test_child_acceptance_is_fenced_atomic_and_idempotent(
     )
 
     accepted = await service.accept(first, authority)
+    with pytest.raises(ChildRunAcceptanceError, match="already contains accepted state"):
+        await service.accept(first, authority)
     second = _prepared_child(
         running_parent,
         parent_state,
@@ -128,9 +130,10 @@ async def test_child_acceptance_is_fenced_atomic_and_idempotent(
         child_config,
         suffix="4",
     )
-    replay = await service.accept(second, authority)
+    second_accepted = await service.accept(second, authority)
 
-    assert replay == accepted
+    assert second_accepted.relationship.id != accepted.relationship.id
+    assert second_accepted.child_run_id != accepted.child_run_id
     assert accepted.relationship.child_run_id == first.run.id
     assert accepted.relationship.child_thread_id == first.thread.id
     async with short_session(interaction_sessions) as database:
@@ -144,8 +147,8 @@ async def test_child_acceptance_is_fenced_atomic_and_idempotent(
         assert child.to_resource().authority_principal == running_parent.authority_principal
         assert (child.agent_id, child.agent_revision_id) == (CHILD_AGENT_ID, CHILD_REVISION_ID)
         assert (child_thread.session_id, child_thread.origin_run_id) == (SESSION_ID, running_parent.id)
-        assert relationships == 1
-        assert threads == 1
+        assert relationships == 2
+        assert threads == 2
 
     child_claim = await AttemptScheduler(
         interaction_sessions,
@@ -154,7 +157,6 @@ async def test_child_acceptance_is_fenced_atomic_and_idempotent(
         attempt_id_factory=lambda: "rat_2323232323232323",
     ).claim(accepted.child_run_id, _worker())
     assert child_claim is not None
-    assert await service.accept(second, authority) == accepted
 
 
 async def test_child_acceptance_rejects_stale_generation_before_publishing_state(
@@ -197,7 +199,7 @@ async def test_child_acceptance_rejects_stale_generation_before_publishing_state
         await states.read(TENANT_ID, prepared.run.id)
 
 
-async def test_child_acceptance_reauthorizes_persisted_parent_principal_on_replay(
+async def test_child_acceptance_reauthorizes_persisted_parent_principal(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
@@ -230,7 +232,6 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal_on_repla
         RunPayloadStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=2),
     )
-    await service.accept(prepared, authority)
     async with transaction(interaction_sessions) as database:
         binding = await database.scalar(select(RoleBindingRecord).where(RoleBindingRecord.principal_id == USER_ID))
         assert binding is not None
@@ -239,8 +240,11 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal_on_repla
     with pytest.raises(ChildRunAcceptanceError, match="no longer authorized"):
         await service.accept(prepared, authority)
 
+    with pytest.raises(ObjectNotFound):
+        await states.read(TENANT_ID, prepared.run.id)
 
-async def test_concurrent_child_acceptance_converges_on_postgresql(
+
+async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postgresql(
     postgres_interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
 ) -> None:
@@ -281,12 +285,12 @@ async def test_concurrent_child_acceptance_converges_on_postgresql(
 
     receipts = await asyncio.gather(*(service.accept(candidate, authority) for candidate in candidates))
 
-    assert receipts[0] == receipts[1]
+    assert receipts[0].relationship.id != receipts[1].relationship.id
     async with short_session(sessions) as database:
-        assert await database.scalar(select(func.count()).select_from(ChildRunRelationshipRecord)) == 1
+        assert await database.scalar(select(func.count()).select_from(ChildRunRelationshipRecord)) == 2
         assert (
             await database.scalar(select(func.count()).select_from(ThreadRecord).where(ThreadRecord.role == "child"))
-            == 1
+            == 2
         )
 
 
@@ -352,7 +356,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         parent_run_attempt_id=parent_authority.run_attempt_id,
         parent_run_attempt_generation=parent_authority.fence,
         parent_agent_instance_id="agent-parent",
-        spawn_operation_id="resume-call-1",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"continue"}',
         child_definition_id=CHILD_DEFINITION_ID,
@@ -442,7 +445,6 @@ def _prepared_child(
     child_config: EffectiveAgentConfig,
     *,
     suffix: str,
-    spawn_operation_id: str = "delegate-call-1",
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
 ):
     return prepare_child_run(
@@ -451,7 +453,6 @@ def _prepared_child(
         parent_run_attempt_id=attempt_id,
         parent_run_attempt_generation=fence,
         parent_agent_instance_id="agent-parent",
-        spawn_operation_id=spawn_operation_id,
         subagent_name="researcher",
         delegated_input='{"delegated_task":"research"}',
         child_definition_id=CHILD_DEFINITION_ID,

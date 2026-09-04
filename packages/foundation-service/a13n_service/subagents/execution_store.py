@@ -127,34 +127,17 @@ class SubagentExecutionStore:
             )
         return page.items[0]
 
-    async def read_operation(
-        self,
-        context: SubagentOperatorContext,
-        operation_id: str,
-    ) -> RetainedChildExecution | None:
-        page = await self.read_page(
-            context,
-            operation_id=operation_id,
-            offset=0,
-            limit=1,
-            action=WorkspaceAction.run_read,
-        )
-        return page.items[0] if page.items else None
-
     async def read_page(
         self,
         context: SubagentOperatorContext,
         *,
         execution_id: str | None = None,
-        operation_id: str | None = None,
         offset: int,
         limit: int,
         action: WorkspaceAction,
     ) -> ExecutionPage:
         authority = self.require_context(context)
-        if execution_id is not None and operation_id is not None:
-            raise ValueError("execution and operation filters are mutually exclusive")
-        query_offset = 0 if execution_id is not None or operation_id is not None else offset
+        query_offset = 0 if execution_id is not None else offset
         async with short_session(self._sessions) as database:
             parent, _, _ = await read_attempt_authority(database, authority, _utc(self._clock()))
             session = await _require_session(database, parent)
@@ -169,9 +152,6 @@ class SubagentExecutionStore:
             ]
             if execution_id is not None:
                 filters.append(ChildRunRelationshipRecord.id == execution_id)
-            if operation_id is not None:
-                filters.append(ChildRunRelationshipRecord.parent_run_id == authority.run_id)
-                filters.append(ChildRunRelationshipRecord.spawn_operation_id == operation_id)
             relationship_scope = and_(
                 origin_parent.tenant_id == ChildRunRelationshipRecord.tenant_id,
                 origin_parent.id == ChildRunRelationshipRecord.parent_run_id,

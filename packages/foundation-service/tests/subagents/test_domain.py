@@ -23,7 +23,6 @@ def relationship() -> ChildRunRelationship:
         subagent_name="researcher",
         child_run_id="run_abcdef1234567890",
         child_thread_id="thread-abcdef1234567890abcdef1234567890",
-        spawn_operation_id="call-research-1",
         cancellation_policy=ChildCancellationPolicy.independent,
         result_visibility=ChildResultVisibility.parent_thread,
         created_at=NOW,

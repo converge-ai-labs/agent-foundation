@@ -18,7 +18,6 @@ def child_run_relationship_record(
         subagent_name=value.subagent_name,
         child_run_id=value.child_run_id,
         child_thread_id=value.child_thread_id,
-        spawn_operation_id=value.spawn_operation_id,
         cancellation_policy=value.cancellation_policy.value,
         result_visibility=value.result_visibility.value,
         created_at=value.created_at,

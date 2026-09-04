@@ -218,12 +218,6 @@ class AsyncSubagentToolset:
     ) -> SubagentDelegationPlan:
         from a13n_harness.execution import derive_child_identity
 
-        operation_id = ctx.tool_call_id
-        if operation_id is None:
-            raise DefinitionError(
-                "Async subagent admission requires a tool-call identity.",
-                code="subagent_operation_identity_missing",
-            )
         child_input = _build_child_input(ctx, child, prompt)
         limits = _intersect_usage_limits(
             ctx.usage_limits,
@@ -231,7 +225,6 @@ class AsyncSubagentToolset:
             child.declaration.usage_limits,
         )
         return SubagentDelegationPlan(
-            operation_id=operation_id,
             child=child,
             child_identity=derive_child_identity(
                 self._context.identity,

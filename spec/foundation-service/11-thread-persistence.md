@@ -6,7 +6,7 @@ Foundation persists every hosted `Thread` as an independent versioned relational
 
 The shared [Platform Interaction Model](../interaction-model.md) owns the cross-platform meaning of Thread. The Harness owns creation and preservation of the matching `HarnessState.thread_id`. Foundation stores that exact ID rather than generating a parallel Host Thread identity. [Durable Run State](12-run-persistence.md) owns Run fields, state objects, parent edges, and outcomes; this contract owns which Run is current for a Foundation Thread and which sealed Run is selected as its continuation head. Whether the current Run is active derives from its own status rather than another stored Thread pointer.
 
-Foundation never creates an empty Thread. Root, fork, and child acceptance each create one Thread together with its first Run, initial complete Run state, inbox counter authority, idempotency evidence, lifecycle facts, and outbox intents. Later immediate submission, queued-submission consumption, authenticated feedback, explicit waiting Continue, eligible asynchronous-result acceptance, and retry acceptance create another Run and advance the existing Thread under its current state version; queue-only admission, Thread-inbox acceptance, suppression, or active delivery do not.
+Foundation never creates an empty Thread. Root, fork, and child acceptance each create one Thread together with its first Run, initial complete Run state, inbox counter authority, lifecycle facts, and outbox intents. Root and fork acceptance also retain their owning idempotency evidence; child acceptance instead retains its asynchronous-child relationship and assigns no spawn idempotency identity. Later immediate submission, queued-submission consumption, authenticated feedback, explicit waiting Continue, eligible asynchronous-result acceptance, and retry acceptance create another Run and advance the existing Thread under its current state version; queue-only admission, Thread-inbox acceptance, suppression, or active delivery do not.
 
 ## Boundaries
 
@@ -59,7 +59,7 @@ class Thread:
 
 A previously committed or imported Thread whose valid Harness state uses the legacy Harness-generated `thread-<32 lowercase hex>` form retains that exact value in both the Thread row and every later state; Foundation never rewrites an existing identity. New Foundation-owned Threads use the shared Foundation object-ID generator rather than the legacy generated form.
 
-`version` is the positive Thread domain-object version. It starts at `1` when the Thread and first Run commit and increases by one for every accepted Thread advancement and every transition that seals the current Run. Idempotent replay resolves before comparing an expected version. Claim, execution, and worker recovery inside the same current Run use the Run's own version and do not change the Thread version. A state-first combined completion and queued successor acceptance applies both logically ordered changes in one transaction and therefore increments `version` by two.
+`version` is the positive Thread domain-object version. It starts at `1` when the Thread and first Run commit and increases by one for every accepted Thread advancement and every transition that seals the current Run. When an owning command defines idempotent replay, that replay resolves before comparing an expected version. Claim, execution, and worker recovery inside the same current Run use the Run's own version and do not change the Thread version. A state-first combined completion and queued successor acceptance applies both logically ordered changes in one transaction and therefore increments `version` by two.
 
 `queue_version` is a non-negative version of the Thread's queued-submission collection. It starts at `0` and increases for every add, edit, delete, reorder, consume, or terminal-failure mutation. Queue-only mutation, including failure after the current Run is terminal, does not change `version`, `current_run_id`, or `head_run_id`. Consuming an entry increments both `queue_version` and `version` because the same transaction changes the queue and accepts another Run. When consumption is combined with completion of the prior current Run, `queue_version` increments once while `version` increments twice: once for the seal and once for advancement. When permanent queue invalidity is instead combined with completion, `queue_version` increments once and `version` increments once for the seal; no successor is accepted.
 
@@ -166,17 +166,17 @@ The Thread row contains correlation and control state only. It never exposes raw
 
 ## Failure Semantics
 
-| Failure                                                                | Durable outcome                                                 | Retry or reconciliation                                                        |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Authorization, origin, parent, or state-version validation fails       | No Thread or Run mutation                                       | Caller refreshes authority or resource state                                   |
-| Initial state publication fails                                        | No Thread or Run is accepted                                    | Retry with the same idempotency key                                            |
-| State publishes but relational creation or advancement rolls back      | Existing Thread is unchanged; new objects are non-authoritative | Same-key retry or orphan cleanup after ownership proof                         |
-| Response is lost after commit                                          | Thread and Run may already exist                                | Repeat the same idempotency key and canonical request                          |
-| Concurrent advancement wins                                            | Losing request changes nothing                                  | Read the current Thread and decide against its new state version and head      |
-| Current Run seals while another command uses older state               | Sealing wins and increments Thread state version                | Stale command conflicts and rereads the Thread                                 |
-| Combined completion and queued acceptance loses any final precondition | No part of that combined transaction mutates the Thread         | Re-evaluate ordinary completion; later terminal recovery can consume the queue |
-| Referenced head or current Run is missing or mismatched                | Thread fails closed as relational corruption                    | Readiness or repair restores a verified consistent relational state            |
-| Stale RunAttempt tries to seal a non-current Run or select a head      | Mutation is fenced and rejected                                 | Current RunAttempt or transactional Worker takeover owns the transition        |
+| Failure                                                                | Durable outcome                                                 | Retry or reconciliation                                                              |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Authorization, origin, parent, or state-version validation fails       | No Thread or Run mutation                                       | Caller refreshes authority or resource state                                         |
+| Initial state publication fails                                        | No Thread or Run is accepted                                    | Root and fork can retry with the same key; child admission starts a fresh invocation |
+| State publishes but relational creation or advancement rolls back      | Existing Thread is unchanged; new objects are non-authoritative | Follow the owning operation's retry or orphan-cleanup contract                       |
+| Response is lost after commit                                          | Thread and Run may already exist                                | Root and fork replay by key; child admission reports an unknown outcome              |
+| Concurrent advancement wins                                            | Losing request changes nothing                                  | Read the current Thread and decide against its new state version and head            |
+| Current Run seals while another command uses older state               | Sealing wins and increments Thread state version                | Stale command conflicts and rereads the Thread                                       |
+| Combined completion and queued acceptance loses any final precondition | No part of that combined transaction mutates the Thread         | Re-evaluate ordinary completion; later terminal recovery can consume the queue       |
+| Referenced head or current Run is missing or mismatched                | Thread fails closed as relational corruption                    | Readiness or repair restores a verified consistent relational state                  |
+| Stale RunAttempt tries to seal a non-current Run or select a head      | Mutation is fenced and rejected                                 | Current RunAttempt or transactional Worker takeover owns the transition              |
 
 ## Compatibility
 
@@ -198,7 +198,7 @@ The independent Thread row duplicates relationships that are also present on Run
 06. `head_run_id` is null until the Thread selects a sealed waiting or completed Run and never names a failed or cancelled Run.
 07. Thread `version` changes once on accepted advancement and once whenever the current Run seals; a combined completed seal and queued acceptance applies both increments in one transaction, while a combined completed seal and queue failure applies only the seal increment. Claim, execution, worker recovery, and queue-only mutation do not change it.
 08. Accepted advancement and Run sealing update current, head, and Thread versions exactly as defined by this contract; the owning input, queue, or asynchronous-subagent contract determines operation eligibility and Run lineage.
-09. Idempotency replay resolves before `expected_thread_version`, and a losing concurrency check changes neither Thread nor Run state.
+09. When an owning command defines idempotency, replay resolves before `expected_thread_version`; a losing concurrency check changes neither Thread nor Run state.
 10. No Thread mutation transaction spans Harness execution, object I/O, provider calls, Redis, streaming, sleeps, or other external work.
 11. Thread identity, origin, Run references, cursors, and object locators grant no authority by possession.
 12. Run state, Items, events, provider state, and presentation history never substitute for the durable Thread row.

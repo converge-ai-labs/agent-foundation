@@ -123,9 +123,11 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         child_relationship_unique = {
             constraint["name"] for constraint in inspector.get_unique_constraints("child_run_relationships")
         }
+        child_relationship_columns = {column["name"] for column in inspector.get_columns("child_run_relationships")}
+        assert "spawn_operation_id" not in child_relationship_columns
+        assert "uq_child_run_relationships_spawn_operation" not in child_relationship_unique
         assert {
             "uq_child_run_relationships_tenant_id",
-            "uq_child_run_relationships_spawn_operation",
             "uq_child_run_relationships_child_run",
         } <= child_relationship_unique
         with engine.connect() as connection:

@@ -248,7 +248,6 @@ class ResolvedDelegationContext:
 class SubagentDelegationPlan:
     """Immutable Harness-resolved child authority ceiling for one Host admission."""
 
-    operation_id: str
     child: BuiltSubagent
     child_identity: AgentIdentityRef
     context: ResolvedDelegationContext
@@ -256,10 +255,6 @@ class SubagentDelegationPlan:
     parent: SubagentOperatorContext
 
     def __post_init__(self) -> None:
-        if not isinstance(self.operation_id, str) or not self.operation_id.strip():
-            raise ValueError("subagent delegation operation identity must be non-blank")
-        if len(self.operation_id) > 256:
-            raise ValueError("subagent delegation operation identity exceeds 256 characters")
         if not isinstance(self.child, BuiltSubagent):
             raise TypeError("child must be a BuiltSubagent")
         if not isinstance(self.child_identity, AgentIdentityRef):

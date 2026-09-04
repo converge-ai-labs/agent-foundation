@@ -34,7 +34,7 @@ from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
 
-from .acceptance import ChildRunAcceptanceService
+from .acceptance import ChildRunAcceptanceReceipt, ChildRunAcceptanceService
 from .execution_store import (
     AttemptAuthoritySource,
     FoundationSubagentOperatorError,
@@ -118,19 +118,15 @@ class FoundationSubagentOperator(SubagentOperator):
     ) -> AsyncExecutionView:
         authority = self._require_plan(plan, request.subagent_name)
         delegated_input = _delegated_input(plan)
-        replay = await self._executions.read_operation(plan.parent, plan.operation_id)
-        if replay is not None:
-            _validate_replay(replay, plan=plan, delegated_input=delegated_input, resumed_from=None)
-            return compact_execution_view(replay)
         prepared = await self._admission_preparer.prepare_delegate(authority, plan, request, delegated_input)
         _validate_delegate_candidate(prepared, plan=plan, delegated_input=delegated_input)
         receipt = await self._acceptance.accept(prepared, authority)
-        accepted = await self._executions.read_exact(
-            plan.parent,
-            receipt.relationship.id,
-            WorkspaceAction.run_read,
+        return _accepted_view(
+            receipt,
+            child_definition_id=prepared.child_definition_id,
+            resumed_from=None,
+            segment_index=0,
         )
-        return compact_execution_view(accepted)
 
     async def info(
         self,
@@ -261,15 +257,6 @@ class FoundationSubagentOperator(SubagentOperator):
     ) -> AsyncExecutionView:
         authority = self._require_plan(plan, plan.child.declaration.name)
         delegated_input = _delegated_input(plan)
-        replay = await self._executions.read_operation(plan.parent, plan.operation_id)
-        if replay is not None:
-            _validate_replay(
-                replay,
-                plan=plan,
-                delegated_input=delegated_input,
-                resumed_from=request.execution_id,
-            )
-            return compact_execution_view(replay)
         source = await self._executions.read_exact(
             plan.parent,
             request.execution_id,
@@ -294,12 +281,12 @@ class FoundationSubagentOperator(SubagentOperator):
             delegated_input=delegated_input,
         )
         receipt = await self._acceptance.accept_resume(prepared, authority)
-        accepted = await self._executions.read_exact(
-            plan.parent,
-            receipt.relationship.id,
-            WorkspaceAction.run_read,
+        return _accepted_view(
+            receipt,
+            child_definition_id=prepared.child_definition_id,
+            resumed_from=source.relationship.id,
+            segment_index=source.segment_index + 1,
         )
-        return compact_execution_view(accepted)
 
     def _require_plan(self, plan: SubagentDelegationPlan, subagent_name: str) -> AttemptContext:
         authority = self._executions.require_context(plan.parent)
@@ -319,7 +306,6 @@ def _validate_delegate_candidate(
 ) -> None:
     if (
         prepared.relationship.parent_run_id != plan.parent.parent_run_id
-        or prepared.relationship.spawn_operation_id != plan.operation_id
         or prepared.relationship.subagent_name != plan.child.declaration.name
         or prepared.run.parent_agent_instance_id != plan.parent.parent_agent_instance_id
         or execution_input(prepared.run) != delegated_input
@@ -342,7 +328,6 @@ def _validate_resume_candidate(
         prepared.resumed_from_relationship_id != source.relationship.id
         or prepared.resumed_from_child_run_id != source.run.id
         or prepared.relationship.parent_run_id != plan.parent.parent_run_id
-        or prepared.relationship.spawn_operation_id != plan.operation_id
         or prepared.relationship.subagent_name != plan.child.declaration.name
         or prepared.run.parent_agent_instance_id != plan.parent.parent_agent_instance_id
         or execution_input(prepared.run) != delegated_input
@@ -354,23 +339,24 @@ def _validate_resume_candidate(
         )
 
 
-def _validate_replay(
-    execution: RetainedChildExecution,
+def _accepted_view(
+    receipt: ChildRunAcceptanceReceipt,
     *,
-    plan: SubagentDelegationPlan,
-    delegated_input: str,
+    child_definition_id: str,
     resumed_from: str | None,
-) -> None:
-    if (
-        execution.relationship.subagent_name != plan.child.declaration.name
-        or execution.resumed_from_relationship_id != resumed_from
-        or execution.input != delegated_input
-        or execution.child_definition_id != plan.child.definition.definition_id
-    ):
-        raise FoundationSubagentOperatorError(
-            "subagent_operation_conflict",
-            "Subagent operation identity was reused with different intent",
-        )
+    segment_index: int,
+) -> AsyncExecutionView:
+    relationship = receipt.relationship
+    return AsyncExecutionView(
+        execution_id=relationship.id,
+        subagent_name=relationship.subagent_name,
+        child_definition_id=child_definition_id,
+        status="running",
+        resumed_from=resumed_from,
+        thread_id=receipt.child_thread_id,
+        child_run_id=receipt.child_run_id,
+        segment_index=segment_index,
+    )
 
 
 def _delegated_input(plan: SubagentDelegationPlan) -> str:

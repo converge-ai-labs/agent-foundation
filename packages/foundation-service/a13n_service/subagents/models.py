@@ -55,7 +55,6 @@ class ChildRunRelationshipRecord(Base):
         ),
         CheckConstraint("parent_run_attempt_generation >= 1", name="parent_attempt_generation_positive"),
         CheckConstraint("length(subagent_name) BETWEEN 1 AND 63", name="subagent_name_bounded"),
-        CheckConstraint("length(spawn_operation_id) BETWEEN 1 AND 256", name="spawn_operation_id_bounded"),
         CheckConstraint(
             "cancellation_policy IN ('independent', 'request_child_cancel')",
             name="cancellation_policy_valid",
@@ -66,12 +65,6 @@ class ChildRunRelationshipRecord(Base):
         ),
         CheckConstraint("parent_run_id <> child_run_id", name="child_run_distinct"),
         UniqueConstraint("tenant_id", "id", name="uq_child_run_relationships_tenant_id"),
-        UniqueConstraint(
-            "tenant_id",
-            "parent_run_id",
-            "spawn_operation_id",
-            name="uq_child_run_relationships_spawn_operation",
-        ),
         UniqueConstraint("tenant_id", "child_run_id", name="uq_child_run_relationships_child_run"),
         Index("ix_child_run_relationships_parent", "tenant_id", "parent_run_id", "created_at", "id"),
         Index("ix_child_run_relationships_child_thread", "tenant_id", "child_thread_id", "created_at", "id"),
@@ -85,7 +78,6 @@ class ChildRunRelationshipRecord(Base):
     subagent_name: Mapped[str] = mapped_column(String(63), nullable=False)
     child_run_id: Mapped[str] = mapped_column(String(72), nullable=False)
     child_thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    spawn_operation_id: Mapped[str] = mapped_column(String(256), nullable=False)
     cancellation_policy: Mapped[str] = mapped_column(String(32), nullable=False)
     result_visibility: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -99,7 +91,6 @@ class ChildRunRelationshipRecord(Base):
             subagent_name=self.subagent_name,
             child_run_id=self.child_run_id,
             child_thread_id=self.child_thread_id,
-            spawn_operation_id=self.spawn_operation_id,
             cancellation_policy=ChildCancellationPolicy(self.cancellation_policy),
             result_visibility=ChildResultVisibility(self.result_visibility),
             created_at=_as_utc(self.created_at),

@@ -106,7 +106,6 @@ async def _cancel_parent_with_children(
             authority.fence,
             child_config,
             suffix="a",
-            spawn_operation_id="cancel-child",
             cancellation_policy=ChildCancellationPolicy.request_child_cancel,
         ),
         authority,
@@ -119,7 +118,6 @@ async def _cancel_parent_with_children(
             authority.fence,
             child_config,
             suffix="b",
-            spawn_operation_id="independent-child",
         ),
         authority,
     )

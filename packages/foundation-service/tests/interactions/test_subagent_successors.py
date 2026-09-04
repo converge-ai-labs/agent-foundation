@@ -352,7 +352,6 @@ async def _accept_another_child(
         parent_run_attempt_id=authority.run_attempt_id,
         parent_run_attempt_generation=authority.fence,
         parent_agent_instance_id="agent-parent",
-        spawn_operation_id="delegate-call-2",
         subagent_name="researcher",
         delegated_input='{"delegated_task":"second"}',
         child_definition_id=CHILD_DEFINITION_ID,

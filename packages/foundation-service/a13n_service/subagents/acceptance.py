@@ -15,14 +15,12 @@ from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAc
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
     validate_prepared_run,
-    validate_run_state_selection,
 )
 from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority, read_attempt_authority
 from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import Run, StrictModel, Thread
 from a13n_service.interactions.environment_bindings import (
     add_run_with_environment_binding,
-    verify_environment_binding,
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import (
@@ -81,9 +79,6 @@ class ChildRunAcceptanceService:
         authority: AttemptContext,
     ) -> ChildRunAcceptanceReceipt:
         _validate_bundle(prepared)
-        replay = await self._load_replay(prepared)
-        if replay is not None:
-            return replay
         async with short_session(self._sessions) as database:
             parent, _, thread = await read_attempt_authority(database, authority, _utc(self._clock()))
             session = await _require_session(database, parent)
@@ -150,9 +145,6 @@ class ChildRunAcceptanceService:
                 database.add(child_run_relationship_record(prepared.relationship, tenant_id=prepared.run.tenant_id))
                 database.add(inbox_counter_record(prepared.thread))
         except IntegrityError as error:
-            replay = await self._load_replay(prepared)
-            if replay is not None:
-                return replay
             raise ChildRunAcceptanceError(
                 "child_run_acceptance_conflict",
                 "Child Run acceptance lost a concurrent mutation",
@@ -167,9 +159,6 @@ class ChildRunAcceptanceService:
         """Accept one linked continuation in the retained child Thread."""
 
         _validate_resume_bundle(prepared)
-        replay = await self._load_replay(prepared)
-        if replay is not None:
-            return replay
         async with short_session(self._sessions) as database:
             parent, _, parent_thread = await read_attempt_authority(database, authority, _utc(self._clock()))
             session = await _require_session(database, parent)
@@ -301,9 +290,6 @@ class ChildRunAcceptanceService:
                 child_thread.updated_at = _utc(self._clock())
                 await database.flush()
         except IntegrityError as error:
-            replay = await self._load_replay(prepared)
-            if replay is not None:
-                return replay
             raise ChildRunAcceptanceError(
                 "child_run_resume_conflict",
                 "Child Run continuation lost a concurrent mutation",
@@ -316,68 +302,11 @@ class ChildRunAcceptanceService:
     ) -> None:
         try:
             await self._states.create(prepared.run.tenant_id, prepared.state)
-        except StaleStateWriter:
-            existing = await self._states.read(
-                prepared.run.tenant_id,
-                prepared.run.id,
-                expected_thread_id=prepared.run.thread_id,
-            )
-            if existing.envelope != prepared.state:
-                raise ChildRunAcceptanceError(
-                    "child_run_state_conflict",
-                    "Child Run state key already contains different accepted state",
-                ) from None
-
-    async def _load_replay(
-        self,
-        prepared: PreparedChildRunAcceptance | PreparedChildRunResume,
-    ) -> ChildRunAcceptanceReceipt | None:
-        relationship = prepared.relationship
-        async with short_session(self._sessions) as database:
-            record = await database.scalar(
-                select(ChildRunRelationshipRecord).where(
-                    ChildRunRelationshipRecord.tenant_id == prepared.run.tenant_id,
-                    ChildRunRelationshipRecord.parent_run_id == relationship.parent_run_id,
-                    ChildRunRelationshipRecord.spawn_operation_id == relationship.spawn_operation_id,
-                )
-            )
-            if record is None:
-                return None
-            existing = record.to_resource()
-            child = await database.scalar(
-                select(RunRecord).where(
-                    RunRecord.tenant_id == prepared.run.tenant_id,
-                    RunRecord.id == existing.child_run_id,
-                )
-            )
-            parent = await database.scalar(
-                select(RunRecord).where(
-                    RunRecord.tenant_id == prepared.run.tenant_id,
-                    RunRecord.id == existing.parent_run_id,
-                )
-            )
-            if child is None or parent is None:
-                raise ChildRunAcceptanceError("child_run_replay_corrupt", "Accepted child relationship is incomplete")
-            session = await _require_session(database, parent)
-            parent_resource = parent.to_resource()
-            child_resource = child.to_resource()
-            await _reauthorize(
-                database,
-                parent=parent_resource,
-                child=child_resource,
-                child_definition_id=prepared.child_definition_id,
-                workspace_id=session.workspace_id,
-            )
-            _validate_replay_intent(existing, child, prepared)
-        state = await self._states.read(
-            child_resource.tenant_id,
-            child_resource.id,
-            expected_thread_id=child_resource.thread_id,
-        )
-        validate_run_state_selection(child_resource, state.envelope)
-        async with short_session(self._sessions) as database:
-            await verify_environment_binding(database, run=child_resource, state=state.envelope)
-        return _receipt(existing, child_resource.session_id)
+        except StaleStateWriter as error:
+            raise ChildRunAcceptanceError(
+                "child_run_state_conflict",
+                "Child Run state key already contains accepted state",
+            ) from error
 
 
 def _validate_bundle(prepared: PreparedChildRunAcceptance) -> None:
@@ -395,12 +324,8 @@ def _validate_bundle(prepared: PreparedChildRunAcceptance) -> None:
         or thread.tenant_id != run.tenant_id
     ):
         raise ValueError("prepared child Thread, Run, and relationship identities do not match")
-    if (
-        run.parent_tool_call_id != relationship.spawn_operation_id
-        or run.delegation_id != relationship.id
-        or run.trigger_entity_id != relationship.id
-    ):
-        raise ValueError("prepared child Run does not retain its spawning operation correlation")
+    if run.delegation_id != relationship.id or run.trigger_entity_id != relationship.id:
+        raise ValueError("prepared child Run does not retain its relationship correlation")
 
 
 def _validate_resume_bundle(prepared: PreparedChildRunResume) -> None:
@@ -412,7 +337,6 @@ def _validate_resume_bundle(prepared: PreparedChildRunResume) -> None:
         or run.thread_id != relationship.child_thread_id
         or run.parent_run_id != prepared.resumed_from_child_run_id
         or run.lineage_kind.value != "continue"
-        or run.parent_tool_call_id != relationship.spawn_operation_id
         or run.delegation_id != relationship.id
         or run.trigger_entity_id != relationship.id
         or prepared.resumed_from_relationship_id == relationship.id
@@ -639,24 +563,6 @@ async def _reauthorize(
             "child_run_authorization_denied",
             "Persisted parent Principal is no longer authorized to invoke the child Agent",
         ) from error
-
-
-def _validate_replay_intent(
-    existing: ChildRunRelationship,
-    child: RunRecord,
-    prepared: PreparedChildRunAcceptance | PreparedChildRunResume,
-) -> None:
-    candidate = prepared.relationship
-    if (
-        existing.subagent_name != candidate.subagent_name
-        or existing.cancellation_policy is not candidate.cancellation_policy
-        or existing.result_visibility is not candidate.result_visibility
-        or child.request_fingerprint != prepared.run.request_fingerprint
-    ):
-        raise ChildRunAcceptanceError(
-            "child_run_idempotency_conflict",
-            "Spawning operation was reused with different child Run intent",
-        )
 
 
 def _receipt(relationship: ChildRunRelationship, session_id: str) -> ChildRunAcceptanceReceipt:

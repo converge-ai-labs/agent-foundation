@@ -54,7 +54,7 @@ Async admission is one complete Host boundary:
 4. The operator returns a validated `AsyncExecutionView` after acceptance.
 5. Harness returns the public execution reference; execution continues under Host ownership.
 
-An operator exception before its documented acceptance boundary is rejection. If a backend can accept work but lose the response, the Host preserves enough idempotency or correlation to reconcile that outcome. Harness does not automatically retry non-idempotent delegate or resume operations and keeps no compensating parent projection.
+An operator exception before its documented acceptance boundary is rejection. If a backend can accept work but lose the response, the Host reports the outcome as unknown and may expose its own reconciliation path. Harness does not assign an idempotency identity, automatically retry delegate or resume operations, or keep a compensating parent projection.
 
 The Host independently selects child Environment association, loads current Host state, constructs fresh adapters and `RunBindings`, invokes Harness, stores observations, acknowledges checkpoints, and publishes Environment state. Accepted work never borrows the parent Run's entered Environment, mutable state coordinator, live context, credential, or callback.
 

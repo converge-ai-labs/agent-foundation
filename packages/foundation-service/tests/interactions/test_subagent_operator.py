@@ -92,10 +92,6 @@ async def test_operator_delegates_reads_steers_waits_and_cancels(
         delegate_plan,
         AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
     )
-    replay = await operator.delegate(
-        delegate_plan,
-        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
-    )
     info = await operator.info(context, SubagentInfoRequest(execution_id=delegated.execution_id))
     steered = await operator.steer(
         context,
@@ -107,7 +103,6 @@ async def test_operator_delegates_reads_steers_waits_and_cancels(
         SubagentWaitRequest(execution_id=delegated.execution_id, timeout_seconds=0.01),
     )
 
-    assert replay == delegated
     assert run_ids.calls == 1
     assert delegated.child_definition_id == CHILD_DEFINITION_ID
     assert len(info.executions) == 1
@@ -116,6 +111,31 @@ async def test_operator_delegates_reads_steers_waits_and_cancels(
     assert steered.accepted is True and steered.enqueue_id is not None
     assert cancelled.accepted is True and cancelled.status == "cancelled"
     assert waited.executions[0].status == "cancelled"
+
+
+async def test_operator_treats_repeated_delegate_calls_as_distinct(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    operator, context, delegate_plan, _, run_ids, _ = await _operator(
+        interaction_sessions,
+        interaction_object_store,
+    )
+
+    first = await operator.delegate(
+        delegate_plan,
+        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+    )
+    second = await operator.delegate(
+        delegate_plan,
+        AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+    )
+    page = await operator.info(context, SubagentInfoRequest())
+
+    assert first.execution_id != second.execution_id
+    assert first.child_run_id != second.child_run_id
+    assert run_ids.calls == 2
+    assert page.total == 2
 
 
 async def test_operator_resumes_only_the_selected_completed_child_head(
@@ -146,7 +166,7 @@ async def test_operator_resumes_only_the_selected_completed_child_head(
     )
     completed = await operator.info(context, SubagentInfoRequest(execution_id=delegated.execution_id))
     assert completed.executions[0].resumable is True
-    resume_plan = _plan(context, operation_id="resume-call-1", delegated_input='{"delegated_task":"continue"}')
+    resume_plan = _plan(context, delegated_input='{"delegated_task":"continue"}')
 
     resumed = await operator.resume(
         resume_plan,
@@ -245,7 +265,12 @@ async def _operator(
                 recovery_budget=running_parent.recovery_budget,
             )
         },
-        thread_id_factory=lambda: "thread-ffffffffffffffffffffffffffffffff",
+        thread_id_factory=IdSequence(
+            (
+                "thread-ffffffffffffffffffffffffffffffff",
+                "thread-56565656565656565656565656565656",
+            )
+        ),
         run_id_factory=run_ids,
         relationship_id_factory=IdSequence(("crr_ffffffffffffffff", "crr_5656565656565656")),
         clock=lambda: NOW + timedelta(seconds=2),
@@ -276,7 +301,6 @@ async def _operator(
 def _plan(
     context: SubagentOperatorContext,
     *,
-    operation_id: str = "delegate-call-1",
     delegated_input: str = '{"delegated_task":"research"}',
     child_definition_id: str = CHILD_DEFINITION_ID,
 ) -> SubagentDelegationPlan:
@@ -289,7 +313,6 @@ def _plan(
     executable = HarnessBuilder().build(child)
     declaration = SubagentDefinition(name="researcher", description="Research", agent=child)
     return SubagentDelegationPlan(
-        operation_id=operation_id,
         child=BuiltSubagent(declaration=declaration, definition=child, executable=executable),
         child_identity=AgentIdentityRef(issuer="foundation", subject="child"),
         context=ResolvedDelegationContext(

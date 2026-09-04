@@ -35,7 +35,6 @@ def upgrade() -> None:
         sa.Column("subagent_name", sa.String(length=63), nullable=False),
         sa.Column("child_run_id", sa.String(length=72), nullable=False),
         sa.Column("child_thread_id", sa.String(length=72), nullable=False),
-        sa.Column("spawn_operation_id", sa.String(length=256), nullable=False),
         sa.Column("cancellation_policy", sa.String(length=32), nullable=False),
         sa.Column("result_visibility", sa.String(length=32), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -46,10 +45,6 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "result_visibility IN ('parent_thread', 'session')",
             name=op.f("ck_child_run_relationships_result_visibility_valid"),
-        ),
-        sa.CheckConstraint(
-            "length(spawn_operation_id) BETWEEN 1 AND 256",
-            name=op.f("ck_child_run_relationships_spawn_operation_id_bounded"),
         ),
         sa.CheckConstraint(
             "length(subagent_name) BETWEEN 1 AND 63", name=op.f("ck_child_run_relationships_subagent_name_bounded")
@@ -86,9 +81,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_child_run_relationships")),
         sa.UniqueConstraint("tenant_id", "child_run_id", name="uq_child_run_relationships_child_run"),
         sa.UniqueConstraint("tenant_id", "id", name="uq_child_run_relationships_tenant_id"),
-        sa.UniqueConstraint(
-            "tenant_id", "parent_run_id", "spawn_operation_id", name="uq_child_run_relationships_spawn_operation"
-        ),
     )
     op.create_index(
         "ix_child_run_relationships_child_thread",

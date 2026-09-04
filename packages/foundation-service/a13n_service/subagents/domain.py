@@ -20,7 +20,6 @@ from a13n_service.interactions.domain import (
 
 MAX_INLINE_ASYNC_RESULT_BYTES = 256 * 1024
 SubagentName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,62}$", max_length=63)]
-SpawnOperationId = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
 class ChildCancellationPolicy(StrEnum):
@@ -41,7 +40,6 @@ class ChildRunRelationship(StrictModel):
     subagent_name: SubagentName
     child_run_id: ObjectId
     child_thread_id: ThreadId
-    spawn_operation_id: SpawnOperationId
     cancellation_policy: ChildCancellationPolicy
     result_visibility: ChildResultVisibility
     created_at: UtcDateTime

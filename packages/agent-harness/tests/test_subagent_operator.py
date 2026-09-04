@@ -324,8 +324,6 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
     assert operator.calls == ["delegate", "info", "wait", "steer", "cancel", "info", "resume"]
     assert len(operator.plans) == 2
     first_plan, resume_plan = operator.plans
-    assert first_plan.operation_id == "call-1"
-    assert resume_plan.operation_id == "call-6"
     assert first_plan.child.definition.definition_id == "child-v1"
     assert first_plan.child_identity.issuer == "test"
     assert first_plan.child_identity.subject == "parent"
