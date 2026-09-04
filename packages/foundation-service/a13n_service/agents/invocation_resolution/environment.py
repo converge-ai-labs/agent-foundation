@@ -46,6 +46,12 @@ def validate_child_environment(
 
 
 def environment_target_identity(environment: EnvironmentExecutionConfig) -> tuple[object, ...]:
+    if environment.environment_target_id is not None:
+        return (
+            environment.environment_target_id,
+            environment.provider_package_revision_id,
+            environment.provider_lock,
+        )
     return (
         environment.connection,
         environment.provider_package_revision_id,

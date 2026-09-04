@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from a13n_service.agents.application import AgentManagement
     from a13n_service.assets.service import AssetService
     from a13n_service.connectivity.runtime import ConnectivityRuntime
+    from a13n_service.environments.keepalive import EnvironmentKeepaliveLoop
     from a13n_service.environments.service import EnvironmentManagementService
     from a13n_service.iam import RequestAuthenticator
     from a13n_service.models.model_factory import NativeModelFactory
@@ -61,6 +62,7 @@ class WorkerRuntime:
     plugin_runtime: OnDemandPluginRuntime | PluginRunnerSupervisor
     native_model_factory: NativeModelFactory
     skill_runtime: SkillRuntimePreparer
+    environment_keepalive: EnvironmentKeepaliveLoop
 
 
 @dataclass(slots=True)

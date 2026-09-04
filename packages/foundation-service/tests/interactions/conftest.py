@@ -19,8 +19,11 @@ from a13n_service.environments.domain import (
     EnvironmentAccess,
     EnvironmentConnectionSpec,
     EnvironmentProviderLock,
+    EnvironmentTargetIdentity,
     environment_logical_digest,
+    environment_target_identity_digest,
 )
+from a13n_service.environments.models import EnvironmentTargetRecord
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.interactions import HostContinuationState, RunStateEnvelope
 from a13n_service.models.domain import ModelExecutionSnapshot
@@ -42,6 +45,7 @@ SESSION_ID = "sess_1234567890abcdef"
 THREAD_ID = "thread-1234567890abcdef1234567890abcdef"
 USER_ID = "usr_1234567890abcdef"
 NOW = datetime(2026, 9, 3, 0, 30, tzinfo=UTC)
+ENVIRONMENT_TARGET_ID = "envt_1234567890abcdef"
 
 
 def environment_execution_config() -> EnvironmentExecutionConfig:
@@ -67,6 +71,7 @@ def environment_execution_config() -> EnvironmentExecutionConfig:
         target_key=target_key,
     )
     return EnvironmentExecutionConfig(
+        environment_target_id=ENVIRONMENT_TARGET_ID,
         connection=connection,
         provider_lock=provider_lock,
         credential_bindings=(),
@@ -203,6 +208,37 @@ async def postgres_interaction_sessions(
 async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as database:
         database.add(OrganizationRecord(id=TENANT_ID, name="Test", created_at=NOW, updated_at=NOW))
+        identity = EnvironmentTargetIdentity(target_key="existing-target")
+        database.add(
+            EnvironmentTargetRecord(
+                id=ENVIRONMENT_TARGET_ID,
+                provider_key="test.attachment",
+                identity_schema_version="1",
+                target_key=identity.target_key,
+                target_identity_digest_sha256=environment_target_identity_digest(
+                    provider_key="test.attachment",
+                    identity_schema_version="1",
+                    identity=identity,
+                ),
+                retention_behavior="none",
+                status="idle",
+                active_run_count=0,
+                idle_at=NOW,
+                retire_after=NOW,
+                keeper_claim_generation=0,
+                keeper_owner_worker_generation=None,
+                keeper_lease_expires_at=None,
+                keeper_source_binding_id=None,
+                operation_generation=0,
+                operation_id=None,
+                requested_alive_until=None,
+                acknowledged_alive_until=None,
+                next_keepalive_at=None,
+                last_error=None,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
         database.add(
             WorkspaceRecord(
                 id=WORKSPACE_ID,

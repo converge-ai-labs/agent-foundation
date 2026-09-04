@@ -24,6 +24,7 @@ from ._outcome_transitions import (
 from ._transitions import charge_attempt_usage, terminalize_attempt
 from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority, read_attempt_authority
 from .domain import RunAttemptStatus, RunStatus
+from .environment_bindings import deactivate_run_environment
 from .inbox import ThreadControlSignalPublisher
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
@@ -84,10 +85,12 @@ class RunOutcomeService:
             envelope = state.envelope
             candidate = envelope.outcome_candidate
             if isinstance(candidate, WaitingOutcomeCandidate):
+                await deactivate_run_environment(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="waiting", state=state, now=now)
                 apply_waiting_outcome(run, candidate, now)
                 status = RunStatus.waiting
             elif isinstance(candidate, CompletedOutcomeCandidate):
+                await deactivate_run_environment(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="completed", state=state, now=now)
                 apply_completed_outcome(run, candidate, now)
                 status = RunStatus.completed
@@ -162,6 +165,7 @@ class RunOutcomeService:
                     raise RunOutcomeError("selected RunAttempt cannot be cancelled")
                 terminalize_attempt(attempt, RunAttemptStatus.cancelled, now, failure=failure)
                 charge_attempt_usage(run, attempt)
+            await deactivate_run_environment(database, run=run, now=now)
             await apply_run_outcome(database, run=run, outcome="cancelled", now=now)
             run.status = RunStatus.cancelled.value
             run.current_run_attempt_id = None
