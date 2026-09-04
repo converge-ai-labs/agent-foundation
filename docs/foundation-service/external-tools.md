@@ -1,6 +1,6 @@
 # External tools
 
-Foundation Service selects external tools by managed Application Account, ConnectorConnection, or MCPConnection. Create the resource in the same Workspace before selecting it in an Agent configuration.
+Foundation Service selects external tools by managed ConnectorConnection or MCPConnection. Create the resource in the same Workspace before selecting it in an Agent configuration.
 
 ```json
 {
@@ -32,24 +32,9 @@ An Application Account represents one provider account, Bot, or concrete applica
 
 Create an optional Ingress using `account_id`, `provider_config: {"events_transport": "http"}`, its execution Service Account, allowed Agents, and default Agent. Each account has at most one Ingress. Routes beneath that Ingress select how events reach Agents. Pausing Ingress stops new input; already accepted Runs can still reply within their admitted scope. Disabling the Account blocks both new input and subsequent outbound calls.
 
-For proactive operations, select the Account independently:
+Account tools are injected automatically from the Run's trusted execution context. There is no Account selection in Agent configuration or Run overrides. An Ingress supplies only its admitted reply actions and target. A trusted non-Ingress entry can supply explicit proactive actions and destinations. With no such context, the Run gets no Account tools; creating an Account alone does not expose it to every Agent. Clearing `connector_tools` or `mcp_tools` does not remove these default tools.
 
-```json
-{
-  "account_tools": [
-    {
-      "account_id": "acct_1234567890abcdef",
-      "tools": ["slack.send_message"],
-      "target_scope": {"channel_ids": ["C123"]},
-      "defer_loading": false
-    }
-  ]
-}
-```
-
-The Slack tool accepts `channel_id` and `text`; only configured channel IDs are allowed. Lark uses `lark.send_message`, a scope of `chat_ids`, and `chat_id` plus typed `content`. GitHub scopes contain `repositories`, each with `repository_id`, `owner`, and `repository`; selected comment/read tools accept a permitted repository ID, issue/PR number, and target kind. Tools cannot choose another account or credential. Empty tool or target lists grant no operations or destinations respectively.
-
-`account_tools` follows the same category replacement rules as other selections, but requires an explicit tool list and target scope. It does not inherit a destination from arbitrary input text. Inbound reply tools remain bound to the admitted conversation, and proactive sends do not automatically create an Ingress Thread binding.
+For proactive sends, Slack accepts `channel_id` and `text` within the entry-authorized `channel_ids`; Lark accepts `chat_id` and typed `content` within `chat_ids`. GitHub scope contains exact repositories, and its tools accept a permitted repository ID, issue/PR number, and target kind. Tools cannot choose another Account or credential. Proactive sends do not automatically create an Ingress Thread binding.
 
 ## Discovery and execution
 
@@ -63,7 +48,9 @@ Discovery is bounded per source to 128 pages, 2,048 tools, and 16 MiB of tool de
 
 ## Host integration
 
-Worker composition provides `WorkerRuntime.external_tools`. A host constructing `HarnessDriver` passes this collaborator as `external_tools`; the driver creates and closes fresh capabilities around each Attempt's Harness execution. Admission integrations construct protected metadata with `IngressRunContext.from_batch()` and retain its JSON in the accepted Run's `ingress_context`. This context must come from trusted admission, never a public Run override.
+Worker composition provides `WorkerRuntime.external_tools`. A host constructing `HarnessDriver` passes this collaborator as `external_tools`; the driver creates and closes fresh capabilities around each Attempt's Harness execution. Admission integrations use `connectivity.native_context.IngressRunContext.from_batch()` and retain its JSON as one entry in the accepted Run's `native_tool_contexts`. For proactive operations, a trusted entry calls `bind_account_tools()` inside its short acceptance transaction with the execution actor, Workspace, exact Account, allowed actions, and authorized target scope, then persists the returned context in that tuple. The entry owns target authorization; the helper checks Account use and scope validity. Neither context comes directly from public input or a model argument.
+
+Replacement Attempts and inherited continuations retain these contexts and resolve fresh credentials. New child Runs receive no parent native contexts by default. The Harness sees ordinary MCP capabilities and needs no Account-specific configuration.
 
 Control owns Account and connection management, setup, OAuth refresh, and cleanup. Connectivity owns inbound delivery and admission. Workers own tool discovery and outbound execution. No local MCP listener or separate MCP service is needed.
 

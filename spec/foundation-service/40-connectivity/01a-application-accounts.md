@@ -40,7 +40,7 @@ class Account:
 
 Account IDs use the `acct_` object prefix. Provider identity, Organization, and Workspace are immutable. Name and identity-preserving settings are mutable under exact version preconditions. Changing provider, installation, tenant, or account creates a different Account. Among non-deleted Accounts within a Workspace the provider-declared concrete identity is unique; mutable display names and transport configuration never determine that identity.
 
-An Account belongs to its Workspace and can serve multiple Agents. An Agent can select several Accounts. The Account does not own a default Agent or an execution Service Account. Those input decisions belong to Ingress, while independently initiated Runs use their accepted authority Principal.
+An Account belongs to its Workspace and can serve multiple Agents. A Run may receive bounded tools from several Accounts through its trusted entry context. The Account does not own a default Agent or an execution Service Account. Those input decisions belong to Ingress, while independently initiated Runs use their accepted authority Principal.
 
 An Account owns encrypted credential material under the shared [credential protection contract](../27-secret-management.md). API credentials and application/installation-wide verification secrets belong to the Account. A provider may define a subscription-exclusive verification secret owned by its Ingress. Credential rotation preserves account and ingress IDs and retained event/thread correlation. Credentials are write-only inputs to owning resource operations, never public Secret selections or Agent input.
 
@@ -56,19 +56,19 @@ Disabling Ingress stops new event admission and rejects pending input that has n
 
 Account deletion is blocked while an Ingress references it. Accepted Run references remain meaningful; deletion makes the Account unavailable and clears credential material without substituting another identity during recovery. A new Account may reuse a deleted Account's external identity or name, but receives a new ID and inherits no retained Run authority. An Ingress with retained admissions or Thread bindings cannot be deleted in a way that destroys their identity; disablement is the ordinary way to stop reception.
 
-## Selection and Authority
+## Default Tools and Authority
 
-[Agent Management](../28-agent-management.md) owns the `account_tools` category in Agent configuration, Run overrides, and capability overlays. Each selection fixes an `account_id`, exact allowed tool names, provider-typed target scope, and `defer_loading`. The account adapter validates scope; external event content and model arguments cannot define grants. An empty tool list exposes no tools. Duplicate account selections are invalid. Run acceptance fixes account, tool and target scope; runtime uses current eligible credentials and cannot widen that scope.
+Application Account tools are default host-injected capabilities. They do not belong to Agent configuration, Revisions, overrides, or user-selected connection lists. The trusted Run entry authorizes the Account, exact actions, and provider-typed target scope and freezes them as protected Run context. Ingress admission supplies current-conversation authority; an independent trusted entry can authorize proactive operations without an Ingress. No context means no Account tools, and Foundation never enumerates all Workspace Accounts to derive defaults.
 
-Account use and target authority are distinct. Selecting an account requires current `application_account.use` authority. An explicit allowed operation does not authorize targets outside the selected provider scope. Proactive operations expose provider-native destination arguments only within that scope. Current-conversation reply operations instead use trusted inbound target context and do not expose a destination selector. Inbound reply authority does not automatically enable proactive send tools. A child Run receives account capabilities only through explicit authorized delegation.
+Account use and target authority are distinct. Binding an Account requires current `application_account.use` authority. An allowed operation does not authorize targets outside the entry's scope. The entry must establish target authority from its trusted policy; validating a target's shape is not permission to use it. Proactive operations expose provider-native destination arguments only within that scope. Current-conversation reply operations use the admitted target and expose no destination selector. Inbound reply authority does not enable proactive send tools.
 
-The [Agent-facing tools contract](04-agent-facing-tools.md) owns runtime composition and protected target context. An account may contribute independently selected actions and a narrower inbound reply surface to the same Run; neither source expands the other's scope. Foundation binds account credentials at execution time. Tool arguments cannot choose another Account, credential, tenant, or API origin.
+The [Agent-facing tools contract](04-agent-facing-tools.md#default-native-tool-contexts) owns protected contexts, runtime composition, and continuation behavior. An Account may contribute proactive actions and a narrower inbound reply surface to the same Run; each retains its own scope. Credentials resolve at execution time. Tool arguments cannot choose another Account, credential, tenant, or API origin.
 
-Workspace Admin manages Accounts and credentials. Builder can select authorized Accounts in Agent authoring and Routes. Viewer has safe metadata read access; Runner uses Accounts only through accepted Runs. Every selection and dispatch checks the current Workspace role and resource eligibility; an external sender is never a Foundation Principal.
+Workspace Admin manages Accounts and credentials. Viewer has safe metadata read access; Runner, Builder, and Admin use Accounts only through authorized Run contexts. Binding and dispatch check current Workspace authority and resource eligibility; an external sender is never a Foundation Principal.
 
 ## Built-in Proactive Scopes
 
-All target collections contain at most 128 entries; an empty collection authorizes no targets. Target scopes reject unknown fields. Account tool names are exact selections, with no wildcard or all-tools mode.
+All target collections contain at most 128 entries; an empty collection authorizes no targets. Target scopes reject unknown fields. Account tool names are exact action allowlists, with no wildcard or all-tools mode.
 
 | Provider | Tools                                                                                           | Target scope                                                                   |
 | -------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -90,5 +90,5 @@ Ingress creation accepts `account_id` and ingress-owned configuration. It accept
 2. Zero or one Ingress references an Account; one Ingress cannot change accounts.
 3. Credential rotation and reception changes preserve identity and Thread correlation.
 4. Account disablement blocks dispatch; ingress disablement alone does not revoke accepted replies.
-5. Account selection, action selection, and target authority are separately validated.
+5. Account use, action allowlists, and target authority are separately validated.
 6. Recovery never replaces a missing or disabled account with another account.

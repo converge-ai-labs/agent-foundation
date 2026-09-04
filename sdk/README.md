@@ -28,6 +28,6 @@ The CLI releases as six platform-specific binary archives plus `SHA256SUMS` thro
 
 ## External tool selection wire contract
 
-Service Agent configuration uses `account_tools`, `connector_tools`, and `mcp_tools` arrays. Account entries contain `account_id`, an explicit `tools` list, a provider-specific `target_scope`, and `defer_loading`; they authorize direct provider operations independently of Ingress. Entries contain `connector_connection_id` or `mcp_connection_id`, optional `tools`, and `defer_loading` (default `false`). An omitted or null entry-level `tools` selects all tools; an empty array selects none. Run overrides inherit omitted categories and replace supplied arrays, including clearing with `[]`. Category-level null, aliases, `exposure`, and inline credentials are invalid.
+Service Agent configuration uses `connector_tools` and `mcp_tools` arrays. Entries contain `connector_connection_id` or `mcp_connection_id`, optional `tools`, and `defer_loading` (default `false`). An omitted or null entry-level `tools` selects all tools; an empty array selects none. Run overrides inherit omitted categories and replace supplied arrays, including clearing with `[]`. Category-level null, aliases, `exposure`, and inline credentials are invalid.
 
 The package shells have no Agent client models to migrate. Future typed clients must preserve these distinctions and must not translate the removed alias-keyed shape. See [External tools](../docs/foundation-service/external-tools.md) for request examples and execution semantics.

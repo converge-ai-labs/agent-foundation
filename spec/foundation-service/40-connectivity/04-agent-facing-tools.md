@@ -4,7 +4,7 @@
 
 Foundation selects authorized external resources and binds their current execution context. Harness and its upstream MCP client own protocol handling, tool discovery, filtering, invocation, and deferred capability loading. Foundation composes these through `RunBindings.capabilities`; it does not implement another MCP client or model-facing tool catalog.
 
-The a13n MCP is an in-process implementation for Application Account actions, protected inbound replies, and Connector-backed tools. Each executing Worker or Runner creates a separate lightweight local MCP server instance for each selected source in its RunAttempt and exposes it through Harness `MCP(local=...)`. These instances communicate in memory: they require no listening port, subprocess, network MCP deployment, internal service credential, or persisted MCP invocation grant.
+The a13n MCP is an in-process implementation for Application Account actions, protected inbound replies, and Connector-backed tools. Each executing Worker or Runner creates a separate lightweight local MCP server instance for each authorized source in its RunAttempt and exposes it through Harness `MCP(local=...)`. These instances communicate in memory: they require no listening port, subprocess, network MCP deployment, internal service credential, or persisted MCP invocation grant.
 
 Each selected [`MCPConnection`](06-remote-mcp-connections.md) produces a separate Harness MCP client that connects directly from the executing process to that Remote MCP endpoint. The a13n MCP does not proxy those servers. Remote execution remains Worker-controlled rather than delegated to a model provider's native MCP facility.
 
@@ -12,7 +12,7 @@ Each selected [`MCPConnection`](06-remote-mcp-connections.md) produces a separat
 
 ```mermaid
 flowchart LR
-    Config[Accepted Run selections and protected Ingress context] --> Compose
+    Config[Accepted connection selections and protected native contexts] --> Compose
     subgraph Worker[Executing Worker or Runner]
         Compose[Fresh per-Attempt capability composition] --> Harness
         Harness --> AccountMCP[Account MCP capability per account]
@@ -48,26 +48,41 @@ MCP is the integration boundary for these external tool sources. Environment fil
 
 ## Source Selection and Tool Identity
 
-The [Agent selection contract](../28-agent-management.md#agentconfig) owns the public `account_tools`, `connector_tools`, and `mcp_tools` lists. Each entry names one managed source, its tool selection, and `defer_loading`. Account entries also require an explicit target scope. There are no caller-defined source aliases or inline endpoint and credential definitions. For Connector and Remote MCP selections, omitted or null `tools` means all currently available authorized tools. Account selections require explicit tool names. An empty list selects none for every category. Explicit names are exact source-native tool names, not fuzzy queries or model-visible prefixed names.
+The [Agent selection contract](../28-agent-management.md#agentconfig) owns the public `connector_tools` and `mcp_tools` lists. Each entry names one managed connection, its tool selection, and `defer_loading`. There are no caller-defined source aliases or inline endpoint and credential definitions. Omitted or null `tools` means all currently available authorized tools; an empty list selects none. Explicit names are exact source-native tool names, not fuzzy queries or model-visible prefixed names. Default native tools are independent of these lists: clearing either or both lists does not remove host-injected tools.
 
 Run acceptance retains the effective source selections after overrides, trusted overlays, and authorization. It performs no synchronous remote discovery and requires no durable tool catalog to accept the Run. Agent Revision and Run validation check selection structure, managed resource identity, eligibility, and policy; current tool availability is checked during execution preparation. An explicit name absent from successful discovery fails preparation with a safe unavailable-tool error. Foundation never silently drops an explicit selection or substitutes another source or account.
 
 Foundation derives stable, kind-qualified capability keys and collision-safe tool namespaces from source identity. These are internal composition keys, not another managed resource or caller-authored alias. They remain stable across replacement Attempts of the same Run; mutable display names and Attempt IDs do not determine them. Distinct sources cannot overwrite each other's tools. Model-visible names use only ASCII letters, digits, underscores, and short hyphens and are at most 64 characters; deterministic source and tool identity hashing preserves distinct names after normalization or shortening. Upstream renaming maps calls back to exact source-native names before the source guard and dispatch. Safe connection display names can explain account purpose to the model without exposing private IDs, endpoint URLs, or credential metadata.
 
-## Application Account Tools
+## Default Native Tool Contexts
 
-An Account is independently selectable through `account_tools` even when no Ingress exists. Account identity and credentials are resolved from the selected resource. Each selection contains explicit tool names and provider-typed target scope. Management and Run acceptance validate that scope; every dispatch enforces it against model-supplied destination arguments and current Account use authority. The adapter owns native target meaning, not a universal conversation or action schema.
+Connectivity owns the protected `NativeToolContext` union of `AccountRunContext` and `IngressRunContext`. The trusted entry freezes at most 128 contexts in the accepted Run's `native_tool_contexts`, independently of Agent configuration and connection selection. Each context binds the Run's execution Principal, exact Account identity, provider, and explicit action allowlist. Contexts contain no credentials, tool schemas, or connection IDs. Duplicate contexts for the same kind and source are rejected. Empty contexts contribute no default native tools; Foundation does not discover Accounts by listing Workspace resources.
 
-Proactive account operations and inbound replies have distinct bindings. Account selections authorize exact named operations within their configured targets. A protected Ingress context authorizes only its current-context operations. If both occur in one Run, compose separate collision-free capability scopes so the broader argument schema never replaces the current-context reply schema. Account selections support `defer_loading`; current-context replies remain directly visible. Neither path permits model-selected account IDs, credentials, or API origins.
+A non-Ingress trusted entry may bind this conceptual context after validating current Account use authority, resource eligibility, and the entry's target policy:
 
-An Account action can send to an explicitly authorized external target without an inbound message. Its result does not automatically create or change an Ingress Thread binding. Later inbound correlation follows the Ingress contract. Unknown external write outcomes retain provider-specific reconciliation semantics.
+```python
+class AccountRunContext:
+    kind: Literal["account"]
+    account_id: AccountId
+    execution_principal_ref: PrincipalRef
+    provider_key: str
+    allowed_actions: tuple[str, ...]
+    target_scope: ProviderTargetScope
+```
+
+The [Account contract](01a-application-accounts.md#built-in-proactive-scopes) owns exact target shapes. Model-supplied destinations must belong to that frozen scope. Target schema validation alone is not authorization: the trusted entry supplies actions and targets from its authorized policy, never directly from public overrides, event text, or model arguments. No public Agent or Run override can create these contexts.
+
+Account and Ingress contexts produce separate, directly visible native capabilities even when they reference the same Account. Their schemas and scopes cannot replace or expand each other. The runtime binds them through Harness `RunBindings.capabilities` using in-process MCP; it creates no synthetic ConnectorConnection or MCPConnection.
+
+Replacement Attempts and continuations that inherit execution preserve the exact contexts. New child Runs receive none by default; resuming a child does not inherit its parent's contexts. Any explicit delegation is a fresh trusted-entry authorization under the child's execution Principal. Proactive actions do not automatically create or change an Ingress Thread binding. Unknown write outcomes retain provider-specific reconciliation semantics.
 
 ## IngressRunContext
 
-A Run created from Ingress input can retain this conceptual protected value:
+Ingress admission contributes this conceptual protected value to `native_tool_contexts`:
 
 ```python
 class IngressRunContext:
+    kind: Literal["ingress"]
     ingress_id: IngressId
     account_id: AccountId
     route_id: RouteId | None
@@ -99,7 +114,7 @@ The executor owns these live objects for the logical Harness Run and closes them
 
 ## Deferred Loading
 
-Ingress native actions are always directly visible. Account, Connector, and Remote MCP selections independently set `defer_loading`, defaulting to `false`. With `false`, Harness exposes the selected tool definitions directly. With `true`, Harness advertises the capability through its built-in `load_capability` mechanism and exposes that group's allowed tools when loaded.
+Default native actions are always directly visible. Connector and Remote MCP selections independently set `defer_loading`, defaulting to `false`. With `false`, Harness exposes the selected tool definitions directly. With `true`, Harness advertises the capability through its built-in `load_capability` mechanism and exposes that group's allowed tools when loaded.
 
 Deferred loading operates at capability granularity. It reduces initially model-visible definitions; it does not promise delayed network initialization, per-tool search, or reduced upstream discovery. It does not change connection identity, tool scope, authorization, or dispatch. Foundation provides no separate `direct`/`catalog` mode and no `list_mcp_tools`, `describe_mcp_tools`, or `call_mcp_tool` facade. A Harness tool-search feature has its own contract and is not implied by `defer_loading`.
 
@@ -151,8 +166,8 @@ If an external effect may have occurred but its response or subsequent correlati
 ## Invariants
 
 1. Local native and Connector tool groups use in-process a13n MCP; remote sources use independent Worker-controlled MCP clients.
-2. One source produces one capability; no shared mutable binding crosses accounts or Attempts.
-3. Accepted resource selections and protected Ingress context authorize tools; discovery, headers, display names, and model arguments cannot expand that authority.
+2. One connection or native context produces one capability; no shared mutable binding crosses accounts or Attempts.
+3. Accepted connection selections and protected native contexts authorize tools; discovery, headers, display names, and model arguments cannot expand that authority.
 4. Runtime schemas are discovered under the accepted scope and are not durable Run snapshots.
 5. Deferred loading uses Harness capability loading and does not change authorization.
 6. Each external action rechecks existing Attempt and resource authority and uses current eligible credentials.

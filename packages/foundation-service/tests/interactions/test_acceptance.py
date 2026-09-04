@@ -497,6 +497,19 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         idempotency_key="start-2",
         request_fingerprint="2" * 64,
         config=config,
+    ).model_copy(
+        update={
+            "native_tool_contexts": (
+                {
+                    "kind": "account",
+                    "account_id": "acct_retry",
+                    "provider_key": "slack",
+                    "execution_principal_ref": {"principal_type": "user", "principal_id": USER_ID},
+                    "allowed_actions": ["slack.send_message"],
+                    "target_scope": {"channel_ids": ["C1"]},
+                },
+            )
+        }
     )
     first = _with_input_object(
         first_inline,
@@ -579,9 +592,18 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
                 payload={"schema_version": "1", "content": "hello"},
             ),
         ),
-    ).model_copy(update={"retry_of_run_id": first.id})
+    ).model_copy(update={"retry_of_run_id": first.id, "native_tool_contexts": first.native_tool_contexts})
     await states.create(TENANT_ID, second_state)
 
+    with pytest.raises(RunAcceptanceError, match="preserve its source"):
+        await service.advance_thread(
+            run=second.model_copy(update={"native_tool_contexts": ()}),
+            state=second_state,
+            expected_thread_version=2,
+            expected_current_run_id=first.id,
+            expected_head_run_id=None,
+            next_head_run_id=None,
+        )
     receipt = await service.advance_thread(
         run=second,
         state=second_state,

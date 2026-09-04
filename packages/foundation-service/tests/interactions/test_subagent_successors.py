@@ -105,6 +105,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
             "thread_inbox",
             result.id,
         )
+        assert accepted.native_tool_contexts == completed_parent.native_tool_contexts
         assert accepted.authority_principal == completed_parent.authority_principal
         assert accepted.input == result.payload
         assert "newly available asynchronous subagent result" in project_accepted_async_subagent_result(accepted)

@@ -129,19 +129,6 @@ def _unique_tool_keys(value: tuple[str, ...] | None) -> tuple[str, ...] | None:
 ToolSelection = Annotated[tuple[ToolKey, ...] | None, Field(max_length=2048), AfterValidator(_unique_tool_keys)]
 
 
-class AccountToolSelection(StrictModel):
-    account_id: ObjectId
-    tools: tuple[str, ...] = Field(max_length=128)
-    target_scope: dict[str, JsonValue] = Field(repr=False)
-    defer_loading: bool = False
-
-    @model_validator(mode="after")
-    def unique_tools(self) -> AccountToolSelection:
-        if len(self.tools) != len(set(self.tools)) or any(not value or len(value) > 128 for value in self.tools):
-            raise ValueError("Account tools must be unique bounded names")
-        return self
-
-
 class ConnectorConnectionToolSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     connector_connection_id: ObjectId
@@ -278,7 +265,6 @@ class AgentConfig(StrictModel):
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
-    account_tools: tuple[AccountToolSelection, ...] = Field(default=(), max_length=128)
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = Field(default=(), max_length=128)
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = Field(default=(), max_length=128)
     environment: EnvironmentSelection | None = None
@@ -301,7 +287,6 @@ class AgentConfig(StrictModel):
             ("Skill keys", skill_keys),
             ("client tool names", client_tool_names),
             ("Secret requirement keys", secret_keys),
-            ("Application accounts", tuple(item.account_id for item in self.account_tools)),
             ("Connector connections", tuple(item.connector_connection_id for item in self.connector_tools)),
             ("MCP connections", tuple(item.mcp_connection_id for item in self.mcp_tools)),
         ):
@@ -344,7 +329,6 @@ class AgentRunOverride(StrictModel):
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
-    account_tools: tuple[AccountToolSelection, ...] | None = Field(default=None, max_length=128)
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] | None = Field(
         default=None,
         max_length=128,
@@ -417,7 +401,6 @@ class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
     resolved_model: ResolvedModelT
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...] = ()
     runtime_lock_digest: Sha256Digest
-    account_tools: tuple[AccountToolSelection, ...] = ()
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
     resolved_environment: EnvironmentExecutionConfig | None = None
@@ -474,7 +457,6 @@ class AgentRevision(StrictModel):
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: Sha256Digest
     resolved_skills: tuple[ResolvedSkillBinding, ...]
-    account_tools: tuple[AccountToolSelection, ...] = ()
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
     resolved_environment: EnvironmentExecutionConfig | None

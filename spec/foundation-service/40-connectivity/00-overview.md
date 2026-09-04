@@ -26,7 +26,7 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 
 [Application Account](01a-application-accounts.md) is one concrete provider user, Bot, or installation identity that Foundation operates directly. It owns credentials and availability independently of reception and can serve several Agents.
 
-`Ingress` is the optional reception configuration of one Account. Each Account has at most one Ingress. It binds a same-Workspace Service Account as the Foundation execution Principal and routes authenticated external input. An external sender remains context, never Foundation authority. Independently authorized Account actions do not require inbound input.
+`Ingress` is the optional reception configuration of one Account. Each Account has at most one Ingress. It binds a same-Workspace Service Account as the Foundation execution Principal and routes authenticated external input. An external sender remains context, never Foundation authority. Independently authorized Account actions do not require inbound input. The trusted entry supplies default native tools through protected Run contexts; Agents select Connector and Remote MCP tools separately.
 
 `Route` is provider-specific matching plus Foundation-owned Agent override, safe input mapping, input batching, provider policy, and per-Agent capability policy under one Ingress. A Route can match a Slack channel, Lark chat, Gmail label, GitHub repository event, or another provider-native scope without pretending those resources share one universal conversation model.
 
@@ -105,6 +105,6 @@ Inbound completion means that an event was rejected safely, ignored by policy, o
 3. Raw external data never creates an Agent, Tool, ConnectorConnection, MCPConnection, Secret, Principal, Route, or Run grant.
 4. One Ingress can route to several allowed Agents; one inbound event activates at most one.
 5. Agent selection and effective Skills, Tools, MCPConnections, ConnectorConnections, and native actions are independent decisions.
-6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected Ingress context, Application Account choices, ConnectorConnection choices, MCPConnection choices, and tool scopes. Recovery preserves those choices while discovering current external tool definitions.
+6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected native tool contexts, ConnectorConnection choices, MCPConnection choices, and tool scopes. Recovery preserves those choices while discovering current external tool definitions.
 7. Connectivity retains only bounded event-admission, deduplication, correlation, and external-resource facts; it persists no transcript, Agent inbox, or execution state beside Foundation Threads, Runs, and the Thread inbox.
 8. Provider credentials are typed and owned at the edge; the common model never forces Slack, Lark, GitHub, Gmail, ConnectorProvider, and MCP authorization into one credential schema.

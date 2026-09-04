@@ -4,7 +4,6 @@ import json
 
 import httpx2
 import pytest
-from a13n_service.agents.domain import AccountToolSelection
 from a13n_service.connectivity.accounts.actions import account_actions
 from a13n_service.connectivity.accounts.domain import (
     AccountStatus,
@@ -16,8 +15,9 @@ from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.ingress.domain import IngressStatus
-from a13n_service.connectivity.native import IngressRunContext, native_capability
-from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver, FrozenRunConnectivity
+from a13n_service.connectivity.native import native_capability
+from a13n_service.connectivity.native_context import IngressRunContext, bind_account_tools
+from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.storage import transaction
@@ -151,43 +151,6 @@ async def test_proactive_send_requires_exact_target_and_keeps_unknown_outcome():
         assert (await tool.call({"channel_id": "C1", "text": "next"}))["kind"] == "outcome_unknown"
 
 
-async def test_account_selection_reauthorizes_current_availability(connectivity_sessions, account_service):
-    async with transaction(connectivity_sessions) as session:
-        row = await session.get(AccountRecord, ACCOUNT_ID)
-        row.provider_key = "slack"
-    resolver = ConnectivitySelectionResolver(connectivity_sessions)
-    selected = AccountToolSelection(
-        account_id=ACCOUNT_ID, tools=("slack.send_message",), target_scope={"channel_ids": ["C1"]}
-    )
-    prepared = await resolver.prepare_revision_creation(
-        actor=actor(),
-        organization_id=ORG_ID,
-        workspace_id=WORKSPACE_ID,
-        connector_tools=(),
-        mcp_tools=(),
-        account_tools=(selected,),
-    )
-    assert prepared.selections.account_selections == (selected,)
-    await account_service.set_status(
-        actor=actor(),
-        account_id=ACCOUNT_ID,
-        status=AccountStatus.disabled,
-        expected_version=1,
-        idempotency_key="disable",
-    )
-    with pytest.raises(ValueError):
-        AccountToolSelection(
-            account_id=ACCOUNT_ID,
-            tools=("slack.send_message", "slack.send_message"),
-            target_scope={"channel_ids": ["C1"]},
-        )
-    from a13n_service.connectivity.selection_resolution import ConnectivitySelectionError
-
-    async with transaction(connectivity_sessions) as session:
-        with pytest.raises(ConnectivitySelectionError, match="account_unavailable"):
-            await resolver.freeze_revision_creation(session, prepared=prepared)
-
-
 async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_it(
     ingress_service, account_service, connectivity_sessions, credential_protector
 ):
@@ -221,17 +184,26 @@ async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_i
         ORG_ID,
         WORKSPACE_ID,
         FrozenRunConnectivity((), ()),
-        context.model_dump(mode="json"),
+        (context,),
     )
 
     async def guard():
         pass
 
+    receive_only = context.model_copy(update={"allowed_actions": ()})
+    assert (
+        await native_capability(
+            connectivity_sessions, credential_protector, scope, receive_only, guard, EndpointPolicy()
+        )
+        is None
+    )
+
     await ingress_service.set_status(
         actor=actor(), ingress_id=ingress.id, status=IngressStatus.disabled, expected_version=1, idempotency_key="pause"
     )
     assert (
-        await native_capability(connectivity_sessions, credential_protector, scope, guard, EndpointPolicy()) is not None
+        await native_capability(connectivity_sessions, credential_protector, scope, context, guard, EndpointPolicy())
+        is not None
     )
     await account_service.set_status(
         actor=actor(),
@@ -241,7 +213,7 @@ async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_i
         idempotency_key="stop-account",
     )
     with pytest.raises(ValueError, match="native_source_unavailable"):
-        await native_capability(connectivity_sessions, credential_protector, scope, guard, EndpointPolicy())
+        await native_capability(connectivity_sessions, credential_protector, scope, context, guard, EndpointPolicy())
 
 
 async def test_rotation_changes_webhook_auth_without_changing_admission_identity(
@@ -355,7 +327,7 @@ async def test_lark_proactive_send_requires_scope_without_inbound_context():
 
 
 async def test_account_metadata_does_not_grant_use_or_management(account_service, connectivity_sessions):
-    from a13n_service.connectivity.selection_resolution import ConnectivitySelectionError
+    from a13n_service.iam import AuthorizationError
     from a13n_service.iam.models import RoleBindingRecord
 
     async with transaction(connectivity_sessions) as session:
@@ -371,28 +343,28 @@ async def test_account_metadata_does_not_grant_use_or_management(account_service
             request=ReplaceAccountCredentialsRequest(expected_version=1, credentials={"token": "replacement"}),
         )
     assert denied.value.status_code == 404
-    resolver = ConnectivitySelectionResolver(connectivity_sessions)
-    selection = AccountToolSelection(
-        account_id=ACCOUNT_ID, tools=("slack.send_message",), target_scope={"channel_ids": ["C1"]}
-    )
-    with pytest.raises(ConnectivitySelectionError, match="connection_not_eligible"):
-        await resolver.prepare_revision_creation(
-            actor=actor(),
-            organization_id=ORG_ID,
-            workspace_id=WORKSPACE_ID,
-            connector_tools=(),
-            mcp_tools=(),
-            account_tools=(selection,),
-        )
+    async with transaction(connectivity_sessions) as session:
+        with pytest.raises(AuthorizationError):
+            await bind_account_tools(
+                session,
+                actor=actor(),
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
+                account_id=ACCOUNT_ID,
+                allowed_actions=("slack.send_message",),
+                target_scope={"channel_ids": ["C1"]},
+            )
     async with transaction(connectivity_sessions) as session:
         role = await session.get(RoleBindingRecord, "rb_connectivity_admin")
         role.role_key = "admin"
-    with pytest.raises(ConnectivitySelectionError, match="account_unavailable"):
-        await resolver.prepare_revision_creation(
-            actor=actor(),
-            organization_id="org_other1234567890",
-            workspace_id=WORKSPACE_ID,
-            connector_tools=(),
-            mcp_tools=(),
-            account_tools=(selection,),
-        )
+    async with transaction(connectivity_sessions) as session:
+        with pytest.raises(ValueError, match="native_source_unavailable"):
+            await bind_account_tools(
+                session,
+                actor=actor(),
+                organization_id="org_other1234567890",
+                workspace_id=WORKSPACE_ID,
+                account_id=ACCOUNT_ID,
+                allowed_actions=("slack.send_message",),
+                target_scope={"channel_ids": ["C1"]},
+            )

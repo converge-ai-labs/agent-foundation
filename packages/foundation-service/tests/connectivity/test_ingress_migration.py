@@ -26,6 +26,9 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
     try:
         inspector = inspect(engine)
         assert TABLES <= set(inspector.get_table_names())
+        run_columns = {column["name"] for column in inspector.get_columns("runs")}
+        assert "native_tool_contexts_json" in run_columns
+        assert not {"account_selections_json", "ingress_context_json"} & run_columns
         ingress_columns = {column["name"] for column in inspector.get_columns("ingresses")}
         assert "account_id" in ingress_columns
         assert (

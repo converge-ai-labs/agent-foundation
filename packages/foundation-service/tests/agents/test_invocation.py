@@ -200,7 +200,6 @@ def test_connection_tool_overrides_replace_complete_lists() -> None:
         ({"subagents": {"new": {}}}, "subagents.new.agent_id", "required"),
         ({"connector_tools": None}, "connector_tools", "null_not_allowed"),
         ({"mcp_tools": None}, "mcp_tools", "null_not_allowed"),
-        ({"account_tools": None}, "account_tools", "null_not_allowed"),
     ],
 )
 def test_invalid_null_or_incomplete_overrides_are_bounded(payload: dict[str, object], path: str, reason: str) -> None:
@@ -273,18 +272,6 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
 @pytest.mark.parametrize(
     ("override", "reason"),
     [
-        (
-            {
-                "account_tools": [
-                    {
-                        "account_id": "acct_1234567890abcdef",
-                        "tools": ["slack.send_message"],
-                        "target_scope": {"channel_ids": ["C1"]},
-                    }
-                ]
-            },
-            "account_tool_resolution_unavailable",
-        ),
         (
             {"connector_tools": [{"connector_connection_id": "cconn_1234567890abcdef"}]},
             "connector_tool_resolution_unavailable",
@@ -448,16 +435,14 @@ async def test_invalid_run_settings_preserve_the_parameter_error(
     assert "secret" not in str(invalid.value.details)
 
 
-def test_account_override_inherits_replaces_and_clears_exact_scope():
-    selected = {
-        "account_id": "acct_1234567890abcdef",
-        "tools": ["slack.send_message"],
-        "target_scope": {"channel_ids": ["C1"]},
-    }
-    base = agent_config(account_tools=(selected,))
-    assert merge_agent_run_override(base, None).config.account_tools == base.account_tools
-    override = AgentRunOverride.model_validate(
-        {"account_tools": [{**selected, "target_scope": {"channel_ids": ["C2"]}}]}
-    )
-    assert merge_agent_run_override(base, override).config.account_tools[0].target_scope == {"channel_ids": ["C2"]}
-    assert merge_agent_run_override(base, AgentRunOverride(account_tools=())).config.account_tools == ()
+@pytest.mark.parametrize("field", ["account_tools", "native_tool_contexts"])
+def test_native_authority_cannot_be_supplied_through_agent_config_or_override(field):
+    from a13n_service.agents.domain import AgentConfig, AgentRevision, EffectiveAgentConfig
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        AgentConfig.model_validate({**agent_config().model_dump(), field: []})
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        AgentRunOverride.model_validate({field: []})
+    assert field not in AgentRevision.model_fields
+    assert field not in EffectiveAgentConfig.model_fields

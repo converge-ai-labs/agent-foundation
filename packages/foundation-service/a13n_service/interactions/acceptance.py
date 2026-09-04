@@ -791,10 +791,9 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
         source.encrypted_config_payload,
         source.runtime_lock_digest,
         source.model_execution_observation,
-        source.account_selections,
         source.connector_connection_selections,
         source.mcp_connection_selections,
-        source.ingress_context,
+        source.native_tool_contexts,
     )
     candidate_authority = (
         candidate.authority_principal,
@@ -804,10 +803,9 @@ def _validate_inherited_execution(source: Run, candidate: Run) -> None:
         candidate.encrypted_config_payload,
         candidate.runtime_lock_digest,
         candidate.model_execution_observation,
-        candidate.account_selections,
         candidate.connector_connection_selections,
         candidate.mcp_connection_selections,
-        candidate.ingress_context,
+        candidate.native_tool_contexts,
     )
     if candidate_authority != source_authority:
         raise RunAcceptanceError(

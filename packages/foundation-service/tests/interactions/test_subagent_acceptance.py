@@ -6,7 +6,6 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.agents.domain import (
-    AccountToolSelection,
     ChildEnvironmentPolicy,
     EffectiveAgentConfig,
     ResolvedSubagentEdge,
@@ -70,9 +69,6 @@ pytestmark = pytest.mark.anyio
 CHILD_AGENT_ID = "agt_2222222222222222"
 CHILD_REVISION_ID = "agtr_2222222222222222"
 CHILD_DEFINITION_ID = f"agent-config-{'3' * 24}"
-ACCOUNT_SELECTION = AccountToolSelection(
-    account_id="acct_2222222222222222", tools=("slack.send_message",), target_scope={"channel_ids": ["C1"]}
-)
 CONNECTOR_SELECTION = ConnectorConnectionRunSelection(
     connector_connection_id="cconn_2222222222222222",
     connector_provider_id="cprv_2222222222222222",
@@ -126,6 +122,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         assert parent_record is not None
         running_parent = parent_record.to_resource()
 
+    assert running_parent.native_tool_contexts
     child_config = effective_agent_config(environment=environment_execution_config())
     first = _prepared_child(
         running_parent,
@@ -136,7 +133,6 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         suffix="3",
         connector_connection_selections=(CONNECTOR_SELECTION,),
         mcp_connection_selections=(MCP_SELECTION,),
-        account_selections=(ACCOUNT_SELECTION,),
     )
     service = ChildRunAcceptanceService(
         interaction_sessions,
@@ -172,10 +168,10 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         )
         assert child is not None and child_thread is not None
         child_resource = child.to_resource()
+        assert child_resource.native_tool_contexts == ()
         assert child_resource.authority_principal == running_parent.authority_principal
         assert child_resource.connector_connection_selections == (CONNECTOR_SELECTION.model_dump(mode="json"),)
         assert child_resource.mcp_connection_selections == (MCP_SELECTION.model_dump(mode="json"),)
-        assert child_resource.account_selections == (ACCOUNT_SELECTION.model_dump(mode="json"),)
         assert (child.agent_id, child.agent_revision_id) == (CHILD_AGENT_ID, CHILD_REVISION_ID)
         assert (child_thread.session_id, child_thread.origin_run_id) == (SESSION_ID, running_parent.id)
         assert environment_target is not None
@@ -355,7 +351,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         suffix="d",
         connector_connection_selections=(CONNECTOR_SELECTION,),
         mcp_connection_selections=(MCP_SELECTION,),
-        account_selections=(ACCOUNT_SELECTION,),
     )
     service = ChildRunAcceptanceService(
         interaction_sessions,
@@ -400,7 +395,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         child_effective_config=child_config,
         connector_connection_selections=(CONNECTOR_SELECTION,),
         mcp_connection_selections=(MCP_SELECTION,),
-        account_selections=(ACCOUNT_SELECTION,),
         source_relationship=source_relationship,
         source_parent_run=running_parent,
         source_thread=source_thread,
@@ -433,7 +427,6 @@ async def test_completed_child_can_resume_as_linked_continuation(
         child_resource = child_run.to_resource()
         assert child_resource.connector_connection_selections == (CONNECTOR_SELECTION.model_dump(mode="json"),)
         assert child_resource.mcp_connection_selections == (MCP_SELECTION.model_dump(mode="json"),)
-        assert child_resource.account_selections == (ACCOUNT_SELECTION.model_dump(mode="json"),)
 
 
 async def _complete_run(
@@ -490,7 +483,6 @@ def _prepared_child(
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = (),
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...] = (),
-    account_selections: tuple[AccountToolSelection, ...] = (),
 ):
     return prepare_child_run(
         parent_run=parent,
@@ -506,7 +498,6 @@ def _prepared_child(
         child_effective_config=child_config,
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,
-        account_selections=account_selections,
         child_thread_id=f"thread-{suffix * 32}",
         child_run_id=f"run_{suffix * 16}",
         relationship_id=f"crr_{suffix * 16}",
@@ -553,6 +544,19 @@ async def _accept_parent(
         idempotency_key="parent-start",
         request_fingerprint="1" * 64,
         config=config,
+    ).model_copy(
+        update={
+            "native_tool_contexts": (
+                {
+                    "kind": "account",
+                    "account_id": "acct_parent",
+                    "provider_key": "slack",
+                    "execution_principal_ref": {"principal_type": "user", "principal_id": USER_ID},
+                    "allowed_actions": ["slack.send_message"],
+                    "target_scope": {"channel_ids": ["C1"]},
+                },
+            )
+        }
     )
     states = RunStateStore(objects)
     await RunAcceptanceService(

@@ -231,7 +231,6 @@ class AgentResolver:
             resolved_plugin_versions=plugins,
             runtime_lock_digest=runtime_lock.digest,
             resolved_skills=skills,
-            account_tools=prepared.config.account_tools,
             connector_tools=prepared.config.connector_tools,
             mcp_tools=prepared.config.mcp_tools,
             resolved_environment=environment,
@@ -245,8 +244,6 @@ class AgentResolver:
             raise agent_revision_create_failed("environment_resolution_unavailable", path="environment")
         if config.skills and config.environment is None:
             raise agent_revision_create_failed("skill_environment_required", path="environment")
-        if config.account_tools and self._connectivity_resolver is None:
-            raise agent_revision_create_failed("account_tool_resolution_unavailable", path="account_tools")
         if config.connector_tools and self._connectivity_resolver is None:
             raise agent_revision_create_failed("connector_tool_resolution_unavailable", path="connector_tools")
         if config.mcp_tools and self._connectivity_resolver is None:
