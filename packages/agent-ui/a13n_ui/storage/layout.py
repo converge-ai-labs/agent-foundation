@@ -16,6 +16,7 @@ class StorageLayout:
     objects: Path
     runtimes: Path
     staging: Path
+    content_plugins: Path
 
     @classmethod
     def from_root(cls, root: Path) -> StorageLayout:
@@ -25,6 +26,7 @@ class StorageLayout:
             objects=root / "objects",
             runtimes=root / "runtimes",
             staging=root / "staging",
+            content_plugins=root / "content-plugins",
         )
 
     def prepare(self) -> None:

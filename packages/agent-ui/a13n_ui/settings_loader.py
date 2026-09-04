@@ -75,7 +75,10 @@ async def load_agent_ui_settings(
         exists = False
     else:
         try:
-            configuration = await load_agent_ui_configuration(selected)
+            configuration = await load_agent_ui_configuration(
+                selected,
+                content_plugin_root=resolved_data_root / "content-plugins",
+            )
         except ConfigurationError as exc:
             configuration = None
             candidate_error = exc

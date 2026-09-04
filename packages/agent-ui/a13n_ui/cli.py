@@ -28,6 +28,7 @@ from a13n_ui.configuration import (
     ExternalSubagentScope,
     LoadedAgentUiConfiguration,
 )
+from a13n_ui.content_plugins import ContentPluginStore, InstalledContentPlugin
 from a13n_ui.environment_profiles import EnvironmentMode, environment_profile_id_for_mode
 from a13n_ui.errors import AgentUiError, ConfigurationError
 from a13n_ui.model_accounts import (
@@ -111,6 +112,18 @@ def _parser() -> argparse.ArgumentParser:
         help="apply every ready candidate; omission is a dry-run preview",
     )
     _add_format(import_subagents)
+
+    plugin = commands.add_parser("plugin", help="install or manage declarative Content Plugins")
+    plugin_commands = plugin.add_subparsers(dest="plugin_command", required=True)
+    plugin_install = plugin_commands.add_parser("install", help="install one Content Plugin from a Git repository")
+    plugin_install.add_argument("repository", help="Git repository URL or local path")
+    plugin_install.add_argument("--plugin", dest="plugin_id", help="plugin ID when the repository contains several")
+    plugin_install.add_argument("--ref", help="Git branch, tag, or commit to install")
+    _add_format(plugin_install)
+    _add_format(plugin_commands.add_parser("list", help="list installed Content Plugins and their directories"))
+    plugin_uninstall = plugin_commands.add_parser("uninstall", help="unregister one Content Plugin")
+    plugin_uninstall.add_argument("plugin_id")
+    _add_format(plugin_uninstall)
 
     project = commands.add_parser("project", help="query configured Projects")
     project_commands = project.add_subparsers(dest="project_command", required=True)
@@ -226,6 +239,8 @@ async def _run(args: argparse.Namespace) -> int:
         log_format=LogFormat(settings.log_format),
         logger_names=("a13n_ui",),
     )
+    if args.command == "plugin":
+        return await _run_content_plugins(args, settings.storage.data_root)
     if args.command == "webui":
         from a13n_ui.webui import run as run_web
 
@@ -272,6 +287,40 @@ async def _run(args: argparse.Namespace) -> int:
             )
         await run_tui(app, launch=_tui_launch_options(args))
     return 0
+
+
+async def _run_content_plugins(args: argparse.Namespace, data_root: Path) -> int:
+    store = ContentPluginStore(data_root / "content-plugins")
+    if args.plugin_command == "install":
+        installed = await store.install(
+            args.repository,
+            plugin_id=args.plugin_id,
+            ref=args.ref,
+        )
+        _print_projection({"installed": _content_plugin_projection(installed)}, args.format)
+        return 0
+    if args.plugin_command == "list":
+        _print_projection(
+            {"plugins": tuple(_content_plugin_projection(item) for item in await store.list())},
+            args.format,
+        )
+        return 0
+    removed = await store.uninstall(args.plugin_id)
+    _print_projection(removed, args.format)
+    return 0
+
+
+def _content_plugin_projection(plugin: InstalledContentPlugin) -> dict[str, str]:
+    return {
+        "plugin_id": plugin.plugin_id,
+        "name": plugin.name,
+        "version": plugin.version,
+        "description": plugin.description,
+        "repository": plugin.repository,
+        "commit": plugin.commit,
+        "content_digest": plugin.content_digest,
+        "path": plugin.path,
+    }
 
 
 def _tui_launch_options(args: argparse.Namespace) -> TuiLaunchOptions:

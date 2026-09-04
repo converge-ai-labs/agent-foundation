@@ -45,8 +45,8 @@ flowchart TB
 
 The App owns:
 
-- stable multi-file loading, accepted-generation selection, diagnostics, and expected-digest mutations;
-- Capability and three-plane extension catalog projection;
+- stable multi-file and installed Content Plugin loading, accepted-generation selection, diagnostics, and expected-digest mutations;
+- Capability and three-plane runtime extension catalog projection;
 - Project, configured-resource, and Environment-profile queries, including the two release-owned execution modes;
 - Thread creation, metadata and configuration mutation, Project-filtered keyset queries, and transcript projection;
 - process-local root admission, receipt correlation, execution, deferred response, waiting, cancellation, and steering;
@@ -63,7 +63,7 @@ One App lifetime:
 
 1. resolves the config path and bootstrap data-root locator, then configures logging at the executable boundary;
 2. opens and migrates local storage without depending on a valid root YAML;
-3. loads or restores the last accepted file generation and reports current source diagnostics;
+3. loads or restores the last accepted file-and-Content-Plugin generation and reports current source diagnostics;
 4. initializes Capability and extension catalogs plus release-owned Model, MCP, and Environment adapter integrations;
 5. starts bounded configuration change observation;
 6. attaches the selected CLI, TUI, or Web surface;
@@ -90,7 +90,7 @@ For an admitted prompt or deferred response, the App:
 02. validates and commits the sticky configuration update when present;
 03. validates that the selected continuation accepts the input kind and, for a deferred response, still matches the caller's expected continuation ID;
 04. captures the current accepted generation and selected Project roots;
-05. resolves the exact Agent graph, Capabilities, tool visibility, Harness Plugins, MCP servers, Environment Provider, and Environment Run Extensions;
+05. resolves the exact Agent graph, Capabilities, tool visibility, Harness Plugins, Content Plugin snapshot, MCP servers, Environment Provider, and Environment Run Extensions;
 06. publishes the immutable resolved Run composition;
 07. creates fresh native collaborators; each subscription-backed Model request resolves and refreshes its compatible OAuth credential when needed;
 08. starts one Harness stream and observer from the selected `HarnessState`;

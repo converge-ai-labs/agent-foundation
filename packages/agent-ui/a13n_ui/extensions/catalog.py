@@ -458,6 +458,14 @@ def _construct_skills_capability(
             required=False,
         )
     ]
+    sources.extend(
+        FileSkillSource(
+            f"agent-ui:content-plugin:{plugin_id}",
+            (path,),
+            required=True,
+        )
+        for plugin_id, path in path_layout.content_plugin_skills
+    )
     for index in range(len(path_layout.project_mounts), 1, -1):
         sources.append(
             FileSkillSource(

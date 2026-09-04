@@ -133,7 +133,7 @@ A child Thread persists the same discriminated Agent or Markdown source referenc
 
 ## Canonical Markdown Subagents
 
-Immediate `subagents/*.md` files provide a concise human-authored child format compatible with the common Claude Code shape and the minimal YAACLI adapter pattern:
+Immediate local `subagents/*.md` files and installed Content Plugin `subagents/*.md` files provide a concise human-authored child format compatible with the common Claude Code shape and the minimal YAACLI adapter pattern. Local files override plugin content with the same ID under the [Content Plugin precedence contract](01b-content-plugin-repositories.md#configuration-integration):
 
 ```markdown
 ---
@@ -197,7 +197,7 @@ Semantically identical imports are unchanged or deduplicated. A different existi
 
 For each Run, Agent UI:
 
-1. captures the accepted configuration generation and Thread configuration version;
+1. captures the accepted file-and-Content-Plugin generation and Thread configuration version;
 2. resolves the Thread's current Agent-resource or Markdown-subagent source;
 3. applies exact Thread Harness Plugin and MCP lists to the root Agent;
 4. resolves Capability selections, tool visibility, and every subagent edge;
@@ -218,7 +218,7 @@ flowchart LR
     Generation & Thread --> Graph --> Validate --> Composition --> Native
 ```
 
-The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, Project roots, Environment profile selection, Environment Run Extensions, and dependency provenance. A selected `skills` Capability captures only its ordered explicit Environment roots; automatic Project and user sources are derived during fresh reconstruction under [Environment Skill Sources](02b-environment-skill-sources.md). The composition contains no Skill bytes or discovered catalog, credential bytes, native client, Environment adapter, task, callback, or active state coordinator.
+The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, Project roots, the exact installed Content Plugin identities and immutable paths, Environment profile selection, Environment Run Extensions, and dependency provenance. A selected `skills` Capability captures only its ordered explicit Environment roots; automatic Project, plugin, and user sources are derived during fresh reconstruction under [Environment Skill Sources](02b-environment-skill-sources.md). The composition contains no Skill bytes or discovered catalog, credential bytes, native client, Environment adapter, task, callback, or active state coordinator.
 
 ## Continuing Across Composition Changes
 
@@ -230,11 +230,11 @@ Every continuation bundle records the Run composition that produced it. This is 
 
 ## Invariants
 
-1. Agent, Model, MCP, and Markdown resources are human-editable current definitions.
+1. Agent, Model, MCP, and local Markdown resources are human-editable current definitions; plugin Markdown is an immutable installed catalog input.
 2. Agent configuration selects Capabilities; Capabilities own Toolsets.
 3. Thread selections can replace Agent Plugin and MCP defaults between Runs.
 4. Every Run captures a complete immutable composition before native construction.
-5. An active Run never changes when a source file or Thread configuration changes.
+5. An active Run never changes when a source file, installed plugin registration, or Thread configuration changes.
 6. Canonical Markdown remains small and broadly compatible rather than encoding a complete authorization system.
 7. Claude Code, Cursor, and Codex import is explicit, previewable, diagnostic, and no-clobber.
 8. `HarnessState` can continue across supported composition changes without silently discarding component state.

@@ -4,7 +4,7 @@
 
 Agent UI is a local, single-user Harness workstation. One process-local `AgentUiApp` owns configuration generations, trusted catalogs, Projects, Threads, process-local root receipts, persisted async children, Environment state, detached projections, and live presentation. CLI, Textual TUI, and WebUI adapters call that same application boundary.
 
-Human-editable files remain the desired-resource authority so Agent UI can be configured without a browser or a large command surface. SQLite owns mutable Thread and execution heads, while immutable content-addressed objects retain complete Run compositions and continuation checkpoints.
+Human-editable files remain the desired-resource authority so Agent UI can be configured without a browser or a large command surface. Separately, explicit CLI operations install immutable declarative Content Plugins under the data root. SQLite owns mutable Thread and execution heads, while immutable content-addressed objects retain complete Run compositions and continuation checkpoints.
 
 Agent UI persists complete continuation boundaries, not accepted-work intent. Process loss can discard a root receipt, submitted message or deferred response, partial output, an active child segment, live events, and Run-owned shell processes. A later operation resumes only from a previously selected complete checkpoint.
 
@@ -14,7 +14,8 @@ Agent UI owns two built-in local execution modes. **Full Control** uses the Dire
 
 ```mermaid
 flowchart TB
-    Files[Root YAML, resource YAML, and subagent Markdown]
+    Files[Root YAML, resource YAML, and local subagent Markdown]
+    Content[Installed Content Plugin catalog]
     Catalogs[Capability and extension catalogs]
     Generation[Accepted configuration generation]
     Project[Project, ordered roots, and Thread organization]
@@ -26,7 +27,7 @@ flowchart TB
     Store[SQLite and immutable objects]
     Live[Live presentation]
 
-    Files --> Generation
+    Files & Content --> Generation
     Catalogs --> Generation
     Generation --> Thread
     Project --> Thread
@@ -41,8 +42,9 @@ The core concepts are:
 | Concept                  | Meaning and owner                                                                                                        |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | Configuration generation | One complete stable and valid capture of the root YAML, resource YAML, and canonical Markdown sources                    |
-| Configured resource      | Stable file-defined Model, extension, MCP server, Agent, subagent, or Project selected by ID                             |
-| Installed catalog entry  | Available Capability or extension implementation; availability alone grants no selection                                 |
+| Configured resource      | Stable file-defined Model, extension, MCP server, Agent, local or plugin subagent, or Project selected by ID             |
+| Content Plugin           | Git-installed immutable declarative Skill and Markdown-subagent bundle; availability alone grants no selection           |
+| Installed catalog entry  | Available Capability or runtime-extension implementation; availability alone grants no selection                         |
 | Project                  | File-defined mutable named ordered roots and the only Agent UI concept for organizing root Threads and execution context |
 | Thread                   | Root or async child conversation with independent metadata and sticky-configuration heads plus one selected continuation |
 | Thread configuration     | Versioned Project, Agent, Environment, Plugin, Run Extension, and MCP selections used by default on subsequent Runs      |
@@ -58,6 +60,7 @@ The core concepts are:
 | -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Native Agent construction and loop     | Harness and Pydantic AI                     | Resolves selected Capabilities and extensions into exact native inputs                                              |
 | Desired local resource behavior        | Agent UI configuration files                | Accepts one coherent generation and preserves direct text editing                                                   |
+| Declarative plugin content             | Installed Content Plugin catalog            | Adds immutable Skill sources and fallback Markdown subagents without runtime code                                   |
 | Mutable conversation presentation      | Agent UI Thread metadata                    | Stores versioned title and archive state                                                                            |
 | Mutable conversation defaults          | Agent UI Thread configuration               | Stores sticky selections and applies explicit partial changes                                                       |
 | Root and child continuation            | Harness `HarnessState` selected by Agent UI | Persists complete immutable checkpoints and current references                                                      |
@@ -139,14 +142,14 @@ It does not store root receipts, pending root input or deferred responses, activ
 
 ## Surfaces and Packaging
 
-The `a13n-ui` CLI, [Textual TUI](tui/README.md), and [WebUI](webui/README.md) use the same file configuration and App boundary. The App projects the release-owned **Full Control** and **Sandbox** modes together with accepted custom Environment profiles, so every surface presents the same identity, execution warning, Provider selection, and path-layout fact. The [Web adapter](05-runtime-subagents-and-surfaces.md#http-startup-and-access) binds to loopback and requires a fresh process-local API key by default; its explicit network and access overrides do not create another application-configuration plane. Direct file editing remains a complete configuration path. The CLI locates, validates, and shows configuration but provides no generic desired-resource CRUD; the WebUI owns expected-digest source mutation and Project management; the TUI resolves one launch Project from the current directory, defaults Workbench to that Project filter with an All Projects fallback, and patches only supported non-Project sticky selections. Surfaces receive strict detached views rather than storage or Harness values. Focused views establish an epoch and sequence cutover before reading their snapshot, then consume root-lineage events after that point; an App-wide best-effort invalidation stream prompts summary refetch. The TUI provides terminal-native Focus and Workbench modes without adding another runtime authority.
+The `a13n-ui` CLI, [Textual TUI](tui/README.md), and [WebUI](webui/README.md) use the same file configuration and App boundary. The CLI additionally owns Content Plugin install, list, and uninstall; the other surfaces do not manage that catalog. The App projects the release-owned **Full Control** and **Sandbox** modes together with accepted custom Environment profiles, so every surface presents the same identity, execution warning, Provider selection, and path-layout fact. The [Web adapter](05-runtime-subagents-and-surfaces.md#http-startup-and-access) binds to loopback and requires a fresh process-local API key by default; its explicit network and access overrides do not create another application-configuration plane. Direct file editing remains a complete configuration path. The CLI locates, validates, and shows configuration but provides no generic desired-resource CRUD; the WebUI owns expected-digest source mutation and Project management; the TUI resolves one launch Project from the current directory, defaults Workbench to that Project filter with an All Projects fallback, and patches only supported non-Project sticky selections. Surfaces receive strict detached views rather than storage or Harness values. Focused views establish an epoch and sequence cutover before reading their snapshot, then consume root-lineage events after that point; an App-wide best-effort invalidation stream prompts summary refetch. The TUI provides terminal-native Focus and Workbench modes without adding another runtime authority.
 
 Textual ships as part of the Python `a13n-ui` distribution. The private `apps/harness-ui` build output ships in both the `a13n-ui` wheel and sdist. Rebuilding a wheel from the sdist requires no Node.js.
 
 ## Stable Principles
 
 01. One in-process App owns all local application behavior.
-02. Human-editable files are the desired-resource authority; SQLite does not duplicate their editable definitions.
+02. Human-editable files are the desired-resource authority; installed Content Plugin files are immutable catalog inputs, and SQLite does not duplicate either definition source.
 03. One accepted generation is coherent across all selected configuration files.
 04. Project is the only local-root grouping, root-Thread organization, and execution-context concept; Agent UI defines no Workspace resource.
 05. Thread metadata and sticky configuration are independent versioned heads, while each admitted Run captures immutable effective behavior.

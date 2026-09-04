@@ -12,6 +12,7 @@ class EnvironmentPathLayout:
 
     project_mounts: tuple[str, ...]
     user_skills: str
+    content_plugin_skills: tuple[tuple[str, str], ...] = ()
 
     @classmethod
     def resolve(
@@ -20,6 +21,7 @@ class EnvironmentPathLayout:
         canonical_host_paths: bool,
         project_roots: tuple[str | Path, ...],
         user_skills_root: Path | None = None,
+        content_plugin_skills: tuple[tuple[str, str], ...] = (),
     ) -> EnvironmentPathLayout:
         if not project_roots:
             raise ValueError("project_roots must not be empty")
@@ -29,6 +31,9 @@ class EnvironmentPathLayout:
             return cls(
                 project_mounts=project_mounts,
                 user_skills=skills_root.as_posix(),
+                content_plugin_skills=tuple(
+                    (plugin_id, Path(path).as_posix()) for plugin_id, path in content_plugin_skills
+                ),
             )
         return cls(
             project_mounts=tuple(
@@ -36,6 +41,10 @@ class EnvironmentPathLayout:
                 for index in range(1, len(project_roots) + 1)
             ),
             user_skills="/environment/user-skills",
+            content_plugin_skills=tuple(
+                (plugin_id, f"/environment/content-plugin-{index}")
+                for index, (plugin_id, _path) in enumerate(content_plugin_skills, start=1)
+            ),
         )
 
 

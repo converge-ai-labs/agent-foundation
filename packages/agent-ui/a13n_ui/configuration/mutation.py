@@ -53,6 +53,7 @@ async def mutate_configuration_source(
     request: ResourceMutationRequest,
     *,
     validate_candidate: CandidateValidator | None = None,
+    content_plugin_root: Path | None = None,
 ) -> ConfigurationMutationResult:
     """Create or update one source using an exact digest compare-and-set."""
 
@@ -67,9 +68,15 @@ async def mutate_configuration_source(
     latest = await to_thread.run_sync(_source_digest_or_none, target)
     _check_precondition(expected, latest, target)
 
-    baseline = await load_agent_ui_configuration(selected)
+    baseline = await load_agent_ui_configuration(selected, content_plugin_root=content_plugin_root)
     _check_loaded_target(baseline, normalized, expected, target)
-    candidate = await _validate_candidate(baseline, selected, normalized, content)
+    candidate = await _validate_candidate(
+        baseline,
+        selected,
+        normalized,
+        content,
+        content_plugin_root=content_plugin_root,
+    )
     if validate_candidate is not None:
         validate_candidate(candidate)
 
@@ -77,19 +84,31 @@ async def mutate_configuration_source(
     # publication so a candidate is never applied to a different generation.
     latest = await to_thread.run_sync(_source_digest_or_none, target)
     _check_precondition(expected, latest, target)
-    current = await load_agent_ui_configuration(selected)
+    current = await load_agent_ui_configuration(selected, content_plugin_root=content_plugin_root)
     if current.source_digest != baseline.source_digest:
         latest = await to_thread.run_sync(_source_digest_or_none, target)
         raise _conflict(target, expected, latest, "The configuration generation changed before publication.")
 
     desired_digest = hashlib.sha256(content).hexdigest()
     if latest == desired_digest:
-        verified = await _verify_publication(selected, normalized, content, candidate)
+        verified = await _verify_publication(
+            selected,
+            normalized,
+            content,
+            candidate,
+            content_plugin_root=content_plugin_root,
+        )
         return ConfigurationMutationResult("unchanged", normalized, desired_digest, verified)
 
     action: Literal["created", "updated"] = "created" if expected is None else "updated"
     await to_thread.run_sync(_publish_content, target, content, expected)
-    verified = await _verify_publication(selected, normalized, content, candidate)
+    verified = await _verify_publication(
+        selected,
+        normalized,
+        content,
+        candidate,
+        content_plugin_root=content_plugin_root,
+    )
     return ConfigurationMutationResult(action, normalized, desired_digest, verified)
 
 
@@ -99,6 +118,7 @@ async def delete_configuration_source(
     *,
     expected_source_digest: str,
     validate_candidate: CandidateValidator | None = None,
+    content_plugin_root: Path | None = None,
 ) -> ConfigurationMutationResult:
     """Delete one non-root source using an exact digest compare-and-set."""
 
@@ -114,21 +134,33 @@ async def delete_configuration_source(
     latest = await to_thread.run_sync(_source_digest_or_none, target)
     _check_precondition(expected, latest, target)
 
-    baseline = await load_agent_ui_configuration(selected)
+    baseline = await load_agent_ui_configuration(selected, content_plugin_root=content_plugin_root)
     _check_loaded_target(baseline, normalized, expected, target)
-    candidate = await _validate_candidate(baseline, selected, normalized, None)
+    candidate = await _validate_candidate(
+        baseline,
+        selected,
+        normalized,
+        None,
+        content_plugin_root=content_plugin_root,
+    )
     if validate_candidate is not None:
         validate_candidate(candidate)
 
     latest = await to_thread.run_sync(_source_digest_or_none, target)
     _check_precondition(expected, latest, target)
-    current = await load_agent_ui_configuration(selected)
+    current = await load_agent_ui_configuration(selected, content_plugin_root=content_plugin_root)
     if current.source_digest != baseline.source_digest:
         latest = await to_thread.run_sync(_source_digest_or_none, target)
         raise _conflict(target, expected, latest, "The configuration generation changed before publication.")
 
     await to_thread.run_sync(_delete_content, target, expected)
-    verified = await _verify_publication(selected, normalized, None, candidate)
+    verified = await _verify_publication(
+        selected,
+        normalized,
+        None,
+        candidate,
+        content_plugin_root=content_plugin_root,
+    )
     return ConfigurationMutationResult("deleted", normalized, None, verified)
 
 
@@ -235,10 +267,15 @@ async def _validate_candidate(
     configuration_path: Path,
     relative_path: str,
     replacement: bytes | None,
+    *,
+    content_plugin_root: Path | None,
 ) -> LoadedAgentUiConfiguration:
     staging = await to_thread.run_sync(_stage_candidate, baseline, configuration_path, relative_path, replacement)
     try:
-        return await load_agent_ui_configuration(staging / configuration_path.name)
+        return await load_agent_ui_configuration(
+            staging / configuration_path.name,
+            content_plugin_root=content_plugin_root,
+        )
     finally:
         await to_thread.run_sync(shutil.rmtree, staging, True)
 
@@ -252,6 +289,8 @@ def _stage_candidate(
     staging = Path(tempfile.mkdtemp(prefix=".a13n-ui-candidate-", dir=configuration_path.parent))
     try:
         for source in baseline.sources:
+            if source.relative_path.startswith("content-plugins/"):
+                continue
             if source.relative_path == relative_path:
                 if replacement is None:
                     continue
@@ -322,6 +361,8 @@ async def _verify_publication(
     relative_path: str,
     replacement: bytes | None,
     candidate: LoadedAgentUiConfiguration,
+    *,
+    content_plugin_root: Path | None,
 ) -> LoadedAgentUiConfiguration:
     target = configuration_path.parent.joinpath(*PurePosixPath(relative_path).parts)
     latest = await to_thread.run_sync(_source_digest_or_none, target)
@@ -337,7 +378,10 @@ async def _verify_publication(
             },
         )
     try:
-        loaded = await load_agent_ui_configuration(configuration_path)
+        loaded = await load_agent_ui_configuration(
+            configuration_path,
+            content_plugin_root=content_plugin_root,
+        )
     except ConfigurationError as exc:
         raise ConfigurationError(
             "The published configuration generation did not verify.",
