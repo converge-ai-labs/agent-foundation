@@ -30,6 +30,7 @@ A Run is the stable logical-work identity and durable recovery boundary for one 
 | Attempt execution, Harness callbacks, and live control | [Foundation–Harness Runtime Integration](14-harness-runtime-integration.md)      | Defines the executor tasks, `RunAttemptControl`, `HarnessDriver`, public Harness calls, mandatory Capability, and private gate |
 | Lifecycle history                                      | [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md)       | Records ordered facts without becoming Run or attempt authority                                                                |
 | Thread inbox acceptance and consumption                | [Agent Control: Active Execution](19-agent-control-active-execution.md)          | Supplies durable steer and asynchronous-result entries plus state-coupled same-Run consumption                                 |
+| Environment target active membership and keepalive     | [Environment Management](29-environment-management.md)                           | Counts accepted/running Runs, not Attempt generations; owns target lock order and Keeper execution                             |
 | Agent tool crash behavior                              | Latest complete Run state plus the owning tool or Capability domain              | Defines no generic invocation ledger; effectful tools own cross-crash idempotency or durable task reconciliation               |
 
 ## RunAttempt Allocation Within a Run
@@ -46,6 +47,8 @@ A later Attempt preserves the Run ID, Session, Thread, parent edge, accepted inp
 | Successor after planned handoff                  | Run is `running` without a current Attempt; the highest generation is `yielded`       | Create a later leased Attempt with `recovery_reason="planned_handoff"`; increment `attempts_started` without consuming another recovery or handoff count |
 
 Every claim revalidates the exact Run eligibility, budget, compatibility, and authority rules defined below. A caller- or responder-driven successor, fork, queued-submission consumption, or terminal-intent Retry is new semantic work and therefore creates another Run under its owning acceptance contract rather than entering this allocation path.
+
+The first claim's `accepted -> running` transition does not change Environment target active membership. Attempt replacement, retryable backoff, takeover, and planned handoff likewise leave the same Run counted once. Any claim, preparation, recovery, or cancellation transaction that instead seals an `accepted` or `running` Run decrements its bound target exactly once in that same transaction under the [target lock order](29-environment-management.md#active-run-accounting-and-target-lifecycle).
 
 ## Durable Model
 
@@ -176,7 +179,7 @@ There is no separate scheduler claim, recovery controller, or Redis ownership ha
 1. locks or conditionally updates the candidate Run and, when present, its exact selected attempt;
 2. revalidates the candidate shape, Thread current selection, Run status, `available_at`, lease expiry, fixed recovery deadline, applicable recovery or handoff count, aggregate known usage, and any reason-specific build-preference eligibility;
 3. when taking over an expired lease, terminalizes the selected old attempt as `failed` with a bounded lease-expiry reason, disables its lease, and charges its known usage;
-4. if the fixed deadline or aggregate usage ceiling no longer permits any successor, or a failure or expiry replacement no longer fits the recovery budget, creates no attempt and seals the Run as `failed` with its terminal Thread update in the same transaction; a yielded predecessor is already within the handoff budget consumed by its yield and does not consume recovery budget;
+4. if the fixed deadline or aggregate usage ceiling no longer permits any successor, or a failure or expiry replacement no longer fits the recovery budget, creates no attempt and seals the Run as `failed` with its terminal Thread update and bound Environment-target decrement in the same transaction; a yielded predecessor is already within the handoff budget consumed by its yield and does not consume recovery budget;
 5. otherwise allocates `attempt_number=attempts_started+1` and the next monotonic fence, inserts the new `leased` attempt, increments `attempts_started`, increments `recovery_attempts_started` only for the first generation or a failure or expiry replacement, and selects it as `current_run_attempt_id`; a successor to `yielded` records `recovery_reason="planned_handoff"`, and every new Attempt copies the claimant's immutable `worker_build_id`;
 6. changes an initially `accepted` Run to `running`, leaves a replacement Run `running`, and appends the corresponding lifecycle facts.
 
@@ -240,7 +243,7 @@ The [Run outcome contract](12-run-persistence.md#run-acceptance-checkpoint-and-o
 
 The [active-control contract](19-agent-control-active-execution.md#completion-and-control-races) owns Thread inbox preconditions and disposition, while the [queued-submission contract](20-agent-control-queued-submissions.md#completion-time-combined-handoff) owns a combined completed outcome and successor acceptance. Such a transaction can terminalize this Attempt, but it creates no Attempt for the successor Run; only a later ordinary claim does so.
 
-A known attempt failure commits atomically with its Run decision and charges known usage. A retryable in-budget failure terminalizes the current attempt as `failed`, clears `current_run_attempt_id`, leaves the Run `running`, and sets its bounded `available_at`; a later Worker scan may create the next attempt. A non-retryable or exhausted failure additionally seals the Run as `failed` and applies the active-control contract's terminal inbox disposition. Neither path returns the Run to `accepted`. A failure before Harness entry leaves `harness_run_id` and `started_at` null.
+A known attempt failure commits atomically with its Run decision and charges known usage. A retryable in-budget failure terminalizes the current attempt as `failed`, clears `current_run_attempt_id`, leaves the Run `running`, leaves its Environment target count unchanged, and sets its bounded `available_at`; a later Worker scan may create the next attempt. A non-retryable or exhausted failure additionally decrements the bound target, seals the Run as `failed`, and applies the active-control contract's terminal inbox disposition in the same transaction. Neither path returns the Run to `accepted`. A failure before Harness entry leaves `harness_run_id` and `started_at` null.
 
 ## Graceful Handoff Transaction
 
@@ -365,9 +368,9 @@ The executor then uses one short fenced compare-and-swap transaction to revalida
 
 - **continue**: preserve the Run and attempt as active and permit fresh reconstruction and Harness entry;
 - **retry later**: terminalize the attempt as `failed`, charge known usage, clear the current selection, keep the Run `running`, and set a bounded `available_at`, but only for an explicitly retryable condition while budget remains; or
-- **fail the Run**: terminalize the attempt as `failed`, charge known usage, clear the current selection, seal the Run as `failed`, retain it as the Thread's current Run, preserve the prior head, and increment the Thread version.
+- **fail the Run**: terminalize the attempt as `failed`, charge known usage, clear the current selection, decrement the bound Environment target, seal the Run as `failed`, retain it as the Thread's current Run, preserve the prior head, and increment the Thread version.
 
-Every Run-failure path records bounded `failure`, sets `sealed_at`, clears the current Attempt selection, freezes the deterministic state key, retains the failed Run as the Thread's current Run, preserves the prior continuation head, increments the Thread version, and appends Attempt and Run lifecycle facts as applicable. It records `sealed_state` only when exact valid state metadata is already available under the Run state contract.
+Every Run-failure path records bounded `failure`, sets `sealed_at`, clears the current Attempt selection, freezes the deterministic state key, decrements the bound Environment target when the old Run was active, retains the failed Run as the Thread's current Run, preserves the prior continuation head, increments the Thread version, and appends Attempt and Run lifecycle facts as applicable. It records `sealed_state` only when exact valid state metadata is already available under the Run state contract.
 
 A permanent state, integrity, schema, codec, artifact, lock, compatibility, or authority failure takes the final path. An exhausted applicable recovery or handoff count, deadline, or usage budget also takes the final path. A transient object-store or immutable-artifact availability failure can take the retry-later path only when policy classifies it retryable and all remaining budget checks pass. If the Worker dies during preparation, its lease eventually expires and another Worker's ordinary takeover transaction replaces that attempt.
 
@@ -466,3 +469,4 @@ Keeping attempts as immutable audit rows increases relational retention but pres
 21. Every Attempt owner participates in the Harness-integration and active-control reconciliation points defined by their owning contracts; Redis consumer progress is only a wakeup optimization.
 22. A claim requires a pre-reserved bounded local execution slot and starts exactly one process-local `RunAttemptExecutor` async task; it never creates another OS thread or a durable Execution resource.
 23. The execution slot, both child tasks, `HarnessDriver`, `HarnessRunStream`, `RunAttemptControl`, Capability, and private gate are released only after the executor's bounded structured cleanup finishes.
+24. RunAttempt allocation, replacement, retryable backoff, and handoff never add another Environment target count; only a new Run acceptance increments and only leaving `accepted` or `running` decrements.

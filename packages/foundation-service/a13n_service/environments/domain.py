@@ -55,6 +55,14 @@ def new_environment_revision_id() -> str:
     return new_object_id("envr")
 
 
+def new_environment_target_id() -> str:
+    return new_object_id("envt")
+
+
+def new_environment_keepalive_operation_id() -> str:
+    return new_object_id("envkop")
+
+
 def new_run_environment_binding_id() -> str:
     return new_object_id("envb")
 
@@ -67,6 +75,29 @@ class EnvironmentAccess(StrEnum):
     read_only = "read_only"
     read_write = "read_write"
     full = "full"
+
+
+class EnvironmentTargetRetentionBehavior(StrEnum):
+    none = "none"
+    while_execution_active = "while_execution_active"
+
+
+class EnvironmentTargetStatus(StrEnum):
+    active = "active"
+    idle = "idle"
+    retired = "retired"
+
+
+class EnvironmentTargetIdentity(DomainModel):
+    """Provider-owned, tenant-neutral identity for one external target."""
+
+    namespace: JsonObject = Field(default_factory=dict)
+    target_key: TargetKey
+
+    @field_validator("target_key", mode="before")
+    @classmethod
+    def validate_target_key(cls, value: object) -> str:
+        return validated_target_key(TypeAdapter(str).validate_python(value))
 
 
 class EnvironmentProviderLock(DomainModel):
@@ -83,6 +114,8 @@ class EnvironmentProviderLock(DomainModel):
 class EnvironmentProviderCatalogEntry(DomainModel):
     provider_key: ProviderKey
     connection_versions: tuple[SchemaVersion, ...] = Field(min_length=1, max_length=64)
+    identity_schema_version: SchemaVersion
+    retention_behavior: EnvironmentTargetRetentionBehavior
     provider_lock: EnvironmentProviderLock
 
 
@@ -150,6 +183,7 @@ class EnvironmentRevision(DomainModel):
     provider_lock: EnvironmentProviderLock
     credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
     access: EnvironmentAccess = EnvironmentAccess.full
+    environment_target_id: ObjectId
     target_key: TargetKey
     logical_digest_sha256: Sha256Digest
     created_by: PrincipalRef
@@ -196,6 +230,7 @@ class RunEnvironmentBinding(DomainModel):
     run_id: ObjectId
     mount_name: Literal["workspace"] = "workspace"
     source_environment_revision_id: ObjectId | None = None
+    environment_target_id: ObjectId
     provider_key: ProviderKey
     target_key: TargetKey
     environment_execution_config_digest_sha256: Sha256Digest
@@ -269,6 +304,46 @@ class EnvironmentRevisionTestResult(DomainModel):
     code: Literal["attachment_ready"] = "attachment_ready"
 
 
+class EnvironmentTarget(DomainModel):
+    """Internal global identity, activity, and fenced keepalive authority."""
+
+    id: ObjectId
+    provider_key: ProviderKey
+    identity_schema_version: SchemaVersion
+    target_key: TargetKey
+    target_identity_digest_sha256: Sha256Digest
+    retention_behavior: EnvironmentTargetRetentionBehavior
+    status: EnvironmentTargetStatus
+    active_run_count: int = Field(ge=0)
+    idle_at: datetime | None
+    retire_after: datetime | None
+    keeper_claim_generation: int = Field(ge=0)
+    keeper_owner_worker_generation: str | None
+    keeper_lease_expires_at: datetime | None
+    keeper_source_binding_id: ObjectId | None
+    operation_generation: int = Field(ge=0)
+    operation_id: ObjectId | None
+    requested_alive_until: datetime | None
+    acknowledged_alive_until: datetime | None
+    next_keepalive_at: datetime | None
+    last_error: JsonObject | None
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_lifecycle(self) -> EnvironmentTarget:
+        if (self.active_run_count > 0) != (self.status is EnvironmentTargetStatus.active):
+            raise ValueError("active Environment target status must exactly match a positive Run count")
+        claimed = self.keeper_owner_worker_generation is not None
+        if claimed != (self.keeper_lease_expires_at is not None) or claimed != (
+            self.keeper_source_binding_id is not None
+        ):
+            raise ValueError("Environment target Keeper claim fields must be set or cleared together")
+        if (self.operation_id is None) != (self.requested_alive_until is None):
+            raise ValueError("Environment target operation identity and deadline must be set together")
+        return self
+
+
 def environment_logical_digest(
     *,
     connection: EnvironmentConnectionSpec,
@@ -288,6 +363,27 @@ def environment_logical_digest(
         "target_key": target_key,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def environment_target_identity_digest(
+    *,
+    provider_key: str,
+    identity_schema_version: str,
+    identity: EnvironmentTargetIdentity,
+) -> str:
+    """Digest one canonical, provider-versioned, tenant-neutral target identity."""
+
+    payload = {
+        "provider_key": provider_key,
+        "identity_schema_version": identity_schema_version,
+        "namespace": identity.namespace,
+        "target_key": identity.target_key,
+    }
+    try:
+        encoded = rfc8785.dumps(payload)
+    except rfc8785.CanonicalizationError as error:
+        raise ValueError("target identity must be finite canonical JSON") from error
     return hashlib.sha256(encoded).hexdigest()
 
 

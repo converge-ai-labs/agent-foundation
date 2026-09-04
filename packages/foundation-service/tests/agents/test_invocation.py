@@ -138,6 +138,7 @@ def test_shared_root_child_accepts_narrower_access_to_the_exact_target() -> None
     )
     root = EnvironmentExecutionConfig(
         source_environment_revision_id="envr_1234567890abcdef",
+        environment_target_id="envt_1234567890abcdef",
         connection=connection,
         provider_lock=lock,
         access="full",
@@ -159,7 +160,11 @@ def test_shared_root_child_accepts_narrower_access_to_the_exact_target() -> None
     _validate_child_environment(root, child, selection)
 
     with pytest.raises(AgentError) as incompatible:
-        _validate_child_environment(root, child.model_copy(update={"target_key": "/tmp/other"}), selection)
+        _validate_child_environment(
+            root,
+            child.model_copy(update={"environment_target_id": "envt_abcdef1234567890"}),
+            selection,
+        )
     assert incompatible.value.details == {"reason": "subagent_environment_incompatible"}
 
 

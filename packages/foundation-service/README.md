@@ -50,6 +50,8 @@ Control-plane and all-in-one roles expose immutable Workspace Assets below `/api
 
 `FOUNDATION_ASSET_MAX_SIZE_BYTES` is the positive finite bound applied while streaming uploads and defaults to 100 MiB. Private staging uses `FOUNDATION_FILESYSTEM_ROOT`; object bytes use the selected object backend. Cleanup behavior can be operationally tuned with `FOUNDATION_ASSET_CLEANUP_POLL_INTERVAL_SECONDS`, `FOUNDATION_ASSET_CLEANUP_LEASE_SECONDS`, and `FOUNDATION_ASSET_CLEANUP_MAX_ATTEMPTS`. These settings do not change Asset identity, retention authority, or authorization semantics.
 
+Worker roles run the independently bounded Environment target Keeper. Its poll, lease, retention-window, refresh-margin, Provider-call timeout, retry-backoff, and concurrency settings use the `FOUNDATION_ENVIRONMENT_KEEPALIVE_*` prefix; retired-row cleanup uses `FOUNDATION_ENVIRONMENT_TARGET_TOMBSTONE_RETENTION_SECONDS`. A retention window must exceed both the lease and refresh margin. These settings change scheduling and audit-retention bounds only; Provider identity and the active-Run requirement remain durable Foundation facts.
+
 ## Observability and Trace Query
 
 Foundation tracing is enabled by default with content set to `none`. The Service creates one parentless `foundation.run_attempt` trace root for each durable RunAttempt, admits only the Foundation Service, Harness, and Pydantic AI instrumentation scopes, and passes the same `none`, `standard`, or `full` content value to Harness. The Worker execution domain supplies the durable correlation and owns the exact points at which the root and its `foundation.reconstruct`, `foundation.environment.attach`, and `foundation.persist` children start and finish.

@@ -12,6 +12,7 @@ from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.ingress.admission_domain import FoundationInputAcceptor
 from a13n_service.connectivity.ingress.providers import built_in_ingress_adapter_registry
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
+from a13n_service.environments.keepalive import EnvironmentKeepaliveSourceResolver
 from a13n_service.environments.testing import EnvironmentAttachmentTester
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.models.service import ModelConnectionTester
@@ -43,6 +44,7 @@ class ServiceComponents:
     model_connection_tester: ModelConnectionTester | None = None
     environment_provider_catalog: FoundationEnvironmentProviderCatalog | None = None
     environment_attachment_tester: EnvironmentAttachmentTester | None = None
+    environment_keepalive_source_resolver: EnvironmentKeepaliveSourceResolver | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None

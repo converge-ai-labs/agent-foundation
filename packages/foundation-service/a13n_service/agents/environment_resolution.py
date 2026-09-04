@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import select
@@ -24,13 +25,18 @@ from a13n_service.environments.errors import (
     environment_provider_disabled,
     environment_revision_not_found,
 )
-from a13n_service.environments.models import EnvironmentRecord, EnvironmentRevisionRecord
+from a13n_service.environments.models import (
+    EnvironmentRecord,
+    EnvironmentRevisionRecord,
+    EnvironmentTargetRecord,
+)
+from a13n_service.environments.targets import upsert_environment_target
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.secrets.domain import InvokingUserSecretCredential
 from a13n_service.secrets.models import SecretRecord
-from a13n_service.storage import short_session
+from a13n_service.storage import short_session, transaction
 
 from .domain import (
     EnvironmentExecutionConfig,
@@ -206,6 +212,21 @@ class AgentEnvironmentSelectionResolver:
                     "The Environment Revision changed during acceptance.",
                     status_code=409,
                 )
+        target = await session.scalar(
+            select(EnvironmentTargetRecord).where(
+                EnvironmentTargetRecord.id == prepared.resolved.environment_target_id,
+                EnvironmentTargetRecord.provider_key == provider_key,
+                EnvironmentTargetRecord.target_key == prepared.resolved.target_key,
+                EnvironmentTargetRecord.identity_schema_version == entry.identity_schema_version,
+                EnvironmentTargetRecord.retention_behavior == entry.retention_behavior.value,
+            )
+        )
+        if target is None:
+            raise EnvironmentManagementError(
+                "environment_target_changed",
+                "The Environment target identity changed during acceptance.",
+                status_code=409,
+            )
         return prepared.resolved
 
     async def _prepare_named(
@@ -290,6 +311,7 @@ class AgentEnvironmentSelectionResolver:
             )
         resolved = EnvironmentExecutionConfig(
             source_environment_revision_id=resource.id,
+            environment_target_id=resource.environment_target_id,
             connection=validated.spec,
             provider_package_revision_id=resource.provider_package_revision_id,
             provider_lock=lock,
@@ -321,7 +343,7 @@ class AgentEnvironmentSelectionResolver:
         selection: InlineEnvironmentSelection,
     ) -> PreparedEnvironmentSelection:
         bindings = selection.credential_bindings
-        async with short_session(self._sessions) as session:
+        async with transaction(self._sessions) as session:
             await _authorize(
                 session,
                 actor=actor,
@@ -353,6 +375,16 @@ class AgentEnvironmentSelectionResolver:
                 workspace_id=workspace_id,
                 bindings=selection.credential_bindings,
             )
+            target = await upsert_environment_target(
+                session,
+                provider_key=entry.provider_key,
+                identity_schema_version=entry.identity_schema_version,
+                target_key=validated.target_key,
+                target_identity_digest_sha256=validated.target_identity_digest_sha256,
+                retention_behavior=entry.retention_behavior,
+                now=datetime.now(UTC),
+            )
+            target_id = target.id
         access = EnvironmentAccess(selection.access)
         digest = environment_logical_digest(
             connection=validated.spec,
@@ -364,6 +396,7 @@ class AgentEnvironmentSelectionResolver:
         )
         resolved = EnvironmentExecutionConfig(
             source_environment_revision_id=None,
+            environment_target_id=target_id,
             connection=validated.spec,
             provider_package_revision_id=provider_selection.provider_package_revision_id,
             provider_lock=entry.provider_lock,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 from a13n_environment_provider import (
     DirectLocalProviderRuntime,
     Environment,
+    build_environment_provider_catalog,
 )
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.environments.catalog import (
@@ -22,18 +24,24 @@ from a13n_service.environments.domain import (
     UpdateEnvironmentRequest,
 )
 from a13n_service.environments.errors import EnvironmentManagementError
-from a13n_service.environments.models import EnvironmentRecord, EnvironmentRevisionRecord
+from a13n_service.environments.models import (
+    EnvironmentRecord,
+    EnvironmentRevisionRecord,
+    EnvironmentTargetRecord,
+)
+from a13n_service.environments.providers import FoundationBuiltinEnvironmentProviderAdapter
 from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.environments.testing import NativeEnvironmentAttachmentTester
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
+from a13n_service.iam.models import RoleBindingRecord, WorkspaceRecord
 from a13n_service.secrets.domain import SecretCredentialSource
 from a13n_service.storage import transaction
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import NOW, SECRET_ID, WORKSPACE_ID, actor
+from .conftest import NOW, ORG_ID, SECRET_ID, WORKSPACE_ID, actor
 
 PROVIDER_KEY = "a13n.direct-local"
 
@@ -72,13 +80,24 @@ class _ThirdPartyProvider:
     def connection_versions(self) -> frozenset[str]:
         return frozenset({"2026-09"})
 
+    @property
+    def identity_schema_version(self) -> str:
+        return "1"
+
+    @property
+    def retention_behavior(self) -> str:
+        return "none"
+
     def validate_connection(self, *, schema_version: str, parameters: JsonValue) -> BaseModel:
         if schema_version != "2026-09":
             raise ValueError("unsupported test schema")
         return _ThirdPartyConfig.model_validate(parameters)
 
-    def target_key(self, *, connection: BaseModel) -> str:
-        return _ThirdPartyConfig.model_validate(connection).workspace
+    def target_identity(self, *, connection: BaseModel) -> object:
+        return {
+            "namespace": {},
+            "target_key": _ThirdPartyConfig.model_validate(connection).workspace,
+        }
 
     def create_attachment_environment(
         self,
@@ -88,6 +107,36 @@ class _ThirdPartyProvider:
     ) -> Environment:
         del connection, runtime
         raise AssertionError("management validation must not construct a runtime adapter")
+
+
+class _BrokenRetainingProvider(_ThirdPartyProvider):
+    @property
+    def retention_behavior(self) -> str:
+        return "while_execution_active"
+
+
+def test_foundation_owns_builtin_target_identity_and_retention_metadata(tmp_path: Path) -> None:
+    shared_catalog = build_environment_provider_catalog(builtin_keys=(PROVIDER_KEY,))
+    shared_provider = shared_catalog[PROVIDER_KEY]
+    connection = shared_provider.validate_connection(
+        schema_version="1",
+        parameters=candidate(tmp_path).connection.parameters,
+    )
+
+    assert hasattr(shared_provider, "target_key")
+    assert not hasattr(shared_provider, "target_identity")
+    assert not hasattr(shared_provider, "retention_behavior")
+
+    foundation_catalog = FoundationEnvironmentProviderCatalog.from_environment_provider_catalog(shared_catalog)
+    adapter = foundation_catalog.attachment(PROVIDER_KEY)
+
+    assert isinstance(adapter, FoundationBuiltinEnvironmentProviderAdapter)
+    assert adapter.identity_schema_version == "1"
+    assert adapter.retention_behavior == "none"
+    assert adapter.target_identity(connection=connection) == {
+        "namespace": {},
+        "target_key": str(tmp_path.resolve()),
+    }
 
 
 def candidate(root: Path, *, environment_id: str = "workspace-local") -> CreateEnvironmentRequest:
@@ -116,11 +165,14 @@ def candidate(root: Path, *, environment_id: str = "workspace-local") -> CreateE
 @pytest.mark.anyio
 async def test_provider_selection_environment_and_revision_lifecycle(
     environment_service: EnvironmentManagementService,
+    environment_sessions: async_sessionmaker[AsyncSession],
     tmp_path: Path,
 ) -> None:
     catalog = await environment_service.list_provider_catalog(actor=actor())
     assert [item.provider_key for item in catalog.items] == [PROVIDER_KEY]
     assert catalog.items[0].connection_versions == ("1",)
+    assert catalog.items[0].identity_schema_version == "1"
+    assert catalog.items[0].retention_behavior == "none"
     assert catalog.items[0].provider_lock.distribution_name == "a13n-environment-provider"
 
     selected = await environment_service.put_provider_selection(
@@ -157,6 +209,7 @@ async def test_provider_selection_environment_and_revision_lifecycle(
     detail = await environment_service.get_revision(actor=actor(), revision_id=first.id)
     assert detail.connection.parameters["root"]["path"] == str(tmp_path)
     assert detail.target_key == str(tmp_path.resolve())
+    assert detail.environment_target_id.startswith("envt_")
 
     unchanged = await environment_service.create_revision(
         actor=actor(),
@@ -185,9 +238,12 @@ async def test_provider_selection_environment_and_revision_lifecycle(
     )
     assert second_result.created
     assert second_result.revision.version == 2
+    assert second_result.revision.environment_target_id == detail.environment_target_id
     updated = await environment_service.get(actor=actor(), environment_id=created.id)
     assert updated.current_revision_id == second_result.revision.id
     assert updated.version == 2
+    async with transaction(environment_sessions) as session:
+        assert await session.scalar(select(func.count()).select_from(EnvironmentTargetRecord)) == 1
 
     archived = await environment_service.patch(
         actor=actor(),
@@ -414,3 +470,86 @@ async def test_third_party_provider_attachment_capability_is_registered(
     assert revision.connection.parameters == {"workspace": "tenant-one"}
     assert revision.target_key == "tenant-one"
     assert revision.provider_lock == selected.provider_lock
+
+
+def test_retaining_provider_requires_the_bounded_retention_capability() -> None:
+    with pytest.raises(ValueError, match="ensure_retained_until"):
+        FoundationEnvironmentProviderCatalog(
+            (
+                FoundationEnvironmentProviderRegistration(
+                    provider=_BrokenRetainingProvider(),
+                    provider_lock=EnvironmentProviderLock(
+                        provider_key="acme.remote-workspace",
+                        distribution_name="acme-environment-provider",
+                        distribution_version="1.0.0",
+                        builtin=False,
+                        registration_digest_sha256="f" * 64,
+                    ),
+                ),
+            )
+        )
+
+
+@pytest.mark.anyio
+async def test_target_identity_is_deduplicated_across_workspaces_without_tenant_fields(
+    environment_service: EnvironmentManagementService,
+    environment_sessions: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    second_workspace_id = "ws_env22222222222222"
+    second_actor = replace(actor(), boundary_workspace_id=second_workspace_id)
+    async with transaction(environment_sessions) as session:
+        session.add(
+            WorkspaceRecord(
+                id=second_workspace_id,
+                organization_id=ORG_ID,
+                name="Second",
+                normalized_name="second",
+                created_at=NOW,
+                updated_at=NOW,
+                deleted_at=None,
+            )
+        )
+        await session.flush()
+        session.add(
+            RoleBindingRecord(
+                id="rb_envws22222222222",
+                organization_id=ORG_ID,
+                workspace_id=second_workspace_id,
+                principal_type="user",
+                principal_id=actor().principal.principal_id,
+                resource_type="workspace",
+                resource_id=second_workspace_id,
+                role_key="builder",
+                created_by_user_id=actor().principal.principal_id,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+    first_target_id: str | None = None
+    for current_actor, workspace_id, key in (
+        (actor(), WORKSPACE_ID, "first-workspace"),
+        (second_actor, second_workspace_id, "second-workspace"),
+    ):
+        await environment_service.put_provider_selection(
+            actor=current_actor,
+            workspace_id=workspace_id,
+            provider_key=PROVIDER_KEY,
+            request=PutEnvironmentProviderSelectionRequest(enabled=True),
+        )
+        created = await environment_service.create(
+            actor=current_actor,
+            workspace_id=workspace_id,
+            idempotency_key=key,
+            request=candidate(tmp_path).model_copy(update={"credential_bindings": ()}),
+        )
+        revision = await environment_service.get_revision(
+            actor=current_actor,
+            revision_id=created.current_revision_id,
+        )
+        if workspace_id == WORKSPACE_ID:
+            first_target_id = revision.environment_target_id
+        else:
+            assert first_target_id is not None and revision.environment_target_id == first_target_id
+    async with transaction(environment_sessions) as session:
+        assert await session.scalar(select(func.count()).select_from(EnvironmentTargetRecord)) == 1

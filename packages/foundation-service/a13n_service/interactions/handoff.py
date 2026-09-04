@@ -30,7 +30,11 @@ from .acceptance import (
 from .attempts import AttemptContext, AttemptMutationError, lock_attempt_authority
 from .control_domain import QueuedSubmission, QueuedSubmissionFailure, QueuedSubmissionState
 from .domain import Run, RunAttemptStatus, RunInputKind, RunLineageKind
-from .environment_bindings import add_run_with_environment_binding
+from .environment_bindings import (
+    add_run_with_environment_binding,
+    deactivate_run_environment,
+    lock_run_environment_targets,
+)
 from .inbox_persistence import apply_run_outcome, bind_unbound_async_entries
 from .initialization import RunStateSeed, initialize_completed_continuation_state
 from .input import AcceptedAgentInput
@@ -112,6 +116,7 @@ class CompletionQueueHandoffService:
                     expected_queue_version=expected_queue_version,
                     expected_head_run_id=expected_head_run_id,
                     now=now,
+                    additional_target_ids=_environment_target_ids(successor_state),
                 )
                 _validate_successor_scope(successor_run, thread.tenant_id, thread.session_id, thread.id)
 
@@ -333,6 +338,7 @@ async def _lock_and_seal_source(
     expected_queue_version: int,
     expected_head_run_id: str | None,
     now: datetime,
+    additional_target_ids: tuple[str, ...] = (),
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
     source, attempt, thread = await lock_attempt_authority(
         database,
@@ -353,6 +359,11 @@ async def _lock_and_seal_source(
     validate_outcome_candidate_scope(source_state, source, thread)
     if attempt.status != RunAttemptStatus.running.value:
         raise AttemptMutationError("combined handoff requires Harness entry")
+    await lock_run_environment_targets(
+        database,
+        run=source,
+        additional_target_ids=additional_target_ids,
+    )
     await _seal_completed_source(
         database,
         source=source,
@@ -364,6 +375,13 @@ async def _lock_and_seal_source(
     return source, attempt, thread
 
 
+def _environment_target_ids(state: RunStateEnvelope) -> tuple[str, ...]:
+    environment = state.effective_agent_config.resolved_environment
+    if environment is None or environment.environment_target_id is None:
+        return ()
+    return (environment.environment_target_id,)
+
+
 async def _seal_completed_source(
     database: AsyncSession,
     *,
@@ -373,6 +391,7 @@ async def _seal_completed_source(
     candidate: CompletedOutcomeCandidate,
     now: datetime,
 ) -> None:
+    await deactivate_run_environment(database, run=source, now=now)
     await apply_run_outcome(
         database,
         run=source,

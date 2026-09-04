@@ -82,6 +82,7 @@ from .persistence import (
 from .persistence import (
     require_etag as _require_etag,
 )
+from .targets import upsert_environment_target
 from .testing import EnvironmentAttachmentTester
 
 
@@ -269,6 +270,15 @@ class EnvironmentManagementService:
                 )
                 environment_id = new_environment_id()
                 revision_id = new_environment_revision_id()
+                target = await upsert_environment_target(
+                    session,
+                    provider_key=entry.provider_key,
+                    identity_schema_version=entry.identity_schema_version,
+                    target_key=validated.target_key,
+                    target_identity_digest_sha256=validated.target_identity_digest_sha256,
+                    retention_behavior=entry.retention_behavior,
+                    now=now,
+                )
                 digest = environment_logical_digest(
                     connection=validated.spec,
                     provider_package_revision_id=selection.provider_package_revision_id,
@@ -305,6 +315,7 @@ class EnvironmentManagementService:
                     provider_lock=entry.provider_lock.model_dump(mode="json"),
                     credential_bindings=[item.model_dump(mode="json") for item in request.credential_bindings],
                     access=request.access.value,
+                    environment_target_id=target.id,
                     target_key=validated.target_key,
                     logical_digest_sha256=digest,
                     created_by_type=actor.principal.principal_type.value,
@@ -551,6 +562,15 @@ class EnvironmentManagementService:
                     require_bind_authority=True,
                 )
                 lock = entry.provider_lock
+                target = await upsert_environment_target(
+                    session,
+                    provider_key=entry.provider_key,
+                    identity_schema_version=entry.identity_schema_version,
+                    target_key=validated.target_key,
+                    target_identity_digest_sha256=validated.target_identity_digest_sha256,
+                    retention_behavior=entry.retention_behavior,
+                    now=now,
+                )
                 digest = environment_logical_digest(
                     connection=validated.spec,
                     provider_package_revision_id=selection.provider_package_revision_id,
@@ -579,6 +599,7 @@ class EnvironmentManagementService:
                         provider_lock=lock.model_dump(mode="json"),
                         credential_bindings=[item.model_dump(mode="json") for item in request.credential_bindings],
                         access=request.access.value,
+                        environment_target_id=target.id,
                         target_key=validated.target_key,
                         logical_digest_sha256=digest,
                         created_by_type=actor.principal.principal_type.value,

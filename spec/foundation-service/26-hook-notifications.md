@@ -452,7 +452,7 @@ Foundation owns the immutable Run binding, while each RunAttempt uses a fresh pr
 | `environment.entry.failed`   | Construction, authorization, connection validation, attachment, or compatibility fails                    | Correlation and bounded safe failure; no connection parameters, target credential, or provider body |
 | `environment.adapter.closed` | Non-destructive local close finishes or fails after success, cancellation, lease loss, or Worker shutdown | Correlation and bounded close outcome; no claim that the customer-owned target lifecycle changed    |
 
-These hooks are live Run SSE observations only. They are not attachment state or provider-target lifecycle authority. A missing, stopped, incompatible, inaccessible, or unavailable target appears through `environment.entry.failed` and the authoritative RunAttempt outcome; Foundation does not create, resume, replace, or destroy it. The boundary remains owned by [Environment Connections and Runtime Attachments](29-environment-management.md#runattempt-attachment).
+These hooks are live Run SSE observations only. They are not attachment state, target-keepalive observation, or provider-target lifecycle authority. A missing, stopped, incompatible, inaccessible, or unavailable target appears through `environment.entry.failed` and the authoritative RunAttempt outcome; Foundation does not create, resume, replace, or destroy it. The boundary remains owned by [Environment Connections, Targets, and Runtime Attachments](29-environment-management.md#runattempt-attachment).
 
 ## Execution, Backpressure, and Blocking
 

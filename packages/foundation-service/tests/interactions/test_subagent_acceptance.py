@@ -16,6 +16,7 @@ from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
     MCPConnectionRunSelection,
 )
+from a13n_service.environments.models import EnvironmentTargetRecord
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.interactions import (
     AttemptExecutionService,
@@ -50,6 +51,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
+    ENVIRONMENT_TARGET_ID,
     NOW,
     SESSION_ID,
     TENANT_ID,
@@ -57,6 +59,7 @@ from .conftest import (
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
+    environment_execution_config,
 )
 from .test_acceptance import _accepted_run
 from .test_attempt_execution import _authority, _completed_state, _worker
@@ -89,6 +92,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
     states, parent, parent_state = await _accept_parent(
         interaction_sessions,
         interaction_object_store,
+        with_shared_environment=True,
     )
     scheduler = AttemptScheduler(
         interaction_sessions,
@@ -120,7 +124,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         assert parent_record is not None
         running_parent = parent_record.to_resource()
 
-    child_config = effective_agent_config()
+    child_config = effective_agent_config(environment=environment_execution_config())
     first = _prepared_child(
         running_parent,
         parent_state,
@@ -158,6 +162,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
     async with short_session(interaction_sessions) as database:
         child = await database.get(RunRecord, accepted.child_run_id)
         child_thread = await database.get(ThreadRecord, accepted.child_thread_id)
+        environment_target = await database.get(EnvironmentTargetRecord, ENVIRONMENT_TARGET_ID)
         relationships = await database.scalar(select(func.count()).select_from(ChildRunRelationshipRecord))
         threads = await database.scalar(
             select(func.count()).select_from(ThreadRecord).where(ThreadRecord.role == "child")
@@ -169,6 +174,8 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         assert child_resource.mcp_connection_selections == (MCP_SELECTION.model_dump(mode="json"),)
         assert (child.agent_id, child.agent_revision_id) == (CHILD_AGENT_ID, CHILD_REVISION_ID)
         assert (child_thread.session_id, child_thread.origin_run_id) == (SESSION_ID, running_parent.id)
+        assert environment_target is not None
+        assert (environment_target.status, environment_target.active_run_count) == ("active", 3)
         assert relationships == 2
         assert threads == 2
 
@@ -505,15 +512,19 @@ def _prepared_child(
 async def _accept_parent(
     sessions: async_sessionmaker[AsyncSession],
     objects: ObjectStore,
+    *,
+    with_shared_environment: bool = False,
 ):
     edge = ResolvedSubagentEdge(
         name="researcher",
         child_agent_id=CHILD_AGENT_ID,
         child_agent_revision_id=CHILD_REVISION_ID,
         context={"include_task": True, "history": "none", "task_state": "shared"},
-        environment=ChildEnvironmentPolicy(mode="none"),
+        environment=ChildEnvironmentPolicy(mode="shared_root" if with_shared_environment else "none"),
     )
-    base = effective_agent_config()
+    base = effective_agent_config(
+        environment=environment_execution_config() if with_shared_environment else None,
+    )
     candidate = base.model_copy(update={"resolved_subagents": (edge,), "content_digest": "0" * 64})
     config = candidate.model_copy(
         update={

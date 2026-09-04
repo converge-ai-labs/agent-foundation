@@ -1,7 +1,7 @@
 """add asynchronous child run relationships.
 
 Revision ID: 98e1246af6af
-Revises: c2b68dc827b5
+Revises: e416d6806802
 Create Date: 2026-09-03 14:00:42.341306+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "98e1246af6af"
-down_revision: str | Sequence[str] | None = "c2b68dc827b5"
+down_revision: str | Sequence[str] | None = "e416d6806802"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
