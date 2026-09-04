@@ -134,6 +134,24 @@ async def test_initial_message_atomically_binds_task_and_replays(
     assert message.run_id == run.id
 
 
+async def test_send_rejects_unavailable_accepted_output_modes_before_mutation(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    request = _request()
+    request.configuration.accepted_output_modes.append("application/octet-stream")
+
+    with pytest.raises(A2AError) as captured:
+        await service.send(actor=_actor(), agent_id=AGENT_ID, request=request)
+
+    assert captured.value.code == "output_mode_not_supported"
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assert await database.scalar(select(A2ATaskBindingRecord.id)) is None
+        assert await database.scalar(select(RunRecord.id)) is None
+
+
 async def test_message_id_reuse_with_changed_content_conflicts(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,

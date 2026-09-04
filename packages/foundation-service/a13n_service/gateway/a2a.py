@@ -211,6 +211,18 @@ class A2AService:
         if replay is not None:
             return _apply_history_length(replay, history_length)
 
+        context = await self._load_context(
+            actor=actor,
+            agent_id=agent_id,
+            context_id=request.message.context_id or None,
+        )
+        await self._validate_accepted_output_modes(
+            actor=actor,
+            agent_id=agent_id,
+            task_id=request.message.task_id or None,
+            context=context,
+            accepted=tuple(request.configuration.accepted_output_modes),
+        )
         push_configuration = await self._prepare_send_push_configuration(
             actor=actor,
             agent_id=agent_id,
@@ -221,11 +233,6 @@ class A2AService:
         except A2APartImportError as error:
             raise A2AError(error.code, str(error), status_code=error.status_code) from error
         try:
-            context = await self._load_context(
-                actor=actor,
-                agent_id=agent_id,
-                context_id=request.message.context_id or None,
-            )
             if context is None:
                 if request.message.task_id:
                     raise A2AError("task_not_found", "The requested Task was not found.", status_code=404)
@@ -261,6 +268,73 @@ class A2AService:
             return _apply_history_length(task, history_length)
         finally:
             await self._part_importer.discard(prepared)
+
+    async def _validate_accepted_output_modes(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        task_id: str | None,
+        context: A2AContextBindingRecord | None,
+        accepted: tuple[str, ...],
+    ) -> None:
+        if not accepted:
+            return
+        async with short_session(self._sessions) as database:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=agent_id,
+                    action=WorkspaceAction.agent_invoke,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            if task_id is None:
+                agent = await database.scalar(
+                    select(AgentRecord).where(
+                        AgentRecord.id == agent_id,
+                        AgentRecord.workspace_id == actor.boundary_workspace_id,
+                        AgentRecord.enabled.is_(True),
+                        AgentRecord.archived_at.is_(None),
+                    )
+                )
+                if agent is None:
+                    raise _not_found()
+                revision_id = agent.current_revision_id
+                organization_id = agent.organization_id
+            else:
+                if context is None:
+                    raise _not_found()
+                task = await database.scalar(
+                    select(A2ATaskBindingRecord).where(
+                        A2ATaskBindingRecord.id == task_id,
+                        A2ATaskBindingRecord.context_binding_id == context.id,
+                        A2ATaskBindingRecord.agent_id == agent_id,
+                    )
+                )
+                if task is None:
+                    raise _not_found()
+                revision_id = task.agent_revision_id
+                organization_id = task.organization_id
+            revision = await database.scalar(
+                select(AgentRevisionRecord).where(
+                    AgentRevisionRecord.id == revision_id,
+                    AgentRevisionRecord.agent_id == agent_id,
+                    AgentRevisionRecord.organization_id == organization_id,
+                    AgentRevisionRecord.workspace_id == actor.boundary_workspace_id,
+                )
+            )
+            if revision is None:
+                raise _not_found()
+        configured = frozenset(AgentConfig.model_validate(revision.config).protocol.output_modes)
+        if configured.isdisjoint(accepted):
+            raise A2AError(
+                "output_mode_not_supported",
+                "The Agent cannot produce any accepted output mode.",
+                status_code=400,
+            )
 
     async def get_task(
         self,
