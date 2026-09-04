@@ -420,6 +420,11 @@ async def test_list_tasks_http_binding_preserves_empty_page_token_and_a2a_query_
             headers={"A2A-Version": "1.0"},
             params={"includeArtifacts": "TRUE"},
         )
+        invalid_shape = await client.get(
+            f"/a2a/v1/agents/{AGENT_ID}/tasks/{task.id}",
+            headers={"A2A-Version": "1.0"},
+            params={"historyLength": "12345678901"},
+        )
 
     assert response.status_code == 200
     assert response.json() == {
@@ -437,6 +442,36 @@ async def test_list_tasks_http_binding_preserves_empty_page_token_and_a2a_query_
     assert invalid.status_code == 400
     assert invalid.headers["content-type"].startswith("application/a2a+json")
     assert invalid.json()["error"]["details"][0]["reason"] == "INVALID_QUERY_PARAMETER"
+    assert invalid_shape.status_code == 400
+    assert invalid_shape.headers["content-type"].startswith("application/a2a+json")
+    assert invalid_shape.json()["error"]["details"][0]["reason"] == "INVALID_REQUEST"
+
+
+async def test_a2a_authentication_failure_uses_a2a_error_envelope(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    service_runtime_factory,
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, _objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    app = FastAPI()
+    install_api_conventions(app)
+    app.include_router(a2a_router)
+    runtime = service_runtime_factory(request_authenticator=None, gateway=SimpleNamespace(a2a=service))
+    app.state.runtime = runtime
+    app.state.settings = runtime.settings
+
+    transport = httpx2.ASGITransport(app=app)
+    async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get(
+            f"/a2a/v1/agents/{AGENT_ID}/tasks",
+            headers={"A2A-Version": "1.0"},
+        )
+
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/a2a+json")
+    assert response.json()["error"]["status"] == "UNAUTHENTICATED"
+    assert response.json()["error"]["details"][0]["reason"] == "AUTHENTICATION_REQUIRED"
 
 
 async def test_cancel_task_uses_durable_interrupt(

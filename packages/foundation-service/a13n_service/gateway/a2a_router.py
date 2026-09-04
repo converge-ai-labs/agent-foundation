@@ -4,21 +4,49 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Coroutine
 from datetime import datetime
 from typing import Annotated, Any, cast
 
 from a2a.types import a2a_pb2 as a2a
 from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.routing import APIRoute
 from google.protobuf.json_format import MessageToDict, Parse, ParseError
 
-from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam import AuthenticatedActor, AuthenticationError, authenticate_request
 from a13n_service.request_runtime import get_control_runtime
 
 from .a2a import A2AError, A2AService
 
-router = APIRouter(tags=["a2a"])
+
+class _A2ARoute(APIRoute):
+    """Keep dependency and parameter failures inside the A2A wire contract."""
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        route_handler = super().get_route_handler()
+
+        async def a2a_route_handler(request: Request) -> Response:
+            try:
+                return await route_handler(request)
+            except AuthenticationError:
+                return _error(
+                    A2AError(
+                        "authentication_required",
+                        "Authentication is required.",
+                        status_code=401,
+                    )
+                )
+            except RequestValidationError:
+                return _error(A2AError("invalid_request", "The A2A request is invalid.", status_code=400))
+            except A2AError as error:
+                return _error(error)
+
+        return a2a_route_handler
+
+
+router = APIRouter(tags=["a2a"], route_class=_A2ARoute)
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 _VERSION = Annotated[str | None, Header(alias="A2A-Version")]
 _EXTENSIONS = Annotated[str | None, Header(alias="A2A-Extensions")]
