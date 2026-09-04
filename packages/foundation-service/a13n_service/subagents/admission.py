@@ -13,6 +13,7 @@ from a13n_harness.capabilities import (
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents import EffectiveAgentConfig
+from a13n_service.agents.domain import AccountToolSelection
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
     MCPConnectionRunSelection,
@@ -55,6 +56,7 @@ class ChildRunAdmissionProfile:
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
     recovery_budget: RecoveryBudget
+    account_selections: tuple[AccountToolSelection, ...] = ()
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent
     result_visibility: ChildResultVisibility = ChildResultVisibility.parent_thread
@@ -114,6 +116,7 @@ class ProfileChildRunAdmissionPreparer:
             child_effective_config=profile.effective_config,
             connector_connection_selections=profile.connector_connection_selections,
             mcp_connection_selections=profile.mcp_connection_selections,
+            account_selections=profile.account_selections,
             child_thread_id=self._thread_id_factory(),
             child_run_id=self._run_id_factory(),
             relationship_id=self._relationship_id_factory(),
@@ -158,6 +161,7 @@ class ProfileChildRunAdmissionPreparer:
             child_effective_config=profile.effective_config,
             connector_connection_selections=profile.connector_connection_selections,
             mcp_connection_selections=profile.mcp_connection_selections,
+            account_selections=profile.account_selections,
             source_relationship=source.relationship,
             source_parent_run=source.parent_run,
             source_thread=source.thread,

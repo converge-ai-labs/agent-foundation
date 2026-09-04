@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from a13n_service.agents.domain import AccountToolSelection
 from a13n_service.connectivity.selection_domain import (
     ConnectorConnectionRunSelection,
     MCPConnectionRunSelection,
@@ -84,6 +85,7 @@ class FrozenAgentInvocation:
     effective_config: EffectiveAgentConfig
     sensitive_values: AgentRunSensitiveValues
     sensitive_values_digest: str
+    account_selections: tuple[AccountToolSelection, ...]
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
 

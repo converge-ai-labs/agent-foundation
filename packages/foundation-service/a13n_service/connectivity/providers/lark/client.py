@@ -74,6 +74,20 @@ class LarkNativeClient:
             body["receive_id"] = binding.chat_id
             path = "/open-apis/im/v1/messages"
             params = {"receive_id_type": "chat_id"}
+        return await self._post_message(path, body, params=params, request_id=request_id)
+
+    async def send_message(
+        self, chat_id: str, content: LarkReplyContent, *, effect_id: str, request_id: str
+    ) -> LarkReplyOutcome:
+        body = _reply_body(content, effect_id=effect_id)
+        body["receive_id"] = chat_id
+        return await self._post_message(
+            "/open-apis/im/v1/messages", body, params={"receive_id_type": "chat_id"}, request_id=request_id
+        )
+
+    async def _post_message(
+        self, path: str, body: JsonObject, *, params: dict[str, str] | None, request_id: str
+    ) -> LarkReplyOutcome:
         origin, token = await self._authorize()
         try:
             response = await self._send(

@@ -50,12 +50,11 @@ class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class SlackIngressConfig(_StrictModel):
+class SlackAccountConfig(_StrictModel):
     api_app_id: str = Field(min_length=1, max_length=128)
     team_id: str = Field(min_length=1, max_length=128)
     enterprise_id: str | None = Field(default=None, min_length=1, max_length=128)
     bot_user_id: str = Field(min_length=1, max_length=128)
-    events_transport: Literal["http"] = "http"
 
 
 class SlackRouteMatch(_StrictModel):
@@ -85,7 +84,7 @@ class SlackIngressAdapter:
 
     def validate_config(self, value: object, *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        return _model_json(SlackIngressConfig.model_validate(value))
+        return _model_json(SlackAccountConfig.model_validate(value))
 
     def validate_credentials(self, value: dict[str, str], *, config_version: str) -> JsonObject:
         _require_version(config_version)
@@ -101,13 +100,12 @@ class SlackIngressAdapter:
 
     def configuration_identity(self, value: JsonObject, *, config_version: str) -> object:
         _require_version(config_version)
-        config = SlackIngressConfig.model_validate(value)
+        config = SlackAccountConfig.model_validate(value)
         return (
             config.api_app_id,
             config.team_id,
             config.enterprise_id,
             config.bot_user_id,
-            config.events_transport,
         )
 
     def validate_route(
@@ -115,11 +113,11 @@ class SlackIngressAdapter:
         *,
         match: object,
         provider_policy: object,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         config_version: str,
     ) -> tuple[JsonObject, JsonObject]:
         _require_version(config_version)
-        SlackIngressConfig.model_validate(ingress_config)
+        SlackAccountConfig.model_validate(account_config)
         return _model_json(SlackRouteMatch.model_validate(match)), _model_json(
             MessagingPolicy.model_validate(provider_policy)
         )
@@ -140,12 +138,12 @@ class SlackIngressAdapter:
         request: ProviderRequest,
         *,
         ingress_id: str,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         credentials: JsonObject,
         received_at: datetime,
     ) -> ProviderRequestDecision:
         del ingress_id
-        config = SlackIngressConfig.model_validate(ingress_config)
+        config = SlackAccountConfig.model_validate(account_config)
         secret = _required_string(credentials, "signing_secret")
         _authenticate(request, secret=secret, received_at=received_at)
         payload = _parse_object(request.body)
@@ -188,13 +186,13 @@ class SlackIngressAdapter:
     def default_route(
         self,
         event: InboundEvent,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         *,
         config_version: str,
     ) -> DefaultRoute:
         del event
         _require_version(config_version)
-        SlackIngressConfig.model_validate(ingress_config)
+        SlackAccountConfig.model_validate(account_config)
         return DefaultRoute(
             input_mapping=default_event_mapping(),
             input_batching=InputBatchingPolicy(min_interval_ms=1, max_batch_events=10),
@@ -205,12 +203,12 @@ class SlackIngressAdapter:
         self,
         event: InboundEvent,
         provider_policy: JsonObject,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         *,
         config_version: str,
     ) -> ProviderEventRouting:
         _require_version(config_version)
-        config = SlackIngressConfig.model_validate(ingress_config)
+        config = SlackAccountConfig.model_validate(account_config)
         policy = MessagingPolicy.model_validate(provider_policy)
         direct = event.context.get("conversation_kind") == "im"
         mentioned = event.context.get("mentioned") is True
@@ -259,7 +257,7 @@ def _authenticate(request: ProviderRequest, *, secret: str, received_at: datetim
         raise _request_error(401, "invalid_signature")
 
 
-def _verify_installation(payload: JsonObject, config: SlackIngressConfig) -> None:
+def _verify_installation(payload: JsonObject, config: SlackAccountConfig) -> None:
     if payload.get("api_app_id") != config.api_app_id or payload.get("team_id") != config.team_id:
         raise _request_error(404, "ingress_not_found")
     if payload.get("enterprise_id") != config.enterprise_id:
@@ -279,7 +277,7 @@ def _verify_installation(payload: JsonObject, config: SlackIngressConfig) -> Non
 def _normalize_event(
     event_id: str,
     event: dict[str, JsonValue],
-    config: SlackIngressConfig,
+    config: SlackAccountConfig,
     received_at: datetime,
 ) -> InboundEvent | None:
     event_kind = event.get("type")
@@ -362,7 +360,7 @@ def _required_string(value: JsonObject, key: str) -> str:
     return selected
 
 
-def _provider_context(event: InboundEvent, config: SlackIngressConfig) -> JsonObject:
+def _provider_context(event: InboundEvent, config: SlackAccountConfig) -> JsonObject:
     return {
         "team_id": config.team_id,
         "channel_id": event.context["channel_id"],

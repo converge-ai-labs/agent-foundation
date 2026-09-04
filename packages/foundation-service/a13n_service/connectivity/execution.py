@@ -16,6 +16,7 @@ from pydantic_ai.mcp import CallToolFunc, MCPToolset, ToolResult
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.domain import AccountToolSelection
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -26,6 +27,7 @@ from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
+from .accounts.runtime import account_capability
 from .connectors.connection_access import connection_binding
 from .connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
 from .connectors.management import decode_credentials, require_connection, require_connector_provider
@@ -41,6 +43,7 @@ from .selection_resolution import ConnectivitySelectionResolver, FrozenRunConnec
 from .tool_validation import validate_result
 from .toolsets import local_capability, namespaced, selected_tools, source_key
 
+_ACCOUNTS = TypeAdapter(tuple[AccountToolSelection, ...])
 _CONNECTORS = TypeAdapter(tuple[ConnectorConnectionRunSelection, ...])
 _MCPS = TypeAdapter(tuple[MCPConnectionRunSelection, ...])
 
@@ -98,6 +101,7 @@ class ExternalToolRuntime:
                 FrozenRunConnectivity(
                     _CONNECTORS.validate_python(run.connector_connection_selections_json),
                     _MCPS.validate_python(run.mcp_connection_selections_json),
+                    _ACCOUNTS.validate_python(run.account_selections_json),
                 ),
                 run.ingress_context_json,
             )
@@ -126,6 +130,14 @@ class ExternalToolRuntime:
         await guard()
         capabilities: list[MCP[AgentContext]] = []
         async with AsyncExitStack() as stack:
+            for selection in accepted.selections.account_selections:
+                if not selection.tools:
+                    continue
+                capability = await account_capability(
+                    self._sessions, self._protector, selection, guard, self._endpoints
+                )
+                if capability is not None:
+                    capabilities.append(capability)
             for selection in accepted.selections.connector_connection_selections:
                 if selection.tools == ():
                     continue

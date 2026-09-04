@@ -15,11 +15,14 @@ from a13n_service.connectivity.selection_resolution import (
 )
 from a13n_service.iam import AuthenticatedActor
 
-from .domain import ConnectorConnectionToolSelection, MCPConnectionToolSelection
+from .domain import AccountToolSelection, ConnectorConnectionToolSelection, MCPConnectionToolSelection
 from .errors import agent_revision_create_failed, agent_revision_not_executable
 
 
 class _ConnectivityConfig(Protocol):
+    @property
+    def account_tools(self) -> tuple[AccountToolSelection, ...]: ...
+
     @property
     def connector_tools(self) -> tuple[ConnectorConnectionToolSelection, ...]: ...
 
@@ -35,9 +38,11 @@ async def prepare_revision_connectivity(
     workspace_id: str,
     config: _ConnectivityConfig,
 ) -> PreparedRevisionConnectivity | None:
-    if not config.connector_tools and not config.mcp_tools:
+    if not config.account_tools and not config.connector_tools and not config.mcp_tools:
         return None
     if resolver is None:
+        if config.account_tools:
+            raise agent_revision_create_failed("account_tool_resolution_unavailable", path="account_tools")
         if config.connector_tools:
             raise agent_revision_create_failed("connector_tool_resolution_unavailable", path="connector_tools")
         raise agent_revision_create_failed("mcp_tool_resolution_unavailable", path="mcp_tools")
@@ -48,6 +53,7 @@ async def prepare_revision_connectivity(
             workspace_id=workspace_id,
             connector_tools=config.connector_tools,
             mcp_tools=config.mcp_tools,
+            account_tools=config.account_tools,
         )
     except ConnectivitySelectionError as error:
         raise agent_revision_create_failed(error.code, path=error.path) from error
@@ -78,9 +84,11 @@ async def prepare_invocation_connectivity(
     config: _ConnectivityConfig,
 ) -> PreparedRevisionConnectivity | PreparedRunConnectivity | None:
     if run_id is None:
-        if not config.connector_tools and not config.mcp_tools:
+        if not config.account_tools and not config.connector_tools and not config.mcp_tools:
             return None
         if resolver is None:
+            if config.account_tools:
+                raise agent_revision_not_executable("account_tool_resolution_unavailable")
             reason = (
                 "connector_tool_resolution_unavailable" if config.connector_tools else "mcp_tool_resolution_unavailable"
             )
@@ -92,6 +100,7 @@ async def prepare_invocation_connectivity(
                 workspace_id=workspace_id,
                 connector_tools=config.connector_tools,
                 mcp_tools=config.mcp_tools,
+                account_tools=config.account_tools,
             )
         except ConnectivitySelectionError as error:
             raise agent_revision_not_executable(error.code) from error
@@ -105,6 +114,7 @@ async def prepare_invocation_connectivity(
             run_id=run_id,
             connector_tools=config.connector_tools,
             mcp_tools=config.mcp_tools,
+            account_tools=config.account_tools,
         )
     except ConnectivitySelectionError as error:
         raise agent_revision_not_executable(error.code) from error

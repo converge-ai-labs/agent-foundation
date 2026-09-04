@@ -87,6 +87,7 @@ def prepare_async_result_successor(
         model_execution_observation=selected_parent.model_execution_observation,
         connector_connection_selections=selected_parent.connector_connection_selections,
         mcp_connection_selections=selected_parent.mcp_connection_selections,
+        account_selections=selected_parent.account_selections,
         ingress_context=selected_parent.ingress_context,
         priority=selected_parent.priority,
         queue_name=selected_parent.queue_name,

@@ -26,6 +26,7 @@ def service_metadata() -> MetaData:
     from a13n_service.agents import models as agent_models
     from a13n_service.assets import models as asset_models
     from a13n_service.connectivity import models as connectivity_models
+    from a13n_service.connectivity.accounts import models as account_models
     from a13n_service.connectivity.connectors import models as connector_models
     from a13n_service.connectivity.ingress import admission_models as ingress_admission_models
     from a13n_service.connectivity.ingress import models as ingress_models
@@ -47,6 +48,7 @@ def service_metadata() -> MetaData:
         agent_models,
         asset_models,
         connectivity_models,
+        account_models,
         connector_models,
         durable_operations_models,
         environment_models,

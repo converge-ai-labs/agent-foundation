@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 import pytest
+from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.ingress.models import IngressRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord, MCPOAuthSessionRecord
@@ -19,7 +20,7 @@ from .test_ingress_service import ingress_request
 
 @pytest.mark.parametrize(
     "record_type",
-    [ModelProviderRecord, ConnectorProviderRecord, IngressRecord, MCPConnectionRecord, MCPOAuthSessionRecord],
+    [ModelProviderRecord, ConnectorProviderRecord, AccountRecord, MCPConnectionRecord, MCPOAuthSessionRecord],
 )
 def test_resource_material_authenticates_owner_tenant_generation_and_key(record_type: type[ResourceCredential]) -> None:
     protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")
@@ -87,7 +88,7 @@ async def test_ingress_creation_persists_only_resource_owned_material(
     async with transaction(connectivity_sessions) as session:
         record = await session.get(IngressRecord, created.id)
         assert record is not None
-        encrypted = record.credential_snapshot()
+        encrypted = record.account.credential_snapshot()
         assert await session.scalar(select(func.count()).select_from(SecretRecord)) == 0
     assert encrypted.decrypt(credential_protector) == '{"token":"secret-value"}'
     assert "secret-value" not in created.model_dump_json()

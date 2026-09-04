@@ -12,6 +12,7 @@ from pydantic_ai.capabilities import MCP
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.iam import WorkspaceAction, authorize_workspace
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
@@ -20,10 +21,10 @@ from .connectors.management import decode_credentials
 from .domain import JsonObject
 from .ingress.admission_domain import PreparedIngressBatch
 from .ingress.models import IngressRecord, RouteRecord
-from .ingress.providers.github.wire import CONTEXT_VERSION as GITHUB_CONTEXT_VERSION
-from .ingress.providers.lark.wire import CONTEXT_VERSION as LARK_CONTEXT_VERSION
-from .ingress.providers.slack.adapter import CONTEXT_VERSION as SLACK_CONTEXT_VERSION
 from .native_actions import native_actions
+from .providers.github.wire import CONTEXT_VERSION as GITHUB_CONTEXT_VERSION
+from .providers.lark.wire import CONTEXT_VERSION as LARK_CONTEXT_VERSION
+from .providers.slack.adapter import CONTEXT_VERSION as SLACK_CONTEXT_VERSION
 from .toolsets import local_capability, source_key
 
 if TYPE_CHECKING:
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
 class IngressRunContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     ingress_id: str
+    account_id: str
     route_id: str | None = None
     execution_principal_ref: PrincipalRef
     provider_key: str
@@ -46,6 +48,7 @@ class IngressRunContext(BaseModel):
         """Retain only native authority from a trusted admission batch."""
         return cls(
             ingress_id=batch.ingress_id,
+            account_id=batch.account_id,
             route_id=batch.route_id,
             execution_principal_ref=PrincipalRef(
                 principal_type=PrincipalType.service_account, principal_id=batch.execution_service_account_id
@@ -85,10 +88,12 @@ async def native_capability(
             ingress = await session.get(IngressRecord, context.ingress_id)
             if (
                 ingress is None
-                or ingress.status != "active"
+                or ingress.account_id != context.account_id
+                or ingress.account.status != "active"
+                or ingress.account.deleted_at is not None
                 or ingress.organization_id != scope.organization_id
                 or ingress.workspace_id != scope.workspace_id
-                or ingress.provider_key != context.provider_key
+                or ingress.account.provider_key != context.provider_key
                 or ingress.execution_service_account_id != scope.actor.principal.principal_id
             ):
                 raise ValueError("native_source_unavailable")
@@ -96,8 +101,14 @@ async def native_capability(
                 route = await session.get(RouteRecord, context.route_id)
                 if route is None or route.ingress_id != ingress.id or not route.enabled:
                     raise ValueError("native_route_unavailable")
-            configuration = dict(ingress.provider_config_json)
-            credential_context = ingress.credential_snapshot()
+            await authorize_workspace(
+                session,
+                actor=scope.actor,
+                workspace_id=scope.workspace_id,
+                action=WorkspaceAction.application_account_use,
+            )
+            configuration = dict(ingress.account.provider_config_json)
+            credential_context = ingress.account.credential_snapshot()
         return configuration, decode_credentials(credential_context.decrypt(protector))
 
     configuration, credentials = await source()

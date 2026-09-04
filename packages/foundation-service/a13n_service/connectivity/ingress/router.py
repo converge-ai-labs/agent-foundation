@@ -17,14 +17,13 @@ from .domain import (
     IngressCollection,
     IngressCommandRequest,
     IngressStatus,
-    ReplaceIngressCredentialsRequest,
     Route,
     RouteCollection,
     UpdateIngressRequest,
     UpdateRouteRequest,
 )
 from .routes import RouteService
-from .service import IngressError, IngressService
+from .service import IngressService, NativeError
 
 router = APIRouter(prefix="/api/v1", tags=["connectivity-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
@@ -34,14 +33,14 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, ma
 def _service(request: Request) -> IngressService:
     runtime = get_connectivity_control_runtime(request)
     if runtime is None:
-        raise IngressError("ingress_management_unavailable", "Ingress Management is unavailable.", status_code=503)
+        raise NativeError("ingress_management_unavailable", "Ingress Management is unavailable.", status_code=503)
     return runtime.ingresses
 
 
 def _routes(request: Request) -> RouteService:
     runtime = get_connectivity_control_runtime(request)
     if runtime is None:
-        raise IngressError("route_management_unavailable", "Route Management is unavailable.", status_code=503)
+        raise NativeError("route_management_unavailable", "Route Management is unavailable.", status_code=503)
     return runtime.routes
 
 
@@ -104,25 +103,6 @@ async def update_ingress(
     body: UpdateIngressRequest,
 ) -> Ingress:
     resource = await _service(request).update_ingress(actor=actor, ingress_id=ingress_id, request=body)
-    _set_etag(response, resource)
-    return resource
-
-
-@router.put("/ingresses/{ingress_id}/credentials", response_model=Ingress)
-async def replace_ingress_credentials(
-    request: Request,
-    response: Response,
-    actor: Actor,
-    ingress_id: str,
-    body: ReplaceIngressCredentialsRequest,
-    idempotency_key: IdempotencyKey,
-) -> Ingress:
-    resource = await _service(request).replace_credentials(
-        actor=actor,
-        ingress_id=ingress_id,
-        idempotency_key=idempotency_key,
-        request=body,
-    )
     _set_etag(response, resource)
     return resource
 

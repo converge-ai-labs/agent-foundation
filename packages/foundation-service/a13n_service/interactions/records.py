@@ -74,6 +74,7 @@ def run_record(value: Run) -> RunRecord:
         encrypted_config_schema_version=encrypted.get("schema_version"),
         runtime_lock_digest=value.runtime_lock_digest,
         model_execution_observation_json=_json(value.model_execution_observation),
+        account_selections_json=list(value.account_selections),
         connector_connection_selections_json=list(value.connector_connection_selections),
         mcp_connection_selections_json=list(value.mcp_connection_selections),
         ingress_context_json=value.ingress_context,

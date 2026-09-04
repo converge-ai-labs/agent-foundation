@@ -170,6 +170,7 @@ class AgentConfig:
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
     skills: tuple[SkillSelection, ...]
+    account_tools: tuple[AccountToolSelection, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     environment: EnvironmentSelection | None
@@ -183,6 +184,8 @@ class AgentConfig:
 ```
 
 The [`PluginSelection` contract](36-managed-harness-plugins-and-runtime.md#agent-selection-and-revision-locking) determines which variant is legal under the deployment's fixed Runtime profile. `instructions` is the Agent's stable system prompt; Foundation- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key, and the primary Environment selects at most one exact EnvironmentRevision. The selected Model owns its one calling API and default request settings. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Subagent map keys are stable local names within the Agent.
+
+`account_tools` selects directly managed [Application Accounts](40-connectivity/01a-application-accounts.md). Each entry contains `account_id`, an explicit unique `tools` list, a provider-typed `target_scope`, and `defer_loading` (default false). An empty tool list exposes no tools; an empty target scope grants no destinations. No wildcard or arbitrary JSON path establishes target authority. Account adapters validate exact supported scope fields. Duplicate Account IDs are invalid. Selection requires current Account use authority and cannot supply credentials or forge inbound context.
 
 `connector_tools` and `mcp_tools` are ordered lists keyed semantically by their managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within either category are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
 
@@ -207,7 +210,7 @@ class RunCapabilityOverlay:
     exclude: tuple[CapabilityKey, ...] = ()
 ```
 
-`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, ConnectorConnection tool, or native Ingress action contract. ConnectorConnection and MCPConnection entries reuse the tool-selection types above, including `tools` and `defer_loading`; native Ingress actions remain directly visible. `CapabilityKey` is derived from capability kind and managed source identity, not a caller-defined connection alias. Every selection retains its managed-resource references and compatibility evidence required by its owning contract; external tool schemas are discovered at execution. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or remote schema. Native action selection can only narrow the protected action set supplied by trusted Ingress admission; a direct caller cannot create an Ingress target.
+`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, ConnectorConnection tool, or Application Account and protected inbound reply contracts. ConnectorConnection and MCPConnection entries reuse the tool-selection types above, including `tools` and `defer_loading`; protected inbound replies remain directly visible. `CapabilityKey` is derived from capability kind and managed source identity, not a caller-defined connection alias. Every selection retains its managed-resource references and compatibility evidence required by its owning contract; external tool schemas are discovered at execution. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or remote schema. Native action selection can only narrow the protected action set supplied by trusted Ingress admission; a direct caller cannot create an Ingress target.
 
 ```text
 candidate = (overridden Agent selections when inherit_agent else empty) + include - exclude
@@ -267,6 +270,7 @@ class AgentRunOverride:
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
     skills: tuple[SkillSelection, ...] | None
+    account_tools: tuple[AccountToolSelection, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]  # May be absent.
     mcp_tools: tuple[MCPConnectionToolSelection, ...]  # May be absent.
     environment: EnvironmentOverride | None
@@ -280,7 +284,7 @@ The wire schema preserves absent fields separately from explicit nulls. Top-leve
 
 Within `model`, an absent `model_key` inherits the Agent selection; a supplied key selects another managed Model and cannot be null. There is no API override independent of that Model. `settings` follows the Model Management precedence contract, including explicit clearing of Agent overrides and validation against the final selected Model.
 
-`connector_tools` and `mcp_tools` each replace their complete category when present. Absence inherits, `[]` clears, and null for the whole category is invalid. Entries use the same complete selection types as Agent configuration; there is no per-alias patch or mapped deletion. Overrides can select existing authorized connections, tool scopes, and deferred loading, but cannot supply endpoints, credentials, external integration services, arbitrary headers, or native Ingress targets.
+`account_tools`, `connector_tools`, and `mcp_tools` each replace their complete category when present. Absence inherits, `[]` clears, and null for the whole category is invalid. Entries use the same complete selection types as Agent configuration; there is no per-alias patch or mapped deletion. Overrides can select existing authorized connections, tool scopes, and deferred loading, but cannot supply endpoints, credentials, external integration services, arbitrary headers, or native Ingress targets.
 
 `subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 
@@ -297,6 +301,7 @@ class EffectiveAgentConfig:
     plugins: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
     skills: tuple[SkillRevisionLock, ...]
+    account_tools: tuple[AccountToolSelection, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     environment: EnvironmentExecutionConfig | None
@@ -338,6 +343,7 @@ class AgentRevision:
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     runtime_lock_digest: str
     resolved_skills: tuple[ResolvedSkillBinding, ...]
+    account_tools: tuple[AccountToolSelection, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
     resolved_environment: EnvironmentExecutionConfig | None

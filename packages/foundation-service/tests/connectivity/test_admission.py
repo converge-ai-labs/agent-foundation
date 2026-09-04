@@ -135,8 +135,6 @@ async def test_postgresql_concurrent_duplicate_delivery_creates_one_admission(
     secrets = SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test")
     ingress_service = IngressService(
         postgres_connectivity_sessions,
-        ingress_adapter_registry,
-        secrets,
         clock=lambda: NOW,
     )
     ingress_id = await _create_ingress(ingress_service)

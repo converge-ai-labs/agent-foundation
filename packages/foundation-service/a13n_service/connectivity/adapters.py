@@ -33,7 +33,7 @@ class IngressAdapter(Protocol):
         *,
         match: object,
         provider_policy: object,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         config_version: str,
     ) -> tuple[JsonObject, JsonObject]: ...
 
@@ -44,7 +44,7 @@ class IngressAdapter(Protocol):
         request: ProviderRequest,
         *,
         ingress_id: str,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         credentials: JsonObject,
         received_at: datetime,
     ) -> ProviderRequestDecision: ...
@@ -52,14 +52,14 @@ class IngressAdapter(Protocol):
     def route_matches(self, event: InboundEvent, match: JsonObject, *, config_version: str) -> bool: ...
 
     def default_route(
-        self, event: InboundEvent, ingress_config: JsonObject, *, config_version: str
+        self, event: InboundEvent, account_config: JsonObject, *, config_version: str
     ) -> DefaultRoute: ...
 
     def classify(
         self,
         event: InboundEvent,
         provider_policy: JsonObject,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         *,
         config_version: str,
     ) -> ProviderEventRouting: ...

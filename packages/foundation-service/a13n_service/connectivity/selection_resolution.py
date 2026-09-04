@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.domain import AccountToolSelection
+from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.accounts.targets import validate_scope
 from a13n_service.connectivity.connectors.models import ConnectorConnectionRecord, ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
@@ -31,6 +34,7 @@ class ConnectivitySelectionError(RuntimeError):
 class FrozenRunConnectivity:
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...]
+    account_selections: tuple[AccountToolSelection, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +64,7 @@ class ConnectivitySelectionResolver:
         workspace_id: str,
         connector_tools: tuple[ConnectorConnectionToolSelection, ...],
         mcp_tools: tuple[MCPConnectionToolSelection, ...],
+        account_tools: tuple[AccountToolSelection, ...] = (),
     ) -> PreparedRevisionConnectivity:
         async with short_session(self._sessions) as session:
             selections = await self._resolve(
@@ -69,6 +74,7 @@ class ConnectivitySelectionResolver:
                 workspace_id=workspace_id,
                 connector_tools=connector_tools,
                 mcp_tools=mcp_tools,
+                account_tools=account_tools,
             )
         return PreparedRevisionConnectivity(actor, organization_id, workspace_id, selections)
 
@@ -80,6 +86,7 @@ class ConnectivitySelectionResolver:
             workspace_id=prepared.workspace_id,
             connector_tools=prepared.selections.connector_connection_selections,
             mcp_tools=prepared.selections.mcp_connection_selections,
+            account_tools=prepared.selections.account_selections,
             lock=True,
         )
         if current != prepared.selections:
@@ -94,6 +101,7 @@ class ConnectivitySelectionResolver:
         run_id: str,
         connector_tools: tuple[ConnectorConnectionToolSelection, ...],
         mcp_tools: tuple[MCPConnectionToolSelection, ...],
+        account_tools: tuple[AccountToolSelection, ...] = (),
     ) -> PreparedRunConnectivity:
         prepared = await self.prepare_revision_creation(
             actor=actor,
@@ -101,6 +109,7 @@ class ConnectivitySelectionResolver:
             workspace_id=workspace_id,
             connector_tools=connector_tools,
             mcp_tools=mcp_tools,
+            account_tools=account_tools,
         )
         return PreparedRunConnectivity(actor, organization_id, workspace_id, prepared.selections, run_id)
 
@@ -119,9 +128,15 @@ class ConnectivitySelectionResolver:
         workspace_id: str,
         connector_tools: tuple[ConnectorConnectionToolSelection, ...],
         mcp_tools: tuple[MCPConnectionToolSelection, ...],
+        account_tools: tuple[AccountToolSelection, ...] = (),
         lock: bool = False,
     ) -> FrozenRunConnectivity:
         for path, identifiers, action in (
+            (
+                "account_tools",
+                tuple(item.account_id for item in account_tools),
+                WorkspaceAction.application_account_use,
+            ),
             (
                 "connector_tools",
                 tuple(item.connector_connection_id for item in connector_tools),
@@ -204,7 +219,32 @@ class ConnectivitySelectionResolver:
                         defer_loading=selection.defer_loading,
                     )
                 )
-        return FrozenRunConnectivity(tuple(connectors), tuple(mcps))
+        accounts: list[AccountToolSelection] = []
+        if account_tools:
+            query = (
+                select(AccountRecord)
+                .where(
+                    AccountRecord.id.in_(item.account_id for item in account_tools),
+                    AccountRecord.organization_id == organization_id,
+                    AccountRecord.workspace_id == workspace_id,
+                    AccountRecord.deleted_at.is_(None),
+                    AccountRecord.status == "active",
+                )
+                .order_by(AccountRecord.id)
+            )
+            rows = (await session.scalars(query.with_for_update() if lock else query)).all()
+            by_id = {account.id: account for account in rows}
+            for index, selection in enumerate(account_tools):
+                path = f"account_tools.{index}"
+                account = by_id.get(selection.account_id)
+                if account is None:
+                    raise ConnectivitySelectionError("account_unavailable", path=path)
+                try:
+                    validate_scope(account.provider_key, selection.target_scope, selection.tools)
+                except ValueError as error:
+                    raise ConnectivitySelectionError("invalid_account_scope", path=path) from error
+                accounts.append(selection)
+        return FrozenRunConnectivity(tuple(connectors), tuple(mcps), tuple(accounts))
 
 
 def require_source_owner(actor: AuthenticatedActor, owner_type: str | None, owner_id: str | None, *, path: str) -> None:

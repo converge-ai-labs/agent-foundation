@@ -44,13 +44,12 @@ class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class LarkIngressConfig(_StrictModel):
+class LarkAccountConfig(_StrictModel):
     brand: Literal["feishu", "lark"]
     open_api_origin: str = Field(min_length=1, max_length=2048)
     app_id: str = Field(min_length=1, max_length=256)
     tenant_key: str = Field(min_length=1, max_length=256)
     bot_open_id: str = Field(min_length=1, max_length=256)
-    events_transport: Literal["http"] = "http"
 
 
 class LarkRouteMatch(_StrictModel):
@@ -80,7 +79,7 @@ class LarkIngressAdapter:
 
     def validate_config(self, value: object, *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        config = LarkIngressConfig.model_validate(value)
+        config = LarkAccountConfig.model_validate(value)
         origin = require_provider_origin(
             config.open_api_origin,
             official_origins=_OFFICIAL_ORIGINS,
@@ -104,14 +103,13 @@ class LarkIngressAdapter:
 
     def configuration_identity(self, value: JsonObject, *, config_version: str) -> object:
         _require_version(config_version)
-        config = LarkIngressConfig.model_validate(value)
+        config = LarkAccountConfig.model_validate(value)
         return (
             config.brand,
             config.open_api_origin,
             config.app_id,
             config.tenant_key,
             config.bot_open_id,
-            config.events_transport,
         )
 
     def validate_route(
@@ -119,11 +117,11 @@ class LarkIngressAdapter:
         *,
         match: object,
         provider_policy: object,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         config_version: str,
     ) -> tuple[JsonObject, JsonObject]:
         _require_version(config_version)
-        LarkIngressConfig.model_validate(ingress_config)
+        LarkAccountConfig.model_validate(account_config)
         return _model_json(LarkRouteMatch.model_validate(match)), _model_json(
             MessagingPolicy.model_validate(provider_policy)
         )
@@ -144,12 +142,12 @@ class LarkIngressAdapter:
         request: ProviderRequest,
         *,
         ingress_id: str,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         credentials: JsonObject,
         received_at: datetime,
     ) -> ProviderRequestDecision:
         del ingress_id
-        config = LarkIngressConfig.model_validate(ingress_config)
+        config = LarkAccountConfig.model_validate(account_config)
         return authenticate_and_normalize(
             request,
             identity=LarkIdentity(
@@ -180,13 +178,13 @@ class LarkIngressAdapter:
     def default_route(
         self,
         event: InboundEvent,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         *,
         config_version: str,
     ) -> DefaultRoute:
         del event
         _require_version(config_version)
-        LarkIngressConfig.model_validate(ingress_config)
+        LarkAccountConfig.model_validate(account_config)
         return DefaultRoute(
             input_mapping=default_event_mapping(),
             input_batching=InputBatchingPolicy(min_interval_ms=1, max_batch_events=10),
@@ -197,12 +195,12 @@ class LarkIngressAdapter:
         self,
         event: InboundEvent,
         provider_policy: JsonObject,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         *,
         config_version: str,
     ) -> ProviderEventRouting:
         _require_version(config_version)
-        config = LarkIngressConfig.model_validate(ingress_config)
+        config = LarkAccountConfig.model_validate(account_config)
         policy = MessagingPolicy.model_validate(provider_policy)
         direct = event.context.get("chat_type") == "p2p"
         mentioned = event.context.get("mentioned") is True
@@ -231,7 +229,7 @@ class LarkIngressAdapter:
         return ProviderHttpResponse(status_code=503, headers={"retry-after": "1"})
 
 
-def _provider_context(event: InboundEvent, config: LarkIngressConfig) -> JsonObject:
+def _provider_context(event: InboundEvent, config: LarkAccountConfig) -> JsonObject:
     return {
         "tenant_key": config.tenant_key,
         "chat_id": event.context["chat_id"],

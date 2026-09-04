@@ -42,6 +42,7 @@ class PreparedIngressBatch(_StrictModel):
     organization_id: str
     workspace_id: str
     ingress_id: str
+    account_id: str
     ingress_version: int = Field(ge=1)
     execution_service_account_id: str
     provider_key: str

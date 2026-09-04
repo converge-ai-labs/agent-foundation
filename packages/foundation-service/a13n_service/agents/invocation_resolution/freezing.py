@@ -199,6 +199,7 @@ class AgentInvocationFreezer:
             "resolved_plugin_versions": plugins,
             "runtime_lock_digest": runtime_lock.digest,
             "skills": skills,
+            "account_tools": prepared.merged.config.account_tools,
             "connector_tools": prepared.merged.config.connector_tools,
             "mcp_tools": prepared.merged.config.mcp_tools,
             "resolved_environment": environment,
@@ -232,6 +233,7 @@ class AgentInvocationFreezer:
             effective_config=effective,
             sensitive_values=prepared.merged.sensitive_values,
             sensitive_values_digest=canonical_digest(prepared.merged.sensitive_values),
+            account_selections=(connectivity.account_selections if connectivity is not None else ()),
             connector_connection_selections=(
                 connectivity.connector_connection_selections if connectivity is not None else ()
             ),

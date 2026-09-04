@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import Field, model_validator
 
 from .domain import (
+    AccountToolSelection,
     AgentConfig,
     AgentModel,
     AgentRunOverride,
@@ -35,6 +36,7 @@ class MergedAgentRunConfig(StrictModel):
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
+    account_tools: tuple[AccountToolSelection, ...] = Field(default=(), max_length=128)
     connector_tools: tuple[ConnectorConnectionToolSelection, ...] = Field(default=(), max_length=128)
     mcp_tools: tuple[MCPConnectionToolSelection, ...] = Field(default=(), max_length=128)
     environment: EnvironmentOverride | None = None
@@ -52,6 +54,7 @@ class MergedAgentRunConfig(StrictModel):
             ("plugins", tuple(item.instance_name for item in self.plugins)),
             ("skills", tuple(item.skill_key for item in self.skills)),
             ("client_tools", tuple(item.name for item in self.client_tools)),
+            ("account_tools", tuple(item.account_id for item in self.account_tools)),
             ("connector_tools", tuple(item.connector_connection_id for item in self.connector_tools)),
             ("mcp_tools", tuple(item.mcp_connection_id for item in self.mcp_tools)),
         ):
@@ -127,6 +130,12 @@ def merge_agent_run_override(
         value=override.skills,
         present="skills" in fields,
         path="skills",
+    )
+    account_tools = _replace_list(
+        inherited=base.account_tools,
+        value=override.account_tools,
+        present="account_tools" in fields,
+        path="account_tools",
     )
     connector_tools = _replace_list(
         inherited=base.connector_tools,
@@ -233,6 +242,7 @@ def merge_agent_run_override(
             input_adapter=base.input_adapter,
             plugins=plugins,
             skills=skills,
+            account_tools=account_tools,
             connector_tools=connector_tools,
             mcp_tools=mcp_tools,
             environment=environment,

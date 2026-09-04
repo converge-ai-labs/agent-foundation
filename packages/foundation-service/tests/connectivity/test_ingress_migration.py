@@ -6,6 +6,7 @@ from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect
 
 TABLES = {
+    "application_accounts",
     "agent_thread_bindings",
     "connectivity_commands",
     "ingress_admissions",
@@ -25,6 +26,27 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
     try:
         inspector = inspect(engine)
         assert TABLES <= set(inspector.get_table_names())
+        ingress_columns = {column["name"] for column in inspector.get_columns("ingresses")}
+        assert "account_id" in ingress_columns
+        assert (
+            not {
+                "ciphertext",
+                "nonce",
+                "encryption_key_id",
+                "credential_generation",
+                "provider_key",
+                "provider_config_version",
+            }
+            & ingress_columns
+        )
+        account_columns = {column["name"] for column in inspector.get_columns("application_accounts")}
+        assert {
+            "ciphertext",
+            "nonce",
+            "encryption_key_id",
+            "credential_generation",
+            "identity_digest",
+        } <= account_columns
         command_columns = {column["name"] for column in inspector.get_columns("connectivity_commands")}
         assert "idempotency_key_digest" in command_columns
         assert "idempotency_key" not in command_columns

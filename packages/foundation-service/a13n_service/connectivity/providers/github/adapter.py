@@ -44,7 +44,7 @@ class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class GitHubIngressConfig(_StrictModel):
+class GitHubAccountConfig(_StrictModel):
     api_origin: str = Field(min_length=1, max_length=2048)
     web_origin: str = Field(min_length=1, max_length=2048)
     app_id: int = Field(gt=0)
@@ -103,7 +103,7 @@ class GitHubIngressAdapter:
 
     def validate_config(self, value: object, *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        config = GitHubIngressConfig.model_validate(value)
+        config = GitHubAccountConfig.model_validate(value)
         api_origin = require_provider_base_url(
             config.api_origin,
             official_base_urls=_OFFICIAL_API_BASES,
@@ -133,7 +133,7 @@ class GitHubIngressAdapter:
 
     def configuration_identity(self, value: JsonObject, *, config_version: str) -> object:
         _require_version(config_version)
-        config = GitHubIngressConfig.model_validate(value)
+        config = GitHubAccountConfig.model_validate(value)
         return (
             config.api_origin,
             config.web_origin,
@@ -148,11 +148,11 @@ class GitHubIngressAdapter:
         *,
         match: object,
         provider_policy: object,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         config_version: str,
     ) -> tuple[JsonObject, JsonObject]:
         _require_version(config_version)
-        GitHubIngressConfig.model_validate(ingress_config)
+        GitHubAccountConfig.model_validate(account_config)
         if provider_policy != {}:
             raise ValueError("GitHub provider policy must be empty")
         return _model_json(GitHubRouteMatch.model_validate(match)), {}
@@ -177,12 +177,12 @@ class GitHubIngressAdapter:
         request: ProviderRequest,
         *,
         ingress_id: str,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         credentials: JsonObject,
         received_at: datetime,
     ) -> ProviderRequestDecision:
         del ingress_id
-        config = GitHubIngressConfig.model_validate(ingress_config)
+        config = GitHubAccountConfig.model_validate(account_config)
         return authenticate_and_normalize(
             request,
             identity=GitHubIdentity(
@@ -214,13 +214,13 @@ class GitHubIngressAdapter:
     def default_route(
         self,
         event: InboundEvent,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         *,
         config_version: str,
     ) -> DefaultRoute:
         del event
         _require_version(config_version)
-        GitHubIngressConfig.model_validate(ingress_config)
+        GitHubAccountConfig.model_validate(account_config)
         return DefaultRoute(
             input_mapping=default_event_mapping(),
             input_batching=InputBatchingPolicy(min_interval_ms=1, max_batch_events=10),
@@ -231,12 +231,12 @@ class GitHubIngressAdapter:
         self,
         event: InboundEvent,
         provider_policy: JsonObject,
-        ingress_config: JsonObject,
+        account_config: JsonObject,
         *,
         config_version: str,
     ) -> ProviderEventRouting:
         _require_version(config_version)
-        config = GitHubIngressConfig.model_validate(ingress_config)
+        config = GitHubAccountConfig.model_validate(account_config)
         if provider_policy:
             raise ValueError("GitHub provider policy must be empty")
         target_kind = event.context.get("target_kind")

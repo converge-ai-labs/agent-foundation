@@ -277,6 +277,7 @@ class Run(StrictModel):
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None = None
     runtime_lock_digest: Sha256Digest
     model_execution_observation: ModelExecutionObservation
+    account_selections: tuple[JsonObject, ...] = Field(default=(), max_length=128)
     connector_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     mcp_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     ingress_context: JsonObject | None = None

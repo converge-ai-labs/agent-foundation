@@ -7,29 +7,26 @@ from a13n_service.connectivity.ingress.domain import (
     CreateRouteRequest,
     IngressStatus,
     InputBatchingPolicy,
-    ReplaceIngressCredentialsRequest,
     UpdateIngressRequest,
     UpdateRouteRequest,
 )
 from a13n_service.connectivity.ingress.routes import RouteService
-from a13n_service.connectivity.ingress.service import IngressError, IngressService
+from a13n_service.connectivity.ingress.service import IngressService, NativeError
 from a13n_service.connectivity.models import ConnectivityCommandRecord
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .conftest import AGENT_ID, SERVICE_ACCOUNT_ID, WORKSPACE_ID, FakeIngressAdapter, actor
+from .conftest import ACCOUNT_ID, AGENT_ID, SERVICE_ACCOUNT_ID, WORKSPACE_ID, FakeIngressAdapter, actor
 
 
 def ingress_request() -> CreateIngressRequest:
     return CreateIngressRequest(
         name="Support Slack",
-        provider_key="fake",
-        provider_config_version="fake_http_v1",
-        provider_config={"installation_id": "installation-1"},
+        account_id=ACCOUNT_ID,
+        provider_config={"events_transport": "http"},
         execution_service_account_id=SERVICE_ACCOUNT_ID,
         agents=(AGENT_ID,),
         default_agent_id=AGENT_ID,
-        credentials={"token": "secret-value"},
     )
 
 
@@ -58,9 +55,9 @@ async def test_ingress_lifecycle_is_idempotent_safe_and_cas_guarded(
     )
 
     assert replay == created
-    assert created.credential_configured is True
+    assert created.account_id == ACCOUNT_ID
     assert "secret-value" not in repr(created)
-    assert created.version == created.credential_generation == 1
+    assert created.version == 1
     enabled = await ingress_service.set_status(
         actor=actor(),
         ingress_id=created.id,
@@ -74,24 +71,12 @@ async def test_ingress_lifecycle_is_idempotent_safe_and_cas_guarded(
         commands = tuple((await session.scalars(select(ConnectivityCommandRecord))).all())
     assert all(command.idempotency_key_digest not in {"create", "already-active"} for command in commands)
 
-    rotated = await ingress_service.replace_credentials(
-        actor=actor(),
-        ingress_id=created.id,
-        idempotency_key="rotate",
-        request=ReplaceIngressCredentialsRequest(expected_version=1, credentials={"token": "next-secret"}),
+    updated = await ingress_service.update_ingress(
+        actor=actor(), ingress_id=created.id, request=UpdateIngressRequest(expected_version=1, name="Renamed")
     )
-    assert rotated.version == rotated.credential_generation == 2
-    assert (
-        await ingress_service.replace_credentials(
-            actor=actor(),
-            ingress_id=created.id,
-            idempotency_key="rotate",
-            request=ReplaceIngressCredentialsRequest(expected_version=1, credentials={"token": "next-secret"}),
-        )
-        == rotated
-    )
+    assert updated.version == 2
 
-    with pytest.raises(IngressError, match="version") as stale:
+    with pytest.raises(NativeError, match="version") as stale:
         await ingress_service.update_ingress(
             actor=actor(), ingress_id=created.id, request=UpdateIngressRequest(expected_version=1, name="Stale")
         )
@@ -105,22 +90,14 @@ async def test_ingress_identity_and_route_overlap_fail_closed(
     ingress = await ingress_service.create_ingress(
         actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="create-routes", request=ingress_request()
     )
-    with pytest.raises(IngressError) as immutable:
-        await ingress_service.update_ingress(
-            actor=actor(),
-            ingress_id=ingress.id,
-            request=UpdateIngressRequest(
-                expected_version=1,
-                provider_config={"installation_id": "installation-2"},
-            ),
-        )
-    assert immutable.value.code == "immutable_ingress_identity"
+    with pytest.raises(ValueError):
+        UpdateIngressRequest(expected_version=1, account_id="another-account")
 
     route = await route_service.create_route(
         actor=actor(), ingress_id=ingress.id, idempotency_key="route", request=route_request()
     )
     assert route.version == 1
-    with pytest.raises(IngressError) as overlap:
+    with pytest.raises(NativeError) as overlap:
         await route_service.create_route(
             actor=actor(), ingress_id=ingress.id, idempotency_key="overlap", request=route_request()
         )
@@ -137,17 +114,10 @@ async def test_ingress_identity_and_route_overlap_fail_closed(
 
 @pytest.mark.anyio
 async def test_invalid_adapter_and_idempotency_reuse_are_rejected(ingress_service: IngressService) -> None:
-    invalid = ingress_request().model_copy(update={"provider_config_version": "unknown_v1"})
-    with pytest.raises(IngressError) as unsupported:
-        await ingress_service.create_ingress(
-            actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="unsupported", request=invalid
-        )
-    assert unsupported.value.code == "unsupported_ingress_adapter"
-
     await ingress_service.create_ingress(
         actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="same-key", request=ingress_request()
     )
-    with pytest.raises(IngressError) as conflict:
+    with pytest.raises(NativeError) as conflict:
         await ingress_service.create_ingress(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
@@ -156,7 +126,7 @@ async def test_invalid_adapter_and_idempotency_reuse_are_rejected(ingress_servic
         )
     assert conflict.value.code == "idempotency_conflict"
 
-    with pytest.raises(IngressError) as invalid_key:
+    with pytest.raises(NativeError) as invalid_key:
         await ingress_service.create_ingress(
             actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="not valid", request=ingress_request()
         )
@@ -192,7 +162,7 @@ async def test_unknown_route_overlap_requires_explicit_adapter_support(
         batch_max_wait_seconds=300,
     )
     await routes.create_route(actor=actor(), ingress_id=ingress.id, idempotency_key="first", request=route_request())
-    with pytest.raises(IngressError) as unknown:
+    with pytest.raises(NativeError) as unknown:
         await routes.create_route(
             actor=actor(),
             ingress_id=ingress.id,
@@ -229,7 +199,7 @@ async def test_route_mapping_is_compiled_on_write(ingress_service: IngressServic
         },
     }
 
-    with pytest.raises(IngressError) as invalid:
+    with pytest.raises(NativeError) as invalid:
         await route_service.create_route(
             actor=actor(),
             ingress_id=ingress.id,

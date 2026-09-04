@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 import httpx2
 
+from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
@@ -154,7 +155,8 @@ async def _build_control_runtime(
     )
     runtime = ConnectivityControlRuntime(
         public_origin=public_origin,
-        ingresses=IngressService(storage.sessions, ingress_adapters, secret_protector),
+        accounts=AccountService(storage.sessions, ingress_adapters, secret_protector),
+        ingresses=IngressService(storage.sessions),
         routes=RouteService(
             storage.sessions,
             ingress_adapters,

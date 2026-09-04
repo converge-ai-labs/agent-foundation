@@ -161,6 +161,7 @@ class IngressAdmissionReconciler:
                 organization_id=batch.organization_id,
                 workspace_id=batch.workspace_id,
                 ingress_id=batch.ingress_id,
+                account_id=ingress.account_id,
                 ingress_version=first.ingress_version,
                 execution_service_account_id=ingress.execution_service_account_id,
                 provider_key=first.provider_key,
@@ -269,7 +270,12 @@ def _optional_datetime(value: object) -> datetime | None:
 
 async def _reauthorize(session: AsyncSession, admission: IngressAdmissionRecord) -> IngressRecord:
     ingress = await session.get(IngressRecord, admission.ingress_id)
-    if ingress is None or ingress.status != "active":
+    if (
+        ingress is None
+        or ingress.status != "active"
+        or ingress.account.status != "active"
+        or ingress.account.deleted_at is not None
+    ):
         raise _PermanentRejection("ingress_inactive")
     allowed = await session.scalar(
         select(IngressAgentRecord).where(

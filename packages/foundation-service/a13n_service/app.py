@@ -14,6 +14,7 @@ from sqlalchemy import text
 from a13n_service.agents.router import router as agent_router
 from a13n_service.api import install_api_conventions
 from a13n_service.assets.router import router as asset_router
+from a13n_service.connectivity.accounts.router import router as account_router
 from a13n_service.connectivity.connectors.router import router as connector_router
 from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
 from a13n_service.connectivity.ingress.router import router as ingress_router
@@ -164,6 +165,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(plugin_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
+        app.include_router(account_router)
         app.include_router(ingress_router)
         app.include_router(connector_router)
         app.include_router(mcp_router)

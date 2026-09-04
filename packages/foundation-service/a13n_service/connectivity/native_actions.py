@@ -12,7 +12,7 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 
 from .domain import JsonObject
-from .ingress.providers.github.actions import (
+from .providers.github.actions import (
     GitHubActionBinding,
     GitHubAddCommentArguments,
     GitHubAddCommentSucceeded,
@@ -20,10 +20,10 @@ from .ingress.providers.github.actions import (
     GitHubReadCommentsArguments,
     GitHubReadTargetArguments,
 )
-from .ingress.providers.github.adapter import GitHubIngressConfig
-from .ingress.providers.github.client import GitHubNativeClient
-from .ingress.providers.github.token import GitHubInstallationTokenProvider
-from .ingress.providers.lark.actions import (
+from .providers.github.adapter import GitHubAccountConfig
+from .providers.github.client import GitHubNativeClient
+from .providers.github.token import GitHubInstallationTokenProvider
+from .providers.lark.actions import (
     LarkActionBinding,
     LarkAutoReplyArguments,
     LarkForcedReplyArguments,
@@ -31,10 +31,10 @@ from .ingress.providers.lark.actions import (
     LarkReadMessagesArguments,
     LarkReplySucceeded,
 )
-from .ingress.providers.lark.adapter import LarkIngressConfig
-from .ingress.providers.lark.client import LarkNativeClient
-from .ingress.providers.lark.token import LarkTenantTokenProvider
-from .ingress.providers.slack.client import (
+from .providers.lark.adapter import LarkAccountConfig
+from .providers.lark.client import LarkNativeClient
+from .providers.lark.token import LarkTenantTokenProvider
+from .providers.slack.client import (
     SlackActionBinding,
     SlackAutoReplyArguments,
     SlackForcedReplyArguments,
@@ -110,7 +110,7 @@ def native_actions(
             ),
         )
     elif provider == "lark":
-        config = LarkIngressConfig.model_validate(configuration)
+        config = LarkAccountConfig.model_validate(configuration)
         binding = LarkActionBinding.model_validate(
             {
                 **{key: context.get(key) for key in ("chat_id", "message_id", "discussion_id", "chat_type")},
@@ -134,7 +134,7 @@ def native_actions(
             action("lark.read_messages", LarkReadMessagesArguments, partial(client.read_messages, binding)),
         )
     elif provider == "github":
-        config = GitHubIngressConfig.model_validate(configuration)
+        config = GitHubAccountConfig.model_validate(configuration)
         binding = GitHubActionBinding.model_validate(
             {
                 "repository_id": context.get("repository_id"),

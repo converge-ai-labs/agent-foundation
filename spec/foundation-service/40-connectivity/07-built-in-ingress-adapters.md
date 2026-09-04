@@ -12,9 +12,9 @@ All adapters reject unknown configuration versions and request bodies beyond the
 
 ### Identity and credentials
 
-`provider_key = "slack"` and `provider_config_version = "slack_http_v1"` select this profile. The immutable provider configuration contains `api_app_id`, exactly one installed `team_id`, optional `enterprise_id`, verified `bot_user_id`, and `events_transport = "http"`. A changed App, installation, enterprise scope, or bot identity creates another Ingress.
+`provider_key = "slack"` and `provider_config_version = "slack_http_v1"` select this profile. The immutable Account provider configuration contains `api_app_id`, exactly one installed `team_id`, optional `enterprise_id`, verified `bot_user_id`. The Ingress fixes `events_transport = "http"`. A changed App, installation, enterprise scope, or bot identity creates another Application Account.
 
-The Ingress owns write-only credential fields `signing_secret` and `bot_token`. The signing secret authenticates webhooks. The bot token is used only for the enabled native Slack operations against `https://slack.com`; it never authenticates inbound delivery.
+The Slack Account owns write-only credential fields `signing_secret` and `bot_token`. The signing secret authenticates webhooks. The bot token is used only for the enabled native Slack operations against `https://slack.com`; it never authenticates inbound delivery.
 
 ### Authentication and events
 
@@ -56,9 +56,9 @@ The model cannot provide a team, channel, thread, message, token, or Ingress ide
 
 ### Identity and credentials
 
-`provider_key = "lark"` and `provider_config_version = "lark_http_v1"` select both brands. Immutable configuration contains `brand` in `feishu` or `lark`, an official or exact operator-allowed `open_api_origin`, `app_id`, installed `tenant_key`, verified `bot_open_id`, and `events_transport = "http"`. Brand and origin are explicit configuration rather than separate provider keys.
+`provider_key = "lark"` and `provider_config_version = "lark_http_v1"` select both brands. Immutable Account configuration contains `brand` in `feishu` or `lark`, an official or exact operator-allowed `open_api_origin`, `app_id`, installed `tenant_key`, verified `bot_open_id`. The Ingress fixes `events_transport = "http"`. Brand and origin are explicit configuration rather than separate provider keys.
 
-The Ingress owns write-only credential fields `app_secret`, `encrypt_key`, and `verification_token`. `encrypt_key` can be absent only for an installation deliberately configured without encrypted event delivery. A short-lived tenant access token is derived from `app_id` and `app_secret`, refreshed before provider expiry through async single-flight, and retained only in process memory or the shared ephemeral cache; it is not another durable credential.
+The Lark Account owns write-only credential fields `app_secret`, `encrypt_key`, and `verification_token`. `encrypt_key` can be absent only for an installation deliberately configured without encrypted event delivery. A short-lived tenant access token is derived from `app_id` and `app_secret`, refreshed before provider expiry through async single-flight, and retained only in process memory or the shared ephemeral cache; it is not another durable credential.
 
 ### Authentication, decryption, and events
 
@@ -92,9 +92,9 @@ The model cannot provide an App, tenant, chat, thread, message, token, or Ingres
 
 ### Identity and credentials
 
-`provider_key = "github"` and `provider_config_version = "github_app_http_v1"` select this profile. Immutable configuration contains exact operator-allowed `api_origin` and `web_origin`, GitHub App ID, installation ID, installation account ID, and a bot account database ID verified from the App installation. GitHub.com uses its official origins; GitHub Enterprise origins require an explicit Connectivity allowlist entry.
+`provider_key = "github"` and `provider_config_version = "github_app_http_v1"` select this profile. Immutable Account configuration contains exact operator-allowed `api_origin` and `web_origin`, GitHub App ID, installation ID, installation account ID, and a bot account database ID verified from the App installation. GitHub.com uses its official origins; GitHub Enterprise origins require an explicit Connectivity allowlist entry.
 
-The Ingress owns write-only credential fields `webhook_secret` and `app_private_key_pem`. The private key signs RS256 App JWTs whose lifetime is at most ten minutes. The adapter exchanges them for installation access tokens, retains provider expiry, refreshes with safety skew through async single-flight, and never stores those tokens durably.
+The GitHub Account owns write-only credential fields `webhook_secret` and `app_private_key_pem`. The private key signs RS256 App JWTs whose lifetime is at most ten minutes. The adapter exchanges them for installation access tokens, retains provider expiry, refreshes with safety skew through async single-flight, and never stores those tokens durably.
 
 ### Authentication and events
 
@@ -131,6 +131,6 @@ The model cannot provide an installation, owner, repository, issue, pull request
 2. A path ID, display name, sender identity, retry header, or provider URL grants no authority.
 3. A challenge, ping, ignored bot event, unsupported event, or other deterministic non-input creates no admission.
 4. Every activation-eligible event is durable before the adapter emits its success acknowledgement.
-5. Native action destination and credential identities come only from the protected current Run context.
+5. Current-context action destinations come only from protected Ingress Run context. Proactive destinations are checked against the accepted Account target scope. Both resolve credentials only from their bound Account.
 6. Slack channel chat is enabled only through explicit Route interaction mode and installed scopes; Lark discussion selection follows one fixed priority; GitHub v1 excludes Discussions.
 7. No built-in write retries an unknown outcome without provider-owned reconciliation evidence.

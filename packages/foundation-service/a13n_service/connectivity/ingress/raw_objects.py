@@ -5,10 +5,10 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 
+from a13n_service.connectivity.errors import NativeError
 from a13n_service.storage.object_store import ObjectConflict, ObjectInfo, ObjectStore, ObjectStoreError
 
 from .admission_domain import ProtectedRawRef
-from .errors import IngressError
 
 _CONTENT_TYPE = "application/octet-stream"
 
@@ -50,7 +50,7 @@ class IngressRawObjectStore:
                 info = await self._objects.stat(key)
             _verify(info, key=key, metadata=metadata, size=len(body))
         except (ObjectStoreError, ValueError) as error:
-            raise IngressError(
+            raise NativeError(
                 "raw_retention_unavailable",
                 "Protected provider evidence could not be retained.",
                 status_code=503,

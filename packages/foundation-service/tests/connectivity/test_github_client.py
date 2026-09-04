@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import anyio
 import httpx2
 import pytest
-from a13n_service.connectivity.ingress.providers.github.actions import (
+from a13n_service.connectivity.providers.github.actions import (
     GitHubActionBinding,
     GitHubAddCommentArguments,
     GitHubAddCommentOutcomeUnknown,
@@ -17,9 +17,9 @@ from a13n_service.connectivity.ingress.providers.github.actions import (
     GitHubReadCommentsArguments,
     GitHubReadTargetArguments,
 )
-from a13n_service.connectivity.ingress.providers.github.api import GitHubApiError
-from a13n_service.connectivity.ingress.providers.github.client import GitHubNativeClient
-from a13n_service.connectivity.ingress.providers.github.token import (
+from a13n_service.connectivity.providers.github.api import GitHubApiError
+from a13n_service.connectivity.providers.github.client import GitHubNativeClient
+from a13n_service.connectivity.providers.github.token import (
     GITHUB_API_VERSION,
     GitHubInstallationTokenProvider,
     load_github_private_key,

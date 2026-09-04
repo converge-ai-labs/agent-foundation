@@ -151,6 +151,7 @@ def upgrade() -> None:
         sa.Column("encrypted_config_schema_version", sa.String(length=32), nullable=True),
         sa.Column("runtime_lock_digest", sa.String(length=64), nullable=False),
         sa.Column("model_execution_observation_json", sa.JSON(), nullable=False),
+        sa.Column("account_selections_json", sa.JSON(), nullable=False),
         sa.Column("connector_connection_selections_json", sa.JSON(), nullable=False),
         sa.Column("mcp_connection_selections_json", sa.JSON(), nullable=False),
         sa.Column("ingress_context_json", sa.JSON(none_as_null=True), nullable=True),

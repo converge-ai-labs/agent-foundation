@@ -69,6 +69,9 @@ class WorkspaceAction(StrEnum):
     queued_submission_delete = "queued_submission.delete"
     queued_submission_reorder = "queued_submission.reorder"
     queued_submission_consume = "queued_submission.consume"
+    application_account_read = "application_account.read"
+    application_account_manage = "application_account.manage"
+    application_account_use = "application_account.use"
     ingress_read = "ingress.read"
     ingress_manage = "ingress.manage"
     route_read = "route.read"
@@ -100,6 +103,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.trace_read,
         WorkspaceAction.hook_subscription_read,
         WorkspaceAction.queued_submission_read,
+        WorkspaceAction.application_account_read,
         WorkspaceAction.ingress_read,
         WorkspaceAction.route_read,
         WorkspaceAction.connector_provider_read,
@@ -110,6 +114,7 @@ _READ_ACTIONS = frozenset(
 
 _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
     {
+        WorkspaceAction.application_account_use,
         WorkspaceAction.agent_invoke,
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
@@ -138,6 +143,7 @@ _PLUGIN_OPERATOR_ACTIONS = frozenset(
 
 _CONNECTIVITY_ADMIN_ACTIONS = frozenset(
     {
+        WorkspaceAction.application_account_manage,
         WorkspaceAction.ingress_manage,
         WorkspaceAction.connector_provider_manage,
         WorkspaceAction.connector_connection_manage,

@@ -11,7 +11,7 @@ from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.ingress.admission_domain import InputAcceptor
-from a13n_service.connectivity.ingress.providers import built_in_ingress_adapter_registry
+from a13n_service.connectivity.providers import built_in_ingress_adapter_registry
 from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.environments.keepalive import EnvironmentKeepaliveSourceResolver
 from a13n_service.environments.testing import EnvironmentAttachmentTester

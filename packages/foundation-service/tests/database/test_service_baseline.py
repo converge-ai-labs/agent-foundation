@@ -82,7 +82,7 @@ def test_service_baseline_matches_postgresql_metadata(pg_url: str) -> None:
             for name in (
                 "model_providers",
                 "connector_providers",
-                "ingresses",
+                "application_accounts",
                 "mcp_connections",
                 "mcp_oauth_sessions",
             ):

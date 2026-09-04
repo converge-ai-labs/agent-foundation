@@ -152,6 +152,14 @@ class SlackNativeClient:
         payload: JsonObject = {"channel": binding.channel_id, "text": arguments.text}
         if placement == "thread":
             payload["thread_ts"] = binding.root_thread_ts
+        return await self._post_message(payload, bot_token=bot_token, request_id=request_id)
+
+    async def send_message(self, channel_id: str, text: str, *, bot_token: str, request_id: str) -> SlackReplyOutcome:
+        return await self._post_message(
+            {"channel": channel_id, "text": text}, bot_token=bot_token, request_id=request_id
+        )
+
+    async def _post_message(self, payload: JsonObject, *, bot_token: str, request_id: str) -> SlackReplyOutcome:
         try:
             response = await self._request("chat.postMessage", payload, bot_token=bot_token)
         except SlackNativeActionError as error:
@@ -171,7 +179,7 @@ class SlackNativeClient:
         root = (
             returned_root
             if isinstance(returned_root, str)
-            else (binding.root_thread_ts if placement == "thread" else message_ts)
+            else (str(payload["thread_ts"]) if "thread_ts" in payload else message_ts)
         )
         return SlackReplySucceeded(
             receipt=SlackReplyReceipt(

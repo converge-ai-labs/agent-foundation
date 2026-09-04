@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.ingress.admission import IngressEventService
@@ -18,6 +19,7 @@ class ConnectivityControlRuntime:
     """Connectivity management capabilities owned by Control-plane roles."""
 
     public_origin: str
+    accounts: AccountService
     ingresses: IngressService
     routes: RouteService
     connector_providers: ConnectorProviderService

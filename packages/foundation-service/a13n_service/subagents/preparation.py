@@ -8,6 +8,7 @@ from datetime import datetime
 from pydantic import JsonValue
 
 from a13n_service.agents.domain import (
+    AccountToolSelection,
     EffectiveAgentConfig,
     EnvironmentExecutionConfig,
     ResolvedSubagentEdge,
@@ -86,6 +87,7 @@ def prepare_child_run(
     child_effective_config: EffectiveAgentConfig,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
+    account_selections: tuple[AccountToolSelection, ...] = (),
     child_thread_id: str,
     child_run_id: str,
     relationship_id: str,
@@ -173,6 +175,7 @@ def prepare_child_run(
         child_effective_config=child_effective_config,
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,
+        account_selections=account_selections,
         encrypted_config_payload=encrypted_config_payload,
         recovery_budget=recovery_budget,
         request_fingerprint=request_fingerprint,
@@ -204,6 +207,7 @@ def prepare_child_resume(
     child_effective_config: EffectiveAgentConfig,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
+    account_selections: tuple[AccountToolSelection, ...] = (),
     source_relationship: ChildRunRelationship,
     source_parent_run: Run,
     source_thread: Thread,
@@ -292,6 +296,7 @@ def prepare_child_resume(
         child_effective_config=child_effective_config,
         connector_connection_selections=connector_connection_selections,
         mcp_connection_selections=mcp_connection_selections,
+        account_selections=account_selections,
         encrypted_config_payload=encrypted_config_payload,
         recovery_budget=recovery_budget,
         request_fingerprint=request_fingerprint,
@@ -359,6 +364,7 @@ def _child_run(
     child_effective_config: EffectiveAgentConfig,
     connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
     mcp_connection_selections: tuple[MCPConnectionRunSelection, ...],
+    account_selections: tuple[AccountToolSelection, ...] = (),
     encrypted_config_payload: EncryptedRunConfigPayloadRef | None,
     recovery_budget: RecoveryBudget,
     request_fingerprint: str,
@@ -392,6 +398,7 @@ def _child_run(
         mcp_connection_selections=tuple(
             item.model_dump(mode="json", by_alias=True) for item in mcp_connection_selections
         ),
+        account_selections=tuple(item.model_dump(mode="json") for item in account_selections),
         priority=parent_run.priority,
         queue_name=parent_run.queue_name,
         available_at=created_at,

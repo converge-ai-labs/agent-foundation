@@ -6,6 +6,8 @@ import json
 from datetime import timedelta
 
 import pytest
+from a13n_service.connectivity.accounts.domain import CreateAccountRequest
+from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.admission_models import IngressAdmissionRecord
 from a13n_service.connectivity.ingress.domain import CreateIngressRequest
@@ -19,10 +21,10 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequestError,
     ProviderRequiresBindingRouting,
 )
-from a13n_service.connectivity.ingress.providers.lark import LarkIngressAdapter
-from a13n_service.connectivity.ingress.providers.registry import built_in_ingress_adapter_registry
 from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
 from a13n_service.connectivity.ingress.service import IngressService
+from a13n_service.connectivity.providers.lark import LarkIngressAdapter
+from a13n_service.connectivity.providers.registry import built_in_ingress_adapter_registry
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage.object_store import LocalObjectStore
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -44,7 +46,6 @@ def _config(*, origin: str = "https://open.feishu.cn") -> dict[str, object]:
         "app_id": "cli_app",
         "tenant_key": "tenant-1",
         "bot_open_id": "ou_bot",
-        "events_transport": "http",
     }
 
 
@@ -140,7 +141,7 @@ async def test_lark_encrypted_unicode_event_is_verified_and_normalized() -> None
     decision = await LarkIngressAdapter().authenticate_and_normalize(
         _encrypted_request(_payload()),
         ingress_id="ing_test",
-        ingress_config=_config(),
+        account_config=_config(),
         credentials=_credentials(),
         received_at=NOW,
     )
@@ -165,7 +166,7 @@ async def test_lark_rejects_wrong_stale_signature_and_invalid_padding() -> None:
             await LarkIngressAdapter().authenticate_and_normalize(
                 request,
                 ingress_id="ing_test",
-                ingress_config=_config(),
+                account_config=_config(),
                 credentials=_credentials(),
                 received_at=NOW,
             )
@@ -184,14 +185,14 @@ async def test_lark_challenge_and_self_message_create_no_event() -> None:
     challenge = await adapter.authenticate_and_normalize(
         _encrypted_request(challenge_payload),
         ingress_id="ing_test",
-        ingress_config=_config(),
+        account_config=_config(),
         credentials=_credentials(),
         received_at=NOW,
     )
     own_message = await adapter.authenticate_and_normalize(
         _encrypted_request(_payload(sender_open_id="ou_bot")),
         ingress_id="ing_test",
-        ingress_config=_config(),
+        account_config=_config(),
         credentials=_credentials(),
         received_at=NOW,
     )
@@ -223,7 +224,7 @@ async def test_lark_post_and_attachment_have_bounded_safe_projections() -> None:
             )
         ),
         ingress_id="ing_test",
-        ingress_config=_config(),
+        account_config=_config(),
         credentials=_credentials(),
         received_at=NOW,
     )
@@ -236,7 +237,7 @@ async def test_lark_post_and_attachment_have_bounded_safe_projections() -> None:
             )
         ),
         ingress_id="ing_test",
-        ingress_config=_config(),
+        account_config=_config(),
         credentials=_credentials(),
         received_at=NOW,
     )
@@ -273,13 +274,13 @@ def test_lark_route_overlap_and_interaction_classification() -> None:
     left, discussion = adapter.validate_route(
         match={"event_kinds": ["message"], "chat_types": ["group"], "chat_ids": ["oc_1"]},
         provider_policy={"interaction_mode": "discussion", "reply_mode": "thread"},
-        ingress_config=_config(),
+        account_config=_config(),
         config_version="lark_http_v1",
     )
     right, _policy = adapter.validate_route(
         match={"event_kinds": ["message"], "chat_types": ["group"], "chat_ids": ["oc_2"]},
         provider_policy={"interaction_mode": "chat", "reply_mode": "main"},
-        ingress_config=_config(),
+        account_config=_config(),
         config_version="lark_http_v1",
     )
     assert adapter.prove_non_overlap(left, right) is True
@@ -329,20 +330,32 @@ async def test_lark_real_protocol_fixture_is_durable_before_ack(
     connectivity_objects: LocalObjectStore,
 ) -> None:
     registry = built_in_ingress_adapter_registry()
-    ingress_service = IngressService(connectivity_sessions, registry, credential_protector, clock=lambda: NOW)
+    account = await AccountService(
+        connectivity_sessions, registry, credential_protector, clock=lambda: NOW
+    ).create_account(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="lark-account",
+        request=CreateAccountRequest(
+            name="lark",
+            provider_key="lark",
+            provider_config_version="lark_http_v1",
+            provider_config=_config(),
+            credentials=_credentials(),
+        ),
+    )
+    ingress_service = IngressService(connectivity_sessions, clock=lambda: NOW)
     ingress = await ingress_service.create_ingress(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="lark-ingress",
         request=CreateIngressRequest(
             name="Lark",
-            provider_key="lark",
-            provider_config_version="lark_http_v1",
-            provider_config=_config(),
+            account_id=account.id,
+            provider_config={"events_transport": "http"},
             execution_service_account_id=SERVICE_ACCOUNT_ID,
             agents=(AGENT_ID,),
             default_agent_id=AGENT_ID,
-            credentials=_credentials(),
         ),
     )
     event_service = IngressEventService(

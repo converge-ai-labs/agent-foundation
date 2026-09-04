@@ -13,20 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
 from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.errors import NativeError
+from a13n_service.connectivity.native_management import require_adapter
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from ._management import require_adapter, require_ingress
+from ._management import require_ingress
 from .admission_domain import ProtectedRawRef
 from .admission_models import (
     IngressAdmissionRecord,
     IngressBatchEventRecord,
     IngressBatchRecord,
 )
-from .errors import IngressError
 from .models import IngressRecord
 from .provider import (
     AdmissionReceipt,
@@ -50,6 +51,7 @@ class _IngressSnapshot:
     provider_config_version: str
     provider_config_json: JsonObject
     credential_generation: int
+    account_version: int
     version: int
 
 
@@ -114,7 +116,7 @@ class IngressEventService:
             decision = await adapter.authenticate_and_normalize(
                 request,
                 ingress_id=ingress_id,
-                ingress_config=snapshot.provider_config_json,
+                account_config=snapshot.provider_config_json,
                 credentials=credentials,
                 received_at=received_at,
             )
@@ -143,7 +145,7 @@ class IngressEventService:
                 request_digest=hashlib.sha256(request.body).hexdigest(),
                 raw_ref=raw_ref,
             )
-        except IngressError as error:
+        except NativeError as error:
             if raw_ref is not None:
                 await self._raw_objects.delete(raw_ref)
             return adapter.failure_response(error.code)
@@ -155,10 +157,12 @@ class IngressEventService:
         async with short_session(self._sessions) as session:
             try:
                 record = await require_ingress(session, ingress_id)
-            except IngressError as error:
-                raise IngressError("ingress_not_found", "Ingress was not found.", status_code=404) from error
+            except NativeError as error:
+                raise NativeError("ingress_not_found", "Ingress was not found.", status_code=404) from error
+            if record.account.status != "active" or record.account.deleted_at is not None:
+                raise NativeError("ingress_not_found", "Ingress was not found.", status_code=404)
             snapshot = _snapshot(record)
-            credential = record.credential_snapshot()
+            credential = record.account.credential_snapshot()
         adapter = require_adapter(self._adapters, snapshot.provider_key, snapshot.provider_config_version)
         try:
             value = credential.decrypt(self._protector)
@@ -166,7 +170,7 @@ class IngressEventService:
             if not isinstance(credentials, dict) or any(not isinstance(key, str) for key in credentials):
                 raise ValueError("invalid credential bundle")
         except (SecretProtectionError, ValueError, json.JSONDecodeError) as error:
-            raise IngressError("ingress_not_found", "Ingress was not found.", status_code=404) from error
+            raise NativeError("ingress_not_found", "Ingress was not found.", status_code=404) from error
         return snapshot, adapter, credentials
 
     async def _admit(
@@ -185,10 +189,13 @@ class IngressEventService:
             ingress = await require_ingress(session, snapshot.id, lock=True)
             if (
                 ingress.version != snapshot.version
-                or ingress.credential_generation != snapshot.credential_generation
-                or ingress.provider_config_version != snapshot.provider_config_version
+                or ingress.account.version != snapshot.account_version
+                or ingress.account.status != "active"
+                or ingress.account.deleted_at is not None
+                or ingress.account.credential_generation != snapshot.credential_generation
+                or ingress.account.provider_config_version != snapshot.provider_config_version
             ):
-                raise IngressError("ingress_changed", "Ingress changed during authentication.", status_code=503)
+                raise NativeError("ingress_changed", "Ingress changed during authentication.", status_code=503)
             duplicate = await session.scalar(
                 select(IngressAdmissionRecord).where(
                     IngressAdmissionRecord.ingress_id == ingress.id,
@@ -198,7 +205,7 @@ class IngressEventService:
             )
             if duplicate is not None:
                 if duplicate.request_digest != request_digest:
-                    raise IngressError(
+                    raise NativeError(
                         "delivery_identity_conflict",
                         "Provider delivery identity was reused with different content.",
                         status_code=409,
@@ -285,7 +292,7 @@ class IngressEventService:
             or ingress_count + 1 > self._ingress_pending_max_count
             or ingress_bytes + event_size > self._ingress_pending_max_bytes
         ):
-            raise IngressError("admission_capacity_exhausted", "Ingress admission capacity is full.", status_code=503)
+            raise NativeError("admission_capacity_exhausted", "Ingress admission capacity is full.", status_code=503)
 
     async def _select_batch(
         self,
@@ -361,8 +368,8 @@ def _admission_record(
         workspace_id=ingress.workspace_id,
         ingress_id=ingress.id,
         ingress_version=ingress.version,
-        provider_key=ingress.provider_key,
-        provider_config_version=ingress.provider_config_version,
+        provider_key=ingress.account.provider_key,
+        provider_config_version=ingress.account.provider_config_version,
         route_id=routing.route_id,
         route_version=routing.route_version,
         event_identity_kind=event.identity_kind,
@@ -465,7 +472,7 @@ async def _lock_workspace(session: AsyncSession, workspace_id: str) -> None:
         select(WorkspaceRecord).where(WorkspaceRecord.id == workspace_id).with_for_update()
     )
     if workspace is None:
-        raise IngressError("ingress_not_found", "Ingress was not found.", status_code=404)
+        raise NativeError("ingress_not_found", "Ingress was not found.", status_code=404)
 
 
 def _identity_digest(event: InboundEvent) -> str:
@@ -482,15 +489,16 @@ def _snapshot(record: IngressRecord) -> _IngressSnapshot:
         id=record.id,
         organization_id=record.organization_id,
         workspace_id=record.workspace_id,
-        provider_key=record.provider_key,
-        provider_config_version=record.provider_config_version,
-        provider_config_json=dict(record.provider_config_json),
-        credential_generation=record.credential_generation,
+        provider_key=record.account.provider_key,
+        provider_config_version=record.account.provider_config_version,
+        provider_config_json=dict(record.account.provider_config_json),
+        credential_generation=record.account.credential_generation,
+        account_version=record.account.version,
         version=record.version,
     )
 
 
 def _dedup_horizon(adapter: IngressAdapter, deployment_max: int) -> int:
     if adapter.dedup_horizon_seconds <= 0:
-        raise IngressError("invalid_adapter_contract", "Ingress adapter contract is invalid.", status_code=503)
+        raise NativeError("invalid_adapter_contract", "Ingress adapter contract is invalid.", status_code=503)
     return min(adapter.dedup_horizon_seconds, deployment_max)
