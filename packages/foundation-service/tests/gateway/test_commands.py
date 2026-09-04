@@ -29,6 +29,7 @@ from a13n_service.interactions import (
     RunPayloadStore,
     RunStateStore,
     ThreadInboxStore,
+    WaitingRunFeedbackRequest,
 )
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
@@ -48,7 +49,7 @@ from tests.interactions.conftest import (
     effective_agent_config,
 )
 from tests.interactions.test_acceptance import _inline_hooks
-from tests.interactions.test_attempt_execution import _authority, _completed_state, _worker
+from tests.interactions.test_attempt_execution import _authority, _completed_state, _waiting_state, _worker
 
 pytestmark = pytest.mark.anyio
 
@@ -181,6 +182,48 @@ async def _complete_run(
         RunPayloadStore(objects),
         clock=lambda: NOW + timedelta(seconds=3),
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
+
+
+async def _wait_run(
+    sessions: async_sessionmaker[AsyncSession],
+    objects: LocalObjectStore,
+    *,
+    run_id: str,
+) -> str:
+    states = RunStateStore(objects)
+    claim = await AttemptScheduler(
+        sessions,
+        clock=lambda: NOW + timedelta(seconds=1),
+        token_factory=lambda: "gateway-waiting-lease-secret",
+    ).claim(run_id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+    execution = AttemptExecutionService(sessions, clock=lambda: NOW + timedelta(seconds=2))
+    authority = _authority(claim)
+    preparation = await execution.commit_preparation_success(authority)
+    assert isinstance(preparation, AttemptPreparationAccepted)
+    entered = await execution.enter_harness(
+        authority,
+        preparation=preparation,
+        harness_run_id=f"harness-{run_id}",
+    )
+    authority = _authority(
+        claim,
+        run_version=entered.run_version,
+        attempt_version=entered.attempt_version,
+    )
+    current = await states.read(TENANT_ID, run_id)
+    stored = await execution.publish_checkpoint(
+        authority,
+        states,
+        current,
+        _waiting_state(current.envelope, claim.attempt.id, claim.attempt.fence),
+    )
+    await RunOutcomeService(
+        sessions,
+        RunPayloadStore(objects),
+        clock=lambda: NOW + timedelta(seconds=3),
+    ).commit_state_outcome(authority, stored, expected_thread_version=1)
+    return stored.digest_sha256
 
 
 async def test_start_accepts_root_run_and_replays_before_resolution(
@@ -537,6 +580,130 @@ async def test_fork_idempotency_rejects_changed_input(
             run_id=source.run_id,
             idempotency_key="fork-conflict",
             request=ForkRunRequest(input=_request("different").input),
+        )
+
+    assert captured.value.code == "idempotency_conflict"
+
+
+async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent_request(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    source = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="feedback-source",
+        request=_request(),
+    )
+    digest = await _wait_run(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        run_id=source.run_id,
+    )
+
+    omitted = WaitingRunFeedbackRequest(
+        expected_thread_version=2,
+        sealed_state_digest_sha256=digest,
+    )
+    first = await commands.feedback(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="feedback-one",
+        request=omitted,
+    )
+    explicit_reject = WaitingRunFeedbackRequest.model_validate(
+        {
+            "expected_thread_version": 2,
+            "sealed_state_digest_sha256": digest,
+            "resolutions": [{"call_id": "approval-1", "action": "reject"}],
+        }
+    )
+    repeated = await commands.feedback(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="feedback-one",
+        request=explicit_reject,
+    )
+
+    assert repeated == first
+    assert first.thread_id == source.thread_id
+    assert first.thread_version == 3
+    async with short_session(lifecycle_interaction_sessions) as database:
+        waiting = await database.scalar(select(RunRecord).where(RunRecord.id == source.run_id))
+        successor = await database.scalar(select(RunRecord).where(RunRecord.id == first.run_id))
+        thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == source.thread_id))
+    assert waiting is not None and waiting.status == "waiting"
+    assert successor is not None and thread is not None
+    assert successor.parent_run_id == waiting.id
+    assert successor.input_kind == "waiting_feedback"
+    assert successor.authority_principal_id == waiting.authority_principal_id
+    assert successor.input_json["resolutions"] == [
+        {
+            "call_id": "approval-1",
+            "kind": "approval",
+            "outcome": "reject",
+            "result": None,
+        }
+    ]
+    assert thread.current_run_id == successor.id
+    assert thread.head_run_id == waiting.id
+
+
+async def test_feedback_rejects_changed_idempotent_intent_before_stale_head(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        _Preparation(),
+        _Freezing([_frozen()]),
+    )
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    source = await commands.start(
+        actor=_actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="feedback-conflict-source",
+        request=_request(),
+    )
+    digest = await _wait_run(
+        lifecycle_interaction_sessions,
+        interaction_object_store,
+        run_id=source.run_id,
+    )
+    rejected = WaitingRunFeedbackRequest(
+        expected_thread_version=2,
+        sealed_state_digest_sha256=digest,
+    )
+    await commands.feedback(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="feedback-conflict",
+        request=rejected,
+    )
+    approved = WaitingRunFeedbackRequest.model_validate(
+        {
+            "expected_thread_version": 2,
+            "sealed_state_digest_sha256": digest,
+            "resolutions": [{"call_id": "approval-1", "action": "approve"}],
+        }
+    )
+
+    with pytest.raises(GatewayCommandError) as captured:
+        await commands.feedback(
+            actor=_actor(),
+            run_id=source.run_id,
+            idempotency_key="feedback-conflict",
+            request=approved,
         )
 
     assert captured.value.code == "idempotency_conflict"

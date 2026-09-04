@@ -66,13 +66,16 @@ from a13n_service.interactions import (
     ThreadInboxStore,
     ThreadOriginKind,
     ThreadRole,
+    WaitingRunFeedbackRequest,
     initialize_completed_continuation_state,
     initialize_fork_state,
     initialize_retry_state,
     initialize_start_state,
+    initialize_waiting_continuation_state,
     new_run_id,
     new_session_id,
     new_thread_id,
+    normalize_feedback,
 )
 from a13n_service.interactions.domain import StrictModel
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
@@ -803,6 +806,166 @@ class NativeInteractionCommands:
         except RunAcceptanceError as error:
             raise _map_acceptance_error(error) from error
 
+    async def feedback(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        idempotency_key: str,
+        request: WaitingRunFeedbackRequest,
+    ) -> RunAcceptanceReceipt:
+        _require_idempotency_key(idempotency_key)
+        source, thread = await self._load_feedback_source(actor=actor, run_id=run_id)
+        source_state = await self._states.read(
+            source.tenant_id,
+            source.id,
+            expected_thread_id=source.thread_id,
+        )
+        if source.sealed_state is None or source.pending is None:
+            raise GatewayCommandError(
+                "run_waiting_state_invalid",
+                "The selected waiting Run has no complete pending state.",
+                status_code=409,
+            )
+        try:
+            normalized = normalize_feedback(
+                waiting_run_id=source.id,
+                sealed_state_digest_sha256=request.sealed_state_digest_sha256,
+                pending=source.pending,
+                submitted=request.resolutions,
+            )
+        except ValueError as error:
+            raise GatewayCommandError(
+                "run_feedback_invalid",
+                str(error),
+                status_code=400,
+            ) from error
+        request_fingerprint = canonical_digest(
+            {
+                "expected_thread_version": request.expected_thread_version,
+                "feedback": normalized.model_dump(mode="json", by_alias=True),
+                "hook_subscription": (
+                    None
+                    if request.hook_subscription is None
+                    else request.hook_subscription.model_dump(mode="json", by_alias=True)
+                ),
+            }
+        )
+        stored_key = _scoped_idempotency_key(
+            actor=actor,
+            operation="run.feedback",
+            scope_id=run_id,
+            supplied=idempotency_key,
+        )
+        replay = await self._start_replay(
+            actor=actor,
+            workspace_id=actor.boundary_workspace_id,
+            stored_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            accepted_thread_version=request.expected_thread_version + 1,
+        )
+        if replay is not None:
+            return replay
+        if thread.current_run_id != source.id or thread.head_run_id != source.id:
+            raise GatewayCommandError(
+                "run_not_feedback_eligible",
+                "The selected waiting Run is no longer the Thread's current head.",
+                status_code=409,
+            )
+        if request.sealed_state_digest_sha256 != source.sealed_state.digest_sha256:
+            raise GatewayCommandError(
+                "run_waiting_state_conflict",
+                "The waiting Run state changed before feedback acceptance.",
+                status_code=409,
+            )
+
+        new_run_id_value = new_run_id()
+        state = initialize_waiting_continuation_state(
+            RunStateSeed(
+                run_id=new_run_id_value,
+                agent_id=source.agent_id,
+                agent_revision_id=source.agent_revision_id,
+                effective_agent_config=source_state.envelope.effective_agent_config,
+            ),
+            source_state.envelope,
+        )
+        now = self._clock()
+        feedback_run = Run(
+            id=new_run_id_value,
+            version=1,
+            tenant_id=source.tenant_id,
+            authority_principal=source.authority_principal,
+            session_id=source.session_id,
+            thread_id=source.thread_id,
+            parent_run_id=source.id,
+            retry_of_run_id=None,
+            lineage_kind=RunLineageKind.continue_,
+            trigger_type="feedback",
+            agent_id=source.agent_id,
+            agent_revision_id=source.agent_revision_id,
+            effective_agent_config_digest=source.effective_agent_config_digest,
+            encrypted_config_payload=source.encrypted_config_payload,
+            runtime_lock_digest=source.runtime_lock_digest,
+            model_execution_observation=source.model_execution_observation,
+            connector_connection_selections=source.connector_connection_selections,
+            mcp_connection_selections=source.mcp_connection_selections,
+            ingress_context=source.ingress_context,
+            mcp_tool_snapshot=source.mcp_tool_snapshot,
+            priority=source.priority,
+            queue_name=source.queue_name,
+            available_at=now,
+            current_run_attempt_id=None,
+            next_attempt_fence=1,
+            recovery_budget=source.recovery_budget,
+            attempts_started=0,
+            recovery_attempts_started=0,
+            handoffs_completed=0,
+            usage_charged=RecoveryUsage(),
+            idempotency_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            status=RunStatus.accepted,
+            wait_reason=None,
+            input_kind=RunInputKind.waiting_feedback,
+            input=normalized.model_dump(mode="json", by_alias=True),
+            input_text=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    action=WorkspaceAction.run_feedback,
+                )
+                await authorize_persisted_agent_principal_actions(
+                    database,
+                    principal=source.authority_principal,
+                    organization_id=source.tenant_id,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source.agent_id,
+                    actions=frozenset({WorkspaceAction.agent_invoke}),
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+
+        try:
+            return await self._acceptance.advance_thread(
+                run=feedback_run,
+                state=state,
+                expected_thread_version=request.expected_thread_version,
+                expected_current_run_id=source.id,
+                expected_head_run_id=source.id,
+                next_head_run_id=source.id,
+                hook_subscription=request.hook_subscription,
+                final_validator=validate_final,
+            )
+        except RunAcceptanceError as error:
+            raise _map_acceptance_error(error) from error
+
     async def interrupt(
         self,
         *,
@@ -1439,6 +1602,53 @@ class NativeInteractionCommands:
                     status_code=409,
                 )
             return source
+
+    async def _load_feedback_source(self, *, actor: AuthenticatedActor, run_id: str):
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, ThreadRecord)
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.id == RunRecord.session_id,
+                        ),
+                    )
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == RunRecord.tenant_id,
+                            ThreadRecord.id == RunRecord.thread_id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.id == run_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            source_record, thread_record = row
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=source_record.agent_id,
+                    action=WorkspaceAction.run_feedback,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            source = source_record.to_resource()
+            if source.status is not RunStatus.waiting:
+                raise GatewayCommandError(
+                    "run_not_feedback_eligible",
+                    "The selected Run is not waiting for feedback.",
+                    status_code=409,
+                )
+            return source, thread_record.to_resource()
 
     async def _require_session(self, *, tenant_id: str, workspace_id: str, session_id: str) -> None:
         async with short_session(self._sessions) as database:

@@ -16,7 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.ids import new_object_id
-from a13n_service.interactions import AgentInput, InterruptRequest, RunAcceptanceReceipt, SteerReceipt, SteerStatus
+from a13n_service.interactions import (
+    AgentInput,
+    InterruptRequest,
+    RunAcceptanceReceipt,
+    SteerReceipt,
+    SteerStatus,
+    WaitingRunFeedbackRequest,
+)
 from a13n_service.process.runtime import ServiceRuntime
 from a13n_service.public_errors import PublicError
 from a13n_service.request_runtime import get_control_runtime
@@ -247,6 +254,26 @@ async def retry_run(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
     return await _commands(request).retry(
+        actor=actor,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+        request=body,
+    )
+
+
+@router.post(
+    "/api/v1/runs/{run_id}/feedback",
+    response_model=RunAcceptanceReceipt,
+    status_code=202,
+)
+async def feedback_run(
+    request: Request,
+    actor: Actor,
+    run_id: str,
+    body: WaitingRunFeedbackRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> RunAcceptanceReceipt:
+    return await _commands(request).feedback(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
