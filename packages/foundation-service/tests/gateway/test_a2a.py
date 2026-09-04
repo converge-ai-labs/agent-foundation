@@ -19,7 +19,12 @@ from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a import A2AError, A2AService
 from a13n_service.gateway.a2a_import import A2APartImporter
-from a13n_service.gateway.a2a_push import A2APushMaterial, A2APushPublisher, _event_status
+from a13n_service.gateway.a2a_push import (
+    A2A_PUSH_ENABLED_SESSION_INFO_KEY,
+    A2APushMaterial,
+    A2APushPublisher,
+    _event_status,
+)
 from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.models import (
     A2AContextBindingRecord,
@@ -763,6 +768,33 @@ async def test_push_publisher_delivers_committed_terminal_task_through_outbox(
     assert stored is not None
     assert stored.status == "published"
     assert created.id in stored.destination_ref
+
+
+async def test_disabled_a2a_does_not_append_push_outbox(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, objects = await _service(lifecycle_interaction_sessions, tmp_path)
+    task = await service.send(actor=_actor(), agent_id=AGENT_ID, request=_request())
+    await service.create_push_configuration(
+        actor=_actor(),
+        agent_id=AGENT_ID,
+        task_id=task.id,
+        requested=a2a.TaskPushNotificationConfig(url="https://8.8.8.8/a2a-events"),
+    )
+    lifecycle_interaction_sessions.configure(
+        info={A2A_PUSH_ENABLED_SESSION_INFO_KEY: False},
+    )
+    async with short_session(lifecycle_interaction_sessions) as database:
+        binding = await database.get(A2ATaskBindingRecord, task.id)
+    assert binding is not None
+
+    await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id)
+
+    async with short_session(lifecycle_interaction_sessions) as database:
+        delivery = await database.scalar(select(OutboxRecord.id).where(OutboxRecord.destination_kind == "a2a_push"))
+    assert delivery is None
 
 
 async def test_push_configuration_delete_waits_for_claimed_delivery(

@@ -37,6 +37,8 @@ from a13n_service.storage import short_session, transaction
 
 from .models import A2APushConfigurationRecord, A2ATaskBindingRecord
 
+A2A_PUSH_ENABLED_SESSION_INFO_KEY = "a13n.a2a_push_enabled"
+
 logger = logging.getLogger("a13n_service.gateway.a2a_push")
 
 _SIGNIFICANT_EVENT_TYPES = frozenset(
@@ -81,6 +83,8 @@ async def append_matching_a2a_push_outbox(
 ) -> tuple[OutboxRecord, ...]:
     """Append future-only delivery intents in the lifecycle fact transaction."""
 
+    if not database.info.get(A2A_PUSH_ENABLED_SESSION_INFO_KEY, True):
+        return ()
     if event.event_type not in _SIGNIFICANT_EVENT_TYPES:
         return ()
     configurations = tuple(
@@ -554,6 +558,7 @@ def _parse_destination_ref(value: str) -> tuple[str, int]:
 
 
 __all__ = [
+    "A2A_PUSH_ENABLED_SESSION_INFO_KEY",
     "A2APushFailure",
     "A2APushMaterial",
     "A2APushMaterialError",

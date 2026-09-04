@@ -9,6 +9,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from anyio import create_task_group, move_on_after
 
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.gateway.a2a_push import A2A_PUSH_ENABLED_SESSION_INFO_KEY
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.observability import build_observability_runtime
 from a13n_service.process.background import BackgroundTask, run_critical_component
@@ -50,6 +51,9 @@ async def open_process_runtime(
     )
     try:
         async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
+            storage.sessions.configure(
+                info={A2A_PUSH_ENABLED_SESSION_INFO_KEY: settings.a2a_enabled},
+            )
             shared = SharedRuntime(
                 storage=storage,
                 secret_protector=settings.secret_protector(),
