@@ -11,6 +11,7 @@ from a13n_ui.surfaces import (
     SkillReference,
     ThreadConfigurationMutationInput,
 )
+from a13n_ui.tui.models import DecisionAnswerDraft
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,9 +84,62 @@ class CancelFocusedOperation:
 
 
 @dataclass(frozen=True, slots=True)
+class SteerChildExecution:
+    parent_thread_id: str
+    execution_id: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class CancelChildExecution:
+    parent_thread_id: str
+    execution_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class SubmitDecisions:
     thread_id: str
     response: DecisionResponseBatch
+
+
+@dataclass(frozen=True, slots=True)
+class UpdateDecisionDraft:
+    thread_id: str
+    draft: DecisionAnswerDraft
+
+
+@dataclass(frozen=True, slots=True)
+class NavigateDecision:
+    thread_id: str
+    request_index: int
+    question_index: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class SubmitDecisionSession:
+    thread_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class OpenReview:
+    kind: Literal["retained", "deferred", "task", "child"]
+    thread_id: str
+    continuation_id: str | None = None
+    position: int | None = None
+    tool_call_id: str | None = None
+    request_id: str | None = None
+    task_id: str | None = None
+    execution_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ToggleReasoning:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ToggleToolDetails:
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,7 +218,15 @@ type TerminalIntent = (
     | EditDraft
     | SubmitComposer
     | CancelFocusedOperation
+    | SteerChildExecution
+    | CancelChildExecution
     | SubmitDecisions
+    | UpdateDecisionDraft
+    | NavigateDecision
+    | SubmitDecisionSession
+    | OpenReview
+    | ToggleReasoning
+    | ToggleToolDetails
     | PatchThreadConfiguration
     | ArchiveThread
     | OpenOverlay
@@ -180,14 +242,17 @@ type TerminalIntent = (
 __all__ = [
     "AcknowledgeWorkbenchCompletion",
     "ArchiveThread",
+    "CancelChildExecution",
     "CancelFocusedOperation",
     "CloseOverlay",
     "EditDraft",
     "ExitTerminal",
     "LoadOlderTranscript",
+    "NavigateDecision",
     "OpenExternalEditor",
     "OpenFocus",
     "OpenOverlay",
+    "OpenReview",
     "OpenWorkbench",
     "PatchThreadConfiguration",
     "RetryStartup",
@@ -198,8 +263,13 @@ __all__ = [
     "SetReadingAnchor",
     "SetWorkbenchFilter",
     "StartNewDraft",
+    "SteerChildExecution",
     "SubmitComposer",
+    "SubmitDecisionSession",
     "SubmitDecisions",
     "TerminalIntent",
+    "ToggleReasoning",
+    "ToggleToolDetails",
     "ToggleTopLevelMode",
+    "UpdateDecisionDraft",
 ]

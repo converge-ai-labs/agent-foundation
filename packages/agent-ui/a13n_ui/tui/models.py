@@ -10,6 +10,7 @@ from a13n_ui.surfaces import (
     DecisionBatchView,
     LaunchProjectResolution,
     NewThreadDefaults,
+    ReviewView,
     RootOperationView,
     SkillReference,
     TaskPage,
@@ -76,10 +77,13 @@ class TimelineBlock:
     run_id: str | None = None
     execution_id: str | None = None
     receipt_id: str | None = None
+    tool_call_id: str | None = None
+    task_id: str | None = None
     source_text: str | None = None
     summary: str | None = None
     detail_available: bool = False
     retained_position: int | None = None
+    available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
     provisional: bool = False
 
 
@@ -98,6 +102,43 @@ class DraftState:
     skill_references: tuple[SkillReference, ...] = ()
     editor_revision: int = 0
     touched: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionAnswerDraft:
+    request_id: str
+    question_answers: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    response_text: str = ""
+    action: Literal["approve", "override", "deny", "result"] | None = None
+    payload_text: str = ""
+    denial_reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionSessionState:
+    thread_id: str
+    continuation_id: str
+    request_ids: tuple[str, ...]
+    request_index: int = 0
+    question_index: int = 0
+    answers: tuple[DecisionAnswerDraft, ...] = ()
+    validation_message: str | None = None
+
+    def answer(self, request_id: str) -> DecisionAnswerDraft:
+        return next(
+            (item for item in self.answers if item.request_id == request_id),
+            DecisionAnswerDraft(request_id=request_id),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewState:
+    key: str
+    view: ReviewView
+    request_version: int
+    thread_id: str | None = None
+    execution_id: str | None = None
+    available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +173,8 @@ class ThreadViewState:
     root_operation: RootOperationView | None = None
     tasks: TaskPage = field(default_factory=TaskPage)
     decisions: DecisionBatchView | None = None
+    decision_session: DecisionSessionState | None = None
+    stale_decision_session: DecisionSessionState | None = None
     timeline: tuple[TimelineBlock, ...] = ()
     control_mode: ControlMode = ControlMode.UNAVAILABLE
     epoch: str | None = None
@@ -174,7 +217,10 @@ class TerminalState:
     drafts: tuple[DraftState, ...] = (DraftState(key="new"),)
     thread_views: tuple[ThreadViewState, ...] = ()
     overlays: tuple[OverlayState, ...] = ()
+    review: ReviewState | None = None
     notices: tuple[TerminalNotice, ...] = ()
+    show_reasoning: bool = False
+    show_tool_details: bool = False
     logical_clock: int = 0
 
     def thread_view(self, thread_id: str) -> ThreadViewState | None:
@@ -205,11 +251,14 @@ __all__ = [
     "BlockKind",
     "BlockStatus",
     "ControlMode",
+    "DecisionAnswerDraft",
+    "DecisionSessionState",
     "DraftState",
     "OverlayState",
     "ProjectionHints",
     "ReadingAnchor",
     "Reduction",
+    "ReviewState",
     "TerminalLifecycle",
     "TerminalMode",
     "TerminalNotice",

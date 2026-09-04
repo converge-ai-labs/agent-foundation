@@ -9,10 +9,12 @@ from typing import Literal
 
 from a13n_ui.live import LiveEvent
 from a13n_ui.surfaces import (
+    ChildControlResult,
     DecisionBatchView,
     FailureView,
     LaunchProjectResolution,
     NewThreadDefaults,
+    ReviewView,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
@@ -21,7 +23,7 @@ from a13n_ui.surfaces import (
     TranscriptPage,
     WorkbenchPage,
 )
-from a13n_ui.tui.models import OverlayState, ReadingAnchor
+from a13n_ui.tui.models import DecisionAnswerDraft, OverlayState, ReadingAnchor
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +139,8 @@ class RootReceiptAccepted:
     draft_key: str
     submitted_text: str
     steering: bool = False
+    echo: bool = True
+    clear_draft: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +153,52 @@ class RootControlCompleted:
     result: RootControlResult
     action: Literal["steer", "cancel"]
     draft_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChildControlCompleted:
+    parent_thread_id: str
+    result: ChildControlResult
+    action: Literal["steer", "cancel"]
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionDraftUpdated:
+    thread_id: str
+    draft: DecisionAnswerDraft
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionPositionChanged:
+    thread_id: str
+    request_index: int
+    question_index: int
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionValidationFailed:
+    thread_id: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionSubmitted:
+    thread_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewLoaded:
+    request_version: int
+    key: str
+    view: ReviewView
+    thread_id: str | None = None
+    execution_id: str | None = None
+    available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DisclosureChanged:
+    kind: Literal["reasoning", "tools"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +221,12 @@ class DraftRestored:
     text: str
     message: str
     code: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DraftRekeyed:
+    old_key: str
+    new_key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,9 +296,17 @@ type TerminalEvent = (
     | RootReceiptAccepted
     | RootOperationUpdated
     | RootControlCompleted
+    | ChildControlCompleted
+    | DecisionDraftUpdated
+    | DecisionPositionChanged
+    | DecisionValidationFailed
+    | DecisionSubmitted
+    | ReviewLoaded
+    | DisclosureChanged
     | DraftDefaultsChanged
     | DraftChanged
     | DraftRestored
+    | DraftRekeyed
     | RouteChanged
     | WorkbenchSelectionChanged
     | OverlayOpened
@@ -350,10 +414,17 @@ def _string(payload: Mapping[str, object], key: str) -> str | None:
 
 
 __all__ = [
+    "ChildControlCompleted",
     "ClosingStarted",
     "CompletionAcknowledged",
+    "DecisionDraftUpdated",
+    "DecisionPositionChanged",
+    "DecisionSubmitted",
+    "DecisionValidationFailed",
+    "DisclosureChanged",
     "DraftChanged",
     "DraftDefaultsChanged",
+    "DraftRekeyed",
     "DraftRestored",
     "FocusLoaded",
     "FollowLatestChanged",
@@ -364,6 +435,7 @@ __all__ = [
     "OverlayClosed",
     "OverlayOpened",
     "ReadingAnchorChanged",
+    "ReviewLoaded",
     "RootControlCompleted",
     "RootOperationUpdated",
     "RootReceiptAccepted",

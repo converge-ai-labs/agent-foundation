@@ -7,20 +7,29 @@ from datetime import datetime
 from typing import Literal
 
 from a13n_ui.surfaces import (
+    DecisionBatchView,
     LaunchProjectSelected,
     RootOperationStatus,
     RootOperationView,
     SkillReference,
     ThreadDetail,
+    ThreadFocusSnapshot,
     TranscriptPage,
     WorkbenchPage,
     WorkbenchThreadView,
 )
 from a13n_ui.tui.events import (
+    ChildControlCompleted,
     ClosingStarted,
     CompletionAcknowledged,
+    DecisionDraftUpdated,
+    DecisionPositionChanged,
+    DecisionSubmitted,
+    DecisionValidationFailed,
+    DisclosureChanged,
     DraftChanged,
     DraftDefaultsChanged,
+    DraftRekeyed,
     DraftRestored,
     FocusLoaded,
     FollowLatestChanged,
@@ -30,6 +39,7 @@ from a13n_ui.tui.events import (
     OverlayClosed,
     OverlayOpened,
     ReadingAnchorChanged,
+    ReviewLoaded,
     RootControlCompleted,
     RootOperationUpdated,
     RootReceiptAccepted,
@@ -55,9 +65,13 @@ from a13n_ui.tui.models import (
     BlockKind,
     BlockStatus,
     ControlMode,
+    DecisionAnswerDraft,
+    DecisionSessionState,
     DraftState,
+    OverlayState,
     ProjectionHints,
     Reduction,
+    ReviewState,
     TerminalLifecycle,
     TerminalMode,
     TerminalNotice,
@@ -154,6 +168,13 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         timeline = () if current is None else current.timeline
         if current is not None and current.epoch not in {None, event.snapshot.epoch}:
             timeline = tuple(block for block in timeline if not block.provisional)
+        timeline = tuple(block for block in timeline if block.kind not in {BlockKind.TASK, BlockKind.CHILD})
+        timeline = _deduplicate((*timeline, *_snapshot_activity_blocks(event.snapshot)))
+        decision_session, stale_decision_session = _decision_sessions(
+            thread_id,
+            current,
+            event.decisions,
+        )
         view = ThreadViewState(
             thread_id=thread_id,
             detail=event.snapshot.thread,
@@ -161,7 +182,9 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             root_operation=event.snapshot.root_operation,
             tasks=event.snapshot.tasks,
             decisions=event.decisions,
-            timeline=timeline,
+            decision_session=decision_session,
+            stale_decision_session=stale_decision_session,
+            timeline=_evict_timeline(timeline, current or ThreadViewState(thread_id=thread_id)),
             control_mode=_control_mode(
                 event.snapshot.thread,
                 event.snapshot.root_operation,
@@ -206,8 +229,10 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             timeline = _merge_prepend(view.timeline, incoming)
             preserve = view.reading_anchor
         else:
-            provisional = tuple(block for block in view.timeline if block.provisional)
-            timeline = _deduplicate((*incoming, *provisional))
+            current_activity = tuple(
+                block for block in view.timeline if block.provisional or block.kind in {BlockKind.TASK, BlockKind.CHILD}
+            )
+            timeline = _deduplicate((*incoming, *current_activity))
             preserve = None
         view = replace(
             view,
@@ -251,7 +276,7 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             source_text=event.submitted_text[:MAX_BLOCK_TEXT],
             provisional=True,
         )
-        timeline = view.timeline if event.steering else _deduplicate((*view.timeline, block))
+        timeline = view.timeline if event.steering or not event.echo else _deduplicate((*view.timeline, block))
         current_operation = view.root_operation
         if current_operation is None or current_operation.receipt.receipt_id != event.receipt.receipt_id:
             operation = RootOperationView(
@@ -269,7 +294,7 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             cancelling_receipt_id=None,
         )
         next_state = _with_view(state, view)
-        if not event.steering:
+        if event.clear_draft:
             next_state = _set_draft(next_state, event.draft_key, text="", cursor=0)
         return _result(next_state, "focus", "composer", scroll_to_latest=view.follow_latest)
 
@@ -300,6 +325,93 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         next_state = _with_view(next_state, view)
         return _result(next_state, "focus", "composer")
 
+    if isinstance(event, ChildControlCompleted):
+        status = "accepted" if event.result.accepted else "rejected"
+        next_state = _notice(
+            state,
+            severity="info" if event.result.accepted else "warning",
+            message=f"Child {event.action} {status}.",
+            thread_id=event.parent_thread_id,
+        )
+        return _result(next_state, "focus", "notice")
+
+    if isinstance(event, DecisionDraftUpdated):
+        view = state.thread_view(event.thread_id)
+        if view is None or view.decision_session is None:
+            return Reduction(state, _EMPTY_HINTS)
+        session = view.decision_session
+        if event.draft.request_id not in session.request_ids:
+            return Reduction(state, _EMPTY_HINTS)
+        draft = replace(
+            event.draft,
+            question_answers=tuple(
+                (question_text[:8192], tuple(value[:4096] for value in values[:4]))
+                for question_text, values in event.draft.question_answers[:4]
+            ),
+            response_text=event.draft.response_text[:MAX_BLOCK_TEXT],
+            payload_text=event.draft.payload_text[:MAX_BLOCK_TEXT],
+            denial_reason=event.draft.denial_reason[:MAX_BLOCK_TEXT],
+        )
+        answers = tuple(item for item in session.answers if item.request_id != draft.request_id)
+        answers = (*answers, draft)
+        session = replace(session, answers=answers, validation_message=None)
+        return _result(_with_view(state, replace(view, decision_session=session)), "focus", "composer")
+
+    if isinstance(event, DecisionPositionChanged):
+        view = state.thread_view(event.thread_id)
+        if view is None or view.decision_session is None or view.decisions is None:
+            return Reduction(state, _EMPTY_HINTS)
+        request_index = max(0, min(event.request_index, len(view.decisions.requests) - 1))
+        request = view.decisions.requests[request_index]
+        question_count = len(request.questions) if request.kind == "question" else 1
+        question_index = max(0, min(event.question_index, question_count - 1))
+        session = replace(
+            view.decision_session,
+            request_index=request_index,
+            question_index=question_index,
+            validation_message=None,
+        )
+        return _result(_with_view(state, replace(view, decision_session=session)), "focus", "composer")
+
+    if isinstance(event, DecisionValidationFailed):
+        view = state.thread_view(event.thread_id)
+        if view is None or view.decision_session is None:
+            return Reduction(state, _EMPTY_HINTS)
+        session = replace(view.decision_session, validation_message=event.message)
+        return _result(_with_view(state, replace(view, decision_session=session)), "focus", "composer")
+
+    if isinstance(event, DecisionSubmitted):
+        view = state.thread_view(event.thread_id)
+        if view is None:
+            return Reduction(state, _EMPTY_HINTS)
+        view = replace(view, decision_session=None, stale_decision_session=None)
+        return _result(_with_view(state, view), "focus", "composer")
+
+    if isinstance(event, ReviewLoaded):
+        if state.review is not None and event.request_version < state.review.request_version:
+            return Reduction(state, _EMPTY_HINTS)
+        overlays = (*state.overlays, OverlayState(kind="review", key=event.key))[-8:]
+        return _result(
+            replace(
+                state,
+                review=ReviewState(
+                    key=event.key,
+                    view=event.view,
+                    request_version=event.request_version,
+                    thread_id=event.thread_id,
+                    execution_id=event.execution_id,
+                    available_actions=event.available_actions,
+                ),
+                overlays=overlays,
+            ),
+            "overlay",
+        )
+
+    if isinstance(event, DisclosureChanged):
+        if event.kind == "reasoning":
+            return _result(replace(state, show_reasoning=not state.show_reasoning), "focus")
+        return _result(replace(state, show_tool_details=not state.show_tool_details), "focus")
+
     if isinstance(event, DraftDefaultsChanged):
         return _result(replace(state, draft_defaults=event.defaults), "composer")
 
@@ -321,6 +433,15 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         next_state = _set_draft(state, event.key, text=event.text, cursor=len(event.text))
         next_state = _notice(next_state, severity="warning", message=event.message, code=event.code)
         return _result(next_state, "composer", "notice")
+
+    if isinstance(event, DraftRekeyed):
+        draft = state.draft(event.old_key)
+        if draft is None or event.old_key == event.new_key:
+            return Reduction(state, _EMPTY_HINTS)
+        drafts = tuple(item for item in state.drafts if item.key not in {event.old_key, event.new_key})
+        next_state = replace(state, drafts=drafts)
+        next_state = _touch_draft(next_state, replace(draft, key=event.new_key))
+        return _result(next_state, "composer")
 
     if isinstance(event, RouteChanged):
         mode = TerminalMode(event.mode)
@@ -356,7 +477,15 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         return _result(replace(state, overlays=overlays), "overlay")
 
     if isinstance(event, OverlayClosed):
-        return _result(replace(state, overlays=state.overlays[:-1]), "overlay")
+        closing_review = bool(state.overlays and state.overlays[-1].kind == "review")
+        return _result(
+            replace(
+                state,
+                overlays=state.overlays[:-1],
+                review=None if closing_review else state.review,
+            ),
+            "overlay",
+        )
 
     if isinstance(event, FollowLatestChanged):
         view = state.thread_view(event.thread_id)
@@ -513,6 +642,7 @@ def _reduce_live(state: TerminalState, event: LiveReceived) -> Reduction:
                 execution_id=source.execution_id,
                 kind=BlockKind.TOOL,
                 status=status,
+                tool_call_id=source.tool_call_id,
                 source_text=source.text[:MAX_BLOCK_TEXT] or None,
                 summary=source.tool_name,
                 detail_available=source.action in {"arguments", "result"},
@@ -648,6 +778,123 @@ def _apply_root_operation(state: TerminalState, operation: RootOperationView) ->
     return _result(next_state, "focus", "composer", "notice")
 
 
+def _decision_sessions(
+    thread_id: str,
+    current: ThreadViewState | None,
+    decisions: DecisionBatchView | None,
+) -> tuple[DecisionSessionState | None, DecisionSessionState | None]:
+    if decisions is None:
+        return None, None if current is None else current.stale_decision_session
+    request_ids = tuple(item.request_id for item in decisions.requests)
+    previous = None if current is None else current.decision_session
+    stale = None if current is None else current.stale_decision_session
+    if (
+        previous is not None
+        and previous.continuation_id == decisions.continuation_id
+        and previous.request_ids == request_ids
+    ):
+        return previous, stale
+    if previous is not None and _decision_has_input(previous):
+        stale = previous
+    return (
+        DecisionSessionState(
+            thread_id=thread_id,
+            continuation_id=decisions.continuation_id,
+            request_ids=request_ids,
+            answers=tuple(DecisionAnswerDraft(request_id=request_id) for request_id in request_ids),
+        ),
+        stale,
+    )
+
+
+def _decision_has_input(session: DecisionSessionState) -> bool:
+    return any(
+        draft.question_answers
+        or draft.response_text
+        or draft.action is not None
+        or draft.payload_text
+        or draft.denial_reason
+        for draft in session.answers
+    )
+
+
+def _snapshot_activity_blocks(snapshot: ThreadFocusSnapshot) -> tuple[TimelineBlock, ...]:
+    thread_id = snapshot.thread.thread.thread_id
+    blocks: list[TimelineBlock] = []
+    for task in snapshot.tasks.tasks:
+        status = {
+            "pending": BlockStatus.PROVISIONAL,
+            "in_progress": BlockStatus.RUNNING,
+            "completed": BlockStatus.CLOSED,
+        }[task.status]
+        blocks.append(
+            TimelineBlock(
+                block_id=f"task:{thread_id}:{task.task_id}",
+                thread_id=thread_id,
+                task_id=task.task_id,
+                kind=BlockKind.TASK,
+                status=status,
+                version=task.version,
+                summary=task.subject,
+                source_text=task.active_form,
+                detail_available=True,
+            )
+        )
+    if not snapshot.tasks.available or snapshot.tasks.omitted:
+        detail = (
+            "Task state is unavailable."
+            if not snapshot.tasks.available
+            else f"{snapshot.tasks.omitted} task(s) omitted."
+        )
+        blocks.append(
+            TimelineBlock(
+                block_id=f"task:{thread_id}:availability",
+                thread_id=thread_id,
+                kind=BlockKind.NOTICE,
+                status=BlockStatus.CLOSED,
+                summary=detail,
+            )
+        )
+    for child in snapshot.children.executions:
+        status = {
+            "running": BlockStatus.RUNNING,
+            "succeeded": BlockStatus.CLOSED,
+            "failed": BlockStatus.FAILED,
+            "cancelled": BlockStatus.CANCELLED,
+            "lost": BlockStatus.FAILED,
+        }[child.persisted_status]
+        summary = f"{child.subagent_name} - {child.persisted_status}"
+        if child.local_status == "unavailable" and child.persisted_status == "running":
+            summary = f"{child.subagent_name} - unavailable"
+        blocks.append(
+            TimelineBlock(
+                block_id=f"child:{thread_id}:{child.execution_id}",
+                thread_id=thread_id,
+                execution_id=child.execution_id,
+                run_id=child.child_run_id,
+                kind=BlockKind.CHILD,
+                status=status,
+                version=child.activity.sequence,
+                summary=summary,
+                source_text=child.activity.output_preview or None,
+                detail_available=True,
+                available_actions=child.available_actions,
+            )
+        )
+    omitted_children = snapshot.children.total - len(snapshot.children.executions)
+    if omitted_children > 0:
+        blocks.append(
+            TimelineBlock(
+                block_id=f"child:{thread_id}:omitted",
+                thread_id=thread_id,
+                kind=BlockKind.NOTICE,
+                status=BlockStatus.CLOSED,
+                summary=f"{omitted_children} child execution(s) omitted.",
+            )
+        )
+    return tuple(blocks)
+
+
 def _retained_blocks(thread_id: str, page: TranscriptPage) -> tuple[TimelineBlock, ...]:
     continuation = page.continuation_id or "initial"
     result: list[TimelineBlock] = []
@@ -674,6 +921,7 @@ def _retained_blocks(thread_id: str, page: TranscriptPage) -> tuple[TimelineBloc
                 thread_id=thread_id,
                 kind=kind,
                 status=BlockStatus.CLOSED,
+                tool_call_id=part.tool_call_id,
                 source_text=part.text,
                 summary=part.tool_name,
                 detail_available=part.value is not None or part.value_omitted,

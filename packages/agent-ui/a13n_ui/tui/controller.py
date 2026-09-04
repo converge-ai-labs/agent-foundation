@@ -3,20 +3,28 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
+
+from pydantic import JsonValue
 
 from a13n_ui.errors import AgentUiError, LivePresentationError
 from a13n_ui.live import LiveEvent, SummaryCursor, SummaryInvalidation, SummarySubscription
 from a13n_ui.storage import ThreadConfigurationMutation
 from a13n_ui.surfaces import (
+    ApprovalDecision,
+    ChildControlResult,
     DecisionBatchView,
     DecisionResponseBatch,
+    ExternalToolResult,
     FailureView,
     LaunchProjectResolution,
     NewThreadDefaults,
+    QuestionResponse,
+    ReviewView,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
@@ -30,10 +38,17 @@ from a13n_ui.surfaces import (
     WorkbenchPage,
 )
 from a13n_ui.tui.events import (
+    ChildControlCompleted,
     ClosingStarted,
     CompletionAcknowledged,
+    DecisionDraftUpdated,
+    DecisionPositionChanged,
+    DecisionSubmitted,
+    DecisionValidationFailed,
+    DisclosureChanged,
     DraftChanged,
     DraftDefaultsChanged,
+    DraftRekeyed,
     FocusLoaded,
     FollowLatestChanged,
     LiveReceived,
@@ -42,6 +57,7 @@ from a13n_ui.tui.events import (
     OverlayClosed,
     OverlayOpened,
     ReadingAnchorChanged,
+    ReviewLoaded,
     RootControlCompleted,
     RootOperationUpdated,
     RootReceiptAccepted,
@@ -59,14 +75,17 @@ from a13n_ui.tui.events import (
 from a13n_ui.tui.intents import (
     AcknowledgeWorkbenchCompletion,
     ArchiveThread,
+    CancelChildExecution,
     CancelFocusedOperation,
     CloseOverlay,
     EditDraft,
     ExitTerminal,
     LoadOlderTranscript,
+    NavigateDecision,
     OpenExternalEditor,
     OpenFocus,
     OpenOverlay,
+    OpenReview,
     OpenWorkbench,
     PatchThreadConfiguration,
     RetryStartup,
@@ -77,13 +96,19 @@ from a13n_ui.tui.intents import (
     SetReadingAnchor,
     SetWorkbenchFilter,
     StartNewDraft,
+    SteerChildExecution,
     SubmitComposer,
     SubmitDecisions,
+    SubmitDecisionSession,
     TerminalIntent,
+    ToggleReasoning,
+    ToggleToolDetails,
     ToggleTopLevelMode,
+    UpdateDecisionDraft,
 )
 from a13n_ui.tui.models import (
     ControlMode,
+    DecisionSessionState,
     OverlayState,
     ReadingAnchor,
     TerminalLifecycle,
@@ -148,6 +173,53 @@ class TerminalAppProtocol(Protocol):
         cursor: str | None = None,
         limit: int = 50,
     ) -> TranscriptPage: ...
+
+    async def retained_review(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str,
+        position: int,
+        tool_call_id: str,
+    ) -> ReviewView: ...
+
+    async def deferred_review(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str,
+        request_id: str,
+    ) -> ReviewView: ...
+
+    async def task_review(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str,
+        task_id: str,
+    ) -> ReviewView: ...
+
+    async def child_review(
+        self,
+        *,
+        parent_thread_id: str,
+        execution_id: str,
+    ) -> ReviewView: ...
+
+    async def steer_child_execution(
+        self,
+        *,
+        parent_thread_id: str,
+        execution_id: str,
+        message: str,
+    ) -> ChildControlResult: ...
+
+    async def cancel_child_execution(
+        self,
+        *,
+        parent_thread_id: str,
+        execution_id: str,
+    ) -> ChildControlResult: ...
 
     async def create_thread(
         self,
@@ -386,8 +458,39 @@ class TerminalController:
             await self._submit_composer(intent.key)
         elif isinstance(intent, CancelFocusedOperation):
             await self._cancel_focused()
+        elif isinstance(intent, SteerChildExecution):
+            await self._control_child(
+                parent_thread_id=intent.parent_thread_id,
+                execution_id=intent.execution_id,
+                action="steer",
+                message=intent.message,
+            )
+        elif isinstance(intent, CancelChildExecution):
+            await self._control_child(
+                parent_thread_id=intent.parent_thread_id,
+                execution_id=intent.execution_id,
+                action="cancel",
+            )
         elif isinstance(intent, SubmitDecisions):
             await self._submit_decisions(intent)
+        elif isinstance(intent, UpdateDecisionDraft):
+            await self._dispatch(DecisionDraftUpdated(intent.thread_id, intent.draft))
+        elif isinstance(intent, NavigateDecision):
+            await self._dispatch(
+                DecisionPositionChanged(
+                    intent.thread_id,
+                    intent.request_index,
+                    intent.question_index,
+                )
+            )
+        elif isinstance(intent, SubmitDecisionSession):
+            await self._submit_decision_session(intent.thread_id)
+        elif isinstance(intent, OpenReview):
+            await self._open_review(intent)
+        elif isinstance(intent, ToggleReasoning):
+            await self._dispatch(DisclosureChanged("reasoning"))
+        elif isinstance(intent, ToggleToolDetails):
+            await self._dispatch(DisclosureChanged("tools"))
         elif isinstance(intent, PatchThreadConfiguration):
             await self._patch_configuration(intent)
         elif isinstance(intent, ArchiveThread):
@@ -645,6 +748,7 @@ class TerminalController:
         if app is None or draft is None or not draft.text.strip():
             return
         text = draft.text
+        draft_key = key
         thread_id = self._state.focused_thread_id
         view = None if thread_id is None else self._state.thread_view(thread_id)
         mode = (
@@ -654,6 +758,8 @@ class TerminalController:
             if mode is ControlMode.DRAFT:
                 created = await app.create_thread(defaults=self._state.draft_defaults)
                 thread_id = created.thread_id
+                draft_key = thread_id
+                await self._dispatch(DraftRekeyed(key, thread_id))
                 await self._replace_focus(thread_id)
                 receipt = await app.submit_thread(
                     thread_id=thread_id,
@@ -663,7 +769,7 @@ class TerminalController:
                 await self._dispatch(
                     RootReceiptAccepted(
                         receipt=receipt,
-                        draft_key=key,
+                        draft_key=draft_key,
                         submitted_text=text,
                     ),
                     immediate=True,
@@ -704,7 +810,7 @@ class TerminalController:
                 OperationFailed(
                     action="submit",
                     failure=_failure(exc),
-                    draft_key=key,
+                    draft_key=draft_key,
                     draft_text=text,
                     thread_id=thread_id,
                 ),
@@ -746,6 +852,80 @@ class TerminalController:
             return
         await self._dispatch(RootControlCompleted(result=result, action="cancel"), immediate=True)
 
+    async def _control_child(
+        self,
+        *,
+        parent_thread_id: str,
+        execution_id: str,
+        action: Literal["steer", "cancel"],
+        message: str | None = None,
+    ) -> None:
+        app = self._app
+        view = self._state.thread_view(parent_thread_id)
+        children = () if view is None or view.snapshot is None else view.snapshot.children.executions
+        child = next((item for item in children if item.execution_id == execution_id), None)
+        if app is None or child is None or action not in child.available_actions:
+            await self._dispatch(
+                OperationFailed(
+                    action=f"child_{action}",
+                    failure=FailureView(
+                        code="child_control_unavailable",
+                        message=f"Child {action} is not currently available.",
+                    ),
+                    thread_id=parent_thread_id,
+                ),
+                immediate=True,
+            )
+            return
+        try:
+            if action == "steer":
+                text = "" if message is None else message.strip()
+                if not text:
+                    raise ValueError("Child steering requires a non-empty message.")
+                result = await app.steer_child_execution(
+                    parent_thread_id=parent_thread_id,
+                    execution_id=execution_id,
+                    message=text,
+                )
+            else:
+                result = await app.cancel_child_execution(
+                    parent_thread_id=parent_thread_id,
+                    execution_id=execution_id,
+                )
+        except Exception as exc:
+            await self._dispatch(
+                OperationFailed(
+                    action=f"child_{action}",
+                    failure=_failure(exc),
+                    thread_id=parent_thread_id,
+                ),
+                immediate=True,
+            )
+            return
+        await self._dispatch(
+            ChildControlCompleted(
+                parent_thread_id=parent_thread_id,
+                result=result,
+                action=action,
+            ),
+            immediate=True,
+        )
+        if result.accepted:
+            await self._dispatch(OverlayClosed())
+        if self._state.focused_thread_id == parent_thread_id:
+            await self._replace_focus(parent_thread_id)
+
+    async def _submit_decision_session(self, thread_id: str) -> None:
+        view = self._state.thread_view(thread_id)
+        if view is None or view.decisions is None or view.decision_session is None:
+            return
+        try:
+            response = _decision_response(view.decisions, view.decision_session)
+        except ValueError as exc:
+            await self._dispatch(DecisionValidationFailed(thread_id, str(exc)), immediate=True)
+            return
+        await self._submit_decisions(SubmitDecisions(thread_id=thread_id, response=response))
+
     async def _submit_decisions(self, intent: SubmitDecisions) -> None:
         app = self._app
         if app is None:
@@ -757,16 +937,92 @@ class TerminalController:
                 OperationFailed(action="decision", failure=_failure(exc), thread_id=intent.thread_id),
                 immediate=True,
             )
+            await self._replace_focus(intent.thread_id)
             return
+        await self._dispatch(DecisionSubmitted(intent.thread_id))
         await self._dispatch(
             RootReceiptAccepted(
                 receipt=receipt,
                 draft_key=intent.thread_id,
                 submitted_text="Decision response",
+                echo=False,
+                clear_draft=False,
             ),
             immediate=True,
         )
         self._spawn(self._wait_receipt(receipt), name=f"terminal-receipt-{receipt.receipt_id}")
+
+    async def _open_review(self, intent: OpenReview) -> None:
+        app = self._app
+        if app is None:
+            return
+        version = self._next_version()
+        review_thread_id: str | None = None
+        review_execution_id: str | None = None
+        available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
+        try:
+            if intent.kind == "retained":
+                if intent.continuation_id is None or intent.position is None or intent.tool_call_id is None:
+                    raise ValueError("Retained review requires continuation, position, and tool-call identity.")
+                review = await app.retained_review(
+                    thread_id=intent.thread_id,
+                    expected_continuation_id=intent.continuation_id,
+                    position=intent.position,
+                    tool_call_id=intent.tool_call_id,
+                )
+                key = f"retained:{intent.thread_id}:{intent.position}:{intent.tool_call_id}"
+            elif intent.kind == "deferred":
+                if intent.continuation_id is None or intent.request_id is None:
+                    raise ValueError("Deferred review requires continuation and request identity.")
+                review = await app.deferred_review(
+                    thread_id=intent.thread_id,
+                    expected_continuation_id=intent.continuation_id,
+                    request_id=intent.request_id,
+                )
+                key = f"deferred:{intent.thread_id}:{intent.request_id}"
+            elif intent.kind == "task":
+                if intent.continuation_id is None or intent.task_id is None:
+                    raise ValueError("Task review requires continuation and task identity.")
+                review = await app.task_review(
+                    thread_id=intent.thread_id,
+                    expected_continuation_id=intent.continuation_id,
+                    task_id=intent.task_id,
+                )
+                key = f"task:{intent.thread_id}:{intent.task_id}"
+            else:
+                if intent.execution_id is None:
+                    raise ValueError("Child review requires execution identity.")
+                review = await app.child_review(
+                    parent_thread_id=intent.thread_id,
+                    execution_id=intent.execution_id,
+                )
+                review_thread_id = intent.thread_id
+                review_execution_id = intent.execution_id
+                view = self._state.thread_view(intent.thread_id)
+                children = () if view is None or view.snapshot is None else view.snapshot.children.executions
+                child = next(
+                    (item for item in children if item.execution_id == intent.execution_id),
+                    None,
+                )
+                available_actions = () if child is None else child.available_actions
+                key = f"child:{intent.thread_id}:{intent.execution_id}"
+        except Exception as exc:
+            await self._dispatch(
+                OperationFailed(action="review", failure=_failure(exc), thread_id=intent.thread_id),
+                immediate=True,
+            )
+            return
+        await self._dispatch(
+            ReviewLoaded(
+                version,
+                key,
+                review,
+                thread_id=review_thread_id,
+                execution_id=review_execution_id,
+                available_actions=available_actions,
+            ),
+            immediate=True,
+        )
 
     async def _patch_configuration(self, intent: PatchThreadConfiguration) -> None:
         app = self._app
@@ -814,6 +1070,101 @@ class TerminalController:
     def _next_version(self) -> int:
         self._request_version += 1
         return self._request_version
+
+
+def _decision_response(
+    decisions: DecisionBatchView,
+    session: DecisionSessionState,
+) -> DecisionResponseBatch:
+    if session.continuation_id != decisions.continuation_id:
+        raise ValueError("The pending decision continuation changed; review the current requests.")
+    if session.request_ids != tuple(item.request_id for item in decisions.requests):
+        raise ValueError("The pending request set changed; review every current request.")
+    responses: list[ApprovalDecision | ExternalToolResult | QuestionResponse] = []
+    for request in decisions.requests:
+        draft = session.answer(request.request_id)
+        if request.kind == "question":
+            supplied = dict(draft.question_answers)
+            answers: dict[str, str | tuple[str, ...]] = {}
+            for question in request.questions:
+                selected = supplied.get(question.question, ())
+                if not selected:
+                    raise ValueError(f"Answer the {question.header} question before continuing.")
+                labels = {option.label for option in question.options}
+                selected_labels = tuple(value for value in selected if value in labels)
+                if selected_labels and len(selected_labels) != len(selected):
+                    raise ValueError(f"The {question.header} answer cannot mix options and free text.")
+                if not question.multi_select and len(selected) != 1:
+                    raise ValueError(f"Choose one answer for {question.header}.")
+                answers[question.question] = selected if question.multi_select else selected[0]
+            responses.append(
+                QuestionResponse(
+                    request_id=request.request_id,
+                    answers=answers,
+                    response=draft.response_text.strip() or None,
+                )
+            )
+        elif request.kind == "approval":
+            if draft.action == "approve":
+                responses.append(ApprovalDecision(request_id=request.request_id, approved=True))
+            elif draft.action == "override":
+                if not request.override_allowed:
+                    raise ValueError(f"{request.tool_name} does not allow argument override.")
+                override = _parse_json(draft.payload_text, label="override arguments")
+                if not isinstance(override, dict):
+                    raise ValueError("Override arguments must be a JSON object.")
+                responses.append(
+                    ApprovalDecision(
+                        request_id=request.request_id,
+                        approved=True,
+                        override_arguments=override,
+                    )
+                )
+            elif draft.action == "deny":
+                responses.append(
+                    ApprovalDecision(
+                        request_id=request.request_id,
+                        approved=False,
+                        denial_message=draft.denial_reason.strip() or None,
+                    )
+                )
+            else:
+                raise ValueError(f"Choose approve, override, or deny for {request.tool_name}.")
+        else:
+            if draft.action == "result":
+                responses.append(
+                    ExternalToolResult(
+                        request_id=request.request_id,
+                        result=_parse_json(draft.payload_text, label="external result"),
+                    )
+                )
+            elif draft.action == "deny":
+                reason = draft.denial_reason.strip()
+                if not reason:
+                    raise ValueError(f"Provide a denial reason for {request.tool_name}.")
+                responses.append(
+                    ExternalToolResult(
+                        request_id=request.request_id,
+                        denied=True,
+                        denial_message=reason,
+                    )
+                )
+            else:
+                raise ValueError(f"Provide a result or deny {request.tool_name}.")
+    return DecisionResponseBatch(
+        expected_continuation_id=decisions.continuation_id,
+        responses=tuple(responses),
+    )
+
+
+def _parse_json(text: str, *, label: str) -> JsonValue:
+    source = text.strip()
+    if not source:
+        return None
+    try:
+        return json.loads(source)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"The {label} must be valid JSON: {exc.msg}.") from exc
 
 
 def _failure(exc: BaseException) -> FailureView:
