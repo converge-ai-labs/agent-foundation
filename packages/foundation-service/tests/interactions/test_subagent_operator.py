@@ -11,7 +11,6 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import (
-    MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS,
     AsyncDelegateRequest,
     AsyncResumeRequest,
     ResolvedDelegationContext,
@@ -20,6 +19,7 @@ from a13n_harness.capabilities import (
     SubagentInfoRequest,
     SubagentOperatorContext,
     SubagentSteerRequest,
+    SubagentToolCallContext,
     SubagentWaitRequest,
 )
 from a13n_harness.context import BuiltSubagent
@@ -42,6 +42,7 @@ from a13n_service.subagents import (
     FoundationChildRunAdmissionPreparer,
     FoundationSubagentOperator,
 )
+from a13n_service.subagents.execution_store import ACTIVITY_OUTPUT_PREVIEW_LIMIT
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -91,6 +92,7 @@ async def test_operator_delegates_reads_steers_waits_and_cancels(
     delegated = await operator.delegate(
         delegate_plan,
         AsyncDelegateRequest(subagent_name="researcher", prompt="research"),
+        tool_call=SubagentToolCallContext(tool_call_id="call-1", tool_name="delegate"),
     )
     info = await operator.info(context, SubagentInfoRequest(execution_id=delegated.execution_id))
     steered = await operator.steer(
@@ -202,7 +204,7 @@ async def test_operator_projects_bounded_closed_child_output_activity(
         attempt_id_factory=lambda: "rat_6767676767676767",
     ).claim(delegated.child_run_id, _worker())
     assert child_claim is not None
-    output = "x" * (MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS + 1)
+    output = "x" * (ACTIVITY_OUTPUT_PREVIEW_LIMIT + 1)
     await _complete_run(
         interaction_sessions,
         interaction_object_store,
@@ -218,7 +220,7 @@ async def test_operator_projects_bounded_closed_child_output_activity(
     activity = info.executions[0].activity
     assert activity is not None
     assert activity.sequence == 1
-    assert activity.output_preview == output[:MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS]
+    assert activity.output_preview == output[:ACTIVITY_OUTPUT_PREVIEW_LIMIT]
     assert activity.output_truncated is True
     assert waited.executions[0] == info.executions[0]
 

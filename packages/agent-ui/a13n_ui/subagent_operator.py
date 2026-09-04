@@ -40,6 +40,7 @@ from a13n_harness.capabilities import (
     SubagentOperatorContext,
     SubagentSteerRequest,
     SubagentSteerResult,
+    SubagentToolCallContext,
     SubagentToolCallSnapshot,
     SubagentWaitRequest,
     SubagentWaitResult,
@@ -346,7 +347,10 @@ class AgentUiSubagentOperator(SubagentOperator):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncDelegateRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView:
+        del tool_call
         scope = await self._require_parent(plan.parent)
         edge = _require_edge(scope.composition.root, request.subagent_name)
         if (
@@ -459,7 +463,10 @@ class AgentUiSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentInfoRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentInfoResult:
+        del tool_call
         scope = await self._require_parent(context)
         return await self.inspect_executions(
             parent_thread_id=scope.thread_id,
@@ -590,7 +597,10 @@ class AgentUiSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentWaitRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentWaitResult:
+        del tool_call
         scope = await self._require_parent(context)
         return await self.wait_executions(
             parent_thread_id=scope.thread_id,
@@ -647,7 +657,10 @@ class AgentUiSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentSteerRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentSteerResult:
+        del tool_call
         scope = await self._require_parent(context)
         return await self.steer_execution(
             parent_thread_id=scope.thread_id,
@@ -682,7 +695,10 @@ class AgentUiSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentCancelRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentCancelResult:
+        del tool_call
         scope = await self._require_parent(context)
         return await self.cancel_execution(
             parent_thread_id=scope.thread_id,
@@ -716,7 +732,10 @@ class AgentUiSubagentOperator(SubagentOperator):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView:
+        del tool_call
         scope = await self._require_parent(plan.parent)
         previous = await self._require_execution(scope, request.execution_id)
         subagent_name, _previous_definition_id = await self._execution_identity(previous)

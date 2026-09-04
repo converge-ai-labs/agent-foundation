@@ -49,12 +49,12 @@ The Host chooses the operator lifetime. The operator can outlive one parent Run,
 Async admission is one complete Host boundary:
 
 1. Harness validates the model request and resolves one exact built child.
-2. Harness constructs `SubagentDelegationPlan` with the derived child Identity, applied context, usage ceilings, and detached parent correlation.
-3. The Host operator applies only narrower policy, creates or resolves the child Thread, registers or persists the execution, and admits work according to its own acceptance guarantee.
+2. Harness constructs `SubagentDelegationPlan` with the derived child Identity, applied context, usage ceilings, and detached parent correlation, and separately forwards the originating tool-call correlation available from Pydantic AI.
+3. The Host operator applies only narrower policy, optionally derives its own idempotency identity and replay scope, creates or resolves the child Thread, registers or persists the execution, and admits work according to its own acceptance guarantee.
 4. The operator returns a validated `AsyncExecutionView` after acceptance.
 5. Harness returns the public execution reference; execution continues under Host ownership.
 
-An operator exception before its documented acceptance boundary is rejection. If a backend can accept work but lose the response, the Host reports the outcome as unknown and may expose its own reconciliation path. Harness does not assign an idempotency identity, automatically retry delegate or resume operations, or keep a compensating parent projection.
+An operator exception before its documented acceptance boundary is rejection. If a backend can accept work but lose the response, the Host either preserves enough idempotency or correlation to reconcile that outcome or reports it as unknown through its own contract. The supplied tool-call correlation is available to the Host but does not itself make delegation idempotent. Harness does not assign an idempotency identity, automatically retry delegate or resume operations, or keep a compensating parent projection.
 
 The Host independently selects child Environment association, loads current Host state, constructs fresh adapters and `RunBindings`, invokes Harness, stores observations, acknowledges checkpoints, and publishes Environment state. Accepted work never borrows the parent Run's entered Environment, mutable state coordinator, live context, credential, or callback.
 

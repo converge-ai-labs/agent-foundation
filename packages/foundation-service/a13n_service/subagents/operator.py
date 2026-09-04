@@ -19,6 +19,7 @@ from a13n_harness.capabilities import (
     SubagentOperatorContext,
     SubagentSteerRequest,
     SubagentSteerResult,
+    SubagentToolCallContext,
     SubagentWaitRequest,
     SubagentWaitResult,
 )
@@ -115,7 +116,10 @@ class FoundationSubagentOperator(SubagentOperator):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncDelegateRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView:
+        del tool_call
         authority = self._require_plan(plan, request.subagent_name)
         delegated_input = _delegated_input(plan)
         prepared = await self._admission_preparer.prepare_delegate(authority, plan, request, delegated_input)
@@ -132,7 +136,10 @@ class FoundationSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentInfoRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentInfoResult:
+        del tool_call
         page = await self._executions.read_page(
             context,
             execution_id=request.execution_id,
@@ -151,7 +158,10 @@ class FoundationSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentWaitRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentWaitResult:
+        del tool_call
         timeout = min(
             request.timeout_seconds or self._default_wait_timeout_seconds,
             self._max_wait_timeout_seconds,
@@ -182,7 +192,10 @@ class FoundationSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentSteerRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentSteerResult:
+        del tool_call
         execution = await self._executions.read_exact(context, request.execution_id, WorkspaceAction.run_steer)
         if execution.run.status not in _STEERABLE_STATUSES or execution.thread.current_run_id != execution.run.id:
             return SubagentSteerResult(execution_id=request.execution_id, accepted=False)
@@ -213,7 +226,10 @@ class FoundationSubagentOperator(SubagentOperator):
         self,
         context: SubagentOperatorContext,
         request: SubagentCancelRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentCancelResult:
+        del tool_call
         execution = await self._executions.read_exact(context, request.execution_id, WorkspaceAction.run_interrupt)
         if execution.run.status not in _ACTIVE_STATUSES or execution.thread.current_run_id != execution.run.id:
             return SubagentCancelResult(
@@ -254,7 +270,10 @@ class FoundationSubagentOperator(SubagentOperator):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView:
+        del tool_call
         authority = self._require_plan(plan, plan.child.declaration.name)
         delegated_input = _delegated_input(plan)
         source = await self._executions.read_exact(

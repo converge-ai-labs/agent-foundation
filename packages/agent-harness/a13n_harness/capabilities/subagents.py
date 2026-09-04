@@ -233,6 +233,19 @@ class SubagentOperatorContext:
 
 
 @dataclass(frozen=True, slots=True)
+class SubagentToolCallContext:
+    """Non-authoritative correlation from the originating model tool call."""
+
+    tool_call_id: str | None
+    tool_name: str | None
+
+    def __post_init__(self) -> None:
+        values = (self.tool_call_id, self.tool_name)
+        if any(value is not None and (not isinstance(value, str) or not value.strip()) for value in values):
+            raise ValueError("subagent tool-call correlation must be non-blank when present")
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedDelegationContext:
     """Detached child input produced after applying one authored context policy."""
 
@@ -276,6 +289,8 @@ class SubagentOperator(ABC):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncDelegateRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView: ...
 
     @abstractmethod
@@ -283,6 +298,8 @@ class SubagentOperator(ABC):
         self,
         context: SubagentOperatorContext,
         request: SubagentInfoRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentInfoResult: ...
 
     @abstractmethod
@@ -290,6 +307,8 @@ class SubagentOperator(ABC):
         self,
         context: SubagentOperatorContext,
         request: SubagentWaitRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentWaitResult: ...
 
     @abstractmethod
@@ -297,6 +316,8 @@ class SubagentOperator(ABC):
         self,
         context: SubagentOperatorContext,
         request: SubagentSteerRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentSteerResult: ...
 
     @abstractmethod
@@ -304,6 +325,8 @@ class SubagentOperator(ABC):
         self,
         context: SubagentOperatorContext,
         request: SubagentCancelRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> SubagentCancelResult: ...
 
     @abstractmethod
@@ -311,6 +334,8 @@ class SubagentOperator(ABC):
         self,
         plan: SubagentDelegationPlan,
         request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
     ) -> AsyncExecutionView: ...
 
 
@@ -512,6 +537,7 @@ __all__ = [
     "SubagentStatus",
     "SubagentSteerRequest",
     "SubagentSteerResult",
+    "SubagentToolCallContext",
     "SubagentToolCallSnapshot",
     "SubagentToolCallStatus",
     "SubagentWaitRequest",

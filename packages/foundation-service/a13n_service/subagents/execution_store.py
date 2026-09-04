@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from a13n_harness.capabilities import (
-    MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS,
     AsyncExecutionView,
     SubagentActivitySnapshot,
     SubagentExecutionView,
@@ -31,6 +30,8 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 from .authorization import ChildRunAuthorizationError, authorize_parent_child_action
 from .domain import ChildRunRelationship
 from .models import ChildRunRelationshipRecord
+
+ACTIVITY_OUTPUT_PREVIEW_LIMIT = 32 * 1024
 
 
 class FoundationSubagentOperatorError(RuntimeError):
@@ -418,7 +419,7 @@ def _activity(run: Run) -> SubagentActivitySnapshot | None:
             "subagent_execution_corrupt",
             "Completed subagent Run is missing its sealed checkpoint",
         )
-    output_preview = run.output_text[:MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS]
+    output_preview = run.output_text[:ACTIVITY_OUTPUT_PREVIEW_LIMIT]
     return SubagentActivitySnapshot(
         sequence=sealed_state.checkpoint_seq,
         output_preview=output_preview,
@@ -427,6 +428,7 @@ def _activity(run: Run) -> SubagentActivitySnapshot | None:
 
 
 __all__ = [
+    "ACTIVITY_OUTPUT_PREVIEW_LIMIT",
     "AttemptAuthoritySource",
     "ExecutionPage",
     "FoundationSubagentOperatorError",
