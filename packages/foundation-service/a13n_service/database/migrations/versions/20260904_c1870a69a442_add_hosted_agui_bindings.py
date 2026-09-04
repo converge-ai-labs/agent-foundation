@@ -1,8 +1,8 @@
 """add hosted agui bindings.
 
-Revision ID: 7431f1386408
-Revises: 93b882c58ee2
-Create Date: 2026-09-04 09:11:16.962411+00:00
+Revision ID: c1870a69a442
+Revises: 023eff74515b
+Create Date: 2026-09-04 09:33:40.486173+00:00
 """
 
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "7431f1386408"
-down_revision: str | Sequence[str] | None = "93b882c58ee2"
+revision: str = "c1870a69a442"
+down_revision: str | Sequence[str] | None = "023eff74515b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
