@@ -1149,6 +1149,7 @@ class NativeInteractionCommands:
         run_id: str,
         idempotency_key: str,
         request: WaitingRunFeedbackRequest,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
     ) -> RunAcceptanceReceipt:
         _require_idempotency_key(idempotency_key)
         source, thread = await self._load_feedback_source(actor=actor, run_id=run_id)
@@ -1298,6 +1299,7 @@ class NativeInteractionCommands:
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
                 final_validator=validate_final,
+                transaction_hook=transaction_hook,
             )
         except RunAcceptanceError as error:
             raise _map_acceptance_error(error) from error

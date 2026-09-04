@@ -26,7 +26,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
-from a13n_service.interactions import AgentInput, InterruptRequest, RunAcceptanceReceipt, RunStatus
+from a13n_service.interactions import (
+    AgentInput,
+    InterruptRequest,
+    RunAcceptanceReceipt,
+    RunStatus,
+    SubmittedPendingResolution,
+    WaitingRunFeedbackRequest,
+)
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.public_errors import PublicError
 from a13n_service.run_stream import RedisRunStream, RunReplayStore, RunStreamEntry, RunStreamReplayGap
@@ -44,6 +51,7 @@ from .models import AguiRunBindingRecord, AguiThreadBindingRecord
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _EVENT = TypeAdapter(Event)
+_RESOLUTIONS = TypeAdapter(tuple[SubmittedPendingResolution, ...])
 _VISIBLE_EVENTS = frozenset(
     {
         "text_message_start",
@@ -95,6 +103,25 @@ class HostedAguiAttachment:
     actor: AuthenticatedActor
     binding: HostedAguiBinding
     after_ordinal: int
+
+
+@dataclass(frozen=True, slots=True)
+class _MappedAguiInput:
+    input: AgentInput | None
+    resolutions: tuple[SubmittedPendingResolution, ...] | None
+
+
+class _A13nForwardedProps(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["1"]
+    resume: tuple[dict[str, JsonValue], ...] = Field(max_length=256)
+
+
+class _HostedForwardedProps(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    a13n: _A13nForwardedProps
 
 
 class HostedAguiService:
@@ -178,7 +205,7 @@ class HostedAguiService:
                     "The selected AG-UI parent Run is unavailable.",
                     status_code=409,
                 )
-        input_value = await self._validate_and_map_input(request, thread=thread, history=selected_parent)
+        mapped = await self._validate_and_map_input(request, thread=thread, history=selected_parent)
         thread_binding_id = new_object_id("aguitb") if thread is None else thread.id
         run_binding_id = new_object_id("aguirb")
         now = assume_utc(self._clock())
@@ -259,7 +286,7 @@ class HostedAguiService:
                 actor=actor,
                 workspace_id=actor.boundary_workspace_id,
                 idempotency_key=idempotency_key,
-                request=StartRunRequest(agent_id=agent_id, input=input_value),
+                request=StartRunRequest(agent_id=agent_id, input=_require_agui_input(mapped)),
                 transaction_hook=bind,
             )
         else:
@@ -270,6 +297,12 @@ class HostedAguiService:
                 None if historical_parent else thread.active_thread_id,
             )
             if historical_parent:
+                if mapped.resolutions is not None:
+                    raise HostedAguiError(
+                        "agui_resume_parent_invalid",
+                        "AG-UI feedback can target only the active waiting Run.",
+                        status_code=409,
+                    )
                 if source.status != RunStatus.completed.value:
                     raise HostedAguiError(
                         "agui_parent_not_forkable",
@@ -280,7 +313,7 @@ class HostedAguiService:
                     actor=actor,
                     run_id=source.id,
                     idempotency_key=idempotency_key,
-                    request=ForkRunRequest(input=input_value, agent_id=agent_id),
+                    request=ForkRunRequest(input=_require_agui_input(mapped), agent_id=agent_id),
                     transaction_hook=bind,
                 )
             elif source.status == RunStatus.waiting.value:
@@ -290,25 +323,44 @@ class HostedAguiService:
                         "The active AG-UI Run has no complete waiting state.",
                         status_code=409,
                     )
-                await self._commands.continue_waiting(
-                    actor=actor,
-                    run_id=source.id,
-                    idempotency_key=idempotency_key,
-                    request=WaitingContinueRunRequest(
-                        expected_thread_version=foundation_thread.version,
-                        sealed_state_digest_sha256=source.sealed_state_digest_sha256,
-                        input=input_value,
-                    ),
-                    transaction_hook=bind,
-                )
+                if mapped.resolutions is not None:
+                    await self._commands.feedback(
+                        actor=actor,
+                        run_id=source.id,
+                        idempotency_key=idempotency_key,
+                        request=WaitingRunFeedbackRequest(
+                            expected_thread_version=foundation_thread.version,
+                            sealed_state_digest_sha256=source.sealed_state_digest_sha256,
+                            resolutions=mapped.resolutions,
+                        ),
+                        transaction_hook=bind,
+                    )
+                else:
+                    await self._commands.continue_waiting(
+                        actor=actor,
+                        run_id=source.id,
+                        idempotency_key=idempotency_key,
+                        request=WaitingContinueRunRequest(
+                            expected_thread_version=foundation_thread.version,
+                            sealed_state_digest_sha256=source.sealed_state_digest_sha256,
+                            input=_require_agui_input(mapped),
+                        ),
+                        transaction_hook=bind,
+                    )
             else:
+                if mapped.resolutions is not None:
+                    raise HostedAguiError(
+                        "agui_run_not_waiting",
+                        "AG-UI feedback requires the active Run to be waiting.",
+                        status_code=409,
+                    )
                 await self._commands.continue_from(
                     actor=actor,
                     source_run_id=source.id,
                     idempotency_key=idempotency_key,
                     request=ContinueRunRequest(
                         expected_thread_version=foundation_thread.version,
-                        input=input_value,
+                        input=_require_agui_input(mapped),
                         agent_id=agent_id,
                     ),
                     transaction_hook=bind,
@@ -452,11 +504,11 @@ class HostedAguiService:
         *,
         thread: AguiThreadBindingRecord | None,
         history: AguiRunBindingRecord | None,
-    ) -> AgentInput:
-        if not _empty(request.state) or request.context or request.tools or not _empty(request.forwarded_props):
+    ) -> _MappedAguiInput:
+        if not _empty(request.state) or request.context or request.tools:
             raise HostedAguiError(
                 "agui_surface_not_allowed",
-                "This Agent does not accept AG-UI state, context, tools, or forwardedProps.",
+                "This Agent does not accept AG-UI state, context, or tools.",
                 status_code=400,
             )
         if request.resume is not None:
@@ -465,6 +517,23 @@ class HostedAguiService:
                 "The AG-UI resume extension is not available for this Run.",
                 status_code=409,
             )
+        resolutions = _forwarded_resolutions(request.forwarded_props)
+        if resolutions is not None:
+            if thread is None or history is None:
+                raise HostedAguiError(
+                    "agui_resume_without_binding",
+                    "AG-UI feedback requires an existing waiting Run.",
+                    status_code=409,
+                )
+            expected = await self._expected_messages(history)
+            supplied = tuple(_message_json(item) for item in request.messages)
+            if supplied != expected:
+                raise HostedAguiError(
+                    "agui_history_conflict",
+                    "The AG-UI message snapshot does not match the authorized history.",
+                    status_code=409,
+                )
+            return _MappedAguiInput(input=None, resolutions=resolutions)
         if not request.messages or not isinstance(request.messages[-1], UserMessage):
             raise HostedAguiError(
                 "agui_input_invalid",
@@ -489,7 +558,7 @@ class HostedAguiService:
                     "The AG-UI message snapshot does not match the authorized history.",
                     status_code=409,
                 )
-        return _user_input(request.messages[-1])
+        return _MappedAguiInput(input=_user_input(request.messages[-1]), resolutions=None)
 
     async def _expected_messages(self, latest: AguiRunBindingRecord) -> tuple[dict[str, JsonValue], ...]:
         raw_messages = latest.request_json.get("messages")
@@ -716,6 +785,30 @@ def _validate_external_id(value: str, *, name: str) -> None:
 
 def _empty(value: object) -> bool:
     return value is None or value == {} or value == []
+
+
+def _forwarded_resolutions(value: object) -> tuple[SubmittedPendingResolution, ...] | None:
+    if _empty(value):
+        return None
+    try:
+        forwarded = _HostedForwardedProps.model_validate(value)
+        return _RESOLUTIONS.validate_python(forwarded.a13n.resume)
+    except ValueError as error:
+        raise HostedAguiError(
+            "agui_extension_invalid",
+            "forwardedProps.a13n is invalid.",
+            status_code=400,
+        ) from error
+
+
+def _require_agui_input(mapped: _MappedAguiInput) -> AgentInput:
+    if mapped.input is None:
+        raise HostedAguiError(
+            "agui_input_required",
+            "This AG-UI operation requires a new user input tail.",
+            status_code=400,
+        )
+    return mapped.input
 
 
 def _user_input(message: UserMessage) -> AgentInput:

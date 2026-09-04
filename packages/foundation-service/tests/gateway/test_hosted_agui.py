@@ -174,6 +174,68 @@ async def test_new_user_tail_defaults_active_waiting_run(
     assert successor.input_json["input"]["content"] == [{"type": "text", "text": "handle this instead"}]
 
 
+async def test_explicit_resume_maps_to_atomic_waiting_feedback_run(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    async with AsyncExitStack() as stack:
+        service, _stream, objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        first = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=_request(),
+            last_event_id=None,
+        )
+        await _wait_run(
+            lifecycle_interaction_sessions,
+            objects,
+            run_id=first.binding.run_id,
+        )
+        request = RunAgentInput.model_validate(
+            {
+                "threadId": "external-thread-1",
+                "runId": "external-run-feedback",
+                "parentRunId": "external-run-1",
+                "state": {},
+                "messages": [{"id": "message-external-run-1", "role": "user", "content": "hello"}],
+                "tools": [],
+                "context": [],
+                "forwardedProps": {
+                    "a13n": {
+                        "schema_version": "1",
+                        "resume": [{"call_id": "approval-1", "action": "approve"}],
+                    }
+                },
+            }
+        )
+
+        feedback = await service.accept(
+            actor=_actor(),
+            agent_id=AGENT_ID,
+            request=request,
+            last_event_id=None,
+        )
+
+    async with short_session(lifecycle_interaction_sessions) as database:
+        successor = await database.scalar(select(RunRecord).where(RunRecord.id == feedback.binding.run_id))
+        binding = await database.scalar(
+            select(AguiRunBindingRecord).where(AguiRunBindingRecord.external_run_id == "external-run-feedback")
+        )
+    assert successor is not None
+    assert binding is not None
+    assert successor.parent_run_id == first.binding.run_id
+    assert successor.input_kind == "waiting_feedback"
+    assert successor.input_json["resolutions"] == [
+        {
+            "call_id": "approval-1",
+            "kind": "approval",
+            "outcome": "approve",
+            "result": None,
+        }
+    ]
+
+
 async def test_historical_parent_forks_and_selects_new_active_thread(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
     tmp_path,
