@@ -18,9 +18,11 @@ from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.ids import new_object_id
 from a13n_service.interactions import (
     AgentInput,
+    ConsumeQueuedSubmissionRequest,
     InterruptRequest,
     QueuedSubmission,
     QueuedSubmissionCollection,
+    QueuedSubmissionConsumptionReceipt,
     QueuedSubmissionMutationReceipt,
     QueuedSubmissionState,
     ReorderQueuedSubmissionsRequest,
@@ -334,6 +336,26 @@ async def submit_thread_run(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> ThreadRunSubmissionReceipt:
     return await _queued_submissions(request).submit(
+        actor=actor,
+        thread_id=thread_id,
+        request=body,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(
+    "/api/v1/threads/{thread_id}/queued-submissions/consume",
+    response_model=QueuedSubmissionConsumptionReceipt,
+    status_code=202,
+)
+async def consume_queued_submission(
+    request: Request,
+    actor: Actor,
+    thread_id: str,
+    body: ConsumeQueuedSubmissionRequest,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
+) -> QueuedSubmissionConsumptionReceipt:
+    return await _queued_submissions(request).consume(
         actor=actor,
         thread_id=thread_id,
         request=body,

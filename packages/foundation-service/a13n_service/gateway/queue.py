@@ -25,9 +25,11 @@ from a13n_service.durable_operations.idempotency import (
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions import (
+    ConsumeQueuedSubmissionRequest,
     QueuedSubmission,
     QueuedSubmissionCollection,
     QueuedSubmissionConflict,
+    QueuedSubmissionConsumptionReceipt,
     QueuedSubmissionMutationReceipt,
     QueuedSubmissionState,
     QueuedSubmissionStore,
@@ -252,6 +254,21 @@ class NativeQueuedSubmissionService:
             )
         except (QueuedSubmissionConflict, ValueError) as error:
             raise _queue_error(error) from error
+
+    async def consume(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        request: ConsumeQueuedSubmissionRequest,
+        idempotency_key: str,
+    ) -> QueuedSubmissionConsumptionReceipt:
+        return await self._commands.consume_queued(
+            actor=actor,
+            thread_id=thread_id,
+            request=request,
+            idempotency_key=idempotency_key,
+        )
 
     async def get(self, *, actor: AuthenticatedActor, queued_submission_id: str) -> QueuedSubmission:
         scope = await self._submission_scope(

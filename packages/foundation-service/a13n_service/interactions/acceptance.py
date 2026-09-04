@@ -253,6 +253,7 @@ class RunAcceptanceService:
         expected_current_run_id: str,
         expected_head_run_id: str | None,
         next_head_run_id: str | None,
+        final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> QueuedSubmissionConsumptionReceipt:
         """Atomically consume the first queue row and accept its prepared Run."""
 
@@ -283,6 +284,8 @@ class RunAcceptanceService:
         now = self._clock()
         try:
             async with transaction(self._sessions) as database:
+                if final_validator is not None:
+                    await final_validator(database)
                 thread = await _lock_thread(database, run)
                 _require_thread_precondition(
                     thread,

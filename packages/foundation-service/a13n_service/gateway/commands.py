@@ -41,7 +41,10 @@ from a13n_service.interactions import (
     AgentInputAcceptance,
     AgentInputAcceptanceContext,
     AgentInputError,
+    ConsumeQueuedSubmissionRequest,
     InterruptRequest,
+    QueuedSubmission,
+    QueuedSubmissionConsumptionReceipt,
     RecoveryBudget,
     RecoveryUsage,
     Run,
@@ -79,6 +82,7 @@ from a13n_service.interactions import (
     normalize_feedback,
     normalize_waiting_continue,
 )
+from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.domain import StrictModel
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.public_errors import PublicError
@@ -960,6 +964,184 @@ class NativeInteractionCommands:
         except RunAcceptanceError as error:
             raise _map_acceptance_error(error) from error
 
+    async def consume_queued(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        idempotency_key: str,
+        request: ConsumeQueuedSubmissionRequest,
+    ) -> QueuedSubmissionConsumptionReceipt:
+        """Consume the current queue head under its retained authority."""
+
+        _require_idempotency_key(idempotency_key)
+        stored_key = _scoped_idempotency_key(
+            actor=actor,
+            operation="queue.consume",
+            scope_id=thread_id,
+            supplied=idempotency_key,
+        )
+        request_fingerprint = canonical_digest(request)
+        replay = await self._queued_consumption_replay(
+            actor=actor,
+            thread_id=thread_id,
+            stored_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            request=request,
+        )
+        if replay is not None:
+            return replay
+
+        current, head, thread, queued = await self._load_queued_consumption_source(
+            actor=actor,
+            thread_id=thread_id,
+        )
+        retained_actor = AuthenticatedActor(
+            principal=queued.authority_principal,
+            auth_method="stored_queued_submission",
+            credential_id=queued.queued_submission_id,
+            boundary_workspace_id=actor.boundary_workspace_id,
+            request_id=actor.request_id,
+        )
+        target_agent_id = queued.submission.agent_id or (head.agent_id if head is not None else current.agent_id)
+        run_id = new_run_id()
+        prepared = await self._invocations.preparation.prepare(
+            actor=retained_actor,
+            agent_id=target_agent_id,
+            agent_revision_id=queued.submission.agent_revision_id,
+            expected_current_revision_id=queued.submission.expected_current_revision_id,
+            config_override=queued.submission.config_override,
+            run_id=run_id,
+        )
+        async with transaction(self._sessions) as database:
+            frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
+        if frozen.mcp_tool_snapshot is None:
+            raise GatewayCommandError(
+                "run_connectivity_unavailable",
+                "The Run tool snapshot could not be frozen.",
+                status_code=409,
+            )
+        accepted_input = await self._accept_input_value(
+            actor=retained_actor,
+            workspace_id=actor.boundary_workspace_id,
+            submitted=queued.submission.input,
+            frozen=frozen,
+        )
+        seed = RunStateSeed(
+            run_id=run_id,
+            agent_id=frozen.agent_id,
+            agent_revision_id=frozen.agent_revision_id,
+            effective_agent_config=frozen.effective_config,
+        )
+        if head is None:
+            state = initialize_empty_thread_state(seed, thread_id=thread.id)
+            parent_run_id = None
+            lineage_kind = RunLineageKind.root
+            next_head_run_id = None
+        else:
+            head_state = await self._states.read(
+                head.tenant_id,
+                head.id,
+                expected_thread_id=head.thread_id,
+            )
+            state = initialize_completed_continuation_state(seed, head_state.envelope)
+            parent_run_id = head.id
+            lineage_kind = RunLineageKind.continue_
+            next_head_run_id = head.id
+
+        now = self._clock()
+        run = Run(
+            id=run_id,
+            version=1,
+            tenant_id=current.tenant_id,
+            authority_principal=queued.authority_principal,
+            session_id=current.session_id,
+            thread_id=current.thread_id,
+            parent_run_id=parent_run_id,
+            retry_of_run_id=None,
+            lineage_kind=lineage_kind,
+            trigger_type="queued_submission",
+            agent_id=frozen.agent_id,
+            agent_revision_id=frozen.agent_revision_id,
+            effective_agent_config_digest=frozen.effective_config.content_digest,
+            encrypted_config_payload=None,
+            runtime_lock_digest=frozen.effective_config.runtime_lock_digest,
+            model_execution_observation=frozen.effective_config.resolved_model.execution.observation(),
+            connector_connection_selections=tuple(
+                item.model_dump(mode="json") for item in frozen.connector_connection_selections
+            ),
+            mcp_connection_selections=tuple(item.model_dump(mode="json") for item in frozen.mcp_connection_selections),
+            ingress_context=None,
+            mcp_tool_snapshot=frozen.mcp_tool_snapshot,
+            priority=self._priority,
+            queue_name=self._queue_name,
+            available_at=now,
+            current_run_attempt_id=None,
+            next_attempt_fence=1,
+            recovery_budget=RecoveryBudget(
+                policy_version="1",
+                max_recovery_attempts=self._recovery_max_attempts,
+                max_handoffs=self._max_handoffs,
+            ),
+            attempts_started=0,
+            recovery_attempts_started=0,
+            handoffs_completed=0,
+            usage_charged=RecoveryUsage(),
+            idempotency_key=stored_key,
+            request_fingerprint=request_fingerprint,
+            status=RunStatus.accepted,
+            wait_reason=None,
+            input_kind=RunInputKind.agent_input,
+            input=accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True),
+            input_text=_input_text(accepted_input),
+            created_at=now,
+            updated_at=now,
+        )
+
+        async def validate_final(database: AsyncSession) -> None:
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=target_agent_id,
+                    action=WorkspaceAction.queued_submission_consume,
+                )
+                await authorize_persisted_agent_principal_actions(
+                    database,
+                    principal=queued.authority_principal,
+                    organization_id=current.tenant_id,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=target_agent_id,
+                    actions=frozenset({WorkspaceAction.agent_invoke}),
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            final = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
+            if final != frozen:
+                raise GatewayCommandError(
+                    "run_invocation_changed",
+                    "The selected Agent invocation changed before Run acceptance.",
+                    status_code=409,
+                )
+
+        try:
+            return await self._acceptance.consume_queued(
+                run=run,
+                state=state,
+                queued_submission_id=queued.queued_submission_id,
+                submission_digest_sha256=queued.submission_digest_sha256,
+                accepted_input=accepted_input,
+                expected_thread_version=request.expected_thread_version,
+                expected_queue_version=request.expected_queue_version,
+                expected_current_run_id=current.id,
+                expected_head_run_id=None if head is None else head.id,
+                next_head_run_id=next_head_run_id,
+                final_validator=validate_final,
+            )
+        except RunAcceptanceError as error:
+            raise _map_acceptance_error(error) from error
+
     async def feedback(
         self,
         *,
@@ -1787,6 +1969,167 @@ class NativeInteractionCommands:
             )
         except AgentInputError as error:
             raise GatewayCommandError(error.code, str(error), status_code=400) from error
+
+    async def _queued_consumption_replay(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        stored_key: str,
+        request_fingerprint: str,
+        request: ConsumeQueuedSubmissionRequest,
+    ) -> QueuedSubmissionConsumptionReceipt | None:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(RunRecord, QueuedSubmissionRecord)
+                    .join(
+                        SessionRecord,
+                        and_(
+                            SessionRecord.tenant_id == RunRecord.tenant_id,
+                            SessionRecord.id == RunRecord.session_id,
+                        ),
+                    )
+                    .join(
+                        QueuedSubmissionRecord,
+                        and_(
+                            QueuedSubmissionRecord.tenant_id == RunRecord.tenant_id,
+                            QueuedSubmissionRecord.thread_id == RunRecord.thread_id,
+                            QueuedSubmissionRecord.consumed_run_id == RunRecord.id,
+                        ),
+                    )
+                    .where(
+                        RunRecord.thread_id == thread_id,
+                        RunRecord.idempotency_key == stored_key,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                return None
+            run_record, queued_record = row
+            queued = queued_record.to_resource()
+            target_agent_id = queued.submission.agent_id or run_record.agent_id
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=target_agent_id,
+                    action=WorkspaceAction.queued_submission_consume,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            if run_record.request_fingerprint != request_fingerprint:
+                raise _idempotency_conflict()
+            hook = await load_inline_hook_subscription(
+                database,
+                organization_id=run_record.tenant_id,
+                run_id=run_record.id,
+            )
+            return QueuedSubmissionConsumptionReceipt(
+                outcome="run_accepted",
+                queued_submission=queued,
+                queue_version=request.expected_queue_version + 1,
+                run=RunAcceptanceReceipt(
+                    session_id=run_record.session_id,
+                    thread_id=run_record.thread_id,
+                    thread_version=request.expected_thread_version + 1,
+                    run_id=run_record.id,
+                    run_version=1,
+                    hook_subscription_id=None if hook is None else hook[0].id,
+                ),
+            )
+
+    async def _load_queued_consumption_source(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+    ) -> tuple[Run, Run | None, Thread, QueuedSubmission]:
+        async with short_session(self._sessions) as database:
+            row = (
+                await database.execute(
+                    select(SessionRecord, ThreadRecord, RunRecord)
+                    .join(
+                        ThreadRecord,
+                        and_(
+                            ThreadRecord.tenant_id == SessionRecord.tenant_id,
+                            ThreadRecord.session_id == SessionRecord.id,
+                        ),
+                    )
+                    .join(
+                        RunRecord,
+                        and_(
+                            RunRecord.tenant_id == ThreadRecord.tenant_id,
+                            RunRecord.id == ThreadRecord.current_run_id,
+                        ),
+                    )
+                    .where(
+                        ThreadRecord.id == thread_id,
+                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found()
+            _session_record, thread_record, current_record = row
+            queued_record = await database.scalar(
+                select(QueuedSubmissionRecord)
+                .where(
+                    QueuedSubmissionRecord.tenant_id == thread_record.tenant_id,
+                    QueuedSubmissionRecord.thread_id == thread_record.id,
+                    QueuedSubmissionRecord.position.is_not(None),
+                )
+                .order_by(QueuedSubmissionRecord.position, QueuedSubmissionRecord.id)
+                .limit(1)
+            )
+            if queued_record is None:
+                raise GatewayCommandError(
+                    "queue_empty",
+                    "The Thread has no queued submission to consume.",
+                    status_code=409,
+                )
+            queued = queued_record.to_resource()
+            target_agent_id = queued.submission.agent_id or current_record.agent_id
+            try:
+                await authorize_agent(
+                    database,
+                    actor=actor,
+                    workspace_id=actor.boundary_workspace_id,
+                    agent_id=target_agent_id,
+                    action=WorkspaceAction.queued_submission_consume,
+                )
+            except AuthorizationError as error:
+                raise _not_found() from error
+            head_record = (
+                None
+                if thread_record.head_run_id is None
+                else await database.scalar(
+                    select(RunRecord).where(
+                        RunRecord.tenant_id == thread_record.tenant_id,
+                        RunRecord.id == thread_record.head_run_id,
+                    )
+                )
+            )
+            if thread_record.head_run_id is not None and head_record is None:
+                raise GatewayCommandError(
+                    "thread_head_missing",
+                    "The Thread head Run was not found.",
+                    status_code=409,
+                )
+            if head_record is not None and head_record.status != RunStatus.completed.value:
+                raise GatewayCommandError(
+                    "queue_not_consumable",
+                    "The Thread head Run is not completed.",
+                    status_code=409,
+                )
+            return (
+                current_record.to_resource(),
+                None if head_record is None else head_record.to_resource(),
+                thread_record.to_resource(),
+                queued,
+            )
 
     async def _load_continue_source(self, *, actor: AuthenticatedActor, source_run_id: str):
         async with short_session(self._sessions) as database:

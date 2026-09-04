@@ -89,6 +89,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/runs/{run_id}/steer" in document["paths"]
     assert "/api/v1/runs/{run_id}/steers/{steer_id}" in document["paths"]
     assert "/api/v1/threads/{thread_id}/queued-submissions" in document["paths"]
+    assert "/api/v1/threads/{thread_id}/queued-submissions/consume" in document["paths"]
     assert "/api/v1/queued-submissions/{queued_submission_id}" in document["paths"]
     assert "/api/v1/threads/{thread_id}/queued-submissions/reorder" in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/ingresses" in document["paths"]

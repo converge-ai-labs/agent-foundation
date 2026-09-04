@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from a13n_service.gateway.queue import DeleteQueuedSubmissionRequest, NativeQueuedSubmissionService
 from a13n_service.interactions import (
+    ConsumeQueuedSubmissionRequest,
     InterruptRequest,
     QueuedSubmissionState,
     QueuedSubmissionStore,
@@ -211,6 +212,55 @@ async def test_thread_submission_accepts_root_like_run_after_cancelled_empty_hea
     async with short_session(lifecycle_interaction_sessions) as database:
         successor = await database.get(RunRecord, receipt.run.run_id)
     assert successor is not None
+    assert successor.parent_run_id is None
+    assert successor.lineage_kind == "root"
+
+
+async def test_explicit_queue_consumption_accepts_under_retained_authority_and_replays(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    service, commands, _objects, source = await _submission_setup(lifecycle_interaction_sessions, tmp_path)
+    queued_receipt = await service.submit(
+        actor=_actor(),
+        thread_id=source.thread_id,
+        request=ThreadRunSubmissionRequest(expected_thread_version=1, input=_request("queued next").input),
+        idempotency_key="submit-before-consume",
+    )
+    assert queued_receipt.queued_submission is not None
+    await commands.interrupt(
+        actor=_actor(),
+        run_id=source.run_id,
+        idempotency_key="cancel-before-consume",
+        request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
+    )
+    request = ConsumeQueuedSubmissionRequest(expected_thread_version=2, expected_queue_version=1)
+
+    first = await service.consume(
+        actor=_actor(),
+        thread_id=source.thread_id,
+        request=request,
+        idempotency_key="consume-first",
+    )
+    repeated = await service.consume(
+        actor=_actor(),
+        thread_id=source.thread_id,
+        request=request,
+        idempotency_key="consume-first",
+    )
+
+    assert repeated == first
+    assert first.outcome == "run_accepted"
+    assert first.run is not None
+    assert first.run.thread_version == 3
+    assert first.queue_version == 2
+    assert first.queued_submission.state is QueuedSubmissionState.consumed
+    assert first.queued_submission.consumed_run_id == first.run.run_id
+    async with short_session(lifecycle_interaction_sessions) as database:
+        successor = await database.get(RunRecord, first.run.run_id)
+    assert successor is not None
+    assert successor.authority_principal_id == queued_receipt.queued_submission.authority_principal.principal_id
     assert successor.parent_run_id is None
     assert successor.lineage_kind == "root"
 
