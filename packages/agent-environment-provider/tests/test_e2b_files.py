@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 from a13n_environment_provider.e2b.guest import files
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Guest filesystem helpers execute on POSIX sandboxes")
 
 
 @pytest.fixture
