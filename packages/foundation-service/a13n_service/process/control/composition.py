@@ -14,22 +14,18 @@ from a13n_service.gateway.a2a import A2AService
 from a13n_service.gateway.a2a_import import A2APartImporter
 from a13n_service.gateway.a2a_push import A2APushPublisher
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
-from a13n_service.gateway.commands import NativeInteractionCommands
 from a13n_service.gateway.hosted_agui import HostedAguiService
 from a13n_service.gateway.native_streaming import NativeRunStreamService
 from a13n_service.gateway.notifications import NotificationService
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.gateway.queue import NativeQueuedSubmissionService
-from a13n_service.interactions.acceptance import RunAcceptanceService
-from a13n_service.interactions.inbox import RedisThreadControlSignals, ThreadInboxStore
-from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
-from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.plugins.runner_supervisor import PluginRunnerSupervisor
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import ControlRuntime, SharedRuntime, WorkerRuntime
+from a13n_service.process.submission import build_input_commands
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
 from a13n_service.settings import Settings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
@@ -101,9 +97,6 @@ async def build_control_runtime(
         max_items=settings.run_replay_max_items,
         max_bytes=settings.run_replay_max_bytes,
     )
-    gateway_states = RunStateStore(shared.storage.objects)
-    gateway_payloads = RunPayloadStore(shared.storage.objects)
-    gateway_control_signals = RedisThreadControlSignals(shared.storage.redis)
     a2a_endpoint_policy = EndpointPolicy.from_operator_allowlist(
         private_domains=settings.webhook_private_endpoint_domains,
         private_cidrs=settings.webhook_private_endpoint_cidrs,
@@ -144,32 +137,8 @@ async def build_control_runtime(
             max_response_bytes=settings.webhook_max_response_bytes,
             max_redirects=settings.connectivity_max_redirects,
         )
-    gateway_commands = NativeInteractionCommands(
-        shared.storage.sessions,
-        agents.invocations,
-        RunAcceptanceService(
-            shared.storage.sessions,
-            gateway_states,
-            gateway_payloads,
-            hooks.inline_validator,
-        ),
-        gateway_states,
-        assets.service,
-        EndpointPolicy(),
-        outcomes=RunOutcomeService(
-            shared.storage.sessions,
-            gateway_payloads,
-            control_signals=gateway_control_signals,
-        ),
-        inbox=ThreadInboxStore(
-            shared.storage.sessions,
-            signals=gateway_control_signals,
-        ),
-        payloads=gateway_payloads,
-        recovery_max_attempts=settings.gateway_run_recovery_max_attempts,
-        max_handoffs=settings.gateway_run_max_handoffs,
-        queue_name=settings.gateway_run_queue_name,
-        priority=settings.gateway_run_priority,
+    gateway_commands = build_input_commands(
+        settings, shared, agents.invocations, assets.service, hooks.inline_validator
     )
     if settings.a2a_enabled:
         assert a2a_import_http_client is not None

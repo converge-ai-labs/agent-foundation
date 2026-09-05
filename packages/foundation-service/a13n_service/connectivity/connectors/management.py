@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from pydantic import TypeAdapter, ValidationError
@@ -38,8 +39,19 @@ def require_implementation(registry: ConnectorProviderRegistry, provider_type: s
         ) from error
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderSnapshot:
+    type: str
+    configuration_json: JsonObject
+    status: str
+
+    @classmethod
+    def from_record(cls, record: ConnectorProviderRecord) -> ProviderSnapshot:
+        return cls(record.type, dict(record.configuration_json), record.status)
+
+
 def configure_provider(
-    registry: ConnectorProviderRegistry, record: ConnectorProviderRecord, credentials: JsonObject
+    registry: ConnectorProviderRegistry, record: ConnectorProviderRecord | ProviderSnapshot, credentials: JsonObject
 ) -> ConnectorProviderRuntime:
     implementation = require_implementation(registry, record.type)
     try:
@@ -149,7 +161,7 @@ def map_management_value_error(error: ConnectivityManagementValueError) -> Conne
     return ConnectorError("invalid_request", "Idempotency-Key is invalid.", status_code=400)
 
 
-def require_active_provider(record: ConnectorProviderRecord) -> None:
+def require_active_provider(record: ConnectorProviderRecord | ProviderSnapshot) -> None:
     if record.status != "active":
         raise ConnectorError("connector_provider_disabled", "Connector Provider is disabled.", status_code=409)
 

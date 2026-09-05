@@ -818,9 +818,13 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     monkeypatch,
     revocation,
 ):
+    from unittest.mock import Mock
+
+    import httpx2
     from a13n_service.connectivity import execution
     from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
     from a13n_service.connectivity.execution import ExternalToolRuntime
+    from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
     from a13n_service.connectivity.mcp.transport import RemoteTransport
     from a13n_service.iam import AuthorizationError
     from a13n_service.iam.models import RoleBindingRecord, UserRecord
@@ -869,6 +873,8 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
         ConnectorProviderRegistry(()),
         RemoteTransport(policy),
         policy,
+        Mock(spec=httpx2.AsyncClient),
+        Mock(spec=OAuthCredentialRefresh),
     )
     scope = await runtime._scope(context)
     assert scope.actor.principal.principal_id == USER_ID

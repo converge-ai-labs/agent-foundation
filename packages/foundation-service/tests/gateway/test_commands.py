@@ -26,7 +26,7 @@ from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRec
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
-from a13n_service.interactions.state import CompletedOutcomeCandidate
+from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry
 from a13n_service.storage import short_session
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import select
@@ -137,6 +137,7 @@ async def _complete_run(
     *,
     run_id: str,
     expected_thread_version: int = 1,
+    consumed_entries: tuple[ConsumedThreadInboxEntry, ...] = (),
 ) -> None:
     states = RunStateStore(objects)
     claim = await AttemptScheduler(
@@ -165,6 +166,9 @@ async def _complete_run(
         claim.attempt.id,
         claim.attempt.fence,
         outcome=CompletedOutcomeCandidate(output={"answer": 42}),
+    )
+    candidate = candidate.model_copy(
+        update={"host": candidate.host.model_copy(update={"consumed_inbox_entries": consumed_entries})}
     )
     stored = await execution.publish_checkpoint(authority, states, current, candidate)
     await RunOutcomeService(

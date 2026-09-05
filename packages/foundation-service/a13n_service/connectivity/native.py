@@ -18,9 +18,8 @@ from a13n_service.storage import short_session
 from .accounts.providers import account_actions
 from .connectors.management import decode_credentials
 from .domain import JsonObject
-from .ingress.models import IngressRecord, RouteRecord
 from .native_actions import NativeAction, native_actions
-from .native_context import AccountRunContext, IngressRunContext, NativeToolContext, authorized_account
+from .native_context import AccountRunContext, InboundRunContext, NativeToolContext, authorized_account
 from .providers.github.wire import CONTEXT_VERSION as GITHUB_CONTEXT_VERSION
 from .providers.lark.wire import CONTEXT_VERSION as LARK_CONTEXT_VERSION
 from .providers.slack.adapter import CONTEXT_VERSION as SLACK_CONTEXT_VERSION
@@ -37,6 +36,7 @@ async def native_capability(
     context: NativeToolContext,
     guard: Callable[[], Awaitable[None]],
     endpoints: EndpointPolicy,
+    http: httpx2.AsyncClient,
 ) -> MCP[AgentContext] | None:
     if not context.allowed_actions:
         return None
@@ -55,30 +55,33 @@ async def native_capability(
             )
             if account.provider_key != context.provider_key:
                 raise ValueError("native_source_unavailable")
-            if isinstance(context, IngressRunContext):
-                await _authorize_ingress(session, context, scope)
+            if isinstance(context, InboundRunContext):
+                _validate_context(context)
             configuration = dict(account.provider_config_json)
             credential = account.credential_snapshot()
-        return configuration, decode_credentials(credential.decrypt(protector))
+            generation = account.credential_generation
+        return configuration, decode_credentials(credential.decrypt(protector)), generation
 
-    configuration, credentials = await source()
-    async with httpx2.AsyncClient(timeout=30, follow_redirects=False) as http:
-        definitions = tuple(
-            item.definition for item in _actions(context, configuration, credentials, http, endpoints).values()
-        )
+    configuration, credentials, generation = await source()
+    actions = _actions(context, configuration, credentials, http, endpoints)
+    definitions = tuple(item.definition for item in actions.values())
 
     async def call(name: str, arguments: JsonObject) -> JsonValue:
+        nonlocal actions, generation, configuration
         if name not in context.allowed_actions:
             raise ValueError("native_action_not_authorized")
-        configuration, credentials = await source()
-        async with httpx2.AsyncClient(timeout=30, follow_redirects=False) as http:
-            selected = _actions(context, configuration, credentials, http, endpoints).get(name)
-            if selected is None:
-                raise ValueError("native_action_unavailable")
-            await guard()
-            return await selected.call(arguments)
+        current_configuration, credentials, current_generation = await source()
+        if current_generation != generation or current_configuration != configuration:
+            configuration = current_configuration
+            actions = _actions(context, configuration, credentials, http, endpoints)
+            generation = current_generation
+        selected = actions.get(name)
+        if selected is None:
+            raise ValueError("native_action_unavailable")
+        await guard()
+        return await selected.call(arguments)
 
-    identifier = context.ingress_id if isinstance(context, IngressRunContext) else context.account_id
+    identifier = context.binding_id if isinstance(context, InboundRunContext) else context.account_id
     return await local_capability(
         key=source_key(context.kind, identifier), tools=definitions, allowed=context.allowed_actions, handler=call
     )
@@ -104,7 +107,7 @@ def _actions(
     )
 
 
-async def _authorize_ingress(session: AsyncSession, context: IngressRunContext, scope: AttemptToolScope) -> None:
+def _validate_context(context: InboundRunContext) -> None:
     supported_version = {
         "slack": SLACK_CONTEXT_VERSION,
         "lark": LARK_CONTEXT_VERSION,
@@ -112,16 +115,3 @@ async def _authorize_ingress(session: AsyncSession, context: IngressRunContext, 
     }.get(context.provider_key)
     if context.provider_context_version != supported_version:
         raise ValueError("native_context_incompatible")
-    ingress = await session.get(IngressRecord, context.ingress_id)
-    if (
-        ingress is None
-        or ingress.account_id != context.account_id
-        or ingress.organization_id != scope.organization_id
-        or ingress.workspace_id != scope.workspace_id
-        or ingress.execution_service_account_id != scope.actor.principal.principal_id
-    ):
-        raise ValueError("native_source_unavailable")
-    if context.route_id is not None:
-        route = await session.get(RouteRecord, context.route_id)
-        if route is None or route.ingress_id != ingress.id or not route.enabled:
-            raise ValueError("native_route_unavailable")

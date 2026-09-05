@@ -12,6 +12,9 @@ from a13n_service.agents.domain import PluginRuntimeMode
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
+from a13n_service.connectivity.http import cookie_free_jar
+from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
+from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
 from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
@@ -121,7 +124,9 @@ async def build_worker_runtime(
     )
     endpoint_policy = settings.connectivity_endpoint_policy()
     http = await stack.enter_async_context(
-        httpx2.AsyncClient(timeout=settings.connectivity_total_timeout_seconds, follow_redirects=False)
+        httpx2.AsyncClient(
+            cookies=cookie_free_jar(), timeout=settings.connectivity_total_timeout_seconds, follow_redirects=False
+        )
     )
     external_tools = ExternalToolRuntime(
         shared.storage.sessions,
@@ -132,6 +137,20 @@ async def build_worker_runtime(
         ),
         RemoteTransport(endpoint_policy, timeout_seconds=settings.connectivity_total_timeout_seconds),
         endpoint_policy,
+        http,
+        OAuthCredentialRefresh(
+            shared.storage.sessions,
+            MCPOAuthClient(
+                http,
+                endpoint_policy,
+                response_max_bytes=settings.connectivity_response_max_bytes,
+                max_redirects=settings.connectivity_max_redirects,
+            ),
+            shared.secret_protector,
+            instance_id=settings.service_instance_id or new_object_id("svc"),
+            lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
+            skew_seconds=settings.connectivity_provider_token_expiry_skew_seconds,
+        ),
     )
     runtime = WorkerRuntime(
         external_tools=external_tools,

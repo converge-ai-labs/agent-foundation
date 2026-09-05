@@ -18,14 +18,10 @@ from a13n_service.connectivity.management import (
     idempotency_key_digest,
     replay_command,
 )
-from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
+from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import (
-    AuthorizationError,
     WorkspaceAction,
-    authorize_workspace,
 )
-from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord, UserRecord
-from a13n_service.iam.resource_scope import ResourceScope
 
 from .domain import ConnectorConnection
 from .errors import ConnectorError
@@ -33,95 +29,22 @@ from .management import authorize, map_management_value_error, require_connectio
 from .models import ConnectorConnectionRecord, ConnectorSetupAttemptRecord
 
 
-async def authorize_owner_change(
-    session: AsyncSession,
-    actor: AuthenticatedActor,
-    scope: ResourceScope,
-    owner: PrincipalRef | None,
-) -> None:
-    if (
-        owner is not None
-        and owner.principal_type is PrincipalType.user
-        and owner.principal_id == actor.principal.principal_id
-    ):
-        await authorize(session, actor, scope.workspace_id, WorkspaceAction.connector_connection_read)
-        user = await session.get(UserRecord, owner.principal_id)
-        if user is None or user.status != "active":
-            raise ConnectorError("invalid_owner", "ConnectorConnection owner is invalid.", status_code=400)
-        return
-    await authorize(session, actor, scope.workspace_id, WorkspaceAction.connector_connection_manage)
-    if owner is None:
-        return
-    if owner.principal_type is PrincipalType.user:
-        user = await session.get(UserRecord, owner.principal_id)
-        workspace_binding = await session.scalar(
-            select(RoleBindingRecord.id).where(
-                RoleBindingRecord.principal_type == PrincipalType.user.value,
-                RoleBindingRecord.principal_id == owner.principal_id,
-                RoleBindingRecord.resource_type == "workspace",
-                RoleBindingRecord.resource_id == scope.workspace_id,
-            )
-        )
-        if user is None or user.status != "active" or workspace_binding is None:
-            raise ConnectorError("invalid_owner", "ConnectorConnection owner is invalid.", status_code=400)
-        return
-    account = await session.scalar(
-        select(ServiceAccountRecord).where(
-            ServiceAccountRecord.id == owner.principal_id,
-            ServiceAccountRecord.organization_id == scope.organization_id,
-            ServiceAccountRecord.workspace_id == scope.workspace_id,
-            ServiceAccountRecord.status == "active",
-            ServiceAccountRecord.deleted_at.is_(None),
-        )
-    )
-    if account is None:
-        raise ConnectorError("invalid_owner", "ConnectorConnection owner is invalid.", status_code=400)
-
-
 async def authorize_connection(
     session: AsyncSession,
     actor: AuthenticatedActor,
     connection: ConnectorConnectionRecord,
     *,
-    mode: Literal["read", "owner_manage", "administrative"],
+    mode: Literal["read", "manage"],
 ) -> None:
-    if (
-        connection.owner_type == actor.principal.principal_type.value
-        and connection.owner_id == actor.principal.principal_id
-        and actor.principal.principal_type is PrincipalType.user
-    ):
-        await authorize(session, actor, connection.workspace_id, WorkspaceAction.connector_connection_read)
-        return
-    if connection.owner_type == PrincipalType.user.value and mode == "owner_manage":
-        raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404)
-    action = WorkspaceAction.connector_connection_read
-    if mode != "read" or connection.owner_type is not None:
-        action = WorkspaceAction.connector_connection_manage
+    action = (
+        WorkspaceAction.connector_connection_read if mode == "read" else WorkspaceAction.connector_connection_manage
+    )
     await authorize(session, actor, connection.workspace_id, action)
-
-
-async def has_admin_access(session: AsyncSession, actor: AuthenticatedActor, workspace_id: str) -> bool:
-    try:
-        await authorize_workspace(
-            session,
-            actor=actor,
-            workspace_id=workspace_id,
-            action=WorkspaceAction.connector_connection_manage,
-        )
-    except AuthorizationError:
-        return False
-    return True
 
 
 async def connection_resource(session: AsyncSession, connection_id: str) -> ConnectorConnection:
     record = await require_connection(session, connection_id)
     return record.to_resource()
-
-
-def owner_ref(connection: ConnectorConnectionRecord) -> PrincipalRef | None:
-    if connection.owner_type is None or connection.owner_id is None:
-        return None
-    return PrincipalRef(principal_type=PrincipalType(connection.owner_type), principal_id=connection.owner_id)
 
 
 def verify_inspection(

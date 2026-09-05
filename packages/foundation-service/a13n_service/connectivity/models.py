@@ -2,7 +2,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, String
+from pydantic import JsonValue
+from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
@@ -39,4 +40,5 @@ class ConnectivityCommandRecord(Base):
     resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(72), nullable=False)
     result_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    result_json: Mapped[dict[str, JsonValue] | None] = mapped_column(JSON(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

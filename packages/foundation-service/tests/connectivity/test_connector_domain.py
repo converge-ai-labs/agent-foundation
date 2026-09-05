@@ -12,7 +12,6 @@ def _connection(**changes: object) -> ConnectorConnection:
         "organization_id": "org_abcdef1234567890",
         "workspace_id": "ws_abcdef1234567890",
         "connector_provider_id": "cnr_abcdef1234567890",
-        "owner_principal_ref": None,
         "name": "GitHub",
         "connector_key": "github",
         "safe_metadata": {},

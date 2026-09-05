@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.management import ConnectivityManagementValueError
-from a13n_service.iam import AuthenticatedActor, PrincipalType
+from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.models import SecurityAuditRecord
@@ -35,35 +35,11 @@ async def authorize_connection(
     session: AsyncSession,
     actor: AuthenticatedActor,
     connection: MCPConnectionRecord,
-    mode: Literal["read", "owner_manage", "administrative"],
+    *,
+    mode: Literal["read", "manage"],
 ) -> None:
-    is_owner = (
-        connection.owner_user_id is not None
-        and actor.principal.principal_type is PrincipalType.user
-        and actor.principal.principal_id == connection.owner_user_id
-    )
-    if is_owner:
-        await authorize_workspace_action(session, actor, connection.workspace_id, WorkspaceAction.mcp_connection_read)
-        return
-    if connection.owner_user_id is not None and mode == "owner_manage":
-        raise not_found()
-    action = WorkspaceAction.mcp_connection_read
-    if mode != "read" or connection.owner_user_id is not None:
-        action = WorkspaceAction.mcp_connection_manage
+    action = WorkspaceAction.mcp_connection_read if mode == "read" else WorkspaceAction.mcp_connection_manage
     await authorize_workspace_action(session, actor, connection.workspace_id, action)
-
-
-async def has_admin_access(session: AsyncSession, actor: AuthenticatedActor, workspace_id: str) -> bool:
-    try:
-        await authorize_workspace(
-            session,
-            actor=actor,
-            workspace_id=workspace_id,
-            action=WorkspaceAction.mcp_connection_manage,
-        )
-    except AuthorizationError:
-        return False
-    return True
 
 
 async def require_connection(
@@ -126,7 +102,6 @@ def invalidate_refresh_claim(connection: MCPConnectionRecord, *, now: datetime) 
     connection.refresh_claim_generation += 1
     connection.refresh_claim_owner = None
     connection.refresh_claim_expires_at = None
-    connection.refresh_available_at = now
 
 
 def not_found() -> MCPConnectionError:

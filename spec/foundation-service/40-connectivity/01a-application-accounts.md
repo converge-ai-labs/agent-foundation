@@ -6,13 +6,11 @@ An Application Account is one concrete external identity operated directly by Fo
 
 ## Boundaries
 
-| Concern                                                                      | Owner                                        |
-| ---------------------------------------------------------------------------- | -------------------------------------------- |
-| External identity, API configuration, credentials, availability              | Application Account                          |
-| Event transport, subscriptions, input execution Principal and allowed Agents | Ingress                                      |
-| Event matching, Agent selection and input policy                             | Route                                        |
-| Internal execution authority                                                 | Foundation User or Service Account           |
-| Externally managed SaaS credentials                                          | Connector service behind ConnectorConnection |
+| Concern                                                                      | Owner               |
+| ---------------------------------------------------------------------------- | ------------------- |
+| External identity, API configuration, credentials, availability              | Application Account |
+| Reception, default Agent, execution Service Account and default input policy | Application Account |
+| Exact provider object Agent and narrow configuration override                | AccountTarget       |
 
 A reusable provider application definition is not an Account. Each concrete tenant installation or authorization is a separate Account. Provider adapters own exact identity meaning and credential schemas. ConnectorProvider, ConnectorConnection, and MCPConnection retain their independent contracts.
 
@@ -30,6 +28,11 @@ class Account:
     provider_config_version: str
     provider_config: AccountProviderConfig
     status: Literal["active", "disabled"]
+    receive_enabled: bool = False
+    default_agent_id: AgentId | None
+    execution_service_account_id: ServiceAccountId | None
+    input_batching: InputBatchingPolicy | None
+    provider_policy: ProviderPolicy | None
     version: int
     credential_configured: bool
     credential_generation: int
@@ -40,25 +43,25 @@ class Account:
 
 Account IDs use the `acct_` object prefix. Provider identity, Organization, and Workspace are immutable. Name and identity-preserving settings are mutable under exact version preconditions. Changing provider, installation, tenant, or account creates a different Account. Among non-deleted Accounts within a Workspace the provider-declared concrete identity is unique; mutable display names and transport configuration never determine that identity.
 
-An Account belongs to its Workspace and can serve multiple Agents. A Run may receive bounded tools from several Accounts through its trusted entry context. The Account does not own a default Agent or an execution Service Account. Those input decisions belong to Ingress, while independently initiated Runs use their accepted authority Principal.
+An Account belongs to its Workspace and can serve multiple Agents. `receive_enabled` defaults to false. `default_agent_id` and `execution_service_account_id` are optional for tool-only Accounts and required when reception is enabled. The execution identity is an active same-Workspace Service Account; external actors never supply Foundation authority. Optional `input_batching` and `provider_policy` provide reception defaults, with exact AccountTarget overrides defined by [event routing](01-ingress-and-routing.md#exact-account-targets).
 
-An Account owns encrypted credential material under the shared [credential protection contract](../27-secret-management.md). API credentials and application/installation-wide verification secrets belong to the Account. A provider may define a subscription-exclusive verification secret owned by its Ingress. Credential rotation preserves account and ingress IDs and retained event/thread correlation. Credentials are write-only inputs to owning resource operations, never public Secret selections or Agent input.
+An Account owns encrypted credential material under the shared [credential protection contract](../27-secret-management.md). API credentials and verification secrets are write-only owning-resource inputs. Rotation preserves Account identity and Thread correlation; no credential enters Agent input or public Secret selections.
 
-## Ingress Relationship and Lifecycle
+## Reception and Lifecycle
 
-An Account has zero or one Ingress. Every Ingress has one immutable same-Workspace `account_id`; database uniqueness and tenant foreign keys enforce this relationship. Receive-only and send-only configurations use the same Account model. Account creation neither creates an Ingress nor starts an Agent.
+Account creation starts no Agent. Reception is embedded Account configuration, with no separate Ingress identity or Agent allowlist. Supported transport settings and credentials use the provider-owned Account schema.
 
-Ingress holds transport/subscription configuration, its immutable execution Service Account, allowed Agents, default Agent, and Routes. Its provider identity is resolved through the Account, never duplicated as separately editable identity configuration. Changing supported transport configuration preserves the Ingress ID. One event selects at most one Route and one Agent; the existing `(ingress_id, external_ref.kind, external_ref.id)` Thread binding remains authoritative.
+Account defaults select input execution authority and the default Agent. Exact targets select an optional Agent and narrow override. Changing defaults preserves `(account_id, external_ref.kind, external_ref.id)` Thread correlation. Each ordinary Run uses current configuration; an active or selected waiting Run receives only Steer.
 
-`active` is administrative eligibility, not a continuous provider health claim. `disabled` Account blocks new admission through its Ingress and every subsequent provider dispatch, including retries and previously accepted Runs. Already dispatched effects retain their provider outcome semantics. Re-enabling the Account does not change Ingress enablement.
+`active` is administrative eligibility, not a health claim. A disabled Account blocks reception and subsequent provider dispatch, including from accepted Runs. Re-enabling it does not change `receive_enabled`.
 
-Disabling Ingress stops new event admission and rejects pending input that has not been accepted. It does not revoke the bounded reply authority of an already accepted Run. Those actions continue to check Account availability, execution Principal, Route authorization, accepted target and action policy, and Attempt fencing. Explicit Route disablement revokes its action authority. Ingress disablement never grants broader proactive authority.
+Setting `receive_enabled=false` on an Account or exact target stops new admission; already acknowledged batches continue processing. Accepted replies retain their protected target and action policy and continue checking Account availability, execution Principal, and Attempt fencing. Reception settings do not grant proactive authority.
 
-Account deletion is blocked while an Ingress references it. Accepted Run references remain meaningful; deletion makes the Account unavailable and clears credential material without substituting another identity during recovery. A new Account may reuse a deleted Account's external identity or name, but receives a new ID and inherits no retained Run authority. An Ingress with retained admissions or Thread bindings cannot be deleted in a way that destroys their identity; disablement is the ordinary way to stop reception.
+Account deletion makes the identity unavailable and clears its credentials. Retained Run, Event, Batch, and Binding evidence keeps its original identity; recovery never substitutes another Account. A newly created Account inherits no retained Run authority.
 
 ## Default Tools and Authority
 
-Application Account tools are default host-injected capabilities. They do not belong to Agent configuration, Revisions, overrides, or user-selected connection lists. The trusted Run entry authorizes the Account, exact actions, and provider-typed target scope and freezes them as protected Run context. Ingress admission supplies current-conversation authority; an independent trusted entry can authorize proactive operations without an Ingress. No context means no Account tools, and Foundation never enumerates all Workspace Accounts to derive defaults.
+Application Account tools are default host-injected capabilities. They do not belong to Agent configuration, Revisions, overrides, or user-selected connection lists. The trusted Run entry authorizes the Account, exact actions, and provider-typed target scope and freezes them as protected Run context. Inbound admission supplies current-conversation authority; an independent trusted entry can authorize proactive operations without reception. No context means no Account tools, and Foundation never enumerates all Workspace Accounts to derive defaults.
 
 Account use and target authority are distinct. Binding an Account requires current `application_account.use` authority. An allowed operation does not authorize targets outside the entry's scope. The entry must establish target authority from its trusted policy; validating a target's shape is not permission to use it. Proactive operations expose provider-native destination arguments only within that scope. Current-conversation reply operations use the admitted target and expose no destination selector. Inbound reply authority does not enable proactive send tools.
 
@@ -82,13 +85,13 @@ Slack and Lark send actions accept the selected destination ID and provider-spec
 
 Account management uses `/api/v1/workspaces/{workspace_id}/application-accounts` for create/list and `/api/v1/application-accounts/{account_id}` for get/update/delete. Credential replacement uses `PUT .../credentials`; administrative commands use `POST .../enable` and `POST .../disable`. Creation and commands follow shared idempotency rules; mutations require exact version preconditions. Responses contain safe metadata only.
 
-Ingress creation accepts `account_id` and ingress-owned configuration. It accepts no account credentials or provider identity fields. Account and ingress routes use their own IAM actions; possessing either resource ID grants no authority.
+Exact object management uses the Account `/targets` child collection. Workspace Builders can manage targets within their current Agent and capability authority. Account management and credentials require Workspace Admin. Possession of an Account or target ID grants no authority.
 
 ## Invariants
 
 1. One Account is one concrete provider identity in one Workspace.
-2. Zero or one Ingress references an Account; one Ingress cannot change accounts.
+2. Reception is embedded Account configuration; exact targets belong to that Account.
 3. Credential rotation and reception changes preserve identity and Thread correlation.
-4. Account disablement blocks dispatch; ingress disablement alone does not revoke accepted replies.
+4. Account disablement blocks dispatch; reception closure alone does not revoke accepted replies.
 5. Account use, action allowlists, and target authority are separately validated.
 6. Recovery never replaces a missing or disabled account with another account.

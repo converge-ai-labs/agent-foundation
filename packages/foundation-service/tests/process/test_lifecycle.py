@@ -168,7 +168,7 @@ async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(tmp_
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             readiness = await client.get("/readyz")
-            delivery = await client.post("/connectivity/v1/ingresses/ing_test/events")
+            delivery = await client.post("/connectivity/v1/accounts/acct_test/events")
             health = await client.get("/healthz")
 
         assert readiness.status_code == 503

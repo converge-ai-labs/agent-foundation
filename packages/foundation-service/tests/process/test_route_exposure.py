@@ -34,17 +34,18 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert {
         "Account",
         "Asset",
-        "Ingress",
+        "AccountTarget",
         "Model",
         "Plugin",
         "PluginVersion",
         "Skill",
         "SkillPackageManifest",
         "SkillRevision",
-        "Route",
     } <= schemas.keys()
     assert {"Observation", "TraceCollection", "TraceDetail", "TraceSummary"} <= schemas.keys()
     assert {
+        "Ingress",
+        "Route",
         "FoundationAgentSkillSelection",
         "ManagedSkillPackageManifest",
         "ModelResource",
@@ -102,8 +103,10 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/workspaces/{workspace_id}/application-accounts" in document["paths"]
     assert "/api/v1/application-accounts/{account_id}/credentials" in document["paths"]
     assert "/api/v1/ingresses/{ingress_id}/credentials" not in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/ingresses" in document["paths"]
-    assert "/api/v1/ingresses/{ingress_id}/routes" in document["paths"]
+    assert "/api/v1/workspaces/{workspace_id}/ingresses" not in document["paths"]
+    assert "/api/v1/application-accounts/{account_id}/targets" in document["paths"]
+    assert "/api/v1/ingresses/{ingress_id}/routes" not in document["paths"]
+    assert "/api/v1/application-accounts/{account_id}/targets/{target_id}" in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/mcp-connections" in document["paths"]
     assert "/api/v1/mcp-connections/{connection_id}/authorize" in document["paths"]
     assert "/api/v1/oauth/mcp/client-metadata.json" in document["paths"]
@@ -124,8 +127,9 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     )
     for name in ("CreateAccountRequest", "ReplaceAccountCredentialsRequest"):
         assert schemas[name]["properties"]["credentials"]["writeOnly"]
-    assert "account_id" in schemas["CreateIngressRequest"]["required"]
-    for name in ("Account", "Ingress", "CreateIngressRequest"):
+    assert {"target_kind", "external_target_id"} <= set(schemas["TargetConfig"]["required"])
+    assert "CreateIngressRequest" not in schemas
+    for name in ("Account", "AccountTarget", "TargetConfig"):
         assert "credentials" not in schemas[name]["properties"]
 
 
@@ -171,10 +175,10 @@ def test_connectivity_role_exposes_no_control_plane_routes() -> None:
     assert request(app, "/healthz").json() == {"status": "ok", "role": "connectivity"}
     assert request(app, "/api/openapi.json").status_code == 404
     assert request(app, "/").status_code == 404
-    assert request(app, "/connectivity/v1/ingresses/ing_test/events", method="POST").status_code == 503
+    assert request(app, "/connectivity/v1/accounts/acct_test/events", method="POST").status_code == 503
 
 
 def test_non_connectivity_roles_do_not_expose_provider_data_plane() -> None:
     for role in (ProcessRole.control, ProcessRole.worker):
         app = create_app(Settings(_env_file=None, role=role))
-        assert request(app, "/connectivity/v1/ingresses/ing_test/events", method="POST").status_code == 404
+        assert request(app, "/connectivity/v1/accounts/acct_test/events", method="POST").status_code == 404

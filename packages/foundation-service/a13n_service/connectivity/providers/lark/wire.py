@@ -205,7 +205,6 @@ def _normalize_message(
         },
         data=data,
         ordering_key=f"{create_time}:{event_id}",
-        retain_raw=True,
     )
 
 

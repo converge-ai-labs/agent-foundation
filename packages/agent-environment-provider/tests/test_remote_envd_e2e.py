@@ -181,7 +181,7 @@ async def exercise(environment):
     handle = started.process.handle
     assert handle.identity.environment_id == LOGICAL_ID
     assert handle.mount_id == "mount-test"
-    info = await processes.wait(handle, condition="initial_terminal", timeout_seconds=5)
+    info = await processes.wait(handle, condition="tree_cleaned", timeout_seconds=5)
     assert info.status.exit_code == 0
     await processes.release(handle)
     return generation

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
 from typing import Any, Protocol
 
+import anyio
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.management import (
     ConnectivityManagementValueError,
@@ -19,8 +20,9 @@ from a13n_service.connectivity.management import (
     record_command,
     replay_command,
 )
+from a13n_service.connectivity.models import ConnectivityCommandRecord
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
-from a13n_service.iam import AuthenticatedActor, PrincipalType
+from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
@@ -48,10 +50,8 @@ from .management import (
     audit,
     authorize_connection,
     authorize_workspace_action,
-    has_admin_access,
     invalidate_refresh_claim,
     map_management_error,
-    not_found,
     require_connection,
     require_version,
 )
@@ -107,7 +107,7 @@ class MCPConnectionService:
             request.model_copy(update={"endpoint_url": endpoint, "static_header_names": header_names})
         )
         async with transaction(self._sessions) as session:
-            await _authorize_create(session, actor, workspace_id, request.owner_user_id)
+            await authorize_workspace_action(session, actor, workspace_id, WorkspaceAction.mcp_connection_manage)
         try:
             endpoint = await self._endpoint_policy.validate(endpoint, resolve_dns=True)
         except EndpointPolicyError as error:
@@ -120,7 +120,9 @@ class MCPConnectionService:
         connection_id = new_object_id("mcpc")
         try:
             async with transaction(self._sessions) as session:
-                workspace = await _authorize_create(session, actor, workspace_id, request.owner_user_id)
+                workspace = await authorize_workspace_action(
+                    session, actor, workspace_id, WorkspaceAction.mcp_connection_manage
+                )
                 try:
                     replay = await replay_command(
                         session,
@@ -139,7 +141,6 @@ class MCPConnectionService:
                     id=connection_id,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
-                    owner_user_id=request.owner_user_id,
                     name=request.name,
                     normalized_name=request.name.casefold(),
                     endpoint_url=endpoint,
@@ -152,12 +153,6 @@ class MCPConnectionService:
                     refresh_claim_generation=0,
                     refresh_claim_owner=None,
                     refresh_claim_expires_at=None,
-                    refresh_available_at=now,
-                    refresh_last_error_code=None,
-                    cleanup_pending=False,
-                    cleanup_attempt_count=0,
-                    cleanup_available_at=now,
-                    cleanup_last_error_code=None,
                     deleted_at=None,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
@@ -208,13 +203,10 @@ class MCPConnectionService:
             raise MCPConnectionError("invalid_cursor", "The collection cursor is invalid.", status_code=400) from error
         async with transaction(self._sessions) as session:
             await authorize_workspace_action(session, actor, workspace_id, WorkspaceAction.mcp_connection_read)
-            admin_access = await has_admin_access(session, actor, workspace_id)
             query = select(MCPConnectionRecord).where(
                 MCPConnectionRecord.workspace_id == workspace_id,
                 MCPConnectionRecord.deleted_at.is_(None),
             )
-            if not admin_access:
-                query = query.where(_visible_owner(actor))
             if position is not None:
                 query = query.where(
                     or_(
@@ -232,7 +224,7 @@ class MCPConnectionService:
                 ).all()
             )
             page = records[:limit]
-            items = tuple([await self._resource(session, record.id) for record in page])
+            items = tuple(record.to_resource() for record in page)
             next_cursor = None
             if len(records) > limit:
                 last = page[-1]
@@ -243,7 +235,7 @@ class MCPConnectionService:
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id)
             await authorize_connection(session, actor, record, mode="read")
-            return await self._resource(session, record.id)
+            return record.to_resource()
 
     async def update(
         self,
@@ -255,14 +247,14 @@ class MCPConnectionService:
         try:
             async with transaction(self._sessions) as session:
                 record = await require_connection(session, connection_id, lock=True)
-                await authorize_connection(session, actor, record, mode="owner_manage")
+                await authorize_connection(session, actor, record, mode="manage")
                 require_version(record.version, request.expected_version)
                 record.name = request.name
                 record.normalized_name = request.name.casefold()
                 record.version += 1
                 record.updated_at = self._clock()
                 session.add(audit(actor, record, action="mcp_connection.update", now=record.updated_at))
-                return await self._resource(session, record.id)
+                return record.to_resource()
         except IntegrityError as error:
             raise MCPConnectionError(
                 "mcp_connection_conflict",
@@ -281,7 +273,7 @@ class MCPConnectionService:
         key_digest = _idempotency_digest(idempotency_key)
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True)
-            await authorize_connection(session, actor, record, mode="owner_manage")
+            await authorize_connection(session, actor, record, mode="manage")
             credential_value = _credential_value(record, request)
             request_fingerprint = fingerprint(request, credentials={"bundle": credential_value})
             replay = await self._replay(
@@ -293,7 +285,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
             )
             if replay:
-                return await self._resource(session, record.id)
+                return record.to_resource()
             require_version(record.version, request.expected_version)
             try:
                 record.replace_credential(credential_value, self._protector)
@@ -332,7 +324,7 @@ class MCPConnectionService:
         request_fingerprint = canonical_digest({"expected_version": expected_version})
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True)
-            await authorize_connection(session, actor, record, mode="owner_manage")
+            await authorize_connection(session, actor, record, mode="manage")
             replay = await self._replay(
                 session,
                 actor=actor,
@@ -342,7 +334,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
             )
             if replay:
-                return await self._resource(session, record.id)
+                return record.to_resource()
             require_version(record.version, expected_version)
             if record.auth_mode != "none" and record.ciphertext is None:
                 raise MCPConnectionError("credentials_required", "MCP credentials are required.", status_code=409)
@@ -380,7 +372,7 @@ class MCPConnectionService:
                 session,
                 actor,
                 record,
-                mode="owner_manage" if enabled else "administrative",
+                mode="manage",
             )
             replay = await self._replay(
                 session,
@@ -414,7 +406,7 @@ class MCPConnectionService:
                     key_digest=key_digest,
                     request_fingerprint=request_fingerprint,
                 )
-            return await self._resource(session, record.id)
+            return record.to_resource()
 
     async def delete(
         self,
@@ -423,88 +415,99 @@ class MCPConnectionService:
         connection_id: str,
         idempotency_key: str,
         expected_version: int,
-    ) -> None:
+    ) -> ConnectionCleanupReceipt:
         key_digest = _idempotency_digest(idempotency_key)
         request_fingerprint = canonical_digest({"expected_version": expected_version})
-        cleanup_required = False
+        credentials = []
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id, lock=True, include_deleted=True)
-            await authorize_connection(session, actor, record, mode="administrative")
-            replay = await self._replay(
-                session,
-                actor=actor,
-                record=record,
-                operation="mcp_connection.delete",
-                key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
-            )
-            if replay:
-                return
+            await authorize_connection(session, actor, record, mode="manage")
+            try:
+                replay = await replay_command(
+                    session,
+                    actor=actor,
+                    workspace_id=record.workspace_id,
+                    operation="mcp_connection.delete",
+                    scope_id=connection_id,
+                    idempotency_key_digest=key_digest,
+                    fingerprint=request_fingerprint,
+                )
+            except ConnectivityManagementValueError as error:
+                raise map_management_error(error) from error
+            if replay is not None:
+                return ConnectionCleanupReceipt.model_validate(replay.result_json)
             require_version(record.version, expected_version)
-            cleanup_required = record.auth_mode == MCPAuthMode.oauth.value and record.ciphertext is not None
-            if record.ciphertext is not None and not cleanup_required:
-                record.clear_credential()
-            deleted_at = self._clock()
+            if record.auth_mode == "oauth" and record.ciphertext is not None:
+                credentials.append(record.credential_snapshot())
+            record.clear_credential()
+            now = self._clock()
             record.status = "disabled"
             record.status_reason = None
-            record.cleanup_pending = cleanup_required
-            record.cleanup_available_at = deleted_at
-            record.deleted_at = deleted_at
+            record.deleted_at = now
             record.version += 1
-            record.updated_at = deleted_at
-            invalidate_refresh_claim(record, now=deleted_at)
+            record.updated_at = now
+            invalidate_refresh_claim(record, now=now)
             oauth_sessions = await session.scalars(
                 select(MCPOAuthSessionRecord).where(
-                    MCPOAuthSessionRecord.mcp_connection_id == record.id,
+                    MCPOAuthSessionRecord.mcp_connection_id == connection_id,
                     MCPOAuthSessionRecord.status.in_(("pending", "exchanging")),
                 )
             )
             for oauth_session in oauth_sessions:
+                if oauth_session.ciphertext is not None:
+                    credentials.append(oauth_session.credential_snapshot())
                 oauth_session.status = "expired"
+                oauth_session.clear_credential()
                 oauth_session.claim_owner = None
                 oauth_session.claim_expires_at = None
-                oauth_session.updated_at = deleted_at
-            self._record(
+                oauth_session.updated_at = now
+            receipt = ConnectionCleanupReceipt(
+                connection_id=connection_id,
+                local_status="deleted",
+                remote_status="unknown" if credentials else "not_required",
+            )
+            command = record_command(
                 session,
                 actor=actor,
-                record=record,
+                organization_id=record.organization_id,
+                workspace_id=record.workspace_id,
                 operation="mcp_connection.delete",
-                key_digest=key_digest,
-                request_fingerprint=request_fingerprint,
+                scope_id=connection_id,
+                idempotency_key_digest=key_digest,
+                fingerprint=request_fingerprint,
+                resource_type="mcp_connection",
+                resource_id=connection_id,
+                result_version=record.version,
+                now=now,
+                result=receipt.model_dump(mode="json"),
             )
-        if cleanup_required:
-            await self.reconcile_cleanup(connection_id)
-
-    async def reconcile_cleanup(self, connection_id: str) -> bool:
+            command_id = command.id
+            session.add(audit(actor, record, action="mcp_connection.delete", now=now))
+        if not credentials:
+            return receipt
+        outcomes = []
+        # Each owned registration gets one bounded attempt; command replay uses
+        # the stored aggregate receipt and cannot repeat these side effects.
+        for credential in credentials:
+            outcome = "unknown"
+            try:
+                bundle = json.loads(credential.decrypt(self._protector))
+                if isinstance(bundle, dict) and self._registration_cleaner is not None:
+                    with anyio.fail_after(30):
+                        cleaned = await self._registration_cleaner.cleanup_registration_bundle(bundle)
+                    outcome = "succeeded" if cleaned else "unknown"
+            except (SecretProtectionError, ValueError):
+                outcome = "failed"
+            except Exception:
+                outcome = "unknown"
+            outcomes.append(outcome)
+        outcome = "unknown" if "unknown" in outcomes else "failed" if "failed" in outcomes else "succeeded"
+        receipt = ConnectionCleanupReceipt(connection_id=connection_id, local_status="deleted", remote_status=outcome)
         async with transaction(self._sessions) as session:
-            record = await require_connection(session, connection_id, include_deleted=True)
-            if not record.cleanup_pending or record.ciphertext is None:
-                return True
-            generation = record.credential_generation
-        cleaned = False
-        try:
-            raw = record.credential_snapshot().decrypt(self._protector)
-            bundle = json.loads(raw)
-            if isinstance(bundle, dict) and self._registration_cleaner is not None:
-                cleaned = await self._registration_cleaner.cleanup_registration_bundle(bundle)
-        except (SecretProtectionError, json.JSONDecodeError, UnicodeDecodeError, RecursionError, ValueError):
-            cleaned = False
-        now = self._clock()
-        async with transaction(self._sessions) as session:
-            current = await require_connection(session, connection_id, lock=True, include_deleted=True)
-            if not current.cleanup_pending or current.credential_generation != generation:
-                return False
-            current.cleanup_attempt_count += 1
-            current.cleanup_available_at = now
-            if not cleaned:
-                current.cleanup_last_error_code = "registration_cleanup_failed"
-                delay = min(3600, 30 * (2 ** min(current.cleanup_attempt_count - 1, 7)))
-                current.cleanup_available_at = now + timedelta(seconds=delay)
-                return False
-            current.clear_credential()
-            current.cleanup_pending = False
-            current.cleanup_last_error_code = None
-            return True
+            command = await session.get(ConnectivityCommandRecord, command_id, with_for_update=True)
+            if command is not None:
+                command.result_json = receipt.model_dump(mode="json")
+        return receipt
 
     async def _resource(self, session: AsyncSession, connection_id: str) -> MCPConnection:
         record = await require_connection(session, connection_id, include_deleted=True)
@@ -576,21 +579,6 @@ def _validate_auth_identity(auth_mode: MCPAuthMode, header_names: tuple[str, ...
         )
 
 
-async def _authorize_create(
-    session: AsyncSession,
-    actor: AuthenticatedActor,
-    workspace_id: str,
-    owner_user_id: str | None,
-):
-    if owner_user_id is None:
-        action = WorkspaceAction.mcp_connection_manage
-    elif actor.principal.principal_type is PrincipalType.user and actor.principal.principal_id == owner_user_id:
-        action = WorkspaceAction.mcp_connection_read
-    else:
-        raise not_found()
-    return await authorize_workspace_action(session, actor, workspace_id, action)
-
-
 def _credential_value(record: MCPConnectionRecord, request: ReplaceMCPCredentialsRequest) -> str:
     try:
         if (
@@ -615,15 +603,6 @@ def _credential_value(record: MCPConnectionRecord, request: ReplaceMCPCredential
         "Credentials do not match the MCPConnection authentication mode.",
         status_code=400,
     )
-
-
-def _visible_owner(actor: AuthenticatedActor):
-    if actor.principal.principal_type is PrincipalType.user:
-        return or_(
-            MCPConnectionRecord.owner_user_id.is_(None),
-            MCPConnectionRecord.owner_user_id == actor.principal.principal_id,
-        )
-    return MCPConnectionRecord.owner_user_id.is_(None)
 
 
 def _idempotency_digest(value: str) -> str:

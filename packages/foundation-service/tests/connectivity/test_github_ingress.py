@@ -9,7 +9,6 @@ from a13n_service.connectivity.accounts.domain import CreateAccountRequest
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.admission_models import IngressAdmissionRecord
-from a13n_service.connectivity.ingress.domain import CreateIngressRequest
 from a13n_service.connectivity.ingress.provider import (
     ProviderCompleteDecision,
     ProviderEligibleEventRouting,
@@ -17,8 +16,6 @@ from a13n_service.connectivity.ingress.provider import (
     ProviderRequest,
     ProviderRequestError,
 )
-from a13n_service.connectivity.ingress.raw_objects import IngressRawObjectStore
-from a13n_service.connectivity.ingress.service import IngressService
 from a13n_service.connectivity.providers.github import GitHubIngressAdapter
 from a13n_service.connectivity.providers.registry import built_in_ingress_adapter_registry
 from a13n_service.secrets import SecretProtector
@@ -156,7 +153,7 @@ async def test_github_official_hmac_vector_passes_authentication(
     with pytest.raises(ProviderRequestError) as rejected:
         await GitHubIngressAdapter().authenticate_and_normalize(
             request,
-            ingress_id="ing_test",
+            account_id="ing_test",
             account_config=_config(),
             credentials=_credentials(github_private_key_pem),
             received_at=NOW,
@@ -175,7 +172,7 @@ async def test_github_hmac_unicode_comment_and_identity_are_normalized(
 
     decision = await adapter.authenticate_and_normalize(
         _request(_payload()),
-        ingress_id="ing_test",
+        account_id="ing_test",
         account_config=_config(),
         credentials=_credentials(github_private_key_pem),
         received_at=NOW,
@@ -209,7 +206,7 @@ async def test_github_g1_event_families_use_one_safe_target(
 ) -> None:
     decision = await GitHubIngressAdapter().authenticate_and_normalize(
         _request(_payload(event_name=event_name, action=action), event_name=event_name),
-        ingress_id="ing_test",
+        account_id="ing_test",
         account_config=_config(),
         credentials=_credentials(github_private_key_pem),
         received_at=NOW,
@@ -231,7 +228,7 @@ async def test_github_rejects_wrong_signature_or_installation(github_private_key
         with pytest.raises(ProviderRequestError) as rejected:
             await GitHubIngressAdapter().authenticate_and_normalize(
                 request,
-                ingress_id="ing_test",
+                account_id="ing_test",
                 account_config=_config(),
                 credentials=_credentials(github_private_key_pem),
                 received_at=NOW,
@@ -248,21 +245,21 @@ async def test_github_ping_unsupported_and_self_events_create_no_admission(
     decisions = (
         await adapter.authenticate_and_normalize(
             _request(ping, event_name="ping"),
-            ingress_id="ing_test",
+            account_id="ing_test",
             account_config=_config(),
             credentials=_credentials(github_private_key_pem),
             received_at=NOW,
         ),
         await adapter.authenticate_and_normalize(
             _request(_payload(action="edited")),
-            ingress_id="ing_test",
+            account_id="ing_test",
             account_config=_config(),
             credentials=_credentials(github_private_key_pem),
             received_at=NOW,
         ),
         await adapter.authenticate_and_normalize(
             _request(_payload(sender_id=999)),
-            ingress_id="ing_test",
+            account_id="ing_test",
             account_config=_config(),
             credentials=_credentials(github_private_key_pem),
             received_at=NOW,
@@ -300,40 +297,17 @@ def test_github_config_requires_official_pair_or_allowlisted_enterprise(
 async def test_github_route_predicates_overlap_and_native_actions(
     github_private_key_pem: str,
 ) -> None:
+    policy = {}
     adapter = GitHubIngressAdapter()
-    left, policy = adapter.validate_route(
-        match={
-            "repository_ids": [42],
-            "event_actions": ["pull_request.labeled"],
-            "labels": ["ready"],
-            "base_branches": ["main"],
-        },
-        provider_policy={},
-        account_config=_config(),
-        config_version="github_app_http_v1",
-    )
-    right, _ = adapter.validate_route(
-        match={
-            "repository_ids": [42],
-            "event_actions": ["pull_request.labeled"],
-            "labels": ["blocked"],
-            "base_branches": ["main"],
-        },
-        provider_policy={},
-        account_config=_config(),
-        config_version="github_app_http_v1",
-    )
     decision = await adapter.authenticate_and_normalize(
         _request(_payload(event_name="pull_request", action="labeled"), event_name="pull_request"),
-        ingress_id="ing_test",
+        account_id="ing_test",
         account_config=_config(),
         credentials=_credentials(github_private_key_pem),
         received_at=NOW,
     )
     assert isinstance(decision, ProviderEventDecision)
 
-    assert adapter.prove_non_overlap(left, right) is True
-    assert adapter.route_matches(decision.event, left, config_version="github_app_http_v1") is True
     classified = adapter.classify(decision.event, policy, _config(), config_version="github_app_http_v1")
     assert isinstance(classified, ProviderEligibleEventRouting)
     assert classified.native_actions[-1] == "github.list_pr_files"
@@ -354,6 +328,9 @@ async def test_github_real_protocol_fixture_is_durable_and_duplicate_acknowledge
         workspace_id=WORKSPACE_ID,
         idempotency_key="github-account",
         request=CreateAccountRequest(
+            receive_enabled=True,
+            default_agent_id=AGENT_ID,
+            execution_service_account_id=SERVICE_ACCOUNT_ID,
             name="github",
             provider_key="github",
             provider_config_version="github_app_http_v1",
@@ -361,39 +338,23 @@ async def test_github_real_protocol_fixture_is_durable_and_duplicate_acknowledge
             credentials=_credentials(github_private_key_pem),
         ),
     )
-    ingress_service = IngressService(connectivity_sessions, clock=lambda: NOW)
-    ingress = await ingress_service.create_ingress(
-        actor=actor(),
-        workspace_id=WORKSPACE_ID,
-        idempotency_key="github-ingress",
-        request=CreateIngressRequest(
-            name="GitHub",
-            account_id=account.id,
-            provider_config={"events_transport": "http"},
-            execution_service_account_id=SERVICE_ACCOUNT_ID,
-            agents=(AGENT_ID,),
-            default_agent_id=AGENT_ID,
-        ),
-    )
     event_service = IngressEventService(
         connectivity_sessions,
         registry,
         credential_protector,
-        IngressRawObjectStore(connectivity_objects),
         request_max_bytes=8 * 1024 * 1024,
-        raw_retention_seconds=0,
         workspace_pending_max_count=100,
         workspace_pending_max_bytes=8 * 1024 * 1024,
-        ingress_pending_max_count=100,
-        ingress_pending_max_bytes=8 * 1024 * 1024,
+        account_pending_max_count=100,
+        account_pending_max_bytes=8 * 1024 * 1024,
         batch_max_bytes=1024 * 1024,
         dedup_horizon_seconds=7 * 24 * 60 * 60,
         clock=lambda: NOW,
     )
     request = _request(_payload())
 
-    first = await event_service.receive(ingress_id=ingress.id, request=request)
-    duplicate = await event_service.receive(ingress_id=ingress.id, request=request)
+    first = await event_service.receive(account_id=account.id, request=request)
+    duplicate = await event_service.receive(account_id=account.id, request=request)
 
     assert first.status_code == 202
     assert duplicate.status_code == 200

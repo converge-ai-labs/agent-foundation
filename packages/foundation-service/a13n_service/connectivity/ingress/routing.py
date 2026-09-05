@@ -1,189 +1,105 @@
-"""Deterministic route and frozen destination resolution."""
+"""Resolve exact Account objects and provider conversation policy."""
 
-from __future__ import annotations
-
-import hashlib
-import json
 from dataclasses import dataclass
-from typing import Literal
 
-from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
+from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.errors import NativeError
 
-from .admission_domain import BindingState
+from .admission_domain import BatchConfiguration
 from .admission_models import AgentThreadBindingRecord
-from .mapping import CompiledMapping, MappingError, compile_mapping
-from .models import IngressRecord, RouteRecord
-from .provider import (
-    DefaultRoute,
-    ExternalRef,
-    InboundEvent,
-    ProviderEventRouting,
-    ProviderIrrelevantEventRouting,
-    ProviderRequiresBindingRouting,
-)
-
-
-@dataclass(frozen=True, slots=True)
-class IrrelevantRouting:
-    kind: Literal["irrelevant"]
-    reason_code: str
-
-
-@dataclass(frozen=True, slots=True)
-class RejectedRouting:
-    kind: Literal["rejected"]
-    reason_code: str
-    route: RouteRecord | None = None
+from .provider import ExternalRef, InboundEvent, ProviderIrrelevantEventRouting, ProviderRequiresBindingRouting
 
 
 @dataclass(frozen=True, slots=True)
 class EligibleRouting:
-    kind: Literal["eligible"]
-    route: RouteRecord | None
-    selected_agent_id: str
+    configuration: BatchConfiguration
     external_ref: ExternalRef
-    binding_state: BindingState
-    binding_id: str | None
-    mapping: CompiledMapping
-    min_interval_ms: int
-    max_batch_events: int
-    provider_context: dict[str, JsonValue]
-    provider_policy: dict[str, JsonValue]
-    native_actions: tuple[str, ...]
-    capability_overlay: dict[str, JsonValue] | None
-    compatibility_digest: str
+    binding: AgentThreadBindingRecord | None
 
 
-type RoutingResolution = IrrelevantRouting | RejectedRouting | EligibleRouting
+@dataclass(frozen=True, slots=True)
+class IrrelevantRouting:
+    reason_code: str
 
 
 async def resolve_routing(
-    session: AsyncSession,
-    *,
-    adapter: IngressAdapter,
-    ingress: IngressRecord,
-    event: InboundEvent,
-) -> RoutingResolution:
-    if ingress.status != "active" or ingress.account.status != "active" or ingress.account.deleted_at is not None:
-        return IrrelevantRouting(kind="irrelevant", reason_code="ingress_disabled")
-    routes = tuple((await session.scalars(select(RouteRecord).where(RouteRecord.ingress_id == ingress.id))).all())
+    session: AsyncSession, *, adapter: IngressAdapter, account: AccountRecord, event: InboundEvent
+) -> EligibleRouting | IrrelevantRouting:
+    if account.status != "active" or not account.receive_enabled or account.deleted_at is not None:
+        return IrrelevantRouting("receiving_disabled")
     try:
-        matching = tuple(
-            route
-            for route in routes
-            if adapter.route_matches(event, route.match_json, config_version=ingress.account.provider_config_version)
-        )
+        kind, identifier = adapter.event_target(event)
     except ValueError as error:
-        raise NativeError("invalid_provider_event", "Provider event could not be routed.", status_code=400) from error
-    if len(matching) > 1:
-        return RejectedRouting(kind="rejected", reason_code="route_ambiguous")
-    route = matching[0] if matching else None
-    if route is not None and not route.enabled:
-        return IrrelevantRouting(kind="irrelevant", reason_code="route_disabled")
-
-    default = _default_route(adapter, ingress, event)
-    provider_policy = route.provider_policy_json if route is not None else default.provider_policy
-    classification = _classify(adapter, ingress, event, provider_policy)
-    if isinstance(classification, ProviderIrrelevantEventRouting):
-        return IrrelevantRouting(kind="irrelevant", reason_code=classification.reason_code)
-    external_ref = event.refs.get(classification.external_ref_key)
-    if external_ref is None:
-        return RejectedRouting(kind="rejected", reason_code="correlation_ref_missing", route=route)
-    binding = await session.scalar(
-        select(AgentThreadBindingRecord).where(
-            AgentThreadBindingRecord.ingress_id == ingress.id,
-            AgentThreadBindingRecord.external_ref_kind == external_ref.kind,
-            AgentThreadBindingRecord.external_ref_id == external_ref.id,
+        raise NativeError("invalid_provider_event", "Provider event target is invalid.", status_code=400) from error
+    target = await session.scalar(
+        select(AccountTargetRecord).where(
+            AccountTargetRecord.account_id == account.id,
+            AccountTargetRecord.target_kind == kind,
+            AccountTargetRecord.external_target_id == identifier,
         )
     )
-    if isinstance(classification, ProviderRequiresBindingRouting) and binding is None:
-        return IrrelevantRouting(kind="irrelevant", reason_code="binding_required")
-    selected_agent_id = binding.agent_id if binding is not None else (route.agent_id if route is not None else None)
-    if selected_agent_id is None:
-        selected_agent_id = ingress.default_agent_id
-    mapping_value = (
-        route.input_mapping_json
-        if route is not None and route.input_mapping_json is not None
-        else default.input_mapping
-    )
+    if target is not None and not target.receive_enabled:
+        return IrrelevantRouting("target_receiving_disabled")
     try:
-        mapping = compile_mapping(mapping_value)
-    except MappingError as error:
-        raise NativeError("invalid_input_mapping", "Frozen input mapping is invalid.", status_code=409) from error
-    min_interval_ms = route.min_interval_ms if route is not None else default.input_batching.min_interval_ms
-    max_batch_events = route.max_batch_events if route is not None else default.input_batching.max_batch_events
-    overlay = None
-    if route is not None:
-        value = route.capability_overlays_json.get(selected_agent_id)
-        overlay = value if isinstance(value, dict) else None
-    compatibility = _digest(
-        {
-            "ingress_id": ingress.id,
-            "route_id": route.id if route is not None else None,
-            "route_version": route.version if route is not None else None,
-            "selected_agent_id": selected_agent_id,
-            "external_ref": external_ref.model_dump(mode="json"),
-            "binding_id": binding.id if binding is not None else None,
-            "mapping_digest": mapping.digest,
-            "provider_context": classification.provider_context,
-            "provider_policy": provider_policy,
-            "native_actions": classification.native_actions,
-            "capability_overlay": overlay,
-        }
-    )
-    return EligibleRouting(
-        kind="eligible",
-        route=route,
-        selected_agent_id=selected_agent_id,
-        external_ref=external_ref,
-        binding_state=BindingState.bound if binding is not None else BindingState.unbound,
-        binding_id=binding.id if binding is not None else None,
-        mapping=mapping,
-        min_interval_ms=min_interval_ms,
-        max_batch_events=max_batch_events,
-        provider_context=classification.provider_context,
-        provider_policy=provider_policy,
-        native_actions=classification.native_actions,
-        capability_overlay=overlay,
-        compatibility_digest=compatibility,
-    )
-
-
-def _default_route(adapter: IngressAdapter, ingress: IngressRecord, event: InboundEvent) -> DefaultRoute:
-    try:
-        return adapter.default_route(
-            event,
-            ingress.account.provider_config_json,
-            config_version=ingress.account.provider_config_version,
+        default = adapter.reception_defaults(
+            event, account.provider_config_json, config_version=account.provider_config_version
         )
-    except ValueError as error:
-        raise NativeError(
-            "invalid_provider_event", "Provider event cannot use default routing.", status_code=400
-        ) from error
-
-
-def _classify(
-    adapter: IngressAdapter,
-    ingress: IngressRecord,
-    event: InboundEvent,
-    provider_policy: dict[str, JsonValue],
-) -> ProviderEventRouting:
-    try:
-        return adapter.classify(
-            event,
-            provider_policy,
-            ingress.account.provider_config_json,
-            config_version=ingress.account.provider_config_version,
+        policy = (
+            target.provider_policy_json
+            if target is not None and target.provider_policy_json is not None
+            else account.provider_policy_json
+        )
+        if policy is None:
+            policy = default.provider_policy
+        classification = adapter.classify(
+            event, policy, account.provider_config_json, config_version=account.provider_config_version
         )
     except ValueError as error:
         raise NativeError("invalid_provider_event", "Provider event cannot be classified.", status_code=400) from error
-
-
-def _digest(value: object) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    if isinstance(classification, ProviderIrrelevantEventRouting):
+        return IrrelevantRouting(classification.reason_code)
+    ref = event.refs.get(classification.external_ref_key)
+    if ref is None:
+        raise NativeError("correlation_ref_missing", "Provider event has no conversation reference.", status_code=400)
+    binding = await session.scalar(
+        select(AgentThreadBindingRecord)
+        .where(
+            AgentThreadBindingRecord.account_id == account.id,
+            AgentThreadBindingRecord.external_ref_kind == ref.kind,
+            AgentThreadBindingRecord.external_ref_id == ref.id,
+        )
+        .with_for_update()
+    )
+    if isinstance(classification, ProviderRequiresBindingRouting) and (binding is None or binding.thread_id is None):
+        return IrrelevantRouting("binding_required")
+    batching = (
+        target.input_batching_json
+        if target is not None and target.input_batching_json is not None
+        else account.input_batching_json
+    )
+    return EligibleRouting(
+        configuration=BatchConfiguration(
+            account_id=account.id,
+            account_version=account.version,
+            target_id=target.id if target is not None else None,
+            target_version=target.version if target is not None else None,
+            target_kind=kind,
+            external_target_id=identifier,
+            provider_key=account.provider_key,
+            provider_context_version=event.normalization_version,
+            provider_context=classification.provider_context,
+            provider_policy=policy,
+            native_actions=classification.native_actions,
+            input_batching=InputBatchingPolicy.model_validate(batching)
+            if batching is not None
+            else default.input_batching,
+        ),
+        external_ref=ref,
+        binding=binding,
+    )

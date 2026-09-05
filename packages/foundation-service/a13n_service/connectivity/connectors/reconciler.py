@@ -1,4 +1,4 @@
-"""Lease-based ConnectorProvider setup, revoke, and connection reconciliation."""
+"""Lease-based ConnectorProvider setup reconciliation."""
 
 from __future__ import annotations
 
@@ -17,13 +17,11 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .connection_access import apply_inspection, verify_inspection
-from .connections import ConnectorConnectionService
 from .contracts import ConnectionBinding
 from .domain import ConnectorConnectionStatus, ConnectorConnectionStatusReason
 from .errors import ConnectorError
-from .management import configure_provider, require_active_provider, require_connection
-from .models import ConnectorOperationRecord, ConnectorSetupAttemptRecord
+from .management import configure_provider, require_active_provider
+from .models import ConnectorConnectionRecord, ConnectorSetupAttemptRecord
 from .setup import ConnectorSetupCoordinator
 
 
@@ -33,7 +31,6 @@ class ConnectorReconciler:
         sessions: async_sessionmaker[AsyncSession],
         adapters: ConnectorProviderRegistry,
         setup: ConnectorSetupCoordinator,
-        connections: ConnectorConnectionService,
         *,
         instance_id: str,
         poll_interval_seconds: float,
@@ -43,7 +40,6 @@ class ConnectorReconciler:
         self._sessions = sessions
         self._adapters = adapters
         self._setup = setup
-        self._connections = connections
         self._instance_id = instance_id
         self._poll_interval_seconds = poll_interval_seconds
         self._lease_seconds = lease_seconds
@@ -61,30 +57,42 @@ class ConnectorReconciler:
         if attempt is not None:
             await self._reconcile_attempt(*attempt)
             return True
-        operation = await self._claim_operation()
-        if operation is not None:
-            await self._reconcile_operation(*operation)
-            return True
         return False
 
     async def _expire_attempt(self) -> bool:
         now = self._clock()
         async with transaction(self._sessions) as session:
-            attempt = await session.scalar(
-                select(ConnectorSetupAttemptRecord)
+            connection = await session.scalar(
+                select(ConnectorConnectionRecord)
+                .join(
+                    ConnectorSetupAttemptRecord,
+                    ConnectorSetupAttemptRecord.connector_connection_id == ConnectorConnectionRecord.id,
+                )
                 .where(
                     ConnectorSetupAttemptRecord.status.in_(("pending", "attached", "reserved")),
                     ConnectorSetupAttemptRecord.expires_at <= now,
                 )
                 .order_by(ConnectorSetupAttemptRecord.expires_at, ConnectorSetupAttemptRecord.id)
                 .limit(1)
-                .with_for_update(skip_locked=True)
+                .with_for_update(of=ConnectorConnectionRecord, skip_locked=True)
+            )
+            if connection is None:
+                return False
+            attempt = await session.scalar(
+                select(ConnectorSetupAttemptRecord)
+                .where(
+                    ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
+                    ConnectorSetupAttemptRecord.status.in_(("pending", "attached", "reserved")),
+                    ConnectorSetupAttemptRecord.expires_at <= now,
+                )
+                .order_by(ConnectorSetupAttemptRecord.expires_at, ConnectorSetupAttemptRecord.id)
+                .limit(1)
+                .with_for_update()
             )
             if attempt is None:
                 return False
             attempt.status = "expired"
             attempt.updated_at = now
-            connection = await require_connection(session, attempt.connector_connection_id, lock=True)
             if connection.setup_generation == attempt.generation and connection.status == "pending":
                 connection.status = ConnectorConnectionStatus.action_required.value
                 connection.status_reason = ConnectorConnectionStatusReason.reauthorization_required.value
@@ -167,93 +175,6 @@ class ConnectorReconciler:
                 await self._defer_attempt(attempt_id, claim_generation, code=error.code)
         finally:
             await self._release_attempt(attempt_id, claim_generation)
-
-    async def _claim_operation(self) -> tuple[str, int] | None:
-        now = self._clock()
-        async with transaction(self._sessions) as session:
-            operation = await session.scalar(
-                select(ConnectorOperationRecord)
-                .where(
-                    ConnectorOperationRecord.status.in_(("pending", "unknown")),
-                    ConnectorOperationRecord.available_at <= now,
-                    or_(
-                        ConnectorOperationRecord.claim_expires_at.is_(None),
-                        ConnectorOperationRecord.claim_expires_at <= now,
-                    ),
-                )
-                .order_by(ConnectorOperationRecord.available_at, ConnectorOperationRecord.id)
-                .limit(1)
-                .with_for_update(skip_locked=True)
-            )
-            if operation is None:
-                return None
-            operation.claim_generation += 1
-            operation.claim_owner = self._instance_id
-            operation.claim_expires_at = now + timedelta(seconds=self._lease_seconds)
-            return operation.id, operation.claim_generation
-
-    async def _reconcile_operation(self, operation_id: str, claim_generation: int) -> None:
-        async with short_session(self._sessions) as session:
-            operation = await session.get(ConnectorOperationRecord, operation_id)
-            if operation is None:
-                return
-            status = operation.status
-        if status == "unknown" and await self._revocation_is_confirmed(operation_id, claim_generation):
-            return
-        try:
-            await self._connections.run_revoke(
-                operation_id,
-                claim_owner=self._instance_id,
-                claim_generation=claim_generation,
-            )
-        except ConnectorError:
-            return
-
-    async def _revocation_is_confirmed(self, operation_id: str, claim_generation: int) -> bool:
-        async with short_session(self._sessions) as session:
-            operation = await session.get(ConnectorOperationRecord, operation_id)
-            if operation is None:
-                return True
-            connection = await require_connection(session, operation.connector_connection_id)
-            attempt = await session.scalar(
-                select(ConnectorSetupAttemptRecord)
-                .where(ConnectorSetupAttemptRecord.connector_connection_id == connection.id)
-                .order_by(ConnectorSetupAttemptRecord.generation.desc())
-                .limit(1)
-            )
-        if attempt is None or attempt.external_ref is None:
-            return False
-        snapshot = await self._setup.attempt_snapshot(attempt.id)
-        runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
-        try:
-            binding = ConnectionBinding(
-                external_ref=attempt.external_ref,
-                connector_key=attempt.connector_key,
-                external_user_correlation=attempt.external_user_correlation,
-            )
-            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connection_runtime:
-                inspection = await connection_runtime.inspect()
-        except ConnectorProviderError:
-            return False
-        if inspection.status is not AdapterConnectionStatus.action_required:
-            return False
-        now = self._clock()
-        async with transaction(self._sessions) as session:
-            operation = await session.get(ConnectorOperationRecord, operation_id, with_for_update=True)
-            if (
-                operation is None
-                or operation.status != "unknown"
-                or operation.claim_owner != self._instance_id
-                or operation.claim_generation != claim_generation
-            ):
-                return True
-            connection = await require_connection(session, operation.connector_connection_id, lock=True)
-            verify_inspection(attempt, connection, inspection)
-            apply_inspection(connection, inspection, now=now)
-            operation.status = "succeeded"
-            operation.completed_at = now
-            operation.updated_at = now
-        return True
 
     async def _defer_attempt(
         self,

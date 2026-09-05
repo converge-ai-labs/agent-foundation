@@ -10,19 +10,18 @@ from pydantic import TypeAdapter, ValidationError
 
 from a13n_service.connectivity.domain import JsonObject
 
-from .models import MCPOAuthSessionRecord
 from .oauth_client import MCPOAuthError, OAuthPreparation
 
 _JSON_OBJECT = TypeAdapter(JsonObject)
 
 
-def oauth_preparation(session: MCPOAuthSessionRecord, setup: JsonObject) -> OAuthPreparation:
+def oauth_preparation(setup: JsonObject) -> OAuthPreparation:
     return OAuthPreparation(
-        resource_url=session.resource_url,
-        issuer_url=session.issuer_url,
-        authorization_endpoint=session.authorization_endpoint,
-        token_endpoint=session.token_endpoint,
-        registration_endpoint=session.registration_endpoint,
+        resource_url=_required_string(setup, "resource_url"),
+        issuer_url=_required_string(setup, "issuer_url"),
+        authorization_endpoint=_required_string(setup, "authorization_endpoint"),
+        token_endpoint=_required_string(setup, "token_endpoint"),
+        registration_endpoint=_optional_string(setup, "registration_endpoint"),
         client_id=_required_string(setup, "client_id"),
         client_secret=_optional_string(setup, "client_secret"),
         token_endpoint_auth_method=_required_string(setup, "token_endpoint_auth_method"),
@@ -34,6 +33,11 @@ def oauth_preparation(session: MCPOAuthSessionRecord, setup: JsonObject) -> OAut
 
 def oauth_setup_bundle(preparation: OAuthPreparation, *, state: str, verifier: str) -> JsonObject:
     return {
+        "resource_url": preparation.resource_url,
+        "issuer_url": preparation.issuer_url,
+        "authorization_endpoint": preparation.authorization_endpoint,
+        "token_endpoint": preparation.token_endpoint,
+        "registration_endpoint": preparation.registration_endpoint,
         "client_id": preparation.client_id,
         "client_secret": preparation.client_secret,
         "token_endpoint_auth_method": preparation.token_endpoint_auth_method,

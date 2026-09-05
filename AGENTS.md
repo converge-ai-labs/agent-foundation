@@ -1,72 +1,48 @@
 # Repository Guide
 
-Agent Foundation is a Python-first open-source cloud foundation for building agents and multi-agent systems. Its core surfaces are the embeddable Agent Harness, hosted agent services, and built-in observability. The repository is currently in its architecture and specification phase.
+Agent Foundation is a Python-first open-source cloud foundation for building agents and multi-agent systems, with an embeddable Agent Harness, hosted agent services, and built-in observability.
 
 ## Sources of Truth
 
-- `spec/` contains only the current accepted product and architecture design.
-- `docs/` contains Markdown user documentation published with MkDocs Material.
-- GitHub Issues are the primary venue for proposals, discussion, open questions, coordination, and progress tracking.
-- Pull requests are the reviewed mechanism for changing specifications, documentation, code, tests, and automation.
-- `CONTRIBUTING.md` defines the contribution workflow, local setup, and validation.
-- `DEVELOPMENT.md` defines repository-wide engineering standards for deployable services.
-- `MAINTAINERS.md` defines semantic reviewer routing.
+- [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution workflow, setup, and validation. Read it before changing the repository.
+- [DEVELOPMENT.md](DEVELOPMENT.md) owns service engineering standards. Read it before implementation, along with the directly owning specification.
+- [spec/repository-model.md](spec/repository-model.md) owns repository structure and workflow boundaries. Read it before changing either.
+- [spec/README.md](spec/README.md) leads to the accepted product and architecture contracts. Keep proposals, discussion, and progress in GitHub Issues; changes are reviewed through pull requests.
+- `docs/` contains Markdown user documentation published with MkDocs Material; `mkdocs.yml` owns site configuration and navigation.
+- [MAINTAINERS.md](MAINTAINERS.md) owns semantic reviewer routing.
 
-Read [spec/repository-model.md](spec/repository-model.md) before changing repository structure or workflow. **Before starting any change, read [CONTRIBUTING.md](CONTRIBUTING.md); before implementation, also read [DEVELOPMENT.md](DEVELOPMENT.md).** The contribution workflow and applicable engineering standards are mandatory.
+Read relevant owners as needed and reuse context already read. This guide and skills summarize operational rules; they do not replace the owning contracts.
 
-## Workflow
+## Scope and Authorization
 
-- Start material product, architecture, security, compatibility, or scope discussions in a GitHub Issue.
-- Do not add RFCs, discussion logs, issue summaries, roadmaps, or progress tracking to `spec/`.
-- When an issue reaches a conclusion, update the accepted design directly through a pull request.
-- Keep changes focused and update affected specs, implementation, tests, docs, and automation together.
-- Use the semantic areas in `MAINTAINERS.md` when requesting review.
+- Carry requested changes through implementation and relevant validation. Resolve routine choices from the request and repository evidence; ask only when missing information materially affects correctness, scope, or authorization. Existing authorization carries across follow-ups.
+- An audit or review is read-only unless fixes are requested. Local editing does not itself authorize committing, pushing, GitHub writes, merging, deploying, or releasing. Each action must be covered by the request or established authorization; loading a skill grants none of these permissions.
+- Preserve unrelated work and secrets. History rewrites, destructive cleanup, and changes to shared or deployed state require authorization covering the concrete operation and target.
+- Unresolved product, architecture, security, compatibility, or scope decisions follow the Issue-to-PR workflow. Complete independent, authorized work while those decisions remain open. Routine corrections do not require a new Issue, and the workflow does not authorize posting one on the user's behalf.
+- Explicit user instructions take precedence over skill guidelines, subject to system and developer instructions. Resolve apparent conflicts using the request and existing authorization. If work remains blocked by an applicable skill instruction, link its `SKILL.md`, quote the requirement, and explain the missing decision or authority while continuing independent authorized work.
 
-## Documentation
+Keep diffs focused and update affected contracts, implementation, tests, docs, and automation together. Report the outcome, changed files, validation, and material limitations concisely in the user's language.
 
-- Keep documentation source files under `docs/` as Markdown.
-- Configure site behavior and navigation in the root `mkdocs.yml`.
-- Run `make docs-build` after changing docs content, navigation, or site configuration.
-- Use `make docs-serve` for local preview.
+## Package and Release Boundaries
 
-## Development
+Python 3.13 and `packages/*` use `uv`; Rust crates live under `crates/`. Workspace directories omit the project prefix, distributions use `a13n-`, and Python imports use `a13n_` (for example, `agent-stream-protocol`, `a13n-stream-protocol`, and `a13n_stream_protocol`). SDKs under `sdk/{python,go,rust,typescript}` and the companion `sdk/rust/agent-foundation-cli` stay outside the root workspaces. The CLI uses the Rust SDK for every network operation and owns no service-process behavior or parallel HTTP client.
 
-Do not work from this summary alone. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Issue-to-PR workflow and [DEVELOPMENT.md](DEVELOPMENT.md) for implementation standards throughout design, development, and review.
+For packaging and release changes, read [repository boundaries](spec/repository-model.md#repository-surfaces), [release rules](CONTRIBUTING.md#releases), and the owning workflow. The Harness group includes Environment Provider, Harness, and Stream Protocol at one exact release version; Agent UI releases independently against one reviewed Harness version. Source workspace dependencies remain unversioned. `apps/harness-ui` is private build input included in the UI wheel and sdist, with no independent release or committed build output; rebuilding the wheel from its sdist requires no Node.js. RC releases never advance Docker or npm `latest`.
 
-The Python 3.13 environment and `packages/*` workspace are managed with `uv`. Workspace directories omit the project prefix, Python distribution names use the `a13n-` prefix, and import packages normalize it as `a13n_` (for example, `packages/agent-stream-protocol`, `a13n-stream-protocol`, and `a13n_stream_protocol`). Rust crates live under `crates/`. Foundation Service SDKs live independently under `sdk/{python,go,rust,typescript}` and do not join the root Python or Rust workspaces. The independent `sdk/rust/agent-foundation-cli` companion uses the Rust SDK for every network operation; it does not own another HTTP client or service-process behavior.
+## High-Risk Engineering Rules
 
-`a13n-harness` and `a13n-stream-protocol` form the Harness release group. A `release/harness-v<version>` tag assigns and publishes exactly the same version for both, and published Stream Protocol metadata pins that exact Harness version. `a13n-ui` releases independently through `release/agent-ui-v<version>`; reviewed source metadata selects one Harness release, and published UI metadata pins both Harness and Protocol to that version. Source manifests keep workspace dependencies unversioned for local development. `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`; Python metadata normalizes an RC to `X.Y.ZrcN`. `apps/harness-ui` is private build input to `a13n-ui`; its compiled files are not committed or released independently, but both the Agent UI sdist and wheel must contain them and an sdist-to-wheel build must not require Node.js. RC releases never advance Docker or npm `latest`.
+Retain these constraints and read [DEVELOPMENT.md](DEVELOPMENT.md) for the full service engineering contract:
 
-Follow these service invariants; the complete contract and rationale live in [DEVELOPMENT.md](DEVELOPMENT.md):
+- Keep service I/O async and use canonical storage helpers. Never hold a database session or transaction across agent execution, external I/O, waits, background work, or streams. Streaming routes must not receive yielded database sessions, including through authentication dependencies.
+- Generate migrations with the owning Make target against a disposable database, then review rollout safety; never write revisions from scratch. Worker and connectivity roles never migrate. The `all` and `control` roles auto-migrate under bounded PostgreSQL advisory locking; a dedicated migration job disables replica auto migration.
+- Build one non-root service image with runtime role selection. Libraries use namespaced `a13n-logging` loggers; executables configure logging once.
+- Keep model-visible and user-trace identifiers concise and kind-prefixed. Preserve entropy where unpredictability is part of a security or protocol contract.
 
-- Use async I/O on service paths and keep blocking work off the event loop.
-- Use the canonical engine, session, and short-transaction helpers rather than constructing local variants. Use `a13n-logging`; libraries obtain namespaced loggers, while executables configure output once at the process boundary.
-- Never hold a database session or transaction across agent execution, external I/O, sleeps, background work, or a streaming response.
-- SSE, WebSocket, and other streaming routes must not receive a yielded database session through their FastAPI dependency graph. Finish authorization and initial reads in a closed short session; open fresh short sessions inside the stream only when needed.
-- Generate migration revisions through the repository Make target against disposable PostgreSQL, then review the generated operations and rollout safety. Never create a revision file from scratch.
-- Worker- and connectivity-only processes never migrate. The shared image lets compatible control or all-in-one replicas auto-migrate under bounded PostgreSQL advisory locking; deployments with a dedicated migration job disable replica auto migration.
-- Build one non-root service image for all-in-one, control, worker, and connectivity roles; select the role at runtime.
-- Keep identifiers that may reach model context or user-facing traces concise and kind-prefixed (for example, `process-1` or a short kind-prefixed hash). Do not shorten identifiers whose unpredictability or entropy is part of their security or protocol contract.
+## Validation
 
-```bash
-make install
-make setup
-make dev
-make a13n-ui
-make db-migrate msg="description"
-make format
-make lint
-make deps-check
-make typecheck
-make test
-make examples-check
-make rust-check
-make build
-make image-foundation-service
-make image-sandbox
-make image-check
-make check
-make check-all
-```
+Use the [Make targets](CONTRIBUTING.md#local-validation) as the stable interface. Start with the fastest relevant check, add meaningful tests for behavior changes, and complete required gates. Instruction-only edits need formatting, link, and skill validation rather than application tests that merely assert wording.
 
-Use `make check` for fast feedback while iterating, and run `make check-all` before finalizing a broad change. Add implementation-specific checks behind the existing Make targets as packages are introduced.
+- `make check` applies formatting before running fast checks; review any resulting edits.
+- Run `make docs-build` for changes to `docs/`, navigation, or site configuration.
+- Run `make check-all` before finalizing a broad change, plus owning image or migration checks when applicable.
+- Once relevant checks pass, repeat or broaden them only for new changes, failures, or unresolved risk. Report unavailable checks accurately; do not claim a gate passed when it did not run.

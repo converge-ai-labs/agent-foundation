@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from a13n_service.connectivity.domain import AdapterKey, BoundedName, ConfigVersion, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
+from .reception import InputBatchingPolicy, Reception
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -18,7 +20,7 @@ class AccountStatus(StrEnum):
     disabled = "disabled"
 
 
-class Account(StrictModel):
+class Account(Reception):
     id: str
     organization_id: str
     workspace_id: str
@@ -40,7 +42,7 @@ class AccountCollection(StrictModel):
     next_cursor: str | None = None
 
 
-class CreateAccountRequest(StrictModel):
+class CreateAccountRequest(Reception):
     name: BoundedName
     provider_key: AdapterKey
     provider_config_version: ConfigVersion
@@ -54,10 +56,15 @@ class UpdateAccountRequest(StrictModel):
     expected_version: int = Field(ge=1)
     name: BoundedName | None = None
     provider_config: JsonObject | None = None
+    receive_enabled: bool | None = None
+    default_agent_id: str | None = None
+    execution_service_account_id: str | None = None
+    input_batching: InputBatchingPolicy | None = None
+    provider_policy: JsonObject | None = None
 
     @model_validator(mode="after")
     def validate_change(self) -> "UpdateAccountRequest":
-        if self.name is None and self.provider_config is None:
+        if not (self.model_fields_set - {"expected_version"}):
             raise ValueError("Account update must change at least one field")
         return self
 

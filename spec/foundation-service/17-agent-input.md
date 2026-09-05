@@ -150,7 +150,7 @@ The adapter returns `None` only for accepted empty input. It receives no credent
 | Continuation          | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                                                  |
 | Thread Run submission | Accepts input immediately when the Thread is eligible; otherwise stores the complete editable Run intent until consumption accepts a Run.                            |
 | Fork                  | Stores new accepted input on the new Thread's first Run.                                                                                                             |
-| Ingress               | Places mapped bounded external data in `text` and `structured_content`, validating the optional protocol schema.                                                     |
+| Ingress               | Places the fixed ordered safe event projection in `structured_content`, validating the canonical and selected Agent schemas.                                         |
 | Asynchronous child    | Stores parent- or Host-supplied input on the child Run.                                                                                                              |
 | Async child result    | Uses the separate Host-owned inbox payload and active-or-successor delivery contract; it is not `AgentInput`.                                                        |
 | Steer                 | Stores accepted input in the Thread inbox without creating a Run; it binds to the current accepted or running Run or records the current/head waiting Run as source. |
