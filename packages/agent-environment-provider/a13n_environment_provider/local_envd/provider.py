@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from a13n_envd_client import __version__ as envd_client_version
+from anyio import CancelScope
 from pydantic import BaseModel, JsonValue, ValidationError
 
 from ..attachments import StdioEIPCarrier
@@ -450,6 +451,15 @@ def _canonical_file(path: Path, label: str, *, executable: bool) -> Path:
     return canonical
 
 
+async def validate_local_envd_runtime(executable: Path, configuration: LocalEnvdProviderConfiguration) -> None:
+    """Check exact release and production isolation without starting an EIP daemon.
+
+    This is the same check used by prepare(); success is an observation, not a
+    lease or a replacement for validation when an environment is prepared.
+    """
+    await _validate_runtime(executable, configuration)
+
+
 async def _validate_runtime(executable: Path, configuration: LocalEnvdProviderConfiguration) -> None:
     await asyncio.to_thread(_validate_runtime_executable, executable)
     expected_version = f"agent-envd {_client_release_identity()}\n".encode()
@@ -509,9 +519,10 @@ async def _run_checked_subprocess(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=environment,
+            start_new_session=os.name == "posix",
         )
         async with asyncio.timeout(_SUBPROCESS_TIMEOUT_SECONDS):
-            stdout, stderr = await process.communicate()
+            stdout, stderr = await _bounded_validation_output(process)
     except asyncio.CancelledError:
         if process is not None:
             await _stop_validation_process(process)
@@ -527,6 +538,10 @@ async def _run_checked_subprocess(
             recovery_hint=EnvironmentProviderRecoveryHint.REFRESH_RUNTIME,
             context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
         ) from error
+    except EnvironmentProviderError:
+        if process is not None:
+            await _stop_validation_process(process)
+        raise
     except (OSError, subprocess.SubprocessError) as error:
         if process is not None:
             await _stop_validation_process(process)
@@ -538,10 +553,85 @@ async def _run_checked_subprocess(
     return stdout, stderr
 
 
+async def _bounded_validation_output(process: asyncio.subprocess.Process) -> tuple[bytes, bytes]:
+    async def read(stream: asyncio.StreamReader | None) -> bytes:
+        assert stream is not None
+        chunks: list[bytes] = []
+        size = 0
+        while chunk := await stream.read(8192):
+            size += len(chunk)
+            if size > 64 * 1024:
+                raise _runtime_failure("Local Envd runtime validation output exceeded its bounded limit.")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    readers = [asyncio.create_task(read(process.stdout)), asyncio.create_task(read(process.stderr))]
+    try:
+        stdout, stderr = await asyncio.gather(*readers)
+        await process.wait()
+        return stdout, stderr
+    finally:
+        for reader in readers:
+            reader.cancel()
+        with CancelScope(shield=True):
+            await asyncio.gather(*readers, return_exceptions=True)
+
+
+def _kill_validation_session(session_id: int) -> None:
+    # Envd's production probe creates a second process group (not a second
+    # session). Freeze its launcher before finding those owned groups. This is
+    # cleanup for a trusted runtime, not a containment claim for hostile code.
+    try:
+        os.killpg(session_id, signal.SIGSTOP)
+    except (ProcessLookupError, PermissionError):
+        pass
+    groups = {session_id}
+    members: set[int] = set()
+    try:
+        if Path("/proc/self/stat").exists():
+            pids = [int(path.name) for path in Path("/proc").iterdir() if path.name.isdigit()]
+        else:  # macOS has no procfs; /bin/ps is part of the supported Host.
+            listed = subprocess.run(["/bin/ps", "-axo", "pid="], capture_output=True, timeout=2, check=True)
+            pids = [int(value) for value in listed.stdout.split() if value.isdigit()]
+        for pid in pids:
+            try:
+                if os.getsid(pid) == session_id:
+                    os.kill(pid, signal.SIGSTOP)
+                    members.add(pid)
+                    groups.add(os.getpgid(pid))
+            except (ProcessLookupError, PermissionError):
+                pass
+    finally:
+        for group in groups:
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        for pid in members:
+            try:
+                if os.getsid(pid) == session_id:
+                    os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+
 async def _stop_validation_process(process: asyncio.subprocess.Process) -> None:
-    if process.returncode is None:
-        process.kill()
-    await asyncio.shield(process.wait())
+    async def drain(stream: asyncio.StreamReader | None) -> None:
+        if stream is not None:
+            while await stream.read(8192):
+                pass  # Discard; never retain cleanup output.
+
+    # Shield only bounded cleanup. Drain paused pipe transports after killing;
+    # wait() alone can hang on their buffered output even after root exit.
+    with CancelScope(shield=True):
+        try:
+            if os.name == "posix":
+                await asyncio.to_thread(_kill_validation_session, process.pid)
+            elif process.returncode is None:
+                process.kill()
+        finally:
+            async with asyncio.timeout(_TERMINATE_GRACE_SECONDS):
+                await asyncio.gather(drain(process.stdout), drain(process.stderr), process.wait())
 
 
 def _write_private_bootstrap(

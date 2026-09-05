@@ -94,6 +94,10 @@ class CliRequest:
     provider: str | None = None
     allow_account_switch: bool = False
     device_code: bool = False
+    web_host: str = "127.0.0.1"
+    web_port: int = 8765
+    web_api_key: str | None = None
+    dangerously_bypass_permission: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,12 +231,34 @@ def tui_command(
     )
 
 
-@cli.command("webui")
+@cli.command("setup")
 @click.pass_context
-def webui_command(ctx: click.Context) -> None:
-    """Run the bundled WebUI frontend."""
+def setup_command(ctx: click.Context) -> None:
+    """Open interactive setup, or inspect setup status with --format json."""
+    _execute(_request(ctx, command="setup"))
 
-    _execute(_request(ctx, command="webui"))
+
+@cli.command("webui")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Listener IPv4 or IPv6 address.")
+@click.option("--port", type=click.IntRange(1, 65535), default=8765, show_default=True)
+@click.option("--api-key", default=None, help="Explicit process-local API key (visible in shell arguments).")
+@click.option("--dangerously-bypass-permission", is_flag=True, help="Disable API authentication for this listener.")
+@click.pass_context
+def webui_command(
+    ctx: click.Context, host: str, port: int, api_key: str | None, dangerously_bypass_permission: bool
+) -> None:
+    """Run one foreground WebUI server and its in-memory App."""
+
+    _execute(
+        _request(
+            ctx,
+            command="webui",
+            web_host=host,
+            web_port=port,
+            web_api_key=api_key,
+            dangerously_bypass_permission=dangerously_bypass_permission,
+        )
+    )
 
 
 @cli.command("run")
@@ -678,7 +704,15 @@ async def _run(request: CliRequest) -> int:
     if request.command == "webui":
         from a13n_ui.webui import run as run_web
 
-        await asyncio.to_thread(run_web)
+        await run_web(
+            lambda: open_agent_ui_app(
+                settings, configuration_path=source.path, configuration_error=source.candidate_error, host_mode="webui"
+            ),
+            host=request.web_host,
+            port=request.web_port,
+            api_key=request.web_api_key,
+            dangerously_bypass_permission=request.dangerously_bypass_permission,
+        )
         return 0
     if (
         request.command == "auth"
@@ -706,11 +740,14 @@ async def _run(request: CliRequest) -> int:
             grok_login=lambda request: _grok_cli_login(request, device_code=use_grok_device_code),
         )
 
-    if request.command in {None, "tui"}:
+    if request.command in {None, "tui"} or (request.command == "setup" and request.output_format is OutputFormat.text):
         await run_tui(app_factory, launch=_tui_launch_options(request))
         return 0
 
     async with app_factory() as app:
+        if request.command == "setup":
+            click.echo((await app.setup_status(rediscover=True)).model_dump_json(indent=2))
+            return 0
         if request.command == "run":
             configuration = await app.current_configuration()
             if configuration is None:
@@ -789,7 +826,7 @@ def _tui_launch_options(request: CliRequest) -> TuiLaunchOptions:
             "An existing TUI Thread cannot be combined with new-Thread launch overrides.",
             code="tui_arguments_conflict",
         )
-    return TuiLaunchOptions(thread_id=request.thread_id, defaults=defaults)
+    return TuiLaunchOptions(thread_id=request.thread_id, defaults=defaults, show_setup=request.command == "setup")
 
 
 async def _codex_cli_login(request: object) -> CodexCredentials:

@@ -24,10 +24,10 @@ from a13n_ui.surfaces import (
     SkillCatalogView,
     SkillReference,
     TaskView,
+    ThreadActivityPage,
     ThreadFocusSnapshot,
     ThreadSelectorCatalog,
     TranscriptPage,
-    WorkbenchPage,
 )
 from a13n_ui.tui.models import (
     CompletionState,
@@ -119,9 +119,8 @@ class StartupStarted:
 @dataclass(frozen=True, slots=True)
 class StartupReady:
     launch: LaunchProjectResolution
-    workbench: WorkbenchPage
+    thread_activity: ThreadActivityPage
     explicit_thread_id: str | None = None
-    open_workbench: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,9 +134,9 @@ class ClosingStarted:
 
 
 @dataclass(frozen=True, slots=True)
-class WorkbenchLoaded:
+class ThreadActivityLoaded:
     request_version: int
-    page: WorkbenchPage
+    page: ThreadActivityPage
     query: str = ""
     append: bool = False
 
@@ -163,8 +162,9 @@ class SkillCatalogLoaded:
 @dataclass(frozen=True, slots=True)
 class ThreadPickerLoaded:
     request_version: int
-    page: WorkbenchPage
+    page: ThreadActivityPage
     query: str = ""
+    append: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -325,15 +325,9 @@ class DraftSubmitted:
 
 @dataclass(frozen=True, slots=True)
 class RouteChanged:
-    mode: Literal["focus", "workbench"]
     thread_id: str | None = None
     new_draft: bool = False
     clear_focus: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class WorkbenchSelectionChanged:
-    thread_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,11 +369,6 @@ class TimelineSelectionChanged:
 
 
 @dataclass(frozen=True, slots=True)
-class CompletionAcknowledged:
-    receipt_id: str
-
-
-@dataclass(frozen=True, slots=True)
 class OperationFailed:
     action: str
     failure: FailureView
@@ -393,7 +382,7 @@ type TerminalEvent = (
     | StartupReady
     | StartupFailed
     | ClosingStarted
-    | WorkbenchLoaded
+    | ThreadActivityLoaded
     | ProjectsLoaded
     | SelectorsLoaded
     | SkillCatalogLoaded
@@ -422,7 +411,6 @@ type TerminalEvent = (
     | DraftRekeyed
     | DraftSubmitted
     | RouteChanged
-    | WorkbenchSelectionChanged
     | OverlayOpened
     | OverlayClosed
     | ConfigurationConflictRecorded
@@ -430,7 +418,6 @@ type TerminalEvent = (
     | FollowLatestChanged
     | ReadingAnchorChanged
     | TimelineSelectionChanged
-    | CompletionAcknowledged
     | OperationFailed
 )
 
@@ -557,7 +544,6 @@ def _string(payload: Mapping[str, object], key: str) -> str | None:
 __all__ = [
     "ChildControlCompleted",
     "ClosingStarted",
-    "CompletionAcknowledged",
     "CompletionApplied",
     "CompletionClosed",
     "CompletionLoaded",
@@ -598,12 +584,11 @@ __all__ = [
     "StreamPartEvent",
     "TaskChangedEvent",
     "TerminalEvent",
+    "ThreadActivityLoaded",
     "ThreadPickerLoaded",
     "TimelineSelectionChanged",
     "ToolEvent",
     "TranscriptLoaded",
     "UnknownLiveEvent",
-    "WorkbenchLoaded",
-    "WorkbenchSelectionChanged",
     "normalize_live_event",
 ]

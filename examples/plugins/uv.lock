@@ -34,6 +34,7 @@ version = "0.0.0"
 source = { editable = "../../packages/agent-environment-provider" }
 dependencies = [
     { name = "a13n-envd-client" },
+    { name = "anyio" },
     { name = "docker" },
     { name = "e2b" },
     { name = "pathspec" },
@@ -44,6 +45,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-envd-client", editable = "../../packages/agent-envd-client" },
+    { name = "anyio", specifier = ">=4,<5" },
     { name = "docker", specifier = ">=7.2,<8" },
     { name = "e2b", specifier = ">=2.46.4,<3" },
     { name = "pathspec", specifier = ">=1.1,<2" },

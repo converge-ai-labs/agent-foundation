@@ -8,7 +8,7 @@ Guided forms are the primary experience and cover every first-party resource fie
 
 ## Settings Shell
 
-Settings opens from the persistent sidebar and replaces the conversation region. A section navigator remains visible beside one collection, editor, account flow, catalog, or diagnostic view; the conversation and its context panel are not mounted behind Settings. The conversation shell retains only the current ordinary composer or new-Thread draft in page memory so leaving Settings can return to that destination without losing input. Deferred-response and destructive-confirmation drafts do not cross the route transition without explicit completion or discard.
+Settings opens from the header and replaces the conversation region. A section navigator remains visible beside one collection, editor, account flow, catalog, or diagnostic view; the conversation and its context panel are not mounted behind Settings. The conversation shell retains ordinary per-Thread and new-Thread drafts in page memory so leaving Settings can return to that destination without losing input. Deferred-response and destructive-confirmation drafts do not cross the route transition without explicit completion or discard.
 
 The navigator groups related management without collapsing distinct resource kinds:
 
@@ -90,7 +90,7 @@ If the source disappeared, recreation remains a new no-clobber create. If anothe
 
 The Project editor manages name, position, and an ordered non-empty root list. Roots are entered as explicit paths and validated by the App; the browser receives no directory enumeration capability. Reordering roots visibly changes the default working directory and mount order for later Runs. The UI explains that existing admitted Runs are unchanged and that Environment state identity can change with profile behavior or root path.
 
-Project is both the WebUI's root-Thread organization and the owner of roots used by execution; Settings does not create a second grouping layer. Deleting a Project can leave retained Threads with an unresolved Project ID. The sidebar keeps those Threads reachable through Recent, search, archive, or a bounded unresolved section for explicit reassignment.
+Project is both the WebUI's root-Thread organization and the owner of roots used by execution; Settings does not create a second grouping layer. Deleting a Project can leave retained Threads with an unresolved Project ID. The all-Project picker keeps those Threads reachable through search and archive inclusion. Restore the matching Project resource or create a new Thread; retained Thread Project identity cannot be reassigned.
 
 The defaults editor distinguishes scalar default selection from exact ordered Plugin, Run Extension, and MCP collections. It states that defaults initialize new root Threads only. Clearing a collection means select none; omission is not represented as a persistent browser-only inheritance state.
 
@@ -178,3 +178,7 @@ Authenticated App status, listener access, schema compatibility, accepted-genera
 09. Settings diagnostics navigate to exact source repair and canonical Thread activity; they do not duplicate Thread or Run inspection.
 10. Extension packages contribute schemas and validation only through trusted Host contracts, never executable browser components.
 11. Direct file editing and WebUI editing converge on the same accepted-generation authority.
+
+## First-use Setup
+
+`/setup` is a bounded initialization flow, not an alternative mutation authority. It shares App discovery, preview, candidate validation, effective Project-root preflight, and generation-checked publication with the TUI. [Setup and Environment Readiness](../06-setup-and-environment-readiness.md) owns its models, defaults, preservation rules, failure recovery, and explicit Sandbox/Full Control choice. Login without an exposed Web provider flow is offered as a copyable external terminal command followed by explicit rediscovery; discovery itself never begins authentication.

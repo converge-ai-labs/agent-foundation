@@ -132,6 +132,10 @@ a13n-ui auth logout <codex|grok>
 
 Every command supports detached text and JSON result rendering. Authorization progress and URLs use stderr in both formats; the final credential-free projection uses stdout. Login cancellation or failure exits nonzero and leaves the previous shared account unchanged.
 
+## Setup Discovery
+
+[First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers every usable compatible provider as an independently selectable starter. Selecting both creates two Model/Agent resources and one explicit default, not a combined credential or runtime fallback. Discovery never starts login or refresh. A missing or invalid provider does not prevent selecting the other provider or an existing configured Agent.
+
 ## Run Capture and Information Boundary
 
 An immutable Run composition records the Model route and authentication kind, never credential bytes. Every independent Run receives fresh Model collaborators built by `a13n_harness.model_auth`. The local store can rotate without changing the logical composition.

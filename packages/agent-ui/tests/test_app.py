@@ -958,7 +958,7 @@ async def test_root_deferred_response_requires_exact_selected_request_batch(tmp_
                 expected_continuation_id="0" * 64,
             )
         assert changed.value.code == "thread_history_continuation_changed"
-        workbench = await app.workbench(project_id="project-main")
+        workbench = await app.thread_activity(project_id="project-main")
         assert workbench.rows[0].pending_decision is not None
         assert workbench.rows[0].pending_decision.count == 1
 
@@ -1251,3 +1251,82 @@ async def test_app_owns_price_updater_and_releases_it_after_failure(tmp_path, mo
             assert events == (["start"] if enabled else [])
             raise RuntimeError("surface failed")
     assert events == (["start", "stop"] if enabled else [])
+
+
+@pytest.mark.parametrize("host_mode", ["local", "webui"])
+async def test_thread_collaboration_tools_are_only_exposed_by_webui_roots(tmp_path: Path, host_mode: str) -> None:
+    tools: list[set[str]] = []
+
+    class InspectReconstructor:
+        def reconstruct(self, composition, *, subagent_operator, root_capabilities=(), **kwargs):
+            async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+                tools.append({tool.name for tool in info.function_tools})
+                yield "inspected"
+
+            return _reconstructed(model, root_capabilities)
+
+    root = _write_configuration(tmp_path)
+    async with open_agent_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode=host_mode) as app:
+        app._root_runs._executor._agents = InspectReconstructor()
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="inspect tools")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed
+    expected = {"list_threads", "get_thread", "run_thread", "create_thread", "steer_thread"}
+    assert bool(expected & tools[0]) is (host_mode == "webui")
+    if host_mode == "webui":
+        assert expected <= tools[0]
+
+
+async def test_webui_create_thread_preserves_project_and_returns_before_completion(tmp_path: Path) -> None:
+    from a13n_ui.thread_capability import ThreadToolController
+
+    root = _write_configuration(tmp_path)
+    async with open_agent_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        source = await app.create_thread(title="Source")
+        controller = ThreadToolController(
+            projections=app._projections,
+            root_runs=app._root_runs,
+            create_thread=app.create_thread,
+        )
+        # No model request is needed to receive an admission receipt.
+        with fail_after(2):
+            result = await controller.create_thread(
+                source_thread_id=source.thread_id,
+                prompt="new work",
+                title="New work",
+                agent_id=None,
+            )
+        assert result["ok"] is True
+        created = await app.get_thread(result["thread_id"])
+        assert created.thread.configuration == source.configuration
+        assert result["receipt"]["thread_id"] == created.thread.thread_id
+        assert created.thread.thread_id != source.thread_id
+        assert (await app.list_threads()).total == 2
+
+
+async def test_webui_create_reports_created_identity_when_admission_fails(tmp_path: Path, monkeypatch) -> None:
+    from a13n_ui.errors import AgentUiError
+    from a13n_ui.thread_capability import ThreadToolController
+
+    root = _write_configuration(tmp_path)
+    async with open_agent_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        source = await app.create_thread()
+
+        async def fail_submit(**kwargs):
+            raise AgentUiError("admission rejected", code="run_rejected")
+
+        monkeypatch.setattr(app._root_runs, "submit_prompt", fail_submit)
+        controller = ThreadToolController(
+            projections=app._projections,
+            root_runs=app._root_runs,
+            create_thread=app.create_thread,
+        )
+        result = await controller.create_thread(
+            source_thread_id=source.thread_id, prompt="work", title=None, agent_id=None
+        )
+        assert result["ok"] is False
+        assert result["error"]["code"] == "run_rejected"
+        assert (await app.get_thread(result["thread_id"])).thread.thread_id == result["thread_id"]
+        assert (await app.list_threads()).total == 2

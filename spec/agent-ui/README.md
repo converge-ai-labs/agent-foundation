@@ -4,6 +4,8 @@
 
 Agent UI is the local single-user workstation distributed as `a13n-ui`. It embeds the Harness in one process-local `AgentUiApp`, reads human-editable configuration resources, discovers trusted extensions and Capabilities, groups local roots and root Threads into Projects, and runs continuation-backed root and child Threads through the same CLI, TUI, and WebUI application boundary.
 
+There is no standalone Agent UI daemon or IPC mode. The WebUI foreground server owns its App and injects root-only Thread collaboration in memory; CLI/TUI Runs do not receive those tools.
+
 Agent UI provides best-effort local continuation rather than durable workflow execution. It stores complete Harness checkpoints at explicit boundaries, but it does not durably accept root receipts, input, or deferred responses, recover active operating-system processes, lease work across workers, or provide distributed failover. Foundation Service remains the durable hosted product.
 
 Agent UI depends on the [Harness](../agent-harness/README.md), [Environment Provider package](../agent-environment-provider/README.md), and [Agent Stream Protocol](../agent-stream-protocol/README.md) through their public contracts. It does not reproduce their Agent loop, Environment operation, or observation semantics.
@@ -22,14 +24,15 @@ Agent UI depends on the [Harness](../agent-harness/README.md), [Environment Prov
 | [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                             | Thread metadata/configuration heads, immutable Run/checkpoint values, Environment state, and local recovery                    |
 | [04-projects-threads-and-environments.md](04-projects-threads-and-environments.md)               | Project roots, Full Control and Sandbox modes, path layouts, Thread configuration, Environment binding, and state publication  |
 | [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)                     | `AgentUiApp`, detached projections, root operations, async children, Web listener access, tools, and live presentation         |
-| [tui/](tui/README.md)                                                                            | Textual terminal workstation, Focus and Workbench interaction, semantic presentation, and terminal runtime                     |
+| [06-setup-and-environment-readiness.md](06-setup-and-environment-readiness.md)                   | First-use discovery, reviewed starter files, explicit defaults, and selected Environment preflight/recovery                    |
+| [tui/](tui/README.md)                                                                            | Conversation-first Textual terminal, transient Thread picker, semantic presentation, and terminal runtime                      |
 | [webui/](webui/README.md)                                                                        | React conversation browser, client data and live state, contextual activity, guided Settings management, and design system     |
 
 ## Reading Paths
 
 ### Understand the Product
 
-Read `00`, `03`, `04`, and `05`. Then read the Harness and Agent Stream Protocol catalogs for the embedded execution and presentation contracts. Read [TUI Specifications](tui/README.md) for the terminal-native workstation and [WebUI Specifications](webui/README.md) for the browser workstation.
+Read `00`, `03`, `04`, `05`, and `06`. Then read the Harness and Agent Stream Protocol catalogs for the embedded execution and presentation contracts. Read [TUI Specifications](tui/README.md) for the terminal-native workstation and [WebUI Specifications](webui/README.md) for the browser workstation.
 
 ### Configure Agents, Extensions, and Subagents
 
@@ -55,7 +58,7 @@ Read `05`. A surface calls `AgentUiApp` commands and queries and consumes detach
 08. Every independent root or async child Run receives fresh Model, Harness Plugin, MCP, Provider-runtime, Environment-adapter, and Environment Run Extension collaborators. Shell references are Run-local; native command survival and recovery follow the Provider Environment state contract.
 09. Root and child continuation checkpoints are independent authorities. Compact AG-UI child display is inspection history and never reconstructs `HarnessState`.
 10. Saved root and child facts never imply current-process liveness. Root receipts and all control availability are process-local; Agent UI does not infer liveness or silently replay work.
-11. CLI, TUI, and WebUI are peers over one `AgentUiApp` and receive detached bounded surface values. The CLI reads desired configuration and exposes explicit imports but no generic resource mutation; the WebUI manages Project and other desired resources through guided Settings and expected source digests; the TUI derives a launch Project filter from the current directory, inspects accepted resources and catalogs, and patches supported non-Project sticky selections.
+11. CLI, TUI, and WebUI are peers over one `AgentUiApp` and receive detached bounded surface values. The CLI reads desired configuration and exposes explicit imports but no generic resource mutation; the WebUI manages Project and other desired resources through guided Settings and expected source digests; the TUI derives a launch Project filter from the current directory, navigates a transient Thread picker, and patches supported non-Project sticky selections. First-use setup is an explicit shared initialization workflow, not a generic terminal resource editor.
 12. Focused live delivery follows complete root lineage and uses an epoch/sequence snapshot cutover. App-wide summary invalidations are best-effort refetch hints, not durable truth.
 13. Multiple local processes can open one data root through ordinary SQLite and immutable-file behavior. Mutable SQLite heads use expected-version or expected-reference compare-and-select without process lock files, PID inspection, heartbeats, leases, fencing, or distributed scheduling.
 

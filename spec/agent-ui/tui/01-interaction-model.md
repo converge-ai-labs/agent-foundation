@@ -13,18 +13,16 @@ The terminal owns only bounded presentation state:
 ```python
 class TerminalState:
     lifecycle: Literal["starting", "ready", "closing", "failed"]
-    mode: Literal["focus", "workbench"]
     launch_project_id: str | None
     project_filter_id: str | None
     focused_thread_id: str | None
-    selected_workbench_thread_id: str | None
     overlays: tuple[OverlayState, ...]
     drafts: tuple[DraftState, ...]
     thread_views: tuple[ThreadViewState, ...]
     notifications: tuple[TerminalNotice, ...]
 ```
 
-This schema is conceptual and is not an App surface or persistence format. `launch_project_id` is the App-resolved Project used for new drafts and the default Workbench Project filter in this TUI lifetime; it does not override an existing Thread's stored Project. `project_filter_id` is either that Project or `None` for All Projects and never changes an existing Thread's stored Project. Drafts, overlay stacks, selection, follow-latest state, expanded blocks, and current-process review acknowledgements may disappear on process exit.
+This schema is conceptual and is not an App surface or persistence format. `launch_project_id` is the App-resolved Project used for new drafts and the default Thread-picker Project filter in this TUI lifetime; it does not override an existing Thread's stored Project. `project_filter_id` is either that Project or `None` for All Projects and never changes an existing Thread's stored Project. Drafts, overlay stacks, selection, follow-latest state, expanded blocks, and current-process review acknowledgements may disappear on process exit.
 
 The focused Thread derives one control mode from detached App facts:
 
@@ -143,21 +141,13 @@ Default editing behavior is:
 | `Alt+Enter`         | Insert a newline using a terminal-portable modified-key path                                               |
 | `Shift+Enter`       | Insert a newline when the terminal reports the modifier distinctly                                         |
 | `Ctrl+P`            | Open the command palette                                                                                   |
-| `Ctrl+O`            | Perform the context-valid Focus/Workbench toggle                                                           |
+| `Ctrl+O`            | Open the transient Thread picker                                                                           |
 | `Ctrl+N`            | Start a new draft Thread                                                                                   |
 | `Ctrl+C`            | Request cancellation of the focused active root operation; otherwise close the top cancellable interaction |
 | `Esc`               | Close the top overlay or leave block focus without cancelling a Run                                        |
 | `Tab` / `Shift+Tab` | Move through visible panes or decision controls                                                            |
 
-`Ctrl+O` follows an explicit routing rule:
-
-| Current state                                  | Action                                                                      |
-| ---------------------------------------------- | --------------------------------------------------------------------------- |
-| Focus                                          | Open Workbench and retain the current Thread as the previous focus          |
-| Workbench with an accessible previous focus    | Return to that Thread without changing the selected Workbench row           |
-| Workbench without an accessible previous focus | The action is hidden or disabled; `Enter` explicitly opens the selected row |
-
-Opening a selected Workbench row always makes that row the focused Thread. It does not overload the return-to-previous-focus action.
+`Ctrl+O` opens the Thread picker without changing the current conversation. Selecting a result opens it; Escape restores the unchanged draft and reading position.
 
 The footer always shows the effective context-sensitive actions, so the user does not need to memorize bindings. An external editor action resolves `$VISUAL` and then `$EDITOR`, parses the selected value into an executable and arguments without an intermediary shell, and reports the action as unavailable when neither variable supplies a usable command. It creates an owner-private temporary file outside Project roots and the Agent UI data root, writes only the bounded current draft, suspends full-screen terminal presentation, launches the editor with the ordinary terminal attached, waits without blocking App-owned execution, reads a bounded result, and restores the TUI. The original draft remains intact when editor launch or result reading fails. The action never logs the file content or path and performs best-effort deletion after normal or exceptional editor exit. It does not expose Agent UI storage or Project file authority. App work can continue while the editor owns the terminal; after resuming, the TUI reconciles current App projections before presenting new activity as complete.
 
@@ -185,29 +175,28 @@ A Skill reference does not eagerly attach `SKILL.md` bytes, change Skill source 
 
 The command palette is the complete discovery surface for secondary actions. Slash commands provide concise aliases for frequent terminal-local actions:
 
-| Command        | Behavior                                                                                                                                                                                                                         |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/new`         | Start a new terminal-local root-Thread draft under the launch Project. Nothing is persisted until its first prompt is submitted successfully, and the action is unavailable when no launch Project was resolved.                 |
-| `/workbench`   | Enter the persistent Workbench top-level mode under the current terminal-local Project filter or All Projects. It is not a Focus toggle and does not cancel or otherwise change App-owned work.                                  |
-| `/threads`     | Open the transient searchable root-Thread picker with an explicit Project/All Projects toggle. Selecting a result opens that Thread in Focus; dismissing the picker restores the underlying mode and local presentation state.   |
-| `/skills`      | Open the read-only effective Skill picker used by `$` completion. Selecting a result inserts one exact Skill reference into the composer; the command does not edit sources, install packages, or change Thread configuration.   |
-| `/status`      | Open a read-only status surface for the App, focused Thread, operation, selected continuation, accepted configuration, and live delivery. It performs no refresh, mutation, or execution action merely by being opened.          |
-| `/details`     | Toggle the terminal-local default disclosure of tool details in the focused timeline. It changes presentation only and does not alter tool execution, retention, or policy.                                                      |
-| `/thinking`    | Toggle the terminal-local default disclosure of reasoning content that the App is permitted to expose. It never enables reasoning, changes Model effort or Agent configuration, or reveals encrypted or policy-hidden reasoning. |
-| `/agent`       | Open the accepted Agent selector for a new draft or the current Thread. A persisted change uses the exact Thread configuration version, and a change made during an active Run applies only to the next Run.                     |
-| `/environment` | Open the accepted Environment profile selector, including the release-owned Full Control and Sandbox choices. It changes draft or sticky Thread selection only and never mutates the Environment captured by an active Run.      |
-| `/extensions`  | Inspect and select accepted Harness Plugins, Environment Run Extensions, and MCP servers for a draft or Thread. It exposes no package installation, resource authoring, or source mutation action.                               |
-| `/editor`      | Suspend full-screen presentation and edit the bounded current composer draft through `$VISUAL` or `$EDITOR`. Returning from the editor restores the TUI and preserves the original draft if launch or result reading fails.      |
-| `/cancel`      | Request cancellation against the exact eligible focused root receipt. It does not infer a target from recent activity, cancel child work independently, or turn cancellation acknowledgement into a terminal result.             |
-| `/archive`     | Archive an idle focused root Thread through metadata compare-and-select. It does not delete retained history and reports a conflict instead of overwriting newer metadata.                                                       |
-| `/help`        | Open the context-aware binding, command, and input-routing reference. Closing it restores the underlying mode, draft, selection, and reading position.                                                                           |
-| `/exit`        | Begin explicit TUI and App shutdown. When process-local work is active, the command explains that the work cannot continue after App exit and requires confirmation before interruption.                                         |
+| Command        | Behavior                                                                                                                                                                                                                               |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/new`         | Start a new terminal-local root-Thread draft under the launch Project. Nothing is persisted until its first prompt is submitted successfully, and the action is unavailable when no launch Project was resolved.                       |
+| `/threads`     | Open the transient searchable root-Thread picker with an explicit Project/All Projects toggle. Selecting a result opens that Thread in Focus; dismissing the picker restores the underlying conversation and local presentation state. |
+| `/skills`      | Open the read-only effective Skill picker used by `$` completion. Selecting a result inserts one exact Skill reference into the composer; the command does not edit sources, install packages, or change Thread configuration.         |
+| `/status`      | Open a read-only status surface for the App, focused Thread, operation, selected continuation, accepted configuration, and live delivery. It performs no refresh, mutation, or execution action merely by being opened.                |
+| `/details`     | Toggle the terminal-local default disclosure of tool details in the focused timeline. It changes presentation only and does not alter tool execution, retention, or policy.                                                            |
+| `/thinking`    | Toggle the terminal-local default disclosure of reasoning content that the App is permitted to expose. It never enables reasoning, changes Model effort or Agent configuration, or reveals encrypted or policy-hidden reasoning.       |
+| `/agent`       | Open the accepted Agent selector for a new draft or the current Thread. A persisted change uses the exact Thread configuration version, and a change made during an active Run applies only to the next Run.                           |
+| `/environment` | Open the accepted Environment profile selector, including the release-owned Full Control and Sandbox choices. It changes draft or sticky Thread selection only and never mutates the Environment captured by an active Run.            |
+| `/extensions`  | Inspect and select accepted Harness Plugins, Environment Run Extensions, and MCP servers for a draft or Thread. It exposes no package installation, resource authoring, or source mutation action.                                     |
+| `/editor`      | Suspend full-screen presentation and edit the bounded current composer draft through `$VISUAL` or `$EDITOR`. Returning from the editor restores the TUI and preserves the original draft if launch or result reading fails.            |
+| `/cancel`      | Request cancellation against the exact eligible focused root receipt. It does not infer a target from recent activity, cancel child work independently, or turn cancellation acknowledgement into a terminal result.                   |
+| `/archive`     | Archive an idle focused root Thread through metadata compare-and-select. It does not delete retained history and reports a conflict instead of overwriting newer metadata.                                                             |
+| `/help`        | Open the context-aware binding, command, and input-routing reference. Closing it restores the underlying conversation, draft, selection, and reading position.                                                                         |
+| `/exit`        | Begin explicit TUI and App shutdown. When process-local work is active, the command explains that the work cannot continue after App exit and requires confirmation before interruption.                                               |
 
 A recognized slash command runs on the terminal control plane and is not sent to the model. An unrecognized slash-prefixed string remains ordinary prompt or steering text. Built-in commands cannot be shadowed by Agent or resource configuration. The command registry is a fixed TUI control surface and does not dynamically import Skill names, MCP prompts, or configuration Markdown into the slash namespace.
 
 Thread configuration presents the stored Project as read-only context. Selectors list only accepted Agents, Environment profiles, Harness Plugins, Environment Run Extensions, and MCP servers and use the current exact Thread configuration version. The Environment selector presents the release-owned **Full Control** and **Sandbox** entries from the App projection before custom profiles and shows their authority descriptions; it never relabels Full Control as “Native” or infers safety from canonical Host path presentation. Moving a Thread to another Project remains a WebUI operation; the TUI never exposes Project or root mutation. A conflict refetches and displays the newer state instead of overwriting it. Changing a supported sticky selection during a Run is clearly labeled **applies to the next Run**; it cannot mutate the captured active composition. Direct Model selection is absent because the Agent resource owns its Model. The selector can show the Model resolved by the selected Agent as read-only context.
 
-Selectors and status views can expose accepted-generation diagnostics, installed-catalog availability, and the App-approved configuration source location. They do not expose resource create, duplicate, source-edit, delete, import, package-install, or package-upgrade actions. The TUI never turns an unavailable selection into an inline resource editor; the user resolves desired-resource or Skill changes through direct files, the CLI, or the WebUI and then reloads or refreshes the App-owned catalog.
+Except for the explicitly confirmed [setup workflow](../06-setup-and-environment-readiness.md), selectors and status views can expose accepted-generation diagnostics, installed-catalog availability, and the App-approved configuration source location. They do not expose resource create, duplicate, source-edit, delete, import, package-install, or package-upgrade actions. The TUI never turns an unavailable selection into an inline resource editor; the user resolves desired-resource or Skill changes through direct files, the CLI, or the WebUI and then reloads or refreshes the App-owned catalog.
 
 ## Decisions
 
@@ -267,7 +256,7 @@ Diff display is presentation only. Apply, rollback, or edit actions appear only 
 
 Working State tasks appear in the inspector and as compact timeline updates. The TUI preserves task status, owner, dependencies, and authoritative version supplied by the Harness/App projection. It does not reinterpret tasks as an executable plan or add plan approval semantics.
 
-Async child executions appear under their immediate parent and roll up under the root Thread in Workbench. A child row distinguishes:
+Async child executions appear under their immediate parent and roll up under the root Thread in the picker. A child row distinguishes:
 
 - persisted status: `running`, `succeeded`, `failed`, `cancelled`, or `lost`;
 - current-process local status: `active` or `unavailable`;
@@ -275,30 +264,13 @@ Async child executions appear under their immediate parent and roll up under the
 
 A saved `running` child without local authority is labeled **unavailable**, never **still running**. Steering and cancellation target only the exact child execution ID and are shown only when the App advertises those actions. Opening child detail never creates an independently continuable root surface.
 
-## Workbench Attention
+## Thread Picker and Other Work
 
-Workbench ranks non-archived root Threads by these presentation groups:
+The transient picker uses deterministic descending Thread recency, bounded search, cursor paging, and an explicit Project/All Projects filter. Rows show title, compact Project context, current root activity, pending-decision count, and child status. Saved running children without local authority are unavailable, not live. Highlighting a row changes selection only; Enter opens it. It has no transcript preview, decision form, or secondary composer.
 
-1. selected continuations awaiting a decision;
-2. current-process root failure, cancellation, or lost/failed child work requiring inspection;
-3. current-process completed work not yet acknowledged in this TUI lifetime;
-4. active root or child work;
-5. idle Threads.
+One lightweight App summary subscription refreshes the other-work indicator. The open picker is a bounded navigation snapshot: reopening, changing search or scope, or explicitly loading another page refreshes its data. Background invalidations never reset a search in flight, discard loaded pages, or move the highlighted result. Indicators are not execution authority. The App-wide active-work summary supplies exit counts independently of filtered or paged results. A bounded waiting indicator labels its scope rather than presenting a partial count as complete.
 
-Within one group, rows order by descending relevant update time and stable Thread ID. The launch Project ID is the default App query filter; All Projects omits that filter. The TUI never expands this into another grouping model. Project appears as compact row context when several Projects can be present.
-
-Acknowledged completion is terminal-local presentation state. It is lost on restart and never written into Thread metadata or continuation state. Pending decisions and durable child terminal facts remain visible after restart because their owning App projections retain them.
-
-A Workbench row contains only bounded summary data: title, Project, Agent, Environment, age, root activity, pending-decision summary, child roll-up, latest safe activity, and available actions. Selecting a row loads bounded preview detail. Only opening Focus establishes the full root-lineage watch and timeline.
-
-Context-sensitive Workbench input follows the same rules as Focus:
-
-- idle Thread: submit a new prompt;
-- running Thread: steer the exact active receipt;
-- awaiting Thread: answer the exact decision sequence;
-- new-work composer: create another root Thread under the launch-resolved Project and submit its first prompt; disable creation when no Project was resolved, including in an All Projects fallback with no launch Project.
-
-Workbench owns no queued delivery. A dispatch can remain on Workbench or open Focus as two explicit actions, not as a modifier-dependent hidden distinction.
+Only the current conversation exposes run, steer, cancel, archive, and decision actions. Drafts and scroll state survive opening and closing the picker. A root or child completion in another Thread does not steal focus or automatically open a decision.
 
 ## Failure and Conflict Presentation
 
@@ -326,6 +298,6 @@ Workbench owns no queued delivery. A dispatch can remain on Workbench or open Fo
 07. No input is silently queued for a later turn.
 08. Decisions submit one exact complete response batch and never auto-approve.
 09. Tool, diff, task, and child detail use progressive disclosure and bounded App data.
-10. Workbench attention is useful presentation, not another scheduler or durable state machine.
+10. The Thread picker navigates conversations and never becomes a second execution-control surface.
 11. The Project/All Projects filter changes terminal queries only and never mutates Thread configuration.
 12. `$` references exact App-resolved Skills for the current input without changing Skill sources, catalog selection, Thread configuration, or Environment authority.

@@ -53,10 +53,10 @@ from a13n_ui.surfaces import (
     StructuredQuestionRequestView,
     TaskPage,
     TaskView,
+    ThreadActivityPage,
+    ThreadActivityView,
     ThreadSelectorCatalog,
     ThreadSummary,
-    WorkbenchPage,
-    WorkbenchThreadView,
 )
 from a13n_ui.thread_projection import ThreadProjectionService
 
@@ -137,7 +137,7 @@ class TerminalProjectionService:
             configuration_path=configuration_path,
         )
 
-    async def workbench(
+    async def thread_activity(
         self,
         *,
         project_id: str | None,
@@ -145,7 +145,7 @@ class TerminalProjectionService:
         include_archived: bool = False,
         cursor: str | None = None,
         limit: int = 20,
-    ) -> WorkbenchPage:
+    ) -> ThreadActivityPage:
         source = await self._required_configuration()
         if project_id is not None and project_id not in source.projects:
             raise ThreadError("The selected Workbench Project is unavailable.", code="project_missing")
@@ -172,7 +172,7 @@ class TerminalProjectionService:
             if activity is not None:
                 retained_activity[thread_id] = activity
 
-        rows: list[WorkbenchThreadView] = []
+        rows: list[ThreadActivityView] = []
         for thread in page.threads:
             project = source.projects.get(thread.configuration.project_id)
             agent = source.agents.get(thread.configuration.agent_source.id)
@@ -208,7 +208,7 @@ class TerminalProjectionService:
             else:
                 actions.extend(thread.root_activity.available_actions)
             rows.append(
-                WorkbenchThreadView(
+                ThreadActivityView(
                     thread=thread,
                     project_name=project.name if project is not None else thread.configuration.project_id,
                     agent_name=agent.name if agent is not None else thread.configuration.agent_source.id,
@@ -226,7 +226,7 @@ class TerminalProjectionService:
                     available_actions=tuple(dict.fromkeys(actions)),
                 )
             )
-        return WorkbenchPage(
+        return ThreadActivityPage(
             project_id=project_id,
             rows=tuple(rows),
             total=page.total,

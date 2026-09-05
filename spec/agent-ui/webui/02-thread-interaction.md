@@ -4,25 +4,17 @@
 
 The WebUI opens one continuation-backed root Thread directly as a conversation with understandable current-process activity. It deliberately shows retained and live facts as two layers. A smooth interaction experience never hides whether content is selected continuation history, provisional stream output, a saved child checkpoint, or a control that is available only in the current App process.
 
-The canonical detail route names only the stable root Thread ID. Project, Agent, Environment profile, Plugin, Run Extension, and MCP selections are not route identity. They are visible mutable Thread configuration. A root Thread remains inspectable when one of those references is missing; only the next Run is blocked by App validation.
+The canonical detail route names only the stable root Thread ID. Project, Agent, Environment profile, Plugin, Run Extension, and MCP selections are not route identity. Project is immutable after creation; the remaining selections use versioned Thread configuration commands. A root Thread remains inspectable when one of those references is missing; only the next Run is blocked by App validation.
 
-## Sidebar Navigation
+## Transient Thread Navigation
 
-The sidebar presents:
+The Conversations action or `Ctrl+O` opens a modal picker over the current conversation. It contains bounded title/ID search, current-Project or explicit all-Projects scope, archive inclusion, keyset Load more, New conversation, and Close. It has no persistent sidebar, split preview, execution controls, or second composer. Opening or closing it does not change a Thread or interrupt active work.
 
-- one global New Thread action;
-- a bounded Recent list across Projects;
-- accepted Projects in configured order, each with a bounded expandable root-Thread list and a Project-scoped New Thread action;
-- search and archive entry points;
-- a bottom-pinned Settings action.
+Project is the only root-Thread grouping. A Project query matches the exact immutable creation-time `project_id`; all-Project navigation includes unresolved references. Rows show concise App-projected state, never inferred liveness from retained running status. Selecting a row closes the picker, opens the canonical Thread route, and restores that Thread's page-memory draft.
 
-Project is the only root-Thread grouping. A Project list query includes root Threads whose current sticky `project_id` equals that exact ID. Recent is an App-projected cross-Project index ordered by authoritative recency; it does not own membership, acknowledgement, or another saved grouping. A Thread row shows only concise state relevant to navigation, such as active, awaiting input, failed, or idle. It never claims liveness from retained status alone.
+The global New conversation action applies ordinary creation defaults without creating a Thread. The draft always carries an explicit Project selection before creation. Search, scope, archive inclusion, and pagination are navigation only. Summary invalidations do not replace an open picker's search or loaded pages; reopening or changing filters refreshes them. No picker row opens a detailed subscription.
 
-The global New Thread action applies ordinary root-Thread creation defaults. A Project-scoped action initializes the draft with that exact Project. The create command always carries one resolved explicit Project selection. Project creation, guided editing, reordering, and deletion remain in Settings and use the ordinary expected-digest desired-resource boundary.
-
-The sidebar never subscribes to every Thread. Its bounded recent, Project, and unresolved-Project pages consume detached summaries plus the App-wide invalidation stream. Opening a row selects its canonical Thread route; changing an expanded Project, search, archive filter, or page never mutates a Thread.
-
-A retained Thread whose Project no longer resolves remains reachable through Recent, search, archive, or a bounded unresolved section supplied by the App. Reassignment is an explicit Thread configuration mutation; the browser never silently applies a similarly named Project.
+A missing Project does not permit Thread reassignment. Restore its resource under the same stable ID, or create a separate Thread under another Project. Retained history remains inspectable and a failed composition does not discard the draft.
 
 ## Conversation Shell
 
@@ -30,7 +22,7 @@ The selected root Thread occupies the primary region. Its header presents the Th
 
 A selected root Thread opens directly as the ordinary conversation without an intermediate dashboard. Selecting a child, task, tool, review, or other activity opens a bounded contextual view under the owning root lineage; child Threads do not enter the root collection as peers. Exact child and operation correlations reuse the on-demand [Activity and Diagnostics](04-debugging-and-diagnostics.md) views rather than creating a permanent inspector.
 
-Wide layouts keep the sidebar beside the conversation and can add one optional context panel. Narrow layouts show sidebar, conversation or activity, and selected context as separate panels with explicit back navigation. Layout changes preserve the same canonical Thread route, focused controller, draft, and selection.
+Wide layouts keep the conversation dominant and can add one read-only context panel. The transient picker overlays that same surface. Narrow layouts give the picker or selected detail the available width with explicit Close/Back navigation. Layout changes preserve the same canonical Thread route, focused controller, draft, and selection.
 
 ## Opening a Thread
 
@@ -79,7 +71,7 @@ Tool arguments, results, failures, and custom payloads use bounded structured vi
 
 A new-Thread route begins as a browser-local draft with Project, Agent, Environment profile, ordered Harness Plugins, ordered Environment Run Extensions, ordered MCP servers, optional title, and prompt. A Project-scoped origin initializes that explicit selection; the global action applies ordinary root-Thread creation defaults. Defaults initialize the controls but do not create a Thread.
 
-On first submission, the browser calls `create_thread()` and then submits the prompt to the returned Thread. These are two explicit App operations rather than an invented atomic create-and-run contract. If creation succeeds and prompt admission fails or has unknown outcome, the created Thread remains visible at its canonical route and the prompt draft is restored for reconciliation. The browser never creates another Thread automatically to hide that boundary.
+On first submission, the browser calls `create_thread()` and then submits the prompt to the returned Thread. These are two explicit App operations rather than an invented atomic create-and-run contract. If creation succeeds and prompt admission fails or has unknown outcome, the created Thread remains visible at its canonical route and the prompt draft is restored for reconciliation. The browser never creates another Thread automatically to hide that boundary. Unknown-outcome status and the created ID survive navigation in page memory. A late response does not force navigation after the user has left the source route; an acknowledgement clears only the submitted draft revision, not newly typed text. Rejected steering retains the prompt even when the HTTP status is successful.
 
 An explicit Create without prompt persists the Thread and opens it idle. Cancelling a browser-local draft has no App effect.
 
@@ -174,24 +166,24 @@ Archived Threads leave the ordinary collection but remain queryable through the 
 
 ## Failure Semantics
 
-| Failure                                     | Presentation and recovery                                                                        |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Thread Project missing or deleted           | Keep the Thread reachable through derived navigation and require explicit reassignment           |
-| Thread or selected resource missing         | Preserve inspectable history, identify the missing selection, and link to explicit reassignment  |
-| Root admission rejected                     | Retain prompt and configuration draft; refresh exact Thread and operation projections            |
-| Admission outcome unknown                   | Retain draft, refetch current root activity, and require user confirmation before another submit |
-| Steering or cancellation rejected           | Refresh available actions; never target a replacement operation                                  |
-| Deferred continuation conflict              | Preserve the draft for comparison, refetch requests, and require a complete new batch            |
-| Focused stream reset                        | Mark provisional content reset, establish a new snapshot, and keep retained transcript visible   |
-| Saved child running but locally unavailable | Show interruption/unavailability with no inferred controls or takeover                           |
-| Continuation or cleanup facet fails         | Present the independent facet rather than flattening the entire outcome                          |
+| Failure                                     | Presentation and recovery                                                                                                               |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Thread Project missing or deleted           | Keep the Thread reachable through derived navigation and require restoring its Project resource or creating a new Thread                |
+| Thread or selected resource missing         | Preserve inspectable history, identify the missing selection, and link to the applicable resource repair or allowed versioned selection |
+| Root admission rejected                     | Retain prompt and configuration draft; refresh exact Thread and operation projections                                                   |
+| Admission outcome unknown                   | Retain draft, refetch current root activity, and require user confirmation before another submit                                        |
+| Steering or cancellation rejected           | Refresh available actions; never target a replacement operation                                                                         |
+| Deferred continuation conflict              | Preserve the draft for comparison, refetch requests, and require a complete new batch                                                   |
+| Focused stream reset                        | Mark provisional content reset, establish a new snapshot, and keep retained transcript visible                                          |
+| Saved child running but locally unavailable | Show interruption/unavailability with no inferred controls or takeover                                                                  |
+| Continuation or cleanup facet fails         | Present the independent facet rather than flattening the entire outcome                                                                 |
 
 ## Invariants
 
 01. Project is the only root-Thread grouping; Recent, search, archive, and unresolved navigation remain derived indexes.
 02. The selected root Thread opens directly as the one ordinary conversation and composer surface.
-03. Project-grouped visibility of a root Thread is derived from its current sticky Project.
-04. A focused root Thread route renders one high-water-bound snapshot and one complete descendant live lineage.
+03. Project-grouped visibility of a root Thread is derived from its immutable creation-time Project.
+04. A focused root Thread route renders one subscribe-before-query snapshot and one complete descendant live lineage.
 05. Creating a Thread and admitting its first prompt remain two App operations; partial success preserves the created Thread and recoverable prompt draft.
 06. Retained timeline, saved child display, and provisional live activity remain visually and semantically distinct.
 07. One active root operation permits no hidden queued prompt.

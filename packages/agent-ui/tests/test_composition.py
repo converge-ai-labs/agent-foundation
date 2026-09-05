@@ -475,3 +475,83 @@ async def test_missing_markdown_only_blocks_the_agent_that_selects_it(tmp_path: 
     # Reviewer has no Markdown dependency; its Run remains resolvable.
     composition = resolver.resolve_run(source, replace(_selection(), agent_source_id="agent-reviewer"))
     assert composition.root.source_id == "agent-reviewer"
+
+
+async def test_shell_review_captures_and_registers_its_subscription_model(tmp_path: Path) -> None:
+    from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability
+    from a13n_ui.model_runtime import model_recipe_id
+
+    path = _write_source(tmp_path)
+    review_model = tmp_path / "models" / "review.yaml"
+    review_model.write_text("""schema_version: "1"
+kind: model
+id: model-review
+name: Review
+route: openai-codex:gpt-5.6-luna
+authentication: {kind: codex_subscription}
+settings: {thinking: low}
+""")
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(
+        agent.read_text().replace(
+            "harness_plugins: null",
+            """  - capability: ShellReviewCapability
+    configuration:
+      model: model-review
+      risk_threshold: high
+      on_flagged: approval_required
+      on_error: approval_required
+harness_plugins: null""",
+        )
+    )
+    source = await load_agent_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    resolver.validate_generation(source)
+    composition = resolver.resolve_run(source, _selection())
+    recipe = next(item for item in composition.root.capabilities if item.capability == "ShellReviewCapability")
+    assert recipe.model is not None
+    assert recipe.model.route == "openai-codex:gpt-5.6-luna"
+    assert recipe.model.authentication.kind == "codex_subscription"
+    review_model.unlink()
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    capability = next(
+        item for item in reconstructed.executable.definition.capabilities if isinstance(item, ShellReviewCapability)
+    )
+    assert capability.model == model_recipe_id(recipe.model)
+    assert capability.on_error is ShellReviewAction.APPROVAL_REQUIRED
+    assert capability.model_settings["thinking"] == "low"
+    assert recipe.model in reconstructed.model_resolver._recipes.values()
+
+
+async def test_shell_review_rejects_missing_model_resource(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    agent = tmp_path / "agents" / "assistant.yaml"
+    agent.write_text(
+        agent.read_text().replace(
+            "harness_plugins: null",
+            """  - capability: ShellReviewCapability
+    configuration: {model: model-missing}
+harness_plugins: null""",
+        )
+    )
+    source = await load_agent_ui_configuration(path)
+    with pytest.raises(CompositionError) as error:
+        AgentCompositionResolver(_catalog()).validate_generation(source)
+    assert error.value.code == "capability_model_missing"
+
+
+async def test_webui_collaboration_is_absent_from_reconstructed_children(tmp_path: Path) -> None:
+    from a13n_ui.thread_capability import ThreadCollaborationCapability
+
+    source = await load_agent_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    controller: Any = object()
+    capability = ThreadCollaborationCapability(controller=controller, source_thread_id="thread-1")
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(
+        composition,
+        subagent_operator=_UnusedOperator(),
+        root_capabilities=(capability,),
+    )
+    assert capability in reconstructed.executable.definition.capabilities
+    for child in reconstructed.executable.subagents.values():
+        assert not any(isinstance(item, ThreadCollaborationCapability) for item in child.definition.capabilities)

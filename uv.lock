@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -51,6 +51,7 @@ version = "0.0.0"
 source = { editable = "packages/agent-environment-provider" }
 dependencies = [
     { name = "a13n-envd-client" },
+    { name = "anyio" },
     { name = "docker" },
     { name = "e2b" },
     { name = "pathspec" },
@@ -67,6 +68,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-envd-client", editable = "packages/agent-envd-client" },
+    { name = "anyio", specifier = ">=4,<5" },
     { name = "docker", specifier = ">=7.2,<8" },
     { name = "e2b", specifier = ">=2.46.4,<3" },
     { name = "pathspec", specifier = ">=1.1,<2" },
@@ -270,6 +272,7 @@ dependencies = [
     { name = "alembic" },
     { name = "anyio" },
     { name = "click" },
+    { name = "fastapi" },
     { name = "fastmcp-slim", extra = ["client"] },
     { name = "filelock" },
     { name = "httpcore2" },
@@ -286,7 +289,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "starlette" },
     { name = "textual" },
+    { name = "uvicorn" },
     { name = "zstandard" },
 ]
 
@@ -307,6 +312,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.1,<2" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "click", specifier = ">=8.2,<9" },
+    { name = "fastapi", specifier = ">=0.135,<1" },
     { name = "fastmcp-slim", extras = ["client"], specifier = ">=3.4,<4" },
     { name = "filelock", specifier = ">=3.18,<4" },
     { name = "httpcore2", specifier = ">=2.12,<3" },
@@ -323,7 +329,9 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "rich", specifier = ">=15,<16" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
+    { name = "starlette", specifier = ">=0.52,<2" },
     { name = "textual", specifier = ">=6.12,<7" },
+    { name = "uvicorn", specifier = ">=0.34,<1" },
     { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]
 

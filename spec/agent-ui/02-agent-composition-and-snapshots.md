@@ -25,6 +25,22 @@ model_configuration: {}
 
 The release-owned Model integration selected by the route validates settings, construction configuration, and the explicit authentication kind without resolving credential bytes. API keys name environment variables; Codex and Grok subscription Models can instead select their compatible product account store. [Model Authentication and Compatible Account Stores](02a-model-authentication-and-account-stores.md) owns authentication precedence, shared login, refresh, and credential persistence.
 
+### Shell Review Auxiliary Model
+
+`ShellReviewCapability.configuration.model` names a Model resource ID, not an ambient provider route. Agent UI validates the reference, captures its complete credential-free recipe with the Capability in the immutable Run composition, and registers it in the same per-Run Model resolver as primary Models. Subscription refresh and request-local authentication therefore apply to the reviewer as well as the main Agent. Changing or deleting the source Model does not change an already captured reviewer. The captured Model settings initialize the review request, with explicit Capability `model_settings` overriding matching keys. Auxiliary-model resolution alone does not apply request settings; the reconstructed reviewer receives the merged frozen values, including the starter Luna's low thinking level.
+
+```yaml
+capabilities:
+  - capability: ShellReviewCapability
+    configuration:
+      model: model-codex-review
+      risk_threshold: high
+      on_flagged: approval_required
+      on_error: approval_required
+```
+
+The reviewer is tool-free and uses the Harness-owned bounded review lifecycle. Review failure requires approval by default; it never silently authorizes a command. Shell review is not filesystem, process, or network isolation and remains useful in explicitly selected Full Control mode. Setup offers a reviewed lightweight subscription Model and lets the user opt out before publication.
+
 ## MCP Servers
 
 One file under `mcp/` defines a reusable MCP server:

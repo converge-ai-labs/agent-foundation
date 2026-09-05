@@ -133,6 +133,10 @@ Rules:
 
 Filesystem editors do not participate in an application transaction, so Agent UI does not claim distributed linearizability against an uncooperative write racing the final filesystem replacement. Stable rereads, expected digests, atomic replacement, and post-publication verification provide local no-stale-write behavior without process lock files or a proprietary file format.
 
+## First-use Initialization
+
+[Setup and Environment Readiness](06-setup-and-environment-readiness.md) owns the explicit guided initialization shared by surfaces. It uses this same source tree, complete candidate validation, no-clobber creation, and exact-digest default publication. It creates no alternate settings store and never rewrites an existing installation merely because a new template is available.
+
 ## Global Defaults
 
 Global defaults initialize a new root Thread. The App resolves omitted create fields in this order:

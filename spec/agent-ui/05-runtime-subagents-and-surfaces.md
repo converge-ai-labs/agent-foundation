@@ -225,20 +225,27 @@ Thread title and archive state share a metadata head independent from sticky con
 
 Failures are presentation-safe structured values with bounded code, message, details, and retry hint. Root operation outcomes contain scalar or JSON output, status, usage projection, continuation selection, Environment-state publication summaries, and cleanup failures; they never contain a native `HarnessRunResult`, `HarnessState`, deferred request object, or `Exception`.
 
-## Root-only Thread Capability
+## WebUI Thread Collaboration Capability
 
-The resolved root Agent receives one Agent UI-owned Toolset with operations conceptually equivalent to:
+`ThreadCollaborationCapability` is an App-injected, root-only Capability for a WebUI server lifetime. It exposes bounded cross-Thread collaboration, not storage access, process supervision, or durable scheduling. The public configuration catalog cannot select it. TUI, one-shot CLI, and ordinary embedded App lifetimes do not inject it; async children never inherit it. The executable selects the App lifetime mode explicitly, independently of Model arguments or desired configuration.
+
+The tools are conceptually:
 
 ```python
-list_threads(query: str | None = None, cursor: str | None = None, limit: int = 20)
-get_thread(thread_id: str, history_cursor: str | None = None, history_limit: int = 50)
-run_thread(thread_id: str, prompt: str)
-steer_thread(thread_id: str, message: str)
+list_threads(query=None, cursor=None, limit=20)
+get_thread(thread_id, history_cursor=None, history_limit=50)
+create_thread(prompt, title=None, agent_id=None)
+run_thread(thread_id, prompt)
+steer_thread(thread_id, message)
 ```
 
-`run_thread` accepts only a root Thread, uses that target's sticky configuration, and accepts no Project roots or configuration changes from model arguments. It submits through the same receipt boundary and waits for the detached terminal outcome. Async children continue through `resume_subagent`, which retains the current parent roster and delegation ceilings. `steer_thread` resolves the target's current receipt once and controls that exact receipt; it never falls through to a replacement Run. Same-active-Thread recursive run or steer is rejected.
+Listing and search cover the server's accepted root Threads with bounded retained history and process-local activity. `create_thread` creates a root in the source Thread's Project using accepted defaults and an optional accepted Agent ID, then admits its first prompt. It accepts no new Project, roots, credential, tool grants, or raw configuration. Creation and prompt admission are separate: if admission fails after creation, the response identifies the created Thread rather than silently creating another on retry.
 
-The Toolset appears only on root invocation. Children cannot obtain it through Markdown, Capability selection, Plugin contribution, or tool visibility.
+`run_thread` accepts only another root, retains its sticky configuration, and returns the exact admission receipt without waiting for terminal completion. `create_thread` likewise returns the new identity and receipt. Callers inspect subsequent activity through `get_thread`; admission is not success. These nonblocking tools do not build a chain of waiting root Runs or a durable queue. Repeating a mutation is not idempotent; a caller must reconcile known identities and receipts rather than retry an uncertain write blindly.
+
+`steer_thread` resolves the target's current receipt once and controls that exact receipt; it never falls through to a replacement Run. Same-source recursive run or steer is rejected. A child uses the existing parent-scoped delegation controls, not cross-root tools. Scope checks bind every tool invocation to its source root. Tool results remain bounded detached values with safe errors and explicit pending, unavailable, or failed status.
+
+The Capability and Web transport call the same in-memory `AgentUiApp` services. There is no localhost HTTP client, IPC bridge, independent agent daemon, or supervisor. Closing a browser tab closes delivery only; stopping the WebUI server performs ordinary App shutdown. Restart does not reacquire old receipts or automatically replay interrupted input. Historical capability identifiers in saved compositions do not authorize reinjection outside WebUI mode.
 
 ## Live Presentation
 
@@ -248,14 +255,16 @@ The global sequence is event identity, not a per-subscriber delivery count. Even
 
 The detailed live hub performs bounded best-effort fan-out and retains only a small in-memory ring. A slow subscriber can lose events and a reconnect outside the retained range receives an explicit reset requirement. Epoch mismatch likewise requires a new snapshot. A slow or disconnected subscriber never blocks execution, state publication, or continuation selection.
 
-Every process-local presentation change represented by a detailed event commits its detached local projection and allocates that event's sequence through one App presentation-serialization boundary. A focused watch:
+A focused watch establishes a subscribe-before-query boundary:
 
-1. installs its root-lineage subscriber before capture begins;
-2. uses that same boundary to freeze the complete process-local presentation projection and record its global high-water sequence;
-3. assembles retained Thread, child, task, deferred, and root-operation projections against one exact selected continuation and verifies that the relevant heads did not change, retrying capture when they did; and
-4. returns a snapshot whose `cutover_sequence` is that high-water plus a subscription that delivers only matching events strictly after it.
+1. install the exact root-lineage subscriber and record its epoch and `cutover_sequence`;
+2. query detached Thread, child, task, and root-operation projections, with retained queries bound to the selected continuation;
+3. attach `recent_events`, the newest available root-lineage ring tail at or below cutover, bounded to 128 KiB of encoded events; and
+4. return the snapshot and subscription, whose subsequent delivery contains only matching events strictly after cutover.
 
-Buffered matching events at or below the high-water are already represented by the frozen local projection and are not delivered after the snapshot. Matching events above it are not represented by the snapshot and remain buffered until the surface consumes them. A surface can load retained transcript pages concurrently through cursors bound to the snapshot's selected continuation; a concurrent continuation change fails or resets the transcript query rather than combining unrelated histories. This cutover prevents both missing and duplicate reduction without treating the live ring as durable history.
+The snapshot is not a transaction across execution, SQLite, and the live hub. Its detached activity projections can be newer than cutover; they are separate facts, not a complete materialized event fold. `recent_events` is explicitly provisional and incomplete when the ring or byte budget evicts earlier events. It cannot reconstruct all active output or serve as durable history. Consumers render retained history independently, deduplicate event identity, and refetch authoritative Thread/receipt projections for controls rather than deriving acceptance from a replayed lifecycle event. A concurrent continuation change fails or resets a retained query instead of combining histories from unrelated continuations.
+
+Subscription installation and retained replay are atomic within the owning hub, so events after cutover remain buffered even while snapshot queries run. Ring loss or a subscriber gap requests reset; it never invents historical output. Closing or cancelling delivery releases the registered subscriber even under task cancellation, without cancelling the producing Run.
 
 A separate lightweight App-wide stream emits bounded invalidation hints for configuration, catalog, Project, Thread metadata/configuration/continuation, root operation, and child execution changes. Each hint identifies only the affected summary scope needed for refetch. It carries no transcript or checkpoint payload and is not durable truth. A surface that misses hints refetches its summaries.
 
@@ -263,11 +272,12 @@ Retained transcript comes from selected continuations and child compact checkpoi
 
 ## CLI
 
-The CLI supports direct execution and focused inspection or management without a generic desired-resource CRUD surface:
+The CLI supports direct execution, explicit first-use setup, and focused inspection or management without a generic desired-resource CRUD surface:
 
 ```text
 a13n-ui [tui] [--thread <id> | --project <id> --agent <id> --environment-mode <full-control|sandbox>]
   run ...
+  setup
   config path
   config validate
   config show
@@ -279,7 +289,7 @@ a13n-ui [tui] [--thread <id> | --project <id> --agent <id> --environment-mode <f
   auth status [codex|grok]
   auth login <codex|grok> [--allow-account-switch] [--device-code]
   auth logout <codex|grok>
-  webui [--host <ip>] [--api-key <key>] [--dangerously-bypass-permission]
+  webui [--host <ip>] [--port <port>] [--api-key <key>] [--dangerously-bypass-permission]
 ```
 
 Bare `a13n-ui` and `a13n-ui tui` are equivalent terminal-workstation entries. Their `--project`, `--agent`, `--environment-mode`, and advanced `--environment-profile` options initialize only that invocation's new-Thread draft; they do not mutate accepted file defaults. `--thread` opens an existing root Thread and is mutually exclusive with those new-draft overrides. `environment list` returns the App-owned Full Control, Sandbox, and accepted custom profile projections.
@@ -292,15 +302,15 @@ Auth commands use [Model Authentication and Compatible Account Stores](02a-model
 
 ## Textual TUI
 
-The bundled [Textual TUI](tui/README.md) runs in the App process and uses detached commands, queries, receipts, focused root-lineage watches, and summary invalidations. Focus mounts one root Thread in detail; Workbench uses bounded attention-ready summaries and selected previews without attaching one detailed stream or widget tree per Thread. Switching focus does not cancel App-owned work. Exiting the owning App follows bounded shutdown and never promises detached execution.
+The bundled [Textual TUI](tui/README.md) has one conversation surface, one composer, and a transient searchable root-Thread picker. There is no Workbench or top-level mode toggle. The current conversation mounts one live root-lineage timeline; other Threads have only bounded summary rows and activity indicators. Selection changes delivery, not ownership, and App-owned work can continue while another Thread is open. Exiting the terminal ends its App lifetime and does not detach execution.
 
-The TUI uses an explicit accepted Project launch override when supplied, otherwise resolves one launch Project from the current working directory, and defaults its Workbench to that Project filter with an explicit all-projects fallback. It can query accepted configured resources, catalog availability, source locations, and diagnostics; it presents each existing Thread's Project as read-only context, patches only supported non-Project sticky selections with exact versions, and submits exact `$` Skill references resolved by the App from the applicable effective catalog. It does not invoke desired-resource source mutations, import resources or Skills, mutate Projects, or install, remove, or upgrade Python extension packages. Project and resource authoring remain WebUI or direct-file behavior; Skill authoring remains direct-file or external-tool behavior, and package management remains outside `AgentUiApp`.
+The TUI resolves a launch Project from an explicit accepted override or the current directory. The picker defaults to that Project and offers All Projects. Existing Thread Projects are read-only; supported non-Project sticky selections use exact versions. An unmatched directory leaves existing-history navigation available while new submission requires valid configuration. The explicit [setup workflow](06-setup-and-environment-readiness.md) is the only terminal desired-resource initialization path; ordinary authoring remains direct files or WebUI Settings.
 
-Textual Messages, workers, widgets, drafts, scroll position, expansion state, and attention acknowledgements remain presentation-local. The TUI owns no durable prompt queue, filesystem execution shortcut, continuation codec, or alternate Thread configuration. Active ordinary input is exact receipt-scoped steering rather than a queued later prompt.
+Textual state, drafts, scroll position, and expansion remain presentation-local. Active ordinary input is receipt-scoped steering, not queued later input. User-facing Thread navigation and child controls do not imply model-visible cross-Thread tools; those are absent from terminal Runs.
 
 ## WebUI
 
-The bundled WebUI uses one HTTP/SSE adapter over detached App commands and queries. The adapter owns only process-bound listener access, HTTP serialization and status mapping, static-asset delivery, and stream delivery. It does not expose an alternate configuration, authorization, or Thread model.
+The bundled WebUI uses one HTTP/SSE adapter over detached App commands and queries. Its foreground server process owns one WebUI-mode `AgentUiApp` and all process-local execution, even while no browser is connected. The server calls the App directly in memory; it does not forward work to a separate daemon or use process-to-process communication. The adapter owns only process-bound listener access, HTTP serialization and status mapping, static-asset delivery, and stream delivery. It does not expose an alternate configuration, authorization, or Thread model.
 
 ### HTTP Startup and Access
 
@@ -316,11 +326,11 @@ Every `/api` request, including an SSE stream connection, authenticates with `Au
 
 Bind address, API key, and the dangerous bypass are executable-bound Web-surface inputs rather than desired-resource configuration. All authenticated application behavior still uses the same `AgentUiApp` configuration, commands, queries, receipts, and live hubs as the CLI; the HTTP adapter cannot introduce surface-only business settings.
 
-The adapter is a same-origin boundary. It does not enable credentialed cross-origin browser access or permissive CORS. A non-loopback bind remains a single-user plain-HTTP listener rather than a remote multi-user security boundary; the terminal identifies that exposure, and any trusted-network or TLS termination requirement belongs outside Agent UI.
+The adapter validates the explicit Host authority and, when present, the exact same-origin Origin before App access. Request bodies are bounded to 1 MiB and strict validation errors omit input values. Static assets use a self-only Content Security Policy without `unsafe-eval`; generated standalone validators need no runtime compilation. The adapter is a same-origin boundary. It does not enable credentialed cross-origin browser access or permissive CORS. A non-loopback bind remains a single-user plain-HTTP listener rather than a remote multi-user security boundary; the terminal identifies that exposure, and any trusted-network or TLS termination requirement belongs outside Agent UI.
 
 ### HTTP Adapter Contract
 
-Finite `/api` routes map strict request documents to one `AgentUiApp` command or query and return strict detached JSON projections. A common bounded error envelope preserves safe App error code, message, details, retry hint, and conflict precondition when present. HTTP status mapping does not reinterpret App lifecycle or retry semantics. No route exposes a database session, storage-object path, arbitrary filesystem operation, native Harness value, Python exception, or credential.
+Finite `/api` routes map strict request documents to one `AgentUiApp` command or query and return strict detached JSON projections. A common bounded error envelope preserves safe App error code and message; detailed conflict recovery refetches the owning versioned projection. HTTP status mapping does not reinterpret App lifecycle or retry semantics. No route exposes a database session, storage-object path, arbitrary filesystem operation, native Harness value, Python exception, or credential.
 
 The adapter publishes the versioned OpenAPI document used to generate the bundled browser client. Its authenticated status projection identifies the API schema, App status, listener bind address, and whether listener access uses an API key or the explicit dangerous bypass. The browser and adapter ship in one Python artifact, but a stale tab or development proxy still fails an incompatible schema explicitly rather than guessing.
 
@@ -335,11 +345,13 @@ Focused frames use the following conceptual JSON union; the adapter's OpenAPI do
 class FocusSnapshotFrame:
     kind: Literal["snapshot"]
     snapshot: ThreadFocusSnapshot
+    resume_cursor: str
 
 
 class FocusEventFrame:
     kind: Literal["event"]
     event: LiveEvent
+    resume_cursor: str
 
 
 class FocusResetFrame:
@@ -347,13 +359,14 @@ class FocusResetFrame:
     reason: str
 ```
 
-A fresh focused stream never reads a snapshot before installing its subscription. Reconnect can name the last accepted epoch and sequence while the App retains them. That cursor is bound to the focused stream kind and exact root lineage and cannot be reused for another root. A valid resume does not emit a replacement snapshot; the hub establishes retained replay and following live delivery as one cursor continuation, so no matching event can fall between them. It replays retained matching events after the cursor and then follows the same lineage. An epoch change, expired cursor, or subscriber gap returns reset semantics rather than invented replay. Because the global sequence is sparse after root-lineage filtering, a numerical jump alone is valid and never causes reset. HTTP disconnect closes only that subscription and never cancels the producing root or child execution. The browser uses authenticated `fetch` streaming because native `EventSource` cannot supply the required Authorization header.
+A fresh focused stream never reads a snapshot before installing its subscription. Every normal frame carries an opaque `resume_cursor`, encoding stream kind, exact root lineage when applicable, epoch, and sequence. Reconnect passes it in the bounded `after` query parameter without browser decoding. Summary `open` and `invalidation` frames carry the same cursor concept; reset frames carry a reason and no reusable cursor. An invalid encoding, wrong kind, wrong lineage, future sequence, or expired epoch receives explicit reset semantics. That cursor is bound to the focused stream kind and exact root lineage and cannot be reused for another root. A valid resume does not emit a replacement snapshot; the hub establishes retained replay and following live delivery as one cursor continuation, so no matching event can fall between them. It replays retained matching events after the cursor and then follows the same lineage. An epoch change, expired cursor, or subscriber gap returns reset semantics rather than invented replay. Because the global sequence is sparse after root-lineage filtering, a numerical jump alone is valid and never causes reset. HTTP disconnect closes only that subscription and never cancels the producing root or child execution. The browser uses authenticated `fetch` streaming because native `EventSource` cannot supply the required Authorization header.
 
 Every authenticated JSON, OpenAPI, and SSE response uses `Cache-Control: no-store`; stream responses also disable intermediary buffering where the deployment path supports it. Recognized browser navigation paths serve `index.html` with mandatory revalidation so History API routes survive direct load, refresh, and package replacement. Content-hashed JavaScript, CSS, font, icon, editor, and worker assets use long-lived immutable caching. Asset misses, unknown `/api` routes, and unknown health routes remain explicit HTTP failures and never fall back to browser HTML.
 
 The complete browser architecture and experience are owned by [WebUI Specifications](webui/README.md). The WebUI provides:
 
-- one Project-and-Thread sidebar with New Thread, Recent, search, archive, and Project-scoped navigation;
+- one transient navigation-only Thread picker with bounded search, Project/all-Projects scope, archive inclusion, and keyset pagination;
+- shared first-use setup with subscription discovery, full file preview, explicit publication, and Sandbox readiness recovery;
 - one selected root-Thread conversation with decisions, exact controls, live updates, progressive activity disclosure, and optional Environment or activity context;
 - on-demand read-only activity for detailed Thread, Run, child, task, state, payload, and timing inspection; and
 - guided Settings management for source-tree diagnostics, Capability and extension discovery, expected-digest resource editing, Project, Agent, Plugin, Environment, MCP, compatible account, and global-default management.

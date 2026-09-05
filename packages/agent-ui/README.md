@@ -23,7 +23,7 @@ A one-shot Run can use the same human-editable configuration tree:
 a13n-ui --config ~/.a13n-ui/a13n-ui.yaml run "Inspect the Agent behavior"
 ```
 
-Projects are the only local-root grouping concept. Every root or child Thread owns sticky mutable selections, while each admitted Run captures an immutable resolved composition. CLI, WebUI, and model-visible Thread tools call the same application boundary. The exact accepted behavior and migration target are owned by the [Agent UI specification](../../spec/agent-ui/README.md).
+Projects are the only local-root grouping concept. Every root or child Thread owns an immutable Project identity and versioned mutable non-Project selections, while each admitted Run captures an immutable resolved composition. CLI, TUI, WebUI, and model-visible tools call the same application boundary. Only WebUI-hosted roots receive `ThreadCollaborationCapability`; CLI/TUI roots and children do not. The exact accepted behavior and migration target are owned by the [Agent UI specification](../../spec/agent-ui/README.md).
 
 The repository Make alias starts the interactive TUI:
 
@@ -42,18 +42,15 @@ The repository directory is `packages/agent-ui`, the Python distribution is `a13
 
 ## Terminal Workstation
 
-The TUI keeps one process-local App open and provides two persistent routes:
+The TUI keeps one process-local App open and shows one conversation with its timeline, composer, decisions, and exact operation controls. `Ctrl+O` opens a transient navigation-only Thread picker with bounded title/ID search, current-Project or All-Projects scope, and pagination. There is no Workbench, split preview, second composer, or mode toggle. Other root Runs and child executions continue while their Thread is not selected.
 
-- **Focus** shows one Thread timeline, composer, decisions, and available operation controls. Only the focused Thread owns the detailed live subscription.
-- **Workbench** shows bounded, attention-ranked Thread summaries under the selected Project or All Projects. Root Runs and child executions continue when their Thread is not focused.
-
-`Ctrl+O` moves between Focus and Workbench, `Ctrl+N` starts a new draft, and `Ctrl+P` opens the command palette. `Escape` closes the top completion, picker, or review without approving, denying, cancelling, or clearing a draft. `Ctrl+C` first closes a transient surface, otherwise requests cancellation for the focused active root operation, and exits when there is nothing to cancel. Every workflow also exposes selectable controls for mouse use.
+`Ctrl+N` starts a new draft and `Ctrl+P` opens the command palette. `Escape` closes the top completion, picker, or review without approving, denying, cancelling, or clearing a draft. `Ctrl+C` first closes a transient surface, otherwise requests cancellation for the focused active root operation, and exits when there is nothing to cancel. Every workflow also exposes selectable controls for mouse use.
 
 The composer accepts the following terminal commands; the command palette exposes the same registry and disables actions that are unavailable in the current state:
 
 | Commands                                           | Purpose                                                                                     |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `/new`, `/workbench`, `/threads`                   | Create a draft, supervise Thread summaries, or find a Thread.                               |
+| `/new`, `/threads`, `/setup`                       | Create a draft, find a Thread, or reopen first-use setup.                                   |
 | `/skills`, `/agent`, `/environment`, `/extensions` | Insert an effective Skill reference or select accepted configuration for a draft or Thread. |
 | `/status`, `/details`, `/thinking`, `/help`        | Inspect state and control progressive disclosure.                                           |
 | `/editor`, `/cancel`, `/archive`, `/exit`          | Hand off a draft, control exact work, archive an inactive Thread, or leave the App.         |
@@ -62,7 +59,15 @@ Ordinary input during an active root Run is an exact steering attempt, never a h
 
 The external editor action resolves `$VISUAL` and then `$EDITOR`, parses the command without a shell, suspends Textual while the editor owns the terminal, and applies the returned text only after a successful editor exit. The original draft survives an unavailable editor or non-zero exit.
 
-Wide terminals show the Focus inspector and Workbench preview. Medium terminals reduce secondary detail, and narrow terminals use the primary single-pane flow with full-screen overlays. Resizing preserves the selected Thread, draft, overlay purpose, timeline selection, and reading state. If exit would interrupt active process-local root or child work, the TUI shows the active counts and requires explicit confirmation; that work does not detach or continue after App shutdown. Textual restores normal terminal mode before the launcher waits for App cleanup.
+Wide terminals can show the conversation inspector; the picker remains a transient navigation overlay. Medium terminals reduce secondary detail, and narrow terminals use the primary single-pane flow with full-screen overlays. Resizing preserves the selected Thread, draft, overlay purpose, timeline selection, and reading state. If exit would interrupt active process-local root or child work, the TUI shows the active counts and requires explicit confirmation; that work does not detach or continue after App shutdown. Textual restores normal terminal mode before the launcher waits for App cleanup.
+
+## Setup and Browser
+
+First use offers compatible Codex/Grok discovery, separate editable starter Agents, an explicit default Agent and Project, complete file preview, and confirmed publication. All usable providers are initially selected. Codex defaults to Terra with a separate low-thinking Luna shell reviewer; Grok defaults to Grok 4.6. Shell review starts enabled and is not a Sandbox. Existing resource files remain unchanged.
+
+Sandbox selection runs a cancellable production-equivalent preflight. Failed checks offer Retry, Cancel, or explicit Full Control without changing system security policy. Windows Sandbox isolation is unsupported; Full Control uses PowerShell and requires explicit selection. See the [user guide](../../docs/agent-ui.md) for setup, recovery, and environment authority.
+
+`a13n-ui webui` starts one foreground HTTP/SSE server that directly owns its App in memory. No separate daemon, IPC, or CLI bridge is involved. The browser has one conversation, a transient picker, and setup. Closing a tab only closes delivery; stopping the server shuts down the App. A generated API key is printed as terminal-only bootstrap material. General-purpose guided Settings editors and advanced child controls remain outside this browser implementation; desired resources remain editable files.
 
 ## CLI Discovery and Output
 

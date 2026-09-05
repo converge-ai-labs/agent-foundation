@@ -30,13 +30,13 @@ from a13n_ui.surfaces import (
     SkillCatalogItemView,
     SkillCatalogView,
     StructuredQuestionRequestView,
+    ThreadActivityPage,
+    ThreadActivityView,
     ThreadConfigurationView,
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadSelectorCatalog,
     ThreadSummary,
-    WorkbenchPage,
-    WorkbenchThreadView,
 )
 from a13n_ui.tui.application import AgentUiTerminalApp, StateProjected
 from a13n_ui.tui.intents import (
@@ -45,16 +45,12 @@ from a13n_ui.tui.intents import (
     ExecuteCommand,
     ExitTerminal,
     InsertSkillReference,
-    OpenFocus,
     OpenOverlay,
-    SearchWorkbench,
     SelectConfigurationResource,
     SetReadingAnchor,
-    SetWorkbenchFilter,
-    StartNewDraft,
+    SetThreadFilter,
     SubmitComposer,
     SubmitDecisionSession,
-    SubmitThreadDraft,
     UpdateDecisionDraft,
 )
 from a13n_ui.tui.models import (
@@ -71,16 +67,15 @@ from a13n_ui.tui.models import (
     ReadingAnchor,
     ReviewState,
     TerminalLifecycle,
-    TerminalMode,
     TerminalState,
+    ThreadActivityState,
     ThreadViewState,
     TimelineBlock,
-    WorkbenchState,
 )
 from a13n_ui.tui.scheduler import ProjectionScheduler
 from a13n_ui.tui.widgets.blocks import TimelineBlockWidget
 from a13n_ui.tui.widgets.timeline import TimelineScroll
-from textual.widgets import Input, ListView, Markdown, Static, TextArea
+from textual.widgets import ListView, Markdown, Static, TextArea
 
 
 @pytest.mark.anyio
@@ -184,7 +179,6 @@ def _focused_state(
         )
     return TerminalState(
         lifecycle=TerminalLifecycle.READY,
-        mode=TerminalMode.FOCUS,
         launch_project_id="project-main",
         focused_thread_id="thread-1",
         drafts=(DraftState(key="thread-1"),),
@@ -470,11 +464,11 @@ async def test_decision_and_review_surfaces_emit_explicit_actions_only(tmp_path:
     await app.controller.close()
 
 
-def _workbench_state() -> TerminalState:
+def _thread_activity_state() -> TerminalState:
     focused = _focused_state()
     thread = focused.thread_views[0].detail
     assert thread is not None
-    row = WorkbenchThreadView(
+    row = ThreadActivityView(
         thread=thread.thread,
         project_name="Main",
         agent_name="Agent",
@@ -484,64 +478,12 @@ def _workbench_state() -> TerminalState:
     )
     return replace(
         focused,
-        mode=TerminalMode.WORKBENCH,
         project_filter_id="project-main",
-        workbench=WorkbenchState(
-            page=WorkbenchPage(project_id="project-main", rows=(row,), total=1),
-            selected_thread_id="thread-1",
+        thread_activity=ThreadActivityState(
+            page=ThreadActivityPage(project_id="project-main", rows=(row,), total=1),
             projection_version=1,
         ),
     )
-
-
-@pytest.mark.anyio
-async def test_workbench_navigation_search_and_prompt_preserve_one_terminal_state(tmp_path: Path) -> None:
-    app, _release = _blocked_terminal_app(tmp_path)
-    handled = AsyncMock()
-    app.controller.handle = handled
-    state = _workbench_state()
-
-    async with app.run_test(size=(120, 36)) as pilot:
-        app.post_message(StateProjected(state, ProjectionHints(changed=frozenset({"workbench"}))))
-        await pilot.pause(0.1)
-
-        assert app.query_one("#workbench-screen").display
-        assert "Finished inspection" in str(app.query_one("#workbench-preview-body", Static).render())
-
-        search = app.query_one("#workbench-search", Input)
-        search.value = "failure"
-        await pilot.pause(0.3)
-        editor = app.query_one("#workbench-editor", TextArea)
-        editor.load_text("continue")
-        await pilot.pause(0.05)
-        editor.focus()
-        await pilot.press("enter")
-        await pilot.pause(0.05)
-        list_view = app.query_one("#workbench-list", ListView)
-        list_view.focus()
-        await pilot.press("enter")
-        await pilot.pause(0.05)
-
-        intents = [call.args[0] for call in handled.await_args_list]
-        assert any(isinstance(intent, SearchWorkbench) and intent.query == "failure" for intent in intents)
-        assert any(isinstance(intent, SubmitThreadDraft) for intent in intents)
-        assert any(isinstance(intent, OpenFocus) for intent in intents)
-
-        await pilot.click("#workbench-new")
-        await pilot.pause(0.05)
-        new_draft = next(call.args[0] for call in handled.await_args_list if isinstance(call.args[0], StartNewDraft))
-        assert new_draft.defaults is not None
-        assert new_draft.defaults.project_id == "project-main"
-
-        await pilot.resize_terminal(60, 28)
-        await pilot.pause(0.05)
-        assert app.has_class("width-narrow")
-        await pilot.resize_terminal(130, 36)
-        await pilot.pause(0.05)
-        assert app.has_class("width-wide")
-        assert app.terminal_state.workbench.selected_thread_id == "thread-1"
-
-    await app.controller.close()
 
 
 @pytest.mark.anyio
@@ -549,50 +491,7 @@ async def test_medium_and_narrow_use_one_pane_preview_and_inspector_drill_down(t
     app, _release = _blocked_terminal_app(tmp_path)
     handled = AsyncMock()
     app.controller.handle = handled
-    workbench_state = _workbench_state()
-
-    async with app.run_test(size=(100, 32)) as pilot:
-        app.post_message(StateProjected(workbench_state, ProjectionHints(changed=frozenset({"workbench"}))))
-        await pilot.pause(0.1)
-        workbench = app.query_one("#workbench-screen")
-        list_pane = app.query_one("#workbench-list-pane")
-        preview = app.query_one("#workbench-preview")
-        assert app.has_class("width-medium")
-        assert list_pane.display
-        assert not preview.display
-
-        app.query_one("#workbench-list", ListView).focus()
-        await pilot.press("enter")
-        await pilot.pause(0.05)
-        assert workbench.has_class("show-preview")
-        assert not list_pane.display
-        assert preview.display
-        assert not any(isinstance(call.args[0], OpenFocus) for call in handled.await_args_list)
-
-        await pilot.click("#workbench-open")
-        await pilot.pause(0.02)
-        assert any(isinstance(call.args[0], OpenFocus) for call in handled.await_args_list)
-        await pilot.press("escape")
-        await pilot.pause(0.02)
-        assert not workbench.has_class("show-preview")
-        assert list_pane.display
-
-        await pilot.resize_terminal(60, 28)
-        await pilot.pause(0.05)
-        assert app.has_class("width-narrow")
-        app.query_one("#workbench-list", ListView).focus()
-        await pilot.press("enter")
-        await pilot.pause(0.02)
-        assert workbench.has_class("show-preview")
-        assert preview.display
-        assert workbench_state.workbench.selected_thread_id == app.terminal_state.workbench.selected_thread_id
-
-        await pilot.resize_terminal(130, 36)
-        await pilot.pause(0.05)
-        assert app.has_class("width-wide")
-        assert list_pane.display
-        assert preview.display
-
+    async with app.run_test(size=(130, 36)) as pilot:
         focus_state = _focused_state()
         app.post_message(StateProjected(focus_state, ProjectionHints(changed=frozenset({"focus"}))))
         await pilot.pause(0.05)
@@ -630,8 +529,8 @@ async def test_exit_overlay_explains_active_work_and_requires_explicit_action(tm
     app, _release = _blocked_terminal_app(tmp_path)
     handled = AsyncMock()
     app.controller.handle = handled
-    state = _workbench_state()
-    row = state.workbench.rows[0]
+    state = _thread_activity_state()
+    row = state.thread_activity.rows[0]
     active_thread = row.thread.model_copy(
         update={
             "root_activity": RootActivityView(
@@ -650,9 +549,9 @@ async def test_exit_overlay_explains_active_work_and_requires_explicit_action(tm
     )
     active_state = replace(
         state,
-        workbench=replace(
-            state.workbench,
-            page=WorkbenchPage(project_id="project-main", rows=(active_row,), total=1),
+        thread_activity=replace(
+            state.thread_activity,
+            page=ThreadActivityPage(project_id="project-main", rows=(active_row,), total=1),
         ),
         overlays=(
             OverlayState(
@@ -826,7 +725,7 @@ async def test_command_and_resource_overlays_emit_exact_typed_intents(tmp_path: 
 
         handled.reset_mock()
         project_state = replace(
-            _workbench_state(),
+            _thread_activity_state(),
             projects=projects,
             overlays=(OverlayState(kind="projects"),),
         )
@@ -837,7 +736,7 @@ async def test_command_and_resource_overlays_emit_exact_typed_intents(tmp_path: 
         await pilot.press("enter")
         await pilot.pause(0.05)
         assert any(
-            isinstance(call.args[0], SetWorkbenchFilter) and call.args[0].project_id == "project-main"
+            isinstance(call.args[0], SetThreadFilter) and call.args[0].project_id == "project-main"
             for call in handled.await_args_list
         )
 
@@ -846,28 +745,6 @@ async def test_command_and_resource_overlays_emit_exact_typed_intents(tmp_path: 
         assert not app.query_one("#focus-screen").disabled
         assert app.focused is editor
 
-    await app.controller.close()
-
-
-@pytest.mark.anyio
-async def test_plain_workbench_content_does_not_interpret_rich_markup(tmp_path: Path) -> None:
-    app, _release = _blocked_terminal_app(tmp_path)
-    app.controller.handle = AsyncMock()
-    state = _workbench_state()
-    row = state.workbench.rows[0]
-    row = row.model_copy(
-        update={
-            "thread": row.thread.model_copy(update={"title": "[red]literal[/red]"}),
-            "latest_activity": ActivitySummary(text="[/not-a-tag]", kind="assistant"),
-        }
-    )
-    state = replace(state, workbench=replace(state.workbench, page=WorkbenchPage(rows=(row,), total=1)))
-    async with app.run_test(size=(130, 36)) as pilot:
-        app.post_message(StateProjected(state, ProjectionHints(changed=frozenset({"workbench"}))))
-        await pilot.pause(0.05)
-        assert not app.query_one("#workbench-render-error").display
-        assert "[red]literal[/red]" in str(app.query_one("#workbench-preview-title", Static).render())
-        assert "[/not-a-tag]" in str(app.query_one("#workbench-preview-body", Static).render())
     await app.controller.close()
 
 
@@ -913,4 +790,42 @@ async def test_completion_popup_emits_exact_skill_identity(tmp_path: Path) -> No
         assert applied.skill_reference.catalog_id == "c" * 64
         assert applied.skill_reference.item_id == "d" * 64
 
+    await app.controller.close()
+
+
+@pytest.mark.anyio
+async def test_thread_picker_has_no_second_composer_or_inline_prompt(tmp_path: Path) -> None:
+    from a13n_ui.tui.intents import OpenFocus, SearchThreadPicker
+    from textual.widgets import Input
+
+    app, _release = _blocked_terminal_app(tmp_path)
+    handled = AsyncMock()
+    app.controller.handle = handled
+    state = _thread_activity_state()
+    page = state.thread_activity.page
+    assert page is not None
+    state = replace(
+        state,
+        thread_picker=page,
+        overlays=(OverlayState(kind="threads", context_key="thread-1"),),
+    )
+    async with app.run_test(size=(100, 32)) as pilot:
+        app.post_message(StateProjected(state, ProjectionHints(changed=frozenset({"overlay"}))))
+        await pilot.pause(0.1)
+        assert len(app.query("#composer-editor")) == 1
+        assert len(app.query("#workbench-screen")) == 0
+        app.query_one("#overlay-search", Input).value = "failure"
+        await pilot.pause(0.3)
+        assert any(
+            isinstance(c.args[0], SearchThreadPicker) and c.args[0].query == "failure" for c in handled.await_args_list
+        )
+        app.query_one("#overlay-list", ListView).focus()
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert any(isinstance(c.args[0], OpenFocus) for c in handled.await_args_list)
+        await pilot.resize_terminal(60, 28)
+        await pilot.pause(0.05)
+        assert app.has_class("width-narrow")
+        assert app.terminal_state.focused_thread_id == "thread-1"
+        assert len(app.query("#composer-editor")) == 1
     await app.controller.close()

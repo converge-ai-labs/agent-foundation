@@ -25,20 +25,10 @@ class ExitTerminal:
 
 
 @dataclass(frozen=True, slots=True)
-class ToggleTopLevelMode:
-    pass
-
-
-@dataclass(frozen=True, slots=True)
 class ExecuteCommand:
     name: str
     draft_key: str | None = None
     context_key: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class OpenWorkbench:
-    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,23 +42,8 @@ class StartNewDraft:
 
 
 @dataclass(frozen=True, slots=True)
-class SelectWorkbenchThread:
-    thread_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class SetWorkbenchFilter:
+class SetThreadFilter:
     project_id: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class SearchWorkbench:
-    query: str
-
-
-@dataclass(frozen=True, slots=True)
-class LoadMoreWorkbench:
-    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,14 +52,8 @@ class SearchThreadPicker:
 
 
 @dataclass(frozen=True, slots=True)
-class SubmitThreadDraft:
-    thread_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class CancelThreadOperation:
-    thread_id: str
-    receipt_id: str
+class LoadMoreThreadPicker:
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,11 +236,6 @@ class SetReadingAnchor:
 
 
 @dataclass(frozen=True, slots=True)
-class AcknowledgeWorkbenchCompletion:
-    receipt_id: str
-
-
-@dataclass(frozen=True, slots=True)
 class OpenExternalEditor:
     key: str
 
@@ -279,18 +243,12 @@ class OpenExternalEditor:
 type TerminalIntent = (
     RetryStartup
     | ExitTerminal
-    | ToggleTopLevelMode
     | ExecuteCommand
-    | OpenWorkbench
     | OpenFocus
     | StartNewDraft
-    | SelectWorkbenchThread
-    | SetWorkbenchFilter
-    | SearchWorkbench
-    | LoadMoreWorkbench
+    | SetThreadFilter
+    | LoadMoreThreadPicker
     | SearchThreadPicker
-    | SubmitThreadDraft
-    | CancelThreadOperation
     | LoadOlderTranscript
     | LoadLatestTranscript
     | EditDraft
@@ -317,18 +275,15 @@ type TerminalIntent = (
     | SelectTimelineBlock
     | SetFollowLatest
     | SetReadingAnchor
-    | AcknowledgeWorkbenchCompletion
     | OpenExternalEditor
 )
 
 
 __all__ = [
-    "AcknowledgeWorkbenchCompletion",
     "ApplyCompletion",
     "ArchiveThread",
     "CancelChildExecution",
     "CancelFocusedOperation",
-    "CancelThreadOperation",
     "CloseCompletions",
     "CloseOverlay",
     "EditDraft",
@@ -336,34 +291,28 @@ __all__ = [
     "ExitTerminal",
     "InsertSkillReference",
     "LoadLatestTranscript",
-    "LoadMoreWorkbench",
     "LoadOlderTranscript",
     "NavigateDecision",
     "OpenExternalEditor",
     "OpenFocus",
     "OpenOverlay",
     "OpenReview",
-    "OpenWorkbench",
     "PatchThreadConfiguration",
     "RequestCompletions",
     "RetryStartup",
     "SearchThreadPicker",
-    "SearchWorkbench",
     "SelectConfigurationResource",
     "SelectTimelineBlock",
-    "SelectWorkbenchThread",
     "SetFollowLatest",
     "SetReadingAnchor",
-    "SetWorkbenchFilter",
+    "SetThreadFilter",
     "StartNewDraft",
     "SteerChildExecution",
     "SubmitComposer",
     "SubmitDecisionSession",
     "SubmitDecisions",
-    "SubmitThreadDraft",
     "TerminalIntent",
     "ToggleReasoning",
     "ToggleToolDetails",
-    "ToggleTopLevelMode",
     "UpdateDecisionDraft",
 ]

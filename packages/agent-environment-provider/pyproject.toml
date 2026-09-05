@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "a13n-envd-client",
+    "anyio>=4,<5",
     "docker>=7.2,<8",
     "e2b>=2.46.4,<3",
     "pathspec>=1.1,<2",

@@ -23,6 +23,8 @@ from a13n_ui.surfaces import (
     RootOperationView,
     RootRunOutcomeView,
     RootRunReceipt,
+    ThreadActivityPage,
+    ThreadActivityView,
     ThreadConfigurationView,
     ThreadDetail,
     ThreadFocusSnapshot,
@@ -30,12 +32,9 @@ from a13n_ui.surfaces import (
     TranscriptEntry,
     TranscriptPage,
     TranscriptPart,
-    WorkbenchPage,
-    WorkbenchThreadView,
 )
 from a13n_ui.tui.events import (
     ClosingStarted,
-    CompletionAcknowledged,
     DraftChanged,
     FocusLoaded,
     FollowLatestChanged,
@@ -46,10 +45,10 @@ from a13n_ui.tui.events import (
     RootReceiptAccepted,
     StartupReady,
     StreamPartEvent,
+    ThreadActivityLoaded,
     ToolEvent,
     TranscriptLoaded,
     UnknownLiveEvent,
-    WorkbenchLoaded,
     normalize_live_event,
 )
 from a13n_ui.tui.models import (
@@ -61,13 +60,12 @@ from a13n_ui.tui.models import (
     OverlayState,
     ReadingAnchor,
     TerminalLifecycle,
-    TerminalMode,
     TerminalState,
+    ThreadActivityState,
     ThreadViewState,
     TimelineBlock,
-    WorkbenchState,
 )
-from a13n_ui.tui.reducer import derive_control_mode, ranked_workbench_rows, reduce_terminal
+from a13n_ui.tui.reducer import derive_control_mode, reduce_terminal
 
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 
@@ -162,7 +160,6 @@ def _focused_state(*, operation: RootOperationView | None = None) -> TerminalSta
     snapshot = _snapshot(operation=operation)
     return TerminalState(
         lifecycle=TerminalLifecycle.READY,
-        mode=TerminalMode.FOCUS,
         focused_thread_id="thread-1",
         thread_views=(
             ThreadViewState(
@@ -181,7 +178,7 @@ def _focused_state(*, operation: RootOperationView | None = None) -> TerminalSta
     )
 
 
-def _workbench_row(
+def _thread_activity_row(
     thread_id: str,
     *,
     updated_at: datetime,
@@ -190,10 +187,10 @@ def _workbench_row(
     active_children: int = 0,
     failed_children: int = 0,
     lost_children: int = 0,
-) -> WorkbenchThreadView:
+) -> ThreadActivityView:
     from a13n_ui.surfaces import PendingDecisionSummary
 
-    return WorkbenchThreadView(
+    return ThreadActivityView(
         thread=_summary(thread_id, updated_at=updated_at),
         project_name="Main",
         agent_name="Main",
@@ -513,7 +510,7 @@ def test_closing_clears_transient_surfaces_without_changing_domain_state() -> No
     assert result.hints.changed == frozenset({"lifecycle", "overlay"})
 
 
-def test_startup_uses_selected_project_and_unmatched_falls_back_to_workbench() -> None:
+def test_startup_uses_selected_project_and_unmatched_falls_back_to_thread_activity() -> None:
     project = ProjectSummary(
         project_id="project-main",
         name="Main",
@@ -522,12 +519,12 @@ def test_startup_uses_selected_project_and_unmatched_falls_back_to_workbench() -
     )
     selected = StartupReady(
         launch=LaunchProjectSelected(directory="/workspace", project=project),
-        workbench=WorkbenchPage(project_id="project-main", rows=(), total=0),
+        thread_activity=ThreadActivityPage(project_id="project-main", rows=(), total=0),
     )
     ready = reduce_terminal(TerminalState(), selected).state
 
     assert ready.lifecycle is TerminalLifecycle.READY
-    assert ready.mode is TerminalMode.FOCUS
+    assert ready.focused_thread_id is None
     assert ready.launch_project_id == "project-main"
     assert ready.draft_defaults.project_id == "project-main"
 
@@ -535,10 +532,10 @@ def test_startup_uses_selected_project_and_unmatched_falls_back_to_workbench() -
         TerminalState(),
         StartupReady(
             launch=LaunchProjectUnmatched(directory="/tmp"),
-            workbench=WorkbenchPage(project_id=None, rows=(), total=0),
+            thread_activity=ThreadActivityPage(project_id=None, rows=(), total=0),
         ),
     ).state
-    assert unmatched.mode is TerminalMode.WORKBENCH
+    assert unmatched.focused_thread_id is None
     assert unmatched.launch_project_id is None
 
 
@@ -771,41 +768,27 @@ def test_cancel_acknowledgement_waits_for_terminal_operation_settlement() -> Non
     assert state.thread_view("thread-1").control_mode is ControlMode.IDLE  # type: ignore[union-attr]
 
 
-def test_workbench_attention_and_completion_acknowledgement_are_local() -> None:
+def test_thread_activity_preserves_projection_recency_without_attention_ranking() -> None:
     completed = _operation(
         RootOperationStatus.completed,
         receipt_id="receipt-completed",
         thread_id="thread-completed",
     )
     rows = (
-        _workbench_row("thread-idle", updated_at=NOW),
-        _workbench_row("thread-completed", updated_at=NOW - timedelta(seconds=1), operation=completed),
-        _workbench_row("thread-running", updated_at=NOW - timedelta(seconds=2), active_children=1),
-        _workbench_row("thread-decision", updated_at=NOW - timedelta(seconds=3), pending=True),
-        _workbench_row("thread-failed-child", updated_at=NOW - timedelta(seconds=4), failed_children=1),
+        _thread_activity_row("thread-idle", updated_at=NOW),
+        _thread_activity_row("thread-completed", updated_at=NOW - timedelta(seconds=1), operation=completed),
+        _thread_activity_row("thread-running", updated_at=NOW - timedelta(seconds=2), active_children=1),
+        _thread_activity_row("thread-decision", updated_at=NOW - timedelta(seconds=3), pending=True),
+        _thread_activity_row("thread-failed-child", updated_at=NOW - timedelta(seconds=4), failed_children=1),
     )
-    page = WorkbenchPage(project_id=None, rows=rows, total=5)
+    page = ThreadActivityPage(project_id=None, rows=rows, total=5)
     state = TerminalState(
         lifecycle=TerminalLifecycle.READY,
-        mode=TerminalMode.WORKBENCH,
-        workbench=WorkbenchState(),
+        thread_activity=ThreadActivityState(),
     )
-    state = reduce_terminal(state, WorkbenchLoaded(request_version=1, page=page)).state
-    assert [row.thread.thread_id for row in ranked_workbench_rows(state.workbench)] == [
-        "thread-decision",
-        "thread-failed-child",
-        "thread-completed",
-        "thread-running",
-        "thread-idle",
-    ]
-    state = reduce_terminal(state, CompletionAcknowledged(receipt_id="receipt-completed")).state
-    assert [row.thread.thread_id for row in ranked_workbench_rows(state.workbench)] == [
-        "thread-decision",
-        "thread-failed-child",
-        "thread-running",
-        "thread-idle",
-        "thread-completed",
-    ]
+    state = reduce_terminal(state, ThreadActivityLoaded(request_version=1, page=page)).state
+    assert state.thread_activity.rows == rows
+    assert state.focused_thread_id is None
 
 
 def test_draft_cache_and_timeline_are_bounded_without_evicting_open_or_anchor_blocks() -> None:

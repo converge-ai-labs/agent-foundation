@@ -86,15 +86,15 @@ The activity log can use denser tabular presentation than the conversation, but 
 
 ## Failure Semantics
 
-| Failure                           | Browser behavior                                                                                         |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Thread missing or inaccessible    | Preserve the shell and present the exact missing identity                                                |
-| Focused stream reset              | Discard provisional rows and establish a fresh high-water-bound snapshot without altering retained facts |
-| Process-local correlation expired | Keep the enclosing view and mark the selected detail unavailable                                         |
-| Retained continuation changes     | Replace continuation-bound pages and selections rather than combining histories                          |
-| Payload omitted or truncated      | Present the App omission fact; never display an invented empty value                                     |
-| App unavailable or restarting     | Keep intended route and show reconnect state without replaying commands                                  |
-| Configuration issue selected      | Navigate to the owning Settings editor without duplicating its source projection                         |
+| Failure                           | Browser behavior                                                                                               |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Thread missing or inaccessible    | Preserve the shell and present the exact missing identity                                                      |
+| Focused stream reset              | Discard provisional rows and establish a fresh subscribe-before-query snapshot without altering retained facts |
+| Process-local correlation expired | Keep the enclosing view and mark the selected detail unavailable                                               |
+| Retained continuation changes     | Replace continuation-bound pages and selections rather than combining histories                                |
+| Payload omitted or truncated      | Present the App omission fact; never display an invented empty value                                           |
+| App unavailable or restarting     | Keep intended route and show reconnect state without replaying commands                                        |
+| Configuration issue selected      | Navigate to the owning Settings editor without duplicating its source projection                               |
 
 ## Invariants
 

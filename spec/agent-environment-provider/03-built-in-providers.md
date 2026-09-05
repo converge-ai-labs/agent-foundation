@@ -132,6 +132,8 @@ A fresh `LocalEnvdProviderRuntime` supplies one exact absolute envd executable a
 
 The package exposes a separate Host convenience `resolve_agent_envd_executable()` helper. It can resolve an explicit path, `A13N_AGENT_ENVD_EXECUTABLE`, then `shutil.which`. The helper validates the result and performs no download or installation. Low-level Provider construction never invokes it or loads `.env`.
 
+The package also exposes `local_envd.validate_local_envd_runtime(executable, configuration)` for explicit Host preflight. It uses the same exact-release and production isolation checks as `prepare()`, including denied-network verification when selected, without allocating a private runtime or starting an EIP daemon. It performs no executable discovery, downloads, installation, or system-policy changes. Success is a point-in-time observation; actual preparation retains its normal checks. Cancellation and timeout terminate the validation subprocess.
+
 ### State and lifecycle
 
 Local Envd owns no durable provider target beyond the Host-selected workspace. Each fresh adapter launches a new process-local daemon generation and closes it with the adapter. `dump_state()` therefore returns `None`.

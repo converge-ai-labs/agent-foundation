@@ -15,6 +15,7 @@ from a13n_environment_provider import (
 )
 from a13n_harness.capabilities import DocumentsCapability, WebCapability
 from a13n_harness.capabilities.documents import DocumentsConfiguration
+from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability, ShellRiskLevel
 from a13n_harness.capabilities.skills import FileSkillSource, SkillManager, SkillsCapability, SkillsPolicy
 from a13n_harness.capabilities.web import WebConfiguration
 from a13n_harness.capability_types import CapabilityTypeCatalog, first_party_declarative_capability_types
@@ -439,9 +440,19 @@ def _construct_capability(
             ),
         )
 
-    initializer = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True))(capability_type.__init__)
+    arguments: dict[str, Any] = dict(configuration)
+    if capability_type is ShellReviewCapability:
+        # JSON source uses enum values; keep strict validation for all other parameters.
+        if "risk_threshold" in arguments:
+            arguments["risk_threshold"] = ShellRiskLevel(arguments["risk_threshold"])
+        for name in ("on_flagged", "on_error"):
+            if name in arguments:
+                arguments[name] = ShellReviewAction(arguments[name])
+    initializer: Any = validate_call(config=ConfigDict(strict=True, arbitrary_types_allowed=True))(
+        capability_type.__init__
+    )
     capability = capability_type.__new__(capability_type)
-    initializer(capability, **configuration)
+    initializer(capability, **arguments)
     return capability
 
 

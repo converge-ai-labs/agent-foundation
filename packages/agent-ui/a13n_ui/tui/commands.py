@@ -4,21 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from a13n_ui.surfaces import WorkbenchThreadView
 from a13n_ui.tui.intents import (
     ArchiveThread,
     CancelFocusedOperation,
-    CancelThreadOperation,
     ExitTerminal,
     OpenExternalEditor,
     OpenOverlay,
-    OpenWorkbench,
     StartNewDraft,
     TerminalIntent,
     ToggleReasoning,
     ToggleToolDetails,
 )
-from a13n_ui.tui.models import ControlMode, TerminalLifecycle, TerminalMode, TerminalState, ThreadViewState
+from a13n_ui.tui.models import ControlMode, TerminalLifecycle, TerminalState, ThreadViewState
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,10 +30,10 @@ class TerminalCommand:
 
 COMMANDS = (
     TerminalCommand("new", "Start a new root Thread draft"),
-    TerminalCommand("workbench", "Open the persistent Workbench"),
     TerminalCommand("threads", "Find and open a Thread"),
     TerminalCommand("skills", "Browse effective Skills for this input"),
     TerminalCommand("status", "Show current Thread and App status"),
+    TerminalCommand("setup", "Set up accounts, editable Agents, and default execution authority"),
     TerminalCommand("details", "Toggle expanded tool details"),
     TerminalCommand("thinking", "Toggle permitted reasoning content"),
     TerminalCommand("agent", "Select the Agent for this Thread"),
@@ -65,20 +62,12 @@ def command_available(
     context_key: str | None = None,
 ) -> bool:
     key = _context_key(state, context_key)
-    row = _context_row(state, key)
     view = _context_view(state, key)
     if command.name == "new":
         return state.launch_project_id is not None or state.draft_defaults.project_id is not None
     if command.name == "cancel":
-        if row is not None:
-            return (
-                row.thread.root_activity.receipt_id is not None
-                and "cancel" in row.thread.root_activity.available_actions
-            )
         return view is not None and view.control_mode in {ControlMode.PREPARING, ControlMode.RUNNING}
     if command.name == "archive":
-        if row is not None:
-            return not row.thread.archived and "archive" in row.available_actions
         return (
             view is not None
             and view.detail is not None
@@ -104,8 +93,6 @@ def command_intent(
         project_id = state.launch_project_id or state.draft_defaults.project_id
         defaults = state.draft_defaults.model_copy(update={"project_id": project_id})
         return StartNewDraft(defaults)
-    if name == "workbench":
-        return OpenWorkbench()
     if name == "threads":
         return OpenOverlay("threads")
     if name == "skills":
@@ -123,20 +110,8 @@ def command_intent(
     if name == "editor":
         return OpenExternalEditor(key)
     if name == "cancel":
-        row = _context_row(state, key)
-        if row is not None and row.thread.root_activity.receipt_id is not None:
-            return CancelThreadOperation(
-                thread_id=row.thread.thread_id,
-                receipt_id=row.thread.root_activity.receipt_id,
-            )
         return CancelFocusedOperation()
     if name == "archive":
-        row = _context_row(state, key)
-        if row is not None:
-            return ArchiveThread(
-                thread_id=row.thread.thread_id,
-                expected_version=row.thread.metadata_version,
-            )
         view = _context_view(state, key)
         if view is None or view.detail is None:
             return None
@@ -149,15 +124,7 @@ def command_intent(
 def _context_key(state: TerminalState, context_key: str | None) -> str:
     if context_key is not None:
         return context_key
-    if state.mode is TerminalMode.WORKBENCH:
-        return state.workbench.selected_thread_id or "new"
     return state.focused_thread_id or "new"
-
-
-def _context_row(state: TerminalState, key: str) -> WorkbenchThreadView | None:
-    if state.mode is not TerminalMode.WORKBENCH or key == "new":
-        return None
-    return next((row for row in state.workbench.rows if row.thread.thread_id == key), None)
 
 
 def _context_view(state: TerminalState, key: str) -> ThreadViewState | None:

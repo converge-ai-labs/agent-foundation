@@ -46,6 +46,8 @@ from a13n_ui.surfaces import (
     SkillCatalogView,
     SkillReference,
     StructuredQuestionRequestView,
+    ThreadActivityPage,
+    ThreadActivityView,
     ThreadConfigurationMutationInput,
     ThreadConfigurationView,
     ThreadDetail,
@@ -53,8 +55,6 @@ from a13n_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     TranscriptPage,
-    WorkbenchPage,
-    WorkbenchThreadView,
 )
 from a13n_ui.tui.application import AgentUiTerminalApp
 from a13n_ui.tui.controller import TerminalController
@@ -63,30 +63,29 @@ from a13n_ui.tui.intents import (
     ArchiveThread,
     CancelChildExecution,
     CloseCompletions,
+    CloseOverlay,
     EditDraft,
     ExecuteCommand,
     ExitTerminal,
+    LoadMoreThreadPicker,
     OpenExternalEditor,
     OpenFocus,
     OpenOverlay,
     OpenReview,
-    OpenWorkbench,
     RequestCompletions,
     RetryStartup,
     SearchThreadPicker,
     SelectConfigurationResource,
-    SetWorkbenchFilter,
+    SetThreadFilter,
     SteerChildExecution,
     SubmitComposer,
     SubmitDecisionSession,
-    SubmitThreadDraft,
     UpdateDecisionDraft,
 )
 from a13n_ui.tui.models import (
     DecisionAnswerDraft,
     ProjectionHints,
     TerminalLifecycle,
-    TerminalMode,
     TerminalState,
 )
 from textual.widgets import Input, ListView, TextArea
@@ -115,9 +114,9 @@ class _FakeApp:
         self.summary_active = 0
         self.focus_active = 0
         self.max_focus_active = 0
-        self.workbench_calls = 0
-        self.workbench_requests: list[dict[str, object]] = []
-        self.workbench_page = WorkbenchPage(project_id="project-main", rows=(), total=0)
+        self.thread_activity_calls = 0
+        self.thread_activity_requests: list[dict[str, object]] = []
+        self.thread_activity_page = ThreadActivityPage(project_id="project-main", rows=(), total=0)
         self.decisions: DecisionBatchView | None = None
         self.root_operation: RootOperationView | None = None
         self.children: tuple[ChildExecutionView, ...] = ()
@@ -151,12 +150,12 @@ class _FakeApp:
             ),
         )
 
-    async def workbench(self, **kwargs: object) -> WorkbenchPage:
-        self.workbench_calls += 1
-        self.workbench_requests.append(kwargs)
+    async def thread_activity(self, **kwargs: object) -> ThreadActivityPage:
+        self.thread_activity_calls += 1
+        self.thread_activity_requests.append(kwargs)
         project_id = kwargs.get("project_id")
         assert project_id is None or isinstance(project_id, str)
-        return self.workbench_page.model_copy(update={"project_id": project_id})
+        return self.thread_activity_page.model_copy(update={"project_id": project_id})
 
     async def active_work_summary(self) -> ActiveWorkSummary:
         return ActiveWorkSummary(
@@ -476,12 +475,12 @@ async def test_pilot_composer_completion_stays_editable_and_commands_match_butto
 
 
 @pytest.mark.anyio
-async def test_pilot_workbench_admission_clears_focused_editor_and_dispatches_commands(tmp_path: Path) -> None:
+async def test_pilot_thread_activity_admission_clears_focused_editor_and_dispatches_commands(tmp_path: Path) -> None:
     fake = _FakeApp()
-    fake.workbench_page = WorkbenchPage(
+    fake.thread_activity_page = ThreadActivityPage(
         project_id="project-main",
         rows=(
-            WorkbenchThreadView(
+            ThreadActivityView(
                 thread=_snapshot("thread-1").thread.thread,
                 project_name="Main",
                 agent_name="Main",
@@ -491,11 +490,11 @@ async def test_pilot_workbench_admission_clears_focused_editor_and_dispatches_co
         ),
         total=1,
     )
-    app = AgentUiTerminalApp(app_factory=_factory(fake), launch_directory=tmp_path, open_workbench=True)
+    app = AgentUiTerminalApp(app_factory=_factory(fake), launch_directory=tmp_path, launch_thread_id="thread-1")
     try:
         async with app.run_test(size=(130, 36)) as pilot:
             await pilot.pause(0.15)
-            editor = app.query_one("#workbench-editor", TextArea)
+            editor = app.query_one("#composer-editor", TextArea)
             editor.focus()
             await pilot.press("h", "e", "l", "l", "o", "enter")
             await pilot.pause(0.2)
@@ -504,7 +503,7 @@ async def test_pilot_workbench_admission_clears_focused_editor_and_dispatches_co
             assert editor.has_focus
             await app.controller.handle(EditDraft(key="thread-1", text="/status", cursor=7))
             await pilot.pause(0.1)
-            await pilot.click("#workbench-submit")
+            await pilot.click("#composer-submit")
             await pilot.pause(0.1)
             assert app.controller.state.overlays[-1].kind == "status"
     finally:
@@ -538,7 +537,7 @@ async def test_pilot_palette_preserves_selection_and_accepts_search_enter(tmp_pa
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("previous_run", [False, True])
-async def test_workbench_steers_and_cancels_only_the_current_receipt(
+async def test_thread_activity_steers_and_cancels_only_the_current_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     previous_run: bool,
@@ -562,11 +561,11 @@ async def test_workbench_steers_and_cancels_only_the_current_receipt(
         if previous_run
         else None
     )
-    app.workbench_page = WorkbenchPage(
+    app.thread_activity_page = ThreadActivityPage(
         project_id="project-main",
         total=1,
         rows=(
-            WorkbenchThreadView(
+            ThreadActivityView(
                 thread=thread,
                 project_name="Main",
                 agent_name="Main",
@@ -575,6 +574,11 @@ async def test_workbench_steers_and_cancels_only_the_current_receipt(
                 available_actions=("open", "steer", "wait", "cancel"),
             ),
         ),
+    )
+    app.root_operation = RootOperationView(
+        receipt=RootRunReceipt(receipt_id="receipt-current", thread_id="thread-1", submitted_at=NOW),
+        status=RootOperationStatus.running,
+        run_id="run-current",
     )
     steered: list[str] = []
     cancelled: list[str] = []
@@ -590,12 +594,12 @@ async def test_workbench_steers_and_cancels_only_the_current_receipt(
     monkeypatch.setattr(app, "steer_root_operation", steer, raising=False)
     monkeypatch.setattr(app, "cancel_root_operation", cancel, raising=False)
     controller = TerminalController(
-        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, open_workbench=True
+        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, launch_thread_id="thread-1"
     )
     try:
         await controller.start()
         await controller.handle(EditDraft("thread-1", "steer", 5))
-        await controller.handle(SubmitThreadDraft("thread-1"))
+        await controller.handle(SubmitComposer("thread-1"))
         await controller.handle(ExecuteCommand("cancel", context_key="thread-1"))
         assert steered == ["receipt-current"]
         assert cancelled == ["receipt-current"]
@@ -605,7 +609,7 @@ async def test_workbench_steers_and_cancels_only_the_current_receipt(
 
 
 @pytest.mark.anyio
-async def test_workbench_background_refresh_never_navigates_back_to_focus(tmp_path: Path) -> None:
+async def test_thread_activity_background_refresh_never_navigates_back_to_focus(tmp_path: Path) -> None:
     app = _FakeApp()
     controller = TerminalController(
         app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, launch_thread_id="thread-1"
@@ -613,8 +617,8 @@ async def test_workbench_background_refresh_never_navigates_back_to_focus(tmp_pa
     try:
         await controller.start()
         await _wait_until(lambda: app.focus_active == 1)
-        await controller.handle(OpenWorkbench())
-        assert app.focus_active == 0
+        await controller.handle(OpenOverlay("threads"))
+        assert app.focus_active == 1
         await controller._handle_invalidation(
             SummaryInvalidation(
                 epoch="summary-1",
@@ -623,46 +627,10 @@ async def test_workbench_background_refresh_never_navigates_back_to_focus(tmp_pa
                 root_thread_id="thread-1",
             )
         )
-        assert controller.state.mode is TerminalMode.WORKBENCH
-        assert app.focus_active == 0
-        await controller.handle(OpenFocus("thread-1"))
+        assert controller.state.overlays[-1].kind == "threads"
         await _wait_until(lambda: app.focus_active == 1)
-    finally:
-        await controller.close()
-
-
-@pytest.mark.anyio
-async def test_workbench_configuration_uses_summary_instead_of_stopped_focus_cache(tmp_path: Path) -> None:
-    from a13n_ui.surfaces import ChildStatusCounts
-    from a13n_ui.tui.screens.overlays import _status_text
-
-    app = _FakeApp()
-    controller = TerminalController(
-        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, launch_thread_id="thread-1"
-    )
-    try:
-        await controller.start()
-        await _wait_until(lambda: controller.state.thread_view("thread-1") is not None)
-        await controller.handle(OpenWorkbench())
-        app.configuration_version = 2
-        app.workbench_page = WorkbenchPage(
-            project_id="project-main",
-            rows=(
-                WorkbenchThreadView(
-                    thread=_snapshot("thread-1", configuration_version=2).thread.thread,
-                    project_name="Main",
-                    agent_name="Main",
-                    environment_name="Full Control",
-                    children=ChildStatusCounts(running=0, active=0, unavailable=0, failed=0, lost=0),
-                ),
-            ),
-            total=1,
-        )
-        await controller._refresh_workbench()
-        assert "Configuration: v2" in _status_text(controller.state, "thread-1")
-        await controller.handle(OpenOverlay("configuration", key="agent"))
-        await controller.handle(SelectConfigurationResource("agent", "agent-main"))
-        assert app.configuration_mutations[-1].expected_version == 2
+        await controller.handle(OpenFocus("thread-2"))
+        await _wait_until(lambda: app.focus_active == 1)
     finally:
         await controller.close()
 
@@ -769,7 +737,7 @@ async def test_controller_installs_summary_before_startup_queries_and_owns_clean
 
     assert controller.state.lifecycle is TerminalLifecycle.READY
     assert app.summary_active == 1
-    assert app.workbench_calls == 1
+    assert app.thread_activity_calls == 1
     assert rendered[-1].lifecycle is TerminalLifecycle.READY
 
     await controller.close()
@@ -835,7 +803,7 @@ async def test_active_work_requires_confirmed_exit_and_stops_new_intents(tmp_pat
     await controller.handle(ExitTerminal())
 
     assert controller.state.lifecycle is TerminalLifecycle.READY
-    assert controller.state.workbench.rows == ()
+    assert controller.state.thread_activity.rows == ()
     assert controller.state.overlays[-1].kind == "exit"
     assert controller.state.overlays[-1].active_root_operations == 1
     assert controller.state.overlays[-1].active_child_executions == 2
@@ -848,7 +816,7 @@ async def test_active_work_requires_confirmed_exit_and_stops_new_intents(tmp_pat
     assert controller.state.overlays == ()
     assert exits == ["requested"]
     await _wait_until(lambda: app.summary_active == 0)
-    await controller.handle(OpenWorkbench())
+    await controller.handle(OpenOverlay("threads"))
     assert controller.state.lifecycle is TerminalLifecycle.CLOSING
 
     await controller.close()
@@ -875,9 +843,9 @@ async def test_unexpected_controller_failure_rejects_later_intents_until_exit(tm
 
     assert controller.state.lifecycle is TerminalLifecycle.FAILED
     assert controller.state.notices[-1].code == "terminal_controller_failed"
-    previous_mode = controller.state.mode
-    await controller.handle(OpenWorkbench())
-    assert controller.state.mode is previous_mode
+    previous_overlays = controller.state.overlays
+    await controller.handle(OpenOverlay("threads"))
+    assert controller.state.overlays == previous_overlays
 
     await controller.handle(ExitTerminal())
     assert controller.state.lifecycle is TerminalLifecycle.CLOSING
@@ -919,7 +887,7 @@ async def test_summary_gap_reinstalls_subscription_before_full_refresh(tmp_path:
     await controller.start()
 
     await app.summary_streams[0].queue.put(LivePresentationError("summary gap", code="summary_cursor_expired"))
-    await _wait_until(lambda: len(app.summary_streams) == 2 and app.workbench_calls == 2)
+    await _wait_until(lambda: len(app.summary_streams) == 2 and app.thread_activity_calls == 2)
 
     assert app.summary_active == 1
     await controller.close()
@@ -1406,7 +1374,7 @@ async def test_external_editor_failure_preserves_complete_draft(tmp_path: Path) 
 
 
 @pytest.mark.anyio
-async def test_archiving_focused_thread_returns_to_workbench(tmp_path: Path) -> None:
+async def test_archiving_focused_thread_returns_to_thread_activity(tmp_path: Path) -> None:
     app = _FakeApp()
     controller = TerminalController(
         app_factory=_factory(app),
@@ -1419,9 +1387,8 @@ async def test_archiving_focused_thread_returns_to_workbench(tmp_path: Path) -> 
     await controller.handle(ArchiveThread(thread_id="thread-1", expected_version=1))
 
     assert len(app.metadata_mutations) == 1
-    assert controller.state.mode is TerminalMode.WORKBENCH
     assert controller.state.focused_thread_id is None
-    assert controller.state.previous_focused_thread_id is None
+    assert controller.state.focused_thread_id is None
     assert app.focus_active == 0
 
     await controller.close()
@@ -1445,7 +1412,7 @@ async def test_external_editor_discards_result_when_draft_revision_changes(tmp_p
     )
     await controller.start()
     await controller.handle(EditDraft(key="new", text="original draft", cursor=14))
-    initial_workbench_calls = app.workbench_calls
+    initial_thread_activity_calls = app.thread_activity_calls
 
     await controller.handle(OpenExternalEditor("new"))
 
@@ -1453,17 +1420,17 @@ async def test_external_editor_discards_result_when_draft_revision_changes(tmp_p
     assert draft is not None
     assert draft.text == "newer local draft"
     assert controller.state.notices[-1].code == "editor_draft_changed"
-    assert app.workbench_calls == initial_workbench_calls + 1
+    assert app.thread_activity_calls == initial_thread_activity_calls + 1
 
     await controller.close()
 
 
 @pytest.mark.anyio
-async def test_workbench_does_not_queue_prompt_behind_preparing_operation(tmp_path: Path) -> None:
+async def test_thread_activity_does_not_queue_prompt_behind_preparing_operation(tmp_path: Path) -> None:
     app = _FakeApp()
     thread = _snapshot("thread-1").thread.thread
     receipt = RootRunReceipt(receipt_id="receipt-preparing", thread_id="thread-1", submitted_at=NOW)
-    row = WorkbenchThreadView(
+    row = ThreadActivityView(
         thread=thread.model_copy(
             update={
                 "root_activity": RootActivityView(
@@ -1479,16 +1446,18 @@ async def test_workbench_does_not_queue_prompt_behind_preparing_operation(tmp_pa
         latest_operation=None,
         available_actions=("open", "wait", "cancel"),
     )
-    app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)
+    app.thread_activity_page = ThreadActivityPage(project_id="project-main", rows=(row,), total=1)
+    app.root_operation = RootOperationView(receipt=receipt, status=RootOperationStatus.preparing)
     controller = TerminalController(
         app_factory=_factory(app),
         render=_renderer([]),
         launch_directory=tmp_path,
+        launch_thread_id="thread-1",
     )
     await controller.start()
     await controller.handle(EditDraft(key="thread-1", text="queue this", cursor=10))
 
-    await controller.handle(SubmitThreadDraft("thread-1"))
+    await controller.handle(SubmitComposer("thread-1"))
 
     assert app.submitted == []
     draft = controller.state.draft("thread-1")
@@ -1512,12 +1481,12 @@ async def test_thread_picker_preserves_query_across_project_scope_change(tmp_pat
     await controller.handle(SearchThreadPicker("failure"))
     await controller.handle(OpenOverlay("projects"))
 
-    await controller.handle(SetWorkbenchFilter(None))
+    await controller.handle(SetThreadFilter(None))
 
     assert controller.state.overlays[-1].kind == "threads"
     assert controller.state.thread_picker_query == "failure"
-    assert app.workbench_requests[-1]["project_id"] is None
-    assert app.workbench_requests[-1]["query"] == "failure"
+    assert app.thread_activity_requests[-1]["project_id"] is None
+    assert app.thread_activity_requests[-1]["query"] == "failure"
 
     await controller.close()
 
@@ -1551,24 +1520,24 @@ async def test_closing_pending_completion_prevents_it_from_reopening(tmp_path: P
 
 
 @pytest.mark.anyio
-async def test_workbench_path_completion_uses_selected_row_project_without_focus(tmp_path: Path) -> None:
+async def test_thread_activity_path_completion_uses_selected_row_project_without_focus(tmp_path: Path) -> None:
     app = _FakeApp()
     thread = _snapshot("thread-1").thread.thread
-    row = WorkbenchThreadView(
+    row = ThreadActivityView(
         thread=thread,
         project_name="Main",
         agent_name="Main Agent",
         environment_name="Full Control",
     )
-    app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)
+    app.thread_activity_page = ThreadActivityPage(project_id="project-main", rows=(row,), total=1)
     controller = TerminalController(
         app_factory=_factory(app),
         render=_renderer([]),
         launch_directory=tmp_path,
-        open_workbench=True,
+        launch_thread_id="thread-1",
     )
     await controller.start()
-    assert controller.state.thread_view("thread-1") is None
+    assert controller.state.thread_view("thread-1") is not None
     await controller.handle(EditDraft(key="thread-1", text="inspect @src", cursor=12))
 
     await controller.handle(
@@ -1591,63 +1560,21 @@ async def test_workbench_path_completion_uses_selected_row_project_without_focus
 
 
 @pytest.mark.anyio
-async def test_workbench_slash_command_uses_selected_thread_context(tmp_path: Path) -> None:
+async def test_thread_activity_configuration_command_mutates_selected_thread(tmp_path: Path) -> None:
     app = _FakeApp()
     selected = _snapshot("thread-selected").thread.thread
-    row = WorkbenchThreadView(
+    row = ThreadActivityView(
         thread=selected,
         project_name="Main",
         agent_name="Main Agent",
         environment_name="Full Control",
     )
-    app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)
-    edited_keys: list[str] = []
-
-    async def editor(key: str, _draft: object) -> str:
-        edited_keys.append(key)
-        return "selected draft"
-
+    app.thread_activity_page = ThreadActivityPage(project_id="project-main", rows=(row,), total=1)
     controller = TerminalController(
         app_factory=_factory(app),
         render=_renderer([]),
         launch_directory=tmp_path,
-        open_workbench=True,
-        editor_callback=editor,
-    )
-    await controller.start()
-    await controller.handle(OpenFocus("thread-previous"))
-    await _wait_until(lambda: controller.state.thread_view("thread-previous") is not None)
-    await controller.handle(OpenWorkbench())
-    await controller.handle(EditDraft(key="thread-selected", text="/editor", cursor=7))
-
-    await controller.handle(ExecuteCommand("editor", draft_key="thread-selected"))
-
-    assert edited_keys == ["thread-selected"]
-    assert controller.state.mode is TerminalMode.WORKBENCH
-    assert controller.state.previous_focused_thread_id == "thread-previous"
-    draft = controller.state.draft("thread-selected")
-    assert draft is not None
-    assert draft.text == "selected draft"
-
-    await controller.close()
-
-
-@pytest.mark.anyio
-async def test_workbench_configuration_command_mutates_selected_thread(tmp_path: Path) -> None:
-    app = _FakeApp()
-    selected = _snapshot("thread-selected").thread.thread
-    row = WorkbenchThreadView(
-        thread=selected,
-        project_name="Main",
-        agent_name="Main Agent",
-        environment_name="Full Control",
-    )
-    app.workbench_page = WorkbenchPage(project_id="project-main", rows=(row,), total=1)
-    controller = TerminalController(
-        app_factory=_factory(app),
-        render=_renderer([]),
-        launch_directory=tmp_path,
-        open_workbench=True,
+        launch_thread_id="thread-selected",
     )
     await controller.start()
 
@@ -1659,7 +1586,98 @@ async def test_workbench_configuration_command_mutates_selected_thread(tmp_path:
     mutation = app.configuration_mutations[0]
     assert mutation.expected_version == 1
     assert mutation.patch.agent_id == "agent-alt"
-    assert controller.state.mode is TerminalMode.WORKBENCH
+    assert controller.state.focused_thread_id == "thread-selected"
     assert not controller.state.overlays
 
     await controller.close()
+
+
+@pytest.mark.anyio
+async def test_thread_picker_dismiss_preserves_current_draft_and_subscription(tmp_path: Path) -> None:
+    app = _FakeApp()
+    controller = TerminalController(
+        app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path, launch_thread_id="thread-1"
+    )
+    try:
+        await controller.start()
+        await _wait_until(lambda: app.focus_active == 1)
+        await controller.handle(EditDraft("thread-1", "keep my draft", 4))
+        original = controller.state.thread_view("thread-1")
+        await controller.handle(OpenOverlay("threads"))
+        assert controller.state.focused_thread_id == "thread-1"
+        assert app.focus_active == 1
+        await controller.handle(CloseOverlay())
+        assert controller.state.thread_view("thread-1") is original
+        assert controller.state.draft("thread-1").text == "keep my draft"
+        assert controller.state.draft("thread-1").cursor == 4
+        await controller.handle(OpenOverlay("threads"))
+        await controller.handle(OpenFocus("thread-2"))
+        await _wait_until(lambda: app.focus_active == 1)
+        assert controller.state.focused_thread_id == "thread-2"
+        assert controller.state.overlays == ()
+        assert controller.state.draft("thread-1").text == "keep my draft"
+        assert len(app.focus_streams) == 2
+        assert app.max_focus_active == 1
+    finally:
+        await controller.close()
+
+
+@pytest.mark.anyio
+async def test_background_activity_preserves_picker_pages_and_does_not_override_search(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _FakeApp()
+    row = ThreadActivityView(
+        thread=_snapshot("thread-1").thread.thread,
+        project_name="Main",
+        agent_name="Main",
+        environment_name="Full Control",
+    )
+    app.thread_activity_page = ThreadActivityPage(rows=(row,), total=2, next_cursor="page-2")
+    controller = TerminalController(app_factory=_factory(app), render=_renderer([]), launch_directory=tmp_path)
+    try:
+        await controller.start()
+        await controller.handle(OpenOverlay("threads"))
+        app.thread_activity_page = ThreadActivityPage(
+            rows=(row.model_copy(update={"thread": _snapshot("thread-2").thread.thread}),),
+            total=2,
+        )
+        await controller.handle(LoadMoreThreadPicker())
+        page = controller.state.thread_picker
+        assert page is not None and len(page.rows) == 2
+        await controller._handle_invalidation(
+            SummaryInvalidation(
+                epoch="summary-1",
+                sequence=1,
+                kind="root_operation",
+                root_thread_id="other",
+            )
+        )
+        assert controller.state.thread_picker is page
+
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        original = app.thread_activity
+
+        async def delayed(**kwargs):
+            if kwargs.get("query") == "needle":
+                entered.set()
+                await release.wait()
+            return await original(**kwargs)
+
+        monkeypatch.setattr(app, "thread_activity", delayed)
+        search = asyncio.create_task(controller.handle(SearchThreadPicker("needle")))
+        await entered.wait()
+        await controller._handle_invalidation(
+            SummaryInvalidation(
+                epoch="summary-1",
+                sequence=2,
+                kind="root_operation",
+                root_thread_id="other",
+            )
+        )
+        release.set()
+        await search
+        assert controller.state.thread_picker_query == "needle"
+    finally:
+        await controller.close()

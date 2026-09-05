@@ -14,7 +14,7 @@ async def launch_terminal(
     launch_directory: Path,
     launch_thread_id: str | None = None,
     launch_defaults: NewThreadDefaults | None = None,
-    open_workbench: bool = False,
+    show_setup: bool = False,
 ) -> None:
     from a13n_ui.tui.application import AgentUiTerminalApp
 
@@ -23,7 +23,7 @@ async def launch_terminal(
         launch_directory=launch_directory,
         launch_thread_id=launch_thread_id,
         launch_defaults=launch_defaults,
-        open_workbench=open_workbench,
+        show_setup=show_setup,
     )
     try:
         await app.run_async()

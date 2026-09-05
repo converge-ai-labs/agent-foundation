@@ -7,18 +7,18 @@ import pytest
 from a13n_ui.errors import AgentUiError
 from a13n_ui.tui.commands import command_intent, match_slash_command
 from a13n_ui.tui.editor import MAX_EDITOR_BYTES, edit_text, resolve_editor_command
-from a13n_ui.tui.intents import OpenExternalEditor, OpenOverlay, OpenWorkbench, StartNewDraft
-from a13n_ui.tui.models import TerminalLifecycle, TerminalMode, TerminalState, WorkbenchState
+from a13n_ui.tui.intents import OpenExternalEditor, OpenOverlay, StartNewDraft
+from a13n_ui.tui.models import TerminalLifecycle, TerminalState
 
 
 def test_slash_registry_matches_only_exact_known_commands() -> None:
-    command = match_slash_command("  /workbench  ")
+    command = match_slash_command("  /threads  ")
 
     assert command is not None
-    assert command.name == "workbench"
-    assert match_slash_command("/workbench now") is None
+    assert command.name == "threads"
+    assert match_slash_command("/threads now") is None
     assert match_slash_command("/not-a-command") is None
-    assert isinstance(command_intent("workbench", TerminalState()), OpenWorkbench)
+    assert isinstance(command_intent("threads", TerminalState()), OpenOverlay)
 
 
 def test_editor_resolution_prefers_visual_without_using_a_shell() -> None:
@@ -56,13 +56,10 @@ def test_editor_command_is_available_only_after_terminal_startup() -> None:
     assert command_intent("editor", state) is None
 
 
-def test_workbench_commands_target_selected_thread_not_previous_focus() -> None:
+def test_thread_activity_commands_target_selected_thread_not_previous_focus() -> None:
     state = TerminalState(
         lifecycle=TerminalLifecycle.READY,
-        mode=TerminalMode.WORKBENCH,
         focused_thread_id="thread-previous",
-        previous_focused_thread_id="thread-previous",
-        workbench=WorkbenchState(selected_thread_id="thread-selected"),
     )
 
     editor = command_intent("editor", state)
@@ -70,14 +67,14 @@ def test_workbench_commands_target_selected_thread_not_previous_focus() -> None:
     skills = command_intent("skills", state)
 
     assert isinstance(editor, OpenExternalEditor)
-    assert editor.key == "thread-selected"
+    assert editor.key == "thread-previous"
     assert isinstance(agent, OpenOverlay)
-    assert agent.context_key == "thread-selected"
+    assert agent.context_key == "thread-previous"
     assert isinstance(skills, OpenOverlay)
-    assert skills.context_key == "thread-selected"
+    assert skills.context_key == "thread-previous"
 
 
-def test_new_command_uses_launch_project_independent_of_workbench_filter() -> None:
+def test_new_command_uses_launch_project_independent_of_thread_activity_filter() -> None:
     state = TerminalState(
         launch_project_id="project-launch",
         project_filter_id="project-other",

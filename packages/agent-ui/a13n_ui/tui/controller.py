@@ -34,6 +34,7 @@ from a13n_ui.surfaces import (
     RootRunReceipt,
     SkillCatalogView,
     SkillReference,
+    ThreadActivityPage,
     ThreadConfigurationMutationInput,
     ThreadConfigurationPatch,
     ThreadFocusSnapshot,
@@ -42,13 +43,11 @@ from a13n_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     TranscriptPage,
-    WorkbenchPage,
 )
 from a13n_ui.tui.commands import command_intent
 from a13n_ui.tui.events import (
     ChildControlCompleted,
     ClosingStarted,
-    CompletionAcknowledged,
     CompletionApplied,
     CompletionClosed,
     CompletionLoaded,
@@ -85,20 +84,17 @@ from a13n_ui.tui.events import (
     StartupReady,
     StartupStarted,
     TerminalEvent,
+    ThreadActivityLoaded,
     ThreadPickerLoaded,
     TimelineSelectionChanged,
     TranscriptLoaded,
-    WorkbenchLoaded,
-    WorkbenchSelectionChanged,
     normalize_live_event,
 )
 from a13n_ui.tui.intents import (
-    AcknowledgeWorkbenchCompletion,
     ApplyCompletion,
     ArchiveThread,
     CancelChildExecution,
     CancelFocusedOperation,
-    CancelThreadOperation,
     CloseCompletions,
     CloseOverlay,
     EditDraft,
@@ -106,35 +102,30 @@ from a13n_ui.tui.intents import (
     ExitTerminal,
     InsertSkillReference,
     LoadLatestTranscript,
-    LoadMoreWorkbench,
+    LoadMoreThreadPicker,
     LoadOlderTranscript,
     NavigateDecision,
     OpenExternalEditor,
     OpenFocus,
     OpenOverlay,
     OpenReview,
-    OpenWorkbench,
     PatchThreadConfiguration,
     RequestCompletions,
     RetryStartup,
     SearchThreadPicker,
-    SearchWorkbench,
     SelectConfigurationResource,
     SelectTimelineBlock,
-    SelectWorkbenchThread,
     SetFollowLatest,
     SetReadingAnchor,
-    SetWorkbenchFilter,
+    SetThreadFilter,
     StartNewDraft,
     SteerChildExecution,
     SubmitComposer,
     SubmitDecisions,
     SubmitDecisionSession,
-    SubmitThreadDraft,
     TerminalIntent,
     ToggleReasoning,
     ToggleToolDetails,
-    ToggleTopLevelMode,
     UpdateDecisionDraft,
 )
 from a13n_ui.tui.models import (
@@ -146,7 +137,6 @@ from a13n_ui.tui.models import (
     OverlayState,
     ReadingAnchor,
     TerminalLifecycle,
-    TerminalMode,
     TerminalState,
 )
 from a13n_ui.tui.reducer import reduce_terminal
@@ -169,7 +159,7 @@ class TerminalAppProtocol(Protocol):
         project_id: str | None = None,
     ) -> LaunchProjectResolution: ...
 
-    async def workbench(
+    async def thread_activity(
         self,
         *,
         project_id: str | None,
@@ -177,7 +167,7 @@ class TerminalAppProtocol(Protocol):
         include_archived: bool = False,
         cursor: str | None = None,
         limit: int = 20,
-    ) -> WorkbenchPage: ...
+    ) -> ThreadActivityPage: ...
 
     async def active_work_summary(self) -> ActiveWorkSummary: ...
 
@@ -348,17 +338,17 @@ class TerminalController:
         launch_directory: Path,
         launch_thread_id: str | None = None,
         launch_defaults: NewThreadDefaults | None = None,
-        open_workbench: bool = False,
         editor_callback: EditorCallback | None = None,
         exit_callback: ExitCallback | None = None,
+        setup_callback: Callable[[TerminalAppProtocol, bool], Coroutine[object, object, None]] | None = None,
     ) -> None:
         self._app_factory = app_factory
         self._launch_directory = launch_directory
         self._launch_thread_id = launch_thread_id
         self._launch_defaults = launch_defaults or NewThreadDefaults()
-        self._open_workbench = open_workbench
         self._editor_callback = editor_callback
         self._exit_callback = exit_callback
+        self._setup_callback = setup_callback
         self._state = TerminalState(draft_defaults=self._launch_defaults)
         self._scheduler = ProjectionScheduler(render)
         self._state_lock = asyncio.Lock()
@@ -426,6 +416,8 @@ class TerminalController:
         try:
             app = await stack.enter_async_context(self._app_factory())
             self._app = app
+            if self._setup_callback is not None:
+                await self._setup_callback(app, False)
             self._summary_task = self._spawn(
                 self._run_summary(app, summary_ready, summary_gate),
                 name="terminal-summary",
@@ -436,13 +428,12 @@ class TerminalController:
                 project_id=self._launch_defaults.project_id,
             )
             project_id = launch.project.project_id if launch.kind == "selected" else None
-            page = await app.workbench(project_id=project_id)
+            page = await app.thread_activity(project_id=project_id)
             await self._dispatch(
                 StartupReady(
                     launch=launch,
-                    workbench=page,
+                    thread_activity=page,
                     explicit_thread_id=self._launch_thread_id,
-                    open_workbench=self._open_workbench,
                 ),
                 immediate=True,
             )
@@ -497,14 +488,14 @@ class TerminalController:
             await self._dispatch(ClosingStarted(), immediate=True)
             if self._exit_callback is not None:
                 await self._exit_callback()
-        elif isinstance(intent, ToggleTopLevelMode):
-            if self._state.mode is TerminalMode.FOCUS:
-                self._cancel_completion()
-                await self._dispatch(CompletionClosed())
-                await self._show_workbench()
-            elif self._state.previous_focused_thread_id is not None:
-                await self._replace_focus(self._state.previous_focused_thread_id)
         elif isinstance(intent, ExecuteCommand):
+            if intent.name == "setup" and self._setup_callback is not None and self._app is not None:
+                if intent.draft_key is not None:
+                    await self._dispatch(DraftSubmitted(intent.draft_key))
+                if self._state.overlays and self._state.overlays[-1].kind == "commands":
+                    await self._dispatch(OverlayClosed())
+                self._spawn(self._setup_callback(self._app, True), name="terminal-setup")
+                return
             if intent.draft_key is not None:
                 await self._dispatch(DraftSubmitted(intent.draft_key))
             if self._state.overlays and self._state.overlays[-1].kind == "commands":
@@ -526,10 +517,6 @@ class TerminalController:
                 )
             else:
                 await self.handle(translated)
-        elif isinstance(intent, OpenWorkbench):
-            self._cancel_completion()
-            await self._dispatch(CompletionClosed())
-            await self._show_workbench()
         elif isinstance(intent, OpenFocus):
             if self._state.overlays and self._state.overlays[-1].kind == "threads":
                 await self._dispatch(OverlayClosed())
@@ -541,14 +528,12 @@ class TerminalController:
                 self._launch_defaults = intent.defaults
                 await self._dispatch(DraftDefaultsChanged(intent.defaults), immediate=True)
             await self._stop_focus()
-            await self._dispatch(RouteChanged(mode="focus", new_draft=True), immediate=True)
-        elif isinstance(intent, SelectWorkbenchThread):
-            await self._dispatch(WorkbenchSelectionChanged(intent.thread_id))
-        elif isinstance(intent, SetWorkbenchFilter):
-            await self._refresh_workbench(
+            await self._dispatch(RouteChanged(new_draft=True), immediate=True)
+        elif isinstance(intent, SetThreadFilter):
+            await self._refresh_thread_activity(
                 project_id=intent.project_id,
                 replace_project=True,
-                query=self._state.workbench.query,
+                query=self._state.thread_activity.query,
             )
             return_to_threads = bool(
                 len(self._state.overlays) > 1
@@ -559,19 +544,12 @@ class TerminalController:
                 await self._dispatch(OverlayClosed())
             if return_to_threads:
                 await self._load_thread_picker(self._state.thread_picker_query)
-        elif isinstance(intent, SearchWorkbench):
-            await self._refresh_workbench(
-                project_id=self._state.project_filter_id,
-                query=intent.query,
-            )
-        elif isinstance(intent, LoadMoreWorkbench):
-            await self._load_more_workbench()
+        elif isinstance(intent, LoadMoreThreadPicker):
+            page = self._state.thread_picker
+            if page is not None and page.next_cursor is not None:
+                await self._load_thread_picker(self._state.thread_picker_query, cursor=page.next_cursor)
         elif isinstance(intent, SearchThreadPicker):
             await self._load_thread_picker(intent.query)
-        elif isinstance(intent, SubmitThreadDraft):
-            await self._submit_thread_draft(intent.thread_id)
-        elif isinstance(intent, CancelThreadOperation):
-            await self._cancel_thread_operation(intent.thread_id, intent.receipt_id)
         elif isinstance(intent, LoadOlderTranscript):
             await self._load_transcript(intent.thread_id, older=True)
         elif isinstance(intent, LoadLatestTranscript):
@@ -663,8 +641,6 @@ class TerminalController:
                     ReadingAnchor(intent.block_id, intent.line_offset),
                 )
             )
-        elif isinstance(intent, AcknowledgeWorkbenchCompletion):
-            await self._dispatch(CompletionAcknowledged(intent.receipt_id))
         elif isinstance(intent, OpenExternalEditor):
             await self._open_external_editor(intent.key)
         else:
@@ -752,13 +728,15 @@ class TerminalController:
             )
 
     async def _refresh_after_summary_gap(self) -> None:
-        await self._refresh_workbench()
+        await self._refresh_thread_activity()
         focused = self._state.focused_thread_id
         if focused is not None:
             await self._replace_focus(focused, navigate=False)
 
     async def _handle_invalidation(self, invalidation: SummaryInvalidation) -> None:
-        await self._refresh_workbench()
+        await self._refresh_thread_activity()
+        # The picker is a navigation snapshot. Background activity must not replace
+        # a search in flight or remove pages while the user is browsing them.
         focused = self._state.focused_thread_id
         if (
             focused is not None
@@ -767,7 +745,7 @@ class TerminalController:
         ):
             await self._replace_focus(focused, navigate=False)
 
-    async def _refresh_workbench(
+    async def _refresh_thread_activity(
         self,
         *,
         project_id: str | None = None,
@@ -778,42 +756,18 @@ class TerminalController:
         if app is None:
             return
         selected_project = project_id if replace_project else self._state.project_filter_id
-        selected_query = self._state.workbench.query if query is None else query
+        selected_query = self._state.thread_activity.query if query is None else query
         version = self._next_version()
         try:
-            page = await app.workbench(project_id=selected_project, query=selected_query or None)
+            page = await app.thread_activity(project_id=selected_project, query=selected_query or None)
         except Exception as exc:
-            await self._dispatch(OperationFailed(action="workbench", failure=_failure(exc)))
+            await self._dispatch(OperationFailed(action="thread_activity", failure=_failure(exc)))
             return
         await self._dispatch(
-            WorkbenchLoaded(
+            ThreadActivityLoaded(
                 request_version=version,
                 page=page,
                 query=selected_query,
-            )
-        )
-
-    async def _load_more_workbench(self) -> None:
-        app = self._app
-        page = self._state.workbench.page
-        if app is None or page is None or page.next_cursor is None:
-            return
-        version = self._next_version()
-        try:
-            next_page = await app.workbench(
-                project_id=self._state.project_filter_id,
-                query=self._state.workbench.query or None,
-                cursor=page.next_cursor,
-            )
-        except Exception as exc:
-            await self._dispatch(OperationFailed(action="workbench", failure=_failure(exc)))
-            return
-        await self._dispatch(
-            WorkbenchLoaded(
-                request_version=version,
-                page=next_page,
-                query=self._state.workbench.query,
-                append=True,
             )
         )
 
@@ -857,21 +811,22 @@ class TerminalController:
                 immediate=True,
             )
 
-    async def _load_thread_picker(self, query: str) -> None:
+    async def _load_thread_picker(self, query: str, *, cursor: str | None = None) -> None:
         app = self._app
         if app is None:
             return
         version = self._next_version()
         try:
-            page = await app.workbench(
+            page = await app.thread_activity(
                 project_id=self._state.project_filter_id,
                 query=query or None,
+                cursor=cursor,
                 limit=50,
             )
         except Exception as exc:
             await self._dispatch(OperationFailed(action="threads", failure=_failure(exc)))
             return
-        await self._dispatch(ThreadPickerLoaded(version, page, query=query))
+        await self._dispatch(ThreadPickerLoaded(version, page, query=query, append=cursor is not None))
 
     def _schedule_completion(self, intent: RequestCompletions) -> None:
         self._cancel_completion()
@@ -948,14 +903,12 @@ class TerminalController:
         if view is not None and view.detail is not None:
             return view.detail.thread.configuration.project_id
         row = next(
-            (item for item in self._state.workbench.rows if item.thread.thread_id == key),
+            (item for item in self._state.thread_activity.rows if item.thread.thread_id == key),
             None,
         )
         return None if row is None else row.thread.configuration.project_id
 
     def _interaction_key(self) -> str:
-        if self._state.mode is TerminalMode.WORKBENCH:
-            return self._state.workbench.selected_thread_id or "new"
         return self._state.focused_thread_id or "new"
 
     async def _replace_focus(self, thread_id: str, *, navigate: bool = True) -> None:
@@ -963,20 +916,13 @@ class TerminalController:
             self._cancel_completion()
             await self._dispatch(CompletionClosed())
         async with self._focus_lock:
-            if not navigate and (
-                self._state.mode is not TerminalMode.FOCUS or self._state.focused_thread_id != thread_id
-            ):
+            if not navigate and (self._state.focused_thread_id != thread_id):
                 return
             await self._stop_focus_locked()
             if navigate:
-                await self._dispatch(RouteChanged(mode="focus", thread_id=thread_id), immediate=True)
+                await self._dispatch(RouteChanged(thread_id=thread_id), immediate=True)
             task = self._spawn(self._run_focus(thread_id), name=f"terminal-focus-{thread_id}")
             self._focus_task = task
-
-    async def _show_workbench(self) -> None:
-        async with self._focus_lock:
-            await self._dispatch(RouteChanged(mode="workbench"), immediate=True)
-            await self._stop_focus_locked()
 
     async def _stop_focus(self) -> None:
         async with self._focus_lock:
@@ -993,9 +939,7 @@ class TerminalController:
         app = self._app
         if app is None:
             return
-        while (
-            not self._closed and self._state.mode is TerminalMode.FOCUS and self._state.focused_thread_id == thread_id
-        ):
+        while not self._closed and self._state.focused_thread_id == thread_id:
             version = self._next_version()
             try:
                 async with app.watch_thread(root_thread_id=thread_id) as watch:
@@ -1151,6 +1095,11 @@ class TerminalController:
                         "The active Run completed before steering was accepted.",
                         code="steering_not_accepted",
                     )
+            else:
+                raise AgentUiError(
+                    "This Thread cannot accept a prompt yet. Your draft has been kept.",
+                    code="thread_input_unavailable",
+                )
         except Exception as exc:
             await self._dispatch(
                 OperationFailed(
@@ -1162,80 +1111,6 @@ class TerminalController:
                 ),
                 immediate=True,
             )
-
-    async def _submit_thread_draft(self, thread_id: str) -> None:
-        app = self._app
-        draft = self._state.draft(thread_id)
-        row = next(
-            (item for item in self._state.workbench.rows if item.thread.thread_id == thread_id),
-            None,
-        )
-        if app is None or draft is None or row is None or not draft.text.strip():
-            return
-        text = draft.text
-        try:
-            activity = row.thread.root_activity
-            if activity.receipt_id is not None and "steer" in activity.available_actions:
-                result = await app.steer_root_operation(
-                    receipt_id=activity.receipt_id,
-                    message=text,
-                    skill_references=draft.skill_references,
-                )
-                if not result.accepted:
-                    raise AgentUiError(
-                        "The active Run completed before steering was accepted.",
-                        code="steering_not_accepted",
-                    )
-                await self._dispatch(DraftSubmitted(thread_id))
-            elif "respond" in row.available_actions:
-                raise AgentUiError(
-                    "Answer the pending decision before sending another prompt.",
-                    code="thread_decision_pending",
-                )
-            elif activity.receipt_id is not None:
-                raise AgentUiError(
-                    "This Thread cannot accept input until its current operation changes state.",
-                    code="thread_input_unavailable",
-                )
-            else:
-                receipt = await app.submit_thread(
-                    thread_id=thread_id,
-                    prompt=text,
-                    skill_references=draft.skill_references,
-                )
-                await self._dispatch(DraftSubmitted(thread_id))
-                self._observe_receipt(receipt)
-            await self._refresh_workbench()
-        except Exception as exc:
-            await self._dispatch(
-                OperationFailed(
-                    action="workbench_submit",
-                    failure=_failure(exc),
-                    draft_key=thread_id,
-                    draft_text=text,
-                    thread_id=thread_id,
-                ),
-                immediate=True,
-            )
-
-    async def _cancel_thread_operation(self, thread_id: str, receipt_id: str) -> None:
-        app = self._app
-        if app is None:
-            return
-        try:
-            result = await app.cancel_root_operation(receipt_id)
-            if not result.accepted:
-                raise AgentUiError(
-                    "The root operation settled before cancellation was accepted.",
-                    code="cancellation_not_accepted",
-                )
-        except Exception as exc:
-            await self._dispatch(
-                OperationFailed(action="workbench_cancel", failure=_failure(exc), thread_id=thread_id),
-                immediate=True,
-            )
-            return
-        await self._refresh_workbench()
 
     async def _select_configuration_resource(self, intent: SelectConfigurationResource) -> None:
         overlay = self._state.overlays[-1] if self._state.overlays else None
@@ -1250,12 +1125,12 @@ class TerminalController:
                 await self._dispatch(OverlayClosed())
             return
         thread_id = context_key
-        view = self._state.thread_view(thread_id) if self._state.mode is TerminalMode.FOCUS else None
+        view = self._state.thread_view(thread_id)
         if view is not None and view.detail is not None:
             configuration = view.detail.thread.configuration
         else:
             row = next(
-                (item for item in self._state.workbench.rows if item.thread.thread_id == thread_id),
+                (item for item in self._state.thread_activity.rows if item.thread.thread_id == thread_id),
                 None,
             )
             if row is None:
@@ -1389,9 +1264,9 @@ class TerminalController:
         )
 
     async def _reconcile_after_editor(self) -> None:
-        await self._refresh_workbench()
+        await self._refresh_thread_activity()
         thread_id = self._state.focused_thread_id
-        if self._state.mode is TerminalMode.FOCUS and thread_id is not None:
+        if thread_id is not None:
             await self._replace_focus(thread_id, navigate=False)
 
     def _observe_receipt(self, receipt: RootRunReceipt) -> None:
@@ -1422,7 +1297,7 @@ class TerminalController:
             )
             return
         await self._dispatch(RootOperationUpdated(operation), immediate=True)
-        await self._refresh_workbench()
+        await self._refresh_thread_activity()
         if self._state.focused_thread_id == receipt.thread_id:
             await self._replace_focus(receipt.thread_id, navigate=False)
 
@@ -1658,8 +1533,8 @@ class TerminalController:
         return True
 
     async def _refresh_configuration_context(self, thread_id: str) -> None:
-        await self._refresh_workbench()
-        if self._state.mode is TerminalMode.FOCUS and self._state.focused_thread_id == thread_id:
+        await self._refresh_thread_activity()
+        if self._state.focused_thread_id == thread_id:
             await self._replace_focus(thread_id, navigate=False)
 
     async def _archive(self, intent: ArchiveThread) -> None:
@@ -1676,15 +1551,15 @@ class TerminalController:
             )
         except Exception as exc:
             await self._dispatch(OperationFailed(action="archive", failure=_failure(exc), thread_id=intent.thread_id))
-            await self._refresh_workbench()
-            if self._state.mode is TerminalMode.FOCUS and self._state.focused_thread_id == intent.thread_id:
+            await self._refresh_thread_activity()
+            if self._state.focused_thread_id == intent.thread_id:
                 await self._replace_focus(intent.thread_id, navigate=False)
             return
-        await self._refresh_workbench()
+        await self._refresh_thread_activity()
         if intent.archived and self._state.focused_thread_id == intent.thread_id:
             await self._stop_focus()
             await self._dispatch(
-                RouteChanged(mode="workbench", clear_focus=True),
+                RouteChanged(clear_focus=True),
                 immediate=True,
             )
 

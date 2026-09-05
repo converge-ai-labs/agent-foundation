@@ -21,8 +21,8 @@ class TuiLaunchOptions:
     """Terminal-local initial selection that never mutates file defaults."""
 
     thread_id: str | None = None
+    show_setup: bool = False
     defaults: NewThreadDefaults = field(default_factory=NewThreadDefaults)
-    open_workbench: bool = False
 
 
 async def run(
@@ -51,7 +51,7 @@ async def run(
         launch_directory=(launch_directory or Path(os.getcwd())).resolve(strict=True),
         launch_thread_id=selected.thread_id,
         launch_defaults=selected.defaults,
-        open_workbench=selected.open_workbench,
+        show_setup=selected.show_setup,
     )
 
 

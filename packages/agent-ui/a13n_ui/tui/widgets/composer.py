@@ -71,7 +71,10 @@ class Composer(Container):
         submit.label = "Steer" if mode is ControlMode.RUNNING else "Send"
         submit.disabled = (
             lifecycle is not TerminalLifecycle.READY
-            or mode not in {ControlMode.DRAFT, ControlMode.IDLE, ControlMode.RUNNING}
+            or (
+                mode not in {ControlMode.DRAFT, ControlMode.IDLE, ControlMode.RUNNING}
+                and match_slash_command(draft.text) is None
+            )
             or not draft.text.strip()
         )
         editor.read_only = lifecycle is TerminalLifecycle.CLOSING

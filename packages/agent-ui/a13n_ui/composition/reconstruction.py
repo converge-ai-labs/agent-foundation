@@ -150,10 +150,23 @@ class AgentReconstructor:
         if previous != node.model:
             raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
 
-        selected = self._catalog.capabilities(
-            tuple((item.capability, item.configuration) for item in node.capabilities),
-            path_layout=path_layout,
-        )
+        selections = []
+        for item in node.capabilities:
+            configuration = dict(item.configuration)
+            if item.model is not None:
+                auxiliary_id = model_recipe_id(item.model)
+                previous = model_recipes.setdefault(auxiliary_id, item.model)
+                if previous != item.model:
+                    raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
+                configuration["model"] = auxiliary_id
+                overrides = configuration.get("model_settings", {})
+                if not isinstance(overrides, dict):
+                    raise CompositionError(
+                        "Auxiliary Model settings must be an object.", code="capability_model_settings_invalid"
+                    )
+                configuration["model_settings"] = {**item.model.settings, **overrides}
+            selections.append((item.capability, configuration))
+        selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
         capabilities.extend(AgentUiMCP(item) for item in node.mcp_servers)
         if node.children:

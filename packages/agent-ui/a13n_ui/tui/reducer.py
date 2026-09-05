@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
 from typing import Literal
 
 from a13n_ui.surfaces import (
@@ -13,16 +12,14 @@ from a13n_ui.surfaces import (
     RootOperationView,
     SkillReference,
     TaskPage,
+    ThreadActivityPage,
     ThreadDetail,
     ThreadFocusSnapshot,
     TranscriptPage,
-    WorkbenchPage,
-    WorkbenchThreadView,
 )
 from a13n_ui.tui.events import (
     ChildControlCompleted,
     ClosingStarted,
-    CompletionAcknowledged,
     CompletionApplied,
     CompletionClosed,
     CompletionLoaded,
@@ -62,13 +59,12 @@ from a13n_ui.tui.events import (
     StreamPartEvent,
     TaskChangedEvent,
     TerminalEvent,
+    ThreadActivityLoaded,
     ThreadPickerLoaded,
     TimelineSelectionChanged,
     ToolEvent,
     TranscriptLoaded,
     UnknownLiveEvent,
-    WorkbenchLoaded,
-    WorkbenchSelectionChanged,
 )
 from a13n_ui.tui.models import (
     MAX_BLOCK_TEXT,
@@ -86,12 +82,11 @@ from a13n_ui.tui.models import (
     Reduction,
     ReviewState,
     TerminalLifecycle,
-    TerminalMode,
     TerminalNotice,
     TerminalState,
+    ThreadActivityState,
     ThreadViewState,
     TimelineBlock,
-    WorkbenchState,
 )
 
 _EMPTY_HINTS = ProjectionHints(changed=frozenset())
@@ -117,32 +112,26 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
 
     if isinstance(event, StartupReady):
         launch_project_id = event.launch.project.project_id if isinstance(event.launch, LaunchProjectSelected) else None
-        mode = TerminalMode.WORKBENCH if event.open_workbench or launch_project_id is None else TerminalMode.FOCUS
         focused = event.explicit_thread_id
-        if focused is not None:
-            mode = TerminalMode.FOCUS
         defaults = state.draft_defaults.model_copy(
             update={
                 "project_id": state.draft_defaults.project_id or launch_project_id,
             }
         )
-        selected = event.workbench.rows[0].thread.thread_id if event.workbench.rows else None
         next_state = replace(
             state,
             lifecycle=TerminalLifecycle.READY,
-            mode=mode,
             launch_resolution=event.launch,
             launch_project_id=launch_project_id,
-            project_filter_id=event.workbench.project_id,
+            project_filter_id=event.thread_activity.project_id,
             focused_thread_id=focused,
             draft_defaults=defaults,
-            workbench=WorkbenchState(
-                page=_ranked_page(event.workbench, frozenset()),
-                selected_thread_id=selected,
+            thread_activity=ThreadActivityState(
+                page=event.thread_activity,
                 projection_version=1,
             ),
         )
-        return _result(next_state, "lifecycle", "route", "workbench", "focus")
+        return _result(next_state, "lifecycle", "route", "thread_activity", "focus")
 
     if isinstance(event, StartupFailed):
         next_state = _notice(
@@ -174,38 +163,34 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
             "overlay",
         )
 
-    if isinstance(event, WorkbenchLoaded):
-        if event.request_version < state.workbench.projection_version:
+    if isinstance(event, ThreadActivityLoaded):
+        if event.request_version < state.thread_activity.projection_version:
             return Reduction(state, _EMPTY_HINTS)
         page = event.page
         if (
             event.append
-            and state.workbench.page is not None
-            and state.workbench.page.project_id == event.page.project_id
-            and state.workbench.query == event.query
+            and state.thread_activity.page is not None
+            and state.thread_activity.page.project_id == event.page.project_id
+            and state.thread_activity.query == event.query
         ):
             rows = tuple(
-                {item.thread.thread_id: item for item in (*state.workbench.page.rows, *event.page.rows)}.values()
+                {item.thread.thread_id: item for item in (*state.thread_activity.page.rows, *event.page.rows)}.values()
             )
-            page = WorkbenchPage(
+            page = ThreadActivityPage(
                 project_id=event.page.project_id,
                 rows=rows,
                 total=event.page.total,
                 next_cursor=event.page.next_cursor,
             )
-        ranked = _ranked_page(page, state.workbench.acknowledged_receipts)
-        selected = state.workbench.selected_thread_id
-        visible = {row.thread.thread_id for row in ranked.rows}
-        if selected not in visible:
-            selected = ranked.rows[0].thread.thread_id if ranked.rows else None
-        workbench = replace(
-            state.workbench,
-            page=ranked,
+        thread_activity = replace(
+            state.thread_activity,
+            page=page,
             query=event.query,
-            selected_thread_id=selected,
             projection_version=event.request_version,
         )
-        return _result(replace(state, workbench=workbench, project_filter_id=event.page.project_id), "workbench")
+        return _result(
+            replace(state, thread_activity=thread_activity, project_filter_id=event.page.project_id), "thread_activity"
+        )
 
     if isinstance(event, ProjectsLoaded):
         if event.request_version < state.overlay_request_version:
@@ -246,10 +231,16 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
     if isinstance(event, ThreadPickerLoaded):
         if event.request_version < state.overlay_request_version:
             return Reduction(state, _EMPTY_HINTS)
+        page = event.page
+        if event.append and state.thread_picker is not None:
+            if state.thread_picker.project_id != page.project_id or state.thread_picker_query != event.query:
+                return Reduction(state, _EMPTY_HINTS)
+            rows = tuple({row.thread.thread_id: row for row in (*state.thread_picker.rows, *page.rows)}.values())
+            page = page.model_copy(update={"rows": rows})
         return _result(
             replace(
                 state,
-                thread_picker=_ranked_page(event.page, state.workbench.acknowledged_receipts),
+                thread_picker=page,
                 thread_picker_query=event.query,
                 overlay_request_version=event.request_version,
             ),
@@ -676,38 +667,8 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         return _result(replace(next_state, completion=None), "composer", "overlay")
 
     if isinstance(event, RouteChanged):
-        mode = TerminalMode(event.mode)
-        focused = state.focused_thread_id
-        previous = state.previous_focused_thread_id
-        if event.clear_focus:
-            focused = None
-            previous = None
-        elif event.new_draft:
-            focused = None
-        elif mode is TerminalMode.FOCUS and event.thread_id is not None:
-            focused = event.thread_id
-            previous = event.thread_id
-        return _result(
-            replace(
-                state,
-                mode=mode,
-                focused_thread_id=focused,
-                previous_focused_thread_id=previous,
-            ),
-            "route",
-            "focus" if mode is TerminalMode.FOCUS else "workbench",
-        )
-
-    if isinstance(event, WorkbenchSelectionChanged):
-        if state.workbench.selected_thread_id == event.thread_id:
-            return Reduction(state, _EMPTY_HINTS)
-        return _result(
-            replace(
-                state,
-                workbench=replace(state.workbench, selected_thread_id=event.thread_id),
-            ),
-            "workbench",
-        )
+        focused = None if event.new_draft or event.clear_focus else event.thread_id
+        return _result(replace(state, focused_thread_id=focused), "route", "focus")
 
     if isinstance(event, OverlayOpened):
         overlays = (*state.overlays, event.overlay)[-8:]
@@ -773,14 +734,6 @@ def reduce_terminal(state: TerminalState, event: TerminalEvent) -> Reduction:
         selected = event.block_id if any(block.block_id == event.block_id for block in view.timeline) else None
         return _result(_with_view(state, replace(view, selected_block_id=selected)), "focus")
 
-    if isinstance(event, CompletionAcknowledged):
-        acknowledged = frozenset((*state.workbench.acknowledged_receipts, event.receipt_id))
-        page = state.workbench.page
-        workbench = replace(state.workbench, acknowledged_receipts=acknowledged)
-        if page is not None:
-            workbench = replace(workbench, page=_ranked_page(page, acknowledged))
-        return _result(replace(state, workbench=workbench), "workbench")
-
     if isinstance(event, OperationFailed):
         next_state = state
         if event.draft_key is not None and event.draft_text is not None:
@@ -810,12 +763,6 @@ def derive_control_mode(view: ThreadViewState | None, *, draft: bool = False) ->
     if view.cancelling_receipt_id is not None:
         return ControlMode.CANCELLING
     return _control_mode(view.detail, view.root_operation, view.decisions is not None)
-
-
-def ranked_workbench_rows(state: WorkbenchState) -> tuple[WorkbenchThreadView, ...]:
-    if state.page is None:
-        return ()
-    return _rank_rows(state.page.rows, state.acknowledged_receipts)
 
 
 def _control_mode(
@@ -1471,10 +1418,6 @@ def _notice(
     )
 
 
-def _ranked_page(page: WorkbenchPage, acknowledged: frozenset[str]) -> WorkbenchPage:
-    return page.model_copy(update={"rows": _rank_rows(page.rows, acknowledged)})
-
-
 def _has_exact_marker(text: str, marker: str, *, allow_trailing_slash: bool = False) -> bool:
     start = text.find(marker)
     while start >= 0:
@@ -1489,48 +1432,9 @@ def _has_exact_marker(text: str, marker: str, *, allow_trailing_slash: bool = Fa
     return False
 
 
-def _rank_rows(
-    rows: tuple[WorkbenchThreadView, ...],
-    acknowledged: frozenset[str],
-) -> tuple[WorkbenchThreadView, ...]:
-    return tuple(sorted(rows, key=lambda row: _attention_key(row, acknowledged)))
-
-
-def _attention_key(row: WorkbenchThreadView, acknowledged: frozenset[str]) -> tuple[int, float, str]:
-    operation = row.latest_operation
-    if row.pending_decision is not None:
-        rank = 0
-    elif (
-        (operation is not None and operation.status in {RootOperationStatus.failed, RootOperationStatus.cancelled})
-        or row.children.failed > 0
-        or row.children.lost > 0
-    ):
-        rank = 1
-    elif (
-        operation is not None
-        and operation.status is RootOperationStatus.completed
-        and operation.receipt.receipt_id not in acknowledged
-    ):
-        rank = 2
-    elif row.thread.root_activity.state.value != "inactive" or row.children.active:
-        rank = 3
-    else:
-        rank = 4
-    occurred_at = row.thread.updated_at
-    if operation is not None and rank < 4:
-        occurred_at = operation.completed_at or operation.started_at or operation.receipt.submitted_at
-    elif row.latest_activity is not None and row.latest_activity.occurred_at is not None:
-        occurred_at = row.latest_activity.occurred_at
-    return rank, -_timestamp(occurred_at), row.thread.thread_id
-
-
-def _timestamp(value: datetime) -> float:
-    return value.timestamp()
-
-
 def _result(
     state: TerminalState,
-    *changed: Literal["lifecycle", "route", "workbench", "focus", "composer", "overlay", "notice"],
+    *changed: Literal["lifecycle", "route", "thread_activity", "focus", "composer", "overlay", "notice"],
     scroll_to_latest: bool = False,
 ) -> Reduction:
     return Reduction(
@@ -1539,4 +1443,4 @@ def _result(
     )
 
 
-__all__ = ["derive_control_mode", "ranked_workbench_rows", "reduce_terminal"]
+__all__ = ["derive_control_mode", "reduce_terminal"]

@@ -4,19 +4,19 @@
 
 The WebUI is a simple, progressively disclosed local workstation, not a marketing page and not a generic administration template. Its design system keeps conversation primary, reveals activity detail only on demand, and gives guided Settings management a distinct but coherent context. Visual polish cannot blur authority: retained versus live content, persisted versus process-local state, accepted versus draft configuration, and available versus unavailable control remain distinguishable without relying on color alone.
 
-Radix UI primitives own accessible interaction behavior for dialogs, menus, popovers, tabs, tooltips, selects, switches, and related controls. Tailwind CSS consumes a small repository-owned semantic token layer. Feature components compose these primitives but do not bypass them with incompatible keyboard or focus behavior.
+Radix UI primitives own accessible interaction behavior for dialogs, menus, popovers, tabs, tooltips, selects, switches, and related controls. Repository-owned CSS consumes a small repository-owned semantic token layer. Feature components compose these primitives but do not bypass them with incompatible keyboard or focus behavior.
 
 ## Component Architecture
 
 Components are organized by responsibility rather than page-specific duplication:
 
-| Layer             | Responsibility                                                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Foundations       | Semantic color, typography, spacing, radius, elevation, motion, focus, and density tokens                                                 |
-| Primitives        | Buttons, inputs, badges, panels, scroll areas, disclosures, dialogs, menus, and feedback composed from Radix where behavior is nontrivial |
-| Data display      | Timeline blocks, code, structured JSON/YAML, diffs, status facets, pagination, empty states, and diagnostic callouts                      |
-| Domain components | Thread composer, decision batch, child execution card, configuration selectors, resource editor, account status, and catalog reference    |
-| Feature layouts   | Sidebar, conversation, optional context panel, activity log/detail, Settings collection/editor, account area, and responsive shell        |
+| Layer             | Responsibility                                                                                                                                     |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundations       | Semantic color, typography, spacing, radius, elevation, motion, focus, and density tokens                                                          |
+| Primitives        | Buttons, inputs, badges, panels, scroll areas, disclosures, dialogs, menus, and feedback composed from Radix where behavior is nontrivial          |
+| Data display      | Timeline blocks, code, structured JSON/YAML, diffs, status facets, pagination, empty states, and diagnostic callouts                               |
+| Domain components | Thread composer, decision batch, child execution card, configuration selectors, resource editor, account status, and catalog reference             |
+| Feature layouts   | Transient Thread picker, conversation, optional context panel, activity log/detail, Settings collection/editor, account area, and responsive shell |
 
 A component can render a detached domain projection but cannot issue an HTTP request implicitly. Route feature boundaries own queries and commands and pass explicit values and callbacks downward. A component does not infer an App action from a color, label, or prior event.
 
@@ -32,7 +32,7 @@ The design system defines semantic CSS variables for at least:
 - retained, live, suspended, interrupted, and unavailable execution states;
 - code, diff addition/removal, tool activity, and child activity accents.
 
-Tailwind utilities reference semantic tokens instead of embedding feature-specific color values. Light and dark themes both meet the same contrast and state-distinction requirements. The default follows the operating-system preference; an explicit light, dark, or system choice is the only non-sensitive preference retained in `localStorage`.
+Local CSS references semantic tokens instead of embedding feature-specific color values. Light and dark themes both meet the same contrast and state-distinction requirements. The default follows the operating-system preference; an explicit light, dark, or system choice is the only non-sensitive preference retained in `localStorage`.
 
 Theme changes affect presentation only. They do not recreate the router, query client, focused stream, editor draft, or App command.
 
@@ -40,15 +40,15 @@ The production asset tree includes all fonts and icons it requires. System fonts
 
 ## Workstation Layout
 
-The ordinary shell has a persistent sidebar, one dominant conversation, and one optional context panel. It has no global product-area rail:
+The ordinary shell has one dominant conversation, a header, a transient Thread picker, and optional read-only context detail. It has no global product-area rail:
 
-| Region        | Wide layout                                                                | Narrow behavior                                                                 |
-| ------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Sidebar       | New Thread, Recent, expandable Projects and root Threads, search, Settings | Becomes a separate navigation panel with explicit return to the selected Thread |
-| Conversation  | Header, semantic timeline, deferred interactions, and one composer         | Remains the primary panel                                                       |
-| Context panel | Closed by default; Environment context or one selected activity detail     | Becomes a drawer or separate route-preserving panel                             |
-| Activity log  | Replaces the conversation body only after an explicit inspection action    | Uses one primary panel and separate selected detail                             |
-| Settings      | Section navigation plus one collection, guided editor, or diagnostic view  | Section list, collection, and editor become explicit sequential panels          |
+| Region        | Wide layout                                                                       | Narrow behavior                                                        |
+| ------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Thread picker | Modal search, Project/all-Project scope, archive inclusion, New, and keyset pages | Uses the full available width while preserving Close and focus return  |
+| Conversation  | Header, semantic timeline, deferred interactions, and one composer                | Remains the primary panel                                              |
+| Context panel | Closed by default; Environment context or one selected activity detail            | Becomes a drawer or separate route-preserving panel                    |
+| Activity log  | Replaces the conversation body only after an explicit inspection action           | Uses one primary panel and separate selected detail                    |
+| Settings      | Section navigation plus one collection, guided editor, or diagnostic view         | Section list, collection, and editor become explicit sequential panels |
 
 Settings replaces the conversation region instead of remaining mounted beside it. Guided fields are visually primary. Advanced source, diffs, and conflict controls load only when requested, while guided and exact-source editing remain views over one draft.
 
@@ -75,7 +75,7 @@ The WebUI targets WCAG 2.2 AA for its supported browser profile. In particular:
 
 Streaming assistant deltas are not announced token by token. A polite live region announces meaningful boundaries such as response completion, pending decision, failed operation, or child completion. Steering and cancellation confirmations name the exact target in accessible text.
 
-Keyboard shortcuts are discoverable, scoped, and never shadow ordinary browser or editor behavior. At minimum, focus composer, open command palette, toggle the sidebar, open Settings, return to conversation, toggle Environment context, and open the selected activity detail have configurable or documented bindings. A shortcut never approves, denies, deletes, logs out, or bypasses a confirmation through one unmodified keystroke.
+Keyboard shortcuts are discoverable, scoped, and never shadow ordinary browser or editor behavior. At minimum, focus composer, open command palette, open or close the Thread picker (`Ctrl+O`), open Settings, return to conversation, toggle Environment context, and open the selected activity detail have configurable or documented bindings. A shortcut never approves, denies, deletes, logs out, or bypasses a confirmation through one unmodified keystroke.
 
 ## Forms and Editors
 
@@ -118,7 +118,7 @@ The application registers no service worker. A stale open tab detects incompatib
 
 ## Performance and Resource Discipline
 
-The sidebar, new-Thread flow, selected conversation, inline activity summaries, composer, and deferred interactions form the initial bundle. Activity ledgers and payload viewers, Settings collections and editors, diff support, catalog management, account flows, and other heavy routes load on demand. CodeMirror and language support do not enter the initial conversation bundle.
+The Thread picker, new-Thread flow, selected conversation, inline activity summaries, composer, and deferred interactions form the initial bundle. Activity ledgers and payload viewers, Settings collections and editors, diff support, catalog management, account flows, and other heavy routes load on demand. CodeMirror and language support do not enter the initial conversation bundle.
 
 Long Thread, resource, catalog, and child collections use server keyset pagination. Long timelines and structured views use virtualization or bounded expansion while preserving keyboard navigation and copy semantics. The browser never fetches every Thread or mounts every transcript to calculate Project recency or navigation status.
 
@@ -130,9 +130,9 @@ Leaving a route aborts its requests, focused stream, workers, syntax tasks, and 
 
 Vitest owns pure browser boundaries: access bootstrap, normalized query and invalidation mapping, SSE framing and cursor semantics, high-water cutover and reset handling, focused event reduction, command and draft construction, conflict state, and route decisions. Testing Library exercises components through roles, labels, visible text, keyboard input, and focus rather than private component state. Automated accessibility assertions cover primitives and representative feature states in both themes.
 
-MSW uses fixtures validated by the generated runtime schemas to exercise the generated client across finite queries, commands, authentication, conflicts, validation failures, unknown outcomes, and stream reconnection. These tests do not substitute for Python tests that mount the actual Web adapter and verify access enforcement, static routing, OpenAPI bodies, error mapping, fresh-watch snapshot cutover, resumable event replay, explicit cursor and subscriber-gap resets, disconnect cleanup, and `AgentUiApp` method correlation.
+HTTP integration uses fixtures validated by the generated runtime schemas to exercise the generated client across finite queries, commands, authentication, conflicts, validation failures, unknown outcomes, and stream reconnection. These tests do not substitute for Python tests that mount the actual Web adapter and verify access enforcement, static routing, OpenAPI bodies, error mapping, fresh-watch snapshot cutover, resumable event replay, explicit cursor and subscriber-gap resets, disconnect cleanup, and `AgentUiApp` method correlation.
 
-Playwright runs the built static application against a real local Web adapter and disposable Agent UI data and configuration roots. Its critical journeys cross access bootstrap and direct navigation; New Thread, Recent, Project-grouped navigation, search, archive, and unresolved Project references; root and child interaction with live-to-retained reconciliation and exact controls; complete deferred decisions; conversation-to-activity disclosure without a second composer or stream; Environment context; guided Project, Agent, Model, Environment, Plugin, MCP, and default management; advanced source editing, digest conflict, and reviewed rebase; accepted-generation diagnostics; compatible account actions; restart and stream recovery; and keyboard-only accessibility. End-to-end assertions target semantic state and authority boundaries rather than pixel snapshots alone. Visual regression can cover the shell and core states, but it does not replace interaction, accessibility, or protocol assertions.
+Real-browser automation runs the built static application against a real local Web adapter and disposable Agent UI data and configuration roots. Its critical journeys cross access bootstrap and direct navigation; New Thread, Recent, Project-grouped navigation, search, archive, and unresolved Project references; root and child interaction with live-to-retained reconciliation and exact controls; complete deferred decisions; conversation-to-activity disclosure without a second composer or stream; Environment context; guided Project, Agent, Model, Environment, Plugin, MCP, and default management; advanced source editing, digest conflict, and reviewed rebase; accepted-generation diagnostics; compatible account actions; restart and stream recovery; and keyboard-only accessibility. End-to-end assertions target semantic state and authority boundaries rather than pixel snapshots alone. Visual regression can cover the shell and core states, but it does not replace interaction, accessibility, or protocol assertions.
 
 ## Browser Compatibility
 
@@ -144,16 +144,16 @@ A browser that cannot provide authenticated fetch streaming receives an explicit
 
 The frontend validation boundary includes formatting, strict TypeScript, production build, unit/component tests, generated-contract freshness, and critical browser tests. The final asset validator verifies that every HTML-referenced local asset exists and matches the packaged manifest. Source maps, test fixtures, development credentials, and external registry state do not enter the production static tree.
 
-The built frontend is tested from the same wheel/sdist packaging path used for release. Rebuilding a wheel from the sdist never invokes npm, Vite, CodeMirror tooling, Tailwind, or contract generation.
+The built frontend is tested from the same wheel/sdist packaging path used for release. Rebuilding a wheel from the sdist never invokes npm, Vite, editor tooling, CSS tooling, or contract generation.
 
 ## Trade-offs
 
-Radix plus Tailwind requires the repository to own more composition and visual detail than a full component suite, but it keeps behavior accessible and the workstation identity controllable. A strict static SPA cannot use server rendering for initial content, but local same-origin latency and a stable shell make that cost small while preserving Python-only runtime installation. Comprehensive stream and conflict tests add upfront work, but those are the boundaries where a superficially responsive UI can otherwise misrepresent execution or overwrite user configuration.
+Radix plus local CSS requires the repository to own more composition and visual detail than a full component suite, but it keeps behavior accessible and the workstation identity controllable. A strict static SPA cannot use server rendering for initial content, but local same-origin latency and a stable shell make that cost small while preserving Python-only runtime installation. Comprehensive stream and conflict tests add upfront work, but those are the boundaries where a superficially responsive UI can otherwise misrepresent execution or overwrite user configuration.
 
 ## Invariants
 
 01. Visual treatment never collapses retained/live, persisted/local, accepted/draft, or available/unavailable distinctions.
-02. The ordinary shell remains a simple Project-and-Thread sidebar, one conversation, and one optional context panel; Settings remains the complete desired-resource management surface.
+02. The ordinary shell remains one conversation, a transient navigation-only picker, and optional read-only context detail; Settings remains the complete desired-resource management surface.
 03. Radix primitives and semantic tokens provide one accessible component foundation.
 04. Every critical operation remains keyboard operable and understandable without color or motion.
 05. Untrusted content is rendered as inert text or bounded structured data.

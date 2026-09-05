@@ -34,6 +34,9 @@ dependencies = [
     "openpyxl>=3.1,<4",
     "python-pptx>=1,<2",
     "textual>=6.12,<7",
+    "fastapi>=0.135,<1",
+    "starlette>=0.52,<2",
+    "uvicorn>=0.34,<1",
 ]
 
 [project.scripts]

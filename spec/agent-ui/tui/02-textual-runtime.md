@@ -50,17 +50,16 @@ It does not import:
 
 ## Terminal Components
 
-| Component            | Owns                                                                                                         | Does not own                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| Terminal entry       | TTY validation, minimal imports, logging setup, Textual launch, process exit mapping                         | App domain operations or rendering policy                      |
-| `TerminalApp`        | Textual lifetime, top-level modes, screen stack, bindings, terminal restoration                              | Agent execution or authoritative state                         |
-| `TerminalController` | App calls, subscriptions, receipt correlation, refetch, intent routing, and bounded controller tasks         | Widgets, storage, Harness values, or continuation construction |
-| Reducer              | Deterministic semantic blocks, provisional state, reconciliation, attention order, and local acknowledgement | I/O, timers, App calls, or terminal rendering                  |
-| Projection scheduler | Delta coalescing, stale-version rejection, and bounded render cadence                                        | Dropping semantic boundaries or changing App truth             |
-| Focus screen         | One focused timeline, inspector, decision surface, and composer                                              | Other Threads' mounted histories                               |
-| Workbench screen     | Bounded summary rows, selected preview, filters, and new-work composer                                       | Per-Thread live streams or hidden full screens                 |
-| Review screen        | App-supplied diff, tool, approval, task, or child detail                                                     | Reading Project files or granting authority                    |
-| Semantic widgets     | Markdown, tool rows, task rows, child rows, notices, failures, and composer editing                          | App calls from event callbacks                                 |
+| Component            | Owns                                                                                                   | Does not own                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Terminal entry       | TTY validation, minimal imports, logging setup, Textual launch, process exit mapping                   | App domain operations or rendering policy                      |
+| `TerminalApp`        | Textual lifetime, conversation and modal routing, screen stack, bindings, terminal restoration         | Agent execution or authoritative state                         |
+| `TerminalController` | App calls, subscriptions, receipt correlation, refetch, intent routing, and bounded controller tasks   | Widgets, storage, Harness values, or continuation construction |
+| Reducer              | Deterministic semantic blocks, provisional state, reconciliation and lightweight other-work indicators | I/O, timers, App calls, or terminal rendering                  |
+| Projection scheduler | Delta coalescing, stale-version rejection, and bounded render cadence                                  | Dropping semantic boundaries or changing App truth             |
+| Focus screen         | One focused timeline, inspector, decision surface, and composer                                        | Other Threads' mounted histories                               |
+| Review screen        | App-supplied diff, tool, approval, task, or child detail                                               | Reading Project files or granting authority                    |
+| Semantic widgets     | Markdown, tool rows, task rows, child rows, notices, failures, and composer editing                    | App calls from event callbacks                                 |
 
 A widget callback posts one typed intent. It never starts a Harness Run, calls storage, or independently resolves whether an operation is allowed.
 
@@ -80,29 +79,31 @@ sequenceDiagram
     TUI->>Controller: start
     Controller->>App: open, resolve current directory, and load accepted state
     App-->>Controller: status, launch Project result, and Project-filtered Thread summaries
-    Controller->>Controller: apply explicit Thread or Workbench route and initial filter
+    Controller->>Controller: apply explicit Thread or new-draft route and picker filter
     Controller-->>TUI: ready projection
 ```
 
 The terminal entry avoids importing optional document conversion, syntax-heavy review, Project indexing, or embedded runtime modules before they are needed for first paint. The App can still fail during startup; the mounted shell renders the safe failure and recovery actions instead of leaving an unpainted alternate screen.
 
+First-use setup and selected-Environment preparation follow [Setup and Environment Readiness](../06-setup-and-environment-readiness.md). They run as cancellable App operations after first paint, never under the terminal input lock, and publish typed progress/results. A stale result cannot change a newer draft or Thread selection.
+
 Non-interactive CLI commands do not import or initialize Textual. Non-TTY input or output never accidentally starts a full-screen application.
 
 ## App Integration
 
-### Workbench Subscription
+### Summary Subscription
 
-Workbench uses one App-wide summary subscription plus bounded queries:
+The picker and other-work indicator use one App-wide summary subscription plus bounded queries:
 
 1. establish the summary subscription and record its epoch and cutover;
 2. query the first root-Thread summary page under the current Project filter or through All Projects;
 3. apply buffered invalidations after the cutover;
-4. refetch only affected rows or the page when ordering may change;
-5. refresh the complete page after a cursor gap or epoch change.
+4. refresh current-operation and other-work projections on invalidation, without replacing an open picker's filter or accumulated pages;
+5. reopen the summary barrier after a gap; refresh picker pages on explicit reopen, search/scope change, or Load more.
 
 Summary invalidations are refetch hints, not row patches. The reducer never manufactures row truth from an invalidation alone.
 
-A root-Thread summary page supplies enough bounded information to rank and render rows without one detail query per Thread:
+A root-Thread summary page supplies enough bounded information to render rows without one detail query per Thread:
 
 - root activity and exact current-process control availability;
 - pending-decision kind and count;
@@ -111,7 +112,7 @@ A root-Thread summary page supplies enough bounded information to rank and rende
 - latest safe activity summary and time;
 - Thread identity, metadata, Project, Agent, Environment, and update time.
 
-Selecting a row may fetch bounded detail and child pages for its preview. It does not create a focused detailed subscription until the user opens Focus. Switching between the launch Project and All Projects starts a fresh Project-filtered first-page query.
+Highlighting a row performs no detail query or subscription. Explicit selection replaces the one focused watch. Switching between the launch Project and All Projects starts a fresh Project-filtered first-page query.
 
 ### Focus Watch
 
@@ -127,7 +128,7 @@ Focus uses one root-lineage watch at a time:
 
 If the selected continuation changes while the retained page loads, the transcript query fails or resets rather than combining unrelated history and control state.
 
-Only Focus owns live root-lineage event reduction. Workbench sees the same work through lightweight App summaries.
+Only the current conversation owns live root-lineage event reduction. The picker sees other work through lightweight App summaries.
 
 ### Operation Receipts
 
@@ -167,7 +168,7 @@ Reducer inputs carry monotonically comparable local versions or exact source cor
 - applies task updates by authoritative task-state version;
 - preserves unknown custom events as bounded neutral activity when possible;
 - distinguishes provisional blocks from closed retained blocks;
-- computes Workbench attention from App facts plus local acknowledgement;
+- updates the picker and bounded other-work indicators from App facts;
 - emits render hints rather than calling Textual APIs.
 
 It never:
@@ -224,7 +225,7 @@ Textual's retained tree is bounded explicitly:
 - older retained blocks are represented by paging sentinels and remounted on demand;
 - completed Markdown streams stop and lose active watchers;
 - large tool output, diffs, Project-path choices, Skill choices, task graphs, and child detail mount lazily;
-- Workbench rows are small immutable projections rather than hidden Focus screens;
+- Thread-picker rows are small immutable projections rather than hidden Focus screens;
 - inactive Thread drafts use a bounded least-recently-used terminal cache;
 - shell output, notices, and local errors have independent byte and row limits;
 - resize work is coalesced and never reparses an unbounded transcript.
@@ -258,7 +259,7 @@ Focus rules are explicit:
 
 - overlays trap focus only for their own controls;
 - a decision can temporarily move focus to the timeline for context and exposes a direct return action;
-- switching mode preserves the corresponding draft and semantic reading anchor;
+- switching Threads preserves the corresponding draft and semantic reading anchor;
 - a resize preserves logical focus even when the target moves into a drawer or full-screen view;
 - ordinary terminal text selection coexists with block navigation;
 - Escape follows the screen stack and never implicitly approves, denies, cancels a Run, or clears a draft.
@@ -283,7 +284,7 @@ Live recovery always uses retained and current-process App projections. The TUI 
 
 ## Shutdown and Terminal Restoration
 
-`TerminalApp` owns terminal mode restoration while process control remains available. It restores the terminal before awaiting App collaborators that might ignore cooperative cancellation. Before a user-requested exit, the controller reads one detached authoritative App summary containing the counts of all process-local active root operations and child executions. This summary is independent of the current Workbench filter, search, pagination, and terminal retention bounds; presentation state is never used to infer whether confirmation is required.
+`TerminalApp` owns terminal mode restoration while process control remains available. It restores the terminal before awaiting App collaborators that might ignore cooperative cancellation. Before a user-requested exit, the controller reads one detached authoritative App summary containing the counts of all process-local active root operations and child executions. This summary is independent of the current picker filter, search, pagination, and terminal retention bounds; presentation state is never used to infer whether confirmation is required.
 
 Shutdown proceeds as follows:
 
@@ -305,7 +306,7 @@ An App collaborator that ignores cancellation can prevent the process from retur
 02. One controller owns every terminal-to-App call and subscription.
 03. The reducer is deterministic, bounded, replayable, and free of I/O.
 04. Only Focus owns a full mounted transcript and detailed root-lineage stream.
-05. Workbench renders bounded summaries under one Project filter or through All Projects and never performs an N+1 detail scan to establish attention order.
+05. The picker renders bounded summaries under one Project filter or through All Projects and never performs an N+1 detail scan to establish listing order.
 06. One token does not imply one Textual Message, Markdown parse, layout, or terminal repaint.
 07. Semantic boundaries are never dropped by coalescing.
 08. App projections and terminal outcomes reconcile all provisional presentation.

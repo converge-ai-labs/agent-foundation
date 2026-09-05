@@ -8,7 +8,7 @@ from textual.containers import Container, Horizontal
 from textual.widgets import Button, Static
 
 from a13n_ui.surfaces import RootOperationStatus
-from a13n_ui.tui.intents import CancelFocusedOperation, OpenOverlay, OpenWorkbench
+from a13n_ui.tui.intents import CancelFocusedOperation, OpenOverlay
 from a13n_ui.tui.models import (
     ControlMode,
     DraftState,
@@ -38,7 +38,8 @@ class FocusScreen(Container):
             yield Static("Draft", id="focus-activity", markup=False)
             yield Button("Cancel", id="focus-cancel", variant="error")
             yield Button("Inspect", id="focus-inspect")
-            yield Button("Workbench", id="focus-workbench")
+            yield Button("Threads", id="focus-threads")
+        yield Static(id="focus-other-work", markup=False)
         yield Static(id="focus-operation-summary", markup=False)
         with Horizontal(id="focus-main"):
             yield Static("Start a new Thread by sending a prompt.", id="focus-draft-intro", markup=False)
@@ -52,6 +53,14 @@ class FocusScreen(Container):
     async def project(self, state: TerminalState, hints: ProjectionHints) -> None:
         thread_id = state.focused_thread_id
         self._focused_thread_id = thread_id
+        rows = [row for row in state.thread_activity.rows if row.thread.thread_id != thread_id]
+        active = sum(row.thread.root_activity.receipt_id is not None for row in rows)
+        decisions_count = sum(row.pending_decision is not None for row in rows)
+        other = self.query_one("#focus-other-work", Static)
+        other.display = bool(active or decisions_count)
+        bounded = state.thread_activity.page is not None and state.thread_activity.page.next_cursor is not None
+        qualifier = "Loaded threads: " if bounded else "Other threads: "
+        other.update(f"{qualifier}{active} active, {decisions_count} need a decision. Ctrl+O to switch.")
         view = None if thread_id is None else state.thread_view(thread_id)
         identity = self.query_one("#focus-identity", Static)
         activity = self.query_one("#focus-activity", Static)
@@ -195,7 +204,7 @@ class FocusScreen(Container):
         self.query_one(Composer).display = False
         self.query_one("#focus-cancel", Button).display = False
         self.query_one("#focus-inspect", Button).display = False
-        self.query_one("#focus-actions", Static).update("Ctrl+O workbench  Ctrl+P commands")
+        self.query_one("#focus-actions", Static).update("Ctrl+O threads  Ctrl+P commands")
 
     def _project_footer(
         self,
@@ -204,13 +213,13 @@ class FocusScreen(Container):
         mode: ControlMode,
     ) -> None:
         actions = {
-            ControlMode.DRAFT: "Enter send  Alt+Enter newline  Ctrl+N new  Ctrl+O workbench",
-            ControlMode.IDLE: "Enter send  Alt+Enter newline  Ctrl+P commands  Ctrl+O workbench",
-            ControlMode.PREPARING: "Ctrl+C cancel  Ctrl+O workbench  input remains a draft",
-            ControlMode.RUNNING: "Enter steer  Ctrl+C cancel  Ctrl+O workbench",
+            ControlMode.DRAFT: "Enter send  Alt+Enter newline  Ctrl+N new  Ctrl+O threads",
+            ControlMode.IDLE: "Enter send  Alt+Enter newline  Ctrl+P commands  Ctrl+O threads",
+            ControlMode.PREPARING: "Ctrl+C cancel  Ctrl+O threads  input remains a draft",
+            ControlMode.RUNNING: "Enter steer  Ctrl+C cancel  Ctrl+O threads",
             ControlMode.AWAITING_DECISION: "Tab navigate  Enter activate  Esc leave decision pending",
-            ControlMode.CANCELLING: "Waiting for terminal settlement  Ctrl+O workbench",
-            ControlMode.UNAVAILABLE: "Refreshing App truth  Ctrl+O workbench",
+            ControlMode.CANCELLING: "Waiting for terminal settlement  Ctrl+O threads",
+            ControlMode.UNAVAILABLE: "Refreshing App truth  Ctrl+O threads",
         }[mode]
         self.query_one("#focus-actions", Static).update(actions)
         notice = next(
@@ -230,9 +239,9 @@ class FocusScreen(Container):
         elif event.button.id == "focus-inspect":
             event.stop()
             self.post_message(IntentRequested(OpenOverlay("inspector", context_key=self._focused_thread_id)))
-        elif event.button.id == "focus-workbench":
+        elif event.button.id == "focus-threads":
             event.stop()
-            self.post_message(IntentRequested(OpenWorkbench()))
+            self.post_message(IntentRequested(OpenOverlay("threads")))
 
 
 def _draft_identity(state: TerminalState) -> str:

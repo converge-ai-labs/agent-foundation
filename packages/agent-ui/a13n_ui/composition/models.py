@@ -52,6 +52,7 @@ class ResolvedModelRecipe(CompositionModel):
 class ResolvedCapabilityRecipe(CompositionModel):
     capability: str = Field(min_length=1, max_length=200)
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    model: ResolvedModelRecipe | None = None
 
 
 class ResolvedPluginRecipe(CompositionModel):

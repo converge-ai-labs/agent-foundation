@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Agent UI WebUI is the bundled browser workstation distributed inside `a13n-ui`. It is a static React application served by the local Web adapter and connected to the same process-local `AgentUiApp` used by the CLI and TUI. Its ordinary shell keeps one conversation primary: a sidebar provides new-Thread, recent-Thread, Project, and Settings navigation; the selected root Thread occupies the main region; and one optional contextual panel presents current Environment information or selected activity detail.
+The Agent UI WebUI is the bundled browser workstation distributed inside `a13n-ui`. It is a static React application served by the local Web adapter and connected to the same process-local `AgentUiApp` used by the CLI and TUI. Its ordinary shell keeps one conversation primary: a transient picker provides bounded Thread search and Project/all-Project scope, while the header provides New, Setup, and Settings; the selected root Thread occupies the main region; and one optional contextual panel presents current Environment information or selected activity detail.
 
 Settings is the complete browser management surface for Projects, Agents, canonical subagents, Models and compatible accounts, Environment profiles, Plugins, Environment Run Extensions, MCP servers, defaults, catalogs, and configuration diagnostics. Guided forms are the primary experience, while exact source remains an advanced recovery and interoperability surface over the same desired-resource authority.
 
@@ -17,7 +17,7 @@ The WebUI does not own another Agent loop, Thread model, desired-resource store,
 | [02-thread-interaction.md](02-thread-interaction.md)                                           | Project and recent-Thread navigation, conversation, composer, configuration patching, control, decisions, child work, and contextual Environment information |
 | [03-configuration-and-management.md](03-configuration-and-management.md)                       | Settings navigation, guided resource management, advanced source drafts, expected-digest mutation, accounts, catalogs, diagnostics, and conflict handling    |
 | [04-debugging-and-diagnostics.md](04-debugging-and-diagnostics.md)                             | Inline activity disclosure, the on-demand activity log and detail panel, App diagnostics, exact correlations, and process-local limits                       |
-| [05-design-system-accessibility-and-quality.md](05-design-system-accessibility-and-quality.md) | Radix and Tailwind design system, conversation and Settings responsive behavior, accessibility, safe content rendering, performance, testing, and browsers   |
+| [05-design-system-accessibility-and-quality.md](05-design-system-accessibility-and-quality.md) | Radix and local CSS design system, conversation and Settings responsive behavior, accessibility, safe content rendering, performance, testing, and browsers  |
 
 ## Reading Paths
 
@@ -58,7 +58,7 @@ Read `00`, the feature document being rendered, and `05`.
 ## Conventions
 
 - A **server projection** is a detached `AgentUiApp` value returned by an HTTP query or command.
-- A **focused session** is the browser runtime for one selected root Thread: one high-water-bound snapshot, one detailed stream cursor, and one ephemeral reducer.
+- A **focused session** is the browser runtime for one selected root Thread: one subscribe-before-query snapshot, one detailed stream cursor, and one ephemeral reducer.
 - A **retained timeline** comes from the selected continuation and saved child checkpoints.
 - A **live layer** is provisional current-process activity folded from detailed stream events after the snapshot cutover.
 - An **activity selection** is a route-owned view or exact correlation inside the current root Thread. It is not another Thread or event-history authority.

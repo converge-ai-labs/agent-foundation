@@ -120,7 +120,7 @@ class AgentCompositionResolver:
         for model in source.models.values():
             self._model_recipe(model)
         for agent in source.agents.values():
-            self._capabilities(agent)
+            self._capability_recipes(source, agent)
 
     def resolve_run(
         self,
@@ -240,11 +240,7 @@ class AgentCompositionResolver:
         plugins = self._plugins(source, plugin_ids, plugin_catalog)
         mcp = tuple(ResolvedMcpRecipe(server_id=item, transport=source.mcp_servers[item].transport) for item in mcp_ids)
         model = self._model_recipe(source.models[agent.model])
-        capabilities = tuple(
-            ResolvedCapabilityRecipe(capability=item.capability, configuration=item.configuration)
-            for item in agent.capabilities
-        )
-        self._capabilities(agent)
+        capabilities = self._capability_recipes(source, agent)
         children: list[ResolvedSubagent] = []
         provisional = ResolvedAgentNode(
             source_kind="agent",
@@ -366,6 +362,33 @@ class AgentCompositionResolver:
             settings=normalized.settings,
             model_configuration=normalized.model_cfg,
         )
+
+    def _capability_recipes(
+        self,
+        source: LoadedAgentUiConfiguration,
+        agent: AgentResource,
+    ) -> tuple[ResolvedCapabilityRecipe, ...]:
+        self._capabilities(agent)
+        recipes: list[ResolvedCapabilityRecipe] = []
+        for item in agent.capabilities:
+            model = None
+            if item.capability == "ShellReviewCapability":
+                model_id = item.configuration.get("model")
+                if not isinstance(model_id, str) or model_id not in source.models:
+                    raise CompositionError(
+                        "Shell review must reference an available Model resource.",
+                        code="capability_model_missing",
+                        details={"agent_id": agent.id},
+                    )
+                model = self._model_recipe(source.models[model_id])
+            recipes.append(
+                ResolvedCapabilityRecipe(
+                    capability=item.capability,
+                    configuration=item.configuration,
+                    model=model,
+                )
+            )
+        return tuple(recipes)
 
     def _capabilities(self, agent: AgentResource) -> tuple[SelectedCapability, ...]:
         return self.catalog.capabilities(tuple((item.capability, item.configuration) for item in agent.capabilities))

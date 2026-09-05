@@ -168,3 +168,49 @@ def test_local_envd_provider_constructs_distinct_inert_adapters(tmp_path: Path) 
     assert first is not second
     assert first.dump_state() is None
     assert second.dump_state() is None
+
+
+@pytest.mark.parametrize("output_size", [70000, 10000000])
+async def test_runtime_probe_output_is_bounded(output_size: int) -> None:
+    import sys
+
+    with pytest.raises(EnvironmentProviderError, match="bounded limit"):
+        await provider_module._run_checked_subprocess(
+            Path(sys.executable), "-c", f"import sys; sys.stdout.write('x' * {output_size})", environment=None
+        )
+
+
+async def test_runtime_probe_reads_both_pipes_without_deadlock() -> None:
+    import sys
+
+    stdout, stderr = await provider_module._run_checked_subprocess(
+        Path(sys.executable),
+        "-c",
+        "import sys; sys.stderr.write('e' * 60000); sys.stdout.write('o' * 60000)",
+        environment=None,
+    )
+    assert stdout == b"o" * 60000
+    assert stderr == b"e" * 60000
+
+
+@pytest.mark.skipif(__import__("sys").platform != "linux", reason="Linux process state inspection")
+@pytest.mark.parametrize("separate_group", [False, True])
+async def test_cancelled_runtime_probe_stops_its_process_group(tmp_path: Path, separate_group: bool) -> None:
+    import asyncio
+    import sys
+
+    from anyio import move_on_after
+
+    child_file = tmp_path / "child.pid"
+    script = "import subprocess,sys,time; from pathlib import Path; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'], process_group=int(sys.argv[2])); Path(sys.argv[1]).write_text(str(p.pid)); time.sleep(60)"
+    # Exercise AnyIO's level cancellation, as used by the UI's bounded preflight.
+    with move_on_after(0.5) as scope:
+        await provider_module._run_checked_subprocess(
+            Path(sys.executable), "-c", script, str(child_file), "0" if separate_group else "-1", environment=None
+        )
+    assert scope.cancel_called
+    child = child_file.read_text()
+    status = Path(f"/proc/{child}/stat")
+    async with asyncio.timeout(2):
+        while status.exists() and status.read_text().split()[2] != "Z":
+            await asyncio.sleep(0.01)

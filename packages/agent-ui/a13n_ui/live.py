@@ -12,6 +12,7 @@ from uuid import uuid4
 from ag_ui.core import Event as AguiEvent
 from anyio import (
     BrokenResourceError,
+    CancelScope,
     ClosedResourceError,
     EndOfStream,
     Lock,
@@ -220,8 +221,11 @@ class AgentUiLiveHub:
         try:
             yield subscription
         finally:
-            async with self._lock:
-                self._discard_subscriber(subscriber)
+            # Delivery consumers can be cancelled while the producer continues.
+            # Unsubscribe is bounded local cleanup and must survive that scope.
+            with CancelScope(shield=True):
+                async with self._lock:
+                    self._discard_subscriber(subscriber)
 
     def _validate_cursor(self, after: LiveCursor | None) -> int:
         if after is None:
@@ -384,8 +388,11 @@ class AgentUiSummaryHub:
         try:
             yield subscription
         finally:
-            async with self._lock:
-                self._discard_subscriber(subscriber)
+            # Delivery consumers can be cancelled while the producer continues.
+            # Unsubscribe is bounded local cleanup and must survive that scope.
+            with CancelScope(shield=True):
+                async with self._lock:
+                    self._discard_subscriber(subscriber)
 
     def _validate_cursor(self, after: SummaryCursor | None) -> int:
         if after is None:

@@ -18,18 +18,18 @@ from a13n_ui.tui.intents import (
     ExecuteCommand,
     ExitTerminal,
     InsertSkillReference,
+    LoadMoreThreadPicker,
     OpenFocus,
     OpenOverlay,
     SearchThreadPicker,
     SelectConfigurationResource,
-    SetWorkbenchFilter,
+    SetThreadFilter,
     TerminalIntent,
 )
 from a13n_ui.tui.models import (
     ConfigurationResourceKind,
     ControlMode,
     OverlayState,
-    TerminalMode,
     TerminalState,
 )
 from a13n_ui.tui.widgets.messages import IntentRequested
@@ -42,7 +42,7 @@ type ResourceKind = Literal[
 
 
 class OverlayPane(Container):
-    """Render one bounded transient workflow over persistent Focus/Workbench state."""
+    """Render one bounded transient workflow over the current conversation."""
 
     def __init__(self) -> None:
         super().__init__(id="overlay-pane")
@@ -58,6 +58,7 @@ class OverlayPane(Container):
         yield Static("", id="overlay-title", markup=False)
         yield Input(placeholder="Filter", id="overlay-search")
         yield Button("Scope", id="overlay-scope")
+        yield Button("Load more", id="overlay-more")
         yield Static(id="overlay-body", markup=False)
         yield ListView(id="overlay-list")
         yield Button("Exit and stop work", id="overlay-confirm-exit", variant="error")
@@ -117,6 +118,11 @@ class OverlayPane(Container):
         body.update("")
         search.display = overlay.kind not in {"status", "help", "inspector", "exit"}
         scope.display = overlay.kind == "threads"
+        self.query_one("#overlay-more", Button).display = (
+            overlay.kind == "threads"
+            and state.thread_picker is not None
+            and state.thread_picker.next_cursor is not None
+        )
         scope.label = f"Project: {state.project_filter_id or 'All Projects'}"
         list_view.display = overlay.kind not in {"status", "help", "inspector", "exit"}
         confirm_exit.display = overlay.kind == "exit"
@@ -137,7 +143,7 @@ class OverlayPane(Container):
                 if query in command.name.casefold() or query in command.description.casefold()
             ]
         elif overlay.kind == "threads":
-            title.update("Open Thread")
+            title.update("Open Thread — snapshot; reopen to refresh")
             page = state.thread_picker
             entries = (
                 []
@@ -145,7 +151,10 @@ class OverlayPane(Container):
                 else [
                     (
                         row.thread.title or row.thread.thread_id,
-                        f"{row.project_name} - {row.agent_name}",
+                        f"{row.project_name} - {row.agent_name} - {row.thread.root_activity.state.value}"
+                        + (f" - {row.pending_decision.count} decisions" if row.pending_decision is not None else "")
+                        + (f" - {row.children.active} active children" if row.children.active else "")
+                        + (f" - {row.children.unavailable} unavailable children" if row.children.unavailable else ""),
                         OpenFocus(row.thread.thread_id),
                         True,
                     )
@@ -179,12 +188,12 @@ class OverlayPane(Container):
             )
         elif overlay.kind == "projects":
             title.update("Project filter")
-            entries = [("All Projects", "Show every configured Project", SetWorkbenchFilter(None), True)]
+            entries = [("All Projects", "Show every configured Project", SetThreadFilter(None), True)]
             entries.extend(
                 (
                     project.name,
                     " | ".join(project.roots),
-                    SetWorkbenchFilter(project.project_id),
+                    SetThreadFilter(project.project_id),
                     True,
                 )
                 for project in state.projects
@@ -286,6 +295,9 @@ class OverlayPane(Container):
         elif event.button.id == "overlay-confirm-exit":
             event.stop()
             self.post_message(IntentRequested(ExitTerminal(confirmed=True)))
+        elif event.button.id == "overlay-more":
+            event.stop()
+            self.post_message(IntentRequested(LoadMoreThreadPicker()))
         elif event.button.id == "overlay-scope":
             event.stop()
             self.post_message(IntentRequested(OpenOverlay("projects")))
@@ -360,11 +372,11 @@ def _configuration_context(state: TerminalState, context_key: str | None) -> str
     view = None
     row = None
     if context_key is not None and context_key != "new":
-        view = state.thread_view(context_key) if state.mode is TerminalMode.FOCUS else None
+        view = state.thread_view(context_key)
     configuration = None if view is None or view.detail is None else view.detail.thread.configuration
     if configuration is None and context_key is not None and context_key != "new":
         row = next(
-            (item for item in state.workbench.rows if item.thread.thread_id == context_key),
+            (item for item in state.thread_activity.rows if item.thread.thread_id == context_key),
             None,
         )
         configuration = None if row is None else row.thread.configuration
@@ -405,12 +417,12 @@ def _configuration_entries(
         return []
     configuration = None
     if context_key is not None and context_key != "new":
-        view = state.thread_view(context_key) if state.mode is TerminalMode.FOCUS else None
+        view = state.thread_view(context_key)
         if view is not None and view.detail is not None:
             configuration = view.detail.thread.configuration
         else:
             row = next(
-                (item for item in state.workbench.rows if item.thread.thread_id == context_key),
+                (item for item in state.thread_activity.rows if item.thread.thread_id == context_key),
                 None,
             )
             configuration = None if row is None else row.thread.configuration
@@ -522,10 +534,14 @@ def _configuration_marker(
 def _status_text(state: TerminalState, context_key: str | None) -> str:
     view = None
     if context_key is not None and context_key != "new":
-        view = state.thread_view(context_key) if state.mode is TerminalMode.FOCUS else None
+        view = state.thread_view(context_key)
     if view is None or view.detail is None:
         row = next(
-            (item for item in state.workbench.rows if context_key is not None and item.thread.thread_id == context_key),
+            (
+                item
+                for item in state.thread_activity.rows
+                if context_key is not None and item.thread.thread_id == context_key
+            ),
             None,
         )
         if row is not None:
@@ -542,7 +558,6 @@ def _status_text(state: TerminalState, context_key: str | None) -> str:
             return "\n".join(
                 (
                     f"App: {state.lifecycle.value}",
-                    f"Mode: {state.mode.value}",
                     f"Thread: {row.thread.thread_id}",
                     f"Project: {configuration.project_id} (read-only)",
                     f"Agent: {configuration.agent_source.id}",
@@ -554,7 +569,6 @@ def _status_text(state: TerminalState, context_key: str | None) -> str:
             )
         return (
             f"App: {state.lifecycle.value}\n"
-            f"Mode: {state.mode.value}\n"
             f"Launch Project: {state.launch_project_id or 'unmatched'}\n"
             "Focused Thread: new draft\n"
             "Live detail: no focused Thread"
@@ -572,7 +586,6 @@ def _status_text(state: TerminalState, context_key: str | None) -> str:
     return "\n".join(
         (
             f"App: {state.lifecycle.value}",
-            f"Mode: {state.mode.value}",
             f"Thread: {view.thread_id}",
             f"Continuation: {view.detail.continuation_id or 'none'}",
             f"Live snapshot: {'loaded' if view.epoch is not None else 'unavailable'}",
@@ -593,7 +606,7 @@ def _help_text() -> str:
     return (
         "Keyboard\n"
         "  Ctrl+P command palette\n"
-        "  Ctrl+O Focus / Workbench\n"
+        "  Ctrl+O Threads\n"
         "  Ctrl+N new Thread\n"
         "  Ctrl+C cancel active root operation or exit\n"
         "  Enter submit / activate\n"

@@ -17,11 +17,11 @@ from a13n_ui.surfaces import (
     SkillCatalogView,
     SkillReference,
     TaskPage,
+    ThreadActivityPage,
+    ThreadActivityView,
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadSelectorCatalog,
-    WorkbenchPage,
-    WorkbenchThreadView,
 )
 
 MAX_DRAFTS = 16
@@ -43,11 +43,6 @@ class TerminalLifecycle(StrEnum):
     READY = "ready"
     CLOSING = "closing"
     FAILED = "failed"
-
-
-class TerminalMode(StrEnum):
-    FOCUS = "focus"
-    WORKBENCH = "workbench"
 
 
 class ControlMode(StrEnum):
@@ -236,29 +231,25 @@ class ThreadViewState:
 
 
 @dataclass(frozen=True, slots=True)
-class WorkbenchState:
-    page: WorkbenchPage | None = None
+class ThreadActivityState:
+    page: ThreadActivityPage | None = None
     query: str = ""
-    selected_thread_id: str | None = None
-    acknowledged_receipts: frozenset[str] = frozenset()
     projection_version: int = 0
 
     @property
-    def rows(self) -> tuple[WorkbenchThreadView, ...]:
+    def rows(self) -> tuple[ThreadActivityView, ...]:
         return () if self.page is None else self.page.rows
 
 
 @dataclass(frozen=True, slots=True)
 class TerminalState:
     lifecycle: TerminalLifecycle = TerminalLifecycle.STARTING
-    mode: TerminalMode = TerminalMode.FOCUS
     launch_resolution: LaunchProjectResolution | None = None
     launch_project_id: str | None = None
     project_filter_id: str | None = None
     focused_thread_id: str | None = None
-    previous_focused_thread_id: str | None = None
     draft_defaults: NewThreadDefaults = field(default_factory=NewThreadDefaults)
-    workbench: WorkbenchState = field(default_factory=WorkbenchState)
+    thread_activity: ThreadActivityState = field(default_factory=ThreadActivityState)
     drafts: tuple[DraftState, ...] = (DraftState(key="new"),)
     thread_views: tuple[ThreadViewState, ...] = ()
     overlays: tuple[OverlayState, ...] = ()
@@ -266,7 +257,7 @@ class TerminalState:
     projects: tuple[ProjectSummary, ...] = ()
     selectors: ThreadSelectorCatalog | None = None
     skill_catalog: SkillCatalogView | None = None
-    thread_picker: WorkbenchPage | None = None
+    thread_picker: ThreadActivityPage | None = None
     thread_picker_query: str = ""
     overlay_request_version: int = 0
     completion: CompletionState | None = None
@@ -285,7 +276,7 @@ class TerminalState:
 
 @dataclass(frozen=True, slots=True)
 class ProjectionHints:
-    changed: frozenset[Literal["lifecycle", "route", "workbench", "focus", "composer", "overlay", "notice"]]
+    changed: frozenset[Literal["lifecycle", "route", "thread_activity", "focus", "composer", "overlay", "notice"]]
     scroll_to_latest: bool = False
     preserve_anchor: ReadingAnchor | None = None
 
@@ -316,10 +307,9 @@ __all__ = [
     "Reduction",
     "ReviewState",
     "TerminalLifecycle",
-    "TerminalMode",
     "TerminalNotice",
     "TerminalState",
+    "ThreadActivityState",
     "ThreadViewState",
     "TimelineBlock",
-    "WorkbenchState",
 ]
