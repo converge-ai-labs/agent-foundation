@@ -59,6 +59,8 @@ async def test_dependency_wheel_cannot_register_foundation_plugin_entry_point(tm
         (build_wheel(unsafe_member=True), "unsafe_archive_member"),
         (build_wheel(requires_dist=("example @ https://example.test/pkg.whl",)), "direct_requirement_unsupported"),
     ),
+    # ZIP timestamps differ across workers; archive bytes cannot identify a test case.
+    ids=("multiple-entry-points", "corrupt-record", "unsafe-member", "direct-requirement"),
 )
 async def test_rejects_invalid_or_unsafe_wheels(tmp_path: Path, wheel: bytes, reason: str) -> None:
     path = tmp_path / "plugin.whl"

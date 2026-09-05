@@ -8,6 +8,8 @@ _REPOSITORY_ROOT = Path(__file__).parent
 _FOUNDATION_TEST_ROOT = _REPOSITORY_ROOT / "packages" / "foundation-service" / "tests"
 
 
+# xdist reads group marks in this hook, so assign them before its hook runs.
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if item.get_closest_marker("xdist_group") is not None:
