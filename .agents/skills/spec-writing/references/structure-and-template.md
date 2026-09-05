@@ -1,48 +1,32 @@
 # Specification Structure and Contract Template
 
-Use this reference selectively. A specification is not required to contain every section; include only the sections needed to make its contract complete.
+Use this reference for placement, splits, navigation, and section selection. Adapt the structure to the contract; it is not a required heading checklist.
 
 ## Information Hierarchy
 
-| Layer                        | Owns                                                                                                               | Avoids                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `spec/README.md`             | Platform definition, component boundaries, dependency direction, global authority, top-level navigation            | Subsystem field tables and detailed lifecycle rules        |
-| `spec/<subsystem>/README.md` | Subsystem scope, document catalog, reading paths, authority rules, terminology conventions                         | Detailed contracts already owned by numbered documents     |
-| `00-overview.md`             | Subsystem design position, boundaries, major components, end-to-end flow, completion boundaries, stable principles | Repeating every detailed schema or failure table           |
-| Numbered detail document     | One cohesive domain, API, lifecycle, protocol, security, compatibility, or packaging contract                      | Unrelated concerns and copied contracts from another owner |
+| Layer                        | Owns                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------- |
+| `spec/README.md`             | Platform definition, components, dependency direction, global authority, top-level navigation |
+| `spec/<subsystem>/README.md` | Subsystem catalog, reading paths, authority rules, terminology conventions                    |
+| `00-overview.md`             | Subsystem architecture, boundaries, major components, end-to-end flow, stable principles      |
+| Numbered detail document     | One cohesive domain, API, lifecycle, protocol, security, compatibility, or packaging contract |
 
-The hierarchy is broad to deep. A reader starts with the platform, enters one subsystem, understands its architecture, and follows links to the contract being changed.
-
-## Decide Whether to Add a Document
-
-Update an existing document when:
-
-- the concept already has an owner;
-- the change refines that owner's schema, behavior, or boundary;
-- a new section remains cohesive with the existing contract.
-
-Add a detail document when:
-
-- the contract has a distinct authority or lifecycle;
-- several existing documents need to reference it;
-- keeping it in the current owner would mix unrelated responsibilities;
-- the design is accepted and substantive, not a placeholder.
-
-Split a document when independent facts have different owners or reading paths. Do not split merely because a file is long.
+Update an existing owner when the change refines its contract. Add or split a detail document when it has distinct authority/lifecycle or independently meaningful content that would otherwise mix responsibilities. Length alone is not a reason to split. A reader should be able to navigate from platform to subsystem to owning detail.
 
 ## Adaptive Detail-Document Shape
+
+A detailed contract explains its design position and boundaries, using existing headings where appropriate. Select further sections according to the subject:
 
 ```markdown
 # <Contract Name>
 
 ## Design Position
 
-<One to three decisive paragraphs: what the contract is, why this boundary exists,
-and which upstream or host layer remains authoritative.>
+<What the contract is, why the boundary exists, and which layer is authoritative.>
 
 ## Boundaries
 
-<Ownership table, explicit in-scope/out-of-scope statements, and links to adjacent owning contracts.>
+<Ownership, scope, and links to adjacent contracts.>
 
 ## <Core Model or Contract>
 
@@ -50,89 +34,41 @@ and which upstream or host layer remains authoritative.>
 
 ## <Flow or Lifecycle>
 
-<Mermaid flow, sequence, or state diagram plus semantics not visible in the diagram.>
+<Observable interactions, legal transitions, and independent completion boundaries.>
 
 ## Failure Semantics
 
-<Failure classes, observable outcomes, retry or unknown-effect behavior.>
+<Observable outcomes, cancellation, retries, reconciliation, and unknown effects.>
 
 ## Compatibility
 
-<Version axes, additive/breaking behavior, migration owner, upstream compatibility.>
+<Version axes, additive/breaking behavior, and migration owner.>
 
 ## Trade-offs
 
-<Costs of the selected design, without preserving unresolved or rejected alternatives.>
+<Costs of the accepted design and the owner that absorbs them.>
 
 ## Invariants
 
-<Short numbered statements that implementations and reviews can verify.>
+<Testable statements that implementations and reviews can verify.>
 ```
 
-`Design Position` and one clear `Boundaries` section are normally required for a detailed contract. Do not add both `Boundary` and `Boundaries` sections with overlapping content. Flow, failure, compatibility, security, trade-offs, and invariants are conditional on the subject.
+Failure, compatibility, security, trade-off, and lifecycle sections are conditional. Avoid overlapping sections that repeat the same contract.
 
-## Useful Content Patterns
+## Choose a Representation
 
-### Ownership table
+- Use an ownership table when several layers participate in a flow. Separate observations from the authority that commits durable completion.
+- Use typed conceptual schemas when relationships are clearer than prose; label conceptual versus wire format and explain field authority.
+- Use state diagrams for public/durable states, with transition preconditions and terminal/retry meaning.
+- Use sequence diagrams for cross-boundary interactions. Identify who accepts or commits each fact; distinguish external delivery, telemetry, usage settlement, and execution completion where independent.
+- Use failure tables to distinguish failure before dispatch from unknown outcome after possible side effects. Useful columns are failure, observable outcome, retry/reconciliation, and authority.
 
-Use when several layers participate in one flow:
+## Navigation and Terminology
 
-```markdown
-| Concern | Owner | Relationship |
-| --- | --- | --- |
-| Process-local result | Harness | Observation supplied to host |
-| Durable completion | Host | Commits its own lifecycle transition |
-```
+Link a foreign concept to its owner on first material use, using a relative Markdown link and a section anchor where helpful. Summaries may state a conclusion but must not duplicate a schema, state machine, or field table.
 
-### Conceptual typed schema
+Update incoming links, catalogs, and reading paths when ownership or filenames change. A complete catalog lists every owned document; label a selective entry list as selective.
 
-Use Python-like Pydantic or dataclass syntax when type relationships are clearer than prose. State whether it is conceptual or a wire format. Explain authority and field semantics after the schema; do not use code only as decoration.
+Preserve exact spelling/capitalization of named contracts. Define overloaded terms before use and use `must` for a genuine invariant or compatibility requirement. Separate identity from authority, routing from authorization, observation from commitment, and acceptance from delivery.
 
-### State diagram
-
-Use for public or durable states and legal transitions. Do not turn internal implementation steps into public states. Pair the diagram with ownership, transition preconditions, terminal meaning, and retry semantics.
-
-### Sequence diagram
-
-Use for cross-boundary interactions. Name the authority that accepts or commits each fact. Keep external delivery, telemetry, usage settlement, and execution completion separate when they are independent.
-
-### Failure table
-
-Use columns such as `Failure`, `Observable outcome`, `Retry or reconciliation`, and `Authority`. Distinguish failure before dispatch from unknown outcome after possible side effects.
-
-### Trade-off section
-
-Describe what the accepted design gains, what cost it accepts, and which owner absorbs that cost. Do not narrate the meeting or enumerate still-open choices.
-
-## Cross-Reference Rules
-
-- Link to the owner on the first material use of a foreign concept.
-- Use relative Markdown links and meaningful link text.
-- Prefer a section anchor when only one part of a large owner is relevant.
-- Update catalogs and reading paths when navigation changes. A complete catalog lists every owned document; a curated entry list says explicitly that it is selective.
-- Summaries may repeat a one-sentence conclusion, but not a schema, state machine, field table, or complete invariant list.
-- Preserve exact capitalization for named contracts such as `AgentContext`, `HarnessState`, and `HarnessRunStream`.
-- A `Ref` names another entity; a `Receipt` records an observed outcome; neither implies authority unless the owning contract says so.
-
-## Language Rules
-
-- Use present tense: “The host owns durable completion,” not “The host will own durable completion.”
-- Prefer explicit verbs: owns, selects, validates, commits, emits, rejects, preserves.
-- Use `must` for a genuine invariant or compatibility requirement, not for project management urgency.
-- Separate identity from authority, observation from commitment, routing from authorization, and acceptance from delivery.
-- Define terms before using abbreviations or overloaded words such as run, session, state, checkpoint, and completion.
-- Avoid `currently`, `eventually`, `planned`, `phase`, and delivery-status qualifiers.
-- Avoid implementation-specific filenames and private APIs unless stability of that surface is itself the accepted contract.
-
-## Final Contract Review
-
-Confirm that:
-
-- a new reader can navigate from the root index to this contract;
-- every durable fact and state transition has one owner;
-- every referenced concept either has a local definition or a link to its owner;
-- diagrams, schemas, tables, and prose use the same terms and states;
-- failure, cancellation, retry, side-effect uncertainty, and cleanup are explicit where material;
-- security and compatibility behavior are enforceable rather than aspirational;
-- broad documents remain readable after the change;
-- the final text contains no discussion history, unresolved choice, implementation status, roadmap, adjacent duplicate, or truncated editing residue.
+Apply the consistency and validation checks in [SKILL.md](../SKILL.md) after restructuring.

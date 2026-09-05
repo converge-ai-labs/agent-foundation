@@ -1,198 +1,44 @@
 # Domain Modeling and Naming
 
-Use this reference when a specification adds or reshapes core concepts, schemas,
-identities, revisions, lifecycle boundaries, or shared terminology.
+Use when a specification adds or reshapes concepts, schemas, identities, revisions, lifecycle boundaries, or shared terminology. The examples below explain modeling choices; they do not establish product behavior. Read the owning contract before assigning semantics to an existing resource or operation.
 
-## Core Rules
+## Derive Models from Flows
 
-### Walk through use flows before modeling
+Walk through representative create, continue, change, cancel, read, and resume flows before selecting schemas or tables. For each operation, identify whether it creates an identity, continues one, or records an observation; specify the owner and lifecycle boundary.
 
-Start with representative ways a caller creates, continues, changes, cancels,
-reads, and resumes the work. Use those flows to discover identity and lifecycle
-boundaries before choosing resources, schemas, APIs, or tables. If a common flow
-requires an exception or cannot be expressed naturally, the model is not ready.
+Define concepts, relationships, and authority before field lists. Separate independently changing values at the boundary that owns their lifecycle. Keep values together when they have no independent identity, lifecycle, authority, compatibility, or query value.
 
-### Define concepts before schemas
+For example, if one configuration value may change while another must remain frozen, placing both in a single immutable snapshot is too coarse. Determine which owner accepts the change before splitting the model. Do not infer from this example that an existing Run permits configuration mutation.
 
-First state what the core concepts mean, which ones have independent identity,
-who owns them, how they relate, and when their lifecycles begin and end. A field
-list cannot repair an unclear domain model.
+Managed references, exact revisions, overrides, inline definitions, triggers, and child entry paths should converge on the same core concepts when they represent the same semantics. An additional entry path does not by itself justify a parallel model.
 
-### Split by independent change
+Persisted and public types describe domain facts. Resolution, preparation, loading, or projection stages warrant separate models only when their results have independent contract meaning. Retain snapshots when historical reconstruction or compatibility makes them meaningful.
 
-If one value can change while another remains valid, do not freeze them in the
-same immutable boundary. If a value has no independent identity, lifecycle,
-authority, compatibility, or query value, keep it inside the concept that owns it
-rather than creating another resource or model.
+## Canonical Terms and Types
 
-### Keep one canonical concept
+Use one owning specification, canonical model, and term for each concept; other documents link to it. Compare meaning before consolidating names: similar fields may represent distinct authority or compatibility boundaries.
 
-One concept has one owning specification, one canonical model, and one canonical
-term. Other documents link to that owner instead of copying the schema, renaming
-it, or defining a local variant.
+Names state what a concept is without repeating the project or module namespace. Add a qualifier only when it distinguishes real concepts at the same boundary. For implementation naming and domain suffixes, follow [DEVELOPMENT.md](../../../../DEVELOPMENT.md#naming).
 
-### Model domain facts, not processing stages
+Keep `Id`, `Ref`, `Revision`, `Request`, `Selection`, `Lock`, `State`, `Event`, and `Receipt` meanings consistent with their owners. A reference or receipt does not confer authority unless its contract says so.
 
-Persisted and public models describe stable facts and observable contracts. Do
-not turn every resolution, preparation, loading, or projection step into a domain
-type. An implementation stage deserves a model only when the resulting value has
-independent contract meaning.
-
-### Normalize entry paths
-
-Managed resources, exact revisions, overrides, inline definitions, triggers,
-children, and other entry paths should converge on the same core concepts. A new
-entry path should not create a parallel ontology.
-
-### Keep names short, precise, and consistent
-
-A name states what the concept is. Do not repeat a project or module namespace in
-the type name. Use one term for one concept and one meaning for each term. Give
-suffixes such as `Id`, `Ref`, `Revision`, `Request`, `Selection`, `Lock`, `State`,
-`Event`, and `Receipt` stable meanings.
-
-## Representative Cases
-
-### Bad: schemas come before the common flows
-
-Suppose the first schema assumes one Thread can accept work only while idle and
-one Run can contain only one input. Queueing another request or steering active
-work then requires exceptions that the original identities cannot express.
-
-Good: write the flows first and derive the model from their identity behavior.
-
-```text
-start work       -> new Run
-submit while busy -> new queued Run
-steer active work -> same Run, new RunInput
-replace a lost worker -> same Run, new RunAttempt
-```
-
-The exact names are domain-specific; the reusable rule is to settle whether each
-operation continues or creates an identity before designing the schema.
-
-### Bad: one immutable object owns independently changing values
+Preserve distinct identity domains in conceptual schemas even when wire encodings are strings:
 
 ```python
-class Run:
-    agent_revision_id: AgentRevisionId
-    model_snapshot: ModelExecutionSnapshot
-    skill_keys: tuple[str, ...]
-    environment: EnvironmentExecutionConfig
-```
-
-If the Agent, model, or Skills can change during the Run while the Environment
-cannot, this boundary is too coarse.
-
-Good: assign each value to the smallest concept whose lifecycle actually owns it.
-
-```python
-class Run:
-    environment: EnvironmentExecutionConfig
-
-
-class RunInput:
-    agent: AgentSelection
-    effective_model: ModelExecutionConfig
-    skill_keys: tuple[str, ...]
-```
-
-### Bad: an intermediate value becomes an unnecessary model
-
-```python
-class ModelExecutionSnapshot:
-    # No identity, API, independent lifecycle, or reuse.
-    ...
-
-
-class Run:
-    model_snapshot: ModelExecutionSnapshot
-```
-
-Good: store the resolved value directly in the input or state that owns it. Keep
-a separate snapshot type only when the snapshot itself has independent contract
-meaning.
-
-### Bad: type names repeat their namespace
-
-```python
-class FoundationAgentSkillSelectionRequest: ...
-class FoundationSkillRevisionLock: ...
-```
-
-Inside the Foundation Skill module, `Foundation` repeats information already
-provided by the namespace.
-
-Good:
-
-```python
-class AgentSkillSelectionRequest: ...
-class SkillRevisionLock: ...
-```
-
-Add a domain qualifier only when it distinguishes this concept from another real
-concept at the same boundary.
-
-### Bad: one concept uses several terms
-
-```text
-provider_key
-provider_type
-```
-
-If both fields identify the same provider catalog entry, choose one canonical
-term and use it across schemas, prose, APIs, events, and SDKs.
-
-### Bad: field names restate context without resolving ambiguity
-
-```text
-state_version = the only version on Run
-value_version = the only version on Secret
-```
-
-Good: each model calls its single primary version `version`. Qualify a secondary
-version only when multiple independently meaningful versions coexist at the same
-boundary, such as Thread `version` and `queue_version`. A revisioned resource's
-head and current Revision share the same `version`; mutable head metadata uses a
-strong ETag rather than another counter.
-
-### Bad: another document copies a shared concept
-
-```python
-class WorkspaceSecretCredential: ...
-class WorkspaceSecretEnvironmentCredential: ...
-```
-
-When these express the same Secret selection and eligibility contract, one owner
-defines the shared concept and both consumers reference it. Do not preserve two
-models merely because they were introduced by different features.
-
-### Bad: conceptual identities become untyped strings
-
-```python
-class RunEvent:
-    run_id: str
-    thread_id: str
-```
-
-Good:
-
-```python
+# Conceptual identity types, not a wire-format declaration.
 class RunEvent:
     run_id: RunId
     thread_id: ThreadId
 ```
 
-Use distinct identity types in conceptual schemas so the contract preserves
-identity domains even when the wire encoding is a string.
+Do not rename stable wire fields merely to improve internal names. A terminology change that crosses public, durable, or independently released boundaries requires the owning compatibility decision.
 
-## Review Questions
+## Version and Revision Semantics
 
-Before accepting a model or name, ask:
+Read [Platform Data Conventions](../../../../spec/data-conventions.md) for Foundation identity, Revision, Snapshot, and version rules, and [Platform API Conventions](../../../../spec/api-conventions.md#mutations-and-retries) for mutation preconditions.
 
-1. Have representative create, continue, change, cancel, read, and resume flows been walked through before choosing the schemas?
-2. Can each core concept be explained without referring to a table, endpoint, or Worker step?
-3. Can any two fields change independently, and if so, are they separated at the correct lifecycle boundary?
-4. Does every separate model have independent contract meaning?
-5. Does another document already own this concept or use another name for it?
-6. Would the name remain clear without its surrounding heading, while avoiding namespace repetition?
+These contracts own the primary `version` axis, independently qualified axes such as Thread `queue_version`, head/Revision version agreement, and strong ETags for mutable representations. Do not invent another counter or freeze independently mutable metadata to satisfy a naming pattern. Protocols, artifacts, packages, and external systems retain their own version semantics.
+
+## Model Review
+
+Check that representative flows fit the identities, each separate model has independent meaning, and values change at the correct lifecycle boundary. Search for existing owners and alternate terms before adding concepts. Verify that terminology remains clear in context and that any public/durable rename preserves the accepted compatibility contract.
