@@ -143,7 +143,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_environments")),
         sa.UniqueConstraint("id", "workspace_id", name="uq_environments_scope"),
-        sa.UniqueConstraint("provider_id", "target_identity", name="uq_environments_provider_target"),
+        sa.UniqueConstraint("target_identity", name="uq_environments_provider_target"),
     )
     op.create_index("ix_environments_maintenance", "environments", ["next_maintenance_at", "id"], unique=False)
     op.create_table(
@@ -157,7 +157,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("action IN ('stop', 'delete')", name=op.f("ck_environment_commands_action_valid")),
-        sa.CheckConstraint("status IN ('pending', 'completed')", name=op.f("ck_environment_commands_status_valid")),
+        sa.CheckConstraint(
+            "status IN ('pending', 'completed', 'failed')", name=op.f("ck_environment_commands_status_valid")
+        ),
         sa.ForeignKeyConstraint(
             ["environment_id"], ["environments.id"], name=op.f("fk_environment_commands_environment_id_environments")
         ),

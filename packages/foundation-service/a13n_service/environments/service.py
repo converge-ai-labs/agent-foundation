@@ -39,7 +39,8 @@ from .domain import (
     UpdateProviderRequest,
     UpdateTemplateRequest,
 )
-from .errors import EnvironmentManagementError, environment_not_found, invalid_environment
+from .errors import EnvironmentManagementError, environment_not_found, invalid_environment, is_target_identity_conflict
+from .identity import target_identity as scoped_target_identity
 from .models import (
     EnvironmentCommandRecord,
     EnvironmentProviderRecord,
@@ -367,6 +368,12 @@ class EnvironmentService:
                 )
                 return row.to_resource()
         except IntegrityError as error:
+            if is_target_identity_conflict(error):
+                raise EnvironmentManagementError(
+                    "environment_target_conflict",
+                    "This backend target already has an Environment owner.",
+                    status_code=409,
+                ) from error
             if is_evidence_unique_race(error):
                 async with transaction(self.sessions) as session:
                     replay = await load_replay(
@@ -401,7 +408,11 @@ class EnvironmentService:
             raise invalid_environment("Environment registration configuration is invalid") from error
         if request.state is not None and request.state.provider_key != provider.type:
             raise invalid_environment("Target state belongs to another Provider type")
-        target_identity = implementation.target_identity(configuration=configuration, state=request.state)
+        try:
+            target_identity = implementation.target_identity(configuration=configuration, state=request.state)
+        except (ValueError, EnvironmentProviderError) as error:
+            raise invalid_environment("Environment registration state is invalid") from error
+        target_identity = scoped_target_identity(provider.type, provider.configuration, target_identity)
         row = EnvironmentRecord(
             id=new_object_id("env"),
             organization_id=provider.organization_id,
@@ -599,7 +610,7 @@ class EnvironmentService:
         request: EnvironmentCommandRequest,
         idempotency_key: str,
     ) -> EnvironmentCommand:
-        from .lifecycle import has_active_use
+        from .retention import has_active_use
 
         now = datetime.now(UTC)
         identity = request_identity(idempotency_key, request)

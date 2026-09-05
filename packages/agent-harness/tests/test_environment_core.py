@@ -1824,3 +1824,44 @@ async def test_process_result_cannot_substitute_another_same_mount_handle() -> N
         with pytest.raises(EnvironmentError) as retargeted:
             await environment.processes.inspect(first.process.handle)
         assert retargeted.value.code == "environment_provider_failure"
+
+
+async def test_readiness_publishes_permissions_before_operation_dispatch() -> None:
+    binding = _Binding("narrow")
+
+    async def ready(operations):
+        binding.bound.descriptor = binding.bound.descriptor.model_copy(
+            update={"permissions": EnvironmentPermissionSet()}
+        )
+        binding.bound.availability = EnvironmentAvailability(status="available", ready_families=frozenset({"files"}))
+
+    binding.bound.ensure_ready = ready
+    runtime = create_environment_runtime(mounts=_request(binding), default_mount="workspace-1")
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        before = environment.snapshot
+        with pytest.raises(EnvironmentError, match="denied"):
+            await environment.files.stat("/workspace/file")
+        assert not environment.snapshot.mounts[0].permission_ceiling.operations
+        assert before.mounts[0].permission_ceiling.operations
+
+
+async def test_recovery_publishes_new_generation_even_when_reporting_rebuild() -> None:
+    binding = _Binding("rebuild")
+
+    async def ready(operations):
+        binding.bound.descriptor = binding.bound.descriptor.model_copy(update={"generation": "generation-new"})
+        binding.bound.availability = EnvironmentAvailability(status="available", ready_families=frozenset({"files"}))
+        raise EnvironmentError("Rebuilt", code="environment_rebuilt")
+
+    runtime = create_environment_runtime(mounts=_request(binding), default_mount="workspace-1")
+    async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=_instance(), host_refs={}) as environment:
+        selection = environment.select_files("/workspace/file")
+        binding.bound.ensure_ready = ready
+        with pytest.raises(EnvironmentError) as caught:
+            await environment.files.stat("/workspace/file")
+        assert caught.value.code == "environment_rebuilt"
+        assert environment.snapshot.mounts[0].descriptor.generation == "generation-new"
+        assert (await environment.describe("workspace-1")).mount == environment.snapshot.mounts[0]
+        with pytest.raises(EnvironmentError, match="stale"):
+            async with environment.open_files(selection):
+                pass

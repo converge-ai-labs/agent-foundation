@@ -287,3 +287,27 @@ async def test_collection_cursors_cannot_cross_resource_scope(environment_servic
     assert next_page.items[0].id != first.items[0].id
     with pytest.raises(EnvironmentManagementError, match="another collection"):
         await environment_service.list_templates(actor=actor(), workspace_id=WORKSPACE_ID, cursor=first.next_cursor)
+
+
+async def test_registering_same_target_under_another_provider_is_a_conflict(environment_service, tmp_path):
+    from a13n_service.environments.domain import RegisterEnvironmentRequest
+    from a13n_service.environments.errors import EnvironmentManagementError
+
+    first = await environment_service.create_provider(
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="First")
+    )
+    second = await environment_service.create_provider(
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Second")
+    )
+    request = RegisterEnvironmentRequest(provider_id=first.id, configuration={"root": {"path": str(tmp_path)}})
+    await environment_service.create_environment(
+        actor=actor(), workspace_id=WORKSPACE_ID, request=request, idempotency_key="register-first"
+    )
+    with pytest.raises(EnvironmentManagementError) as caught:
+        await environment_service.create_environment(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            request=request.model_copy(update={"provider_id": second.id}),
+            idempotency_key="register-second",
+        )
+    assert caught.value.status_code == 409

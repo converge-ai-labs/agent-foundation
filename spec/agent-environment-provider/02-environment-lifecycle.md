@@ -47,6 +47,7 @@ class Environment(ABC):
     def dump_state(self) -> EnvironmentState | None: ...
     async def close(self) -> None: ...
     async def stop(self) -> None: ...
+    async def reconcile(self) -> Literal["running", "stopped", "absent"]: ...
     async def keepalive(self, *, deadline: datetime, operation_id: str) -> datetime | None: ...
     async def destroy(self) -> None: ...
 ```
@@ -76,9 +77,17 @@ Preparation validates current evidence and:
 
 An inaccessible, incompatible, unknown or temporarily unreachable target is not absent. Creation uses stable provider idempotency or recoverable ownership correlation supplied by the Host. The shared API does not claim exactly-once external effects. A known create result remains available even if subsequent readiness fails; a Host can recover it after cancellation or failure.
 
-Concurrent first operations on one object share preparation. Repeated preparation of a valid ready object does not allocate another target. Hosted use of several objects for one target coordinates through the Host's Environment authority, rather than an implementation-global cache.
+Concurrent first operations on one object share preparation. Close is serialized with preparation so a cancelled or closing scope cannot publish a newly prepared adapter after cleanup. Repeated preparation of a valid ready object does not allocate another target. Hosted use of several objects for one target coordinates through the Host's Environment authority, rather than an implementation-global cache.
 
 Actual file, shell, port or explicitly requested readiness operations can trigger lazy preparation. Scope entry, configured descriptor projection, synchronous state dump and local close cannot. A Run that never uses the environment need not start it. Hosts doing input or Skill materialization through file operations naturally trigger preparation.
+
+### Recovery and reconciliation
+
+Readiness checks use the existing operation connection. Healthy operations do not repeat target discovery, image validation or bootstrap. A pre-dispatch unavailable connection enters the same preparation path as first use; concurrent recovery shares that path. Unknown outcomes after dispatch are never replayed by recovery.
+
+`reconcile()` observes an abandoned preparation without creating, starting, replacing or deleting a target. It recovers target state from stable ownership correlation even when an interrupted create returned no target ID. It reports `running`, `stopped` or authoritative `absent`; ambiguous observations retain the pending operation. Hosts can reconcile after the originating Run ends without manufacturing Run execution authority.
+
+`target_identity(configuration, state)` returns only the canonical native target selector. It excludes bootstrap, credential and connection metadata. The Host namespaces it by Provider type and immutable backend configuration. A state checksum is not a target identity. An externally registered adapter can have a logical Environment ID distinct from its validated native daemon identity; wire receipts validate the native identity while Harness artifacts retain the logical identity.
 
 ### Stop, keepalive and destruction
 

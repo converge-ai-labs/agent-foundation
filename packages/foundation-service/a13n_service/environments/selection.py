@@ -113,9 +113,9 @@ async def select_run_environment(
         session.add(environment)
     elif isinstance(choice, ExistingEnvironmentSelection):
         environment = await session.scalar(
-            select(EnvironmentRecord)
-            .where(EnvironmentRecord.id == choice.environment_id, EnvironmentRecord.workspace_id == workspace_id)
-            .with_for_update()
+            select(EnvironmentRecord).where(
+                EnvironmentRecord.id == choice.environment_id, EnvironmentRecord.workspace_id == workspace_id
+            )
         )
         if environment is None:
             raise invalid_environment("Environment is unavailable")

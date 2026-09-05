@@ -516,3 +516,48 @@ async def test_docker_unknown_destroy_outcome_preserves_state(
     assert captured.value.code == "provider_unknown_outcome"
     assert destroyer.dump_state() == state
     await destroyer.close()
+
+
+async def test_reconcile_recovers_create_without_state_or_start(tmp_path, monkeypatch):
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    first = _environment(tmp_path, engine)
+    await first.prepare()
+    state = first.dump_state()
+    await first.close()
+    recovered = _environment(tmp_path, engine)
+    before = len(engine.create_specs)
+    assert await recovered.reconcile() == "running"
+    assert recovered.dump_state() == state
+    assert len(engine.create_specs) == before
+    await recovered.close()
+
+
+async def test_external_registration_separates_logical_and_native_identity(tmp_path, monkeypatch):
+    _skip_eip(monkeypatch)
+    engine = _FakeDockerEngine()
+    original = _environment(tmp_path, engine)
+    await original.prepare()
+    state = original.dump_state()
+    await original.close()
+    provider = DockerEnvironmentProvider()
+    configuration = provider.validate_configuration(schema_version="1", value={})
+    external = provider.create_environment(
+        configuration=configuration,
+        environment_id="env-registered",
+        state=state,
+        runtime=DockerProviderRuntime(
+            engine=engine,
+            bootstrap_store=DirectoryDockerBootstrapStore((tmp_path / "bootstrap").resolve()),
+            managed=False,
+        ),
+    )
+    await external.prepare()
+    assert external.environment_id == "env-registered"
+    assert external.dump_state() == state
+    assert len(engine.create_specs) == 1
+    assert (
+        provider.target_identity(configuration=configuration, state=state)
+        == DockerProviderStateData.model_validate(state.state).container_id
+    )
+    await external.close()

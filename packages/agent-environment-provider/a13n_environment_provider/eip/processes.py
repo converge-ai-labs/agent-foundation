@@ -164,7 +164,10 @@ class _ProcessConversions:
         return info
 
     def _validate_process_identity(self, process: eip.ProcessInfo) -> None:
-        if process.environment_id != self._environment_id or str(process.generation) != self._generation:
+        if (
+            process.environment_id != self._session.descriptor.environment_id
+            or str(process.generation) != self._generation
+        ):
             raise EnvironmentError("EIP process identity is stale", code="environment_stale_mount")
 
     def _ensure_record(self, process: eip.ProcessInfo, policy: EnvironmentOutputPolicy) -> str:
@@ -191,7 +194,7 @@ class _ProcessConversions:
     def receipt(self, receipt: eip.OperationReceipt) -> EnvironmentOperationReceipt:
         return convert_receipt(
             receipt,
-            environment_id=self._environment_id,
+            environment_id=self._session.descriptor.environment_id,
             mount_id=self._mount_id,
             generation=self._generation,
         )

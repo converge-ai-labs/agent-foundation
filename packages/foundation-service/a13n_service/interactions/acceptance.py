@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.environments.domain import EnvironmentSelection
 from a13n_service.environments.selection import Omitted, bind_environment_intent, queued_environment_choice
-from a13n_service.environments.usage import add_run_with_environment
+from a13n_service.environments.usage import add_run_with_environment, schedule_environment_maintenance
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
@@ -207,6 +207,8 @@ class RunAcceptanceService:
                         )
                 thread.version += 1
                 thread.current_run_id = run.id
+                if current is not None:
+                    await schedule_environment_maintenance(database, run=current, now=self._clock())
                 thread.head_run_id = next_head_run_id
                 thread.updated_at = self._clock()
                 await database.flush()
@@ -332,6 +334,8 @@ class RunAcceptanceService:
                 thread.version += 1
                 thread.queue_version += 1
                 thread.current_run_id = run.id
+                if current is not None:
+                    await schedule_environment_maintenance(database, run=current, now=self._clock())
                 thread.head_run_id = next_head_run_id
                 thread.updated_at = now
                 await database.flush()

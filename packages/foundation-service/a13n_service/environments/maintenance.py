@@ -10,8 +10,9 @@ from sqlalchemy import select
 
 from a13n_service.storage import short_session
 
+from .identity import local_backend_eligible
 from .lifecycle import EnvironmentLifecycle
-from .models import EnvironmentRecord
+from .models import EnvironmentProviderRecord, EnvironmentRecord
 
 logger = get_logger(__name__)
 
@@ -38,8 +39,10 @@ class EnvironmentMaintenanceLoop:
             ids = tuple(
                 await session.scalars(
                     select(EnvironmentRecord.id)
+                    .join(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id)
                     .where(
                         EnvironmentRecord.ownership == "managed",
+                        local_backend_eligible(),
                         EnvironmentRecord.next_maintenance_at <= datetime.now(UTC),
                     )
                     .order_by(EnvironmentRecord.next_maintenance_at)

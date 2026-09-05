@@ -350,3 +350,9 @@ Hosts construct fresh operation objects from authoritative state and choose eage
 10. Destroy validates and removes only the exact represented target.
 11. External workspaces, bind sources, and named volumes are not provider-owned cleanup targets.
 12. Host prune policy and bookkeeping remain outside the shared model.
+
+## Host-local Backend Scope
+
+Direct Local, Local Envd and Docker backend configuration includes a fixed `host_id`. Docker also records its exact local `docker_host` endpoint. Hosts enforce this affinity before preparation and maintenance; equal filesystem paths on different hosts are different targets. Direct Local and Local Envd identify their selected workspace path without including access or connection state. Docker's canonical native identity is the exact container ID, independent of bootstrap credential rotation.
+
+Docker reconciliation searches the frozen logical target's ownership labels, validates exact configuration and bootstrap evidence, and caches any recovered container ID without starting the container. External registration preserves the native identity in Provider state while exposing its independently allocated Foundation identity to Harness. An external stopped target is unavailable until its external owner starts it.

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
+import socket
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from .models import (
     EnvironmentAvailability,
@@ -112,9 +112,9 @@ class Environment(ABC):
             self._bind_mount(mount_id)
 
     async def prepare(self) -> None:
-        if self._lifecycle in {"closed", "closing", "destroyed"}:
-            raise RuntimeError("Environment is closed")
         async with self._prepare_lock:
+            if self._lifecycle in {"closed", "closing", "destroyed"}:
+                raise RuntimeError("Environment is closed")
             if self._prepared:
                 return
             await self._prepare(
@@ -134,6 +134,10 @@ class Environment(ABC):
         if self._lifecycle != "entered":
             raise RuntimeError("Environment has no operation scope")
         self._bind_mount(mount_id)
+
+    async def reconcile(self) -> Literal["running", "stopped", "absent"]:
+        """Observe an abandoned preparation without creating, starting, or replacing a target."""
+        raise NotImplementedError("This Provider does not support durable target reconciliation")
 
     async def stop(self) -> None:
         await self._stop()
@@ -155,13 +159,14 @@ class Environment(ABC):
         await self._ensure_ready(operations)
 
     async def close(self) -> None:
-        if self._lifecycle in {"closed", "closing"}:
-            return
-        self._lifecycle = "closing"
-        try:
-            await self._close()
-        finally:
-            self._lifecycle = "closed"
+        async with self._prepare_lock:
+            if self._lifecycle in {"closed", "closing"}:
+                return
+            self._lifecycle = "closing"
+            try:
+                await self._close()
+            finally:
+                self._lifecycle = "closed"
 
     async def destroy(self) -> None:
         if self._lifecycle != "constructed":
@@ -215,6 +220,10 @@ class EmptyProviderConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class HostLocalProviderConfiguration(EmptyProviderConfiguration):
+    host_id: str = Field(default_factory=socket.gethostname, min_length=1, max_length=256)
+
+
 class EnvironmentProvider(ABC):
     """Inert trusted plugin that validates configuration and constructs Environments."""
 
@@ -233,11 +242,13 @@ class EnvironmentProvider(ABC):
     def describe_configuration(self, configuration: BaseModel) -> EnvironmentDescriptor: ...
 
     def target_identity(self, *, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
-        del configuration
-        if state is None:
-            return None
-        payload = state.model_dump(mode="json")
-        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        """Canonical backend target identity; exclude credentials and session state.
+
+        Stateless adapters return None. Durable providers must override this method.
+        The host namespaces this identity by the immutable backend configuration.
+        """
+        del configuration, state
+        return None
 
     @property
     @abstractmethod

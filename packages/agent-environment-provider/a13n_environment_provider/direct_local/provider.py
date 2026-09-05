@@ -6,6 +6,7 @@ import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, JsonValue, ValidationError
@@ -17,7 +18,7 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..management import Environment, EnvironmentProvider
+from ..management import Environment, EnvironmentProvider, HostLocalProviderConfiguration
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
@@ -68,6 +69,8 @@ class _DirectLocalPortPolicy:
 
 
 class DirectLocalEnvironmentProvider(EnvironmentProvider):
+    provider_configuration_model = HostLocalProviderConfiguration
+
     @property
     def key(self) -> str:
         return _PROVIDER_KEY
@@ -96,6 +99,11 @@ class DirectLocalEnvironmentProvider(EnvironmentProvider):
         if not isinstance(configuration, DirectLocalProviderConfiguration):
             raise TypeError("Unexpected Provider recipe")
         return _descriptor(configuration, "unprepared")
+
+    def target_identity(self, *, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+        if not isinstance(configuration, DirectLocalProviderConfiguration) or state is not None:
+            raise ValueError("Local Providers require a valid stateless workspace configuration")
+        return str(configuration.root.path)
 
     def create_environment(
         self,
@@ -250,6 +258,11 @@ class DirectLocalEnvironment(Environment):
                     await asyncio.to_thread(shutil.rmtree, self._retention_root, True)
             finally:
                 self._operations = EnvironmentOperations()
+
+    async def reconcile(self) -> Literal["running", "stopped", "absent"]:
+        # These adapters own no durable daemon; their process-local resources
+        # end with their owner. Workspace paths are externally retained.
+        return "stopped"
 
     async def _destroy(self) -> None:
         return None

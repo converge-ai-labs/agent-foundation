@@ -13,6 +13,8 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.environments.identity import local_backend_eligible
+from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentRecord
 from a13n_service.environments.usage import schedule_environment_maintenance
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
@@ -123,6 +125,8 @@ class AttemptScheduler:
         )
         statement = (
             select(RunRecord.id)
+            .outerjoin(EnvironmentRecord, EnvironmentRecord.id == RunRecord.environment_id)
+            .outerjoin(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id)
             .outerjoin(
                 predecessor,
                 and_(
@@ -133,6 +137,7 @@ class AttemptScheduler:
             )
             .where(
                 RunRecord.tenant_id == claim.tenant_id,
+                local_backend_eligible(),
                 RunRecord.queue_name == queue_name,
                 RunRecord.runtime_lock_digest == claim.runtime_lock_digest,
                 eligible,
@@ -177,6 +182,14 @@ class AttemptScheduler:
             run = next((item for item in locked_runs if item.id == run_id), None)
             if run is None or thread is None or thread.current_run_id != run.id:
                 return None
+            if run.environment_id is not None:
+                eligible_environment = await database.scalar(
+                    select(EnvironmentRecord.id)
+                    .join(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id)
+                    .where(EnvironmentRecord.id == run.environment_id, local_backend_eligible())
+                )
+                if eligible_environment is None:
+                    return None
             if run.runtime_lock_digest != claim.runtime_lock_digest:
                 raise AttemptSchedulingError("claimant Runtime lock does not match the accepted Run")
 

@@ -149,3 +149,82 @@ async def test_queued_choice_roundtrip_preserves_omitted_and_null():
         ThreadRunSubmissionIntent.model_validate(omitted.retained_payload()).model_fields_set
         != ThreadRunSubmissionIntent.model_validate(explicit.retained_payload()).model_fields_set
     )
+
+
+async def test_lazy_unused_environment_closes_without_preparation(
+    interaction_sessions, interaction_object_store, tmp_path
+):
+    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
+        run.id, _worker()
+    )
+    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    assert environment.dump_state() is None
+    await environment.close()
+    async with short_session(interaction_sessions) as session:
+        stored = await session.get(RunRecord, run.id)
+        actual = await session.get(EnvironmentRecord, stored.environment_id)
+        assert stored.environment_use_started_at is None
+        assert actual.status == "unprepared" and actual.generation == 0
+
+
+async def test_reconnect_preserves_backing_generation_after_cleanup_failure(
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch
+):
+    from a13n_environment_provider import EnvironmentError
+    from a13n_environment_provider.direct_local.provider import DirectLocalEnvironment
+
+    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_run")
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1)).claim(
+        run.id, _worker()
+    )
+    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    original = environment.descriptor.backing_identity
+    real_close = DirectLocalEnvironment._close
+    cleanup_failed = False
+
+    async def close_once(self):
+        nonlocal cleanup_failed
+        await real_close(self)
+        if not cleanup_failed:
+            cleanup_failed = True
+            raise RuntimeError("Connection cleanup failed")
+
+    monkeypatch.setattr(DirectLocalEnvironment, "_close", close_once)
+    real_ready = DirectLocalEnvironment._ensure_ready
+    failed = False
+
+    async def disconnect_once(self, operations):
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise EnvironmentError("Lost connection", code="environment_unavailable")
+        await real_ready(self, operations)
+
+    monkeypatch.setattr(DirectLocalEnvironment, "_ensure_ready", disconnect_once)
+    with pytest.raises(EnvironmentError) as caught:
+        await environment.ensure_ready(frozenset({"files"}))
+    assert caught.value.code == "environment_connection_refreshed"
+    assert environment.descriptor.backing_identity == original
+    await environment.ensure_ready(frozenset({"files"}))
+    await environment.close()
+
+
+async def test_worker_cannot_claim_environment_from_another_host(
+    interaction_sessions, interaction_object_store, tmp_path
+):
+    from a13n_service.environments.models import EnvironmentProviderRecord
+
+    _, _, _ = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    async with transaction(interaction_sessions) as session:
+        stored = await session.get(RunRecord, run.id)
+        selected = await session.get(EnvironmentRecord, stored.environment_id)
+        provider = await session.get(EnvironmentProviderRecord, selected.provider_id)
+        provider.configuration = {"host_id": "another-worker-host"}
+    scheduler = AttemptScheduler(interaction_sessions, clock=lambda: NOW + timedelta(seconds=1))
+    assert await scheduler.claim(run.id, _worker()) is None

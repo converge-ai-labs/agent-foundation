@@ -220,7 +220,7 @@ class EnvironmentCommand(DomainModel):
     id: ObjectId
     environment_id: ObjectId
     action: Literal["stop", "delete"]
-    status: Literal["pending", "completed"]
+    status: Literal["pending", "completed", "failed"]
     created_at: datetime
     completed_at: datetime | None
 

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from a13n_environment_provider import Environment as OperationEnvironment
 from a13n_environment_provider import (
@@ -29,21 +30,25 @@ from a13n_service.iam.authorization import (
 )
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.ids import new_object_id
-from a13n_service.interactions.attempts import AttemptContext, lock_attempt_lease
-from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import EnvironmentStatus, JsonObject, TemplateConfiguration, retention_action
+from .errors import is_target_identity_conflict
+from .identity import target_identity as scoped_target_identity
 from .models import (
     EnvironmentCommandRecord,
     EnvironmentProviderRecord,
     EnvironmentRecord,
     EnvironmentTemplateRevisionRecord,
 )
+from .retention import has_active_use, refresh_retention
 
-Action = Literal["prepare", "stop", "delete", "keepalive"]
+if TYPE_CHECKING:
+    from a13n_service.interactions.attempts import AttemptContext
+
+Action = Literal["prepare", "reconcile", "stop", "delete", "keepalive"]
 
 
 class EnvironmentOperationBusy(RuntimeError):
@@ -68,6 +73,12 @@ class LifecycleOperation:
     attempt_id: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class LifecycleResult:
+    environment: OperationEnvironment
+    generation: int
+
+
 class EnvironmentLifecycle:
     def __init__(
         self,
@@ -89,6 +100,8 @@ class EnvironmentLifecycle:
     async def acquire(
         self, environment_id: str, action: Action, *, attempt: AttemptContext | None = None
     ) -> LifecycleOperation:
+        from a13n_service.interactions.attempts import lock_attempt_lease
+
         if action == "prepare" and attempt is None:
             raise ValueError("Run preparation requires current Attempt authority")
         now = assume_utc(self.clock())
@@ -106,6 +119,8 @@ class EnvironmentLifecycle:
             provider = await session.get(EnvironmentProviderRecord, row.provider_id)
             if provider is None:
                 raise ValueError("Environment Provider is unavailable")
+            if provider.configuration.get("host_id", socket.gethostname()) != socket.gethostname():
+                raise ValueError("Environment backend belongs to another host")
             if run is not None:
                 await authorize_persisted_agent_principal_actions(
                     session,
@@ -117,24 +132,15 @@ class EnvironmentLifecycle:
                 )
                 if not provider.enabled:
                     raise ValueError("Environment Provider is disabled")
-            command = await session.get(EnvironmentCommandRecord, row.operation_id) if row.operation_id else None
-            if command is not None:
-                await authorize_persisted_workspace_principal_action(
-                    session,
-                    principal=PrincipalRef(
-                        principal_type=PrincipalType(command.principal_type), principal_id=command.principal_id
-                    ),
-                    organization_id=row.organization_id,
-                    workspace_id=row.workspace_id,
-                    action=WorkspaceAction.environment_manage,
-                )
             resuming_operation = row.operation_id is not None
             if row.operation_id is not None:
                 if row.operation_expires_at is not None and assume_utc(row.operation_expires_at) > now:
                     raise EnvironmentOperationBusy("Environment lifecycle operation is in progress")
-                if row.operation_action != action:
+                if row.operation_action != action and not (action == "reconcile" and row.operation_action == "prepare"):
                     raise EnvironmentOperationBusy("The preceding Environment operation must be reconciled first")
             else:
+                if action == "reconcile":
+                    raise ValueError("No abandoned preparation to reconcile")
                 row.operation_id = new_object_id("envop")
                 row.operation_action = action
             if action in {"stop", "delete"}:
@@ -142,8 +148,9 @@ class EnvironmentLifecycle:
                     raise ValueError("Environment cannot be stopped or deleted while in use or externally owned")
             if run is not None:
                 run.environment_use_started_at = run.environment_use_started_at or now
-                row.retention_condition = "active"
-                row.condition_since = now
+                if row.retention_condition != "active":
+                    row.retention_condition = "active"
+                    row.condition_since = now
             row.operation_generation += 1
             row.operation_owner = new_object_id("envowner")
             row.operation_expires_at = now + timedelta(seconds=self.timeout_seconds + 10)
@@ -163,9 +170,7 @@ class EnvironmentLifecycle:
                     }
                 )
             if action in {"stop", "delete"} and not resuming_operation:
-                condition, changed_at = await _condition(session, row, now)
-                if condition != row.retention_condition:
-                    row.retention_condition, row.condition_since = condition, changed_at
+                condition = await refresh_retention(session, row, now)
                 due = retention_action(
                     recipe.retention,
                     condition=condition,
@@ -193,6 +198,8 @@ class EnvironmentLifecycle:
             )
 
     async def validate_use(self, attempt: AttemptContext, environment_id: str) -> None:
+        from a13n_service.interactions.attempts import lock_attempt_lease
+
         async with transaction(self.sessions) as session:
             run, _, _ = await lock_attempt_lease(session, attempt, assume_utc(self.clock()))
             row = await session.get(EnvironmentRecord, environment_id)
@@ -210,11 +217,31 @@ class EnvironmentLifecycle:
                 actions=frozenset({WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}),
             )
 
+    async def authorize_command(self, operation: LifecycleOperation) -> None:
+        async with transaction(self.sessions) as session:
+            row = await session.get(EnvironmentRecord, operation.environment_id)
+            if row is None:
+                raise ValueError("Environment is unavailable")
+            command = await session.get(EnvironmentCommandRecord, operation.operation_id)
+            if command is not None:
+                await authorize_persisted_workspace_principal_action(
+                    session,
+                    principal=PrincipalRef(
+                        principal_type=PrincipalType(command.principal_type), principal_id=command.principal_id
+                    ),
+                    organization_id=row.organization_id,
+                    workspace_id=row.workspace_id,
+                    action=WorkspaceAction.environment_manage,
+                )
+
     async def construct(self, operation: LifecycleOperation) -> OperationEnvironment:
         provider = self.catalog.require(operation.provider_type)
         credential = None
         if provider.credential_model is not None:
             credential = provider.credential_model.model_validate_json(operation.credential.decrypt(self.protector))
+        configuration = provider.validate_configuration(
+            schema_version=operation.recipe.configuration_schema_version, value=operation.recipe.configuration
+        )
         runtime = await provider.create_runtime(
             configuration=provider.provider_configuration_model.model_validate(operation.provider_configuration),
             credential=credential,
@@ -222,19 +249,21 @@ class EnvironmentLifecycle:
                 operation.environment_id, operation.operation_id, self.storage_root, operation.managed
             ),
         )
-        configuration = provider.validate_configuration(
-            schema_version=operation.recipe.configuration_schema_version, value=operation.recipe.configuration
-        )
         return provider.create_environment(
             configuration=configuration, environment_id=operation.environment_id, state=operation.state, runtime=runtime
         )
 
-    async def execute(self, operation: LifecycleOperation) -> OperationEnvironment:
+    async def execute(self, operation: LifecycleOperation) -> LifecycleResult:
         environment = None
         try:
             async with asyncio.timeout(self.timeout_seconds):
+                if operation.action in {"stop", "delete"}:
+                    await self.authorize_command(operation)
                 environment = await self.construct(operation)
-                if operation.action == "prepare":
+                observation = None
+                if operation.action == "reconcile":
+                    observation = await environment.reconcile()
+                elif operation.action == "prepare":
                     await environment.prepare()
                 elif operation.state is None and operation.action in {"stop", "delete"}:
                     pass
@@ -250,40 +279,61 @@ class EnvironmentLifecycle:
                             "Provider did not confirm the required retention deadline",
                             code="environment_keepalive_failed",
                         )
-                await self.publish(operation, environment)
-            return environment
+                generation = await self.publish(operation, environment, observation=observation)
+            return LifecycleResult(environment, generation)
         except BaseException as error:
+            if is_target_identity_conflict(error):
+                error = EnvironmentError(
+                    "This backend target already has an Environment owner.", code="environment_target_conflict"
+                )
             # A known target must survive readiness failure or cancellation. Unknown
             # operations retain their identity for reconciliation, never a new create.
-            if environment is not None:
-                task = asyncio.create_task(self.publish(operation, environment, error=error))
-                try:
-                    await asyncio.shield(task)
-                finally:
-                    await environment.close()
-            raise
+            task = asyncio.create_task(self.publish(operation, environment, error=error))
+            try:
+                await asyncio.shield(task)
+            except BaseException as publication_error:
+                error.add_note(f"Lifecycle failure publication also failed: {publication_error!r}")
+            finally:
+                if environment is not None:
+                    try:
+                        await environment.close()
+                    except BaseException as cleanup_error:
+                        error.add_note(f"Environment cleanup also failed: {cleanup_error!r}")
+            raise error
 
     async def publish(
-        self, operation: LifecycleOperation, environment: OperationEnvironment, *, error: BaseException | None = None
-    ) -> None:
+        self,
+        operation: LifecycleOperation,
+        environment: OperationEnvironment | None,
+        *,
+        error: BaseException | None = None,
+        observation: Literal["running", "stopped", "absent"] | None = None,
+    ) -> int:
         succeeded = error is None
-        resolved_preparation_failure = operation.action == "prepare" and (
-            isinstance(error, EnvironmentError)
+        # Construction cannot dispatch target work. Provider errors explicitly distinguish
+        # a known failure from an operation whose external effect remains unknown.
+        resolved = (
+            succeeded
+            or environment is None
+            or isinstance(error, EnvironmentError)
             or (
                 isinstance(error, EnvironmentProviderError)
                 and error.certainty != EnvironmentProviderOutcomeCertainty.UNKNOWN
             )
         )
-        state = environment.dump_state()
+        state = environment.dump_state() if environment is not None else operation.state
         provider = self.catalog.require(operation.provider_type)
-        configuration = provider.validate_configuration(
-            schema_version=operation.recipe.configuration_schema_version, value=operation.recipe.configuration
-        )
-        identity = (
-            provider.target_identity(configuration=configuration, state=state)
-            if state is not None or succeeded
-            else None
-        )
+        identity = None
+        target_conflict = isinstance(error, EnvironmentError) and error.code == "environment_target_conflict"
+        if not target_conflict and (state is not None or succeeded) and operation.action in {"prepare", "reconcile"}:
+            configuration = provider.validate_configuration(
+                schema_version=operation.recipe.configuration_schema_version, value=operation.recipe.configuration
+            )
+            identity = scoped_target_identity(
+                operation.provider_type,
+                operation.provider_configuration,
+                provider.target_identity(configuration=configuration, state=state),
+            )
         now = assume_utc(self.clock())
         async with transaction(self.sessions) as session:
             row = await session.scalar(
@@ -297,34 +347,35 @@ class EnvironmentLifecycle:
                 raise RuntimeError("Environment lifecycle authority changed")
             if state is not None:
                 row.state = state.model_dump(mode="json")
-            if identity is not None and operation.action == "prepare" and identity != row.target_identity:
+            if identity is not None and identity != row.target_identity:
                 row.generation += 1
                 row.target_identity = identity
             if succeeded:
                 if operation.action == "prepare" and row.generation == 0:
                     row.generation = 1
                 if operation.action == "delete":
-                    row.status = "deleted"
-                    row.state = None
-                    row.target_identity = None
+                    row.status, row.state, row.target_identity = "deleted", None, None
                 elif operation.action == "stop":
                     row.status = "stopped"
                 elif operation.action == "prepare":
                     row.status = "running"
+                elif operation.action == "reconcile":
+                    assert observation is not None
+                    row.status = "unavailable" if observation == "absent" else observation
+                row.last_error = None
+            else:
+                if operation.action in {"prepare", "reconcile"}:
+                    row.status = "unavailable"
+                row.last_error = {
+                    "code": "environment_operation_failed" if resolved else "environment_operation_unresolved"
+                }
+            if resolved:
                 command = await session.get(EnvironmentCommandRecord, operation.operation_id)
                 if command is not None:
-                    command.status = "completed"
+                    command.status = "completed" if succeeded else "failed"
                     command.completed_at = now
                 row.operation_id = row.operation_action = row.operation_owner = None
                 row.operation_expires_at = None
-                row.last_error = None
-            elif resolved_preparation_failure:
-                row.status = "unavailable"
-                row.operation_id = row.operation_action = row.operation_owner = None
-                row.operation_expires_at = None
-                row.last_error = {"code": "environment_preparation_failed"}
-            else:
-                row.last_error = {"code": "environment_operation_unresolved"}
             row.updated_at = now
             row.next_maintenance_at = now + timedelta(seconds=10)
             session.add(
@@ -344,10 +395,12 @@ class EnvironmentLifecycle:
                         "run_id": operation.run_id,
                         "run_attempt_id": operation.attempt_id,
                         "status": row.status,
-                        "outcome_known": succeeded or resolved_preparation_failure,
+                        "outcome_known": resolved,
                     },
                 )
             )
+
+            return row.generation
 
     async def maintain(self, environment_id: str) -> None:
         action: Action | None = None
@@ -362,10 +415,7 @@ class EnvironmentLifecycle:
             if revision is None:
                 return
             recipe = revision.to_resource()
-            condition, changed_at = await _condition(session, row, now)
-            if condition != row.retention_condition:
-                row.retention_condition = condition
-                row.condition_since = changed_at
+            condition = await refresh_retention(session, row, now)
             if row.operation_id is not None:
                 if row.operation_expires_at is not None and assume_utc(row.operation_expires_at) > now:
                     return
@@ -377,7 +427,8 @@ class EnvironmentLifecycle:
                         if row.operation_action == "delete"
                         else "keepalive"
                     )
-                # Preparation needs the current Run's authority, never a maintenance principal.
+                elif row.operation_action == "prepare":
+                    action = "reconcile"
             else:
                 action = retention_action(
                     recipe.retention,
@@ -397,58 +448,5 @@ class EnvironmentLifecycle:
             row.next_maintenance_at = now + timedelta(seconds=10)
         if action is not None:
             operation = await self.acquire(environment_id, action)
-            environment = await self.execute(operation)
-            await environment.close()
-
-
-async def has_active_use(session: AsyncSession, environment_id: str) -> bool:
-    return (
-        await session.scalar(
-            select(RunRecord.id)
-            .where(
-                RunRecord.environment_id == environment_id,
-                RunRecord.status == "running",
-                RunRecord.environment_use_started_at.is_not(None),
-            )
-            .limit(1)
-        )
-        is not None
-    )
-
-
-async def _condition(
-    session: AsyncSession, environment: EnvironmentRecord, now: datetime
-) -> tuple[Literal["active", "idle", "waiting_approval"], datetime]:
-    if await has_active_use(session, environment.id):
-        return "active", now
-    waiting = tuple(
-        await session.scalars(
-            select(RunRecord)
-            .join(ThreadRecord, ThreadRecord.current_run_id == RunRecord.id)
-            .where(
-                RunRecord.environment_id == environment.id,
-                RunRecord.status == "waiting",
-                RunRecord.wait_reason.in_(("approval", "multiple")),
-                RunRecord.environment_use_started_at.is_not(None),
-            )
-        )
-    )
-    resources = (run.to_resource() for run in waiting)
-    approvals = tuple(
-        run
-        for run in resources
-        if run.pending is not None and any(call.kind == "approval" for call in run.pending.calls)
-    )
-    if approvals:
-        return "waiting_approval", min(assume_utc(run.sealed_at) for run in approvals if run.sealed_at is not None)
-    latest = await session.scalar(
-        select(RunRecord.sealed_at)
-        .where(
-            RunRecord.environment_id == environment.id,
-            RunRecord.environment_use_started_at.is_not(None),
-            RunRecord.sealed_at.is_not(None),
-        )
-        .order_by(RunRecord.sealed_at.desc())
-        .limit(1)
-    )
-    return "idle", assume_utc(latest) if latest else now
+            result = await self.execute(operation)
+            await result.environment.close()

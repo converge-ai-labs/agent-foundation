@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import math
 import secrets
@@ -123,5 +124,7 @@ def raise_converted(error: BaseException) -> Never:
 async def invoke[T](awaitable: Awaitable[T]) -> T:
     try:
         return await awaitable
+    except asyncio.CancelledError:
+        raise
     except BaseException as error:
         raise_converted(error)

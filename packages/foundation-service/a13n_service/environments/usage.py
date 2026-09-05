@@ -15,6 +15,7 @@ from a13n_service.interactions.state import RunStateEnvelope
 from .domain import EnvironmentSelection
 from .errors import invalid_environment
 from .models import EnvironmentRecord
+from .retention import refresh_retention
 from .selection import Omitted, select_run_environment
 
 
@@ -32,6 +33,14 @@ async def add_run_with_environment(
         raise invalid_environment("Managed Skills require a writable Environment")
     if (run.environment_id is None) != (run.environment_access is None):
         raise invalid_environment("Environment selection and access must be supplied together")
+    thread = await database.get(ThreadRecord, run.thread_id)
+    previous = await database.get(RunRecord, thread.current_run_id) if thread and thread.current_run_id else None
+    record = run_record(run)
+    await lock_run_environments(
+        database,
+        run=record,
+        additional_environment_ids=(previous.environment_id,) if previous and previous.environment_id else (),
+    )
     if run.environment_id is not None:
         environment = await database.scalar(
             select(EnvironmentRecord)
@@ -44,9 +53,7 @@ async def add_run_with_environment(
         )
         if environment is None:
             raise invalid_environment("Run references an unavailable Environment")
-    record = run_record(run)
     database.add(record)
-    thread = await database.get(ThreadRecord, run.thread_id)
     if thread is not None:
         thread.default_environment_id = run.environment_id
     await database.flush()
@@ -61,7 +68,7 @@ async def schedule_environment_maintenance(database: AsyncSession, *, run: RunRe
     )
     if environment is None:
         raise invalid_environment("Run Environment is missing")
-    environment.next_maintenance_at = now
+    await refresh_retention(database, environment, now)
 
 
 async def lock_run_environments(

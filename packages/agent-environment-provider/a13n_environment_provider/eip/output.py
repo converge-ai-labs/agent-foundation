@@ -237,7 +237,7 @@ class EIPOutputRegistry:
             raise_converted(error)
         receipt = convert_receipt(
             result.receipt,
-            environment_id=self._environment_id,
+            environment_id=self._session.descriptor.environment_id,
             mount_id=self._mount_id,
             generation=self._generation,
         )

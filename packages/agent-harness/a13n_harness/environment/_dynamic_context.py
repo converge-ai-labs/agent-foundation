@@ -180,6 +180,7 @@ class _DynamicEnvironmentContext:
             namespace="environment",
             kind="file",
             identifier=f"{selected.mount_id}:{selection.observed_generation}:{selected.path}",
+            approval_revision=self._approval_revision(selected.mount_id, selected.path),
         )
 
     async def _binding_resource(
@@ -202,7 +203,17 @@ class _DynamicEnvironmentContext:
             namespace="environment",
             kind="mount",
             identifier=f"{selected.mount_id}:{selection.observed_generation}",
+            approval_revision=self._approval_revision(selected.mount_id),
         )
+
+    def _approval_revision(self, mount_id: str, path: str = "") -> str:
+        mount = next(
+            item
+            for item in self._environment.snapshot.mounts
+            if self._environment.select_files(".", alias=item.name).resolved_path.mount_id == mount_id
+        )
+        identity = mount.descriptor.backing_identity or f"{mount_id}:{mount.descriptor.generation}"
+        return f"{identity}:{path}"
 
     def _record_fence(self, mount_id: str, generation: str) -> None:
         builder = self._fence_builder.get()

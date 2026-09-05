@@ -380,6 +380,15 @@ class DockerSDKEngine(DockerEngine):
             )
         )
 
+    @classmethod
+    def connect(cls, docker_host: str, *, timeout_seconds: int = 30) -> DockerSDKEngine:
+        import docker
+        from docker.constants import DEFAULT_DOCKER_API_VERSION
+
+        return cls(
+            docker.DockerClient(base_url=docker_host, timeout=timeout_seconds, version=DEFAULT_DOCKER_API_VERSION)
+        )
+
     async def validate_local_topology(self) -> None:
         await asyncio.to_thread(self._validate_local_topology)
 

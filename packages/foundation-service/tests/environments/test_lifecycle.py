@@ -138,3 +138,99 @@ async def test_stale_lifecycle_publication_cannot_change_target(
     async with short_session(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         assert row.status == "running" and row.operation_id == operation.operation_id
+
+
+async def test_known_stop_failure_releases_operation_and_records_failed_command(
+    environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
+):
+    from a13n_environment_provider.docker._errors import missing_failure
+    from a13n_service.environments.domain import EnvironmentCommandRequest
+    from a13n_service.environments.models import EnvironmentCommandRecord
+
+    environment = await fixture_environment(environment_service)
+    now = datetime(2026, 9, 5, tzinfo=UTC)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+
+    class MissingTarget(Target):
+        async def _stop(self):
+            raise missing_failure("Docker target is missing")
+
+    async def construct(operation):
+        return MissingTarget(operation.state, [])
+
+    monkeypatch.setattr(lifecycle, "construct", construct)
+    async with transaction(environment_sessions) as session:
+        row = await session.get(EnvironmentRecord, environment.id)
+        row.status = "running"
+        row.state = EnvironmentState(
+            provider_key="a13n.docker", state_version="1", state={"target": "lost"}
+        ).model_dump(mode="json")
+    command = await environment_service.request_command(
+        actor=actor(),
+        environment_id=environment.id,
+        request=EnvironmentCommandRequest(action="stop"),
+        idempotency_key="stop-missing",
+    )
+    with pytest.raises(Exception, match="Docker target is missing"):
+        await lifecycle.maintain(environment.id)
+    async with short_session(environment_sessions) as session:
+        row = await session.get(EnvironmentRecord, environment.id)
+        receipt = await session.get(EnvironmentCommandRecord, command.id)
+        assert row.operation_id is None
+        assert receipt.status == "failed" and receipt.completed_at is not None
+    await environment_service.request_command(
+        actor=actor(),
+        environment_id=environment.id,
+        request=EnvironmentCommandRequest(action="delete"),
+        idempotency_key="delete-missing",
+    )
+
+
+async def test_abandoned_preparation_is_observed_without_starting_target(
+    environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
+):
+    environment = await fixture_environment(environment_service)
+    now = datetime(2026, 9, 5, tzinfo=UTC)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    events = []
+
+    class ObservedTarget(Target):
+        async def reconcile(self):
+            events.append("observe")
+            return "absent"
+
+    async def construct(operation):
+        return ObservedTarget(None, events)
+
+    monkeypatch.setattr(lifecycle, "construct", construct)
+    async with transaction(environment_sessions) as session:
+        row = await session.get(EnvironmentRecord, environment.id)
+        row.operation_id, row.operation_action = "envop-abandoned", "prepare"
+        row.operation_expires_at = now - timedelta(seconds=1)
+    await lifecycle.maintain(environment.id)
+    assert events == ["observe", "close"]
+    async with short_session(environment_sessions) as session:
+        row = await session.get(EnvironmentRecord, environment.id)
+        assert row.operation_id is None and row.status == "unavailable"
+
+
+async def test_retention_transition_uses_aggregate_entry_time():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_service.environments.retention import refresh_retention
+
+    now = datetime(2026, 9, 5, tzinfo=UTC)
+    waiting = SimpleNamespace(
+        pending=SimpleNamespace(calls=[SimpleNamespace(kind="approval")]), sealed_at=now - timedelta(hours=2)
+    )
+    session = SimpleNamespace(
+        flush=AsyncMock(),
+        scalar=AsyncMock(return_value=None),
+        scalars=AsyncMock(return_value=[SimpleNamespace(to_resource=lambda: waiting)]),
+    )
+    row = SimpleNamespace(id="env-shared", retention_condition="active", condition_since=now - timedelta(hours=3))
+    await refresh_retention(session, row, now)
+    assert row.retention_condition == "waiting_approval" and row.condition_since == now
+    await refresh_retention(session, row, now + timedelta(seconds=10))
+    assert row.condition_since == now

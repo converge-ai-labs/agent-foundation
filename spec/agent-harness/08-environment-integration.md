@@ -101,7 +101,7 @@ Provider denial always narrows Harness access. Mount names, mount IDs, paths, pr
 | ------------------------ | ------------------------------------------------------- | ------------------------------------------------ |
 | Mount name               | Stable Run-local alias such as `workspace`              | Host, routing, model projection                  |
 | Aggregate mount path     | Optional Host-selected model-facing root                | Routing, model projection, provider-result paths |
-| Mount ID                 | Opaque Harness-generated incarnation identity           | Harness internals and provider-neutral artifacts |
+| Mount ID                 | Opaque Harness-generated mount scope identity           | Harness internals and provider-neutral artifacts |
 | Provider key             | Provider implementation discriminator                   | Trusted Host and provider integration            |
 | Provider target identity | Provider-owned state data such as a Docker container ID | Trusted Host/provider state; never model context |
 | Provider generation      | Entered operation fence when a backend exposes one      | Trusted operation and stale-handle checks        |
@@ -232,7 +232,7 @@ Compound file operations pin exact source and destination incarnations before I/
 
 Readiness is operation-family scoped. Entry binds configured identity and descriptor; it does not establish a target connection or assert live viability for an unprepared object. An actual operation or explicit `ensure_ready()` invokes the object's coordinated preparation when necessary. Merely projecting descriptors or readiness summaries never does. A live descriptor can narrow configured capabilities but cannot broaden accepted access.
 
-Harness groups requirements by current mount incarnation, intersects requested operations with access ceilings and provider descriptors, and invokes readiness only for required families. Concurrent equivalent waits can share provider work. A replacement cannot satisfy a wait captured for an old incarnation.
+Harness groups requirements by current mount incarnation, intersects requested operations with access ceilings and provider descriptors, and invokes readiness only for required families. Concurrent equivalent waits can share provider work. A replacement cannot authorize dispatch captured for an old incarnation; initial preparation can replace the `unprepared` descriptor before the first operation is authorized.
 
 Timeout, provider failure, unavailable family, replacement, and closure produce typed bounded errors. Harness never widens a requirement or retries an uncertain side effect automatically.
 
@@ -453,3 +453,11 @@ Cleanup aggregates failures without changing lifecycle ownership. A close failur
 21. No process projection, backend ID, offset, status, loss marker, watcher, or readiness fact enters portable Harness or Environment state.
 22. Run-owned shell and async subagents share no Manager, store, projection, observer registry, or shutdown lifecycle.
 23. Environment Run Extensions are fresh Host-selected aggregate scopes, not another Plugin, Capability, or Provider plane.
+
+## Publishing Live Environment Changes
+
+A mount incarnation is the pair of Harness mount ID and published provider generation. Provider readiness publishes one immutable descriptor, effective permission set and operation-facet snapshot together. The aggregate snapshot and change journal update in the same local publication step. A provider recovery that reports a replacement error still publishes its new observation before the next model context projection.
+
+Dispatch rechecks permissions and generation after readiness. Already dispatched operations retain their captured operation facets and receipt fence. File scopes, process handles and retained outputs from an older generation cannot silently retarget. A new mount ID is required for explicit mount replacement; refreshing the same provider scope advances its observed generation instead.
+
+A descriptor can supply a bounded `backing_identity` for stable Host-owned backing-generation evidence. It is distinct from the operation-session generation and omitted from model projection. Environment resource resolution attaches this evidence to the managed resource's `approval_revision`, including the selected logical path. Without Host backing evidence, the mount incarnation is the conservative fallback. Deferred approval captures those resource revisions and the tool/argument digest. Resumption resolves current resources and rejects changed approval facts before dispatch, independently of whether the current policy still asks for approval.

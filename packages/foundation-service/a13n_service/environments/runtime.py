@@ -14,6 +14,7 @@ from a13n_environment_provider import (
     EnvironmentOperations,
     EnvironmentState,
 )
+from a13n_logging import get_logger
 
 from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.models import RunRecord
@@ -22,6 +23,8 @@ from a13n_service.storage import short_session
 from .domain import TemplateConfiguration
 from .lifecycle import EnvironmentLifecycle, EnvironmentOperationBusy
 from .models import EnvironmentProviderRecord, EnvironmentRecord, EnvironmentTemplateRevisionRecord
+
+logger = get_logger(__name__)
 
 
 class RunEnvironment(Environment):
@@ -42,6 +45,11 @@ class RunEnvironment(Environment):
         self._provider_key = provider_key
         self._configured_descriptor = descriptor
         self._delegate: Environment | None = None
+        self._generation = 0
+
+    @property
+    def backing_generation(self) -> int:
+        return self._generation
 
     @property
     def provider_key(self) -> str:
@@ -53,7 +61,13 @@ class RunEnvironment(Environment):
 
     @property
     def descriptor(self) -> EnvironmentDescriptor:
-        return self._delegate.descriptor if self._delegate else self._configured_descriptor
+        if self._delegate is None:
+            return self._configured_descriptor
+        return self._delegate.descriptor.model_copy(
+            update={
+                "backing_identity": f"{self.environment_id}:{self._generation}",
+            }
+        )
 
     @property
     def availability(self) -> EnvironmentAvailability:
@@ -73,14 +87,16 @@ class RunEnvironment(Environment):
                     break
                 except EnvironmentOperationBusy:
                     await asyncio.sleep(0.1)
-        self._delegate = await self._coordinator.execute(operation)
-        await self._delegate.enter(
+        result = await self._coordinator.execute(operation)
+        delegate = result.environment
+        await delegate.enter(
             thread_id=thread_id,
             run_id=run_id,
             agent_instance_id=agent_instance_id,
             mount_id=mount_id,
             host_refs=host_refs,
         )
+        self._delegate, self._generation = delegate, result.generation
 
     def _bind_mount(self, mount_id: str) -> None:
         if self._delegate is not None:
@@ -100,10 +116,13 @@ class RunEnvironment(Environment):
             # file/shell/process operation whose outcome is unknown.
             async with self._prepare_lock:
                 if self._delegate is delegate:
-                    previous_generation = delegate.descriptor.generation
+                    previous_generation = self._generation
                     self._prepared = False
                     self._delegate = None
-                    await delegate.close()
+                    try:
+                        await delegate.close()
+                    except Exception:
+                        logger.exception("Discarded Environment connection cleanup failed")
                     await self._prepare(
                         thread_id=self._scope.thread_id,
                         run_id=self._scope.run_id,
@@ -112,7 +131,7 @@ class RunEnvironment(Environment):
                         host_refs=self._host_refs,
                     )
                     self._prepared = True
-                    changed = self.descriptor.generation != previous_generation
+                    changed = self._generation != previous_generation
                     raise EnvironmentError(
                         "Environment was rebuilt; previous temporary files and process handles may be gone. Recheck the workspace before continuing."
                         if changed
@@ -120,7 +139,10 @@ class RunEnvironment(Environment):
                         code="environment_rebuilt" if changed else "environment_connection_refreshed",
                         details={"environment_id": self.environment_id, "generation": self.descriptor.generation},
                     ) from error
-            await self._delegate.ensure_ready(operations)
+            current = self._delegate
+            if current is None:
+                raise RuntimeError("Environment recovery did not publish a delegate") from error
+            await current.ensure_ready(operations)
 
     def dump_state(self) -> EnvironmentState | None:
         return self._delegate.dump_state() if self._delegate else None

@@ -158,7 +158,7 @@ class EnvironmentRecord(WorkspaceResource, Base):
             ),
         ),
         UniqueConstraint("id", "workspace_id", name="uq_environments_scope"),
-        UniqueConstraint("provider_id", "target_identity", name="uq_environments_provider_target"),
+        UniqueConstraint("target_identity", name="uq_environments_provider_target"),
         CheckConstraint("generation >= 0 AND operation_generation >= 0", name="generation_nonnegative"),
         CheckConstraint(
             "(ownership = 'managed' AND template_revision_id IS NOT NULL) OR (ownership = 'external' AND template_revision_id IS NULL)",
@@ -209,7 +209,7 @@ class EnvironmentCommandRecord(Base):
     __table_args__ = (
         ForeignKeyConstraint(("environment_id",), ("environments.id",)),
         CheckConstraint("action IN ('stop', 'delete')", name="action_valid"),
-        CheckConstraint("status IN ('pending', 'completed')", name="status_valid"),
+        CheckConstraint("status IN ('pending', 'completed', 'failed')", name="status_valid"),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     environment_id: Mapped[str] = mapped_column(String(72), nullable=False)

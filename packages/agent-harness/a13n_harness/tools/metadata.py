@@ -34,6 +34,7 @@ class CanonicalResource(BaseModel):
     namespace: str = Field(min_length=1, max_length=256)
     kind: str = Field(min_length=1, max_length=256)
     identifier: str = Field(min_length=1, max_length=2048)
+    approval_revision: str | None = Field(default=None, min_length=1, max_length=2048)
 
 
 class ToolOutputPolicy(BaseModel):

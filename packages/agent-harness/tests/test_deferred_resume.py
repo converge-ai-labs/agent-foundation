@@ -391,3 +391,41 @@ async def test_resume_rejects_non_native_approval_values_and_non_finite_override
             ),
         )
     assert non_finite.value.code == "deferred_results_invalid"
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+async def test_deferred_approval_binds_backing_revision_across_run_connections(replacement):
+    from a13n_harness.tools import CanonicalResource
+
+    executed = []
+    connection = "mount-first"
+    backing = "env-shared:1"
+
+    async def resources(arguments, *, context):
+        return (
+            CanonicalResource(
+                namespace="environment",
+                kind="file",
+                identifier=f"{connection}:/work",
+                approval_revision=f"{backing}:/work",
+            ),
+        )
+
+    executable = _build(executed, resolver=resources, requires_approval=False)
+    policy = _Policy(InvocationPolicyDecision.require_approval(), [])
+    suspended = await _suspend(executable, policy)
+    connection = "mount-resumed"
+    if replacement:
+        backing = "env-shared:2"
+    # Even a newly permissive policy cannot revive an approval for another target.
+    result = await executable.run(
+        previous_state=suspended.state,
+        deferred_resume=DeferredToolResume(suspended.deferred, suspended.deferred.build_results(approve_all=True)),
+        bindings=RunBindings.embedded(
+            capabilities=(InvocationPolicyCapability(evaluator=_Policy(InvocationPolicyDecision.allow(), [])),)
+        ),
+    )
+    assert result.status == "completed"
+    assert executed == ([] if replacement else [1]), (result.output, suspended.deferred)
+    if replacement:
+        assert "Approved resources changed" in result.output

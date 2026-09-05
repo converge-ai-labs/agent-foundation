@@ -10,7 +10,7 @@ import subprocess
 from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from a13n_envd_client import __version__ as envd_client_version
 from pydantic import BaseModel, JsonValue, ValidationError
@@ -25,7 +25,7 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..management import Environment, EnvironmentProvider, ProviderRuntimeContext
+from ..management import Environment, EnvironmentProvider, HostLocalProviderConfiguration, ProviderRuntimeContext
 from ..models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -55,6 +55,8 @@ _PYTHON_RELEASE_VERSION = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?:rc(?P
 
 class LocalEnvdEnvironmentProvider(EnvironmentProvider):
     """Inert singleton-style Provider for fresh private Local Envd generations."""
+
+    provider_configuration_model = HostLocalProviderConfiguration
 
     @property
     def key(self) -> str:
@@ -96,6 +98,11 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
         if not isinstance(configuration, LocalEnvdProviderConfiguration):
             raise TypeError("Unexpected Provider recipe")
         return configured_descriptor()
+
+    def target_identity(self, *, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+        if not isinstance(configuration, LocalEnvdProviderConfiguration) or state is not None:
+            raise ValueError("Local Providers require a valid stateless workspace configuration")
+        return str(configuration.workspace.path)
 
     def create_environment(
         self,
@@ -283,6 +290,11 @@ class LocalEnvdEnvironment(Environment):
         cleanup_error = await self._cleanup_local_runtime()
         if cleanup_error is not None:
             raise cleanup_error
+
+    async def reconcile(self) -> Literal["running", "stopped", "absent"]:
+        # These adapters own no durable daemon; their process-local resources
+        # end with their owner. Workspace paths are externally retained.
+        return "stopped"
 
     async def _destroy(self) -> None:
         return None
