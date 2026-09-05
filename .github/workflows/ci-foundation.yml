@@ -38,10 +38,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: Foundation Python
+  validation:
+    name: Foundation Python (${{ matrix.name }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: checks
+            runner: ubuntu-latest
+          - name: tests
+            runner: ubuntu-24.04-8core
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -63,19 +71,38 @@ jobs:
         run: uv sync --locked --all-packages
 
       - name: Type-check Foundation Python packages
+        if: matrix.name == 'checks'
         run: >-
           uv run --locked pyright
           packages/logging/a13n_logging
           packages/foundation-service/a13n_service
 
-      - name: Test Foundation Python packages
+      - name: Test logging
+        if: matrix.name == 'checks'
+        run: uv run --locked python -m pytest packages/logging/tests
+
+      - name: Test Foundation Service
+        if: matrix.name == 'tests'
         run: >-
           uv run --locked python -m pytest
-          -n 2 --dist loadgroup --durations=30
-          packages/logging/tests
+          -n 7 --dist loadgroup --durations=30
           packages/foundation-service/tests
 
       - name: Build Foundation Python distributions
+        if: matrix.name == 'checks'
         run: |
           uv build --package a13n-logging --out-dir dist/foundation
           uv build --package a13n-service --out-dir dist/foundation
+
+  python:
+    name: Foundation Python
+    needs: validation
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all Foundation checks to pass
+        env:
+          VALIDATION_RESULT: ${{ needs.validation.result }}
+        run: test "$VALIDATION_RESULT" = success
