@@ -21,7 +21,6 @@ from a13n_harness import (
     RunBindings,
     SafeFailure,
 )
-from a13n_harness.errors import RunError
 from a13n_service.interactions import (
     AdaptedThreadInboxEntry,
     AttemptContext,
@@ -582,7 +581,7 @@ async def test_driver_projects_events_and_control_commits_one_completed_result(
     assert coordinator.current_state.envelope.checkpoint_kind == "completed"
 
 
-async def test_control_rejects_provider_target_state_from_foundation_attachment(
+async def test_control_excludes_provider_state_from_run_checkpoints(
     interaction_object_store: ObjectStore,
 ) -> None:
     trace: list[str] = []
@@ -625,15 +624,9 @@ async def test_control_rejects_provider_target_state_from_foundation_attachment(
         usage=completed.usage,
     )
 
-    with pytest.raises(RunError) as error:
-        await coordinator.finalize(
-            invalid,
-            adapter=_outcome_adapter(interaction_object_store),
-            committer=terminal,
-        )
-
-    assert error.value.code == "foundation_environment_state_invalid"
-    assert terminal.states == []
+    await coordinator.finalize(invalid, adapter=_outcome_adapter(interaction_object_store), committer=terminal)
+    assert terminal.states
+    assert all(not value.envelope.harness.environment_states for value in terminal.states)
 
 
 async def test_control_commits_native_suspension_as_waiting(

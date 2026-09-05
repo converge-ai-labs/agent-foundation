@@ -11,6 +11,7 @@ from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
 )
+from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -138,11 +139,15 @@ class AgentCommands:
                     resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
                 except Exception as error:
                     raise resolution_error(error) from error
+                await authorize_template(
+                    session, actor=actor, workspace_id=workspace_id, template_id=request.default_environment_template_id
+                )
                 record = AgentRecord(
                     id=agent_id,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
                     source=AgentSource.custom.value,
+                    default_environment_template_id=request.default_environment_template_id,
                     name=request.name,
                     normalized_name=normalize_agent_name(request.name),
                     description=request.description,
@@ -243,6 +248,14 @@ class AgentCommands:
                     record.normalized_name = normalize_agent_name(request.name)
                 if "description" in request.model_fields_set:
                     record.description = request.description
+                if "default_environment_template_id" in request.model_fields_set:
+                    await authorize_template(
+                        session,
+                        actor=actor,
+                        workspace_id=workspace.workspace_id,
+                        template_id=request.default_environment_template_id,
+                    )
+                    record.default_environment_template_id = request.default_environment_template_id
                 touch_agent(record, actor=actor, now=now)
                 session.add(
                     new_agent_audit(

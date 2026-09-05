@@ -283,7 +283,9 @@ Live recovery always uses retained and current-process App projections. The TUI 
 
 ## Shutdown and Terminal Restoration
 
-`TerminalApp` owns terminal mode restoration while process control remains available. It restores the terminal before awaiting App collaborators that might ignore cooperative cancellation. Shutdown proceeds as follows:
+`TerminalApp` owns terminal mode restoration while process control remains available. It restores the terminal before awaiting App collaborators that might ignore cooperative cancellation. Before a user-requested exit, the controller reads one detached authoritative App summary containing the counts of all process-local active root operations and child executions. This summary is independent of the current Workbench filter, search, pagination, and terminal retention bounds; presentation state is never used to infer whether confirmation is required.
+
+Shutdown proceeds as follows:
 
 1. stop accepting new terminal intents;
 2. close command palette, pickers, and review surfaces without manufacturing decisions;

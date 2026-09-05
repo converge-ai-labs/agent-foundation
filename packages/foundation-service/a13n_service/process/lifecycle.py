@@ -94,7 +94,6 @@ async def open_process_runtime(
                     shared,
                     execution,
                     environment_catalog,
-                    components.environment_keepalive_source_resolver,
                     stack,
                     components.connector_provider_registry,
                 )
@@ -149,9 +148,9 @@ async def open_process_runtime(
                 finally:
                     status.draining = True
                     if worker is not None:
-                        worker.environment_keepalive.drain()
-                        with move_on_after(settings.environment_keepalive_lease_seconds):
-                            await worker.environment_keepalive.wait_stopped()
+                        worker.environment_maintenance.drain()
+                        with move_on_after(settings.environment_operation_timeout_seconds):
+                            await worker.environment_maintenance.wait_stopped()
                     background_tasks.cancel_scope.cancel()
                     logger.info(
                         "service_stopped",

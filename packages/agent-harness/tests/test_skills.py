@@ -174,9 +174,9 @@ def _runtime_mount(root: Path, *, environment_id: str = "skills-test") -> Enviro
     return EnvironmentRuntimeMount(
         binding=DirectLocalEnvironmentProviderBinding(
             DirectLocalProviderConfiguration(
-                environment_id=environment_id,
                 root=DirectLocalRootConfiguration(path=root),
-            )
+            ),
+            environment_id=environment_id,
         ),
         permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
         working_directory="/",
@@ -1324,3 +1324,25 @@ async def test_custom_skill_source_requires_existing_regular_document(tmp_path: 
 
 async def _text(value: str) -> AsyncIterator[str]:
     yield value
+
+
+async def test_file_source_can_skip_invalid_plugin_entries_without_hiding_valid_skills(tmp_path: Path, caplog) -> None:
+    good = tmp_path / "skills" / "good"
+    good.mkdir(parents=True)
+    (good / "SKILL.md").write_text("---\nname: good\ndescription: A valid Skill.\n---\n")
+    bad = tmp_path / "skills" / "bad"
+    bad.mkdir()
+    (bad / "SKILL.md").write_text("Incomplete frontmatter")
+    files = LocalFileOperator(
+        root=tmp_path,
+        read_only=False,
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        mount_id="plugin-test",
+        generation="generation-1",
+    )
+    tolerant = FileSkillSource("plugin", ("/skills",), skip_invalid=True)
+    entries = await tolerant.catalog(files=files)
+    assert [entry.name for entry in entries] == ["good"]
+    assert "skill_catalog_entry_skipped" in caplog.text
+    with pytest.raises(DefinitionError):
+        await FileSkillSource("strict", ("/skills",)).catalog(files=files)

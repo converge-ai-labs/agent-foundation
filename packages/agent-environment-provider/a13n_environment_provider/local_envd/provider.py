@@ -10,13 +10,14 @@ import subprocess
 from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from a13n_envd_client import __version__ as envd_client_version
 from pydantic import BaseModel, JsonValue, ValidationError
 
 from ..attachments import StdioEIPCarrier
 from ..eip import EIPEnvironmentSession, open_eip_environment
+from ..eip.binding import configured_descriptor
 from ..errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
@@ -24,7 +25,7 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..management import Environment, EnvironmentProvider
+from ..management import Environment, EnvironmentProvider, HostLocalProviderConfiguration, ProviderRuntimeContext
 from ..models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -55,6 +56,8 @@ _PYTHON_RELEASE_VERSION = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?:rc(?P
 class LocalEnvdEnvironmentProvider(EnvironmentProvider):
     """Inert singleton-style Provider for fresh private Local Envd generations."""
 
+    provider_configuration_model = HostLocalProviderConfiguration
+
     @property
     def key(self) -> str:
         return _PROVIDER_KEY
@@ -62,14 +65,6 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
     @property
     def configuration_versions(self) -> frozenset[str]:
         return frozenset({_CONFIGURATION_VERSION})
-
-    @property
-    def provider_key(self) -> str:
-        return self.key
-
-    @property
-    def connection_versions(self) -> frozenset[str]:
-        return self.configuration_versions
 
     def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
         if schema_version != _CONFIGURATION_VERSION:
@@ -89,10 +84,31 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
                 schema_version=schema_version,
             ) from error
 
+    async def create_runtime(
+        self, *, configuration: BaseModel, credential: BaseModel | None, context: ProviderRuntimeContext
+    ) -> LocalEnvdProviderRuntime:
+        from .runtime import TemporaryLocalEnvdRuntimeAllocator, resolve_agent_envd_executable
+
+        executable = await asyncio.to_thread(resolve_agent_envd_executable)
+        return LocalEnvdProviderRuntime(
+            executable=executable, allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator()
+        )
+
+    def describe_configuration(self, configuration: BaseModel) -> EnvironmentDescriptor:
+        if not isinstance(configuration, LocalEnvdProviderConfiguration):
+            raise TypeError("Unexpected Provider recipe")
+        return configured_descriptor()
+
+    def target_identity(self, *, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+        if not isinstance(configuration, LocalEnvdProviderConfiguration) or state is not None:
+            raise ValueError("Local Providers require a valid stateless workspace configuration")
+        return str(configuration.workspace.path)
+
     def create_environment(
         self,
         *,
         configuration: BaseModel,
+        environment_id: str,
         state: EnvironmentState | None,
         runtime: object | None = None,
     ) -> Environment:
@@ -106,46 +122,7 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
             )
         if not isinstance(runtime, LocalEnvdProviderRuntime):
             raise TypeError("Local Envd requires LocalEnvdProviderRuntime")
-        return LocalEnvdEnvironment(configuration, runtime)
-
-    def validate_connection(self, *, schema_version: str, parameters: JsonValue) -> BaseModel:
-        if schema_version != _CONFIGURATION_VERSION:
-            raise _provider_error(
-                "Local Envd connection version is unsupported.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                schema_version=schema_version,
-            )
-        try:
-            connection = LocalEnvdProviderConfiguration.model_validate(parameters)
-        except ValidationError as error:
-            raise _provider_error(
-                "Local Envd connection is invalid.",
-                code="provider_connection_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-                schema_version=schema_version,
-            ) from error
-        workspace = connection.workspace.model_copy(
-            update={"path": Path(os.path.normpath(str(connection.workspace.path)))},
-        )
-        return connection.model_copy(update={"workspace": workspace})
-
-    def target_key(self, *, connection: BaseModel) -> str:
-        if not isinstance(connection, LocalEnvdProviderConfiguration):
-            raise TypeError("Local Envd requires LocalEnvdProviderConfiguration")
-        return str(connection.workspace.path)
-
-    def create_attachment_environment(
-        self,
-        *,
-        connection: BaseModel,
-        runtime: object,
-    ) -> Environment:
-        if not isinstance(connection, LocalEnvdProviderConfiguration):
-            raise TypeError("Local Envd attachment requires LocalEnvdProviderConfiguration")
-        if not isinstance(runtime, LocalEnvdProviderRuntime):
-            raise TypeError("Local Envd attachment requires LocalEnvdProviderRuntime")
-        return LocalEnvdEnvironment(connection, runtime, exact_target=True)
+        return LocalEnvdEnvironment(configuration, runtime, environment_id=environment_id)
 
 
 class LocalEnvdEnvironment(Environment):
@@ -154,13 +131,13 @@ class LocalEnvdEnvironment(Environment):
         configuration: LocalEnvdProviderConfiguration,
         runtime: LocalEnvdProviderRuntime,
         *,
-        exact_target: bool = False,
+        environment_id: str,
     ) -> None:
         super().__init__(None)
+        self._environment_id = environment_id
         self._configuration = configuration.model_copy(deep=True)
         self._runtime = runtime
-        self._exact_target = exact_target
-        self._descriptor: EnvironmentDescriptor | None = None
+        self._descriptor: EnvironmentDescriptor = configured_descriptor()
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
         self._allocation: AbstractAsyncContextManager[Path] | None = None
@@ -179,7 +156,7 @@ class LocalEnvdEnvironment(Environment):
 
     @property
     def environment_id(self) -> str:
-        return self._configuration.environment_id
+        return self._environment_id
 
     @property
     def descriptor(self) -> EnvironmentDescriptor:
@@ -195,7 +172,7 @@ class LocalEnvdEnvironment(Environment):
     def operations(self) -> EnvironmentOperations:
         return self._operations
 
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -207,12 +184,6 @@ class LocalEnvdEnvironment(Environment):
         del thread_id, run_id, agent_instance_id, host_refs
         try:
             configuration = await asyncio.to_thread(_canonical_configuration, self._configuration)
-            if self._exact_target and configuration.workspace.path != self._configuration.workspace.path:
-                raise _provider_error(
-                    "Local Envd attachment workspace resolves to a different target.",
-                    code="provider_target_conflict",
-                    category=EnvironmentProviderErrorCategory.CONFLICT,
-                )
             await _validate_runtime(self._runtime.executable, configuration)
             self._configuration = configuration
             await self._launch_private_generation()
@@ -301,6 +272,11 @@ class LocalEnvdEnvironment(Environment):
             max_transfer_frame_bytes=_DAEMON_MAX_TRANSFER_FRAME_BYTES,
         )
 
+    def _bind_mount(self, mount_id: str) -> None:
+        if self._bound_eip is not None:
+            self._bound_eip.bind_mount(mount_id)
+            self._operations = self._bound_eip.operations
+
     async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         bound = self._bound_eip
         if bound is None:
@@ -314,6 +290,11 @@ class LocalEnvdEnvironment(Environment):
         cleanup_error = await self._cleanup_local_runtime()
         if cleanup_error is not None:
             raise cleanup_error
+
+    async def reconcile(self) -> Literal["running", "stopped", "absent"]:
+        # These adapters own no durable daemon; their process-local resources
+        # end with their owner. Workspace paths are externally retained.
+        return "stopped"
 
     async def _destroy(self) -> None:
         return None

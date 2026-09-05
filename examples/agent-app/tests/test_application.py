@@ -20,10 +20,10 @@ pytestmark = pytest.mark.anyio
 
 class _MockEnvironment(DirectLocalEnvironment):
     def __init__(self, configuration: DirectLocalProviderConfiguration, lifecycle: list[str]) -> None:
-        super().__init__(configuration)
+        super().__init__(configuration, environment_id="mock-environment")
         self._lifecycle_events = lifecycle
 
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -32,8 +32,8 @@ class _MockEnvironment(DirectLocalEnvironment):
         mount_id: str,
         host_refs: Mapping[str, str],
     ) -> None:
-        self._lifecycle_events.append("enter")
-        await super()._enter(
+        self._lifecycle_events.append("prepare")
+        await super()._prepare(
             thread_id=thread_id,
             run_id=run_id,
             agent_instance_id=agent_instance_id,
@@ -53,7 +53,6 @@ class _MockEnvironmentFactory:
 
     def __init__(self, root: Path) -> None:
         self._configuration = DirectLocalProviderConfiguration(
-            environment_id="agent-app-test",
             root=DirectLocalRootConfiguration(path=root),
         )
         self.lifecycle: list[str] = []
@@ -125,8 +124,8 @@ async def test_conversation_streams_multiple_turns_and_recovers_after_restart(
     assert len(recovered_after_turn.message_history) > len(second_state.message_history)
     assert recovered_history_sizes == [initial_history_sizes[1] + 2]
     assert state_path.read_text(encoding="utf-8").startswith("{\n")
-    assert initial_environment.lifecycle == ["construct", "enter", "close", "construct", "enter", "close"]
-    assert recovered_environment.lifecycle == ["construct", "enter", "close"]
+    assert initial_environment.lifecycle == ["construct", "close", "construct", "close"]
+    assert recovered_environment.lifecycle == ["construct", "close"]
 
 
 async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
@@ -141,11 +140,11 @@ async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
 
     async with application.stream_turn("abandoned turn") as stream:
         assert await anext(stream) == "scoped:"
-        assert environment.lifecycle == ["construct", "enter"]
+        assert environment.lifecycle == ["construct"]
 
-    assert environment.lifecycle == ["construct", "enter", "close"]
+    assert environment.lifecycle == ["construct", "close"]
     assert await _collect_turn(application, "completed turn") == ["scoped:", "turn-1"]
-    assert environment.lifecycle == ["construct", "enter", "close", "construct", "enter", "close"]
+    assert environment.lifecycle == ["construct", "close", "construct", "close"]
 
 
 async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment(
@@ -176,4 +175,4 @@ async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment
 
     assert exc_info.value.code == "agent_run_failed"
     assert state_path.read_text(encoding="utf-8") == completed_payload
-    assert environment.lifecycle == ["construct", "enter", "close", "construct", "enter", "close"]
+    assert environment.lifecycle == ["construct", "close", "construct", "close"]

@@ -322,7 +322,7 @@ async def test_projects_environment_observation_with_attempt_correlation(redis_c
     )
     projector.project_environment(
         EnvironmentHookObservation(
-            event_type="environment.entry.ready",
+            event_type="environment.preparation.ready",
             thread_id=THREAD_ID,
             harness_run_id=HARNESS_RUN_ID,
             mount_id="workspace",
@@ -337,7 +337,7 @@ async def test_projects_environment_observation_with_attempt_correlation(redis_c
     await projector.close()
 
     page = await stream.read(TENANT_ID, RUN_ID, after_stream_id=None, limit=10)
-    assert tuple(entry.event.event_type for entry in page.items) == ("environment.entry.ready",)
+    assert tuple(entry.event.event_type for entry in page.items) == ("environment.preparation.ready",)
     assert page.items[0].event.run_attempt_id == ATTEMPT_ID
     assert page.items[0].event.harness_run_id == HARNESS_RUN_ID
     assert page.items[0].event.payload["provider_key"] == "test.provider"

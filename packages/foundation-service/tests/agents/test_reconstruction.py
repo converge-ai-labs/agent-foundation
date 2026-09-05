@@ -151,7 +151,6 @@ def _effective(
         skills=(),
         connector_tools=connector_tools,
         mcp_tools=mcp_tools,
-        resolved_environment=None,
         resolved_subagents=subagents,
         instructions=config.instructions,
         input_adapter=config.input_adapter,
@@ -185,7 +184,6 @@ def _revision(
         resolved_skills=(),
         connector_tools=connector_tools,
         mcp_tools=mcp_tools,
-        resolved_environment=None,
         resolved_subagents=subagents,
     )
     digest = canonical_digest(
@@ -210,7 +208,6 @@ def _revision(
         resolved_skills=resolved.resolved_skills,
         connector_tools=resolved.connector_tools,
         mcp_tools=resolved.mcp_tools,
-        resolved_environment=resolved.resolved_environment,
         resolved_subagents=resolved.resolved_subagents,
         content_digest=digest,
         source_revision_id=None,

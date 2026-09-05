@@ -28,6 +28,8 @@ from a13n_service.durable_operations.idempotency import (
     new_evidence,
 )
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.environments.domain import EnvironmentSelection
+from a13n_service.environments.selection import Omitted
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
 from a13n_service.iam import (
@@ -90,6 +92,8 @@ from a13n_service.public_errors import PublicError
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
+from .environment import input_environment_access
+
 
 class GatewayCommandError(PublicError):
     """A bounded command failure safe for every Gateway adapter."""
@@ -102,6 +106,7 @@ class StartRunRequest(StrictModel):
     agent_revision_id: str | None = None
     expected_current_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
+    environment: EnvironmentSelection | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
 
 
@@ -112,6 +117,7 @@ class ContinueRunRequest(StrictModel):
     agent_revision_id: str | None = None
     expected_current_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
+    environment: EnvironmentSelection | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
 
 
@@ -132,6 +138,7 @@ class ForkRunRequest(StrictModel):
     agent_revision_id: str | None = None
     expected_current_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
+    environment: EnvironmentSelection | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
 
 
@@ -202,7 +209,16 @@ class NativeInteractionCommands:
             actor=actor,
             workspace_id=workspace_id,
             stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
+            request_fingerprint=(
+                canonical_digest(
+                    {
+                        "request": request_fingerprint,
+                        "environment": request.environment.model_dump(mode="json") if request.environment else None,
+                    }
+                )
+                if "environment" in request.model_fields_set
+                else request_fingerprint
+            ),
             accepted_thread_version=1,
         )
         if replay is not None:
@@ -333,6 +349,7 @@ class NativeInteractionCommands:
                 run=run,
                 state=state,
                 hook_subscription=request.hook_subscription,
+                environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
                 final_validator=validate_final,
                 transaction_hook=transaction_hook,
             )
@@ -346,6 +363,7 @@ class NativeInteractionCommands:
         source_run_id: str,
         idempotency_key: str,
         request: ContinueRunRequest,
+        inherit_parent_environment: bool = True,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
@@ -361,7 +379,16 @@ class NativeInteractionCommands:
             actor=actor,
             workspace_id=actor.boundary_workspace_id,
             stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
+            request_fingerprint=(
+                canonical_digest(
+                    {
+                        "request": request_fingerprint,
+                        "environment": request.environment.model_dump(mode="json") if request.environment else None,
+                    }
+                )
+                if "environment" in request.model_fields_set
+                else request_fingerprint
+            ),
             accepted_thread_version=request.expected_thread_version + 1,
         )
         if replay is not None:
@@ -389,6 +416,13 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=request.input,
             frozen=frozen,
+            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+            inherited_environment_id=source.environment_id
+            if inherit_parent_environment
+            else thread.default_environment_id,
+            environment_access_ceiling=source.environment_access
+            if inherit_parent_environment and "environment" not in request.model_fields_set
+            else None,
             prepared_assets=prepared_assets,
         )
         now = self._clock()
@@ -475,6 +509,8 @@ class NativeInteractionCommands:
                 expected_head_run_id=thread.head_run_id,
                 next_head_run_id=source.id,
                 hook_subscription=request.hook_subscription,
+                inherit_parent_environment=inherit_parent_environment,
+                environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
                 final_validator=validate_final,
                 transaction_hook=transaction_hook,
             )
@@ -503,17 +539,30 @@ class NativeInteractionCommands:
             actor=actor,
             workspace_id=actor.boundary_workspace_id,
             stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
+            request_fingerprint=(
+                canonical_digest(
+                    {
+                        "request": request_fingerprint,
+                        "environment": request.environment.model_dump(mode="json") if request.environment else None,
+                    }
+                )
+                if "environment" in request.model_fields_set
+                else request_fingerprint
+            ),
             accepted_thread_version=request.expected_thread_version + 1,
         )
         if replay is not None:
             return replay
 
-        source, thread = await self._load_empty_thread_source(actor=actor, thread_id=thread_id)
+        source, thread = await self._load_empty_thread_source(
+            actor=actor, thread_id=thread_id, agent_id=request.agent_id
+        )
+        target_agent_id = request.agent_id or (source.agent_id if source else None)
+        assert target_agent_id is not None
         run_id = new_run_id()
         prepared = await self._invocations.preparation.prepare(
             actor=actor,
-            agent_id=request.agent_id or source.agent_id,
+            agent_id=target_agent_id,
             agent_revision_id=request.agent_revision_id,
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
@@ -526,6 +575,8 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=request.input,
             frozen=frozen,
+            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+            inherited_environment_id=thread.default_environment_id,
             prepared_assets=prepared_assets,
         )
         state = initialize_empty_thread_state(
@@ -541,10 +592,10 @@ class NativeInteractionCommands:
         run = Run(
             id=run_id,
             version=1,
-            tenant_id=source.tenant_id,
+            tenant_id=thread.tenant_id,
             authority_principal=actor.principal,
-            session_id=source.session_id,
-            thread_id=source.thread_id,
+            session_id=thread.session_id,
+            thread_id=thread.id,
             parent_run_id=None,
             retry_of_run_id=None,
             lineage_kind=RunLineageKind.root,
@@ -590,7 +641,7 @@ class NativeInteractionCommands:
                     database,
                     actor=actor,
                     workspace_id=actor.boundary_workspace_id,
-                    agent_id=source.agent_id,
+                    agent_id=source.agent_id if source else target_agent_id,
                     action=WorkspaceAction.run_continue,
                 )
             except AuthorizationError as error:
@@ -608,10 +659,11 @@ class NativeInteractionCommands:
                 run=run,
                 state=state,
                 expected_thread_version=request.expected_thread_version,
-                expected_current_run_id=source.id,
+                expected_current_run_id=thread.current_run_id,
                 expected_head_run_id=None,
                 next_head_run_id=None,
                 hook_subscription=request.hook_subscription,
+                environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
                 final_validator=validate_final,
                 transaction_hook=transaction_hook,
             )
@@ -639,7 +691,16 @@ class NativeInteractionCommands:
             actor=actor,
             workspace_id=actor.boundary_workspace_id,
             stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
+            request_fingerprint=(
+                canonical_digest(
+                    {
+                        "request": request_fingerprint,
+                        "environment": request.environment.model_dump(mode="json") if request.environment else None,
+                    }
+                )
+                if "environment" in request.model_fields_set
+                else request_fingerprint
+            ),
             accepted_thread_version=1,
         )
         if replay is not None:
@@ -684,6 +745,11 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=request.input,
             frozen=frozen,
+            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
+            inherited_environment_id=source.environment_id,
+            environment_access_ceiling=source.environment_access
+            if "environment" not in request.model_fields_set
+            else None,
         )
         state = initialize_fork_state(
             RunStateSeed(
@@ -783,6 +849,7 @@ class NativeInteractionCommands:
                 run=forked_run,
                 state=state,
                 hook_subscription=request.hook_subscription,
+                environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
                 final_validator=validate_final,
                 transaction_hook=transaction_hook,
             )
@@ -998,6 +1065,10 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=queued.submission.input,
             frozen=frozen,
+            environment=queued.submission.environment
+            if "environment" in queued.submission.model_fields_set
+            else Omitted.UNSET,
+            inherited_environment_id=thread.default_environment_id,
         )
         seed = RunStateSeed(
             run_id=run_id,
@@ -1304,6 +1375,7 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=request.input,
             effective=source_state.envelope.effective_agent_config,
+            environment_access=source.environment_access,
             prepared_assets=prepared_assets,
         )
         normalized = normalize_waiting_continue(
@@ -1580,6 +1652,7 @@ class NativeInteractionCommands:
             workspace_id=actor.boundary_workspace_id,
             submitted=input,
             effective=state.envelope.effective_agent_config,
+            environment_access=source.environment_access,
         )
         now = assume_utc(self._clock())
 
@@ -1903,6 +1976,7 @@ class NativeInteractionCommands:
             workspace_id=workspace_id,
             submitted=request.input,
             frozen=frozen,
+            environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
             prepared_assets=prepared_assets,
         )
 
@@ -1913,13 +1987,26 @@ class NativeInteractionCommands:
         workspace_id: str,
         submitted: AgentInput,
         frozen: FrozenAgentInvocation,
+        environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
+        inherited_environment_id: str | Omitted | None = Omitted.UNSET,
+        environment_access_ceiling: str | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
     ):
+        async with short_session(self._sessions) as database:
+            access = await input_environment_access(
+                database,
+                actor=actor,
+                agent_id=frozen.agent_id,
+                choice=environment,
+                inherited_id=inherited_environment_id,
+                access_ceiling=environment_access_ceiling,
+            )
         return await self._accept_input_for_effective(
             actor=actor,
             workspace_id=workspace_id,
             submitted=submitted,
             effective=frozen.effective_config,
+            environment_access=access,
             prepared_assets=prepared_assets,
         )
 
@@ -1930,6 +2017,7 @@ class NativeInteractionCommands:
         workspace_id: str,
         submitted: AgentInput,
         effective: EffectiveAgentConfig,
+        environment_access: str | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
     ):
         async def authorize_asset(asset_id: str):
@@ -1944,7 +2032,6 @@ class NativeInteractionCommands:
                 return prepared
             return await self._assets.require_for_use(actor=actor, asset_id=asset_id)
 
-        environment = effective.resolved_environment
         acceptance = AgentInputAcceptance(self._endpoint_policy, authorize_asset)
         try:
             return await acceptance.accept(
@@ -1954,8 +2041,8 @@ class NativeInteractionCommands:
                     model_characteristics=effective.resolved_model.characteristics,
                     max_input_bytes=effective.protocol.limits.max_input_bytes,
                     structured_content_schema=effective.protocol.input_data_schema,
-                    environment_writable=environment is not None and environment.access != "read_only",
-                    environment_bindings=(frozenset({"workspace"}) if environment is not None else frozenset()),
+                    environment_writable=environment_access is not None and environment_access != "read_only",
+                    environment_bindings=(frozenset({"workspace"}) if environment_access is not None else frozenset()),
                 ),
             )
         except AgentInputError as error:
@@ -2223,13 +2310,15 @@ class NativeInteractionCommands:
         *,
         actor: AuthenticatedActor,
         thread_id: str,
-    ) -> tuple[Run, Thread]:
+        agent_id: str | None,
+    ) -> tuple[Run | None, Thread]:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
                     select(RunRecord, ThreadRecord)
-                    .join(
-                        ThreadRecord,
+                    .select_from(ThreadRecord)
+                    .outerjoin(
+                        RunRecord,
                         and_(
                             ThreadRecord.tenant_id == RunRecord.tenant_id,
                             ThreadRecord.current_run_id == RunRecord.id,
@@ -2251,26 +2340,33 @@ class NativeInteractionCommands:
             if row is None:
                 raise _not_found()
             source_record, thread_record = row
+            target_agent_id = agent_id or (source_record.agent_id if source_record else None)
+            if target_agent_id is None:
+                raise GatewayCommandError("agent_required", "First input requires an Agent selection.", status_code=400)
             try:
                 await authorize_agent(
                     database,
                     actor=actor,
                     workspace_id=actor.boundary_workspace_id,
-                    agent_id=source_record.agent_id,
+                    agent_id=source_record.agent_id if source_record else target_agent_id,
                     action=WorkspaceAction.run_continue,
                 )
             except AuthorizationError as error:
                 raise _not_found() from error
-            if thread_record.head_run_id is not None or source_record.status not in {
-                RunStatus.failed.value,
-                RunStatus.cancelled.value,
-            }:
+            if thread_record.head_run_id is not None or (
+                source_record is not None
+                and source_record.status
+                not in {
+                    RunStatus.failed.value,
+                    RunStatus.cancelled.value,
+                }
+            ):
                 raise GatewayCommandError(
                     "thread_not_root_continuable",
                     "The Thread does not have an empty continuation head.",
                     status_code=409,
                 )
-            return source_record.to_resource(), thread_record.to_resource()
+            return source_record.to_resource() if source_record else None, thread_record.to_resource()
 
     async def _load_fork_source(self, *, actor: AuthenticatedActor, run_id: str) -> Run:
         async with short_session(self._sessions) as database:

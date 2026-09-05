@@ -13,13 +13,15 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
+from a13n_service.environments.identity import local_backend_eligible
+from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentRecord
+from a13n_service.environments.usage import schedule_environment_maintenance
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttempt, RunAttemptStatus, RunStatus, new_run_attempt_id
-from .environment_bindings import deactivate_run_environment
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .lifecycle import append_run_attempt_lifecycle, append_run_lifecycle, append_run_with_attempt_lifecycle
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
@@ -123,6 +125,8 @@ class AttemptScheduler:
         )
         statement = (
             select(RunRecord.id)
+            .outerjoin(EnvironmentRecord, EnvironmentRecord.id == RunRecord.environment_id)
+            .outerjoin(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id)
             .outerjoin(
                 predecessor,
                 and_(
@@ -133,6 +137,7 @@ class AttemptScheduler:
             )
             .where(
                 RunRecord.tenant_id == claim.tenant_id,
+                local_backend_eligible(),
                 RunRecord.queue_name == queue_name,
                 RunRecord.runtime_lock_digest == claim.runtime_lock_digest,
                 eligible,
@@ -177,6 +182,14 @@ class AttemptScheduler:
             run = next((item for item in locked_runs if item.id == run_id), None)
             if run is None or thread is None or thread.current_run_id != run.id:
                 return None
+            if run.environment_id is not None:
+                eligible_environment = await database.scalar(
+                    select(EnvironmentRecord.id)
+                    .join(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id)
+                    .where(EnvironmentRecord.id == run.environment_id, local_backend_eligible())
+                )
+                if eligible_environment is None:
+                    return None
             if run.runtime_lock_digest != claim.runtime_lock_digest:
                 raise AttemptSchedulingError("claimant Runtime lock does not match the accepted Run")
 
@@ -199,7 +212,7 @@ class AttemptScheduler:
 
             budget_failure = _claim_budget_failure(run, classification, now)
             if budget_failure is not None:
-                await deactivate_run_environment(database, run=run, now=now)
+                await schedule_environment_maintenance(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, budget_failure, now)
                 if classification == "lease_expired":

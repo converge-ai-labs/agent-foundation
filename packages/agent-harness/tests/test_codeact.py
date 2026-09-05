@@ -92,9 +92,9 @@ def test_codeact_policy_detaches_and_freezes_tool_decisions() -> None:
 def _local_environment(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
         DirectLocalProviderConfiguration(
-            environment_id="codeact-test",
             root=DirectLocalRootConfiguration(path=root),
-        )
+        ),
+        environment_id="codeact-test",
     )
     return create_environment_runtime(
         mounts={

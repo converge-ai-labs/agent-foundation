@@ -5,10 +5,10 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 
 import httpx2
+from a13n_environment_provider import EnvironmentProviderCatalog
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
 from a13n_service.gateway import GatewayRuntime
 from a13n_service.gateway.a2a import A2AService
 from a13n_service.gateway.a2a_import import A2APartImporter
@@ -40,7 +40,7 @@ from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 
 from .agent import build_agent_management
 from .asset import build_asset_bundle
-from .environment import build_environment_bundle
+from .environment import build_environment_service
 from .hook import build_hook_bundle
 from .model import build_model_bundle
 from .plugin import build_plugin_bundle
@@ -54,7 +54,7 @@ async def build_control_runtime(
     shared: SharedRuntime,
     execution: ExecutionResources,
     worker: WorkerRuntime | None,
-    environment_catalog: FoundationEnvironmentProviderCatalog,
+    environment_catalog: EnvironmentProviderCatalog,
     connectivity_selection: ConnectivitySelectionResolver | None,
     trace_query_provider_registry: TraceQueryProviderRegistry,
     stack: AsyncExitStack,
@@ -67,7 +67,7 @@ async def build_control_runtime(
         trace_query_provider_registry,
         stack,
     )
-    environments = build_environment_bundle(components, shared, environment_catalog)
+    environments = build_environment_service(shared, environment_catalog)
     local_runner = (
         worker.plugin_runtime
         if worker is not None and isinstance(worker.plugin_runtime, PluginRunnerSupervisor)
@@ -88,7 +88,6 @@ async def build_control_runtime(
         components,
         shared,
         models.accepted,
-        environments.agent_selection,
         plugins.agent_selection,
         connectivity_selection,
     )
@@ -238,7 +237,7 @@ async def build_control_runtime(
     )
     runtime = ControlRuntime(
         trace_queries=trace_queries,
-        environments=environments.service,
+        environments=environments,
         plugins=plugins.service,
         skill_uploads=skills.uploads,
         skill_publication=skills.publication,

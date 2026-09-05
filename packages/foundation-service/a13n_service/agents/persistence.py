@@ -201,9 +201,6 @@ def new_revision(
         resolved_skills=[item.model_dump(mode="json") for item in resolved.resolved_skills],
         connector_tools=[item.model_dump(mode="json") for item in resolved.connector_tools],
         mcp_tools=[item.model_dump(mode="json") for item in resolved.mcp_tools],
-        resolved_environment=(
-            resolved.resolved_environment.model_dump(mode="json") if resolved.resolved_environment is not None else None
-        ),
         resolved_subagents=[item.model_dump(mode="json") for item in resolved.resolved_subagents],
         content_digest=content_digest,
         source_revision_id=source_revision_id,
@@ -238,7 +235,6 @@ def copy_revision(
         resolved_skills=source.resolved_skills,
         connector_tools=source.connector_tools,
         mcp_tools=source.mcp_tools,
-        resolved_environment=source.resolved_environment,
         resolved_subagents=source.resolved_subagents,
         content_digest=source.content_digest,
         source_revision_id=source_revision_id,

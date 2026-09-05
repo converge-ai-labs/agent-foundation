@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Literal
 
@@ -50,12 +50,14 @@ _MAX_JSON_BYTES = 64 * 1024
 _JSON_ADAPTER = TypeAdapter(JsonValue)
 _ROOT_INACTIVE = RootActivityView(state=RootActivityState.inactive)
 type RootActivityLookup = Callable[[str], Awaitable[RootActivityView]]
+type RootActivityBatchLookup = Callable[[tuple[str, ...]], Awaitable[Mapping[str, RootActivityView]]]
 
 
 class _ThreadCursor(SurfaceModel):
     version: Literal["1"] = "1"
     kind: Literal["threads"] = "threads"
     query: str | None
+    project_id: str | None = None
     include_archived: bool
     updated_at: datetime
     thread_id: str
@@ -78,13 +80,20 @@ class ThreadProjectionService:
         store: LocalStore,
         configurations: CompositionAcceptanceService,
         root_activity: RootActivityLookup | None = None,
+        root_activities: RootActivityBatchLookup | None = None,
     ) -> None:
         self._store = store
         self._configurations = configurations
         self._root_activity = root_activity
+        self._root_activities = root_activities
 
-    def set_root_activity_lookup(self, lookup: RootActivityLookup) -> None:
+    def set_root_activity_lookup(
+        self,
+        lookup: RootActivityLookup,
+        batch_lookup: RootActivityBatchLookup | None = None,
+    ) -> None:
         self._root_activity = lookup
+        self._root_activities = batch_lookup
 
     async def get_thread(self, thread_id: str) -> ThreadSummary:
         thread = await self._required_thread(thread_id)
@@ -94,6 +103,7 @@ class ThreadProjectionService:
         self,
         *,
         query: str | None = None,
+        project_id: str | None = None,
         include_archived: bool = False,
         cursor: str | None = None,
         limit: int = 20,
@@ -104,23 +114,32 @@ class ThreadProjectionService:
         before: tuple[datetime, str] | None = None
         if cursor is not None:
             decoded = _decode_cursor(cursor, _ThreadCursor, code="thread_cursor_invalid")
-            if decoded.query != normalized_query or decoded.include_archived is not include_archived:
+            if (
+                decoded.query != normalized_query
+                or decoded.project_id != project_id
+                or decoded.include_archived is not include_archived
+            ):
                 raise ThreadError("Thread cursor belongs to another query.", code="thread_cursor_mismatch")
             before = (decoded.updated_at, decoded.thread_id)
         stored, total = await self._store.threads.list(
             query=normalized_query,
+            project_id=project_id,
             include_archived=include_archived,
             before=before,
             limit=limit + 1,
         )
         visible = stored[:limit]
-        summaries = tuple([await self._summary(item) for item in visible])
+        activities: Mapping[str, RootActivityView] = {}
+        if visible and self._root_activities is not None:
+            activities = await self._root_activities(tuple(item.thread_id for item in visible))
+        summaries = tuple([await self._summary(item, activity=activities.get(item.thread_id)) for item in visible])
         next_cursor = None
         if len(stored) > limit:
             last = visible[-1]
             next_cursor = _encode_cursor(
                 _ThreadCursor(
                     query=normalized_query,
+                    project_id=project_id,
                     include_archived=include_archived,
                     updated_at=last.updated_at,
                     thread_id=last.thread_id,
@@ -155,6 +174,7 @@ class ThreadProjectionService:
         self,
         *,
         thread_id: str,
+        expected_continuation_id: str | None = None,
         cursor: str | None = None,
         limit: int = 50,
     ) -> TranscriptPage:
@@ -162,7 +182,13 @@ class ThreadProjectionService:
             raise ThreadError("Transcript page is outside supported bounds.", code="thread_history_page_invalid")
         thread = await self._required_thread(thread_id)
         state, continuation_id = await self._state(thread)
-        position = 0
+        if expected_continuation_id is not None and continuation_id != expected_continuation_id:
+            raise ThreadError(
+                "The selected Thread continuation changed before transcript projection.",
+                code="thread_history_continuation_changed",
+            )
+        history = state.message_history
+        upper_bound = len(history)
         if cursor is not None:
             decoded = _decode_cursor(cursor, _TranscriptCursor, code="thread_history_cursor_invalid")
             if decoded.thread_id != thread_id or decoded.continuation_id != continuation_id:
@@ -170,25 +196,48 @@ class ThreadProjectionService:
                     "Transcript cursor belongs to another continuation.",
                     code="thread_history_cursor_mismatch",
                 )
-            position = decoded.position
-        history = state.message_history
-        if position > len(history):
+            upper_bound = decoded.position
+        if upper_bound > len(history):
             raise ThreadError(
                 "Transcript cursor is outside the selected history.", code="thread_history_cursor_invalid"
             )
-        selected = history[position : position + limit]
+        position = max(0, upper_bound - limit)
+        selected = history[position:upper_bound]
         entries = tuple(_message_entry(index, item) for index, item in enumerate(selected, start=position))
-        next_position = position + len(entries)
         next_cursor = None
-        if next_position < len(history):
+        if position > 0:
             next_cursor = _encode_cursor(
                 _TranscriptCursor(
                     thread_id=thread_id,
                     continuation_id=continuation_id,
-                    position=next_position,
+                    position=position,
                 )
             )
-        return TranscriptPage(entries=entries, total=len(history), next_cursor=next_cursor)
+        return TranscriptPage(
+            continuation_id=continuation_id,
+            entries=entries,
+            total=len(history),
+            next_cursor=next_cursor,
+        )
+
+    async def transcript_entry(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str,
+        position: int,
+    ) -> TranscriptEntry:
+        thread = await self._required_thread(thread_id)
+        state, continuation_id = await self._state(thread)
+        if continuation_id != expected_continuation_id:
+            raise ThreadError(
+                "The selected Thread continuation changed before transcript projection.",
+                code="thread_history_continuation_changed",
+            )
+        history = state.message_history
+        if position < 0 or position >= len(history):
+            raise ThreadError("Transcript position is invalid.", code="thread_history_position_invalid")
+        return _message_entry(position, history[position])
 
     async def projects(self) -> tuple[ProjectSummary, ...]:
         source = await self._configurations.current()
@@ -215,10 +264,16 @@ class ThreadProjectionService:
             raise ThreadError("Thread does not exist.", code="thread_missing")
         return thread
 
-    async def _summary(self, thread: Thread) -> ThreadSummary:
-        activity = _ROOT_INACTIVE
-        if thread.parent_thread_id is None and self._root_activity is not None:
-            activity = await self._root_activity(thread.thread_id)
+    async def _summary(
+        self,
+        thread: Thread,
+        *,
+        activity: RootActivityView | None = None,
+    ) -> ThreadSummary:
+        if activity is None:
+            activity = _ROOT_INACTIVE
+            if thread.parent_thread_id is None and self._root_activity is not None:
+                activity = await self._root_activity(thread.thread_id)
         return ThreadSummary(
             thread_id=thread.thread_id,
             parent_thread_id=thread.parent_thread_id,
@@ -425,4 +480,4 @@ def _bounded_metadata(value: object | None) -> tuple[dict[str, JsonValue] | None
     return projected, False
 
 
-__all__ = ["RootActivityLookup", "ThreadProjectionService"]
+__all__ = ["RootActivityBatchLookup", "RootActivityLookup", "ThreadProjectionService"]

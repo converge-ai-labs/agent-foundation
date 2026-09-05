@@ -39,10 +39,12 @@ class WorkspaceAction(StrEnum):
     skill_delete = "skill.delete"
     skill_bind = "skill.bind"
     environment_provider_read = "environment_provider.read"
-    environment_provider_select = "environment_provider.select"
+    environment_provider_manage = "environment_provider.manage"
+    environment_template_read = "environment_template.read"
+    environment_template_manage = "environment_template.manage"
+    environment_template_use = "environment_template.use"
     environment_read = "environment.read"
     environment_manage = "environment.manage"
-    environment_test = "environment.test"
     environment_use = "environment.use"
     secrets_bind = "secrets.bind"
     session_read = "session.read"
@@ -95,6 +97,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.secrets_read,
         WorkspaceAction.skill_read,
         WorkspaceAction.environment_provider_read,
+        WorkspaceAction.environment_template_read,
         WorkspaceAction.environment_read,
         WorkspaceAction.session_read,
         WorkspaceAction.thread_read,
@@ -122,6 +125,7 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
         WorkspaceAction.environment_use,
+        WorkspaceAction.environment_template_use,
         WorkspaceAction.hook_subscription_create,
         WorkspaceAction.run_continue,
         WorkspaceAction.run_fork,
@@ -315,6 +319,22 @@ async def authorize_agent(
     if action not in _agent_permissions(context.bindings, agent_id=agent_id):
         raise AuthorizationError("permission_denied", concealed=True)
     return context.authorized
+
+
+async def authorize_persisted_workspace_principal_action(
+    session: AsyncSession,
+    *,
+    principal: PrincipalRef,
+    organization_id: str,
+    workspace_id: str,
+    action: WorkspaceAction,
+) -> None:
+    """Authorize deferred Workspace commands from their original Principal."""
+    context = await _load_principal_authorization(session, principal=principal, workspace_id=workspace_id)
+    if context.workspace.organization_id != organization_id:
+        raise AuthorizationError("workspace_not_found", concealed=True)
+    if action not in _workspace_permissions(context.bindings):
+        raise AuthorizationError("permission_denied", concealed=True)
 
 
 async def authorize_persisted_agent_principal_actions(

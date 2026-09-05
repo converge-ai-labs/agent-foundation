@@ -8,6 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.environments.domain import ExistingEnvironmentSelection
+from a13n_service.environments.selection import child_environment_choice
+from a13n_service.environments.usage import (
+    add_run_with_environment,
+)
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
@@ -16,9 +21,6 @@ from a13n_service.interactions.acceptance import (
 from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority, read_attempt_authority
 from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import Run, StrictModel, Thread
-from a13n_service.interactions.environment_bindings import (
-    add_run_with_environment_binding,
-)
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,
@@ -39,7 +41,6 @@ from .preparation import (
     PreparedChildRunAcceptance,
     PreparedChildRunResume,
     require_frozen_subagent_edge,
-    validate_child_environment_policy,
 )
 from .records import child_run_relationship_record
 
@@ -133,12 +134,24 @@ class ChildRunAcceptanceService:
                     parent_state.envelope,
                     authority,
                 )
+                edge = next(
+                    edge
+                    for edge in parent_state.envelope.effective_agent_config.resolved_subagents
+                    if edge.name == prepared.relationship.subagent_name
+                )
+                choice = await child_environment_choice(database, parent=parent_resource, policy=edge.environment)
+                child_run = (
+                    prepared.run.model_copy(update={"environment_access": parent.environment_access})
+                    if edge.environment.mode == "shared"
+                    else prepared.run
+                )
                 database.add(thread_record(prepared.thread))
-                await add_run_with_environment_binding(
+                await add_run_with_environment(
                     database,
-                    run=prepared.run,
+                    run=child_run,
                     state=prepared.state,
                     workspace_id=session.workspace_id,
+                    choice=choice,
                 )
                 database.add(child_run_relationship_record(prepared.relationship, tenant_id=prepared.run.tenant_id))
                 database.add(inbox_counter_record(prepared.thread))
@@ -275,11 +288,14 @@ class ChildRunAcceptanceService:
                     source_child=source_run.to_resource(),
                     workspace_id=session.workspace_id,
                 )
-                await add_run_with_environment_binding(
+                await add_run_with_environment(
                     database,
-                    run=prepared.run,
+                    run=prepared.run.model_copy(update={"environment_access": source_run.environment_access}),
                     state=prepared.state,
                     workspace_id=session.workspace_id,
+                    choice=ExistingEnvironmentSelection(environment_id=source_run.environment_id)
+                    if source_run.environment_id
+                    else None,
                 )
                 database.add(child_run_relationship_record(prepared.relationship, tenant_id=prepared.run.tenant_id))
                 assert child_thread is not None
@@ -389,11 +405,6 @@ def _validate_parent_authority(
         edge.child_agent_revision_id,
     ):
         raise ChildRunAcceptanceError("child_run_edge_conflict", "Child Run does not match the frozen parent edge")
-    validate_child_environment_policy(
-        edge,
-        parent=parent_state.effective_agent_config,
-        child=child_state.effective_agent_config,
-    )
 
 
 def _validate_locked_resume_source(

@@ -1,39 +1,27 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import secrets
 from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
-from typing import Any
+from typing import Any, Literal
 
 from a13n_envd_client import EIPSession
-from a13n_envd_client.eip import v1 as eip
 from pydantic import ValidationError
 
 from ..attachments import HttpEIPSessionSource
 from ..eip._common import invoke
-from ..eip.files import EIPFileOperator
-from ..eip.output import EIPOutputOperations, EIPOutputRegistry
-from ..eip.processes import (
-    EIPPortOperations,
-    EIPProcessOperations,
-    EIPShellOperations,
-    _ProcessConversions,
-)
+from ..eip.binding import EIPEnvironmentSession, configured_descriptor
 from ..errors import (
     EnvironmentProviderError,
 )
 from ..management import Environment
 from ..models import (
-    EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
-    EnvironmentMountDescriptor,
     EnvironmentOperationFamily,
-    EnvironmentPermissionSet,
     EnvironmentState,
 )
 from ..operations import EnvironmentOperations
@@ -59,10 +47,12 @@ from .configuration import (
     DockerBindMountSource,
     DockerImagePullPolicy,
     DockerMountConfiguration,
-    DockerProviderConfiguration,
     DockerProviderStateData,
+    DockerTargetConfiguration,
     DockerVolumeMountSource,
 )
+from .identity import configuration_fingerprint as _configuration_fingerprint
+from .identity import correlation as _correlation
 from .runtime import (
     DockerBootstrapAllocation,
     DockerBootstrapMaterial,
@@ -99,47 +89,18 @@ _LABEL_BOOTSTRAP = "io.a13n.bootstrap-correlation"
 _LABEL_FINGERPRINT = "io.a13n.configuration-fingerprint"
 _LABEL_CREATE = "io.a13n.create-correlation"
 _REQUIRED_EIP_METHODS = frozenset({"environment.describe", "environment.readiness", "session.close"})
-_METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
-    "file.stat": (EnvironmentAction.FILE_STAT,),
-    "file.read_text": (EnvironmentAction.FILE_READ_TEXT,),
-    "file.open_reader": (EnvironmentAction.FILE_READ_BYTES,),
-    "file.write_text": (EnvironmentAction.FILE_WRITE_TEXT,),
-    "file.patch_text": (EnvironmentAction.FILE_PATCH_TEXT,),
-    "file.list": (EnvironmentAction.FILE_LIST,),
-    "file.find": (EnvironmentAction.FILE_QUERY,),
-    "file.search": (EnvironmentAction.FILE_SEARCH_TEXT,),
-    "file.mkdir": (EnvironmentAction.FILE_MKDIR,),
-    "file.move": (EnvironmentAction.FILE_MOVE,),
-    "file.remove": (EnvironmentAction.FILE_REMOVE,),
-    "file.open_writer": (EnvironmentAction.FILE_WRITE_BYTES,),
-    "file.copy": (EnvironmentAction.FILE_COPY_SOURCE, EnvironmentAction.FILE_COPY_DESTINATION),
-    "shell.exec": (EnvironmentAction.SHELL_EXEC,),
-    "process.start": (EnvironmentAction.PROCESS_START,),
-    "process.inspect": (EnvironmentAction.PROCESS_INSPECT,),
-    "process.write_stdin": (EnvironmentAction.PROCESS_WRITE_STDIN,),
-    "process.close_stdin": (EnvironmentAction.PROCESS_CLOSE_STDIN,),
-    "process.signal": (EnvironmentAction.PROCESS_SIGNAL,),
-    "process.wait": (EnvironmentAction.PROCESS_WAIT,),
-    "process.kill": (EnvironmentAction.PROCESS_KILL,),
-    "process.release": (EnvironmentAction.PROCESS_RELEASE,),
-    "output.read": (EnvironmentAction.OUTPUT_READ,),
-    "output.release": (EnvironmentAction.OUTPUT_RELEASE,),
-    "port.inspect": (EnvironmentAction.PORT_INSPECT,),
-    "port.wait": (EnvironmentAction.PORT_WAIT,),
-}
 
 
 class _DockerEIPSession:
     def __init__(self, *, environment_id: str, runtime: DockerProviderRuntime) -> None:
         self._environment_id = environment_id
         self._runtime = runtime
-        self._descriptor: EnvironmentDescriptor | None = None
+        self._descriptor: EnvironmentDescriptor = configured_descriptor()
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
         self._session_context: AbstractAsyncContextManager[EIPSession] | None = None
         self._session: EIPSession | None = None
-        self._outputs: EIPOutputRegistry | None = None
-        self._conversions: _ProcessConversions | None = None
+        self._bound_eip: EIPEnvironmentSession | None = None
 
     @property
     def provider_key(self) -> str:
@@ -185,7 +146,7 @@ class _DockerEIPSession:
             allow_plaintext_private_link=True,
         )
         context = source.open_session(
-            expected_environment_id=self.environment_id,
+            expected_environment_id=inspection.labels[_LABEL_ENVIRONMENT],
             required_methods=_REQUIRED_EIP_METHODS,
         )
         try:
@@ -197,12 +158,11 @@ class _DockerEIPSession:
                     code="environment_unavailable",
                     retry_hint="new_run",
                 )
-            descriptor = _convert_descriptor(session.descriptor)
-            operations, outputs, conversions = _compose_operations(
-                session,
+            bound = EIPEnvironmentSession(
+                session=session,
+                provider_key=self.provider_key,
                 environment_id=self.environment_id,
                 mount_id=mount_id,
-                descriptor=descriptor,
             )
         except BaseException as error:
             try:
@@ -214,44 +174,25 @@ class _DockerEIPSession:
             raise _runtime_failure("Docker EIP initialization or readiness failed.") from error
         self._session_context = context
         self._session = session
-        self._descriptor = descriptor
-        self._operations = operations
-        self._outputs = outputs
-        self._conversions = conversions
-        self._availability = EnvironmentAvailability(
-            status="available",
-            ready_families=descriptor.operation_families,
-        )
+        self._bound_eip = bound
+        self._descriptor = bound.descriptor
+        self._operations = bound.operations
+        self._availability = bound.availability
 
     async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
-        missing = operations - self.descriptor.operation_families
-        if missing:
-            raise EnvironmentError(
-                "Docker EIP does not expose the requested operation family",
-                code="environment_unsupported",
-            )
-        if self._session is None:
+        if self._bound_eip is None:
             raise EnvironmentError("Docker EIP session is closed", code="environment_unavailable")
-        readiness = await invoke(self._session.readiness())
-        if not readiness.ready:
-            self._availability = EnvironmentAvailability(status="unavailable")
-            raise EnvironmentError(
-                "Docker EIP environment is not ready",
-                code="environment_unavailable",
-                retry_hint="new_run",
-            )
+        try:
+            await self._bound_eip.ensure_ready(operations)
+        finally:
+            self._availability = self._bound_eip.availability
 
     async def _close(self) -> None:
         self._availability = EnvironmentAvailability(status="unavailable")
         errors: list[BaseException] = []
-        if self._conversions is not None:
+        if self._bound_eip is not None:
             try:
-                await self._conversions.cleanup_owned()
-            except BaseException as error:
-                errors.append(error)
-        if self._outputs is not None:
-            try:
-                await self._outputs.cleanup_pending()
+                await self._bound_eip.close()
             except BaseException as error:
                 errors.append(error)
         if self._session_context is not None:
@@ -261,8 +202,7 @@ class _DockerEIPSession:
                 errors.append(error)
         self._session_context = None
         self._session = None
-        self._outputs = None
-        self._conversions = None
+        self._bound_eip = None
         self._operations = EnvironmentOperations()
         if len(errors) == 1:
             raise errors[0]
@@ -273,20 +213,28 @@ class _DockerEIPSession:
 class DockerEnvironment(_DockerEIPSession, Environment):
     """Fresh single-use adapter for one exact Docker container."""
 
+    async def _close(self) -> None:
+        try:
+            await super()._close()
+        finally:
+            if self._runtime.owns_engine:
+                await self._runtime.engine.close()
+
     def __init__(
         self,
-        configuration: DockerProviderConfiguration,
+        configuration: DockerTargetConfiguration,
         state: EnvironmentState | None,
         *,
         state_data: DockerProviderStateData | None,
         runtime: DockerProviderRuntime,
+        environment_id: str,
     ) -> None:
         Environment.__init__(self, state.model_copy(deep=True) if state is not None else None)
-        _DockerEIPSession.__init__(self, environment_id=configuration.environment_id, runtime=runtime)
+        _DockerEIPSession.__init__(self, environment_id=environment_id, runtime=runtime)
         self._configuration = configuration.model_copy(deep=True)
         self._state_data = state_data.model_copy(deep=True) if state_data is not None else None
 
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -304,24 +252,26 @@ class DockerEnvironment(_DockerEIPSession, Environment):
         if self._state_data is None:
             state, inspection, allocation = await self._create_target(
                 configuration,
-                correlation_seed=(thread_id, run_id, agent_instance_id, mount_id),
+                correlation_seed=(configuration.environment_id,),
             )
         else:
             state, inspection, allocation = await self._reenter_target(
                 configuration,
                 self._state_data,
-                correlation_seed=(thread_id, run_id, agent_instance_id, mount_id),
+                correlation_seed=(configuration.environment_id,),
             )
         self._state_data = state
         await self._open_eip(inspection, allocation, mount_id=mount_id)
 
     async def _create_target(
         self,
-        configuration: DockerProviderConfiguration,
+        configuration: DockerTargetConfiguration,
         *,
         correlation_seed: tuple[str, ...],
         replacing: DockerProviderStateData | None = None,
     ) -> tuple[DockerProviderStateData, DockerContainerInspection, DockerBootstrapAllocation]:
+        if not self._runtime.managed:
+            raise _missing_failure("Externally owned targets cannot be created or rebuilt")
         image = await _resolve_image(self._runtime, configuration)
         _validate_image(image)
         fingerprint = _configuration_fingerprint(self._configuration)
@@ -431,7 +381,7 @@ class DockerEnvironment(_DockerEIPSession, Environment):
 
     async def _reenter_target(
         self,
-        configuration: DockerProviderConfiguration,
+        configuration: DockerTargetConfiguration,
         state: DockerProviderStateData,
         *,
         correlation_seed: tuple[str, ...],
@@ -441,6 +391,8 @@ class DockerEnvironment(_DockerEIPSession, Environment):
             matches = await _engine_call(self._runtime.engine.find_containers(_labels_from_state(configuration, state)))
             if matches:
                 raise _unknown_failure("Docker exact target is absent but its correlation is still present.")
+            if self._runtime.managed:
+                await _remove_bootstrap(self._runtime, state.bootstrap_correlation)
             return await self._create_target(
                 configuration,
                 correlation_seed=(*correlation_seed, "replacement"),
@@ -464,13 +416,15 @@ class DockerEnvironment(_DockerEIPSession, Environment):
 
     async def _start_if_needed(
         self,
-        configuration: DockerProviderConfiguration,
+        configuration: DockerTargetConfiguration,
         state: DockerProviderStateData,
         inspection: DockerContainerInspection,
         allocation: DockerBootstrapAllocation,
     ) -> tuple[DockerContainerInspection, DockerBootstrapAllocation]:
         if inspection.status == "running":
             return inspection, allocation
+        if not self._runtime.managed:
+            raise _missing_failure("Externally owned target must be started by its owner")
         if inspection.status not in {"created", "exited"}:
             raise _conflict_failure("Docker container state is not safely re-enterable.")
         allocation = await _store_replace(
@@ -505,6 +459,90 @@ class DockerEnvironment(_DockerEIPSession, Environment):
         )
         self._state_data = state
         self._cache_state(envelope)
+
+    def _bind_mount(self, mount_id: str) -> None:
+        if self._bound_eip is not None:
+            self._bound_eip.bind_mount(mount_id)
+            self._operations = self._bound_eip.operations
+
+    async def reconcile(self) -> Literal["running", "stopped", "absent"]:
+        configuration = await _canonical_configuration(self._configuration)
+        await _engine_call(self._runtime.engine.validate_local_topology())
+        # A timed-out create may have allocated a target before its ID was returned.
+        # Stable ownership labels recover it without repeating create/start.
+        matches = await _engine_call(
+            self._runtime.engine.find_containers(
+                {
+                    _LABEL_PROVIDER: _PROVIDER_KEY,
+                    _LABEL_ENVIRONMENT: configuration.environment_id,
+                }
+            )
+        )
+        if not matches:
+            state = self._state_data
+            seed = (configuration.environment_id, "replacement") if state else (configuration.environment_id,)
+            create = _correlation("create", *seed, state.create_correlation if state else "new")
+            await _remove_bootstrap(self._runtime, _correlation("bootstrap", create))
+            return "absent"
+        if len(matches) != 1:
+            raise _unknown_failure("Docker target identity is ambiguous during reconciliation.")
+        inspection = matches[0]
+        labels = inspection.labels
+        try:
+            state = _state_data(
+                configuration,
+                container_id=inspection.container_id,
+                image_id=inspection.image_id,
+                bootstrap_correlation=labels[_LABEL_BOOTSTRAP],
+                configuration_fingerprint=labels[_LABEL_FINGERPRINT],
+                create_correlation=labels[_LABEL_CREATE],
+            )
+        except (KeyError, ValidationError) as error:
+            raise _conflict_failure("Docker target ownership evidence is invalid.") from error
+        allocation = await _store_recover(self._runtime, state.bootstrap_correlation)
+        if allocation is None:
+            raise _conflict_failure("Docker target bootstrap evidence is unavailable.")
+        _validate_bootstrap(allocation, configuration, _configuration_fingerprint(self._configuration))
+        _validate_inspection(
+            inspection,
+            configuration=configuration,
+            image_id=state.image_id,
+            labels=_labels_from_state(configuration, state),
+            allocation=allocation,
+            require_route=inspection.status == "running",
+        )
+        self._publish_state(state)
+        if inspection.status == "running":
+            return "running"
+        if inspection.status in {"created", "exited"}:
+            return "stopped"
+        raise _unknown_failure("Docker target has not reached a stable state.")
+
+    async def _stop(self) -> None:
+        state = self._state_data
+        if state is None:
+            raise _state_failure("Docker stop requires a known target")
+        configuration = await _canonical_configuration(self._configuration)
+        inspection = await _engine_call(self._runtime.engine.inspect_container(state.container_id))
+        if inspection is None:
+            raise _missing_failure("Docker target is missing")
+        allocation = await _store_recover(self._runtime, state.bootstrap_correlation)
+        if allocation is None:
+            raise _missing_failure("Docker ownership evidence is missing")
+        _validate_inspection(
+            inspection,
+            configuration=configuration,
+            image_id=state.image_id,
+            labels=_labels_from_state(configuration, state),
+            allocation=allocation,
+            require_route=inspection.status == "running",
+        )
+        if inspection.status == "running":
+            await _engine_call(
+                self._runtime.engine.stop_container(
+                    state.container_id, timeout_seconds=configuration.stop_grace_seconds
+                )
+            )
 
     async def _destroy(self) -> None:
         state = self._state_data
@@ -548,92 +586,9 @@ class DockerEnvironment(_DockerEIPSession, Environment):
         await _remove_bootstrap(self._runtime, state.bootstrap_correlation)
 
 
-def _compose_operations(
-    session: EIPSession,
-    *,
-    environment_id: str,
-    mount_id: str,
-    descriptor: EnvironmentDescriptor,
-) -> tuple[EnvironmentOperations, EIPOutputRegistry, _ProcessConversions]:
-    generation = descriptor.generation
-    methods = set(session.descriptor.available_methods)
-    files = EIPFileOperator(
-        session=session,
-        environment_id=environment_id,
-        mount_id=mount_id,
-        generation=generation,
-    )
-    outputs = EIPOutputRegistry(
-        session=session,
-        environment_id=environment_id,
-        mount_id=mount_id,
-        generation=generation,
-    )
-    conversions = _ProcessConversions(
-        session=session,
-        files=files,
-        outputs=outputs,
-        provider_type=_PROVIDER_KEY,
-        environment_id=environment_id,
-        mount_id=mount_id,
-        generation=generation,
-    )
-    return (
-        EnvironmentOperations(
-            files=files if any(method.startswith("file.") for method in methods) else None,
-            shell=EIPShellOperations(conversions) if "shell.exec" in methods else None,
-            processes=EIPProcessOperations(conversions) if "process.start" in methods else None,
-            ports=EIPPortOperations(conversions) if {"port.inspect", "port.wait"} & methods else None,
-            outputs=EIPOutputOperations(outputs) if "output.read" in methods else None,
-        ),
-        outputs,
-        conversions,
-    )
-
-
-def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDescriptor:
-    methods = set(descriptor.available_methods)
-    actions = {action for method in methods for action in _METHOD_ACTIONS.get(method, ())}
-    if "process.inspect" in methods and "output.read" in methods:
-        actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
-    families: set[EnvironmentOperationFamily] = set()
-    if any(method.startswith("file.") for method in methods):
-        families.add("files")
-    if "shell.exec" in methods:
-        families.add("shell")
-    if any(method.startswith("process.") for method in methods):
-        families.add("processes")
-    if any(method.startswith("port.") for method in methods):
-        families.add("ports")
-    if any(method.startswith("output.") for method in methods):
-        families.add("outputs")
-    limits = descriptor.limits
-    return EnvironmentDescriptor(
-        generation=str(descriptor.generation),
-        operation_families=frozenset(families),
-        permissions=EnvironmentPermissionSet(operations=frozenset(actions)),
-        limits={
-            "max_request_bytes": limits.max_request_bytes,
-            "max_response_bytes": limits.max_response_bytes,
-            "max_concurrent_operations": limits.max_concurrent_operations,
-            "max_processes": limits.max_processes,
-            "max_operation_duration_ms": limits.max_operation_duration_ms,
-            "max_output_preview_bytes": limits.max_output_preview_bytes,
-            "max_output_bytes_per_stream": limits.max_output_bytes_per_stream,
-            "max_transfer_frame_bytes": limits.max_transfer_frame_bytes,
-            "max_concurrent_file_transfers": limits.max_concurrent_file_transfers,
-            "max_file_transfer_bytes": limits.max_file_transfer_bytes,
-        },
-        mounts=tuple(
-            EnvironmentMountDescriptor(name=mount.mount_id, path=mount.logical_root, read_only=not mount.writable)
-            for mount in descriptor.mounts
-        ),
-    )
-
-
 def decode_state(
     state: EnvironmentState | None,
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
 ) -> DockerProviderStateData | None:
     if state is None:
         return None
@@ -651,8 +606,8 @@ def decode_state(
     return data
 
 
-async def _canonical_configuration(configuration: DockerProviderConfiguration) -> DockerProviderConfiguration:
-    def canonicalize() -> DockerProviderConfiguration:
+async def _canonical_configuration(configuration: DockerTargetConfiguration) -> DockerTargetConfiguration:
+    def canonicalize() -> DockerTargetConfiguration:
         mounts: list[DockerMountConfiguration] = []
         for mount in configuration.mounts:
             source = mount.source
@@ -672,7 +627,7 @@ async def _canonical_configuration(configuration: DockerProviderConfiguration) -
 
 async def _resolve_image(
     runtime: DockerProviderRuntime,
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
 ) -> DockerImageInspection:
     try:
         image: DockerImageInspection | None = None
@@ -696,26 +651,8 @@ def _validate_image(image: DockerImageInspection) -> None:
         raise _state_failure("Docker image must declare a fixed non-root user.")
 
 
-def _configuration_fingerprint(configuration: DockerProviderConfiguration) -> str:
-    payload = json.dumps(
-        configuration.model_dump(mode="json"),
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
-
-
-def _correlation(prefix: str, *values: str) -> str:
-    digest = hashlib.sha256()
-    for value in values:
-        digest.update(value.encode())
-        digest.update(b"\0")
-    return f"{prefix}-{digest.hexdigest()[:24]}"
-
-
 def _new_bootstrap_material(
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
     fingerprint: str,
 ) -> DockerBootstrapMaterial:
     return DockerBootstrapMaterial(
@@ -726,7 +663,7 @@ def _new_bootstrap_material(
     )
 
 
-def _envd_configuration(configuration: DockerProviderConfiguration) -> bytes:
+def _envd_configuration(configuration: DockerTargetConfiguration) -> bytes:
     mounts = [
         {
             "mount_id": mount.mount_id,
@@ -766,7 +703,7 @@ def _envd_configuration(configuration: DockerProviderConfiguration) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
 
 
-def _configured_engine_mounts(configuration: DockerProviderConfiguration) -> tuple[DockerEngineMount, ...]:
+def _configured_engine_mounts(configuration: DockerTargetConfiguration) -> tuple[DockerEngineMount, ...]:
     mounts: list[DockerEngineMount] = []
     for mount in configuration.mounts:
         source = mount.source
@@ -792,7 +729,7 @@ def _configured_engine_mounts(configuration: DockerProviderConfiguration) -> tup
 
 
 def _container_spec(
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
     *,
     image_id: str,
     labels: Mapping[str, str],
@@ -814,7 +751,7 @@ def _container_spec(
 
 
 def _labels(
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
     *,
     bootstrap_correlation: str,
     configuration_fingerprint: str,
@@ -831,7 +768,7 @@ def _labels(
 
 
 def _labels_from_state(
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
     state: DockerProviderStateData,
 ) -> dict[str, str]:
     return _labels(
@@ -843,7 +780,7 @@ def _labels_from_state(
 
 
 def _state_data(
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
     *,
     container_id: str,
     image_id: str,
@@ -863,7 +800,7 @@ def _state_data(
 
 def _validate_bootstrap(
     allocation: DockerBootstrapAllocation,
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
     fingerprint: str,
 ) -> None:
     material = allocation.material
@@ -879,7 +816,7 @@ def _validate_bootstrap(
 def _validate_inspection(
     inspection: DockerContainerInspection,
     *,
-    configuration: DockerProviderConfiguration,
+    configuration: DockerTargetConfiguration,
     image_id: str,
     labels: Mapping[str, str],
     allocation: DockerBootstrapAllocation,

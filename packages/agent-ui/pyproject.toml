@@ -10,6 +10,7 @@ dependencies = [
     "aiosqlite>=0.21,<1",
     "alembic>=1.17.1,<2",
     "anyio>=4,<5",
+    "click>=8.2,<9",
     "a13n-environment-provider",
     "a13n-harness",
     "a13n-stream-protocol",
@@ -24,6 +25,7 @@ dependencies = [
     "pydantic>=2.12,<3",
     "pydantic-ai-slim>=2.38,<3",
     "pyyaml>=6.0.2,<7",
+    "rich>=15,<16",
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "zstandard>=0.25,<0.26",
     "pypdf>=6,<7",
@@ -31,6 +33,7 @@ dependencies = [
     "mammoth>=1.11,<2",
     "openpyxl>=3.1,<4",
     "python-pptx>=1,<2",
+    "textual>=6.12,<7",
 ]
 
 [project.scripts]

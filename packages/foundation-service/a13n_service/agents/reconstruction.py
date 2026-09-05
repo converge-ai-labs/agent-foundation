@@ -46,7 +46,6 @@ from .domain import (
     ConnectorConnectionToolSelection,
     EffectiveAgentConfig,
     EffectiveAgentModel,
-    EnvironmentExecutionConfig,
     InputAdapterConfig,
     MCPConnectionToolSelection,
     OutputSpec,
@@ -89,7 +88,6 @@ class AgentDefinitionReconstructionContext:
     skill_locks: tuple[SkillRevisionLock, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
-    resolved_environment: EnvironmentExecutionConfig | None
     secret_requirements: tuple[SecretRequirement, ...]
     asset_publication: AssetPublicationConfig | None
     protocol: ProtocolConfig
@@ -115,7 +113,6 @@ class _NodeSnapshot:
     skill_locks: tuple[SkillRevisionLock, ...]
     connector_tools: tuple[ConnectorConnectionToolSelection, ...]
     mcp_tools: tuple[MCPConnectionToolSelection, ...]
-    resolved_environment: EnvironmentExecutionConfig | None
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     instructions: str
     input_adapter: InputAdapterConfig
@@ -309,7 +306,6 @@ class AgentReconstructor:
             skill_locks=node.skill_locks,
             connector_tools=node.connector_tools,
             mcp_tools=node.mcp_tools,
-            resolved_environment=node.resolved_environment,
             secret_requirements=node.secret_requirements,
             asset_publication=node.asset_publication,
             protocol=node.protocol,
@@ -359,7 +355,6 @@ class AgentReconstructor:
             resolved_skills=revision.resolved_skills,
             connector_tools=revision.connector_tools,
             mcp_tools=revision.mcp_tools,
-            resolved_environment=revision.resolved_environment,
             resolved_subagents=revision.resolved_subagents,
         )
         payload = {
@@ -390,7 +385,6 @@ def _snapshot_from_effective(
         skill_locks=effective.skills,
         connector_tools=effective.connector_tools,
         mcp_tools=effective.mcp_tools,
-        resolved_environment=effective.resolved_environment,
         resolved_subagents=effective.resolved_subagents,
         instructions=effective.instructions,
         input_adapter=effective.input_adapter,
@@ -415,7 +409,6 @@ def _snapshot_from_revision(revision: AgentRevision) -> _NodeSnapshot:
         skill_locks=(),
         connector_tools=revision.connector_tools,
         mcp_tools=revision.mcp_tools,
-        resolved_environment=revision.resolved_environment,
         resolved_subagents=revision.resolved_subagents,
         instructions=config.instructions,
         input_adapter=config.input_adapter,

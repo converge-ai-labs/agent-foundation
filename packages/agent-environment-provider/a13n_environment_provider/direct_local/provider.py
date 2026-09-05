@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, JsonValue, ValidationError
@@ -18,7 +18,7 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..management import Environment, EnvironmentProvider
+from ..management import Environment, EnvironmentProvider, HostLocalProviderConfiguration
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
@@ -69,6 +69,8 @@ class _DirectLocalPortPolicy:
 
 
 class DirectLocalEnvironmentProvider(EnvironmentProvider):
+    provider_configuration_model = HostLocalProviderConfiguration
+
     @property
     def key(self) -> str:
         return _PROVIDER_KEY
@@ -76,14 +78,6 @@ class DirectLocalEnvironmentProvider(EnvironmentProvider):
     @property
     def configuration_versions(self) -> frozenset[str]:
         return frozenset({_CONFIGURATION_VERSION})
-
-    @property
-    def provider_key(self) -> str:
-        return self.key
-
-    @property
-    def connection_versions(self) -> frozenset[str]:
-        return self.configuration_versions
 
     def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
         if schema_version != _CONFIGURATION_VERSION:
@@ -101,10 +95,21 @@ class DirectLocalEnvironmentProvider(EnvironmentProvider):
                 category=EnvironmentProviderErrorCategory.INVALID,
             ) from error
 
+    def describe_configuration(self, configuration: BaseModel) -> EnvironmentDescriptor:
+        if not isinstance(configuration, DirectLocalProviderConfiguration):
+            raise TypeError("Unexpected Provider recipe")
+        return _descriptor(configuration, "unprepared")
+
+    def target_identity(self, *, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+        if not isinstance(configuration, DirectLocalProviderConfiguration) or state is not None:
+            raise ValueError("Local Providers require a valid stateless workspace configuration")
+        return str(configuration.root.path)
+
     def create_environment(
         self,
         *,
         configuration: BaseModel,
+        environment_id: str,
         state: EnvironmentState | None,
         runtime: object | None = None,
     ) -> Environment:
@@ -118,52 +123,15 @@ class DirectLocalEnvironmentProvider(EnvironmentProvider):
             )
         if runtime is not None and not isinstance(runtime, DirectLocalProviderRuntime):
             raise TypeError("Direct Local runtime must be DirectLocalProviderRuntime or None")
-        return DirectLocalEnvironment(configuration)
-
-    def validate_connection(self, *, schema_version: str, parameters: JsonValue) -> BaseModel:
-        if schema_version != _CONFIGURATION_VERSION:
-            raise _provider_error(
-                "Direct Local connection version is unsupported.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-            )
-        try:
-            connection = DirectLocalProviderConfiguration.model_validate(parameters)
-        except ValidationError as error:
-            raise _provider_error(
-                "Direct Local connection is invalid.",
-                code="provider_connection_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-            ) from error
-        root = connection.root.model_copy(
-            update={"path": Path(os.path.normpath(str(connection.root.path)))},
-        )
-        return connection.model_copy(update={"root": root})
-
-    def target_key(self, *, connection: BaseModel) -> str:
-        if not isinstance(connection, DirectLocalProviderConfiguration):
-            raise TypeError("Direct Local requires DirectLocalProviderConfiguration")
-        return str(connection.root.path)
-
-    def create_attachment_environment(
-        self,
-        *,
-        connection: BaseModel,
-        runtime: object,
-    ) -> Environment:
-        if not isinstance(connection, DirectLocalProviderConfiguration):
-            raise TypeError("Direct Local attachment requires DirectLocalProviderConfiguration")
-        if not isinstance(runtime, DirectLocalProviderRuntime):
-            raise TypeError("Direct Local attachment requires DirectLocalProviderRuntime")
-        return DirectLocalEnvironment(connection, exact_target=True)
+        return DirectLocalEnvironment(configuration, environment_id=environment_id)
 
 
 class DirectLocalEnvironment(Environment):
-    def __init__(self, configuration: DirectLocalProviderConfiguration, *, exact_target: bool = False) -> None:
+    def __init__(self, configuration: DirectLocalProviderConfiguration, *, environment_id: str) -> None:
         super().__init__(None)
+        self._environment_id = environment_id
         self._configuration = configuration.model_copy(deep=True)
-        self._exact_target = exact_target
-        self._descriptor: EnvironmentDescriptor | None = None
+        self._descriptor = _descriptor(configuration, "unprepared")
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
         self._processes: LocalProcessManager | None = None
@@ -176,7 +144,7 @@ class DirectLocalEnvironment(Environment):
 
     @property
     def environment_id(self) -> str:
-        return self._configuration.environment_id
+        return self._environment_id
 
     @property
     def descriptor(self) -> EnvironmentDescriptor:
@@ -192,7 +160,7 @@ class DirectLocalEnvironment(Environment):
     def operations(self) -> EnvironmentOperations:
         return self._operations
 
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -203,12 +171,6 @@ class DirectLocalEnvironment(Environment):
     ) -> None:
         del thread_id, run_id, agent_instance_id, host_refs
         root = await asyncio.to_thread(_resolve_shared_root, self._configuration.root.path)
-        if self._exact_target and root != self._configuration.root.path:
-            raise _provider_error(
-                "Direct Local attachment root resolves to a different target.",
-                code="provider_target_conflict",
-                category=EnvironmentProviderErrorCategory.CONFLICT,
-            )
         generation = f"generation-{uuid4().hex[:16]}"
         files = LocalFileOperator(
             root=root,
@@ -255,44 +217,7 @@ class DirectLocalEnvironment(Environment):
             else None
         )
         shell = LocalShell(processes) if processes is not None else None
-        read_actions = {
-            EnvironmentAction.FILE_STAT,
-            EnvironmentAction.FILE_READ_TEXT,
-            EnvironmentAction.FILE_READ_BYTES,
-            EnvironmentAction.FILE_LIST,
-            EnvironmentAction.FILE_QUERY,
-            EnvironmentAction.FILE_SEARCH_TEXT,
-            EnvironmentAction.FILE_COPY_SOURCE,
-        }
-        file_actions = {action for action in EnvironmentAction if action.value.startswith("environment.file.")}
-        permissions = set(read_actions if self._configuration.root.read_only else file_actions)
-        families: set[EnvironmentOperationFamily] = {"files"}
-        if shell is not None:
-            permissions.add(EnvironmentAction.SHELL_EXEC)
-            families.add("shell")
-        if processes is not None:
-            permissions.update(
-                action for action in EnvironmentAction if action.value.startswith("environment.process.")
-            )
-            permissions.update({EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE})
-            families.update({"processes", "outputs"})
-        if ports is not None:
-            permissions.update({EnvironmentAction.PORT_INSPECT, EnvironmentAction.PORT_WAIT})
-            families.add("ports")
-        limits: dict[str, int | float] = {"max_value_bytes": self._configuration.max_value_bytes}
-        if processes is not None:
-            limits.update(
-                max_wall_time_seconds=self._configuration.max_wall_time_seconds,
-                max_buffer_bytes=self._configuration.max_buffer_bytes,
-                max_spool_bytes=self._configuration.max_spool_bytes,
-            )
-        self._descriptor = EnvironmentDescriptor(
-            generation=generation,
-            operation_families=frozenset(families),
-            permissions=EnvironmentPermissionSet(operations=frozenset(permissions)),
-            limits=limits,
-            mounts=(EnvironmentMountDescriptor(name="root", path="/", read_only=self._configuration.root.read_only),),
-        )
+        self._descriptor = _descriptor(self._configuration, generation)
         self._processes = processes
         self._retention = retention
         self._operations = EnvironmentOperations(
@@ -302,7 +227,18 @@ class DirectLocalEnvironment(Environment):
             ports=ports,
             outputs=retention,
         )
-        self._availability = EnvironmentAvailability(status="available", ready_families=frozenset(families))
+        self._availability = EnvironmentAvailability(
+            status="available", ready_families=self.descriptor.operation_families
+        )
+
+    def _bind_mount(self, mount_id: str) -> None:
+        files = self._operations.files
+        if isinstance(files, LocalFileOperator):
+            files.bind_mount(mount_id)
+        if self._processes is not None:
+            self._processes.bind_mount(mount_id)
+        if self._retention is not None:
+            self._retention.bind_mount(mount_id)
 
     async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         missing = operations - self.descriptor.operation_families
@@ -322,6 +258,11 @@ class DirectLocalEnvironment(Environment):
                     await asyncio.to_thread(shutil.rmtree, self._retention_root, True)
             finally:
                 self._operations = EnvironmentOperations()
+
+    async def reconcile(self) -> Literal["running", "stopped", "absent"]:
+        # These adapters own no durable daemon; their process-local resources
+        # end with their owner. Workspace paths are externally retained.
+        return "stopped"
 
     async def _destroy(self) -> None:
         return None
@@ -379,3 +320,43 @@ def _operation_error(message: str, code: str):
     from ..models import EnvironmentError
 
     return EnvironmentError(message, code=code)
+
+
+def _descriptor(configuration: DirectLocalProviderConfiguration, generation: str) -> EnvironmentDescriptor:
+    process_enabled = bool(configuration.allowed_executables or configuration.shell_profiles)
+    read_actions = {
+        EnvironmentAction.FILE_STAT,
+        EnvironmentAction.FILE_READ_TEXT,
+        EnvironmentAction.FILE_READ_BYTES,
+        EnvironmentAction.FILE_LIST,
+        EnvironmentAction.FILE_QUERY,
+        EnvironmentAction.FILE_SEARCH_TEXT,
+        EnvironmentAction.FILE_COPY_SOURCE,
+    }
+    file_actions = {action for action in EnvironmentAction if action.value.startswith("environment.file.")}
+    permissions = set(read_actions if configuration.root.read_only else file_actions)
+    families: set[EnvironmentOperationFamily] = {"files"}
+    if process_enabled:
+        permissions.add(EnvironmentAction.SHELL_EXEC)
+        families.add("shell")
+    if process_enabled:
+        permissions.update(action for action in EnvironmentAction if action.value.startswith("environment.process."))
+        permissions.update({EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE})
+        families.update({"processes", "outputs"})
+    if configuration.allowed_ports:
+        permissions.update({EnvironmentAction.PORT_INSPECT, EnvironmentAction.PORT_WAIT})
+        families.add("ports")
+    limits: dict[str, int | float] = {"max_value_bytes": configuration.max_value_bytes}
+    if process_enabled:
+        limits.update(
+            max_wall_time_seconds=configuration.max_wall_time_seconds,
+            max_buffer_bytes=configuration.max_buffer_bytes,
+            max_spool_bytes=configuration.max_spool_bytes,
+        )
+    return EnvironmentDescriptor(
+        generation=generation,
+        operation_families=frozenset(families),
+        permissions=EnvironmentPermissionSet(operations=frozenset(permissions)),
+        limits=limits,
+        mounts=(EnvironmentMountDescriptor(name="root", path="/", read_only=configuration.root.read_only),),
+    )

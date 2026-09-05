@@ -462,7 +462,8 @@ def _construct_skills_capability(
         FileSkillSource(
             f"agent-ui:content-plugin:{plugin_id}",
             (path,),
-            required=True,
+            required=False,
+            skip_invalid=True,
         )
         for plugin_id, path in path_layout.content_plugin_skills
     )

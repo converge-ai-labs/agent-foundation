@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
+from collections import Counter, OrderedDict
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
@@ -67,12 +67,23 @@ class _RootOperation:
 class RootRunCoordinator:
     """Own App-lifetime root tasks and correlate every control to one receipt."""
 
-    def __init__(self, executor: RootRunExecutor, *, summary_hub: AgentUiSummaryHub | None = None) -> None:
+    def __init__(
+        self,
+        executor: RootRunExecutor,
+        *,
+        summary_hub: AgentUiSummaryHub | None = None,
+        terminal_retention: int = 256,
+    ) -> None:
+        if terminal_retention < 1:
+            raise ValueError("terminal_retention must be positive")
         self._executor = executor
         self._summary_hub = summary_hub
         self._lock = Lock()
         self._operations: dict[str, _RootOperation] = {}
         self._active_by_thread: dict[str, str] = {}
+        self._latest_terminal: OrderedDict[str, RootOperationView] = OrderedDict()
+        self._terminal_receipts: OrderedDict[str, None] = OrderedDict()
+        self._terminal_retention = terminal_retention
         self._task_group_context: Any | None = None
         self._task_group: TaskGroup | None = None
         self._accepting = False
@@ -90,6 +101,12 @@ class RootRunCoordinator:
     async def stop_admission(self) -> None:
         async with self._lock:
             self._accepting = False
+
+    async def active_count(self) -> int:
+        """Return the number of process-local active root operations."""
+
+        async with self._lock:
+            return len(self._active_by_thread)
 
     async def close(self, *, timeout_seconds: float) -> None:
         if timeout_seconds <= 0:
@@ -224,21 +241,43 @@ class RootRunCoordinator:
             return None if operation is None else _view(operation)
 
     async def activity(self, thread_id: str) -> RootActivityView:
-        operation = await self.active(thread_id)
-        if operation is None:
-            return RootActivityView(state=RootActivityState.inactive)
-        if operation.status is RootOperationStatus.preparing:
-            return RootActivityView(
-                state=RootActivityState.preparing,
-                receipt_id=operation.receipt.receipt_id,
-                available_actions=("wait", "cancel"),
-            )
-        return RootActivityView(
-            state=RootActivityState.running,
-            receipt_id=operation.receipt.receipt_id,
-            run_id=operation.run_id,
-            available_actions=("wait", "steer", "cancel"),
-        )
+        return (await self.activities((thread_id,)))[thread_id]
+
+    async def activities(self, thread_ids: tuple[str, ...]) -> dict[str, RootActivityView]:
+        async with self._lock:
+            result: dict[str, RootActivityView] = {}
+            for thread_id in thread_ids:
+                receipt_id = self._active_by_thread.get(thread_id)
+                operation = None if receipt_id is None else self._operations.get(receipt_id)
+                if operation is None:
+                    result[thread_id] = RootActivityView(state=RootActivityState.inactive)
+                elif operation.status is RootOperationStatus.preparing:
+                    result[thread_id] = RootActivityView(
+                        state=RootActivityState.preparing,
+                        receipt_id=operation.receipt.receipt_id,
+                        available_actions=("wait", "cancel"),
+                    )
+                else:
+                    result[thread_id] = RootActivityView(
+                        state=RootActivityState.running,
+                        receipt_id=operation.receipt.receipt_id,
+                        run_id=operation.run_id,
+                        available_actions=("wait", "steer", "cancel"),
+                    )
+            return result
+
+    async def latest(self, thread_id: str) -> RootOperationView | None:
+        async with self._lock:
+            value = self._latest_terminal.get(thread_id)
+            return None if value is None else value.model_copy(deep=True)
+
+    async def latest_many(self, thread_ids: tuple[str, ...]) -> dict[str, RootOperationView]:
+        async with self._lock:
+            return {
+                thread_id: value.model_copy(deep=True)
+                for thread_id in thread_ids
+                if (value := self._latest_terminal.get(thread_id)) is not None
+            }
 
     async def wait(
         self,
@@ -347,6 +386,16 @@ class RootRunCoordinator:
                 operation.stream = None
                 if self._active_by_thread.get(operation.receipt.thread_id) == operation.receipt.receipt_id:
                     self._active_by_thread.pop(operation.receipt.thread_id, None)
+                thread_id = operation.receipt.thread_id
+                self._latest_terminal.pop(thread_id, None)
+                self._latest_terminal[thread_id] = _view(operation)
+                while len(self._latest_terminal) > self._terminal_retention:
+                    self._latest_terminal.popitem(last=False)
+                receipt_id = operation.receipt.receipt_id
+                self._terminal_receipts[receipt_id] = None
+                while len(self._terminal_receipts) > self._terminal_retention:
+                    expired_receipt, _ = self._terminal_receipts.popitem(last=False)
+                    self._operations.pop(expired_receipt, None)
                 operation.done.set()
             await self._publish_change(operation)
 

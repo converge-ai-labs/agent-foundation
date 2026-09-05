@@ -1,37 +1,10 @@
-"""Environment control-plane construction."""
+"""Compose Environment authoring from shared infrastructure."""
 
-from __future__ import annotations
+from a13n_environment_provider import EnvironmentProviderCatalog
 
-from dataclasses import dataclass
-
-from a13n_service.agents.environment_resolution import AgentEnvironmentSelectionResolver
-from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
-from a13n_service.environments.service import EnvironmentManagementService
-from a13n_service.process.components import Components
+from a13n_service.environments.service import EnvironmentService
 from a13n_service.process.runtime import SharedRuntime
 
 
-@dataclass(frozen=True, slots=True)
-class _EnvironmentBundle:
-    service: EnvironmentManagementService
-    agent_selection: AgentEnvironmentSelectionResolver
-
-
-def build_environment_bundle(
-    components: Components,
-    shared: SharedRuntime,
-    catalog: FoundationEnvironmentProviderCatalog,
-) -> _EnvironmentBundle:
-    """Construct environment management and Agent selection from one catalog."""
-
-    return _EnvironmentBundle(
-        service=EnvironmentManagementService(
-            shared.storage.sessions,
-            catalog,
-            attachment_tester=components.environment_attachment_tester,
-        ),
-        agent_selection=AgentEnvironmentSelectionResolver(shared.storage.sessions, catalog),
-    )
-
-
-__all__ = ["build_environment_bundle"]
+def build_environment_service(shared: SharedRuntime, catalog: EnvironmentProviderCatalog) -> EnvironmentService:
+    return EnvironmentService(shared.storage.sessions, catalog, shared.secret_protector)

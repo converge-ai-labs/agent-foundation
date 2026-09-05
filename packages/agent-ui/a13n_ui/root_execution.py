@@ -20,7 +20,7 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness import __version__ as harness_version
-from a13n_harness.capabilities import SubagentOperator
+from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
 from a13n_harness.context import AgentContext
 from a13n_stream_protocol import HarnessAguiObserver
 from anyio import CancelScope
@@ -369,9 +369,21 @@ def _deferred_resume(
                     "A deferred response kind does not match its selected request.",
                     code="thread_deferred_response_kind_mismatch",
                 )
-            calls[item.request_id] = (
-                ToolDenied(item.denial_message or "The external tool call was denied.") if item.denied else item.result
-            )
+            if item.denied:
+                calls[item.request_id] = ToolDenied(item.denial_message or "The external tool call was denied.")
+                continue
+            pending = next(request for request in requests.calls if request.tool_call_id == item.request_id)
+            metadata = requests.metadata.get(item.request_id)
+            if isinstance(metadata, dict) and metadata.get("kind") == "ask_user_question":
+                try:
+                    calls[item.request_id] = _validate_question_result(pending.args, item.result)
+                except (TypeError, ValueError) as exc:
+                    raise RunCoordinationError(
+                        "A structured question response is invalid.",
+                        code="thread_deferred_response_invalid",
+                    ) from exc
+            else:
+                calls[item.request_id] = item.result
         else:
             raise TypeError("Unsupported deferred response item")
     try:
@@ -382,6 +394,26 @@ def _deferred_resume(
             "The deferred response cannot be represented by the selected requests.",
             code="thread_deferred_response_invalid",
         ) from exc
+
+
+def _validate_question_result(arguments: object, value: object) -> dict[str, object]:
+    request = AskUserQuestionRequest.model_validate(arguments)
+    answers = UserQuestionAnswers.model_validate(value)
+    expected = {question.question: question for question in request.questions}
+    if not set(answers.answers) <= set(expected):
+        raise ValueError("answer contains an unknown question")
+    if set(expected) - set(answers.answers) and answers.response is None:
+        raise ValueError("answer must cover every question or include a general response")
+    for text, answer in answers.answers.items():
+        question = expected[text]
+        values = (answer,) if isinstance(answer, str) else answer
+        labels = {option.label for option in question.options}
+        selected = tuple(item for item in values if item in labels)
+        if selected and len(selected) != len(values):
+            raise ValueError("answer cannot mix option labels and free text")
+        if selected and not question.multi_select and len(selected) != 1:
+            raise ValueError("single-select question requires exactly one option")
+    return answers.model_dump(mode="json", exclude_none=True)
 
 
 def _selection(thread: Thread) -> ThreadCompositionSelection:

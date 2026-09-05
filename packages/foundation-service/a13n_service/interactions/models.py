@@ -168,7 +168,8 @@ class ThreadRecord(Base):
     origin_thread_id: Mapped[str | None] = mapped_column(String(72))
     origin_run_id: Mapped[str | None] = mapped_column(String(72))
     head_run_id: Mapped[str | None] = mapped_column(String(72))
-    current_run_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    current_run_id: Mapped[str | None] = mapped_column(String(72))
+    default_environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -185,6 +186,7 @@ class ThreadRecord(Base):
             origin_run_id=self.origin_run_id,
             head_run_id=self.head_run_id,
             current_run_id=self.current_run_id,
+            default_environment_id=self.default_environment_id,
             created_at=assume_utc(self.created_at),
             updated_at=assume_utc(self.updated_at),
         )
@@ -193,6 +195,10 @@ class ThreadRecord(Base):
 class RunRecord(Base):
     __tablename__ = "runs"
     __table_args__ = (
+        CheckConstraint(
+            "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
+            name="environment_selection_valid",
+        ),
         ForeignKeyConstraint(
             ("tenant_id", "session_id", "thread_id"),
             ("threads.tenant_id", "threads.session_id", "threads.id"),
@@ -409,6 +415,10 @@ class RunRecord(Base):
         Index("ix_runs_retry", "tenant_id", "retry_of_run_id", "id"),
     )
 
+    environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"), index=True)
+    environment_access: Mapped[str | None] = mapped_column(String(16))
+    environment_use_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     tenant_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -503,6 +513,9 @@ class RunRecord(Base):
             "thread_id": self.thread_id,
             "parent_run_id": self.parent_run_id,
             "retry_of_run_id": self.retry_of_run_id,
+            "environment_id": self.environment_id,
+            "environment_access": self.environment_access,
+            "environment_use_started_at": optional_assume_utc(self.environment_use_started_at),
             "lineage_kind": RunLineageKind(self.lineage_kind),
             "trigger_type": self.trigger_type,
             "trigger_entity_type": self.trigger_entity_type,

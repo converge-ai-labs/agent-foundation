@@ -13,6 +13,8 @@ from pydantic_ai import RunContext
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import (
     EnvironmentError,
+    EnvironmentOperationFamily,
+    EnvironmentReadinessRequirement,
 )
 from a13n_harness.model_context import (
     ModelContextNext,
@@ -78,7 +80,7 @@ class _DynamicEnvironmentContext:
             fences: list[_MountFence] = []
             token = self._fence_builder.set(fences)
             try:
-                resources = self._resolve_resources(tool_id, arguments, context)
+                resources = await self._resolve_resources(tool_id, arguments, context)
             except EnvironmentError as exc:
                 if tool_id in {
                     "filesystem.mkdir",
@@ -111,7 +113,7 @@ class _DynamicEnvironmentContext:
 
         return resolve
 
-    def _resolve_resources(
+    async def _resolve_resources(
         self,
         tool_id: str,
         arguments: Mapping[str, object],
@@ -123,27 +125,27 @@ class _DynamicEnvironmentContext:
             "filesystem.edit",
             "filesystem.multi_edit",
         }:
-            return (self._path_resource(context, _string_argument(arguments, "file_path")),)
+            return (await self._path_resource(context, _string_argument(arguments, "file_path")),)
         if tool_id == "filesystem.mkdir":
-            return self._path_resources(context, _string_sequence_argument(arguments, "paths"))
+            return await self._path_resources(context, _string_sequence_argument(arguments, "paths"))
         if tool_id in {"filesystem.move", "filesystem.copy"}:
             pairs = _path_pair_sequence_argument(arguments, "pairs")
-            return self._path_resources(
+            return await self._path_resources(
                 context,
                 tuple(path for pair in pairs for path in (pair.src, pair.dst)),
             )
         if tool_id == "filesystem.remove":
-            return self._path_resources(context, _string_sequence_argument(arguments, "paths"))
+            return await self._path_resources(context, _string_sequence_argument(arguments, "paths"))
         if tool_id == "filesystem.ls":
-            return (self._path_resource(context, _string_argument(arguments, "path")),)
+            return (await self._path_resource(context, _string_argument(arguments, "path")),)
         if tool_id in {"filesystem.glob", "filesystem.grep"}:
-            return (self._path_resource(context, _optional_string_argument(arguments, "root") or "."),)
+            return (await self._path_resource(context, _optional_string_argument(arguments, "root") or "."),)
         if tool_id == "environment.shell_exec":
             alias = _optional_string_argument(arguments, "alias")
             cwd = _optional_string_argument(arguments, "cwd")
             if cwd is not None:
-                return (self._path_resource(context, cwd, alias=alias),)
-            return (self._binding_resource(context, alias),)
+                return (await self._path_resource(context, cwd, alias=alias),)
+            return (await self._binding_resource(context, alias, "shell"),)
         if tool_id.startswith("environment.process_"):
             backend_id = self._resolve_process_resource(_string_argument(arguments, "process_id"))
             return (
@@ -154,33 +156,46 @@ class _DynamicEnvironmentContext:
                 ),
             )
         if tool_id.startswith("environment.port_"):
-            return (self._binding_resource(context, _optional_string_argument(arguments, "alias")),)
+            return (await self._binding_resource(context, _optional_string_argument(arguments, "alias"), "ports"),)
         return ()
 
-    def _path_resources(
+    async def _path_resources(
         self,
         context: AgentContext,
         paths: tuple[str, ...],
     ) -> tuple[CanonicalResource, ...]:
-        return tuple(dict.fromkeys(self._path_resource(context, path) for path in paths))
+        return tuple(dict.fromkeys([await self._path_resource(context, path) for path in paths]))
 
-    def _path_resource(
+    async def _path_resource(
         self,
         context: AgentContext,
         path: str,
         *,
         alias: str | None = None,
     ) -> CanonicalResource:
-        selection = context.environment.select_files(path, alias=alias)
+        selection = await context.environment.resolve_files(path, alias=alias)
         selected = selection.resolved_path
         self._record_fence(selected.mount_id, selection.observed_generation)
         return CanonicalResource(
             namespace="environment",
             kind="file",
             identifier=f"{selected.mount_id}:{selection.observed_generation}:{selected.path}",
+            approval_revision=self._approval_revision(selected.mount_id, selected.path),
         )
 
-    def _binding_resource(self, context: AgentContext, alias: str | None) -> CanonicalResource:
+    async def _binding_resource(
+        self, context: AgentContext, alias: str | None, family: EnvironmentOperationFamily
+    ) -> CanonicalResource:
+        selection = context.environment.select_files(".", alias=alias)
+        mount = next(
+            item
+            for item in context.environment.snapshot.mounts
+            if item.name == (alias or context.environment.snapshot.default_mount)
+        )
+        if family in mount.descriptor.operation_families:
+            await context.environment.ensure_ready(
+                EnvironmentReadinessRequirement(mounts=frozenset({mount.name}), operations=frozenset({family}))
+            )
         selection = context.environment.select_files(".", alias=alias)
         selected = selection.resolved_path
         self._record_fence(selected.mount_id, selection.observed_generation)
@@ -188,7 +203,17 @@ class _DynamicEnvironmentContext:
             namespace="environment",
             kind="mount",
             identifier=f"{selected.mount_id}:{selection.observed_generation}",
+            approval_revision=self._approval_revision(selected.mount_id),
         )
+
+    def _approval_revision(self, mount_id: str, path: str = "") -> str:
+        mount = next(
+            item
+            for item in self._environment.snapshot.mounts
+            if self._environment.select_files(".", alias=item.name).resolved_path.mount_id == mount_id
+        )
+        identity = mount.descriptor.backing_identity or f"{mount_id}:{mount.descriptor.generation}"
+        return f"{identity}:{path}"
 
     def _record_fence(self, mount_id: str, generation: str) -> None:
         builder = self._fence_builder.get()

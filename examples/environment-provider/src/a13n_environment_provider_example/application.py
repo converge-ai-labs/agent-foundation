@@ -61,7 +61,6 @@ async def run_direct_local(workspace: Path) -> StatelessExampleResult:
         provider_key="a13n.direct-local",
         schema_version="1",
         configuration={
-            "environment_id": "direct-local-example",
             "root": {"path": str(root)},
         },
     )
@@ -70,7 +69,9 @@ async def run_direct_local(workspace: Path) -> StatelessExampleResult:
         schema_version=spec.schema_version,
         value=spec.configuration,
     )
-    environment = provider.create_environment(configuration=configuration, state=None)
+    environment = provider.create_environment(
+        configuration=configuration, environment_id="direct-local-example", state=None
+    )
     if not isinstance(environment, DirectLocalEnvironment):
         raise TypeError("Direct Local Provider returned an unexpected Environment")
 
@@ -102,7 +103,6 @@ async def run_local_envd(
         provider_key="a13n.local-envd",
         schema_version="1",
         configuration={
-            "environment_id": "local-envd-example",
             "workspace": {"path": str(root)},
             "execution_network": "deny",
         },
@@ -118,6 +118,7 @@ async def run_local_envd(
     )
     environment = provider.create_environment(
         configuration=configuration,
+        environment_id="local-envd-example",
         state=None,
         runtime=runtime,
     )
@@ -151,7 +152,6 @@ async def run_docker(
         provider_key="a13n.docker",
         schema_version="1",
         configuration={
-            "environment_id": "docker-example",
             "image": image,
         },
     )
@@ -174,6 +174,7 @@ async def run_docker(
         nonlocal current_state, first_text, reentered_text, state_version
         first = provider.create_environment(
             configuration=configuration,
+            environment_id="docker-example",
             state=None,
             runtime=runtime,
         )
@@ -193,6 +194,7 @@ async def run_docker(
 
         reentered = provider.create_environment(
             configuration=configuration,
+            environment_id="docker-example",
             state=current_state,
             runtime=runtime,
         )
@@ -212,6 +214,7 @@ async def run_docker(
             return
         cleanup = provider.create_environment(
             configuration=configuration,
+            environment_id="docker-example",
             state=current_state,
             runtime=runtime,
         )

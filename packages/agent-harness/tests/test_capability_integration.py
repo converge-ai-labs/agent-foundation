@@ -135,11 +135,11 @@ class _WebScrapeProvider:
 def _environment(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
         DirectLocalProviderConfiguration(
-            environment_id="capability-integration",
             root=DirectLocalRootConfiguration(path=root),
             shell_profiles=(DirectLocalShellProfile(profile_id="default", executable=Path(sys.executable).resolve()),),
             allowed_executables=frozenset({Path(sys.executable).resolve()}),
-        )
+        ),
+        environment_id="capability-integration",
     )
     return create_environment_runtime(
         mounts={

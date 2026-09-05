@@ -183,6 +183,7 @@ class EnvironmentDescriptor(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     generation: str
+    backing_identity: str | None = Field(default=None, min_length=1, max_length=256)
     operation_families: frozenset[EnvironmentOperationFamily]
     permissions: EnvironmentPermissionSet
     limits: Mapping[str, JsonValue] = Field(default_factory=dict)

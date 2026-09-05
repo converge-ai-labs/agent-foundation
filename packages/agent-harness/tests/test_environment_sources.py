@@ -45,10 +45,10 @@ def _environment(root: Path, environment_id: str, *, read_only: bool = False) ->
     provider = DirectLocalEnvironmentProvider()
     return provider.create_environment(
         configuration=DirectLocalProviderConfiguration(
-            environment_id=environment_id,
             root=DirectLocalRootConfiguration(path=root, read_only=read_only),
         ),
         state=None,
+        environment_id=environment_id,
     )
 
 
@@ -63,16 +63,16 @@ class _TrackingEnvironment(DirectLocalEnvironment):
     ) -> None:
         super().__init__(
             DirectLocalProviderConfiguration(
-                environment_id=environment_id,
                 root=DirectLocalRootConfiguration(path=root),
-            )
+            ),
+            environment_id=environment_id,
         )
         self.entry: tuple[str, str, str, str, dict[str, str]] | None = None
         self.close_calls = 0
         self._lifecycle_events = lifecycle_events
         self._fail_entry = fail_entry
 
-    async def _enter(
+    async def _prepare(
         self,
         *,
         thread_id: str,
@@ -86,7 +86,7 @@ class _TrackingEnvironment(DirectLocalEnvironment):
             self._lifecycle_events.append(f"enter:{self.environment_id}")
         if self._fail_entry:
             raise RuntimeError("entry failed")
-        await super()._enter(
+        await super()._prepare(
             thread_id=thread_id,
             run_id=run_id,
             agent_instance_id=agent_instance_id,
@@ -323,7 +323,7 @@ async def test_environment_adapter_is_single_use(tmp_path: Path) -> None:
         await _executable().run("second", environment=environment)
 
 
-async def test_entered_environments_close_in_reverse_order_when_later_entry_fails(
+async def test_entered_environments_close_in_reverse_order_when_later_preparation_fails(
     tmp_path: Path,
 ) -> None:
     events: list[str] = []
@@ -339,7 +339,9 @@ async def test_entered_environments_close_in_reverse_order_when_later_entry_fail
             "hello",
             environments={"first": first, "second": second, "failed": failed},
         ):
-            pass
+            await first.prepare()
+            await second.prepare()
+            await failed.prepare()
 
     assert events == [
         "enter:first",

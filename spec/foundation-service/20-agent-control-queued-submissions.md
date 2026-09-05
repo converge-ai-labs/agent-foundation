@@ -50,7 +50,7 @@ class QueuedSubmission:
     failed_at: datetime | None
 ```
 
-`submission` is the bounded [`ThreadRunSubmissionIntent`](18-agent-control-input-and-continuation.md#input-bearing-operations) submitted to the existing-Thread Run route, not an accepted Run input. It contains the `AgentInput` plus every policy-permitted Agent selector, exact Revision selector, current-Revision precondition, typed config override, and inline Hook option that must survive delayed acceptance. `authority_principal` is the authenticated User or Service Account that submitted the intent and is immutable while the entry exists. The queue validates wire schemas, static limits, that Principal's current authority, and references at admission but does not resolve `delivery="auto"`, select an AgentRevision or Runtime lock, merge `EffectiveAgentConfig`, create a HookSubscription, or initialize Harness state. Those decisions depend on the consumption-time head, current Run, and the stored Principal's current authority and occur only when Foundation accepts the resulting Run.
+`submission` is the bounded [`ThreadRunSubmissionIntent`](18-agent-control-input-and-continuation.md#input-bearing-operations) submitted to the existing-Thread Run route, not an accepted Run input. It contains the `AgentInput` plus every policy-permitted Agent selector, exact Revision selector, current-Revision precondition, typed config override, independent Environment choice including omission/null, and inline Hook option that must survive delayed acceptance. `authority_principal` is the authenticated User or Service Account that submitted the intent and is immutable while the entry exists. The queue validates wire schemas, static limits, that Principal's current authority, and references at admission but does not resolve `delivery="auto"`, select an AgentRevision or Runtime lock, merge `EffectiveAgentConfig`, create a HookSubscription, allocate an Environment, resolve a template version, change the Thread default, or initialize Harness state. Those decisions depend on the consumption-time head, current Run, and the stored Principal's current authority and occur only when Foundation accepts the resulting Run.
 
 When the intent omits a stable Agent, consumption from a completed head inherits that parent's stable Agent and root-like consumption with a null head inherits the current failed or cancelled Run's stable Agent. An explicit stable Agent follows the ordinary continuation compatibility policy. An exact Revision selector remains exact while queued; `expected_current_revision_id` remains a separate consumption-time precondition. Consumption reauthorizes and resolves the complete typed override against the then-current eligible state. An inline HookSubscription is created in the same transaction as the accepted Run and receives that Run's exact scope. An option blocked by recoverable current state leaves the submission queued and editable rather than silently falling back to defaults; permanent invalidity follows the terminal classification below.
 
@@ -137,6 +137,8 @@ Reorder carries `expected_queue_version` and the exact ordered IDs of every curr
 
 Consume always selects the first queued entry. A caller chooses another entry by reordering first rather than bypassing queue order. Accepted Run creation returns `202 QueuedSubmissionConsumptionReceipt` with `outcome="run_accepted"`; terminal queue invalidation returns `200` with `outcome="submission_failed"` and no Run.
 
+Omitted Environment selections resolve from the Thread default at consumption, not enqueue time. Explicit template choices resolve their requested exact/current version at consumption and allocate a new Environment once under acceptance idempotency. Target preparation occurs only during execution under the selected template policy.
+
 ## Admission and Mutation Rules
 
 A retained Thread accepts `POST /api/v1/threads/{thread_id}/runs` in this order after verifying `expected_thread_version`:
@@ -145,7 +147,7 @@ A retained Thread accepts `POST /api/v1/threads/{thread_id}/runs` in this order 
 2. otherwise, if the current Run is `failed` or `cancelled`, reject when any queued submission exists or the selected head is waiting; with an empty queue, immediately accept an ordinary continuation when `head_run_id` names a completed Run or a root-like Run with no parent when `head_run_id=null`;
 3. otherwise, if any queued submission already exists, append the new intent so it cannot bypass earlier queue order;
 4. otherwise, if the current Run is `accepted`, `running`, or `waiting`, create a queued submission;
-5. otherwise, if `head_run_id` names a completed Run, immediately accept an ordinary continuation from that head;
+5. otherwise, if both Run references are null, accept the first root Run with an explicit Agent; if the head names a completed Run, accept an ordinary continuation from it;
 6. otherwise reject because locked Thread selection does not identify an eligible immediate-acceptance or queue-admission state.
 
 Continue From, Feedback, waiting Continue, and Retry retain their independent precedence and can run while queued submissions exist because they establish the state from which later queue consumption proceeds. They do not append, reorder, or consume the queue.
@@ -174,14 +176,14 @@ Only the first class may produce `failed`. Absence observed through an unavailab
 
 For an already terminal Thread, the final short transaction:
 
-1. locks the Thread, current or selected head Run and every referenced async-result spawning Run in stable ID order, inbox counter and pending entries in `delivery_sequence`, and selected queued submission;
+1. locks the Thread, current or selected head Run and every referenced async-result spawning Run in stable ID order, affected Environment records in stable Environment-ID order, inbox counter and pending entries in `delivery_sequence`, and selected queued submission;
 2. resolves idempotent replay, then verifies `expected_thread_version`, `expected_queue_version`, command-actor authorization, the stored authority Principal's current status and complete Run authority, and that the entry remains queued in the same Thread;
 3. requires no current `accepted` or `running` Run and rejects a current or selected waiting state;
 4. repeats all ordinary Continue input, Agent, Revision, current-Revision, effective-config, Runtime, inline-Hook, parent-state, empty-state, and digest preconditions;
 5. when `head_run_id` names a completed Run, inserts one `accepted` Run with `authority_principal` copied from the queue entry, `lineage_kind="continue"`, `input_kind="agent_input"`, and `parent_run_id=head_run_id`;
 6. when `head_run_id=null` and the current Run is `failed` or `cancelled`, inserts one root-like `accepted` Run with `authority_principal` copied from the queue entry, `lineage_kind="root"`, `input_kind="agent_input"`, and `parent_run_id=null`; the trusted state adapter initializes empty state under the existing Thread ID;
 7. marks every unbound async result whose spawning Run is failed or cancelled `suppressed`, then binds every remaining eligible result to the new Run in `delivery_sequence`; no pending entry is injected into initial Run input or consumed by this binding;
-8. sets `current_run_id` to the new Run, preserves the completed head or the null head selected above, and increments `Thread.version`;
+8. freezes the independently resolved Run Environment selection and updates `default_environment_id` atomically, sets `current_run_id` to the new Run, preserves the completed head or the null head selected above, and increments `Thread.version`;
 9. sets the queue row's `consumed_run_id`, clears its position, increments its `version`, advances `Thread.queue_version`, and commits lifecycle, idempotency, and ordinary publication facts with the Run; it creates no queue-drain-specific outbox intent.
 
 These writes commit or roll back together. No observer can see a consumed queue entry without its Run or an accepted Run whose source entry is still queued. The first RunAttempt is created only by a later Worker claim. Queue workers, control replicas, and clients therefore need no queue lease; concurrent consume, edit, delete, reorder, Continue, Continue From, Feedback, Retry, and outcome sealing operations serialize through the same versions and row locks.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness import (
@@ -17,6 +18,7 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness.errors import RunError
+from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions import (
     AdaptedThreadInboxEntry,
     AttemptAuthorityError,
@@ -362,6 +364,7 @@ def _terminal_receipt(context: AttemptContext) -> RunTerminalReceipt:
 async def test_executor_supervises_two_children_before_cleanup_and_capacity_release(
     interaction_object_store: ObjectStore,
     reject_preparation: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trace: list[str] = []
     envelope = initial_state()
@@ -400,7 +403,11 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
             )
         ),
     )
+    environment_preparer = AsyncMock(return_value=None)
+    monkeypatch.setattr("a13n_service.interactions.attempt_executor.prepare_run_environment", environment_preparer)
+    lifecycle = Mock(spec=EnvironmentLifecycle)
     executor = RunAttemptExecutor(
+        environments=lifecycle,
         context=context,
         control=control,
         driver=driver,
@@ -413,6 +420,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     )
 
     receipt = await executor.run()
+    environment_preparer.assert_awaited_once_with(lifecycle, context)
     await control.reconcile()
     await control.renew_lease()
 

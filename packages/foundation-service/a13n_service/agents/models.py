@@ -30,7 +30,6 @@ from .domain import (
     AgentRevision,
     AgentSource,
     ConnectorConnectionToolSelection,
-    EnvironmentExecutionConfig,
     MCPConnectionToolSelection,
     PluginRuntimeMode,
     ResolvedAgentModel,
@@ -45,7 +44,6 @@ _PLUGINS_ADAPTER = TypeAdapter(tuple[ResolvedPluginVersion, ...])
 _SKILLS_ADAPTER = TypeAdapter(tuple[ResolvedSkillBinding, ...])
 _CONNECTOR_TOOLS_ADAPTER = TypeAdapter(tuple[ConnectorConnectionToolSelection, ...])
 _MCP_TOOLS_ADAPTER = TypeAdapter(tuple[MCPConnectionToolSelection, ...])
-_ENVIRONMENT_ADAPTER = TypeAdapter(EnvironmentExecutionConfig | None)
 _SUBAGENTS_ADAPTER = TypeAdapter(tuple[ResolvedSubagentEdge, ...])
 
 
@@ -68,6 +66,7 @@ class AgentRecord(Base):
         Index("ix_agents_workspace_availability", "workspace_id", "enabled", "archived_at", "updated_at", "id"),
     )
 
+    default_environment_template_id: Mapped[str | None] = mapped_column(String(72))
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -90,6 +89,7 @@ class AgentRecord(Base):
 
     def to_resource(self) -> Agent:
         return Agent(
+            default_environment_template_id=self.default_environment_template_id,
             id=self.id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
@@ -155,7 +155,6 @@ class AgentRevisionRecord(Base):
         nullable=False,
         server_default=text("'[]'"),
     )
-    resolved_environment: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     resolved_subagents: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     source_revision_id: Mapped[str | None] = mapped_column(String(72))
@@ -179,7 +178,6 @@ class AgentRevisionRecord(Base):
             resolved_skills=_SKILLS_ADAPTER.validate_python(self.resolved_skills),
             connector_tools=_CONNECTOR_TOOLS_ADAPTER.validate_python(self.connector_tools),
             mcp_tools=_MCP_TOOLS_ADAPTER.validate_python(self.mcp_tools),
-            resolved_environment=_ENVIRONMENT_ADAPTER.validate_python(self.resolved_environment),
             resolved_subagents=_SUBAGENTS_ADAPTER.validate_python(self.resolved_subagents),
             content_digest=self.content_digest,
             source_revision_id=self.source_revision_id,

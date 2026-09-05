@@ -11,13 +11,13 @@ from a13n_harness import SafeFailure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.environments.usage import schedule_environment_maintenance
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ._transitions import charge_attempt_usage, seal_failed_run, terminalize_attempt
 from .domain import RecoveryUsage, RunAttemptStatus, RunAttemptYieldReason, RunStatus
-from .environment_bindings import deactivate_run_environment
 from .inbox_persistence import apply_run_outcome, lock_inbox_related_runs
 from .lifecycle import append_run_attempt_lifecycle, append_run_with_attempt_lifecycle
 from .models import RunAttemptRecord, RunRecord, ThreadRecord
@@ -197,7 +197,7 @@ class AttemptExecutionService:
                 )
             terminalize_attempt(attempt, RunAttemptStatus.failed, now, failure=failure)
             charge_attempt_usage(run, attempt)
-            await deactivate_run_environment(database, run=run, now=now)
+            await schedule_environment_maintenance(database, run=run, now=now)
             await apply_run_outcome(database, run=run, outcome="failed", now=now)
             seal_failed_run(run, thread, failure, now)
             await append_run_with_attempt_lifecycle(
@@ -297,7 +297,7 @@ class AttemptExecutionService:
                     occurred_at=now,
                 )
             else:
-                await deactivate_run_environment(database, run=run, now=now)
+                await schedule_environment_maintenance(database, run=run, now=now)
                 await apply_run_outcome(database, run=run, outcome="failed", now=now)
                 seal_failed_run(run, thread, failure, now)
                 await append_run_with_attempt_lifecycle(
@@ -348,6 +348,18 @@ async def lock_attempt_authority(
     *,
     lock_inbox_origins: bool = False,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
+    records = await lock_attempt_lease(database, authority, now, lock_inbox_origins=lock_inbox_origins)
+    _validate_versions(records[0], records[1], authority)
+    return records
+
+
+async def lock_attempt_lease(
+    database: AsyncSession,
+    authority: AttemptContext,
+    now: datetime,
+    *,
+    lock_inbox_origins: bool = False,
+) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
     thread_id = await database.scalar(
         select(RunRecord.thread_id).where(
             RunRecord.tenant_id == authority.tenant_id,
@@ -388,7 +400,7 @@ async def lock_attempt_authority(
         )
         .with_for_update()
     )
-    _validate_authority(run, attempt, thread, authority, now)
+    _validate_lease(run, attempt, thread, authority, now)
     assert run is not None and attempt is not None and thread is not None
     return run, attempt, thread
 
@@ -416,11 +428,17 @@ async def read_attempt_authority(
     if row is None:
         raise AttemptAuthorityError("Attempt authority was not found")
     run, attempt, thread = row
-    _validate_authority(run, attempt, thread, authority, now)
+    _validate_lease(run, attempt, thread, authority, now)
+    _validate_versions(run, attempt, authority)
     return run, attempt, thread
 
 
-def _validate_authority(
+def _validate_versions(run: RunRecord, attempt: RunAttemptRecord, authority: AttemptContext) -> None:
+    if run.version != authority.expected_run_version or attempt.version != authority.expected_attempt_version:
+        raise AttemptAuthorityError("Attempt mutation version is no longer authoritative")
+
+
+def _validate_lease(
     run: RunRecord | None,
     attempt: RunAttemptRecord | None,
     thread: ThreadRecord | None,
@@ -431,9 +449,7 @@ def _validate_authority(
         raise AttemptAuthorityError("Attempt authority was not found")
     token_matches = hmac.compare_digest(attempt.lease_token_digest, _token_digest(authority.lease_token))
     if (
-        run.version != authority.expected_run_version
-        or attempt.version != authority.expected_attempt_version
-        or run.thread_id != authority.thread_id
+        run.thread_id != authority.thread_id
         or thread.current_run_id != run.id
         or run.status != RunStatus.running.value
         or run.current_run_attempt_id != attempt.id

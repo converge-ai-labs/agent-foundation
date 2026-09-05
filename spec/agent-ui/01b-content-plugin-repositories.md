@@ -51,76 +51,54 @@ skills: ./skills
 subagents: ./subagents
 ```
 
-`skills` and `subagents` are independently optional, and at least one is present. A Skill source contains immediate child directories with `SKILL.md`; the Harness Skills contract owns each Skill document and its optional supporting files. A subagent source contains immediate non-README lower-case `.md` files using the canonical format in [Canonical Markdown Subagents](02-agent-composition-and-snapshots.md#canonical-markdown-subagents).
+`skills` and `subagents` are independently optional; the manifest declares at least one. Empty or temporarily missing source directories are allowed. Skill discovery uses the Harness format. Subagents are immediate non-README `.md` files, with case-insensitive file extensions, using [Canonical Markdown Subagents](02-agent-composition-and-snapshots.md#canonical-markdown-subagents). Supporting files are ordinary content and do not need registration.
 
-Marketplace paths and manifest content paths use canonical `./`-prefixed POSIX-relative syntax. They cannot be absolute, contain `~`, contain `.` or `..` traversal segments, escape their owning repository or plugin root, or resolve through a symlink. Selected trees contain only ordinary directories and regular files. Unknown fields, duplicate YAML keys, aliases, anchors, merge keys, custom tags, invalid UTF-8, unsupported schema versions, malformed manifests, special files, and exceeded file or byte bounds reject installation.
-
-Version 1 supports only Skills and Markdown subagents. MCP servers, hooks, install scripts, Python modules, executables, and arbitrary runtime configuration are not plugin contribution types. Files under a Skill's `scripts/` directory remain inert Skill content: Agent UI never executes them during install, load, list, or uninstall.
+Marketplace and manifest paths are `./`-prefixed relative paths within their owner. Absolute paths, traversal, and symlink escapes are not allowed. Installation copies ordinary files and directories under bounded file-count and byte limits; it never runs plugin code or follows a copied symlink. Manifest parsing rejects ambiguous YAML and unsupported schema versions. A bad marketplace entry is diagnosed without hiding other valid entries.
 
 ## Installation and On-Disk State
 
-The selected data root owns:
+Each installation is one ordinary directory named by its stable plugin ID under `<data-root>/content-plugins/`. There is no separate installed registry, content-addressed payload store, or retained-object lifecycle. For example, `plugin-reviewer` owns `<data-root>/content-plugins/plugin-reviewer/` including its manifest, `skills/`, `subagents/`, and supporting files.
 
-```text
-<data-root>/
-  content-plugins/
-    installed/
-      plugin-reviewer.json
-    objects/
-      <content-digest>/
-        .a13n-plugin/plugin.yaml
-        skills/...
-        subagents/...
-    staging/...
-```
+The manifest is the only authority for current name, version, description, and source paths. Its ID matches the directory name. Optional `.a13n-plugin/origin.json` records only `repository` and the original Git `commit`; missing or invalid origin metadata does not disable editable content. No current-tree or installation-tree content hash participates in identity, loading, or deduplication.
 
-`a13n-ui plugin install <repository>` clones the repository into private staging, optionally checks out an explicit Git ref, resolves the exact commit, validates the complete marketplace and selected plugin, copies that plugin into an object directory named by its installation-time content digest, and atomically creates its per-plugin registration file. The command accepts `--plugin <plugin-id>` to choose among repositories with multiple entries; omission is valid only when the repository contains exactly one plugin. Git credentials remain owned by the user's Git configuration and are not persisted by Agent UI.
+`a13n-ui plugin install <repository>` clones into temporary staging under the plugin root, resolves an optional Git ref to a commit, selects a valid manifest using `--plugin <plugin-id>` when needed, and copies the plugin into its final ID directory. The directory is published only after copying is complete. Existing installations are not overwritten. Staging is removed on completion or failure. Installation validates copy boundaries and manifest structure, not the correctness of every editable Markdown document. Invalid content remains available for repair.
 
-One plugin ID has at most one installed registration. Installing an already registered ID fails rather than updating it. The installed record captures the repository locator, exact commit, manifest identity and version, installation-time content digest, and absolute object path. The copied object directory is the editable installed payload and never depends on the clone or network after publication. Agent UI validates its current structure and declared content whenever it loads the catalog, but local edits need not retain the installation-time digest.
+`a13n-ui plugin list` discovers plugin-ID directories, reads their current manifests and available source paths, and reports the directory plus current metadata. Invalid plugins are diagnosed individually. Listing never reads all supporting asset bytes or hashes a directory tree.
 
-`a13n-ui plugin list` reads and validates installed records and their current local content, then prints each plugin's ID, version, exact Git commit, and installation directory. The installation directory is the complete inspection and editing surface; Agent UI does not provide a parallel command for browsing or editing plugin files.
+`a13n-ui plugin uninstall <plugin-id>` deletes that plugin's directory, including local edits. It works even if the manifest is invalid or missing, does not follow a directory symlink to its target, and leaves unrelated directories alone. No payload is retained for admitted Runs. Reinstallation copies fresh repository content; it does not resurrect previous edits.
 
-`a13n-ui plugin uninstall <plugin-id>` atomically removes the registration. It does not delete the editable object directory, so local edits and paths captured by admitted Runs remain present. A later App generation excludes the unregistered plugin, and retained unreferenced objects are not rediscovered as installed content. Reinstalling the same original content reuses a valid retained directory, including its local edits.
-
-Install, list, and uninstall are the complete Content Plugin management surface. Agent UI defines no WebUI management, background updates, implicit upgrades, dependency solver, registry service, or automatic Git fetch.
+Installation and management never execute Skill scripts, Python modules, hooks, or arbitrary configuration. Git authentication remains owned by the user's Git installation. There are no implicit updates, dependency solver, registry service, or background Git fetches.
 
 ## Configuration Integration
 
-At load time Agent UI validates the installed records and their current object trees, then combines them with the selected configuration tree into one accepted generation. The App observes registration and object-tree metadata so a valid local edit triggers candidate-generation reload. The generation digest covers installed plugin identity, exact commit, installation-time content digest, and current contributed canonical Markdown. An invalid registered plugin or invalid local edit rejects the candidate generation while preserving the prior accepted generation.
+Content Plugins are optional local content sources, not an all-or-nothing configuration transaction. Discovery reads each valid manifest and collects available sources. A malformed manifest skips that plugin; a missing declared directory skips that source; malformed or unreadable subagent Markdown skips only that file. Other plugins, valid sibling files, and unrelated YAML configuration remain available. The App exposes nonfatal diagnostics separately from rejected-configuration errors. Repairs are observed on subsequent configuration reloads.
 
-Installed Markdown subagents use their canonical frontmatter IDs. Immediate local `subagents/*.md` files override plugin subagents with the same ID. Two installed plugins contributing the same subagent ID reject the candidate generation even when a local file would otherwise override it; plugin-to-plugin ownership never depends on directory enumeration order. Agent resources still select every Markdown subagent explicitly by ID.
+Configuration captures current plugin metadata, paths, and parsed Markdown, and observes file metadata for changes without hashing supporting assets. Existing bounded stable-read retries avoid accepting mixed configuration reads. A failure in the primary YAML or local configuration tree retains its existing rejection semantics; optional plugin errors do not invalidate that tree.
 
-The accepted generation captures each installed plugin's exact path and installation provenance. A resolved Run composition carries that catalog snapshot. Markdown subagent instructions are normalized into that composition, while Skill content remains Environment-routed through the captured editable path. Uninstalling a plugin affects later accepted generations and later Run admission but does not remove files used by an already admitted Run.
+Subagents use the canonical Markdown format and parser. Plugin IDs and file paths are sorted; a later plugin ID, then a later filename within one plugin, wins a duplicate subagent ID with a diagnostic. Local `subagents/*.md` overrides plugin contributions. Agent resources still explicitly select Markdown subagents by ID. Missing Markdown references, unavailable plugin subagent models, and resolved roster-name conflicts fail only when resolving an Agent that uses them, not unrelated Agent configurations.
 
-## Skill Integration
+A Run composition captures normalized subagent instructions and current plugin paths, not an immutable payload snapshot. Editing a subagent affects later Run composition. Skill and other file reads use live files. Removing or editing an installed directory can make a frozen Skill catalog stale or its files unavailable; Run admission does not pin or retain disk content.
 
-When an Agent selects the `skills` Capability, every installed plugin with a Skill source contributes one read-write Environment mount. Plugin Skills participate in the source order defined by [Run Source Set](02b-environment-skill-sources.md#run-source-set). Capability omission creates no plugin mounts and no plugin Skill catalog.
+## Skill and File Access
 
-Plugin source IDs are derived from plugin IDs. Plugins are ordered lexicographically by plugin ID; a lexicographically later plugin wins a duplicate Skill name among plugins under the Harness `prefer_later` policy. Project and explicit roots retain higher precedence, and the user Skill directory retains lower precedence. The selected catalog item preserves the winning plugin source ID and Environment path.
+Every installed plugin with a valid manifest contributes its entire plugin directory as a read-write, file-only Environment mount. This includes subagent-only plugins and does not require selecting the `skills` Capability. The Agent still needs ordinary Environment file tools to edit content. Installing files does not select a subagent roster, enable shell tools, or execute anything.
 
-Full Control, Sandbox, and other Host-path-preserving adapters expose the canonical plugin Skill directory at the same absolute path. Virtual-layout adapters expose one deterministic `/environment/content-plugin-<position>` route. Every plugin mount uses the Direct Local Provider with read-write file operations and grants no shell, process, port, output, or arbitrary Host-path authority.
+Host-path-preserving adapters retain the plugin directory's absolute path. Virtual adapters use `/environment/content-plugin-<position>` in ascending plugin-ID order. Skill sources use the manifest-declared path *beneath* the same mount; for example `/environment/content-plugin-1/skills`. File writes cover Skills, subagents, manifest metadata, and supporting files within that plugin, but grant no shell, process, port, output, or sibling-directory authority.
 
-## Failure Semantics
+Only a selected `skills` Capability constructs a Skill catalog. Plugin sources are optional and opt into skipping invalid individual Skill entries with diagnostics. Valid entries retain the [Skill source precedence](02b-environment-skill-sources.md#run-source-set): explicit and Project roots override plugins, lexicographically later plugin IDs override earlier ones, and plugins override user-global Skills. The Harness owns the catalog format and frozen-catalog behavior.
 
-| Failure                                                                      | Outcome                                                                        |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Git clone, checkout, or commit resolution fails                              | Installation fails without creating a registration                             |
-| Marketplace, manifest, path, tree, Skill root, or subagent source is invalid | Installation fails before publication                                          |
-| Repository contains several plugins and no selector is supplied              | Installation fails and reports the selectable IDs                              |
-| Selected plugin ID is absent or already installed                            | Installation fails without changing existing state                             |
-| Object publication races with identical installation content                 | The existing valid object directory is reused                                  |
-| Registration publication races                                               | Exactly one registration wins; the other install fails                         |
-| Installed record or object is missing or invalid at App load                 | Candidate generation is rejected; the prior accepted generation remains active |
-| Plugin subagent IDs conflict                                                 | Candidate generation is rejected                                               |
-| Uninstall target is not registered                                           | Uninstall fails without changing state                                         |
+If a captured directory was uninstalled before preparation, it is not recreated or mounted. An absent optional Skill source contributes no catalog entries. Files already removed during a Run are reported through ordinary Environment file failures.
+
+## Compatibility
+
+Discovery recognizes plugin-ID directories only. Legacy `installed/` registrations and `objects/` payloads are not runtime sources and are not automatically deleted or migrated; users preserve edits by relocating the desired payload into its plugin-ID directory, or install a fresh copy. Legacy layouts produce a diagnostic rather than silently appearing installed. Origin metadata is optional after relocation. Existing frozen compositions containing the removed plugin digest field require a fresh Run composition rather than being treated as immutable plugin snapshots.
 
 ## Invariants
 
-1. A Content Plugin is declarative file content and never a Harness Plugin or executable extension.
-2. Every installed registration identifies one exact Git commit, one installation-time content digest, and one editable object path.
-3. Installation and loading never follow symlinks or allow a declared path to escape its owner root.
-4. Installation alone grants no Capability selection, Agent roster membership, shell execution, credential, or network authority.
-5. Local canonical subagents override plugin subagents; plugin-to-plugin subagent conflicts fail deterministically.
-6. Project Skills override plugin Skills, and plugin Skills override user-global Skills.
-7. Local Skill and Markdown edits remain subject to plugin format validation; uninstall removes availability for later generations without deleting captured paths.
-8. Plugin management consists only of explicit CLI install, list, and uninstall operations.
+1. A plugin is editable file content, not a runtime extension or immutable artifact.
+2. Directory identity is the plugin ID; the manifest owns current metadata and Git provenance is optional.
+3. Installation is staged, performs no plugin execution, and respects copy boundaries.
+4. Uninstall deletes the requested directory and local edits, never a symlink target or sibling directory.
+5. Invalid optional content is diagnosed at the narrowest usable source boundary.
+6. All valid plugin directories are writable through file-only mounts, including subagent-only plugins.
+7. Skill discovery and subagent roster selection remain separate from installation and file access.

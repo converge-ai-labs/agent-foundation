@@ -16,6 +16,7 @@ from a13n_service.iam import (
     WorkspaceAction,
     authorize_agent,
     authorize_agent_scoped_collection,
+    authorize_workspace,
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
@@ -212,18 +213,21 @@ class NotificationService:
                         RunRecord.id == thread.current_run_id,
                     )
                 )
-                if run is None:
+                if run is None and thread.current_run_id is not None:
                     raise AuthorizationError("run_not_found", concealed=True)
                 for action in {WorkspaceAction.notification_subscribe, *_topic_actions(subscription.topics)}:
-                    await authorize_agent(
-                        database,
-                        actor=actor,
-                        workspace_id=workspace_id,
-                        agent_id=run.agent_id,
-                        action=action,
-                    )
+                    if run is None:
+                        await authorize_workspace(database, actor=actor, workspace_id=workspace_id, action=action)
+                    else:
+                        await authorize_agent(
+                            database,
+                            actor=actor,
+                            workspace_id=workspace_id,
+                            agent_id=run.agent_id,
+                            action=action,
+                        )
                 tenant_id = thread.tenant_id
-                visible_agent_ids = frozenset({run.agent_id})
+                visible_agent_ids = frozenset({run.agent_id}) if run else None
             high = await database.scalar(
                 select(func.max(LifecycleEventRecord.seq)).where(LifecycleEventRecord.tenant_id == tenant_id)
             )

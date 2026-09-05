@@ -210,7 +210,7 @@ class WorkspaceOutlineCapability(AbstractModelContextCapability):
         if request.kind is not ModelContextRequestKind.INPUT:
             return projection
         try:
-            selection = ctx.deps.environment.select_files(self.configuration.root)
+            selection = await ctx.deps.environment.resolve_files(self.configuration.root)
             async with ctx.deps.environment.open_files(selection) as files:
                 content = await _scan_workspace_outline(files, self.configuration)
         except EnvironmentError as exc:

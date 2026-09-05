@@ -20,6 +20,7 @@ def upgrade() -> None:
     """Create the domain schema."""
     op.create_table(
         "agents",
+        sa.Column("default_environment_template_id", sa.String(length=72), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
@@ -81,7 +82,6 @@ def upgrade() -> None:
         sa.Column("resolved_skills", sa.JSON(), nullable=False),
         sa.Column("connector_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),
         sa.Column("mcp_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),
-        sa.Column("resolved_environment", sa.JSON(none_as_null=True), nullable=True),
         sa.Column("resolved_subagents", sa.JSON(), nullable=False),
         sa.Column("content_digest", sa.String(length=64), nullable=False),
         sa.Column("source_revision_id", sa.String(length=72), nullable=True),

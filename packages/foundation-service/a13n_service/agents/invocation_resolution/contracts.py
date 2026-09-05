@@ -21,11 +21,9 @@ from a13n_service.models.runtime import PreparedModelExecution
 from ..domain import (
     AgentRevision,
     EffectiveAgentConfig,
-    EnvironmentExecutionConfig,
     ResolvedPluginVersion,
     ResolvedSubagentEdge,
 )
-from ..environment_resolution import PreparedEnvironmentSelection
 from ..invocation import AgentRunSensitiveValues, MergedAgentRun
 from ..plugin_resolution import PreparedPluginSelections
 from ..skill_resolution import (
@@ -70,8 +68,6 @@ class PreparedAgentInvocation:
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkillLock, ...]
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
-    environment: PreparedEnvironmentSelection | None
-    resolved_environment: EnvironmentExecutionConfig | None
     subagents: tuple[PreparedInvocationSubagent, ...]
     connectivity: PreparedRevisionConnectivity | PreparedRunConnectivity | None
 

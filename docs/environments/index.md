@@ -217,3 +217,9 @@ The [Harness Environment guide](../agent-harness/environments.md) covers complet
 - [Manage Provider state and implement plugins](../agent-environment-provider/index.md)
 - [Operate and configure `agent-envd`](../agent-envd/index.md)
 - [Read the EIP and agent-envd specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-envd)
+
+## Hosted preparation and recovery
+
+Hosted templates support `on_run` preparation and lazy `on_use` preparation. A later Run can select another Environment, while retry and waiting continuation keep the accepted selection. A broken connection is recovered before the next operation. Rebuilding a missing managed target preserves the Environment ID but creates a new backing generation; lost temporary files and processes are not restored. Approvals for the old target require review again.
+
+Host-local Providers record `host_id` when configured. Docker also records `docker_host`, so an existing Provider keeps using the same daemon even if a worker's environment variables change. Run workers and maintenance must run on that host with access to the same protected bootstrap storage. Register an existing target once and reuse its Environment ID; another Provider record does not create a separate owner for that target.

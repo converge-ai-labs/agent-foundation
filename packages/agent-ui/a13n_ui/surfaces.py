@@ -29,6 +29,15 @@ class AgentSourceView(SurfaceModel):
         return cls(kind=source.kind, id=source.id)
 
 
+class NewThreadDefaults(SurfaceModel):
+    project_id: str | None = Field(default=None, min_length=1, max_length=128)
+    agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
+    harness_plugin_ids: tuple[str, ...] | None = None
+    environment_run_extension_ids: tuple[str, ...] | None = None
+    mcp_server_ids: tuple[str, ...] | None = None
+
+
 class ThreadConfigurationView(SurfaceModel):
     version: int = Field(ge=1)
     project_id: str = Field(min_length=1, max_length=128)
@@ -162,6 +171,7 @@ class TranscriptEntry(SurfaceModel):
 
 
 class TranscriptPage(SurfaceModel):
+    continuation_id: str | None = Field(default=None, pattern=r"^(?:initial:)?[0-9a-f]{64}$")
     entries: tuple[TranscriptEntry, ...]
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
@@ -389,29 +399,329 @@ class ChildControlResult(SurfaceModel):
     persisted_status: Literal["running", "succeeded", "failed", "cancelled", "lost"] | None = None
 
 
+class TaskView(SurfaceModel):
+    task_id: str = Field(min_length=1, max_length=64)
+    version: int = Field(ge=1)
+    subject: str = Field(min_length=1, max_length=512)
+    active_form: str | None = Field(default=None, max_length=512)
+    status: Literal["pending", "in_progress", "completed"]
+    owner: str | None = Field(default=None, max_length=256)
+    blocks: tuple[str, ...] = Field(default=(), max_length=256)
+    blocked_by: tuple[str, ...] = Field(default=(), max_length=256)
+
+
+class TaskPage(SurfaceModel):
+    continuation_id: str | None = Field(default=None, pattern=r"^(?:initial:)?[0-9a-f]{64}$")
+    version: int | None = Field(default=None, ge=1)
+    tasks: tuple[TaskView, ...] = Field(default=(), max_length=256)
+    total: int = Field(default=0, ge=0)
+    omitted: int = Field(default=0, ge=0)
+    available: bool = True
+
+
 class ThreadFocusSnapshot(SurfaceModel):
     epoch: str = Field(min_length=1, max_length=80)
     cutover_sequence: int = Field(ge=0)
     thread: ThreadDetail
+    root_operation: RootOperationView | None = None
     children: ChildExecutionPage
+    tasks: TaskPage = Field(default_factory=TaskPage)
+
+
+class LaunchProjectSelected(SurfaceModel):
+    kind: Literal["selected"] = "selected"
+    directory: str = Field(min_length=1, max_length=4096)
+    project: ProjectSummary
+    configuration_path: str | None = Field(default=None, max_length=4096)
+
+
+class LaunchProjectUnmatched(SurfaceModel):
+    kind: Literal["unmatched"] = "unmatched"
+    directory: str = Field(min_length=1, max_length=4096)
+    configuration_path: str | None = Field(default=None, max_length=4096)
+
+
+class LaunchProjectAmbiguous(SurfaceModel):
+    kind: Literal["ambiguous"] = "ambiguous"
+    directory: str = Field(min_length=1, max_length=4096)
+    projects: tuple[ProjectSummary, ...] = Field(min_length=2, max_length=64)
+    configuration_path: str | None = Field(default=None, max_length=4096)
+
+
+type LaunchProjectResolution = Annotated[
+    LaunchProjectSelected | LaunchProjectUnmatched | LaunchProjectAmbiguous,
+    Field(discriminator="kind"),
+]
+
+
+class PendingDecisionSummary(SurfaceModel):
+    kind: Literal["question", "approval", "external", "mixed"]
+    count: int = Field(ge=1, le=256)
+
+
+class ActiveWorkSummary(SurfaceModel):
+    root_operations: int = Field(default=0, ge=0)
+    child_executions: int = Field(default=0, ge=0)
+
+
+class ChildStatusCounts(SurfaceModel):
+    running: int = Field(default=0, ge=0)
+    succeeded: int = Field(default=0, ge=0)
+    failed: int = Field(default=0, ge=0)
+    cancelled: int = Field(default=0, ge=0)
+    lost: int = Field(default=0, ge=0)
+    active: int = Field(default=0, ge=0)
+    unavailable: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _running_partition(self) -> Self:
+        if self.active + self.unavailable != self.running:
+            raise ValueError("active and unavailable children must partition running children")
+        return self
+
+
+class ActivitySummary(SurfaceModel):
+    kind: Literal["assistant", "reasoning", "tool", "child", "decision", "failure", "notice"]
+    text: str = Field(min_length=1, max_length=2048)
+    occurred_at: datetime | None = None
+
+    @field_validator("occurred_at")
+    @classmethod
+    def _optional_activity_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Activity timestamp must include a UTC offset")
+        return value.astimezone(UTC)
+
+
+class WorkbenchThreadView(SurfaceModel):
+    thread: ThreadSummary
+    project_name: str = Field(min_length=1, max_length=256)
+    agent_name: str = Field(min_length=1, max_length=256)
+    environment_name: str = Field(min_length=1, max_length=256)
+    pending_decision: PendingDecisionSummary | None = None
+    latest_operation: RootOperationView | None = None
+    children: ChildStatusCounts = Field(default_factory=ChildStatusCounts)
+    latest_activity: ActivitySummary | None = None
+    available_actions: tuple[Literal["open", "archive", "respond", "wait", "steer", "cancel"], ...] = ("open",)
+
+
+class WorkbenchPage(SurfaceModel):
+    project_id: str | None = Field(default=None, min_length=1, max_length=128)
+    rows: tuple[WorkbenchThreadView, ...]
+    total: int = Field(ge=0)
+    next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class AgentSummary(SurfaceModel):
+    agent_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=256)
+    model_id: str = Field(min_length=1, max_length=128)
+    source_path: str = Field(min_length=1, max_length=4096)
+
+
+class SelectableResourceSummary(SurfaceModel):
+    resource_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=256)
+    kind: Literal["harness_plugin", "environment_run_extension", "mcp_server"]
+    implementation_key: str | None = Field(default=None, min_length=1, max_length=200)
+    source_path: str = Field(min_length=1, max_length=4096)
+
+
+class ThreadSelectorCatalog(SurfaceModel):
+    agents: tuple[AgentSummary, ...]
+    environments: tuple[EnvironmentProfileSummary, ...]
+    harness_plugins: tuple[SelectableResourceSummary, ...]
+    environment_run_extensions: tuple[SelectableResourceSummary, ...]
+    mcp_servers: tuple[SelectableResourceSummary, ...]
+
+
+class ThreadConfigurationPatch(SurfaceModel):
+    agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
+    harness_plugin_ids: tuple[str, ...] | None = None
+    environment_run_extension_ids: tuple[str, ...] | None = None
+    mcp_server_ids: tuple[str, ...] | None = None
+
+    @model_validator(mode="after")
+    def _non_empty_and_non_null(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("Thread configuration patch must not be empty")
+        for name in self.model_fields_set:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null when supplied")
+        return self
+
+
+class ThreadConfigurationMutationInput(SurfaceModel):
+    expected_version: int = Field(ge=1)
+    patch: ThreadConfigurationPatch
+
+
+class ProjectPathCompletion(SurfaceModel):
+    project_id: str = Field(min_length=1, max_length=128)
+    mount: str = Field(min_length=1, max_length=128)
+    relative_path: str = Field(min_length=1, max_length=4096)
+    kind: Literal["file", "directory"]
+    display: str = Field(min_length=1, max_length=8192)
+
+
+class ProjectPathCompletionPage(SurfaceModel):
+    project_id: str = Field(min_length=1, max_length=128)
+    query: str = Field(default="", max_length=512)
+    items: tuple[ProjectPathCompletion, ...] = Field(max_length=100)
+    truncated: bool = False
+
+
+class SkillCatalogItemView(SurfaceModel):
+    item_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    name: str = Field(min_length=1, max_length=256)
+    description: str = Field(min_length=1, max_length=16 * 1024)
+    source_id: str = Field(min_length=1, max_length=256)
+    logical_path: str = Field(min_length=1, max_length=4096)
+
+
+class SkillCatalogView(SurfaceModel):
+    catalog_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    context_kind: Literal["draft", "idle", "active"]
+    thread_id: str | None = Field(default=None, min_length=1, max_length=80)
+    receipt_id: str | None = Field(default=None, min_length=1, max_length=128)
+    items: tuple[SkillCatalogItemView, ...] = Field(max_length=512)
+
+
+class SkillReference(SurfaceModel):
+    catalog_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    item_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    name: str = Field(min_length=1, max_length=256)
+
+
+class QuestionOptionView(SurfaceModel):
+    label: str = Field(min_length=1, max_length=256)
+    description: str = Field(min_length=1, max_length=4096)
+
+
+class QuestionView(SurfaceModel):
+    question: str = Field(min_length=1, max_length=8192)
+    header: str = Field(min_length=1, max_length=12)
+    options: tuple[QuestionOptionView, ...] = Field(min_length=2, max_length=4)
+    multi_select: bool = False
+
+
+class StructuredQuestionRequestView(SurfaceModel):
+    request_id: str = Field(min_length=1, max_length=256)
+    kind: Literal["question"] = "question"
+    tool_name: str = Field(min_length=1, max_length=128)
+    questions: tuple[QuestionView, ...] = Field(min_length=1, max_length=4)
+    metadata: dict[str, JsonValue] | None = None
+    metadata_omitted: bool = False
+
+
+class ApprovalRequestView(SurfaceModel):
+    request_id: str = Field(min_length=1, max_length=256)
+    kind: Literal["approval"] = "approval"
+    tool_name: str = Field(min_length=1, max_length=128)
+    arguments: JsonValue | None = None
+    arguments_omitted: bool = False
+    metadata: dict[str, JsonValue] | None = None
+    metadata_omitted: bool = False
+    override_allowed: bool = True
+
+
+class ExternalRequestView(SurfaceModel):
+    request_id: str = Field(min_length=1, max_length=256)
+    kind: Literal["external"] = "external"
+    tool_name: str = Field(min_length=1, max_length=128)
+    arguments: JsonValue | None = None
+    arguments_omitted: bool = False
+    metadata: dict[str, JsonValue] | None = None
+    metadata_omitted: bool = False
+
+
+type DecisionRequestView = Annotated[
+    StructuredQuestionRequestView | ApprovalRequestView | ExternalRequestView,
+    Field(discriminator="kind"),
+]
+
+
+class DecisionBatchView(SurfaceModel):
+    continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    requests: tuple[DecisionRequestView, ...] = Field(min_length=1, max_length=256)
+
+
+class QuestionResponse(SurfaceModel):
+    kind: Literal["question"] = "question"
+    request_id: str = Field(min_length=1, max_length=256)
+    answers: dict[str, str | tuple[str, ...]] = Field(default_factory=dict)
+    response: str | None = Field(default=None, min_length=1, max_length=64 * 1024)
+
+
+class DecisionResponseBatch(SurfaceModel):
+    expected_continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    responses: tuple[ApprovalDecision | ExternalToolResult | QuestionResponse, ...] = Field(
+        min_length=1,
+        max_length=256,
+    )
+
+    @model_validator(mode="after")
+    def _unique_requests(self) -> Self:
+        request_ids = tuple(item.request_id for item in self.responses)
+        if len(request_ids) != len(set(request_ids)):
+            raise ValueError("Decision response request IDs must be unique")
+        if len(self.model_dump_json().encode("utf-8")) > _MAX_DEFERRED_RESPONSE_BYTES:
+            raise ValueError("Decision response exceeds the surface payload limit")
+        return self
+
+
+class ReviewView(SurfaceModel):
+    lifecycle: Literal["pending", "running", "closed", "unavailable"]
+    kind: Literal["json", "shell", "task", "child", "diff", "generic"]
+    title: str = Field(min_length=1, max_length=512)
+    summary: str | None = Field(default=None, max_length=4096)
+    content: str | None = Field(default=None, max_length=256 * 1024)
+    value: JsonValue | None = None
+    truncated: bool = False
+    omitted: bool = False
+    unavailable_reason: str | None = Field(default=None, max_length=2048)
 
 
 __all__ = [
+    "ActiveWorkSummary",
+    "ActivitySummary",
     "AgentSourceView",
+    "AgentSummary",
     "ApprovalDecision",
+    "ApprovalRequestView",
     "ChildActivityView",
     "ChildControlResult",
     "ChildExecutionPage",
     "ChildExecutionView",
+    "ChildStatusCounts",
     "ChildToolCallView",
     "ContinuationSelectionView",
+    "DecisionBatchView",
+    "DecisionRequestView",
+    "DecisionResponseBatch",
     "DeferredRequestView",
     "DeferredResponseItem",
     "EnvironmentOutcomeView",
     "EnvironmentProfileSummary",
+    "ExternalRequestView",
     "ExternalToolResult",
     "FailureView",
+    "LaunchProjectAmbiguous",
+    "LaunchProjectResolution",
+    "LaunchProjectSelected",
+    "LaunchProjectUnmatched",
+    "NewThreadDefaults",
+    "PendingDecisionSummary",
+    "ProjectPathCompletion",
+    "ProjectPathCompletionPage",
     "ProjectSummary",
+    "QuestionOptionView",
+    "QuestionResponse",
+    "QuestionView",
+    "ReviewView",
     "RootActivityState",
     "RootActivityView",
     "RootControlResult",
@@ -420,7 +730,16 @@ __all__ = [
     "RootOperationView",
     "RootRunOutcomeView",
     "RootRunReceipt",
+    "SelectableResourceSummary",
+    "SkillCatalogItemView",
+    "SkillCatalogView",
+    "SkillReference",
+    "StructuredQuestionRequestView",
     "SurfaceModel",
+    "TaskPage",
+    "TaskView",
+    "ThreadConfigurationMutationInput",
+    "ThreadConfigurationPatch",
     "ThreadConfigurationView",
     "ThreadDeferredResponse",
     "ThreadDetail",
@@ -428,8 +747,11 @@ __all__ = [
     "ThreadMetadataMutation",
     "ThreadMetadataPatch",
     "ThreadPage",
+    "ThreadSelectorCatalog",
     "ThreadSummary",
     "TranscriptEntry",
     "TranscriptPage",
     "TranscriptPart",
+    "WorkbenchPage",
+    "WorkbenchThreadView",
 ]

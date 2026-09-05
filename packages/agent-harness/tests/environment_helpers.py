@@ -17,16 +17,19 @@ __all__ = [
 
 
 class DirectLocalEnvironmentProviderBinding(_EnvironmentAdapterBinding):
-    """Test-only bridge from legacy fixtures to the public Environment adapter input."""
+    """Construct a Direct Local adapter for Harness mount tests."""
 
     def __init__(
         self,
         configuration: DirectLocalProviderConfiguration,
         runtime: DirectLocalProviderRuntime | None = None,
+        *,
+        environment_id: str,
     ) -> None:
         provider = DirectLocalEnvironmentProvider()
         environment = provider.create_environment(
             configuration=configuration,
+            environment_id=environment_id,
             state=None,
             runtime=runtime,
         )

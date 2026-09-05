@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from a13n_environment_provider import EnvironmentState
 from a13n_environment_provider.operations import EnvironmentOperations as EnvironmentProviderOperations
-from pydantic import BaseModel, JsonValue
+from pydantic import JsonValue
 
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.identity import AgentInstanceContext
@@ -27,17 +27,7 @@ from .changes import EnvironmentChangeJournal
 from .commands import (
     BoundProcessHandle,
     CommandRequest,
-    PortObservation,
-    PortTarget,
-    ProcessControlResult,
     ProcessIdentity,
-    ProcessInfo,
-    ProcessOutputSnapshot,
-    ProcessReadOutputResult,
-    ProcessSignalResult,
-    ProcessStartResult,
-    ProcessWriteStdinResult,
-    ShellExecResult,
 )
 from .extensions import EnvironmentRunExtension, EnvironmentRunExtensionContext
 from .files import FileOperator
@@ -53,7 +43,6 @@ from .models import (
     EnvironmentMountInfo,
     EnvironmentMountObservation,
     EnvironmentOperationFamily,
-    EnvironmentOperationReceipt,
     EnvironmentPath,
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
@@ -71,17 +60,20 @@ from .providers import (
     EnvironmentRuntimeMount,
     FileScopeSelection,
 )
-from .retention import (
-    BoundOutputCursor,
-    BoundOutputReference,
-    EnvironmentOutputCapture,
-    EnvironmentOutputPolicy,
-    EnvironmentOutputReadResult,
-)
 from .virtual_files import VirtualFileOperator, _PreparedFile
 
 if TYPE_CHECKING:
     from a13n_harness.model_context import ModelContextProjection, ModelContextProjectionRequest
+
+from ._facades import _OutputFacade, _PortFacade, _ProcessFacade, _ShellFacade
+from ._mount import (
+    _EnteredMount,
+    _MountKey,
+    _MountRequest,
+    _OwnedProviderScope,
+    _ResolvedPath,
+    _validate_provider_artifacts,
+)
 
 _MAX_ENVIRONMENT_EXTENSION_ID_LENGTH = 200
 _MAX_MODEL_CONTEXT_BINDINGS = 64
@@ -106,465 +98,6 @@ def _bounded_snapshot_json(payload: dict[str, JsonValue], max_bytes: int) -> str
                 code="environment_projection_limit_invalid",
             )
         return encoded.decode("utf-8")
-
-
-@dataclass(frozen=True, slots=True)
-class _MountRequest:
-    name: str
-    permission_ceiling: EnvironmentPermissionSet
-    default_working_directory: str | None
-    mount_path: str | None
-    candidate: EnvironmentProviderBinding
-
-
-@dataclass(frozen=True, slots=True)
-class _EnteredMount:
-    mount_id: str
-    public: EnvironmentMountInfo
-    provider: BoundEnvironmentProvider
-    operations: EnvironmentProviderOperations
-    environment_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class _ResolvedPath:
-    entered: _EnteredMount
-    provider_path: str
-    mount_path: str
-
-
-type _MountKey = tuple[str, str]
-
-
-@dataclass(slots=True)
-class _OwnedProviderScope:
-    entered: _EnteredMount
-    scope: AbstractAsyncContextManager[BoundEnvironmentProvider]
-
-
-def _validate_provider_artifacts(entered: _EnteredMount, value: Any) -> None:
-    bound_types = (
-        BoundProcessHandle,
-        BoundOutputReference,
-        BoundOutputCursor,
-        EnvironmentOperationReceipt,
-    )
-    if isinstance(value, bound_types):
-        if value.mount_id != entered.mount_id or value.observed_generation != entered.public.descriptor.generation:
-            raise EnvironmentError(
-                "Environment provider returned an artifact for another mount incarnation.",
-                code="environment_provider_failure",
-            )
-        return
-    if isinstance(value, BaseModel):
-        for name in type(value).model_fields:
-            _validate_provider_artifacts(entered, getattr(value, name))
-        return
-    if isinstance(value, Mapping):
-        for item in value.values():
-            _validate_provider_artifacts(entered, item)
-        return
-    if isinstance(value, tuple | list):
-        for item in value:
-            _validate_provider_artifacts(entered, item)
-
-
-def _capture_contiguous_prefix(capture: EnvironmentOutputCapture) -> bytes:
-    if capture.inline is not None:
-        return capture.inline
-    expected = 0
-    chunks: list[bytes] = []
-    for segment in sorted(capture.preview, key=lambda item: item.start_offset):
-        if segment.start_offset != expected:
-            break
-        chunks.append(segment.data)
-        expected += len(segment.data)
-    return b"".join(chunks)
-
-
-def _validate_process_result_identity(expected: BoundProcessHandle, value: Any) -> None:
-    if isinstance(value, BoundProcessHandle):
-        if value != expected:
-            raise EnvironmentError(
-                "Environment provider retargeted a process operation to another handle.",
-                code="environment_provider_failure",
-            )
-        return
-    if isinstance(value, BaseModel):
-        for name in type(value).model_fields:
-            _validate_process_result_identity(expected, getattr(value, name))
-        return
-    if isinstance(value, Mapping):
-        for item in value.values():
-            _validate_process_result_identity(expected, item)
-        return
-    if isinstance(value, tuple | list):
-        for item in value:
-            _validate_process_result_identity(expected, item)
-
-
-class _UnavailableFacet:
-    __slots__ = ("_family",)
-
-    def __init__(self, family: str) -> None:
-        self._family = family
-
-    def __getattr__(self, method: str) -> Any:
-        async def unavailable(*args: Any, **kwargs: Any) -> Any:
-            del args, kwargs
-            raise EnvironmentError(
-                f"Environment operation family {self._family!r} is unavailable.",
-                code="environment_unsupported",
-                details={"family": self._family, "method": method},
-                retry_hint="dependency_change",
-            )
-
-        return unavailable
-
-
-class _OutputFacade:
-    def __init__(self, environment: CompositeBoundEnvironment) -> None:
-        self._environment = environment
-
-    async def read(
-        self,
-        reference: BoundOutputReference,
-        **kwargs: Any,
-    ) -> EnvironmentOutputReadResult:
-        async with self._prepare(reference, EnvironmentAction.OUTPUT_READ) as entered:
-            outputs = entered.operations.outputs
-            if outputs is None:
-                raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
-            result = await outputs.read(reference, **kwargs)
-            _validate_provider_artifacts(entered, result)
-            return result
-
-    async def release(
-        self,
-        *,
-        reference: BoundOutputReference | None = None,
-        cursor: BoundOutputCursor | None = None,
-    ) -> EnvironmentOperationReceipt:
-        selected = reference if reference is not None else cursor
-        if selected is None:
-            raise EnvironmentError("Output release requires a selector.", code="environment_request_invalid")
-        async with self._prepare(selected, EnvironmentAction.OUTPUT_RELEASE) as entered:
-            outputs = entered.operations.outputs
-            if outputs is None:
-                raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
-            result = await outputs.release(reference=reference, cursor=cursor)
-            _validate_provider_artifacts(entered, result)
-            return result
-
-    @asynccontextmanager
-    async def _prepare(
-        self,
-        selected: BoundOutputReference | BoundOutputCursor,
-        action: EnvironmentAction,
-    ) -> AsyncGenerator[_EnteredMount]:
-        entered = self._environment.require_action(selected.mount_id, action)
-        if selected.observed_generation != entered.public.descriptor.generation:
-            raise EnvironmentError("Output selector is stale.", code="environment_stale_mount")
-        async with self._environment._operation_lease(
-            entered,
-            action,
-            "outputs",
-            allow_retired=True,
-        ):
-            if entered.operations.outputs is None:
-                raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
-            yield entered
-
-
-class _ShellFacade:
-    def __init__(self, environment: CompositeBoundEnvironment) -> None:
-        self._environment = environment
-
-    async def exec(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult:
-        entered, provider_request = self._environment._prepare_command(request, alias=alias)
-        async with self._environment._operation_lease(
-            entered,
-            EnvironmentAction.SHELL_EXEC,
-            "shell",
-            timeout_seconds=provider_request.limits.wall_time_seconds,
-        ):
-            shell = entered.operations.shell
-            if shell is None:
-                raise EnvironmentError("Shell operation facet is unavailable.", code="environment_unsupported")
-            result = await shell.exec(provider_request)
-            _validate_provider_artifacts(entered, result)
-            return result
-
-    async def exec_captured(
-        self,
-        request: CommandRequest,
-        *,
-        alias: str | None = None,
-        expected_mount_id: str | None = None,
-    ) -> ShellExecResult:
-        """Preflight and hold one mount incarnation through foreground output materialization."""
-        entered, provider_request = self._environment._prepare_command(request, alias=alias)
-        if expected_mount_id is not None and entered.mount_id != expected_mount_id:
-            raise EnvironmentError("Shell mount changed before dispatch.", code="environment_stale_mount")
-        for action in (EnvironmentAction.SHELL_EXEC, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE):
-            selected = self._environment.require_action(entered.mount_id, action)
-            if selected is not entered:
-                raise EnvironmentError("Shell mount changed before dispatch.", code="environment_stale_mount")
-        if entered.operations.outputs is None:
-            raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
-        async with self._environment._operation_lease(
-            entered,
-            EnvironmentAction.SHELL_EXEC,
-            "shell",
-            timeout_seconds=provider_request.limits.wall_time_seconds,
-        ):
-            async with self._environment._operation_lease(
-                entered,
-                EnvironmentAction.OUTPUT_READ,
-                "outputs",
-            ):
-                async with self._environment._operation_lease(
-                    entered,
-                    EnvironmentAction.OUTPUT_RELEASE,
-                    "outputs",
-                ):
-                    shell = entered.operations.shell
-                    if shell is None:
-                        raise EnvironmentError(
-                            "Shell operation facet is unavailable.",
-                            code="environment_unsupported",
-                        )
-                    result = await shell.exec(provider_request)
-                    _validate_provider_artifacts(entered, result)
-                    stdout, stderr = await asyncio.gather(
-                        self._materialize_capture(entered, result.output.stdout, provider_request.output_policy),
-                        self._materialize_capture(entered, result.output.stderr, provider_request.output_policy),
-                    )
-                    return result.model_copy(update={"output": ProcessOutputSnapshot(stdout=stdout, stderr=stderr)})
-
-    @staticmethod
-    async def _materialize_capture(
-        entered: _EnteredMount,
-        capture: EnvironmentOutputCapture,
-        policy: EnvironmentOutputPolicy,
-    ) -> EnvironmentOutputCapture:
-        if capture.reference is None:
-            return capture
-        outputs = entered.operations.outputs
-        if outputs is None:
-            raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
-        read_policy = EnvironmentOutputPolicy(
-            max_inline_bytes=max(1, min(capture.captured_bytes, policy.max_output_bytes)),
-            max_output_bytes=max(1, policy.max_output_bytes),
-            overflow="truncate",
-        )
-        data = _capture_contiguous_prefix(capture)
-        materialized = False
-        try:
-            try:
-                result = await outputs.read(capture.reference, start_offset=0, policy=read_policy)
-                _validate_provider_artifacts(entered, result)
-                data = b"".join(chunk.data for chunk in result.chunks)
-                materialized = True
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                # The command has completed. A provider read failure must not turn
-                # its known outcome and side effects into a retry-shaped failure.
-                pass
-        finally:
-            try:
-                receipt = await outputs.release(reference=capture.reference)
-                _validate_provider_artifacts(entered, receipt)
-            except Exception:
-                # Output cleanup is best effort after the command and materialization
-                # have completed; it cannot replace their known result.
-                pass
-        return capture.model_copy(
-            update={
-                "kind": "empty" if not data else "inline",
-                "content_complete": (materialized and capture.content_complete and len(data) == capture.captured_bytes),
-                "captured_bytes": len(data),
-                "inline": data,
-                "preview": (),
-                "reference": None,
-                "cursor": None,
-                "available_start": 0,
-                "available_end": len(data),
-                "expires_at": None,
-            }
-        )
-
-
-class _ProcessFacade:
-    def __init__(self, environment: CompositeBoundEnvironment) -> None:
-        self._environment = environment
-
-    async def start(
-        self,
-        request: CommandRequest,
-        *,
-        alias: str | None = None,
-        required_actions: frozenset[EnvironmentAction] = frozenset({EnvironmentAction.PROCESS_START}),
-        expected_mount_id: str | None = None,
-    ) -> ProcessStartResult:
-        entered, provider_request = self._environment._prepare_command(request, alias=alias)
-        if expected_mount_id is not None and entered.mount_id != expected_mount_id:
-            raise EnvironmentError("Process mount changed before dispatch.", code="environment_stale_mount")
-        for action in required_actions:
-            selected = self._environment.require_action(entered.mount_id, action)
-            if selected is not entered:
-                raise EnvironmentError("Process mount changed before dispatch.", code="environment_stale_mount")
-        async with self._environment._operation_lease(
-            entered,
-            EnvironmentAction.PROCESS_START,
-            "processes",
-            timeout_seconds=request.limits.wall_time_seconds,
-        ):
-            processes = entered.operations.processes
-            if processes is None:
-                raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
-            result = await processes.start(provider_request)
-            if not isinstance(result, ProcessStartResult):
-                raise EnvironmentError(
-                    "Process provider returned an invalid start result.",
-                    code="environment_provider_failure",
-                )
-            _validate_provider_artifacts(entered, result)
-            self._environment._track_process_handle(result.process.handle, added=True)
-            return result
-
-    async def rebind(
-        self,
-        identity: ProcessIdentity,
-        *,
-        output_policy: EnvironmentOutputPolicy,
-    ) -> ProcessInfo:
-        entered = self._environment._entered_for_process_identity(identity)
-        async with self._environment._operation_lease(
-            entered,
-            EnvironmentAction.PROCESS_INSPECT,
-            "processes",
-        ):
-            processes = entered.operations.processes
-            if processes is None:
-                raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
-            result = await processes.rebind(identity, output_policy=output_policy)
-            _validate_provider_artifacts(entered, result)
-            if result.handle.identity != identity:
-                raise EnvironmentError(
-                    "Environment provider retargeted a restored process identity.",
-                    code="environment_provider_failure",
-                )
-            self._environment._track_process_handle(result.handle, added=True)
-            return result
-
-    async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
-        return await self._call(handle, EnvironmentAction.PROCESS_INSPECT, "inspect")
-
-    async def read_output(self, handle: BoundProcessHandle, **kwargs: Any) -> ProcessReadOutputResult:
-        return await self._call(handle, EnvironmentAction.PROCESS_READ_OUTPUT, "read_output", **kwargs)
-
-    async def write_stdin(self, handle: BoundProcessHandle, data: bytes, **kwargs: Any) -> ProcessWriteStdinResult:
-        return await self._call(handle, EnvironmentAction.PROCESS_WRITE_STDIN, "write_stdin", data, **kwargs)
-
-    async def close_stdin(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
-        return await self._call(handle, EnvironmentAction.PROCESS_CLOSE_STDIN, "close_stdin")
-
-    async def signal(self, handle: BoundProcessHandle, signal: str) -> ProcessSignalResult:
-        return await self._call(handle, EnvironmentAction.PROCESS_SIGNAL, "signal", signal)
-
-    async def wait(self, handle: BoundProcessHandle, **kwargs: Any) -> ProcessInfo:
-        timeout = kwargs.get("timeout_seconds")
-        return await self._call(
-            handle,
-            EnvironmentAction.PROCESS_WAIT,
-            "wait",
-            timeout_seconds=timeout if isinstance(timeout, int | float) else None,
-            semantic_kwargs=kwargs,
-        )
-
-    async def kill(self, handle: BoundProcessHandle) -> ProcessControlResult:
-        return await self._call(handle, EnvironmentAction.PROCESS_KILL, "kill")
-
-    async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
-        result = await self._call(handle, EnvironmentAction.PROCESS_RELEASE, "release")
-        self._environment._track_process_handle(handle, added=False)
-        return result
-
-    async def _call(
-        self,
-        handle: BoundProcessHandle,
-        action: EnvironmentAction,
-        method: str,
-        *args: Any,
-        timeout_seconds: float | None = None,
-        semantic_kwargs: Mapping[str, Any] | None = None,
-        **kwargs: Any,
-    ) -> Any:
-        entered = self._environment._entered_for_handle(handle)
-        async with self._environment._operation_lease(
-            entered,
-            action,
-            "processes",
-            timeout_seconds=timeout_seconds,
-            allow_retired=True,
-        ):
-            processes = entered.operations.processes
-            if processes is None:
-                raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
-            call = getattr(processes, method)
-            try:
-                result = await call(handle, *args, **dict(semantic_kwargs or kwargs))
-            except EnvironmentError as exc:
-                if exc.code == "environment_not_found":
-                    self._environment._track_process_handle(handle, added=False)
-                raise
-            _validate_provider_artifacts(entered, result)
-            _validate_process_result_identity(handle, result)
-            return result
-
-
-class _PortFacade:
-    def __init__(self, environment: CompositeBoundEnvironment) -> None:
-        self._environment = environment
-
-    async def inspect(self, target: PortTarget) -> PortObservation:
-        return await self._call(target, EnvironmentAction.PORT_INSPECT, "inspect")
-
-    async def wait(self, target: PortTarget, **kwargs: Any) -> PortObservation:
-        timeout = kwargs.get("timeout_seconds")
-        return await self._call(
-            target,
-            EnvironmentAction.PORT_WAIT,
-            "wait",
-            timeout_seconds=timeout if isinstance(timeout, int | float) else None,
-            kwargs=kwargs,
-        )
-
-    async def _call(
-        self,
-        target: PortTarget,
-        action: EnvironmentAction,
-        method: str,
-        *,
-        timeout_seconds: float | None = None,
-        kwargs: Mapping[str, Any] | None = None,
-    ) -> Any:
-        entered = self._environment._select_entered(target.alias)
-        async with self._environment._operation_lease(
-            entered,
-            action,
-            "ports",
-            timeout_seconds=timeout_seconds,
-        ):
-            ports = entered.operations.ports
-            if ports is None:
-                raise EnvironmentError("Port operation facet is unavailable.", code="environment_unsupported")
-            call = getattr(ports, method)
-            result = await call(target.model_copy(update={"alias": None}), **dict(kwargs or {}))
-            _validate_provider_artifacts(entered, result)
-            return result
 
 
 class CompositeBoundEnvironment(BoundEnvironment):
@@ -726,6 +259,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
             raise EnvironmentError("File scope selection is stale.", code="environment_stale_mount")
         async with self._mount_slot(entered):
             await self._ensure_provider_family(entered, "files")
+            entered = self._current_publication(entered)
+            if selection.observed_generation not in {"unprepared", entered.public.descriptor.generation}:
+                raise EnvironmentError("File scope selection is stale.", code="environment_stale_mount")
             self._validate_live_observation(entered, entered.provider.availability, frozenset({"files"}))
             if entered.operations.files is None:
                 raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
@@ -819,10 +355,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     @staticmethod
     def _mount_key(entered: _EnteredMount) -> _MountKey:
-        return (entered.mount_id, entered.public.descriptor.generation)
+        return entered.mount_id
 
     def _track_process_handle(self, handle: BoundProcessHandle, *, added: bool) -> None:
-        key = (handle.mount_id, handle.observed_generation)
+        key = handle.mount_id
         if added:
             self._active_process_handles.setdefault(key, set()).add(handle)
         else:
@@ -1290,19 +826,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "The scoped file path selects another mount incarnation.",
                 code="environment_selection_invalid",
             )
-        if action not in entered.public.permission_ceiling.operations:
-            raise EnvironmentError(
-                "Environment operation is denied by the mount permission ceiling.",
-                code="environment_denied",
-                details={"action": action.value, "mount_id": entered.mount_id},
-            )
+        current = self._current_publication(entered)
+        if current.public.descriptor.generation != entered.public.descriptor.generation:
+            raise EnvironmentError("File scope selection is stale.", code="environment_stale_mount")
         try:
-            async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
-                self._validate_live_observation(
-                    entered,
-                    entered.provider.availability,
-                    frozenset({"files"}),
-                )
+            async with self._operation_lease(current, action, "files", allow_retired=True) as entered:
                 if entered.operations.files is None:
                     raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
                 yield _PreparedFile(
@@ -1357,7 +885,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "Environment mount incarnation is unavailable.",
                 code="environment_stale_mount",
             )
-        async with self._operation_lease(entered, action, "files"):
+        async with self._operation_lease(entered, action, "files") as entered:
             if entered.operations.files is None:
                 raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
             root = _preferred_mount_path(entered.public, self._snapshot.default_mount)
@@ -1398,6 +926,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 details={"mount_id": entered.mount_id, "reason_code": availability.reason_code},
                 retry_hint="dependency_change",
             )
+        _validate_operation_facets(entered.public.descriptor, availability, entered.operations)
         if not requested <= availability.ready_families:
             raise EnvironmentError(
                 "Provider returned before the requested families became ready.",
@@ -1462,25 +991,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             async with self._mount_slot(entered):
                 families = frozenset(entered.public.descriptor.operation_families & requested)
                 await asyncio.gather(*(self._ensure_provider_family(entered, family) for family in families))
-                current = entered.provider.descriptor
-                if not isinstance(current, EnvironmentDescriptor):
-                    raise EnvironmentError(
-                        "Provider descriptor became invalid during readiness.",
-                        code="environment_provider_failure",
-                    )
-                if current.generation != entered.public.descriptor.generation:
-                    raise EnvironmentError(
-                        "Provider generation changed during readiness.",
-                        code="environment_stale_mount",
-                        details={"mount_id": entered.mount_id},
-                        retry_hint="dependency_change",
-                    )
-                if current != entered.public.descriptor:
-                    raise EnvironmentError(
-                        "Provider descriptor changed in place during readiness.",
-                        code="environment_provider_failure",
-                        details={"mount_id": entered.mount_id},
-                    )
+                entered = self._current_publication(entered)
                 self._validate_live_observation(entered, entered.provider.availability, families)
 
         timeout = requirement.timeout_seconds or DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS
@@ -1538,8 +1049,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
         async with self._operation_lock:
             if self._closed:
                 raise EnvironmentError("The Environment is closed.", code="environment_closed")
-            if self._entered_by_id.get(entered.mount_id) is not entered or (
-                not allow_retired and self._entered.get(entered.public.name) is not entered
+            current = self._current_publication(entered)
+            if current.public.descriptor.generation != entered.public.descriptor.generation or (
+                not allow_retired and self._entered.get(entered.public.name) is not current
             ):
                 raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
             self._operation_tasks[task] = self._operation_tasks.get(task, 0) + 1
@@ -1595,7 +1107,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         timeout_seconds: float | None = None,
         timeout_code: str = "environment_timeout",
         allow_retired: bool = False,
-    ) -> AsyncGenerator[None]:
+    ) -> AsyncGenerator[_EnteredMount]:
         timeout = (
             DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS
             if timeout_seconds is None
@@ -1618,13 +1130,20 @@ class CompositeBoundEnvironment(BoundEnvironment):
             try:
                 try:
                     async with asyncio.timeout(timeout):
+                        previous_generation = entered.public.descriptor.generation
                         await self._ensure_provider_family(entered, family)
+                        entered = self._current_publication(entered)
+                        if previous_generation not in {"unprepared", entered.public.descriptor.generation}:
+                            raise EnvironmentError(
+                                "Environment changed before dispatch", code="environment_stale_mount"
+                            )
+                        self.require_action(entered.mount_id, action)
                         self._validate_live_observation(
                             entered,
                             entered.provider.availability,
                             frozenset({family}),
                         )
-                        yield
+                        yield entered
                 except TimeoutError as exc:
                     raise EnvironmentError(
                         "Environment operation timed out.",
@@ -1641,6 +1160,45 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         self._process_start_leases.pop(key, None)
                     self._refresh_mount_drained(key)
 
+    def _current_publication(self, entered: _EnteredMount) -> _EnteredMount:
+        current = self._entered_by_id.get(entered.mount_id)
+        if current is None or current.provider is not entered.provider:
+            raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
+        return current
+
+    async def _prepare_provider(self, entered: _EnteredMount, family: EnvironmentOperationFamily) -> None:
+        try:
+            await entered.provider.ensure_ready(frozenset({family}))
+        finally:
+            # Recovery can publish a new target and then report its replacement to
+            # the caller. Publish that observation even when readiness raises.
+            async with self._operation_lock:
+                current = self._current_publication(entered)
+                refreshed = _EnteredMount(
+                    current.mount_id, current.configured, current.provider, current.environment_id
+                )
+                self._validate_live_observation(refreshed, refreshed.provider.availability)
+                self._entered_by_id[current.mount_id] = refreshed
+                if self._entered.get(current.public.name) is current:
+                    self._entered[current.public.name] = refreshed
+                    self._snapshot = EnvironmentSnapshot(
+                        mounts=tuple(item.public for item in self._entered.values()),
+                        default_mount=self._snapshot.default_mount,
+                    )
+                    if current.public != refreshed.public:
+                        self._journal.publish(
+                            EnvironmentChange(
+                                sequence=self._journal.current_sequence + 1,
+                                kind="replaced",
+                                name=current.public.name,
+                                previous_default=self._snapshot.default_mount,
+                                current_default=self._snapshot.default_mount,
+                            )
+                        )
+                if current.public.descriptor.generation != refreshed.public.descriptor.generation:
+                    self._active_process_handles.pop(current.mount_id, None)
+                    self._refresh_mount_drained(current.mount_id)
+
     async def _ensure_provider_family(
         self,
         entered: _EnteredMount,
@@ -1656,9 +1214,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 async with self._operation_lock:
                     if self._closed:
                         raise EnvironmentError("The Environment is closed.", code="environment_closed")
-                    if self._entered_by_id.get(entered.mount_id) is not entered:
-                        raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
-                    task = asyncio.create_task(entered.provider.ensure_ready(frozenset({family})))
+                    self._current_publication(entered)
+                    task = asyncio.create_task(self._prepare_provider(entered, family))
                     self._register_mount_task_locked(mount_key, task)
                     task.add_done_callback(
                         lambda completed, captured=mount_key: self._readiness_worker_finished(captured, completed)
@@ -2088,27 +1645,7 @@ def _validate_entered(
     if not callable(getattr(provider, "dump_state", None)):
         raise EnvironmentError("Provider has no state cache path.", code="environment_provider_failure")
 
-    facet_families = {
-        family
-        for family in ("files", "shell", "processes", "ports", "outputs")
-        if getattr(operations, family) is not None
-    }
-    advertised_facets = set(descriptor.operation_families)
-    if facet_families != advertised_facets:
-        raise EnvironmentError(
-            "Provider descriptor and operation facets disagree.",
-            code="environment_provider_failure",
-            details={"name": requested.name},
-        )
-    for action in descriptor.permissions.operations:
-        dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
-        method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
-        if not callable(method):
-            raise EnvironmentError(
-                "Provider permission has no executable semantic method.",
-                code="environment_provider_failure",
-                details={"action": action.value},
-            )
+    _validate_operation_facets(descriptor, availability, operations)
 
     effective = EnvironmentPermissionSet(
         operations=requested.permission_ceiling.operations & descriptor.permissions.operations
@@ -2123,11 +1660,42 @@ def _validate_entered(
     )
     return _EnteredMount(
         mount_id=mount_id,
-        public=public,
+        configured=public,
         provider=provider,
-        operations=operations,
         environment_id=provider.environment_id,
     )
+
+
+def _validate_operation_facets(
+    descriptor: EnvironmentDescriptor,
+    availability: EnvironmentAvailability,
+    operations: EnvironmentProviderOperations,
+) -> None:
+    if not isinstance(operations, EnvironmentProviderOperations):
+        raise EnvironmentError("Provider returned invalid operations.", code="environment_provider_failure")
+    facet_families = {
+        family
+        for family in ("files", "shell", "processes", "ports", "outputs")
+        if getattr(operations, family) is not None
+    }
+    advertised_facets = set(descriptor.operation_families)
+    required_facets = availability.ready_families if availability.status == "preparing" else advertised_facets
+    if not facet_families <= advertised_facets or not required_facets <= facet_families:
+        raise EnvironmentError(
+            "Provider descriptor and operation facets disagree.",
+            code="environment_provider_failure",
+        )
+    for action in descriptor.permissions.operations:
+        dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
+        if dispatch.facet not in facet_families:
+            continue
+        method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
+        if not callable(method):
+            raise EnvironmentError(
+                "Provider permission has no executable semantic method.",
+                code="environment_provider_failure",
+                details={"action": action.value},
+            )
 
 
 _SUPERVISED_CLEANUP_TASKS: set[asyncio.Task[Any]] = set()

@@ -417,6 +417,7 @@ class LoadedAgentUiConfiguration(StrictModel):
     source_digest: SourceDigest
     sources: tuple[SourceDocument, ...]
     content_plugins: tuple[InstalledContentPlugin, ...] = Field(default=(), max_length=256)
+    content_plugin_diagnostics: tuple[str, ...] = ()
     models: dict[ResourceId, ModelResource] = Field(default_factory=dict)
     harness_plugins: dict[ResourceId, HarnessPluginResource] = Field(default_factory=dict)
     environment_profiles: dict[ResourceId, EnvironmentProfileResource] = Field(default_factory=dict)
@@ -456,15 +457,16 @@ class LoadedAgentUiConfiguration(StrictModel):
                     if child is None:
                         raise ValueError(f"{agent.id} selects unknown Agent {selection.agent}")
                     roster_names.append(child.id)
-                else:
-                    child = self.subagents.get(selection.markdown)
-                    if child is None:
-                        raise ValueError(f"{agent.id} selects unknown Markdown subagent {selection.markdown}")
-                    roster_names.append(child.name)
             if len(roster_names) != len(set(roster_names)):
                 raise ValueError(f"{agent.id} has duplicate immediate roster names")
+        plugin_subagent_ids = {
+            item.resource_id
+            for item in self.sources
+            if item.relative_path.startswith("content-plugins/") and item.resource_kind == "subagent"
+        }
         for child in self.subagents.values():
-            _require_reference(child.model, self.models, f"{child.id}.model")
+            if child.id not in plugin_subagent_ids:
+                _require_reference(child.model, self.models, f"{child.id}.model")
         _reject_agent_cycles(self.agents)
         return self
 

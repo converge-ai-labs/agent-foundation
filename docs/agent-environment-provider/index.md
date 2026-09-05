@@ -30,7 +30,7 @@ A normal Run follows this sequence:
 2. The Provider validates credential-free desired configuration.
 3. The Host loads the latest authoritative `EnvironmentState` and creates fresh runtime collaborators.
 4. The Provider constructs one fresh adapter without external I/O.
-5. Harness enters the adapter, uses its operations, exports its latest state, and closes it.
+5. The Host prepares eagerly, or lets the first operation prepare lazily. Harness binds the local scope, uses operations, exports cached state, and closes it.
 6. The Host persists the latest state and applies retention policy separately.
 
 `close()` releases process-local clients, sessions, daemons, temporary output, and admission owned by that adapter. It is idempotent and non-destructive. Harness never calls `destroy()`.
@@ -51,7 +51,6 @@ spec = EnvironmentProviderSpec(
     provider_key="a13n.direct-local",
     schema_version="1",
     configuration={
-        "environment_id": "workspace",
         "root": {"path": "/srv/agent-workspaces/current"},
     },
 )
@@ -66,11 +65,12 @@ configuration = provider.validate_configuration(
 )
 environment = provider.create_environment(
     configuration=configuration,
+    environment_id="workspace",
     state=None,
 )
 ```
 
-Provider construction, `validate_configuration()`, and `create_environment()` are inert. The workspace or backing target is inspected only when the adapter enters a lifecycle operation.
+Provider construction, `validate_configuration()`, and `create_environment()` are inert. `enter()` also performs no target I/O. `prepare()` creates, resumes or connects the target; `ensure_ready()` triggers it on first use when preparation is lazy.
 
 Pass the fresh adapter to Harness:
 
@@ -91,6 +91,7 @@ The Host supplies state before entry:
 current_state = await state_store.load(environment_key)
 environment = provider.create_environment(
     configuration=configuration,
+    environment_id="workspace",
     state=current_state,
     runtime=fresh_runtime,
 )
@@ -118,6 +119,7 @@ Destroy requires a fresh, not-yet-entered adapter:
 ```python
 cleanup = provider.create_environment(
     configuration=configuration,
+    environment_id="workspace",
     state=current_state,
     runtime=fresh_runtime,
 )
@@ -167,7 +169,7 @@ A Provider implementation should:
 1. expose one stable namespaced `key` and exact `configuration_versions`;
 2. validate configuration into a frozen package-owned Pydantic model;
 3. accept credentials, SDK clients, transport factories, and bootstrap stores only through a fresh process-local runtime collaborator;
-4. return one fresh pre-entry-inert `Environment` from `create_environment()`;
+4. return one fresh inert `Environment` from `create_environment()` and describe its configured capabilities without target I/O;
 5. validate supplied state before mutation and update cached state at every target-identity transition;
 6. expose provider-neutral `EnvironmentOperations` after entry;
 7. keep `close()` non-destructive and implement target removal only in explicit `destroy()`.

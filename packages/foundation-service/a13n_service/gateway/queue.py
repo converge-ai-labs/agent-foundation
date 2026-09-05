@@ -152,6 +152,7 @@ class NativeQueuedSubmissionService:
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
             hook_subscription=request.hook_subscription,
+            **({"environment": request.environment} if "environment" in request.model_fields_set else {}),
         )
         try:
             if admission is ThreadSubmissionAdmission.continuation:
@@ -161,6 +162,7 @@ class NativeQueuedSubmissionService:
                     source_run_id=head.id,
                     idempotency_key=idempotency_key,
                     request=continuation,
+                    inherit_parent_environment=False,
                     transaction_hook=commit_run,
                 )
                 return ThreadRunSubmissionReceipt(
@@ -182,6 +184,7 @@ class NativeQueuedSubmissionService:
                     queue_version=thread.queue_version,
                 )
             if admission is ThreadSubmissionAdmission.waiting_continue:
+                assert current is not None
                 if current.sealed_state is None or request.waiting_resolution is None:
                     raise GatewayCommandError(
                         "run_waiting_state_invalid",
@@ -554,7 +557,7 @@ class NativeQueuedSubmissionService:
         actor: AuthenticatedActor,
         thread_id: str,
         request: ThreadRunSubmissionRequest,
-    ) -> tuple[_QueueScope, Thread, Run, Run | None, ThreadSubmissionAdmission]:
+    ) -> tuple[_QueueScope, Thread, Run | None, Run | None, ThreadSubmissionAdmission]:
         async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
@@ -566,7 +569,7 @@ class NativeQueuedSubmissionService:
                             ThreadRecord.session_id == SessionRecord.id,
                         ),
                     )
-                    .join(
+                    .outerjoin(
                         RunRecord,
                         and_(
                             RunRecord.tenant_id == ThreadRecord.tenant_id,
@@ -604,7 +607,7 @@ class NativeQueuedSubmissionService:
                 )
             )
             thread = thread_record.to_resource()
-            current = current_record.to_resource()
+            current = current_record.to_resource() if current_record is not None else None
             head = None if head_record is None else head_record.to_resource()
             try:
                 admission = classify_thread_submission(
@@ -621,12 +624,14 @@ class NativeQueuedSubmissionService:
                 if admission is ThreadSubmissionAdmission.queued
                 else WorkspaceAction.run_continue
             )
-            target_agent_id = request.agent_id or current.agent_id
+            target_agent_id = request.agent_id or (current.agent_id if current else None)
+            if target_agent_id is None:
+                raise GatewayCommandError("agent_required", "First input requires an Agent selection.", status_code=400)
             scope = _QueueScope(
                 session_record.tenant_id,
                 session_record.workspace_id,
                 thread.id,
-                current.agent_id,
+                current.agent_id if current else target_agent_id,
             )
             try:
                 await authorize_agent(

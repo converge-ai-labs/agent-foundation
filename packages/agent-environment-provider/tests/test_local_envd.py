@@ -53,11 +53,11 @@ def _environment(tmp_path: Path) -> LocalEnvdEnvironment:
     configuration = provider.validate_configuration(
         schema_version="1",
         value={
-            "environment_id": "local-envd-test",
             "workspace": {"path": str(tmp_path)},
         },
     )
     environment = provider.create_environment(
+        environment_id="local-envd-test",
         configuration=configuration,
         state=None,
         runtime=LocalEnvdProviderRuntime(
@@ -67,30 +67,6 @@ def _environment(tmp_path: Path) -> LocalEnvdEnvironment:
     )
     assert isinstance(environment, LocalEnvdEnvironment)
     return environment
-
-
-def test_foundation_local_envd_attachment_construction_is_inert(tmp_path: Path) -> None:
-    provider = LocalEnvdEnvironmentProvider()
-    workspace = tmp_path / "not-created-yet"
-    connection = provider.validate_connection(
-        schema_version="1",
-        parameters={
-            "environment_id": "attached-local-envd",
-            "workspace": {"path": str(workspace)},
-        },
-    )
-    assert provider.target_key(connection=connection) == str(workspace)
-
-    environment = provider.create_attachment_environment(
-        connection=connection,
-        runtime=LocalEnvdProviderRuntime(
-            executable=tmp_path / "not-inspected-agent-envd",
-            allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
-        ),
-    )
-
-    assert isinstance(environment, LocalEnvdEnvironment)
-    assert environment.dump_state() is None
 
 
 def _patch_entry(
@@ -136,6 +112,7 @@ async def test_local_envd_uses_fresh_private_generation_and_non_destructive_clos
         mount_id="workspace",
         host_refs={"session_id": "session-1"},
     )
+    await environment.prepare()
 
     assert environment.is_entered
     assert environment.dump_state() is None
@@ -164,11 +141,12 @@ def test_local_envd_provider_rejects_persisted_pid_or_target_state(tmp_path: Pat
     provider = LocalEnvdEnvironmentProvider()
     configuration = provider.validate_configuration(
         schema_version="1",
-        value={"environment_id": "local-envd-test", "workspace": {"path": str(tmp_path)}},
+        value={"workspace": {"path": str(tmp_path)}},
     )
 
     with pytest.raises(EnvironmentProviderError) as captured:
         provider.create_environment(
+            environment_id="local-envd-test",
             configuration=configuration,
             state=EnvironmentState(
                 provider_key="a13n.local-envd",

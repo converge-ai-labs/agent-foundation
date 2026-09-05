@@ -80,7 +80,11 @@ class QueuedSubmissionStore:
             if thread.version != expected_thread_version:
                 raise QueuedSubmissionConflict("Thread version changed before queue admission")
             rows = await _lock_live(database, tenant_id=tenant_id, thread_id=thread_id)
-            current = await _load_run_snapshot(database, tenant_id=tenant_id, run_id=thread.current_run_id)
+            current = (
+                await _load_run_snapshot(database, tenant_id=tenant_id, run_id=thread.current_run_id)
+                if thread.current_run_id
+                else None
+            )
             head = (
                 None
                 if thread.head_run_id is None
@@ -88,7 +92,7 @@ class QueuedSubmissionStore:
             )
             admission = classify_thread_submission(
                 thread=thread.to_resource(),
-                current=current.to_resource(),
+                current=current.to_resource() if current else None,
                 head=None if head is None else head.to_resource(),
                 has_queued_submission=bool(rows),
                 waiting_resolution_requested=False,
@@ -103,7 +107,7 @@ class QueuedSubmissionStore:
                 database,
                 tenant_id=tenant_id,
                 workspace_id=await _load_workspace_id(database, thread),
-                agent_id=submission.agent_id or current.agent_id,
+                agent_id=submission.agent_id or (current.agent_id if current else ""),
                 principal=authority_principal,
                 submission=submission,
             )
@@ -239,16 +243,20 @@ class QueuedSubmissionStore:
             resource = row.to_resource()
             if resource.authority_principal != actor_principal:
                 raise QueuedSubmissionConflict("only the queued authority Principal can replace its intent")
-            current = await _load_run_snapshot(database, tenant_id=tenant_id, run_id=thread.current_run_id)
+            current = (
+                await _load_run_snapshot(database, tenant_id=tenant_id, run_id=thread.current_run_id)
+                if thread.current_run_id
+                else None
+            )
             await self._authorize_inline_hook(
                 database,
                 tenant_id=tenant_id,
                 workspace_id=await _load_workspace_id(database, thread),
-                agent_id=submission.agent_id or current.agent_id,
+                agent_id=submission.agent_id or (current.agent_id if current else ""),
                 principal=actor_principal,
                 submission=submission,
             )
-            row.submission_json = submission.model_dump(mode="json", by_alias=True, exclude_none=True)
+            row.submission_json = submission.retained_payload()
             row.submission_digest_sha256 = submission.digest_sha256()
             row.version += 1
             row.updated_at = now
@@ -382,13 +390,17 @@ class QueuedSubmissionStore:
 def classify_thread_submission(
     *,
     thread: Thread,
-    current: Run,
+    current: Run | None,
     head: Run | None,
     has_queued_submission: bool,
     waiting_resolution_requested: bool,
 ) -> ThreadSubmissionAdmission:
     """Select the spec-defined queue-if-busy branch from one detached snapshot."""
 
+    if current is None:
+        if thread.current_run_id is not None or head is not None or waiting_resolution_requested:
+            raise QueuedSubmissionConflict("empty Thread state is inconsistent")
+        return ThreadSubmissionAdmission.root
     if current.id != thread.current_run_id or current.thread_id != thread.id:
         raise QueuedSubmissionConflict("current Run does not match the Thread snapshot")
     if head is None:

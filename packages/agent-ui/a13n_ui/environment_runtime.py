@@ -389,14 +389,12 @@ class EnvironmentRunService:
         reconstructed = self._reconstructor.reconstruct(profile)
         roots = await normalize_project_roots(composition.project_roots)
         canonical_host_paths = reconstructed.adapter.preserves_host_paths
-        content_plugin_skills = tuple(
-            (item.plugin_id, item.skills_path) for item in composition.content_plugins if item.skills_path is not None
-        )
+        content_plugins = tuple((item.plugin_id, item.path, item.skills_path) for item in composition.content_plugins)
         path_layout = EnvironmentPathLayout.resolve(
             canonical_host_paths=canonical_host_paths,
             project_roots=roots,
             user_skills_root=self._user_skills_root,
-            content_plugin_skills=content_plugin_skills,
+            content_plugins=content_plugins,
         )
         mounts: list[_PreparedMount] = []
         try:
@@ -427,27 +425,32 @@ class EnvironmentRunService:
                         mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
                     )
                 )
-            if _root_selects_skills(composition):
-                for index, ((plugin_id, root), (_layout_id, mount_path)) in enumerate(
-                    zip(content_plugin_skills, path_layout.content_plugin_skills, strict=True),
-                    start=1,
-                ):
-                    if canonical_host_paths and Path(root) in roots:
-                        continue
-                    mounts.append(
-                        await self._prepare_content_plugin_skills_mount(
-                            plugin_id=plugin_id,
-                            root=Path(root),
-                            alias=f"content-plugin-{index}",
-                            mount_path=mount_path if canonical_host_paths else None,
-                        )
+            for index, ((plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
+                zip(content_plugins, path_layout.content_plugin_roots, strict=True),
+                start=1,
+            ):
+                if canonical_host_paths and Path(root) in roots:
+                    continue
+                # An uninstall is a real deletion; do not recreate a captured path.
+                if not await to_thread.run_sync(Path(root).exists):
+                    continue
+                mounts.append(
+                    await self._prepare_content_plugin_mount(
+                        plugin_id=plugin_id,
+                        root=Path(root),
+                        alias=f"content-plugin-{index}",
+                        mount_path=mount_path,
                     )
+                )
+            if _root_selects_skills(composition):
                 if not (canonical_host_paths and Path(path_layout.user_skills) in roots):
                     mounts.append(
                         await self._prepare_user_skills_mount(
                             mount_path=(path_layout.user_skills if canonical_host_paths else None)
                         )
                     )
+            for mount in mounts:
+                await mount.environment.prepare()
             extensions = await self._reconstructor.create_extensions(composition)
             runtime = create_environment_runtime(
                 mounts={
@@ -476,7 +479,7 @@ class EnvironmentRunService:
             runtime=runtime,
         )
 
-    async def _prepare_content_plugin_skills_mount(
+    async def _prepare_content_plugin_mount(
         self,
         *,
         plugin_id: str,
@@ -485,12 +488,11 @@ class EnvironmentRunService:
         mount_path: str | None,
     ) -> _PreparedMount:
         try:
-            normalized = await to_thread.run_sync(_validate_content_plugin_skills_root, root)
+            normalized = await to_thread.run_sync(_validate_content_plugin_root, root)
             provider = DirectLocalEnvironmentProvider()
             configuration = provider.validate_configuration(
                 schema_version="1",
                 value={
-                    "environment_id": f"content-plugin-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                     "root": {"path": os.fspath(normalized), "read_only": False},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -499,14 +501,15 @@ class EnvironmentRunService:
                 },
             )
             environment = provider.create_environment(
+                environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                 configuration=configuration,
                 state=None,
                 runtime=DirectLocalProviderRuntime(),
             )
         except Exception as exc:
             raise EnvironmentLifecycleError(
-                "A captured Content Plugin Skill directory could not be prepared.",
-                code="content_plugin_skills_mount_failed",
+                "A captured Content Plugin directory could not be prepared.",
+                code="content_plugin_mount_failed",
                 details={"plugin_id": plugin_id, "root": os.fspath(root)},
             ) from exc
         file_actions = frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
@@ -528,7 +531,6 @@ class EnvironmentRunService:
             configuration = provider.validate_configuration(
                 schema_version="1",
                 value={
-                    "environment_id": f"user-skills-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                     "root": {"path": os.fspath(normalized), "read_only": False},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -537,6 +539,7 @@ class EnvironmentRunService:
                 },
             )
             environment = provider.create_environment(
+                environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                 configuration=configuration,
                 state=None,
                 runtime=DirectLocalProviderRuntime(),
@@ -613,7 +616,7 @@ async def normalize_project_roots(roots: Sequence[Path | str]) -> tuple[Path, ..
     return tuple(normalized)
 
 
-def _validate_content_plugin_skills_root(value: Path) -> Path:
+def _validate_content_plugin_root(value: Path) -> Path:
     if "\x00" in os.fspath(value):
         raise ValueError("root contains NUL")
     metadata = value.lstat()

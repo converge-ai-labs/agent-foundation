@@ -6,7 +6,6 @@ import pytest
 from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy
-from a13n_service.environments.models import EnvironmentTargetRecord, RunEnvironmentBindingRecord
 from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -44,7 +43,6 @@ from tests.hooks.support import seed_hook_actor_access
 from .conftest import (
     AGENT_ID,
     AGENT_REVISION_ID,
-    ENVIRONMENT_TARGET_ID,
     NOW,
     SESSION_ID,
     TENANT_ID,
@@ -52,7 +50,6 @@ from .conftest import (
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
-    environment_execution_config,
 )
 
 pytestmark = pytest.mark.anyio
@@ -185,12 +182,7 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         record = await database.get(RunRecord, run.id)
         assert record is not None
         assert record.to_resource() == run
-        assert (
-            await database.scalar(
-                select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == run.id)
-            )
-            is None
-        )
+        assert record.environment_id is None
 
     async with transaction(interaction_sessions) as database:
         record = await database.get(RunRecord, run.id)
@@ -323,90 +315,6 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
         assert deliveries[0].destination_ref == revision.id
 
 
-async def test_acceptance_atomically_binds_exact_environment_and_replay_verifies_it(
-    interaction_sessions: async_sessionmaker[AsyncSession],
-    interaction_object_store: ObjectStore,
-) -> None:
-    states = RunStateStore(interaction_object_store)
-    service = RunAcceptanceService(
-        interaction_sessions,
-        states,
-        RunPayloadStore(interaction_object_store),
-        _inline_hooks(),
-        clock=lambda: NOW,
-    )
-    environment = environment_execution_config()
-    config = effective_agent_config(environment=environment)
-    seed = RunStateSeed(
-        run_id="run_9999999999999999",
-        agent_id=AGENT_ID,
-        agent_revision_id=AGENT_REVISION_ID,
-        effective_agent_config=config,
-    )
-    state = initialize_start_state(seed, thread_id=THREAD_ID)
-    run = _accepted_run(
-        run_id=seed.run_id,
-        thread_id=state.thread_id,
-        idempotency_key="environment-binding",
-        request_fingerprint="9" * 64,
-        config=config,
-    )
-    session = Session(
-        id=SESSION_ID,
-        tenant_id=TENANT_ID,
-        workspace_id=WORKSPACE_ID,
-        created_at=NOW,
-        updated_at=NOW,
-    )
-    thread = Thread(
-        id=state.thread_id,
-        version=1,
-        queue_version=0,
-        tenant_id=TENANT_ID,
-        session_id=SESSION_ID,
-        role=ThreadRole.root,
-        origin_kind=ThreadOriginKind.new,
-        current_run_id=run.id,
-        created_at=NOW,
-        updated_at=NOW,
-    )
-
-    receipt = await service.accept_new_thread(session=session, thread=thread, run=run, state=state)
-
-    async with short_session(interaction_sessions) as database:
-        binding = await database.scalar(
-            select(RunEnvironmentBindingRecord).where(
-                RunEnvironmentBindingRecord.organization_id == TENANT_ID,
-                RunEnvironmentBindingRecord.run_id == run.id,
-            )
-        )
-        assert binding is not None
-        assert binding.id.startswith("envb_")
-        assert binding.mount_name == "workspace"
-        assert binding.provider_key == environment.connection.provider_key
-        assert binding.environment_target_id == ENVIRONMENT_TARGET_ID
-        assert binding.target_key == environment.target_key
-        assert binding.environment_execution_config_digest_sha256 == environment.logical_digest_sha256
-        target = await database.get(EnvironmentTargetRecord, ENVIRONMENT_TARGET_ID)
-        assert target is not None
-        assert (target.status, target.active_run_count) == ("active", 1)
-
-    assert await service.accept_new_thread(session=session, thread=thread, run=run, state=state) == receipt
-
-    async with short_session(interaction_sessions) as database:
-        target = await database.get(EnvironmentTargetRecord, ENVIRONMENT_TARGET_ID)
-        assert target is not None and target.active_run_count == 1
-
-    async with transaction(interaction_sessions) as database:
-        binding = await database.scalar(
-            select(RunEnvironmentBindingRecord).where(RunEnvironmentBindingRecord.run_id == run.id)
-        )
-        assert binding is not None
-        binding.target_key = "different-target"
-    with pytest.raises(ValueError, match="binding does not match"):
-        await service.accept_new_thread(session=session, thread=thread, run=run, state=state)
-
-
 async def test_acceptance_rejects_input_payload_owned_by_another_run(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
@@ -482,8 +390,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=2),
     )
-    environment = environment_execution_config()
-    config = effective_agent_config(environment=environment)
+    config = effective_agent_config()
     first_seed = RunStateSeed(
         run_id="run_2222222222222222",
         agent_id=AGENT_ID,
@@ -625,20 +532,8 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
     assert receipt.thread_version == 3
     async with short_session(interaction_sessions) as database:
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == first.thread_id))
-        bindings = tuple(
-            (
-                await database.scalars(
-                    select(RunEnvironmentBindingRecord)
-                    .where(RunEnvironmentBindingRecord.run_id.in_((first.id, second.id)))
-                    .order_by(RunEnvironmentBindingRecord.run_id)
-                )
-            ).all()
-        )
         assert thread is not None
         assert (thread.version, thread.current_run_id, thread.head_run_id) == (3, second.id, None)
-        assert len(bindings) == 2
-        assert bindings[0].id != bindings[1].id
-        assert {binding.target_key for binding in bindings} == {environment.target_key}
 
     conflicting = second.model_copy(
         update={

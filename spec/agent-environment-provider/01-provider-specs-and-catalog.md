@@ -32,6 +32,10 @@ Rules:
 
 A Host can store its own definition revision around this envelope. That outer record may own user names, policy, sharing, and lifecycle settings, but those values do not become Provider configuration unless the provider contract needs them to define the target.
 
+## Host Backend Configuration
+
+A configured Host Provider separates backend access from the desired environment recipe. The same implementation supplies typed `provider_configuration_model` and optional `credential_model` definitions for backend settings and write-only credentials. Hosts derive schemas and validate those values through these models, persist them under their own resource authority, and supply fresh validated runtime collaborators. The recipe continues to use `configuration_versions` and `validate_configuration()` below. Embedded Hosts can supply equivalent typed collaborators directly without creating service resources. No Foundation resource or credential-storage model enters this package.
+
 ## Provider Contract
 
 ```python
@@ -42,12 +46,27 @@ class EnvironmentProvider(ABC):
     @property
     def configuration_versions(self) -> frozenset[str]: ...
 
+    @property
+    def provider_configuration_model(self) -> type[BaseModel]: ...
+
+    @property
+    def credential_model(self) -> type[BaseModel] | None: ...
+
     def validate_configuration(
         self,
         *,
         schema_version: str,
         value: JsonValue,
     ) -> BaseModel: ...
+
+    @property
+    def supports_stop(self) -> bool: ...
+
+    @property
+    def supports_destroy(self) -> bool: ...
+
+    @property
+    def requires_keepalive(self) -> bool: ...
 
     def create_environment(
         self,
@@ -67,6 +86,8 @@ The exact language API may use typed generic runtime values, but these semantics
 - Runtime collaborators are fresh process-local trusted values. They can include credential sources, a Docker engine boundary, a bootstrap store, an EIP transport factory, or a local runtime allocator.
 - Runtime collaborators and configuration are retained only by the resulting process-local Environment. They are never copied into `EnvironmentState`.
 - A Provider never stores durable current state, chooses retention, or associates Threads.
+
+A small capability declaration describes supported stop/destruction and whether keepalive is required. A Host rejects unsupported policies before target I/O. The same implementation supplies preparation, resume, connections and target lifecycle operations through its Environment objects; there are no separately registered attachment or retention Providers.
 
 There is no separate Provider factory entity. Catalog loading creates an `EnvironmentProvider` directly through the trusted entry point. There is no lifecycle Provider, Resource, attachment, or binding layer between Provider and Environment.
 
@@ -116,13 +137,14 @@ def build_environment_provider_catalog(
 
 `build_environment_provider_catalog()` creates one caller-owned immutable snapshot. It validates all requested keys, rejects duplicates and collisions among built-in, extension, and explicit sources, and verifies that every selected extension has exactly one installed entry point before importing any selected extension target. It then registers built-ins in `builtin_keys` order, installed extensions in `extension_keys` order, and explicit Provider objects in supplied order. An empty selection performs no entry-point scan.
 
-The currently implemented built-in catalog keys are:
+The built-in catalog keys are:
 
 | Key                 | Target                                                            |
 | ------------------- | ----------------------------------------------------------------- |
 | `a13n.direct-local` | One Host-selected local root using direct operating-system access |
 | `a13n.local-envd`   | One Host-selected workspace served by a fresh local envd process  |
 | `a13n.docker`       | One Docker container running envd                                 |
+| `a13n.e2b`          | One E2B sandbox running envd                                      |
 
 Third-party Providers register under the `a13n_environment_provider.providers` entry-point group. One selected entry point must load one concrete `EnvironmentProvider` class with safe no-argument construction. Preconstructed objects are not valid entry-point targets. The entry-point name and constructed `provider.key` must match. Only selected extension keys are imported.
 
@@ -141,7 +163,7 @@ Catalog presence does not authorize use. A Host:
 3. validates the exact configuration version and payload;
 4. resolves current authoritative state and fresh runtime collaborators;
 5. calls `create_environment()`;
-6. passes the Environment to Harness or invokes Host-only warmup/destroy behavior.
+6. selects eager preparation or supplies lazy preparation coordination, then passes the Environment to Harness; stop, keepalive and destroy remain Host-only actions.
 
 Model content, imported Harness state, a package installed in the environment, or an arbitrary entry-point key cannot select a Provider or supply runtime collaborators.
 
@@ -156,22 +178,22 @@ Configuration `schema_version` and `EnvironmentState.state_version` evolve indep
 - Supporting a new configuration version does not imply accepting old state versions.
 - Supporting a state migration does not authorize changing desired configuration.
 - Providers reject unsupported versions explicitly.
-- Hosts migrate stored configuration or state only through an explicit provider-owned migration boundary. Entry never silently rewrites incompatible data.
+- Hosts migrate stored configuration or state only through an explicit provider-owned migration boundary. Preparation never silently rewrites incompatible data.
 
 Configuration normalization produces a stable fingerprint when a provider needs to prove that state belongs to the selected desired configuration. The fingerprint is compatibility evidence, not authorization or target identity.
 
 ## Failure Semantics
 
-| Failure                                       | Behavior                                                               |
-| --------------------------------------------- | ---------------------------------------------------------------------- |
-| Unknown or disabled Provider key              | Fail before configuration validation or runtime resolution             |
-| Duplicate catalog key                         | Fail catalog construction                                              |
-| Unsupported configuration version             | Fail with supported versions and no provider effects                   |
-| Invalid configuration payload                 | Fail with bounded field diagnostics and no provider effects            |
-| Mismatched state Provider key                 | Fail before Environment construction                                   |
-| Invalid state JSON or unsupported codec       | Fail during deterministic state validation                             |
-| Missing runtime collaborator                  | Fail Environment construction or explicit entry before target mutation |
-| Entry-point import or Provider creation fails | Fail catalog loading; do not silently omit an enabled Provider         |
+| Failure                                       | Behavior                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| Unknown or disabled Provider key              | Fail before configuration validation or runtime resolution          |
+| Duplicate catalog key                         | Fail catalog construction                                           |
+| Unsupported configuration version             | Fail with supported versions and no provider effects                |
+| Invalid configuration payload                 | Fail with bounded field diagnostics and no provider effects         |
+| Mismatched state Provider key                 | Fail before Environment construction                                |
+| Invalid state JSON or unsupported codec       | Fail during deterministic state validation                          |
+| Missing runtime collaborator                  | Fail Environment construction or preparation before target mutation |
+| Entry-point import or Provider creation fails | Fail catalog loading; do not silently omit an enabled Provider      |
 
 Errors never expose credentials, bearer URLs, Docker socket details, raw Host paths outside safe configuration diagnostics, or native exception text to model-facing surfaces.
 
@@ -179,7 +201,7 @@ Errors never expose credentials, bearer URLs, Docker socket details, raw Host pa
 
 Provider keys are stable serialized discriminators. A key changes only for a semantically distinct Provider family. Configuration and state version changes follow their explicit compatibility boundaries.
 
-`EnvironmentProvider`, `Environment`, and `EnvironmentState` are the only shared lifecycle API. The pre-release removal of Provider factories, Resources, attachments, Provider bindings, lifecycle capability matrices, and pause APIs is a direct cut with no compatibility aliases.
+`EnvironmentProvider`, `Environment`, and `EnvironmentState` define the shared lifecycle API. Host resources and lifecycle policy do not become another shared Provider hierarchy. Installed code provenance is diagnostic metadata, not a per-Environment exact Python package lock.
 
 ## Invariants
 

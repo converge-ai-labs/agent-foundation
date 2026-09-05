@@ -208,6 +208,9 @@ class LocalFileOperator:
         self._generation = generation
         self._operations = itertools.count(1)
 
+    def bind_mount(self, mount_id: str) -> None:
+        self._mount_id = mount_id
+
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
             mount_id=self._mount_id,

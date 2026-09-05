@@ -514,7 +514,6 @@ async def _seed_replacement_child_revision(sessions: async_sessionmaker[AsyncSes
                 resolved_skills=[],
                 connector_tools=[],
                 mcp_tools=[],
-                resolved_environment=None,
                 resolved_subagents=[],
                 content_digest="4" * 64,
                 source_revision_id=CHILD_REVISION_ID,

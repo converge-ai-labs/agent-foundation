@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.connectivity.selection_resolution import (
     ConnectivitySelectionResolver,
 )
-from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -23,11 +22,9 @@ from ..connectivity_resolution import prepare_invocation_connectivity
 from ..domain import (
     AgentRevision,
     AgentRunOverride,
-    EnvironmentExecutionConfig,
     PluginRuntimeMode,
     ResolvedSubagentEdge,
 )
-from ..environment_resolution import AgentEnvironmentSelectionResolver
 from ..errors import (
     agent_current_revision_missing,
     agent_revision_not_executable,
@@ -46,7 +43,6 @@ from .contracts import (
     PreparedInvocationSubagent,
     RootAgentStatePolicy,
 )
-from .environment import require_writable_skill_environment, validate_child_environment
 from .graph import (
     load_agent_record,
     load_revision_record,
@@ -66,14 +62,12 @@ class AgentInvocationPreparer:
         model_selector: AcceptedModelSelector,
         *,
         plugin_runtime_mode: PluginRuntimeMode,
-        environment_resolver: AgentEnvironmentSelectionResolver | None,
         plugin_resolver: AgentPluginSelectionResolver,
         connectivity_resolver: ConnectivitySelectionResolver | None,
         protocol_policy: AgentProtocolPolicy,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
-        self._environment_resolver = environment_resolver
         self._plugin_runtime_mode = plugin_runtime_mode
         self._plugin_resolver = plugin_resolver
         self._connectivity_resolver = connectivity_resolver
@@ -170,26 +164,6 @@ class AgentInvocationPreparer:
                     except PluginSelectionError as error:
                         raise agent_revision_not_executable(error.reason) from error
                 resolved_plugins = plugins.resolved
-            environment = None
-            resolved_environment = None
-            if merged.config.environment is not None:
-                if self._environment_resolver is None:
-                    raise agent_revision_not_executable("environment_resolution_unavailable")
-                retained_environment = (
-                    revision.resolved_environment if merged.config.environment == revision.config.environment else None
-                )
-                try:
-                    environment = await self._environment_resolver.prepare_invocation(
-                        actor=actor,
-                        organization_id=authorized.organization_id,
-                        workspace_id=workspace_id,
-                        selection=merged.config.environment,
-                        retained=retained_environment,
-                    )
-                except EnvironmentManagementError as error:
-                    raise agent_revision_not_executable(error.code) from error
-                resolved_environment = environment.resolved
-            require_writable_skill_environment(merged.config.skills, resolved_environment)
             async with short_session(self._sessions) as session:
                 subagents = await self._prepare_subagents(
                     session,
@@ -199,7 +173,6 @@ class AgentInvocationPreparer:
                     root_agent_id=agent_id,
                     revision=revision,
                     config=merged.config,
-                    resolved_environment=resolved_environment,
                 )
             try:
                 model = await self._model_selector.prepare(
@@ -244,8 +217,6 @@ class AgentInvocationPreparer:
             plugins=plugins,
             skills=skills,
             resolved_plugin_versions=resolved_plugins,
-            environment=environment,
-            resolved_environment=resolved_environment,
             subagents=subagents,
             connectivity=connectivity,
         )
@@ -298,7 +269,6 @@ class AgentInvocationPreparer:
         root_agent_id: str,
         revision: AgentRevision,
         config,
-        resolved_environment: EnvironmentExecutionConfig | None,
     ) -> tuple[PreparedInvocationSubagent, ...]:
         base_edges = {item.name: item for item in revision.resolved_subagents}
         result: list[PreparedInvocationSubagent] = []
@@ -345,11 +315,6 @@ class AgentInvocationPreparer:
                 session,
                 root_agent_id=root_agent_id,
                 first_revision=child_revision,
-            )
-            validate_child_environment(
-                resolved_environment,
-                child_revision.to_resource().resolved_environment,
-                selection,
             )
             result.append(
                 PreparedInvocationSubagent(

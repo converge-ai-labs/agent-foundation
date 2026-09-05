@@ -499,11 +499,11 @@ class RunAttemptControl:
         checkpoint_kind: Literal["progress", "waiting", "completed"],
         candidate: RunStateOutcomeCandidate | None,
     ) -> RunStateEnvelope:
-        if harness.environment_states:
-            raise RunError(
-                "Foundation Environment attachments must not publish provider target state.",
-                code="foundation_environment_state_invalid",
-            )
+        harness = HarnessState.new(
+            thread_id=harness.thread_id,
+            message_history=harness.message_history,
+            agent_context_state=harness.agent_context_state,
+        )
         prior = self._state.envelope
         payload = prior.model_dump(mode="python", by_alias=True)
         payload.update(

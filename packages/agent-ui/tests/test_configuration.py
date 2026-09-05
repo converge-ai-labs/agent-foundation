@@ -205,7 +205,7 @@ async def test_rejects_invalid_configuration_tree(
     assert invalid.value.details["validation_error_count"] >= 1
 
 
-async def test_rejects_missing_markdown_reference(tmp_path: Path) -> None:
+async def test_missing_markdown_reference_is_deferred_to_run_resolution(tmp_path: Path) -> None:
     config = _write_source_tree(
         tmp_path,
         resources={
@@ -228,10 +228,9 @@ subagents: [{markdown: subagent-missing}]
         },
     )
 
-    with pytest.raises(ConfigurationError) as invalid:
-        await load_agent_ui_configuration(config)
-
-    assert invalid.value.code == "configuration_invalid"
+    loaded = await load_agent_ui_configuration(config)
+    assert loaded.agents["agent-assistant"].subagents
+    assert not loaded.subagents
 
 
 async def test_accepts_release_owned_sandbox_as_global_default(tmp_path: Path) -> None:

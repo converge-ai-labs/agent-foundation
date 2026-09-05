@@ -35,7 +35,7 @@ from a13n_ui.composition import (
 from a13n_ui.configuration import load_agent_ui_configuration
 from a13n_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_ui.environment_runtime import EnvironmentRunService
-from a13n_ui.errors import AppStateError, StoreConflictError
+from a13n_ui.errors import AppStateError, StoreConflictError, ThreadError
 from a13n_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_CLIENT_ID,
     DEFAULT_GROK_OAUTH_ISSUER,
@@ -50,6 +50,7 @@ from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
 from a13n_ui.surfaces import (
     ChildExecutionPage,
+    DecisionResponseBatch,
     ExternalToolResult,
     RootOperationStatus,
     ThreadDeferredResponse,
@@ -200,6 +201,10 @@ async def test_application_starts_persists_objects_and_closes(tmp_path: Path) ->
     async with open_agent_ui_app(settings) as app:
         retained = app
         assert app.state is AppState.ready
+        assert (await app.active_work_summary()).model_dump() == {
+            "root_operations": 0,
+            "child_executions": 0,
+        }
         reference = await app._store.publish_object(
             object_kind=ObjectKind.run_composition,
             object_schema_version="1",
@@ -488,6 +493,13 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    prepared: list[LocalEnvdEnvironment] = []
+
+    async def prepare_local_envd(environment: LocalEnvdEnvironment, **scope: object) -> None:
+        del scope
+        prepared.append(environment)
+
+    monkeypatch.setattr(LocalEnvdEnvironment, "_prepare", prepare_local_envd)
     root = _write_configuration(tmp_path)
     root.write_text(f"{root.read_text()}  environment_profile: {SANDBOX_PROFILE_ID}\n")
     agent = tmp_path / "agents" / "assistant.yaml"
@@ -538,6 +550,7 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         )
         local_envd = plan.environments["workspace"]
         assert isinstance(local_envd, LocalEnvdEnvironment)
+        assert prepared == [local_envd]
         assert local_envd._configuration.workspace.path.as_posix() == project_root
         assert local_envd._configuration.execution_network.value == "deny"
         if os.name == "posix":
@@ -636,13 +649,18 @@ async def test_environment_run_service_directly_prepares_and_finalizes_native_pr
     assert finalization.state_publications[0].status == "unchanged"
 
 
-async def test_environment_run_service_mounts_captured_content_plugin_skills_read_write(tmp_path: Path) -> None:
+@pytest.mark.parametrize("skills_enabled", [True, False])
+async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: Path, skills_enabled: bool) -> None:
     root = _write_configuration(tmp_path)
     agent = tmp_path / "agents" / "assistant.yaml"
-    agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
-    plugin_skills = tmp_path / "state" / "content-plugins" / "objects" / ("1" * 64) / "skills"
+    if skills_enabled:
+        agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
+    plugin_skills = tmp_path / "state" / "content-plugins" / "plugin-reviewer" / "skills"
     plugin_skill = plugin_skills / "review" / "SKILL.md"
     plugin_skill.parent.mkdir(parents=True)
+    subagent = plugin_skills.parent / "subagents" / "explorer.md"
+    subagent.parent.mkdir()
+    subagent.write_text("Original subagent")
     plugin_skill.write_text("---\nname: review\ndescription: Review a change.\n---\n\nReview carefully.\n")
     user_skills = tmp_path / "home" / ".agents" / "skills"
 
@@ -676,9 +694,8 @@ async def test_environment_run_service_mounts_captured_content_plugin_skills_rea
                         plugin_id="plugin-reviewer",
                         version="1.0.0",
                         commit="2" * 40,
-                        content_digest="1" * 64,
                         path=plugin_skills.parent.as_posix(),
-                        skills_path=plugin_skills.as_posix(),
+                        skills_path=plugin_skills.as_posix() if skills_enabled else None,
                     ),
                 )
             }
@@ -686,12 +703,12 @@ async def test_environment_run_service_mounts_captured_content_plugin_skills_rea
 
         plan = await executor._environments.prepare(composition)
 
-        assert tuple(plan.environments) == ("workspace", "content-plugin-1", "user-skills")
+        expected_aliases = ("workspace", "content-plugin-1") + (("user-skills",) if skills_enabled else ())
+        assert tuple(plan.environments) == expected_aliases
         assert tuple(item.mount_path for item in plan._mounts) == (
             (tmp_path / "workspace").resolve().as_posix(),
-            plugin_skills.resolve().as_posix(),
-            user_skills.resolve().as_posix(),
-        )
+            plugin_skills.parent.resolve().as_posix(),
+        ) + ((user_skills.resolve().as_posix(),) if skills_enabled else ())
         plugin_mount = plan._mounts[1]
         assert plugin_mount.permission_ceiling.operations == frozenset(
             action for action in EnvironmentAction if action.value.startswith("environment.file.")
@@ -710,9 +727,17 @@ async def test_environment_run_service_mounts_captured_content_plugin_skills_rea
                 "---\nname: review\ndescription: Review an updated change.\n---\n\nUpdated by the Agent.\n",
                 mode="replace",
             )
+            await environment.files.write_text(subagent.resolve().as_posix(), "Edited subagent", mode="replace")
+            with pytest.raises(EnvironmentError):
+                await environment.files.write_text(
+                    (plugin_skills.parent.parent / "outside.md").as_posix(),
+                    "Not allowed",
+                    mode="create",
+                )
         finalization = await plan.finalize(timeout_seconds=1)
 
     assert finalization.cleanup_errors == ()
+    assert subagent.read_text() == "Edited subagent"
     assert "Updated by the Agent." in plugin_skill.read_text()
 
 
@@ -870,7 +895,8 @@ async def test_application_creates_and_runs_root_thread(tmp_path: Path) -> None:
         assert selected.continuation_id == operation.outcome.continuation.continuation_id
         transcript = await app.get_thread_transcript(thread_id=thread.thread_id, limit=1)
         assert transcript.total >= 1
-        assert transcript.entries[0].message_kind == "request"
+        assert transcript.entries[0].position == transcript.total - 1
+        assert transcript.entries[0].message_kind == "response"
         assert transcript.entries[0].parts
 
 
@@ -920,6 +946,21 @@ async def test_root_deferred_response_requires_exact_selected_request_batch(tmp_
         request = detail.deferred_requests[0]
         assert request.kind == "external"
         assert request.request_id == "deferred-1"
+        decisions = await app.thread_decisions(
+            thread_id=thread.thread_id,
+            expected_continuation_id=detail.continuation_id,
+        )
+        assert decisions is not None
+        assert decisions.requests[0].kind == "external"
+        with pytest.raises(ThreadError) as changed:
+            await app.get_thread_transcript(
+                thread_id=thread.thread_id,
+                expected_continuation_id="0" * 64,
+            )
+        assert changed.value.code == "thread_history_continuation_changed"
+        workbench = await app.workbench(project_id="project-main")
+        assert workbench.rows[0].pending_decision is not None
+        assert workbench.rows[0].pending_decision.count == 1
 
         incomplete_receipt = await app.respond_thread(
             thread_id=thread.thread_id,
@@ -950,9 +991,9 @@ async def test_root_deferred_response_requires_exact_selected_request_batch(tmp_
         assert stale.failure is not None
         assert stale.failure.code == "thread_continuation_conflict"
 
-        response_receipt = await app.respond_thread(
+        response_receipt = await app.respond_decisions(
             thread_id=thread.thread_id,
-            response=ThreadDeferredResponse(
+            response=DecisionResponseBatch(
                 expected_continuation_id=detail.continuation_id,
                 responses=(
                     ExternalToolResult(

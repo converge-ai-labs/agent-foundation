@@ -40,6 +40,43 @@ uvx a13n-ui tui
 
 The repository directory is `packages/agent-ui`, the Python distribution is `a13n-ui`, and the import package is `a13n_ui`. The private browser source lives in [`apps/harness-ui`](../../apps/harness-ui/README.md).
 
+## Terminal Workstation
+
+The TUI keeps one process-local App open and provides two persistent routes:
+
+- **Focus** shows one Thread timeline, composer, decisions, and available operation controls. Only the focused Thread owns the detailed live subscription.
+- **Workbench** shows bounded, attention-ranked Thread summaries under the selected Project or All Projects. Root Runs and child executions continue when their Thread is not focused.
+
+`Ctrl+O` moves between Focus and Workbench, `Ctrl+N` starts a new draft, and `Ctrl+P` opens the command palette. `Escape` closes the top completion, picker, or review without approving, denying, cancelling, or clearing a draft. `Ctrl+C` first closes a transient surface, otherwise requests cancellation for the focused active root operation, and exits when there is nothing to cancel. Every workflow also exposes selectable controls for mouse use.
+
+The composer accepts the following terminal commands; the command palette exposes the same registry and disables actions that are unavailable in the current state:
+
+| Commands                                           | Purpose                                                                                     |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `/new`, `/workbench`, `/threads`                   | Create a draft, supervise Thread summaries, or find a Thread.                               |
+| `/skills`, `/agent`, `/environment`, `/extensions` | Insert an effective Skill reference or select accepted configuration for a draft or Thread. |
+| `/status`, `/details`, `/thinking`, `/help`        | Inspect state and control progressive disclosure.                                           |
+| `/editor`, `/cancel`, `/archive`, `/exit`          | Hand off a draft, control exact work, archive an inactive Thread, or leave the App.         |
+
+Ordinary input during an active root Run is an exact steering attempt, never a hidden next-turn queue. `@` completion resolves App-owned Project logical paths and `$` completion resolves exact effective Skill references. Structured questions and approvals remain bound to one selected continuation and are submitted as one explicit response batch. Tool, diff, task, and child details open as bounded review surfaces; omitted or truncated content is labeled rather than inferred.
+
+The external editor action resolves `$VISUAL` and then `$EDITOR`, parses the command without a shell, suspends Textual while the editor owns the terminal, and applies the returned text only after a successful editor exit. The original draft survives an unavailable editor or non-zero exit.
+
+Wide terminals show the Focus inspector and Workbench preview. Medium terminals reduce secondary detail, and narrow terminals use the primary single-pane flow with full-screen overlays. Resizing preserves the selected Thread, draft, overlay purpose, timeline selection, and reading state. If exit would interrupt active process-local root or child work, the TUI shows the active counts and requires explicit confirmation; that work does not detach or continue after App shutdown. Textual restores normal terminal mode before the launcher waits for App cleanup.
+
+## CLI Discovery and Output
+
+Run `a13n-ui --help` to discover top-level commands and `a13n-ui COMMAND --help` or `a13n-ui GROUP COMMAND --help` for command-specific options. Management groups cover configuration, imports, Content Plugins, Threads, Projects, Environments, model authentication, and one-shot execution.
+
+Non-interactive commands that return data accept `--format text` for readable labeled output or `--format json` for compact machine-readable output. Successful JSON is emitted on stdout. Validation and application errors return a non-zero status, with text diagnostics on stderr or machine-readable JSON envelopes on stdout. Click rejects invalid options and arguments with command-local usage guidance on stderr before application startup.
+
+```console
+a13n-ui config validate
+a13n-ui project list --format json
+a13n-ui thread list --include-archived
+a13n-ui run "Inspect the current project" --format text
+```
+
 ## Configuration
 
 Agent UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-ui/a13n-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain one YAML resource per Model, extension, MCP server, Agent, or Project, plus one canonical Markdown file per `subagents/` definition. Direct editing remains a complete configuration path; valid changes reload without restarting imported Python code.

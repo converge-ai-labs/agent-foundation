@@ -1,12 +1,19 @@
-"""Interactive terminal adapter for the process-local Agent UI App."""
+"""Interactive terminal adapter with strict TTY and lazy Textual imports."""
 
 from __future__ import annotations
 
-import asyncio
+import os
+import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from a13n_ui.app import AgentUiApp
-from a13n_ui.thread_service import RootThreadDefaults
+from a13n_ui.errors import ConfigurationError
+from a13n_ui.surfaces import NewThreadDefaults
+
+if TYPE_CHECKING:
+    from a13n_ui.tui.controller import AppContextFactory
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,33 +21,38 @@ class TuiLaunchOptions:
     """Terminal-local initial selection that never mutates file defaults."""
 
     thread_id: str | None = None
-    defaults: RootThreadDefaults = field(default_factory=RootThreadDefaults)
+    defaults: NewThreadDefaults = field(default_factory=NewThreadDefaults)
+    open_workbench: bool = False
 
 
-async def run(app: AgentUiApp, *, launch: TuiLaunchOptions | None = None) -> None:
-    """Run the interactive terminal frontend against one started App."""
+async def run(
+    app_factory: AppContextFactory,
+    *,
+    launch: TuiLaunchOptions | None = None,
+    launch_directory: Path | None = None,
+    stdin_isatty: Callable[[], bool] | None = None,
+    stdout_isatty: Callable[[], bool] | None = None,
+) -> None:
+    """Validate the terminal and lazily run Textual against one App factory."""
 
-    launch = launch or TuiLaunchOptions()
-    print("Agent UI TUI. Commands: /status, /exit")
-    while True:
-        try:
-            line = (await asyncio.to_thread(input, "a13n-ui> ")).strip()
-        except EOFError:
-            print()
-            return
-        if line in {"/exit", "/quit"}:
-            return
-        if line == "/status":
-            status = await app.status()
-            selection = launch.defaults
-            print(
-                f"{status.state.value} objects={status.object_count} "
-                f"thread={launch.thread_id or '-'} project={selection.project_id or '-'} "
-                f"agent={selection.agent_id or '-'} "
-                f"environment={selection.environment_profile_id or '-'}"
-            )
-        elif line:
-            print("Use the headless run command for Session execution.")
+    input_check = stdin_isatty or sys.stdin.isatty
+    output_check = stdout_isatty or sys.stdout.isatty
+    if not input_check() or not output_check():
+        raise ConfigurationError(
+            "The full-screen TUI requires an interactive input and output terminal. "
+            "Use `a13n-ui run <prompt>` for non-interactive execution.",
+            code="tui_tty_required",
+        )
+    from a13n_ui.tui.launch import launch_terminal
+
+    selected = launch or TuiLaunchOptions()
+    await launch_terminal(
+        app_factory=app_factory,
+        launch_directory=(launch_directory or Path(os.getcwd())).resolve(strict=True),
+        launch_thread_id=selected.thread_id,
+        launch_defaults=selected.defaults,
+        open_workbench=selected.open_workbench,
+    )
 
 
 __all__ = ["TuiLaunchOptions", "run"]

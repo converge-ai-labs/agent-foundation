@@ -107,18 +107,9 @@ class Settings(BaseSettings):
         "a13n.docker",
     )
     environment_provider_extensions: tuple[str, ...] = ()
-    environment_keepalive_poll_interval_seconds: float = Field(default=5, gt=0, le=300)
-    environment_keepalive_lease_seconds: float = Field(default=30, gt=0, le=3600)
-    environment_keepalive_retention_window_seconds: float = Field(default=300, gt=0, le=86_400)
-    environment_keepalive_refresh_margin_seconds: float = Field(default=120, gt=0, le=3600)
-    environment_keepalive_call_timeout_seconds: float = Field(default=15, gt=0, le=3600)
-    environment_keepalive_retry_backoff_seconds: float = Field(default=15, gt=0, le=3600)
-    environment_target_tombstone_retention_seconds: float = Field(
-        default=30 * 24 * 60 * 60,
-        gt=0,
-        le=10 * 365 * 24 * 60 * 60,
-    )
-    environment_keepalive_max_concurrency: int = Field(default=4, ge=1, le=128)
+    environment_maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
+    environment_operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)
+    environment_maintenance_concurrency: int = Field(default=4, ge=1, le=128)
     observability_tracing: bool = True
     observability_trace_content: TraceContent = TraceContent.none
     observability_query_provider: str = Field(default="none", pattern=r"^[a-z][a-z0-9_]*$", max_length=64)

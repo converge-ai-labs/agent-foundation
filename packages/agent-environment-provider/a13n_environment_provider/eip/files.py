@@ -367,7 +367,7 @@ class EIPFileOperator:
     def _receipt(self, receipt: eip.OperationReceipt):
         return convert_receipt(
             receipt,
-            environment_id=self._environment_id,
+            environment_id=self._session.descriptor.environment_id,
             mount_id=self._mount_id,
             generation=self._generation,
         )

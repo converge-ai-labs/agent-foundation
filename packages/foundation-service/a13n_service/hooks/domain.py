@@ -56,9 +56,9 @@ LIVE_HOOK_NAMES = frozenset(
         "item.completed",
         "item.failed",
         "item.interrupted",
-        "environment.entry.started",
-        "environment.entry.ready",
-        "environment.entry.failed",
+        "environment.preparation.started",
+        "environment.preparation.ready",
+        "environment.preparation.failed",
         "environment.adapter.closed",
     }
 )

@@ -1,70 +1,19 @@
-"""Public and durable values owned by Foundation Environment Management."""
+"""Providers, versioned recipes, and actual working environments."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal
 
-import rfc8785
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    JsonValue,
-    StringConstraints,
-    TypeAdapter,
-    field_validator,
-    model_validator,
-)
+from a13n_environment_provider import EnvironmentState
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_serializer, model_validator
 
-from a13n_service.iam.domain import ObjectId, PrincipalRef
-from a13n_service.ids import new_object_id
-from a13n_service.secrets.domain import SecretCredentialSource
+from a13n_service.iam.domain import ObjectId
 
 EnvironmentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
-EnvironmentDescription = Annotated[str, StringConstraints(max_length=4096)]
-ProviderKey = Annotated[
-    str,
-    StringConstraints(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$", min_length=3, max_length=128),
-]
-Sha256Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-SchemaVersion = Annotated[
-    str,
-    StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$", min_length=1, max_length=64),
-]
-TargetKey = Annotated[str, StringConstraints(min_length=1, max_length=1024)]
 JsonObject = dict[str, JsonValue]
-BoundedKey = Annotated[
-    str,
-    StringConstraints(pattern=r"^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$", min_length=1, max_length=128),
-]
-
-_JSON_OBJECT_ADAPTER = TypeAdapter(JsonObject)
-_MAX_CONNECTION_PARAMETERS_BYTES = 256 * 1024
-
-
-def new_environment_id() -> str:
-    return new_object_id("env")
-
-
-def new_environment_revision_id() -> str:
-    return new_object_id("envr")
-
-
-def new_environment_target_id() -> str:
-    return new_object_id("envt")
-
-
-def new_environment_keepalive_operation_id() -> str:
-    return new_object_id("envkop")
-
-
-def new_run_environment_binding_id() -> str:
-    return new_object_id("envb")
+Duration = Annotated[int, Field(ge=0, strict=True)]
 
 
 class DomainModel(BaseModel):
@@ -77,326 +26,204 @@ class EnvironmentAccess(StrEnum):
     full = "full"
 
 
-class EnvironmentTargetRetentionBehavior(StrEnum):
-    none = "none"
-    while_execution_active = "while_execution_active"
+class RetentionWindow(DomainModel):
+    stop_after: Duration | None
+    delete_after: Duration | None
+
+    @model_validator(mode="after")
+    def ordered_deadlines(self) -> RetentionWindow:
+        if self.stop_after is not None and self.delete_after is not None and self.delete_after <= self.stop_after:
+            raise ValueError("delete_after must be later than stop_after")
+        return self
 
 
-class EnvironmentTargetStatus(StrEnum):
-    active = "active"
-    idle = "idle"
-    retired = "retired"
+class ApprovalRetentionOverride(DomainModel):
+    stop_after: Duration | None = None
+    delete_after: Duration | None = None
+
+    @model_serializer
+    def serialize_overrides(self) -> dict[str, int | None]:
+        return {name: getattr(self, name) for name in self.model_fields_set}
 
 
-class EnvironmentTargetIdentity(DomainModel):
-    """Provider-owned, tenant-neutral identity for one external target."""
+class RetentionPolicy(DomainModel):
+    idle: RetentionWindow
+    waiting_approval: ApprovalRetentionOverride = Field(default_factory=ApprovalRetentionOverride)
 
-    namespace: JsonObject = Field(default_factory=dict)
-    target_key: TargetKey
+    def window(self, condition: Literal["idle", "waiting_approval"]) -> RetentionWindow:
+        if condition == "idle":
+            return self.idle
+        return RetentionWindow.model_validate(
+            {
+                **self.idle.model_dump(),
+                **self.waiting_approval.model_dump(exclude_unset=True),
+            }
+        )
 
-    @field_validator("target_key", mode="before")
-    @classmethod
-    def validate_target_key(cls, value: object) -> str:
-        return validated_target_key(TypeAdapter(str).validate_python(value))
-
-
-class EnvironmentProviderLock(DomainModel):
-    """Exact process-catalog provenance without exposing an import target."""
-
-    schema_version: Literal["1"] = "1"
-    provider_key: ProviderKey
-    distribution_name: Annotated[str, StringConstraints(min_length=1, max_length=256)] | None = None
-    distribution_version: Annotated[str, StringConstraints(min_length=1, max_length=256)] | None = None
-    builtin: bool
-    registration_digest_sha256: Sha256Digest
+    @model_validator(mode="after")
+    def validate_approval_deadlines(self) -> RetentionPolicy:
+        self.window("waiting_approval")
+        return self
 
 
-class EnvironmentProviderCatalogEntry(DomainModel):
-    provider_key: ProviderKey
-    connection_versions: tuple[SchemaVersion, ...] = Field(min_length=1, max_length=64)
-    identity_schema_version: SchemaVersion
-    retention_behavior: EnvironmentTargetRetentionBehavior
-    provider_lock: EnvironmentProviderLock
-
-
-class EnvironmentProviderCatalogEntryCollection(DomainModel):
-    items: tuple[EnvironmentProviderCatalogEntry, ...]
-
-
-class EnvironmentProviderSelection(DomainModel):
+class EnvironmentProvider(DomainModel):
+    id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
-    provider_key: ProviderKey
-    provider_package_revision_id: ObjectId | None = None
-    provider_lock: EnvironmentProviderLock
+    type: str
+    name: EnvironmentName
+    configuration: JsonObject
     enabled: bool
-    updated_by: PrincipalRef
+    credential_configured: bool
+    created_at: datetime
     updated_at: datetime
 
 
-class EnvironmentCredentialBinding(DomainModel):
-    requirement_key: BoundedKey
-    credential: SecretCredentialSource
+class TemplateConfiguration(DomainModel):
+    provider_id: ObjectId
+    configuration_schema_version: str = "1"
+    configuration: JsonObject
+    access: EnvironmentAccess = EnvironmentAccess.full
+    preparation: Literal["on_run", "on_use"] = "on_run"
+    retention: RetentionPolicy
 
 
-class EnvironmentConnectionSpec(DomainModel):
-    provider_key: ProviderKey
-    schema_version: SchemaVersion
-    parameters: JsonObject
+class EnvironmentTemplate(DomainModel):
+    id: ObjectId
+    organization_id: ObjectId
+    workspace_id: ObjectId
+    name: EnvironmentName
+    description: str | None
+    version: int
+    current_revision_id: ObjectId
+    archived_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
-    @field_validator("parameters", mode="before")
-    @classmethod
-    def validate_parameters(cls, value: object) -> JsonObject:
-        parameters = _JSON_OBJECT_ADAPTER.validate_python(value)
-        try:
-            encoded = rfc8785.dumps(parameters)
-        except rfc8785.CanonicalizationError as error:
-            raise ValueError("connection parameters must be finite JSON") from error
-        if len(encoded) > _MAX_CONNECTION_PARAMETERS_BYTES:
-            raise ValueError("connection parameters exceed the size limit")
-        return _JSON_OBJECT_ADAPTER.validate_json(encoded)
+
+class EnvironmentTemplateRevision(TemplateConfiguration):
+    id: ObjectId
+    template_id: ObjectId
+    organization_id: ObjectId
+    workspace_id: ObjectId
+    version: int
+    created_at: datetime
+
+
+class EnvironmentStatus(StrEnum):
+    unprepared = "unprepared"
+    running = "running"
+    stopped = "stopped"
+    deleted = "deleted"
+    unavailable = "unavailable"
 
 
 class Environment(DomainModel):
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
-    name: EnvironmentName
-    description: str | None
-    version: int = Field(ge=1)
-    current_revision_id: ObjectId
-    archived_at: datetime | None
-    created_by: PrincipalRef
-    updated_by: PrincipalRef
+    provider_id: ObjectId
+    template_revision_id: ObjectId | None
+    ownership: Literal["managed", "external"]
+    access: EnvironmentAccess
+    generation: int
+    status: EnvironmentStatus
+    retention_condition: Literal["active", "idle", "waiting_approval"]
+    condition_since: datetime
     created_at: datetime
     updated_at: datetime
 
 
-class EnvironmentRevision(DomainModel):
-    id: ObjectId
+class ExistingEnvironmentSelection(DomainModel):
     environment_id: ObjectId
-    organization_id: ObjectId
-    workspace_id: ObjectId
-    version: int = Field(ge=1)
-    connection: EnvironmentConnectionSpec
-    provider_package_revision_id: ObjectId | None = None
-    provider_lock: EnvironmentProviderLock
-    credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
-    access: EnvironmentAccess = EnvironmentAccess.full
-    environment_target_id: ObjectId
-    target_key: TargetKey
-    logical_digest_sha256: Sha256Digest
-    created_by: PrincipalRef
-    created_at: datetime
-
-    def summary(self) -> EnvironmentRevisionSummary:
-        return EnvironmentRevisionSummary(
-            id=self.id,
-            environment_id=self.environment_id,
-            organization_id=self.organization_id,
-            workspace_id=self.workspace_id,
-            version=self.version,
-            provider_key=self.connection.provider_key,
-            provider_package_revision_id=self.provider_package_revision_id,
-            provider_lock=self.provider_lock,
-            access=self.access,
-            logical_digest_sha256=self.logical_digest_sha256,
-            created_by=self.created_by,
-            created_at=self.created_at,
-        )
 
 
-class EnvironmentRevisionSummary(DomainModel):
-    """Collection-safe Revision projection without connection or target details."""
-
-    id: ObjectId
-    environment_id: ObjectId
-    organization_id: ObjectId
-    workspace_id: ObjectId
-    version: int = Field(ge=1)
-    provider_key: ProviderKey
-    provider_package_revision_id: ObjectId | None = None
-    provider_lock: EnvironmentProviderLock
-    access: EnvironmentAccess
-    logical_digest_sha256: Sha256Digest
-    created_by: PrincipalRef
-    created_at: datetime
+class NewEnvironmentSelection(DomainModel):
+    template_id: ObjectId
+    version: Annotated[int, Field(ge=1)] | None = None
 
 
-class RunEnvironmentBinding(DomainModel):
-    id: ObjectId
-    organization_id: ObjectId
-    workspace_id: ObjectId
-    run_id: ObjectId
-    mount_name: Literal["workspace"] = "workspace"
-    source_environment_revision_id: ObjectId | None = None
-    environment_target_id: ObjectId
-    provider_key: ProviderKey
-    target_key: TargetKey
-    environment_execution_config_digest_sha256: Sha256Digest
-    created_at: datetime
+type EnvironmentSelection = ExistingEnvironmentSelection | NewEnvironmentSelection
 
 
-class EnvironmentCollection(DomainModel):
-    items: tuple[Environment, ...]
-    next_cursor: str | None
-
-
-class EnvironmentRevisionCollection(DomainModel):
-    items: tuple[EnvironmentRevisionSummary, ...]
-    next_cursor: str | None
-
-
-class PutEnvironmentProviderSelectionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
-
-
-class CreateEnvironmentRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CreateProviderRequest(DomainModel):
+    type: str
     name: EnvironmentName
-    description: EnvironmentDescription | None = None
-    connection: EnvironmentConnectionSpec
-    credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
-    access: EnvironmentAccess = EnvironmentAccess.full
-
-    @model_validator(mode="after")
-    def validate_bindings(self) -> CreateEnvironmentRequest:
-        return _require_unique_bindings(self)
+    configuration: JsonObject = Field(default_factory=dict)
+    credential: JsonObject | None = Field(default=None, repr=False, exclude=True)
 
 
-class UpdateEnvironmentRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class UpdateProviderRequest(DomainModel):
     name: EnvironmentName | None = None
-    description: EnvironmentDescription | None = None
+    enabled: bool | None = None
+
+
+class ReplaceCredentialRequest(DomainModel):
+    credential: JsonObject | None = Field(repr=False)
+
+
+class CreateTemplateRequest(TemplateConfiguration):
+    name: EnvironmentName
+    description: Annotated[str, Field(max_length=4096)] | None = None
+
+
+class CreateTemplateRevisionRequest(TemplateConfiguration):
+    expected_version: Annotated[int, Field(ge=1)]
+
+
+class UpdateTemplateRequest(DomainModel):
+    name: EnvironmentName | None = None
+    description: Annotated[str, Field(max_length=4096)] | None = None
     archived: bool | None = None
 
-    @model_validator(mode="after")
-    def validate_change(self) -> UpdateEnvironmentRequest:
-        changed = self.model_fields_set.intersection({"name", "description", "archived"})
-        if not changed:
-            raise ValueError("at least one mutable field must be supplied")
-        if "name" in self.model_fields_set and self.name is None:
-            raise ValueError("name cannot be null")
-        if "archived" in self.model_fields_set and self.archived is None:
-            raise ValueError("archived cannot be null")
-        return self
 
-
-class CreateEnvironmentRevisionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    expected_version: int = Field(ge=1)
-    connection: EnvironmentConnectionSpec
-    credential_bindings: tuple[EnvironmentCredentialBinding, ...] = Field(default=(), max_length=64)
+class RegisterEnvironmentRequest(DomainModel):
+    provider_id: ObjectId
+    configuration_schema_version: str = "1"
+    configuration: JsonObject
+    state: EnvironmentState | None = None
     access: EnvironmentAccess = EnvironmentAccess.full
 
-    @model_validator(mode="after")
-    def validate_bindings(self) -> CreateEnvironmentRevisionRequest:
-        return _require_unique_bindings(self)
+
+type CreateEnvironmentRequest = NewEnvironmentSelection | RegisterEnvironmentRequest
 
 
-class EnvironmentRevisionTestResult(DomainModel):
-    success: Literal[True] = True
-    code: Literal["attachment_ready"] = "attachment_ready"
+class Collection[T](DomainModel):
+    items: tuple[T, ...]
+    next_cursor: str | None = None
 
 
-class EnvironmentTarget(DomainModel):
-    """Internal global identity, activity, and fenced keepalive authority."""
+def retention_action(
+    policy: RetentionPolicy,
+    *,
+    condition: Literal["active", "idle", "waiting_approval"],
+    since: datetime,
+    status: EnvironmentStatus,
+    now: datetime,
+) -> Literal["stop", "delete"] | None:
+    """Choose a due action from condition time; stopping never resets this clock."""
+    if condition == "active" or status in {EnvironmentStatus.unprepared, EnvironmentStatus.deleted}:
+        return None
+    window = policy.window(condition)
+    if window.delete_after is not None and now >= since + timedelta(seconds=window.delete_after):
+        return "delete"
+    if (
+        status != EnvironmentStatus.stopped
+        and window.stop_after is not None
+        and now >= since + timedelta(seconds=window.stop_after)
+    ):
+        return "stop"
+    return None
 
+
+class EnvironmentCommand(DomainModel):
     id: ObjectId
-    provider_key: ProviderKey
-    identity_schema_version: SchemaVersion
-    target_key: TargetKey
-    target_identity_digest_sha256: Sha256Digest
-    retention_behavior: EnvironmentTargetRetentionBehavior
-    status: EnvironmentTargetStatus
-    active_run_count: int = Field(ge=0)
-    idle_at: datetime | None
-    retire_after: datetime | None
-    keeper_claim_generation: int = Field(ge=0)
-    keeper_owner_worker_generation: str | None
-    keeper_lease_expires_at: datetime | None
-    keeper_source_binding_id: ObjectId | None
-    operation_generation: int = Field(ge=0)
-    operation_id: ObjectId | None
-    requested_alive_until: datetime | None
-    acknowledged_alive_until: datetime | None
-    next_keepalive_at: datetime | None
-    last_error: JsonObject | None
+    environment_id: ObjectId
+    action: Literal["stop", "delete"]
+    status: Literal["pending", "completed", "failed"]
     created_at: datetime
-    updated_at: datetime
-
-    @model_validator(mode="after")
-    def validate_lifecycle(self) -> EnvironmentTarget:
-        if (self.active_run_count > 0) != (self.status is EnvironmentTargetStatus.active):
-            raise ValueError("active Environment target status must exactly match a positive Run count")
-        claimed = self.keeper_owner_worker_generation is not None
-        if claimed != (self.keeper_lease_expires_at is not None) or claimed != (
-            self.keeper_source_binding_id is not None
-        ):
-            raise ValueError("Environment target Keeper claim fields must be set or cleared together")
-        if (self.operation_id is None) != (self.requested_alive_until is None):
-            raise ValueError("Environment target operation identity and deadline must be set together")
-        return self
+    completed_at: datetime | None
 
 
-def environment_logical_digest(
-    *,
-    connection: EnvironmentConnectionSpec,
-    provider_package_revision_id: str | None,
-    provider_lock: EnvironmentProviderLock,
-    credential_bindings: tuple[EnvironmentCredentialBinding, ...],
-    access: EnvironmentAccess,
-    target_key: str,
-) -> str:
-    payload = {
-        "schema_version": "1",
-        "connection": connection.model_dump(mode="json"),
-        "provider_package_revision_id": provider_package_revision_id,
-        "provider_lock": provider_lock.model_dump(mode="json"),
-        "credential_bindings": [item.model_dump(mode="json") for item in credential_bindings],
-        "access": access.value,
-        "target_key": target_key,
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def environment_target_identity_digest(
-    *,
-    provider_key: str,
-    identity_schema_version: str,
-    identity: EnvironmentTargetIdentity,
-) -> str:
-    """Digest one canonical, provider-versioned, tenant-neutral target identity."""
-
-    payload = {
-        "provider_key": provider_key,
-        "identity_schema_version": identity_schema_version,
-        "namespace": identity.namespace,
-        "target_key": identity.target_key,
-    }
-    try:
-        encoded = rfc8785.dumps(payload)
-    except rfc8785.CanonicalizationError as error:
-        raise ValueError("target identity must be finite canonical JSON") from error
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def validated_target_key(value: str) -> str:
-    if value != value.strip() or any(unicodedata.category(character) in {"Cc", "Cs"} for character in value):
-        raise ValueError("target key must be trimmed and contain no control or surrogate characters")
-    return TypeAdapter(TargetKey).validate_python(value)
-
-
-def _require_unique_bindings[RequestT: CreateEnvironmentRequest | CreateEnvironmentRevisionRequest](
-    request: RequestT,
-) -> RequestT:
-    keys = tuple(item.requirement_key for item in request.credential_bindings)
-    if len(keys) != len(set(keys)):
-        raise ValueError("credential requirement keys must be unique")
-    return request
+class EnvironmentCommandRequest(DomainModel):
+    action: Literal["stop", "delete"]

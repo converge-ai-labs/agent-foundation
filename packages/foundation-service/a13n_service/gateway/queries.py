@@ -21,6 +21,7 @@ from a13n_service.iam import (
     WorkspaceAction,
     authorize_agent,
     authorize_agent_scoped_collection,
+    authorize_workspace,
 )
 from a13n_service.interactions import RunLineageKind, RunStatus
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
@@ -57,7 +58,8 @@ class ThreadResource(_Resource):
     origin_thread_id: str | None
     origin_run_id: str | None
     head_run_id: str | None
-    current_run_id: str
+    current_run_id: str | None
+    default_environment_id: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -75,6 +77,8 @@ class RunResource(_Resource):
     agent_revision_id: str
     effective_agent_config_digest: str
     runtime_lock_digest: str
+    environment_id: str | None
+    environment_access: str | None
     status: RunStatus
     wait_reason: str | None
     input_kind: str
@@ -234,7 +238,7 @@ class NativeInteractionQueries:
                 database,
                 actor=actor,
                 workspace_id=workspace_id,
-                agent_id=run.agent_id,
+                agent_id=run.agent_id if run else None,
                 action=WorkspaceAction.thread_read,
             )
             return _thread(thread)
@@ -266,7 +270,7 @@ class NativeInteractionQueries:
             )
             query = (
                 select(ThreadRecord)
-                .join(
+                .outerjoin(
                     RunRecord,
                     and_(
                         RunRecord.tenant_id == ThreadRecord.tenant_id,
@@ -329,7 +333,7 @@ class NativeInteractionQueries:
                     database,
                     actor=actor,
                     workspace_id=thread_workspace_id,
-                    agent_id=current_run.agent_id,
+                    agent_id=current_run.agent_id if current_run else None,
                     action=WorkspaceAction.run_read,
                 )
             authorization = await _authorize_collection(
@@ -578,7 +582,7 @@ async def _load_run(database: AsyncSession, *, actor: AuthenticatedActor, run_id
 
 async def _load_thread(
     database: AsyncSession, *, actor: AuthenticatedActor, thread_id: str
-) -> tuple[ThreadRecord, RunRecord, str]:
+) -> tuple[ThreadRecord, RunRecord | None, str]:
     row = (
         await database.execute(
             select(ThreadRecord, RunRecord, SessionRecord.workspace_id)
@@ -589,7 +593,7 @@ async def _load_thread(
                     SessionRecord.id == ThreadRecord.session_id,
                 ),
             )
-            .join(
+            .outerjoin(
                 RunRecord,
                 and_(
                     RunRecord.tenant_id == ThreadRecord.tenant_id,
@@ -610,10 +614,13 @@ async def _authorize_agent(
     *,
     actor: AuthenticatedActor,
     workspace_id: str,
-    agent_id: str,
+    agent_id: str | None,
     action: WorkspaceAction,
 ) -> None:
     try:
+        if agent_id is None:
+            await authorize_workspace(database, actor=actor, workspace_id=workspace_id, action=action)
+            return
         await authorize_agent(
             database,
             actor=actor,
@@ -653,6 +660,7 @@ def _thread(record: ThreadRecord) -> ThreadResource:
         origin_run_id=record.origin_run_id,
         head_run_id=record.head_run_id,
         current_run_id=record.current_run_id,
+        default_environment_id=record.default_environment_id,
         created_at=assume_utc(record.created_at),
         updated_at=assume_utc(record.updated_at),
     )
@@ -673,6 +681,8 @@ def _run(record: RunRecord) -> RunResource:
         agent_revision_id=resource.agent_revision_id,
         effective_agent_config_digest=resource.effective_agent_config_digest,
         runtime_lock_digest=resource.runtime_lock_digest,
+        environment_id=resource.environment_id,
+        environment_access=resource.environment_access,
         status=resource.status,
         wait_reason=None if resource.wait_reason is None else resource.wait_reason.value,
         input_kind=resource.input_kind.value,

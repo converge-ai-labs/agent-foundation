@@ -443,7 +443,6 @@ async def test_references_include_disabled_unarchived_current_agents_and_block_d
                 ],
                 connector_tools=[],
                 mcp_tools=[],
-                resolved_environment=None,
                 resolved_subagents=[],
                 content_digest="3" * 64,
                 source_revision_id=None,

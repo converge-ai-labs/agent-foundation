@@ -39,12 +39,11 @@ class EnvironmentDemoResult:
     roots_preserved: bool
 
 
-def _configuration(provider: EnvironmentProvider, root: Path, environment_id: str):
+def _configuration(provider: EnvironmentProvider, root: Path):
     return provider.validate_configuration(
         schema_version="1",
         value={
             "root": str(root),
-            "environment_id": environment_id,
             "read_only": True,
         },
     )
@@ -59,12 +58,14 @@ async def _run_environment_demo(
 ) -> EnvironmentDemoResult:
     provider = catalog.require(PROVIDER_KEY)
     source = provider.create_environment(
-        configuration=_configuration(provider, source_root, "workspace-source"),
+        environment_id="workspace-source",
+        configuration=_configuration(provider, source_root),
         state=None,
         runtime=None,
     )
     docs = provider.create_environment(
-        configuration=_configuration(provider, docs_root, "workspace-docs"),
+        environment_id="workspace-docs",
+        configuration=_configuration(provider, docs_root),
         state=None,
         runtime=None,
     )

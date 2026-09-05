@@ -199,6 +199,7 @@ class ThreadRepository:
         self,
         *,
         query: str | None = None,
+        project_id: str | None = None,
         include_children: bool = False,
         include_archived: bool = False,
         before: tuple[datetime, str] | None = None,
@@ -211,7 +212,18 @@ class ThreadRepository:
         async with short_session(self._sessions) as session:
             statement = select(ThreadRecord)
             count_statement = select(func.count()).select_from(ThreadRecord)
+            if project_id is not None:
+                statement = statement.join(
+                    ThreadConfigurationRecord,
+                    ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
+                )
+                count_statement = count_statement.join(
+                    ThreadConfigurationRecord,
+                    ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
+                )
             predicates = []
+            if project_id is not None:
+                predicates.append(ThreadConfigurationRecord.project_id == project_id)
             if not include_children:
                 predicates.append(ThreadRecord.parent_thread_id.is_(None))
             if not include_archived:
@@ -317,6 +329,17 @@ class ThreadRepository:
             record.updated_at = now
             await session.flush()
             return _thread_value(record, _configuration_value(configuration))
+
+    async def continuation_references(self, thread_ids: tuple[str, ...]) -> dict[str, ObjectRef]:
+        if not thread_ids:
+            return {}
+        async with short_session(self._sessions) as session:
+            records = tuple(
+                (await session.execute(select(ThreadRecord).where(ThreadRecord.thread_id.in_(thread_ids)))).scalars()
+            )
+        return {
+            record.thread_id: reference for record in records if (reference := _continuation_ref(record)) is not None
+        }
 
     async def project_recency(self) -> dict[str, datetime]:
         async with short_session(self._sessions) as session:
@@ -514,6 +537,60 @@ class ChildExecutionRepository:
                 ).scalar_one()
             )
             return tuple(_child_value(row) for row in rows), total
+
+    async def status_counts_for_roots(
+        self,
+        root_thread_ids: tuple[str, ...],
+    ) -> tuple[dict[str, dict[ExecutionStatus, int]], dict[str, tuple[str, ...]]]:
+        if not root_thread_ids:
+            return {}, {}
+        roots = (
+            select(
+                ThreadRecord.thread_id.label("thread_id"),
+                ThreadRecord.thread_id.label("root_thread_id"),
+            )
+            .where(
+                ThreadRecord.thread_id.in_(root_thread_ids),
+                ThreadRecord.parent_thread_id.is_(None),
+            )
+            .cte("thread_lineage", recursive=True)
+        )
+        descendants = select(
+            ThreadRecord.thread_id,
+            roots.c.root_thread_id,
+        ).join(roots, ThreadRecord.parent_thread_id == roots.c.thread_id)
+        lineage = roots.union_all(descendants)
+        async with short_session(self._sessions) as session:
+            count_rows = await session.execute(
+                select(
+                    lineage.c.root_thread_id,
+                    ChildExecutionRecord.status,
+                    func.count(),
+                )
+                .select_from(lineage)
+                .join(
+                    ChildExecutionRecord,
+                    ChildExecutionRecord.parent_thread_id == lineage.c.thread_id,
+                )
+                .group_by(lineage.c.root_thread_id, ChildExecutionRecord.status)
+            )
+            running_rows = await session.execute(
+                select(lineage.c.root_thread_id, ChildExecutionRecord.execution_id)
+                .select_from(lineage)
+                .join(
+                    ChildExecutionRecord,
+                    ChildExecutionRecord.parent_thread_id == lineage.c.thread_id,
+                )
+                .where(ChildExecutionRecord.status == "running")
+                .order_by(lineage.c.root_thread_id, ChildExecutionRecord.execution_id)
+            )
+        counts: dict[str, dict[ExecutionStatus, int]] = {thread_id: {} for thread_id in root_thread_ids}
+        for root_thread_id, status, count in count_rows:
+            counts[root_thread_id][cast(ExecutionStatus, status)] = int(count)
+        running: dict[str, list[str]] = {thread_id: [] for thread_id in root_thread_ids}
+        for root_thread_id, execution_id in running_rows:
+            running[root_thread_id].append(execution_id)
+        return counts, {key: tuple(value) for key, value in running.items()}
 
     async def first_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
         async with short_session(self._sessions) as session:

@@ -85,10 +85,10 @@ pytestmark = pytest.mark.anyio
 def _local_binding(root: Path, *, default_working_directory: str = "/"):
     provider = DirectLocalEnvironmentProviderBinding(
         DirectLocalProviderConfiguration(
-            environment_id="context-capability-test",
             root=DirectLocalRootConfiguration(path=root),
             max_value_bytes=128 * 1024,
-        )
+        ),
+        environment_id="context-capability-test",
     )
     return create_environment_runtime(
         mounts={

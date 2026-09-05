@@ -46,6 +46,7 @@ from a13n_harness.tools._output import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     is_acknowledged_tool_output,
 )
+from a13n_harness.tools.approval import RESOURCE_APPROVAL_KEY, approval_facts, verify_approval_facts
 from a13n_harness.tools.deferred import managed_approval_tool_id
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
@@ -271,6 +272,10 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             raise
         invocation = prepared.context
         await _emit(ctx, managed, "prepared", invocation_id=invocation.invocation_id)
+        if ctx.tool_call_approved:
+            resume = ctx.deps.deferred_resume
+            requested_metadata = resume.requests.metadata.get(invocation.tool_call_id) if resume else None
+            verify_approval_facts(invocation, requested_metadata)
         policy_decision = await _evaluate_policy(ctx, policy, invocation, managed)
         if policy_decision.decision == "deny":
             await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
@@ -302,9 +307,10 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         )
         if requires_approval and not ctx.tool_call_approved:
             await _emit(ctx, managed, "approval_required", invocation_id=invocation.invocation_id)
-            raise ApprovalRequired(
-                metadata=_combined_approval_metadata(policy_decision, shell_assessment, shell_action)
-            )
+            metadata = _combined_approval_metadata(policy_decision, shell_assessment, shell_action)
+            if (facts := approval_facts(invocation)) is not None:
+                metadata[RESOURCE_APPROVAL_KEY] = facts
+            raise ApprovalRequired(metadata=metadata)
         await _emit(ctx, managed, "authorized", invocation_id=invocation.invocation_id)
         leases: list[CredentialLease] = []
         lease_stack = AsyncExitStack()
@@ -563,7 +569,7 @@ def _policy_approval_metadata(value: object) -> Mapping[str, JsonValue]:
         raise ToolFailed("Managed tool approval metadata is invalid.")
     policy_value = value.get(_POLICY_APPROVAL_METADATA_KEY)
     if policy_value is None:
-        return cast(Mapping[str, JsonValue], value)
+        return {key: item for key, item in cast(Mapping[str, JsonValue], value).items() if key != RESOURCE_APPROVAL_KEY}
     if not isinstance(policy_value, Mapping):
         raise ToolFailed("Managed tool approval metadata is invalid.")
     metadata = policy_value.get("metadata")

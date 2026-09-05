@@ -1,0 +1,145 @@
+"""Empty root Thread allocation without executing an Agent or provisioning a target."""
+
+from datetime import UTC, datetime
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from a13n_service.agents.models import AgentRecord
+from a13n_service.durable_operations.idempotency import is_evidence_unique_race
+from a13n_service.environments.domain import ExistingEnvironmentSelection, NewEnvironmentSelection
+from a13n_service.environments.persistence import evidence_record, load_replay, request_identity
+from a13n_service.environments.service import EnvironmentService
+from a13n_service.iam import AuthenticatedActor, authorize_agent
+from a13n_service.iam.authorization import WorkspaceAction, authorize_workspace
+from a13n_service.ids import new_object_id
+from a13n_service.public_errors import PublicError
+from a13n_service.storage import transaction
+
+from .control_records import inbox_counter_record
+from .domain import Thread, ThreadOriginKind, ThreadRole, new_thread_id
+from .models import SessionRecord, ThreadRecord
+from .records import thread_record
+from .thread_domain import CreateThreadRequest
+
+
+async def allocate_thread(
+    service: EnvironmentService,
+    *,
+    actor: AuthenticatedActor,
+    workspace_id: str,
+    body: CreateThreadRequest,
+    idempotency_key: str,
+) -> Thread:
+    now = datetime.now(UTC)
+    identity = request_identity(idempotency_key, body)
+    try:
+        async with transaction(service.sessions) as session:
+            workspace = await authorize_workspace(
+                session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.agent_invoke
+            )
+            replay = await load_replay(
+                session, actor=actor, operation="thread.create", scope_id=workspace_id, identity=identity, now=now
+            )
+            if replay:
+                row = await session.get(ThreadRecord, replay[1])
+                if row is None:
+                    raise PublicError("thread_not_found", "Thread is unavailable", status_code=404)
+                return row.to_resource()
+            selected = body.environment
+            if body.agent_id is not None:
+                await authorize_agent(
+                    session,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    agent_id=body.agent_id,
+                    action=WorkspaceAction.agent_invoke,
+                )
+                agent = await session.get(AgentRecord, body.agent_id)
+                if agent is None:
+                    raise PublicError("agent_not_found", "Agent is unavailable", status_code=404)
+                if "environment" not in body.model_fields_set and agent.default_environment_template_id:
+                    selected = NewEnvironmentSelection(template_id=agent.default_environment_template_id)
+            environment_id = None
+            if isinstance(selected, NewEnvironmentSelection):
+                environment_id = (
+                    await service.allocate(session, actor=actor, workspace_id=workspace_id, selection=selected, now=now)
+                ).id
+            elif isinstance(selected, ExistingEnvironmentSelection):
+                await authorize_workspace(
+                    session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_use
+                )
+                environment_id = (await service.require_environment(session, actor, selected.environment_id)).id
+            if body.session_id:
+                parent = await session.scalar(
+                    select(SessionRecord)
+                    .where(
+                        SessionRecord.id == body.session_id,
+                        SessionRecord.workspace_id == workspace_id,
+                        SessionRecord.tenant_id == workspace.organization_id,
+                    )
+                    .with_for_update()
+                )
+                if parent is None:
+                    raise PublicError("session_not_found", "Session is unavailable", status_code=404)
+                await authorize_workspace(
+                    session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.session_read
+                )
+            else:
+                parent = SessionRecord(
+                    id=new_object_id("session"),
+                    tenant_id=workspace.organization_id,
+                    workspace_id=workspace_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(parent)
+                await session.flush()
+            thread = Thread(
+                id=new_thread_id(),
+                version=1,
+                queue_version=0,
+                tenant_id=workspace.organization_id,
+                session_id=parent.id,
+                role=ThreadRole.root,
+                origin_kind=ThreadOriginKind.new,
+                default_environment_id=environment_id,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(thread_record(thread))
+            await session.flush()
+            session.add(inbox_counter_record(thread))
+            session.add(
+                evidence_record(
+                    actor=actor,
+                    organization_id=workspace.organization_id,
+                    workspace_id=workspace_id,
+                    operation="thread.create",
+                    scope_id=workspace_id,
+                    identity=identity,
+                    result_kind="thread",
+                    result_ref=thread.id,
+                    now=now,
+                )
+            )
+            return thread
+    except IntegrityError as error:
+        if is_evidence_unique_race(error):
+            async with transaction(service.sessions) as session:
+                await authorize_workspace(
+                    session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.agent_invoke
+                )
+                replay = await load_replay(
+                    session,
+                    actor=actor,
+                    operation="thread.create",
+                    scope_id=workspace_id,
+                    identity=identity,
+                    now=datetime.now(UTC),
+                )
+                if replay is not None:
+                    row = await session.get(ThreadRecord, replay[1])
+                    if row is not None:
+                        return row.to_resource()
+        raise
