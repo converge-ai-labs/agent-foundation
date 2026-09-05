@@ -230,7 +230,8 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 .PHONY: eip-integration-test
 eip-integration-test: sync ## Run EIP generation, runtime, cross-language, and wire-model integration tests
 	@cargo build --locked --package agent-envd
-	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" A13N_AGENT_ENVD_EXECUTABLE="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-environment-provider/tests/test_local_envd.py
+	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" A13N_AGENT_ENVD_EXECUTABLE="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-environment-provider/tests/test_local_envd.py packages/agent-environment-provider/tests/test_remote_envd.py packages/agent-environment-provider/tests/test_remote_envd_e2e.py
+	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" uv run --project examples/environment-provider --locked python -m pytest examples/environment-provider/tests/test_remote.py
 	@uv run --locked pyright packages/agent-envd-client/a13n_envd_client packages/agent-environment-provider/a13n_environment_provider
 
 .PHONY: eip-test

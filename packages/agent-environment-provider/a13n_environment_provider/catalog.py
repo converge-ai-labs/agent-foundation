@@ -28,6 +28,8 @@ _BUILTIN_PROVIDER_KEYS = frozenset(
         "a13n.local-envd",
         "a13n.docker",
         "a13n.e2b",
+        "a13n.http-envd",
+        "a13n.websocket-envd",
     }
 )
 
@@ -308,6 +310,14 @@ def _load_builtin_provider(
         from .e2b.factory import E2BEnvironmentProvider
 
         provider_type = E2BEnvironmentProvider
+    elif provider_key == "a13n.http-envd":
+        from .remote_envd import HttpEnvdEnvironmentProvider
+
+        provider_type = HttpEnvdEnvironmentProvider
+    elif provider_key == "a13n.websocket-envd":
+        from .remote_envd import WebSocketEnvdEnvironmentProvider
+
+        provider_type = WebSocketEnvdEnvironmentProvider
     else:  # pragma: no cover - guarded by catalog preflight
         raise _catalog_error(
             "A selected built-in Environment Provider does not exist.",

@@ -13,6 +13,57 @@ It covers the common Provider lifecycle:
 7. read `dump_state()` and close the adapter non-destructively;
 8. for Docker, give the state to a fresh adapter and destroy the target explicitly.
 
+## Choose a route
+
+| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
+| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
+| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
+| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
+| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
+| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
+| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
+
+## Try remote providers in one command
+
+Build the daemon once, then try both transports without credentials, Docker, or a model:
+
+```bash
+# Repository root
+cargo build --locked --package agent-envd
+cd examples/environment-provider
+uv sync --locked
+uv run environment-provider-example remote-envd-demo \
+  --transport http --executable ../../target/debug/agent-envd
+uv run environment-provider-example remote-envd-demo \
+  --transport websocket --executable ../../target/debug/agent-envd
+```
+
+Both write a file, close the adapter and read it through a fresh adapter with the same daemon generation. The output confirms that Provider close preserves the remote daemon/workspace. Demo operator code then removes its own temporary resources. The demo enables text files only, not command execution.
+
+**Start reading [`remote.py`](src/a13n_environment_provider_example/remote.py).** `run_http()` shows the minimal connection setup. `run_websocket()` shows a Host-owned authenticated listener calling `connections.attach()`; the SDK does not open a listener. `use_remote()` demonstrates the common Provider/Environment lifecycle without infrastructure details. [`remote_demo.py`](src/a13n_environment_provider_example/remote_demo.py) is separate local operator scaffolding, not something the remote Provider needs in production.
+
+To use an existing HTTP daemon instead:
+
+```bash
+uv run environment-provider-example http-envd \
+  --endpoint https://envd.example.com \
+  --daemon-environment-id env-remote-machine \
+  --credential-file /private/envd-token
+```
+
+For reverse WebSocket, start the example Host first and point your daemon at `ws://127.0.0.1:8788` with the matching identity and token:
+
+```bash
+uv run environment-provider-example websocket-envd \
+  --daemon-environment-id env-remote-machine \
+  --credential-file /private/envd-token
+```
+
+The external daemon must permit `file.read_text` and `file.write_text`; these examples write `/provider-example.txt`. Token contents never appear in URLs or command-line arguments. The standalone listener binds loopback and waits up to 60 seconds; your production Host supplies its own TLS, authentication, routing and lifespan. Other frameworks adapt the public `WebSocketConnection` message protocol.
+
+See the [remote guide](../../docs/agent-environment-provider/remote-envd.md) for identities, deployment boundaries and recovery. In particular, one daemon has one active Session, and an abandoned HTTP Session is not automatically taken over.
+
 ## Run Direct Local
 
 Direct Local is the default offline path and needs no daemon, container engine, or model credentials:
@@ -89,7 +140,7 @@ Or run the repository-wide examples gate:
 make examples-check-all
 ```
 
-Only Direct Local runs in the repository's offline smoke gate. Local Envd and Docker remain explicit because they require external runtimes.
+Only Direct Local runs in the offline smoke gate. The EIP integration gate builds envd and runs the HTTP/WebSocket demos as tests. Docker and E2B require their own external runtimes.
 
 Read [`application.py`](src/a13n_environment_provider_example/application.py) for the complete Host-side code. For third-party Provider packaging and entry-point discovery, see the separate [Provider plugin example](../plugins/README.md#environment-provider).
 

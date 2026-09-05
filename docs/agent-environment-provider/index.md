@@ -182,16 +182,22 @@ For complete Host-side built-in lifecycles, including Docker state re-entry and 
 
 ## Built-in Providers
 
-| Provider key        | Target and state                                                                | Cleanup boundary                                                                                        |
-| ------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `a13n.direct-local` | Existing Host directory; stateless                                              | Closes process-local process/output helpers; never removes the directory                                |
-| `a13n.local-envd`   | Fresh private `agent-envd` generation over a Host-selected workspace; stateless | Stops the daemon and removes its private runtime; never removes the workspace                           |
-| `a13n.docker`       | Exact local Docker container identified by `EnvironmentState`                   | Closes EIP sessions on `close()`; explicit `destroy()` removes the container and its bootstrap material |
-| `a13n.e2b`          | Exact native E2B sandbox identified by `EnvironmentState`                       | Closes owned command/output resources; explicit `destroy()` kills the sandbox                           |
+There are two operation routes: **Native** uses the host OS or vendor APIs directly; **Envd** uses one shared EIP operation implementation over different deployment and connection arrangements.
 
-Direct Local is appropriate only when sharing the embedding Host account is acceptable. Its operation policy constrains calls through the adapter but is not an operating-system sandbox against an allowed child process.
+| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
+| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
+| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
+| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
+| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
+| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
+| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
 
-Local Envd and Docker expose provider-neutral operations through EIP. The Provider owns daemon or container lifecycle and bootstrap; Harness file, shell, process, retained-output, and port operations do not use Docker exec, copy, archive, or logs.
+Direct Local shares the Host account; E2B uses the native sandbox API and needs no envd installation. Envd-backed Providers use EIP for Agent operations, not Docker exec/copy/logs. Docker Envd retains its existing `a13n.docker` key.
+
+Multi-tenant authorization and container allocation remain Host responsibilities. One daemon admits one active Session; Sessions are not tenant partitions. To work with multiple remote environments, register separate daemon identities and coordinate their use.
+
+Start with the [built-in examples](examples.md) or [run both remote transports locally](remote-envd.md). HTTP/WebSocket Providers require external state, declare `supports_managed=False`, and do not provision or destroy infrastructure. The WebSocket SDK receives authenticated connections from your Host; it never opens a listener.
 
 ## Local Envd runtime
 

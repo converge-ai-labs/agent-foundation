@@ -58,7 +58,7 @@ class HttpTransport:
         _validate_limit("max_request_bytes", max_request_bytes)
         _validate_limit("max_response_bytes", max_response_bytes)
         _validate_limit("max_transfer_frame_bytes", max_transfer_frame_bytes)
-        self._endpoint = _normalize_endpoint(
+        self._endpoint = normalize_http_endpoint(
             endpoint,
             allow_plaintext_private_link=allow_plaintext_private_link,
         )
@@ -303,8 +303,17 @@ async def _read_response_bounded(response: httpx2.Response, maximum: int) -> byt
     return bytes(output)
 
 
-def _normalize_endpoint(endpoint: str, *, allow_plaintext_private_link: bool) -> str:
+def normalize_http_endpoint(endpoint: str, *, allow_plaintext_private_link: bool = False) -> str:
+    """Validate an EIP HTTP origin without creating a client or performing I/O."""
+    if (
+        not endpoint
+        or len(endpoint) > 2048
+        or any(character.isspace() or ord(character) < 32 for character in endpoint)
+    ):
+        raise ValueError("HTTP endpoint must be bounded and contain no whitespace")
     parsed = urlsplit(endpoint)
+    if parsed.port == 0:
+        raise ValueError("HTTP endpoint port must be positive")
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("HTTP endpoint must use http or https and include a host")
     if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:

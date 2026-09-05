@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory defines `agent-environment-provider`, distributed as `a13n-environment-provider`. It owns the shared single-Environment operation contracts, the three core lifecycle entities, provider discovery, and the built-in Direct Local, Local Envd, Docker, and E2B providers.
+This directory defines `agent-environment-provider`, distributed as `a13n-environment-provider`. It owns the shared single-Environment operation contracts, the three core lifecycle entities, provider discovery, and the Native (Direct Local and E2B) and Envd (Local, Docker, HTTP and WebSocket) providers.
 
 The core model is:
 
@@ -25,11 +25,13 @@ The package performs no durable storage and owns no Agent loop, model-facing Too
 | [02-environment-lifecycle.md](02-environment-lifecycle.md)           | `Environment`, `EnvironmentState`, eager/lazy preparation, stop/keepalive/destroy, local scope, failure and concurrency |
 | [03-built-in-providers.md](03-built-in-providers.md)                 | Direct Local, Local Envd, Docker, and E2B configuration, state, entry, close, and destruction behavior                  |
 
+| [04-remote-envd.md](04-remote-envd.md) | External HTTP/WebSocket configuration and state, connect-only lifecycle, and Host-owned reverse WebSocket SDK |
+
 ## Reading Paths
 
 ### Select or persist an Environment
 
-Read `00`, `01`, and `02`, then the chosen built-in section in `03`. Desired provider configuration and `EnvironmentState` are distinct: configuration states what should exist; state is a provider-owned soft reference used to re-enter what currently exists.
+Read `00`, `01`, and `02`, then the chosen built-in section in `03` or remote integration in `04`. Desired provider configuration and `EnvironmentState` are distinct: configuration states what should exist; state is a provider-owned soft reference used to re-enter what currently exists.
 
 ### Integrate the Harness
 

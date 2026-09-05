@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Protocol
 
-from websockets.asyncio.server import ServerConnection
 from websockets.exceptions import ConnectionClosed
 
 from a13n_envd_client.eip.v1 import (
@@ -18,6 +18,26 @@ _EIP_SUBPROTOCOL = "eip.v1"
 _CLOSE_GRACE_SECONDS = 1.0
 
 
+class WebSocketConnection(Protocol):
+    """Minimal Host-owned accepted connection, independent of the web framework.
+
+    The Host negotiates ``eip.v1`` and authenticates before passing this object.
+    Framework adapters map disconnects to EOFError or OSError and implement
+    wait_closed without competing with recv for incoming messages.
+    """
+
+    @property
+    def subprotocol(self) -> str | None: ...
+
+    async def send(self, message: str | bytes) -> None: ...
+
+    async def recv(self) -> str | bytes: ...
+
+    async def close(self, code: int = 1000, reason: str = "") -> None: ...
+
+    async def wait_closed(self) -> None: ...
+
+
 class AcceptedWebSocketTransport:
     """EIP framing over a control-service-authenticated WebSocket connection.
 
@@ -28,7 +48,7 @@ class AcceptedWebSocketTransport:
 
     def __init__(
         self,
-        connection: ServerConnection,
+        connection: WebSocketConnection,
         *,
         max_request_bytes: int = 1024 * 1024,
         max_response_bytes: int = 1024 * 1024,
@@ -87,7 +107,7 @@ class AcceptedWebSocketTransport:
                 raise EIPTransportClosedError("WebSocket transport is closed")
             try:
                 await self._connection.send(payload)
-            except ConnectionClosed as error:
+            except (ConnectionClosed, EOFError) as error:
                 raise EIPTransportClosedError("WebSocket transport closed while sending") from error
             except OSError as error:
                 raise EIPTransportError("failed to send an EIP WebSocket message") from error
@@ -100,7 +120,7 @@ class AcceptedWebSocketTransport:
                 raise EIPTransportClosedError("WebSocket transport is closed")
             try:
                 message = await self._connection.recv()
-            except ConnectionClosed as error:
+            except (ConnectionClosed, EOFError) as error:
                 raise EIPTransportClosedError("WebSocket transport closed while receiving") from error
             except OSError as error:
                 raise EIPTransportError("failed to receive an EIP WebSocket message") from error
@@ -139,7 +159,7 @@ class AcceptedWebSocketTransport:
         try:
             async with asyncio.timeout(_CLOSE_GRACE_SECONDS):
                 await self._connection.close(code=code)
-        except (ConnectionClosed, OSError, TimeoutError):
+        except (ConnectionClosed, EOFError, OSError, TimeoutError):
             pass
 
 

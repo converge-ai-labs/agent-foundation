@@ -13,12 +13,12 @@ dependencies = [
     "pathspec>=1.1,<2",
     "pydantic>=2.12,<3",
     "pydantic-core>=2.41,<3",
-    "websockets>=15,<16",
 ]
 
 [dependency-groups]
 test = [
     "pytest>=9,<10",
+    "websockets>=15,<16",
 ]
 
 [build-system]

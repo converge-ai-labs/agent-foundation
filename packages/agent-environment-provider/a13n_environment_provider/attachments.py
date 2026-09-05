@@ -12,8 +12,8 @@ from a13n_envd_client import (
     EIPSession,
     HttpTransport,
     StdioTransport,
+    WebSocketConnection,
 )
-from websockets.asyncio.server import ServerConnection
 
 
 class EIPSessionSource(ABC):
@@ -265,7 +265,7 @@ class HttpEIPSessionSource(EIPSessionSource):
 class AcceptedWebSocketEIPSessionSource(EIPSessionSource):
     def __init__(
         self,
-        connection: ServerConnection,
+        connection: WebSocketConnection,
         *,
         initialization_timeout: float = 10.0,
         request_timeout: float | None = None,

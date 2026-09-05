@@ -2,16 +2,22 @@
 
 ## Design Position
 
-`a13n-environment-provider` ships four Providers:
+`a13n-environment-provider` supplies two operation routes and six Provider choices:
 
-| Provider key        | Backing target                                   | Operation backend            |
-| ------------------- | ------------------------------------------------ | ---------------------------- |
-| `a13n.direct-local` | One configured existing local root               | Direct Local                 |
-| `a13n.local-envd`   | One configured existing workspace and local envd | EIP                          |
-| `a13n.docker`       | One Docker container running envd                | EIP                          |
-| `a13n.e2b`          | One native E2B sandbox                           | E2B SDK and bounded commands |
+| Route  | Provider key          | Backing target                              | Operation backend            | Lifecycle boundary                              |
+| ------ | --------------------- | ------------------------------------------- | ---------------------------- | ----------------------------------------------- |
+| Native | `a13n.direct-local`   | Existing Host directory                     | Local OS file/process APIs   | Caller-owned directory                          |
+| Native | `a13n.e2b`            | Native E2B sandbox                          | E2B SDK and bounded commands | Sandbox create, pause/resume, renew and destroy |
+| Envd   | `a13n.local-envd`     | Local workspace and private daemon          | EIP over stdio               | Adapter-owned daemon; caller-owned workspace    |
+| Envd   | `a13n.docker`         | Local Docker container running envd         | EIP over HTTP                | Managed container; close preserves target       |
+| Envd   | `a13n.http-envd`      | External daemon at a configured origin      | EIP over HTTP(S)             | Connect-only                                    |
+| Envd   | `a13n.websocket-envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket  | Connect-only; Host-integrated SDK               |
 
-Every built-in follows the same three-entity model: an inert `EnvironmentProvider`, a fresh process-local `Environment`, and optional `EnvironmentState`. Local Envd and Docker use EIP for Agent file, shell, process, output, and port operations after preparation. They do not bypass EIP through vendor filesystem, exec, log, or copy APIs.
+Docker Envd retains the serialized key `a13n.docker`. Local Envd serves CLI and local Agent use; Docker Envd supplies container-backed execution for single-node self-hosting. Multi-tenant authorization and allocation remain Host responsibilities. Remote Envd supports network-reachable environments through HTTP or outbound-only environments through reverse WebSocket. A connection Session is not a tenant boundary.
+
+Every built-in follows the same three-entity model: an inert `EnvironmentProvider`, a fresh process-local `Environment`, and optional `EnvironmentState`. Envd-backed Providers use EIP for Agent file, shell, process, output and port operations. Native Providers use their native backends without requiring envd. No Provider emulates an unsupported operation through a different backend.
+
+This document owns native and provider-launched target behavior. [Remote Envd Providers and Host Integration](04-remote-envd.md) owns the external state/configuration codecs, connection lifecycle, and WebSocket SDK.
 
 ## Shared Configuration Rules
 
@@ -304,11 +310,11 @@ Wall-time limits survive Host disconnection. Signals address a verified runner t
 
 ## Harness Semantics
 
-Harness receives already constructed Direct Local, Local Envd, Docker, or E2B Environment instances. It never receives a Provider, discovers the catalog, acquires an attachment, or owns an ephemeral target lifetime.
+Harness receives already constructed native or Envd-backed Environment instances. It never receives a Provider, discovers the catalog, acquires an attachment, or owns an ephemeral target lifetime.
 
 A singular Environment becomes mount `workspace`. Named mounts can combine built-ins. Harness supplies Run-local access ceilings and working directories, binds local scopes atomically without target I/O, routes operations through ready or lazy objects, snapshots each non-`None` state directly into `HarnessState.environment_states`, and closes adapters non-destructively.
 
-Direct Local and Local Envd normally contribute no state entry. Docker and E2B contribute their provider envelope under the selected mount name. Async child Runs receive fresh adapters selected from Host state; inline children borrow the current entered Harness facade.
+Direct Local and Local Envd normally contribute no state entry. Docker, E2B and Remote Envd contribute their provider envelope under the selected mount name. Async child Runs receive fresh adapters selected from Host state; inline children borrow the current entered Harness facade.
 
 ## Dependencies and Public Surface
 
@@ -319,6 +325,7 @@ The package root exports:
 - `EnvironmentProviderSpec` and the catalog;
 - built-in configuration and runtime collaborator contracts;
 - built-in Provider constructors or catalog instances;
+- Host-owned reverse WebSocket connection SDK and typed runtime collaborators;
 - explicit Host convenience resolvers such as `resolve_agent_envd_executable()`;
 - bounded provider-specific discovery needed for Host-authorized prune where supported.
 

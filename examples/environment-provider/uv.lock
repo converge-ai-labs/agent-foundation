@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -33,7 +33,6 @@ dependencies = [
     { name = "pathspec" },
     { name = "pydantic" },
     { name = "pydantic-core" },
-    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -44,11 +43,13 @@ requires-dist = [
     { name = "pathspec", specifier = ">=1.1,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },
-    { name = "websockets", specifier = ">=15,<16" },
 ]
 
 [package.metadata.requires-dev]
-test = [{ name = "pytest", specifier = ">=9,<10" }]
+test = [
+    { name = "pytest", specifier = ">=9,<10" },
+    { name = "websockets", specifier = ">=15,<16" },
+]
 
 [[package]]
 name = "a13n-environment-provider-example"
@@ -57,6 +58,7 @@ source = { editable = "." }
 dependencies = [
     { name = "a13n-environment-provider" },
     { name = "pydantic" },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -70,6 +72,7 @@ dev = [
 requires-dist = [
     { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
     { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "websockets", specifier = ">=15,<16" },
 ]
 
 [package.metadata.requires-dev]
