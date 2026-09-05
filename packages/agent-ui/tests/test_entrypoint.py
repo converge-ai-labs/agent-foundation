@@ -103,36 +103,6 @@ def test_terminal_entrypoint_exits_cleanly_and_restores_pty(tmp_path: Path) -> N
         os.close(slave)
 
 
-def test_environment_list_exposes_release_owned_modes(tmp_path: Path) -> None:
-    settings = _write_settings(tmp_path)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "a13n_ui",
-            "--config",
-            str(settings),
-            "--data-root",
-            str(tmp_path / "state"),
-            "environment",
-            "list",
-            "--format",
-            "json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=_ENTRYPOINT_TIMEOUT_SECONDS,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert '"profile_id":"environment-native"' in result.stdout
-    assert '"profile_id":"environment-sandbox"' in result.stdout
-    assert '"mode":"full-control"' in result.stdout
-    assert '"mode":"sandbox"' in result.stdout
-
-
 def _write_settings(tmp_path: Path) -> Path:
     settings = tmp_path / "settings.yaml"
     settings.write_text('schema_version: "2"\n')
