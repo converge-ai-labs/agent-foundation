@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
 
-from a13n_harness import AgentContext, RunModelResolver
+from a13n_harness import AgentContext
 from a13n_harness.errors import ModelResolutionError
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model as PydanticModel
@@ -187,7 +187,6 @@ class SnapshotRunModelResolver:
         workspace_id: str,
         provider_resolver: LiveProviderResolver,
         model_factory: NativeModelFactory,
-        **_: Any,
     ) -> None:
         self._snapshot = snapshot
         self._organization_id = organization_id
@@ -221,10 +220,6 @@ class SnapshotRunModelResolver:
             provider_resolver=self._provider_resolver,
             model_factory=self._model_factory,
         )
-
-
-def create_snapshot_model_resolver(**kwargs: Any) -> RunModelResolver:
-    return SnapshotRunModelResolver(**kwargs)
 
 
 def _require_enabled(model: ModelRecord, provider: ModelProviderRecord) -> None:

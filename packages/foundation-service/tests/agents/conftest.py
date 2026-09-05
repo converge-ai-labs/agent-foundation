@@ -211,8 +211,6 @@ async def agent_sessions(
                     upstream_model="gpt-5.6-terra",
                     model_api="openai.responses",
                     settings={},
-                    profile={},
-                    limits={},
                     enabled=True,
                     created_by_type="user",
                     created_by_id=USER_ID,

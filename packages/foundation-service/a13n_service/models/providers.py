@@ -4,43 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
-from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict
 
-from .domain import BoundedName, ModelApi, ModelLimits, ModelProfile, UpstreamModel
+from .domain import ModelApi, UpstreamModel
 from .model_apis import BUILT_IN_MODEL_APIS
 from .provider_adapters.base import ProviderIntegration
 from .provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
 from .provider_adapters.types import CredentialFormat, ValidatedProviderConfiguration
 from .service_common import ModelError
-
-
-class ModelDescription(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    upstream_model: UpstreamModel
-    display_name: BoundedName | None = None
-    suggested_model_api: str
-    suggested_settings: dict[str, JsonValue] = Field(default_factory=dict)
-    suggested_profile: ModelProfile = Field(default_factory=ModelProfile)
-    suggested_limits: ModelLimits = Field(default_factory=ModelLimits)
-    settings_schema: dict[str, object]
-    parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]] = Field(default_factory=dict)
-
-
-class ModelDescriptionCollection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    items: tuple[ModelDescription, ...]
-    next_cursor: str | None = None
-
-
-class DiscoverModelsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    limit: int = Field(default=50, ge=1, le=100)
-    cursor: str | None = Field(default=None, max_length=2048)
 
 
 class DescribeModelRequest(BaseModel):

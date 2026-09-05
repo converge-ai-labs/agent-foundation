@@ -128,8 +128,6 @@ async def _seed_model(sessions: async_sessionmaker[AsyncSession]) -> None:
                 upstream_model="gpt-5.6-terra",
                 model_api="openai.responses",
                 settings={},
-                profile={},
-                limits={},
                 enabled=True,
                 created_by_type="user",
                 created_by_id=actor().principal.principal_id,

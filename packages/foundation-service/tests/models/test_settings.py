@@ -86,7 +86,7 @@ def test_description_defaults_are_suggestions_and_manual_ids_need_no_catalog() -
     registry = built_in_provider_registry()
     unknown = describe_model(registry, "openai", "unreleased/deployment")
     assert unknown.suggested_model_api == "openai.responses"
-    assert unknown.suggested_profile.input_modalities is None
+    assert unknown.profile.input_modalities is None
     assert unknown.suggested_settings == {}
     assert set(unknown.parameter_support.values()) == {"unknown"}
     known = describe_model(
@@ -102,8 +102,8 @@ def test_description_defaults_are_suggestions_and_manual_ids_need_no_catalog() -
         },
     )
     assert known.suggested_settings == {"temperature": 0.7}
-    assert known.suggested_profile.supports_tools is True
-    assert known.suggested_limits.context_window_tokens == 128000
+    assert known.profile.supports_tools is True
+    assert known.limits.context_window_tokens == 128000
     assert known.parameter_support["/openrouter_provider"] == "supported"
     assert known.parameter_support["/seed"] == "unsupported"
     assert known.parameter_support["/extra_body"] == "unknown"
@@ -121,7 +121,27 @@ def test_malformed_optional_catalog_metadata_keeps_trusted_description() -> None
             "context_length": True,
         },
     )
-    assert result.suggested_profile.supports_tools is True
-    assert result.suggested_profile.input_modalities is None
-    assert result.suggested_limits.context_window_tokens is None
-    assert result.suggested_limits.max_output_tokens is None
+    assert result.profile.supports_tools is True
+    assert result.profile.input_modalities is None
+    assert result.limits.context_window_tokens is None
+    assert result.limits.max_output_tokens is None
+
+
+@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+def test_missing_source_documentation_does_not_disable_parameter_validation(monkeypatch, api):
+    import inspect
+
+    def unavailable(_):
+        raise OSError("source is not installed")
+
+    settings_schema.cache_clear()
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(inspect, "getsource", unavailable)
+            schema = settings_schema(api)
+            assert schema["properties"]["temperature"]["type"] == "number"
+            assert validate_settings(api, {"temperature": 0.5}) == {"temperature": 0.5}
+            with pytest.raises(ModelError):
+                validate_settings(api, {"temperature": "invalid"})
+    finally:
+        settings_schema.cache_clear()

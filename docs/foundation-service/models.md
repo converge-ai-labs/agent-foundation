@@ -32,19 +32,16 @@ Keep the returned Provider `id`. Reads expose `credential_configured`, never the
 
 ## Discover candidates or enter an ID
 
-If the Provider supports discovery, request a page:
+If the Provider supports discovery, request the complete catalog:
 
 ```http
 POST /api/v1/workspaces/<workspace-id>/model-providers/<provider-id>/discover-models
 Authorization: Bearer <foundation-token>
-Content-Type: application/json
-
-{"limit": 50}
 ```
 
-The response contains `items` and `next_cursor`. To continue, submit the returned cursor with `limit`; stop when `next_cursor` is null. Limits range from 1 to 100. Results are ordered by upstream ID and deduplicated. If a cursor becomes invalid after a Provider or catalog change, start again without it.
+The response contains one complete `items` array, ordered by upstream ID and deduplicated. Search and paginate these results in your client; repeat the request to refresh. Discovery accepts no `limit` or `cursor`, and returns no `next_cursor`.
 
-Discovery creates no Models. An empty successful page, an upstream failure, and `model_discovery_unsupported` are different outcomes. Enumeration follows upstream pages within bounded budgets and returns an error if the catalog cannot be completely enumerated; it does not silently truncate results.
+Discovery creates no Models. A successful empty list, an upstream failure, and `model_discovery_unsupported` are different outcomes. The service follows upstream pages internally, with limits of 100 pages, 4 MiB per upstream response, 10,000 unique models, and 32 MiB of discovery output. Exceeding a bound returns an error, never a silently truncated catalog.
 
 You can also describe any upstream ID directly, including a deployment or a newly released model absent from discovery:
 
@@ -59,7 +56,7 @@ Content-Type: application/json
 }
 ```
 
-Omit `model_api` to use the suggested binding, or supply one of the Provider's allowed APIs. Each description includes `suggested_model_api`, `suggested_settings`, `suggested_profile`, `suggested_limits`, `settings_schema`, and `parameter_support`. Remote metadata failures still allow a local schema with unknown capability information. Description performs no inference and does not prove that the upstream ID or credential works.
+Omit `model_api` to use the suggested binding, or supply one of the Provider's allowed APIs. Each description includes `suggested_model_api`, `suggested_settings`, `profile`, `limits`, `settings_schema`, and `parameter_support`. Remote metadata failures still allow a local schema with unknown capability information. Description performs no inference and does not prove that the upstream ID or credential works.
 
 Descriptions are suggestions. They never update saved Models or become a list of permitted upstream IDs. Manual creation works without discovery or description.
 
@@ -82,9 +79,9 @@ Content-Type: application/json
 }
 ```
 
-Replace `vendor/model-id` with the exact invocation ID accepted by your endpoint. `settings` defaults to `{}`. Omitted profile and limit fields remain unknown. To restrict OpenRouter's downstream providers for this same model, set native `openrouter_provider` settings, for example `{"only": ["<downstream-provider-id>"]}`. Use identifiers accepted by OpenRouter; Foundation does not select a different model or calling API as a fallback.
+Replace `vendor/model-id` with the exact invocation ID accepted by your endpoint. `settings` defaults to `{}`. To restrict OpenRouter's downstream providers for this same model, set native `openrouter_provider` settings, for example `{"only": ["<downstream-provider-id>"]}`. Use identifiers accepted by OpenRouter; Foundation does not select a different model or calling API as a fallback.
 
-`profile` and `limits` are descriptive metadata. Setting `limits.max_output_tokens` does not send a token limit; set `settings.max_tokens` for that request behavior. Suggested values are copied only when you explicitly submit them.
+`profile` and `limits` appear only in discovery and description results as read-only Provider information. They are not Model create or update fields. For example, a discovered output limit of 32,000 describes upstream capacity; set `settings.max_tokens` to 8,000 to request a smaller output budget.
 
 Test the saved configuration:
 
@@ -117,7 +114,7 @@ Omitting `settings` preserves existing defaults. Changing the upstream ID or API
 
 ## Parameters and overrides
 
-The returned JSON Schema describes the serializable native parameters for the selected API, including provider-specific settings. Unknown top-level keys, invalid value shapes, and attempts to replace model identity, credentials, endpoints, messages, tool declarations, or output schemas are rejected. `parameter_support` is advisory: unknown support permits manual configuration, and local validation does not guarantee upstream acceptance.
+The returned JSON Schema describes the serializable native parameters for the selected API, including provider-specific settings. Missing parameter help text does not prevent configuration or execution. Unknown top-level keys, invalid value shapes, and attempts to replace model identity, credentials, endpoints, messages, tool declarations, or output schemas are rejected. `parameter_support` is advisory: unknown support permits manual configuration, and local validation does not guarantee upstream acceptance.
 
 Use `extra_body` only when the schema exposes it. Bedrock Converse uses `bedrock_additional_model_requests_fields`; Google Generate Content has no arbitrary-body field in this binding. Escape-hatch fields obey the same reserved-field rules, and specifying the same outbound parameter through both a native setting and an escape hatch is rejected. Settings are limited to 64 KiB of UTF-8 JSON and 16 container levels, including after merging. Parameter errors include a safe field path without echoing the submitted value.
 
@@ -139,9 +136,3 @@ For Model defaults `{"temperature": 0.3, "max_tokens": 1024}` and Agent settings
 | `{"settings": {"temperature": 0.5}}` | `{"temperature": 0.5, "max_tokens": 1024}` |
 
 Selecting another Model key uses its defaults and revalidates the inherited Agent settings. Accepted Runs retain their API, upstream ID, and merged settings across replacement attempts. Later Model edits affect new Runs. Provider credentials and connection configuration are resolved afresh for each outbound request, including within an existing Run.
-
-## Development API changes
-
-Model requests now require one `model_api` instead of `model_apis`. Remove separate `model_api` fields from Agent configuration, Run overrides, and Model test requests. Existing callers must use the new request shapes; there are no legacy aliases.
-
-The Model domain initialization migration directly creates the current single-API schema. This development change does not add a transitional migration or reject migration based on whether the Model table contains data.

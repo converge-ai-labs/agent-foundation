@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx2
 import pytest
+from a13n_service.models.provider_adapters.base import ProviderOperationError
 from a13n_service.models.provider_operations import NativeProviderOperations
 from a13n_service.models.provider_runtime import RuntimeProvider
 from a13n_service.models.providers import built_in_provider_registry
@@ -215,5 +216,74 @@ async def test_failed_metadata_falls_back_but_invalid_binding_does_not() -> None
                 upstream_model="unlisted",
                 model_api="anthropic.messages",
             )
-        with pytest.raises(httpx2.HTTPStatusError):
+        with pytest.raises(ProviderOperationError):
+            await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
+
+
+@pytest.mark.anyio
+async def test_programming_errors_are_not_reported_as_missing_metadata():
+    async def handler(request):
+        raise TypeError("broken adapter")
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        operations = NativeProviderOperations(
+            provider_resolver=_ProviderResolver(
+                RuntimeProvider("openrouter", {}, "https://openrouter.ai/api/v1", "secret")
+            ),
+            registry=built_in_provider_registry(),
+            http_client=client,
+        )
+        with pytest.raises(TypeError, match="broken adapter"):
+            await operations.describe(
+                provider_id="p",
+                organization_id="o",
+                workspace_id="w",
+                provider_type="openrouter",
+                upstream_model="model",
+                model_api=None,
+            )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("provider_type", "cursor_key"), [("anthropic", "after_id"), ("openai", "after")])
+async def test_adapter_owns_upstream_paging(provider_type, cursor_key):
+    requests = []
+
+    async def handler(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx2.Response(200, json={"data": [{"id": "z"}, {"id": "a"}], "has_more": True, "last_id": "a"})
+        assert request.url.params[cursor_key] == "a"
+        return httpx2.Response(200, json={"data": [{"id": "a"}, {"id": "b"}], "has_more": False})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        operations = NativeProviderOperations(
+            provider_resolver=_ProviderResolver(
+                RuntimeProvider(provider_type, {}, "https://models.example/v1", "secret")
+            ),
+            registry=built_in_provider_registry(),
+            http_client=client,
+        )
+        result = await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
+    assert [item.upstream_model for item in result.items] == ["a", "b", "z"]
+    assert set(result.model_dump()) == {"items"}
+    assert len(requests) == 2
+
+
+@pytest.mark.anyio
+async def test_discovery_rejects_oversized_output_instead_of_returning_partial_catalog(monkeypatch):
+    from a13n_service.models import provider_operations
+
+    monkeypatch.setattr(provider_operations, "_MAX_DISCOVERY_OUTPUT_BYTES", 100)
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, json={"data": [{"id": "model"}]}))
+    ) as client:
+        operations = NativeProviderOperations(
+            provider_resolver=_ProviderResolver(
+                RuntimeProvider("openrouter", {}, "https://openrouter.ai/api/v1", "secret")
+            ),
+            registry=built_in_provider_registry(),
+            http_client=client,
+        )
+        with pytest.raises(ProviderOperationError, match="output byte limit"):
             await operations.discover(provider_id="p", organization_id="o", workspace_id="w")

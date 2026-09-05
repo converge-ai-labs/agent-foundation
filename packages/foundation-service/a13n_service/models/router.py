@@ -16,6 +16,8 @@ from .domain import (
     Model,
     ModelCollection,
     ModelConnectionTestResult,
+    ModelDescription,
+    ModelDescriptionCollection,
     ModelProvider,
     ModelProviderCollection,
     ModelTestRequest,
@@ -25,9 +27,6 @@ from .domain import (
 from .provider_service import ModelProviderService
 from .providers import (
     DescribeModelRequest,
-    DiscoverModelsRequest,
-    ModelDescription,
-    ModelDescriptionCollection,
     ModelProviderDefinitionCollection,
 )
 from .service import ModelService
@@ -143,10 +142,9 @@ async def update_model_provider(
     response_model=ModelDescriptionCollection,
 )
 async def discover_provider_models(
-    request: Request, actor: Actor, workspace_id: str, provider_id: str, body: DiscoverModelsRequest
+    request: Request, actor: Actor, workspace_id: str, provider_id: str
 ) -> ModelDescriptionCollection:
     return await _provider_service(request).discover_models(
-        request=body,
         actor=actor,
         workspace_id=workspace_id,
         provider_id=provider_id,

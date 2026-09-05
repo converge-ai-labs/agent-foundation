@@ -9,7 +9,8 @@ from pydantic import StringConstraints, model_validator
 from pydantic_ai.providers.alibaba import AlibabaProvider
 
 from . import openai_provider
-from .base import ProviderIntegration, bearer_models_request, openai_style_discovery
+from .base import ProviderIntegration, bearer_models_request
+from .openai_provider import openai_style_discovery
 from .types import ProviderConfiguration, RuntimeProvider
 
 

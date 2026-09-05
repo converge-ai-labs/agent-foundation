@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from time import monotonic
 from typing import Protocol
 
+import httpx2
+from a13n_harness.errors import ModelResolutionError
 from anyio import fail_after
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -17,29 +18,29 @@ from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
+from .connection_test import test_connection
 from .credentials import ProviderCredentialError, validate_provider_credential
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .descriptions import describe_model
-from .discovery_paging import discovery_page
 from .domain import (
     CreateModelProviderRequest,
     ModelConnectionTestResult,
+    ModelDescription,
+    ModelDescriptionCollection,
     ModelProvider,
     ModelProviderCollection,
     UpdateModelProviderRequest,
     new_model_provider_id,
 )
 from .models import ModelProviderRecord
+from .provider_adapters.base import ProviderOperationError
 from .providers import (
     DescribeModelRequest,
-    DiscoverModelsRequest,
-    ModelDescription,
-    ModelDescriptionCollection,
     ModelProviderDefinitionCollection,
     ProviderRegistry,
     ValidatedProviderConfiguration,
 )
-from .service_common import ModelError, audit_record, authorize_models, require_etag
+from .service_common import ModelError, audit_record, authorize_models, escape_like, is_unique_conflict, require_etag
 
 
 class ProviderOperations(Protocol):
@@ -147,6 +148,12 @@ class ModelProviderService:
                 await session.flush()
                 return record.to_resource()
         except IntegrityError as error:
+            if not is_unique_conflict(
+                error,
+                constraint="uq_model_providers_workspace_name",
+                sqlite_columns="model_providers.workspace_id, model_providers.normalized_name",
+            ):
+                raise
             raise ModelError(
                 "model_provider_name_conflict",
                 "A Model Provider with this name already exists in the Workspace.",
@@ -211,7 +218,7 @@ class ModelProviderService:
                 ModelProviderRecord.workspace_id == workspace.workspace_id,
             )
             if name is not None:
-                query = query.where(ModelProviderRecord.name.ilike(f"%{_escape_like(name.strip())}%", escape="\\"))
+                query = query.where(ModelProviderRecord.name.ilike(f"%{escape_like(name.strip())}%", escape="\\"))
             if provider_type is not None:
                 query = query.where(ModelProviderRecord.type == provider_type)
             if enabled is not None:
@@ -300,6 +307,12 @@ class ModelProviderService:
             try:
                 await session.flush()
             except IntegrityError as error:
+                if not is_unique_conflict(
+                    error,
+                    constraint="uq_model_providers_workspace_name",
+                    sqlite_columns="model_providers.workspace_id, model_providers.normalized_name",
+                ):
+                    raise
                 raise ModelError(
                     "model_provider_name_conflict",
                     "A Model Provider with this name already exists in the Workspace.",
@@ -308,7 +321,7 @@ class ModelProviderService:
             return record.to_resource()
 
     async def discover_models(
-        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str, request: DiscoverModelsRequest
+        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str
     ) -> ModelDescriptionCollection:
         provider = await self._prepare_command(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
         if not provider.enabled:
@@ -332,12 +345,11 @@ class ModelProviderService:
                     organization_id=provider.organization_id,
                     workspace_id=provider.workspace_id,
                 )
-            result = discovery_page(result, request, provider=provider, actor=actor)
         except ModelError as error:
             failure = error
         except TimeoutError:
             failure = ModelError("provider_discovery_timeout", "Provider model discovery timed out.", status_code=504)
-        except Exception:
+        except (ModelResolutionError, ProviderOperationError, httpx2.HTTPError):
             failure = ModelError("provider_discovery_failed", "Provider model discovery failed.", status_code=502)
         async with transaction(self._sessions) as session:
             session.add(
@@ -397,19 +409,13 @@ class ModelProviderService:
                 "provider_connection_tester_unavailable", "Provider testing is unavailable.", status_code=503
             )
         provider = await self._prepare_command(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
-        started = monotonic()
-        success, code, message = True, "connection_succeeded", "The Provider connection succeeded."
-        try:
-            with fail_after(self._command_timeout_seconds):
-                await self._operations.test(
-                    provider_id=provider.id,
-                    organization_id=provider.organization_id,
-                    workspace_id=provider.workspace_id,
-                )
-        except TimeoutError:
-            success, code, message = False, "connection_timeout", "The Provider connection timed out."
-        except Exception:
-            success, code, message = False, "connection_failed", "The Provider connection failed."
+        result = await test_connection(
+            self._operations.test(
+                provider_id=provider.id, organization_id=provider.organization_id, workspace_id=provider.workspace_id
+            ),
+            timeout_seconds=self._command_timeout_seconds,
+            subject="Provider",
+        )
         async with transaction(self._sessions) as session:
             session.add(
                 audit_record(
@@ -420,15 +426,10 @@ class ModelProviderService:
                     resource_id=provider.id,
                     action="model_provider.test",
                     now=self._clock(),
-                    outcome="success" if success else "failure",
+                    outcome="success" if result.success else "failure",
                 )
             )
-        return ModelConnectionTestResult(
-            success=success,
-            elapsed_ms=max(0, round((monotonic() - started) * 1000)),
-            code=code,
-            message=message,
-        )
+        return result
 
     async def _prepare_command(
         self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str
@@ -489,7 +490,3 @@ async def require_provider(
     if record is None:
         raise ModelError("model_provider_not_found", "The Model Provider was not found.", status_code=404)
     return record
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

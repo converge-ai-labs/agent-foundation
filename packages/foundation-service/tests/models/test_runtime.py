@@ -7,6 +7,7 @@ import httpx2
 import pytest
 from a13n_service.etags import resource_etag
 from a13n_service.models.connection_test import NativeModelConnectionTester
+from a13n_service.models.connection_test import test_connection as connection_test_result
 from a13n_service.models.domain import (
     CreateModelProviderRequest,
     CreateModelRequest,
@@ -16,12 +17,14 @@ from a13n_service.models.domain import (
 )
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.models import ModelProviderRecord
+from a13n_service.models.provider_adapters.base import ProviderOperationError
 from a13n_service.models.provider_runtime import LiveProviderResolver, RuntimeProvider
 from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service import ModelService
 from a13n_service.storage import short_session
 from google.auth.credentials import AnonymousCredentials
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.bedrock import BedrockConverseModel
 from pydantic_ai.models.bedrock_mantle import BedrockMantleChatModel, BedrockMantleResponsesModel
@@ -32,6 +35,34 @@ from pydantic_ai.models.openrouter import OpenRouterModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import ORG_ID, WORKSPACE_ID, actor, protector
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (ModelHTTPError(401, "example", "secret upstream response"), "connection_failed"),
+        (ProviderOperationError("secret upstream response"), "connection_failed"),
+        (TimeoutError("secret upstream response"), "connection_timeout"),
+    ],
+)
+async def test_connection_failure_returns_safe_result(error: Exception, code: str) -> None:
+    async def operation() -> None:
+        raise error
+
+    result = await connection_test_result(operation(), timeout_seconds=1, subject="Model API")
+    assert result.success is False
+    assert result.code == code
+    assert "secret" not in result.model_dump_json()
+
+
+@pytest.mark.anyio
+async def test_connection_programming_error_propagates() -> None:
+    async def operation() -> None:
+        raise TypeError("broken adapter")
+
+    with pytest.raises(TypeError, match="broken adapter"):
+        await connection_test_result(operation(), timeout_seconds=1, subject="Provider")
 
 
 @pytest.mark.anyio

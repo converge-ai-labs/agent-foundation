@@ -200,3 +200,30 @@ async def test_model_patch_revalidates_all_settings_and_can_clear_defaults(provi
     )
     assert changed.settings == {}
     assert changed.model_api == "openai.chat_completions"
+
+
+@pytest.mark.anyio
+async def test_model_identity_conflict_is_not_misreported_as_duplicate_key(
+    provider_service, model_service, monkeypatch
+):
+    from a13n_service.models import service
+    from a13n_service.models.service_common import ModelError
+    from sqlalchemy.exc import IntegrityError
+
+    provider = await provider_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelProviderRequest(type="openai", name="OpenAI", credential="secret"),
+    )
+    request = CreateModelRequest(
+        key="first", provider_id=provider.id, name="First", upstream_model="gpt-next", model_api="openai.responses"
+    )
+    first = await model_service.create(actor=actor(), workspace_id=WORKSPACE_ID, request=request)
+    with pytest.raises(ModelError) as duplicate:
+        await model_service.create(actor=actor(), workspace_id=WORKSPACE_ID, request=request)
+    assert duplicate.value.code == "model_key_conflict"
+    monkeypatch.setattr(service, "new_model_id", lambda: first.id)
+    with pytest.raises(IntegrityError):
+        await model_service.create(
+            actor=actor(), workspace_id=WORKSPACE_ID, request=request.model_copy(update={"key": "different"})
+        )

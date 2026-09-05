@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+import textwrap
 from functools import lru_cache
 from typing import Any, get_type_hints
 
@@ -99,24 +100,26 @@ _ESCAPE_FIELDS = frozenset({"extra_body", "bedrock_additional_model_requests_fie
 
 def _field_descriptions(native: Any) -> dict[str, str]:
     descriptions: dict[str, str] = {}
-    # TypedDict inheritance erases its runtime bases; source modules retain field docs.
-    from pydantic_ai import settings as native_settings
-
-    for module in (native_settings, inspect.getmodule(native)):
-        if module is None:
+    for parent in getattr(native, "__orig_bases__", ()):
+        if isinstance(parent, type) and hasattr(parent, "__annotations__"):
+            descriptions.update(_field_descriptions(parent))
+    try:
+        source = textwrap.dedent(inspect.getsource(native))
+        tree = ast.parse(source)
+    except (OSError, TypeError, SyntaxError, UnicodeError):
+        return descriptions
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
             continue
-        for node in ast.walk(ast.parse(inspect.getsource(module))):
-            if not isinstance(node, ast.ClassDef):
-                continue
-            for field, following in zip(node.body, node.body[1:], strict=False):
-                if (
-                    isinstance(field, ast.AnnAssign)
-                    and isinstance(field.target, ast.Name)
-                    and isinstance(following, ast.Expr)
-                    and isinstance(following.value, ast.Constant)
-                    and isinstance(following.value.value, str)
-                ):
-                    descriptions[field.target.id] = inspect.cleandoc(following.value.value)
+        for field, following in zip(node.body, node.body[1:], strict=False):
+            if (
+                isinstance(field, ast.AnnAssign)
+                and isinstance(field.target, ast.Name)
+                and isinstance(following, ast.Expr)
+                and isinstance(following.value, ast.Constant)
+                and isinstance(following.value.value, str)
+            ):
+                descriptions[field.target.id] = inspect.cleandoc(following.value.value)
     return descriptions
 
 

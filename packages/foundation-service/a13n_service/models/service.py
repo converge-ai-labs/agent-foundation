@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from time import monotonic
 from typing import Protocol
 
-from anyio import fail_after
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,6 +13,7 @@ from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
+from .connection_test import test_connection
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .domain import (
     CreateModelRequest,
@@ -29,7 +28,7 @@ from .domain import (
 from .models import ModelRecord
 from .provider_service import require_provider
 from .providers import ProviderRegistry
-from .service_common import ModelError, audit_record, authorize_models, require_etag
+from .service_common import ModelError, audit_record, authorize_models, escape_like, is_unique_conflict, require_etag
 from .settings import JsonObject, validate_settings
 
 
@@ -95,8 +94,6 @@ class ModelService:
                     upstream_model=request.upstream_model,
                     model_api=request.model_api,
                     settings=request.settings,
-                    profile=request.profile.model_dump(mode="json"),
-                    limits=request.limits.model_dump(mode="json"),
                     enabled=request.enabled,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
@@ -120,6 +117,10 @@ class ModelService:
                 await session.flush()
                 return record.to_resource()
         except IntegrityError as error:
+            if not is_unique_conflict(
+                error, constraint="uq_models_workspace_key", sqlite_columns="models.workspace_id, models.normalized_key"
+            ):
+                raise
             raise ModelError(
                 "model_key_conflict",
                 "A Model with this key already exists in the Workspace.",
@@ -177,7 +178,7 @@ class ModelService:
                 ModelRecord.workspace_id == workspace.workspace_id,
             )
             if query_text is not None:
-                escaped = _escape_like(query_text.strip())
+                escaped = escape_like(query_text.strip())
                 query = query.where(
                     or_(
                         ModelRecord.name.ilike(f"%{escaped}%", escape="\\"),
@@ -250,10 +251,6 @@ class ModelService:
                 record.upstream_model = request.upstream_model
             record.model_api = model_api
             record.settings = settings
-            if request.profile is not None:
-                record.profile = request.profile.model_dump(mode="json")
-            if request.limits is not None:
-                record.limits = request.limits.model_dump(mode="json")
             if "enabled" in request.model_fields_set:
                 assert request.enabled is not None
                 record.enabled = request.enabled
@@ -296,20 +293,16 @@ class ModelService:
                 )
             ).to_resource()
         snapshot = ModelExecutionSnapshot.freeze(model)
-        started = monotonic()
-        success, code, message = True, "connection_succeeded", "The Model API connection succeeded."
-        try:
-            with fail_after(self._connection_test_timeout_seconds):
-                await self._connection_tester(
-                    snapshot=snapshot,
-                    settings=model.settings,
-                    organization_id=model.organization_id,
-                    workspace_id=model.workspace_id,
-                )
-        except TimeoutError:
-            success, code, message = False, "connection_timeout", "The Model API connection timed out."
-        except Exception:
-            success, code, message = False, "connection_failed", "The Model API connection failed."
+        result = await test_connection(
+            self._connection_tester(
+                snapshot=snapshot,
+                settings=model.settings,
+                organization_id=model.organization_id,
+                workspace_id=model.workspace_id,
+            ),
+            timeout_seconds=self._connection_test_timeout_seconds,
+            subject="Model API",
+        )
         async with transaction(self._sessions) as session:
             session.add(
                 audit_record(
@@ -320,15 +313,10 @@ class ModelService:
                     resource_id=model.id,
                     action="model.test",
                     now=self._clock(),
-                    outcome="success" if success else "failure",
+                    outcome="success" if result.success else "failure",
                 )
             )
-        return ModelConnectionTestResult(
-            success=success,
-            elapsed_ms=max(0, round((monotonic() - started) * 1000)),
-            code=code,
-            message=message,
-        )
+        return result
 
 
 async def require_model(
@@ -350,7 +338,3 @@ async def require_model(
     if record is None:
         raise ModelError("model_not_found", "The Model was not found.", status_code=404)
     return record
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

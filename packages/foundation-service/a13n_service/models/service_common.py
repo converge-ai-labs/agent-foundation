@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.etags import etag_matches, resource_etag
@@ -74,3 +76,17 @@ def audit_record(
         occurred_at=now,
         details=None,
     )
+
+
+def is_unique_conflict(error: IntegrityError, *, constraint: str, sqlite_columns: str) -> bool:
+    diagnostic = getattr(error.orig, "diag", None)
+    if diagnostic is not None:
+        return diagnostic.sqlstate == "23505" and diagnostic.constraint_name == constraint
+    return (
+        getattr(error.orig, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_UNIQUE
+        and str(error.orig) == f"UNIQUE constraint failed: {sqlite_columns}"
+    )
+
+
+def escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

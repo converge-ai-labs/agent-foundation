@@ -137,8 +137,6 @@ class Model:
     upstream_model: str
     model_api: str
     settings: JsonObject
-    profile: ModelProfile
-    limits: ModelLimits
     enabled: bool
     created_by: PrincipalRef
     updated_by: PrincipalRef
@@ -150,11 +148,11 @@ class Model:
 
 `upstream_model` is an opaque string of 1 through 256 characters passed unchanged to the selected native Pydantic AI Model. It is the invocation identifier required by the configured endpoint, including a model ID, deployment name, or inference endpoint ID. It is not restricted to a bundled or discovered catalog. This lets a Workspace use a newly released upstream model through an existing supported binding before Foundation's metadata is updated. Clients select `Model.key`; they do not substitute it for the upstream invocation identifier.
 
-`model_api` is one key allowed by the selected Provider type. `settings` contains non-secret, JSON-serializable native request defaults and defaults to an empty object. `profile` and `limits` describe the selected upstream model through that API and are user-configurable authoring and observability metadata. All unknown profile and limit fields remain null rather than false or fabricated numeric defaults; omitted metadata normalizes to these unknown values.
+`model_api` is one key allowed by the selected Provider type. `settings` contains non-secret, JSON-serializable native request defaults and defaults to an empty object. Model resources contain no editable or persisted capability metadata. Discovery and description return read-only `profile` and `limits` supplied by the Provider; unknown facts remain null rather than false or fabricated numeric defaults.
 
 The safe profile deliberately mirrors only serializable Pydantic AI `ModelProfile` facts useful to users. Schema transformers, Python types, system-prompt templates, request transforms, and other execution mechanics remain trusted adapter/runtime code. Profile metadata does not automatically gate Agent save or execution; the upstream response remains authoritative.
 
-Model name, description, upstream model, calling API, settings, profile, limits, and enabled state are mutable under a strong ETag. Changing upstream model or API validates the resulting complete configuration; it never silently drops incompatible settings. A Model has no version, revision, revision route, historical configuration API, or copy route.
+Model name, description, upstream model, calling API, settings, and enabled state are mutable under a strong ETag. Changing upstream model or API validates the resulting complete configuration; it never silently drops incompatible settings. A Model has no version, revision, revision route, historical configuration API, or copy route.
 
 For OpenRouter, the initial API is `openrouter.chat_completions` and an omitted downstream routing setting leaves selection to OpenRouter. Users can configure native routing settings, including `openrouter_provider`, on the Model. Two Models such as `openrouter-claude` and `openrouter-aws-claude` can reference the same upstream Claude ID while one uses platform defaults and the other restricts eligible downstream providers. Downstream identifiers are upstream data rather than a Foundation release-pinned enum. OpenRouter performs that routing; it does not create additional Foundation Providers or a routing-policy resource.
 
@@ -168,13 +166,13 @@ class ModelDescription:
     display_name: str | None
     suggested_model_api: str
     suggested_settings: JsonObject
-    suggested_profile: ModelProfile
-    suggested_limits: ModelLimits
+    profile: ModelProfile
+    limits: ModelLimits
     settings_schema: JsonObject
     parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]]
 ```
 
-Discovery enumerates candidates using the exact configured Provider's current endpoint and credential, preferring account-filtered information when the upstream exposes it. It excludes models known to be outside this domain; unknown capability metadata does not exclude a new model. Results are paginated with an opaque continuation cursor and must remain fully traversable rather than silently truncated. An enumeration error is distinct from a successful empty list; partial results must not be represented as a complete result.
+Discovery enumerates candidates using the exact configured Provider's current endpoint and credential, preferring account-filtered information when the upstream exposes it. It excludes models known to be outside this domain; unknown capability metadata does not exclude a new model. Results contain the complete bounded catalog in one `items` array, ordered by upstream ID with duplicates consolidated. There is no client-facing discovery cursor. Clients search and paginate the returned catalog locally and explicitly refresh when they need new data. An enumeration error is distinct from a successful empty list; partial results must not be represented as a complete result.
 
 Description accepts one arbitrary bounded upstream identifier and an optional allowed API. An explicitly supplied API is retained; otherwise trusted model-specific information or the Provider definition supplies the suggested API. It works without prior discovery or a saved Model. When remote metadata is absent or unavailable, it still returns the trusted settings schema, available defaults, and unknown support/profile/limit fields. Structural validation, authorization, and unsupported API errors do not become metadata fallbacks. New model IDs do not require an entry in a bundled metadata table.
 
@@ -182,13 +180,13 @@ Both operations return suggestions, not evidence of successful model invocation.
 
 Results are separate from safe Provider definitions and saved Workspace Models. They may be briefly cached within the authorization and configured Provider boundary; connection or credential changes invalidate corresponding cached results. They are not durable resources, do not create or update Models, and never become an execution allowlist.
 
-Callers select discovered descriptions or request a description for a manually entered upstream ID, then submit the same ordinary Model create request. Clients prefill an editable name and key, one API, settings, profile, and limits. The create request always contains the chosen key and explicit API; optional settings and metadata use the defaults defined above. Manual creation remains possible without calling description or discovery. Only explicit creation adds a Workspace Model, and partial failure when adding several candidates leaves already created Models intact and identifies failed entries.
+Callers select discovered descriptions or request a description for a manually entered upstream ID, then submit the same ordinary Model create request. Clients prefill an editable name and key, one API, and settings; Provider capability information remains read-only reference material. The create request always contains the chosen key and explicit API; optional settings default to an empty object. Manual creation remains possible without calling description or discovery. Only explicit creation adds a Workspace Model, and partial failure when adding several candidates leaves already created Models intact and identifies failed entries.
 
 Creation copies the submitted values into the Model. Subsequent discovery, description, or metadata refresh never changes saved values, removes a saved Model, or disables it. Adopting new suggestions is an explicit edit under the Model's ETag. Editing an existing Model requests a description using its current Provider, upstream ID, and API but keeps the saved values as the editor's values.
 
 ## Parameter schemas and validation
 
-`settings_schema` is a self-contained JSON Schema Draft 2020-12 object schema over the public native settings keys. It describes accepted JSON types, nested objects, descriptions, enums, and trusted value constraints for the selected Provider, API, and upstream model. The trusted calling-API binding derives it from the applicable Pydantic AI settings type, including provider-specific settings, restricted to the serializable and permitted service surface. Native callables, clients, credential inputs, and code hooks are not configurable settings. Provider/model metadata supplies suggested values, descriptions, and support information, but cannot introduce code, remote schema references, or executable request transformations. Dynamic catalog limits remain descriptive and do not introduce validation assertions that require a remote lookup or change when a metadata cache expires.
+`settings_schema` is a self-contained JSON Schema Draft 2020-12 object schema over the public native settings keys. It describes accepted JSON types, nested objects, available descriptions, enums, and trusted value constraints for the selected Provider, API, and upstream model. The trusted calling-API binding derives it from the applicable Pydantic AI settings type, including provider-specific settings, restricted to the serializable and permitted service surface. Native callables, clients, credential inputs, and code hooks are not configurable settings. Missing or unreadable parameter documentation never prevents schema generation, validation, or execution. Provider/model metadata supplies suggested values, descriptions, and support information, but cannot introduce code, remote schema references, or executable request transformations. Dynamic catalog limits remain descriptive and do not introduce validation assertions that require a remote lookup or change when a metadata cache expires.
 
 `parameter_support` keys are JSON Pointers into the settings object, using native settings names rather than raw upstream request-field names. Trusted integration code maps upstream metadata to these paths. Missing entries mean unknown. Support information is advisory: known unsupported parameters are not recommended by ordinary forms, while unknown parameters remain available in advanced configuration. An absent upstream parameter is not evidence of non-support unless that upstream contract defines the list as exhaustive. Dynamic support metadata does not by itself reject saving or executing a Model. Runtime never requires a discovery or description request before inference.
 
@@ -198,7 +196,7 @@ The same schema construction and validation rules serve Model create/update, Age
 
 All settings entry paths enforce the same reserved request boundary. Settings cannot replace the selected model, select fallback model IDs, supply credentials or connection targets, or replace Harness-owned messages, instructions, tools, tool results, streaming mode, or structured-output schemas. This applies to native aliases and nested escape hatches, including model-changing presets or `extra_body.model`. Non-authentication headers are permitted only within the integration's safe header contract; authorization and routing-to-another-endpoint headers remain Provider-owned. Downstream provider selection for the same OpenRouter model is permitted. Validation of the constructed outbound request preserves this boundary even when a new upstream parameter is passed through `extra_body`.
 
-Model `settings` are actual request defaults. Catalog `profile` and `limits` remain descriptive: changing a displayed context window does not change native SDK behavior, and changing a displayed output limit does not send `max_tokens`. Users set request controls through `settings`. Pydantic AI and trusted integration code retain ownership of the effective native profile and message transformations.
+Model `settings` are actual request defaults. Discovery `profile` and `limits` are read-only Provider information, never Model create or update fields. A displayed output limit describes upstream capacity; it does not send `max_tokens`. Users set request controls through `settings`. Pydantic AI and trusted integration code retain ownership of the effective native profile and message transformations.
 
 ### Settings precedence
 
@@ -232,7 +230,7 @@ class ModelExecutionObservation:
     model_api: str
 ```
 
-The Provider ID is not duplicated in this snapshot because `Model.provider_id` is immutable. Runtime resolves the Provider through the retained `model_id`. The snapshot contains no profile, limits, endpoint, Provider config, credential, or secret. Profile and limits remain current Model catalog metadata; they neither override the native Pydantic AI Model profile nor become Run reproducibility facts. Replacement attempts and explicit Retry reuse the same Model snapshot, so a mid-Run Model edit does not change upstream model or selected API.
+The Provider ID is not duplicated in this snapshot because `Model.provider_id` is immutable. Runtime resolves the Provider through the retained `model_id`. The snapshot contains no profile, limits, endpoint, Provider config, credential, or secret. Profile and limits remain transient Provider information; they neither override the native Pydantic AI Model profile nor become Run reproducibility facts. Replacement attempts and explicit Retry reuse the same Model snapshot, so a mid-Run Model edit does not change upstream model or selected API.
 
 The final merged non-secret settings are stored once in `EffectiveAgentConfig.model.settings`, alongside the execution snapshot and Harness model characteristics. Every outbound request uses those effective settings. Model edits and description refreshes do not alter them during the Run. Description schemas and advisory parameter support are not execution snapshots. Retained Runs are reconstructed from their explicit execution selection and settings; compatibility handling must not infer an API from current Model defaults or rewrite historical selections.
 
@@ -306,7 +304,7 @@ POST  /api/v1/workspaces/{workspace_id}/models/{model_id}/test
 
 Provider and Model collections use cursor pagination with deterministic `updated_at desc, id desc` ordering. Provider filters include name, type, and enabled state. Model filters include name/key, `provider_id`, and enabled state.
 
-`discover-models` accepts the shared `limit` and optional `cursor` fields and returns the standard `items`/`next_cursor` page of `ModelDescription` values, ordered by `upstream_model` ascending with duplicate IDs consolidated. It follows the collection bounds and authorization rules in [Platform API Conventions](../api-conventions.md#collection-reads). The continuation cursor belongs to that configured Provider and enumeration; an expired or invalidated cursor requires restarting discovery. Filtering out non-generative candidates does not terminate traversal while eligible upstream entries remain. Unsupported discovery returns `model_discovery_unsupported`, and an upstream enumeration failure returns a safe operation error rather than an empty success.
+`discover-models` takes no pagination input and returns one `items` array containing the complete Provider catalog, ordered by `upstream_model` ascending with duplicate IDs consolidated. This transient command result is not an ordinary paginated resource collection. The response has no `next_cursor`, enumeration identity, or persisted catalog snapshot. The service follows upstream pagination internally, allowing at most 100 upstream pages, 4 MiB per upstream response, 10,000 unique models, and 32 MiB of serialized discovery output, under the operation deadline. A bound or upstream failure returns a safe operation error rather than truncated results. Filtering non-generative entries does not stop upstream traversal. Unsupported discovery returns `model_discovery_unsupported`.
 
 `describe-model` accepts `upstream_model` and an optional `model_api`, and returns one `ModelDescription` without persisting or invoking a model. This same operation serves manual IDs, discovered candidates whose selected API changes, and existing Model editors. It requires no discovery-result token or Model ID. It can inspect upstream metadata but never performs generative inference. Description works with local trusted defaults when optional metadata is unavailable, including an unconfigured credential; credential and endpoint errors remain visible through discovery, connection testing, or inference. The service never sends credentials to an endpoint that failed policy validation.
 
@@ -318,7 +316,7 @@ Provider testing validates its current connection and authentication without req
 
 Foundation exposes disable/re-enable instead of hard delete for both resources. Provider disable blocks every dependent Model at the next outbound request. A Provider with dependent Models cannot be removed by storage maintenance. Model keys and Provider relationships cannot be reused through a public delete path.
 
-`models.read` permits safe Provider-type, Provider, and Model reads and the read-only `describe-model` operation. `models.manage` is required for Provider and Model mutations, credential replacement, connection and Model tests, discovery enumeration, and lifecycle commands. Workspace Viewer receives the read surface; Workspace Builder and Admin receive both surfaces. Remote metadata results and caches retain the configured Provider's authorization boundary, and every page or description request reauthorizes access. Agent-scoped grants do not confer Workspace Model-management authority.
+`models.read` permits safe Provider-type, Provider, and Model reads and the read-only `describe-model` operation. `models.manage` is required for Provider and Model mutations, credential replacement, connection and Model tests, discovery enumeration, and lifecycle commands. Workspace Viewer receives the read surface; Workspace Builder and Admin receive both surfaces. Remote metadata results and caches retain the configured Provider's authorization boundary, and every discovery or description request reauthorizes access. Agent-scoped grants do not confer Workspace Model-management authority.
 
 Create, update, credential replacement/removal, test, discovery, description, enable, and disable actions produce security audit records. Audit details contain identifiers and safe outcome codes only; they never contain plaintext credentials, encrypted credential material, authorization headers, raw provider errors, prompts, or model output.
 

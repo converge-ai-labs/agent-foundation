@@ -79,6 +79,8 @@ GET /api/v1/workspaces/ws_123/agents?limit=50&cursor=opaque-value
 
 Each endpoint defines one deterministic default order and uses a unique stable tie-breaker. It exposes only explicit filters and sort choices rather than a platform query language. A cursor is bound to the authenticated scope and the query that created it. A changed scope, filter, or ordering, or an invalid or expired cursor, returns a typed error instead of an empty page.
 
+A bounded transient catalog command may return its complete `items` array without pagination when its owning API explicitly defines that contract and its response limits, as in [Model discovery](foundation-service/30-model-management.md#management-api). This does not change ordinary resource collection pagination.
+
 The cursor is a continuation value, not an object ID or bearer authority. Clients do not parse or construct it, and the server reauthorizes every page. Ordinary collection pagination does not imply a database snapshot; an API that requires snapshot isolation or durable replay defines that stronger contract separately.
 
 ## Errors
@@ -155,7 +157,7 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 ## Invariants
 
 1. Foundation-owned product HTTP APIs use the `/api` namespace, and current public resource routes share one `/api/v1` contract.
-2. Single-resource responses are direct objects; collection responses use only `items` and `next_cursor` for pagination.
+2. Single-resource responses are direct objects; paginated collection responses use only `items` and `next_cursor` for pagination.
 3. JSON wire fields use `snake_case`, presence is explicit, timestamps are UTC, and scalar units appear in field names; an owning binary transfer route declares one exact bounded media type.
 4. Every collection read is bounded, deterministically ordered, and reauthorized; cursors are opaque and non-authoritative.
 5. Clients branch on stable error codes, never message text, and errors disclose no implementation-private or secret data.

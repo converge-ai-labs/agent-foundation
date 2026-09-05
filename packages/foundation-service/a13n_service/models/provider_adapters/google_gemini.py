@@ -1,13 +1,20 @@
 """Google Gemini Developer API Provider adapter."""
 
+from collections.abc import Mapping
+from typing import Any
+
 import httpx2
 from pydantic_ai.providers.google import GoogleProvider
 
+from ..descriptions import positive_token_limit
+from ..domain import ModelDescription, ModelLimits
 from .base import (
+    DiscoveredModelIdentity,
     JsonModelDiscoveryAdapter,
     ModelListRequest,
     ModelListSchema,
     ProviderIntegration,
+    ProviderOperationError,
     join_url,
     require_credential,
     require_endpoint,
@@ -34,6 +41,34 @@ def _request(provider: RuntimeProvider) -> ModelListRequest:
     )
 
 
+class GeminiDiscovery(JsonModelDiscoveryAdapter):
+    def parse(self, payload: Any) -> list[DiscoveredModelIdentity]:
+        return [
+            item
+            for item in super().parse(payload)
+            if not isinstance(item.metadata.get("supportedGenerationMethods"), list)
+            or "generateContent" in item.metadata["supportedGenerationMethods"]
+        ]
+
+    def next_page(self, payload: Mapping[str, Any]) -> dict[str, str]:
+        token = payload.get("nextPageToken")
+        if token:
+            if not isinstance(token, str):
+                raise ProviderOperationError("the Provider returned an invalid continuation token")
+            return {"pageToken": token}
+        return super().next_page(payload)
+
+    def describe(
+        self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
+    ) -> ModelDescription:
+        result = super().describe(model_api, upstream_model, display_name, metadata)
+        limits = ModelLimits(
+            context_window_tokens=positive_token_limit(metadata.get("inputTokenLimit")),
+            max_output_tokens=positive_token_limit(metadata.get("outputTokenLimit")),
+        )
+        return result.model_copy(update={"limits": limits})
+
+
 INTEGRATION = ProviderIntegration(
     type="google_gemini",
     display_name="Google Gemini",
@@ -41,7 +76,7 @@ INTEGRATION = ProviderIntegration(
     supported_model_apis=("google.generate_content",),
     build_provider=_build_provider,
     endpoint="https://generativelanguage.googleapis.com",
-    model_discovery=JsonModelDiscoveryAdapter(
+    model_discovery=GeminiDiscovery(
         request_builder=_request,
         schema=ModelListSchema(
             collection_field="models",

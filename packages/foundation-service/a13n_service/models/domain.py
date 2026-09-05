@@ -51,7 +51,7 @@ def new_model_id() -> str:
 
 
 class ModelProfile(BaseModel):
-    """Safe authoring metadata aligned with Pydantic AI's ModelProfile."""
+    """Read-only Provider capability information returned by discovery and description."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -140,8 +140,6 @@ class CreateModelRequest(BaseModel):
     upstream_model: UpstreamModel
     model_api: ModelApi
     settings: dict[str, JsonValue] = Field(default_factory=dict)
-    profile: ModelProfile = Field(default_factory=ModelProfile)
-    limits: ModelLimits = Field(default_factory=ModelLimits)
     enabled: bool = True
 
 
@@ -153,8 +151,6 @@ class UpdateModelRequest(BaseModel):
     upstream_model: UpstreamModel | None = None
     model_api: ModelApi | None = None
     settings: dict[str, JsonValue] | None = None
-    profile: ModelProfile | None = None
-    limits: ModelLimits | None = None
     enabled: bool | None = None
 
     @model_validator(mode="after")
@@ -180,8 +176,6 @@ class Model(BaseModel):
     upstream_model: str
     model_api: ModelApi
     settings: dict[str, JsonValue] = Field(default_factory=dict)
-    profile: ModelProfile = Field(default_factory=ModelProfile)
-    limits: ModelLimits = Field(default_factory=ModelLimits)
     enabled: bool
     created_by: PrincipalRef
     updated_by: PrincipalRef
@@ -248,3 +242,22 @@ class ModelExecutionSnapshot(BaseModel):
             upstream_model=self.upstream_model,
             model_api=self.model_api,
         )
+
+
+class ModelDescription(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    upstream_model: UpstreamModel
+    display_name: BoundedName | None = None
+    suggested_model_api: str
+    suggested_settings: dict[str, JsonValue] = Field(default_factory=dict)
+    profile: ModelProfile = Field(default_factory=ModelProfile)
+    limits: ModelLimits = Field(default_factory=ModelLimits)
+    settings_schema: dict[str, object]
+    parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]] = Field(default_factory=dict)
+
+
+class ModelDescriptionCollection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    items: tuple[ModelDescription, ...]

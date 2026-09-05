@@ -13,9 +13,9 @@ from .base import (
     ModelListRequest,
     ProviderIntegration,
     join_url,
-    openai_style_discovery,
     require_endpoint,
 )
+from .openai_provider import openai_style_discovery
 from .types import ProviderConfiguration, RuntimeProvider
 
 _RESERVED_HEADERS = {

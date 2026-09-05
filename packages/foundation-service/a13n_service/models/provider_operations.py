@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
+from typing import Protocol
 
 import httpx2
+from a13n_harness.errors import ModelResolutionError
 
 from .descriptions import describe_model
-from .provider_adapters.base import DiscoveredModelIdentity
+from .domain import ModelDescription, ModelDescriptionCollection
+from .provider_adapters.base import DiscoveredModelIdentity, ProviderOperationError
 from .provider_adapters.types import RuntimeProvider
-from .providers import ModelDescription, ModelDescriptionCollection, ProviderRegistry
+from .providers import ProviderRegistry
 
 _MAX_DISCOVERY_RESPONSE_BYTES = 4 * 1024 * 1024
 _MAX_DISCOVERY_PAGES = 100
+_MAX_DISCOVERY_MODELS = 10_000
+_MAX_DISCOVERY_OUTPUT_BYTES = 32 * 1024 * 1024
 
 
 class ProviderStateResolver(Protocol):
@@ -39,18 +43,21 @@ class NativeProviderOperations:
     ) -> ModelDescriptionCollection:
         provider = await self._resolve(provider_id, organization_id, workspace_id)
         identities = await self._list(provider)
-        return ModelDescriptionCollection(
-            items=tuple(
-                describe_model(
-                    self._registry,
-                    provider.type,
-                    item.upstream_model,
-                    display_name=item.display_name,
-                    metadata=item.metadata,
-                )
-                for item in identities
+        items: list[ModelDescription] = []
+        output_bytes = len(b'{"items":[]}')
+        for item in identities:
+            description = describe_model(
+                self._registry,
+                provider.type,
+                item.upstream_model,
+                display_name=item.display_name,
+                metadata=item.metadata,
             )
-        )
+            output_bytes += len(description.model_dump_json().encode()) + bool(items)
+            if output_bytes > _MAX_DISCOVERY_OUTPUT_BYTES:
+                raise ProviderOperationError("the Provider catalog exceeds the output byte limit")
+            items.append(description)
+        return ModelDescriptionCollection(items=tuple(items))
 
     async def describe(
         self,
@@ -77,7 +84,7 @@ class NativeProviderOperations:
                     display_name=match.display_name,
                     metadata=match.metadata,
                 )
-        except Exception:
+        except (ProviderOperationError, ModelResolutionError, TimeoutError):
             # Metadata is advisory; cancellation (BaseException) still propagates.
             return local
         return local
@@ -90,46 +97,36 @@ class NativeProviderOperations:
     async def _list(self, provider: RuntimeProvider) -> list[DiscoveredModelIdentity]:
         discovery = self._registry.integration(provider.type).model_discovery
         if discovery is None:
-            raise ValueError("Provider model discovery is unsupported")
+            raise ProviderOperationError("Provider model discovery is unsupported")
         request = discovery.request(provider)
         params: dict[str, str] = {}
         seen_tokens: set[str] = set()
         indexed: dict[str, DiscoveredModelIdentity] = {}
         for _ in range(_MAX_DISCOVERY_PAGES):
-            async with self._http_client.stream(
-                "GET", request.url, headers=request.headers, params=params, timeout=10
-            ) as response:
-                response.raise_for_status()
-                body = bytearray()
-                async for chunk in response.aiter_bytes():
-                    if len(body) + len(chunk) > _MAX_DISCOVERY_RESPONSE_BYTES:
-                        raise ValueError("the Provider model-list response is too large")
-                    body.extend(chunk)
-            payload = json.loads(body)
+            try:
+                async with self._http_client.stream(
+                    "GET", request.url, headers=request.headers, params=params, timeout=10
+                ) as response:
+                    response.raise_for_status()
+                    body = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(body) + len(chunk) > _MAX_DISCOVERY_RESPONSE_BYTES:
+                            raise ProviderOperationError("the Provider model-list response is too large")
+                        body.extend(chunk)
+                payload = json.loads(body)
+                if not isinstance(payload, dict):
+                    raise ProviderOperationError("the Provider model-list response is invalid")
+            except (httpx2.HTTPError, json.JSONDecodeError, UnicodeDecodeError) as error:
+                raise ProviderOperationError("the Provider model-list request failed") from error
             for item in discovery.parse(payload):
                 indexed[item.upstream_model] = item
-                if len(indexed) > 10000:
-                    raise ValueError("the Provider catalog exceeds the bounded model count")
-            params = _next_page(payload, provider.type)
+                if len(indexed) > _MAX_DISCOVERY_MODELS:
+                    raise ProviderOperationError("the Provider catalog exceeds the bounded model count")
+            params = discovery.next_page(payload)
             if not params:
                 return [indexed[key] for key in sorted(indexed)]
             token = json.dumps(params, sort_keys=True)
             if token in seen_tokens:
-                raise ValueError("the Provider repeated its continuation token")
+                raise ProviderOperationError("the Provider repeated its continuation token")
             seen_tokens.add(token)
-        raise ValueError("the Provider catalog exceeds the bounded enumeration budget")
-
-
-def _next_page(payload: dict[str, Any], provider_type: str) -> dict[str, str]:
-    # Reuse the adapter-owned URL, never an upstream next-page URL carrying credentials.
-    token = payload.get("nextPageToken")
-    if isinstance(token, str) and token:
-        return {"pageToken": token}
-    if payload.get("has_more"):
-        last = payload.get("last_id")
-        if not isinstance(last, str) or not last:
-            raise ValueError("the Provider omitted its continuation token")
-        return {"after_id" if provider_type == "anthropic" else "after": last}
-    if payload.get("next") or payload.get("next_cursor") or payload.get("nextLink"):
-        raise ValueError("the Provider returned an unsupported continuation format")
-    return {}
+        raise ProviderOperationError("the Provider catalog exceeds the bounded enumeration budget")

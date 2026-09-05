@@ -21,7 +21,7 @@ from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc
 
-from .domain import Model, ModelLimits, ModelProfile, ModelProvider
+from .domain import Model, ModelProvider
 
 
 class ModelProviderRecord(ResourceCredential, Base):
@@ -114,8 +114,6 @@ class ModelRecord(Base):
     upstream_model: Mapped[str] = mapped_column(String(256))
     model_api: Mapped[str] = mapped_column(String(96))
     settings: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
-    profile: Mapped[dict[str, object]] = mapped_column(JSON)
-    limits: Mapped[dict[str, object]] = mapped_column(JSON)
     enabled: Mapped[bool] = mapped_column(Boolean)
     created_by_type: Mapped[str] = mapped_column(String(32))
     created_by_id: Mapped[str] = mapped_column(String(72))
@@ -136,8 +134,6 @@ class ModelRecord(Base):
             upstream_model=self.upstream_model,
             model_api=self.model_api,
             settings=self.settings,
-            profile=ModelProfile.model_validate(self.profile),
-            limits=ModelLimits.model_validate(self.limits),
             enabled=self.enabled,
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),

@@ -4,7 +4,8 @@ import httpx2
 from pydantic_ai.providers.zai import ZaiProvider
 
 from . import openai_provider
-from .base import ProviderIntegration, bearer_models_request, openai_style_discovery
+from .base import ProviderIntegration, bearer_models_request
+from .openai_provider import openai_style_discovery
 from .types import EmptyProviderConfiguration, RuntimeProvider
 
 

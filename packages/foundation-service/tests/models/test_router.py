@@ -172,7 +172,6 @@ async def test_model_http_lifecycle_has_no_revision_or_default_api(api_client: h
             "name": "Support",
             "upstream_model": "gpt-current",
             "model_api": "openai.responses",
-            "profile": {"supports_tools": True},
         },
     )
     assert created.status_code == 201
@@ -269,3 +268,34 @@ async def test_model_test_rejects_removed_api_selector(api_client):
         f"/api/v1/workspaces/{WORKSPACE_ID}/models/mdl_1234567890abcdef/test", json={"model_api": "openai.responses"}
     )
     assert response.status_code in {400, 422}
+
+
+@pytest.mark.anyio
+async def test_model_capabilities_are_readonly_discovery_information(api_client):
+    provider = (
+        await api_client.post(
+            f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
+            json={"type": "openai", "name": "OpenAI", "credential": "secret"},
+        )
+    ).json()
+    payload = {
+        "key": "primary",
+        "provider_id": provider["id"],
+        "name": "Primary",
+        "upstream_model": "gpt-next",
+        "model_api": "openai.responses",
+        "settings": {"max_tokens": 8000},
+    }
+    url = f"/api/v1/workspaces/{WORKSPACE_ID}/models"
+    for field in ("profile", "limits"):
+        rejected = await api_client.post(url, json=payload | {field: {}})
+        assert rejected.status_code == 400
+    created = await api_client.post(url, json=payload)
+    assert created.status_code == 201
+    assert {"profile", "limits"}.isdisjoint(created.json())
+    assert created.json()["settings"] == {"max_tokens": 8000}
+    for field in ("profile", "limits"):
+        rejected = await api_client.patch(
+            f"{url}/{created.json()['id']}", json={field: {}}, headers={"If-Match": created.headers["etag"]}
+        )
+        assert rejected.status_code == 400

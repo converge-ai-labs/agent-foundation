@@ -10,7 +10,13 @@ import httpx2
 from a13n_harness.errors import ModelResolutionError
 from pydantic_ai.providers import Provider
 
+from ..descriptions import default_description
+from ..domain import ModelDescription
 from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider, ValidatedProviderConfiguration
+
+
+class ProviderOperationError(ValueError):
+    """An expected failure of provider discovery or connection testing."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +42,12 @@ class ModelDiscoveryAdapter(Protocol):
 
     def parse(self, payload: Any) -> list[DiscoveredModelIdentity]: ...
 
+    def next_page(self, payload: Mapping[str, Any]) -> dict[str, str]: ...
+
+    def describe(
+        self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
+    ) -> ModelDescription: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ModelListSchema:
@@ -57,10 +69,10 @@ class JsonModelDiscoveryAdapter:
 
     def parse(self, payload: Any) -> list[DiscoveredModelIdentity]:
         if not isinstance(payload, Mapping):
-            raise ValueError("the Provider model-list response is invalid")
+            raise ProviderOperationError("the Provider model-list response is invalid")
         values = payload.get(self.schema.collection_field)
         if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
-            raise ValueError("the Provider model-list response is invalid")
+            raise ProviderOperationError("the Provider model-list response is invalid")
 
         parsed: list[DiscoveredModelIdentity] = []
         for value in values:
@@ -72,19 +84,22 @@ class JsonModelDiscoveryAdapter:
             model_id = raw_id.removeprefix(self.schema.identifier_prefix).strip()
             if not 1 <= len(model_id) <= 256:
                 continue
-            methods = value.get("supportedGenerationMethods")
-            if isinstance(methods, list) and "generateContent" not in methods:
-                continue
-            if model_id.startswith(("text-embedding-", "whisper-", "tts-", "omni-moderation-")):
-                continue
-            if value.get("type") in ("embedding", "rerank", "moderation", "transcription"):
-                continue
             parsed.append(
                 DiscoveredModelIdentity(
                     model_id, _display_name(value, self.schema.display_name_fields, model_id), dict(value)
                 )
             )
         return parsed
+
+    def next_page(self, payload: Mapping[str, Any]) -> dict[str, str]:
+        if any(payload.get(key) for key in ("has_more", "nextPageToken", "next", "next_cursor", "nextLink")):
+            raise ProviderOperationError("the Provider returned an unsupported continuation format")
+        return {}
+
+    def describe(
+        self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
+    ) -> ModelDescription:
+        return default_description(model_api, upstream_model, display_name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,19 +141,6 @@ class ProviderIntegration:
         if self.endpoint_configuration_field is not None:
             normalized[self.endpoint_configuration_field] = endpoint
         return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
-
-
-def openai_style_discovery(
-    request_builder: Callable[[RuntimeProvider], ModelListRequest],
-) -> JsonModelDiscoveryAdapter:
-    return JsonModelDiscoveryAdapter(
-        request_builder=request_builder,
-        schema=ModelListSchema(
-            collection_field="data",
-            identifier_field="id",
-            display_name_fields=("name",),
-        ),
-    )
 
 
 def bearer_models_request(provider: RuntimeProvider) -> ModelListRequest:

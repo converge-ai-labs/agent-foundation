@@ -6,9 +6,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from .base import (
     ProviderIntegration,
     bearer_models_request,
-    openai_style_discovery,
     require_credential,
 )
+from .openai_provider import openai_style_discovery
 from .types import EmptyProviderConfiguration, RuntimeProvider
 
 

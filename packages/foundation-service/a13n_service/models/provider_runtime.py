@@ -11,7 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.credentials import CredentialSnapshot
-from a13n_service.secrets.crypto import SecretProtector
+from a13n_service.endpoint_policy import EndpointPolicyError
+from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session
 
 from .domain import ModelExecutionSnapshot
@@ -109,7 +110,7 @@ class LiveProviderResolver:
             if validated.endpoint is not None:
                 await self._endpoint_policy.validate(validated.endpoint, resolve_dns=True)
             credential = provider.credential.decrypt(self._protector) if provider.credential is not None else None
-        except Exception as error:
+        except (ValueError, EndpointPolicyError, SecretProtectionError) as error:
             raise ModelResolutionError(
                 "The current Model Provider configuration is unavailable.",
                 code="model_provider_unavailable",
