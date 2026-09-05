@@ -83,7 +83,7 @@ async def test_discovery_refreshes_across_handshake_and_pages(
         idempotency_key="reconnect-pages",
     )
     assert result.status == "ready"
-    assert len(tokens) >= 2
+    assert len(tokens) == 2
     before = next(token for method, cursor, token in requests if method == expiration_boundary and cursor is None)
     after = next(
         token

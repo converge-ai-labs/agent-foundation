@@ -7,7 +7,7 @@ from time import monotonic
 
 import httpx2
 from anyio import sleep
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.management import canonical_json
@@ -164,12 +164,31 @@ class OAuthCredentialRefresh:
             except (ValueError, SecretProtectionError):
                 _reauthorize(connection, now=now)
                 return _RefreshState.unavailable
-            connection.refresh_claim_generation += 1
-            connection.refresh_claim_owner = self._instance_id
-            connection.refresh_claim_expires_at = now + timedelta(seconds=self._lease_seconds)
-            return _Claim(
-                connection.id, connection.credential_generation, connection.refresh_claim_generation, credential
+            # SQLite ignores FOR UPDATE. Compare the observed generations in
+            # the write itself so concurrent readers cannot both claim a token.
+            generation = await session.scalar(
+                update(MCPConnectionRecord)
+                .where(
+                    MCPConnectionRecord.id == connection.id,
+                    MCPConnectionRecord.version == connection.version,
+                    MCPConnectionRecord.status == connection.status,
+                    MCPConnectionRecord.auth_mode == "oauth",
+                    MCPConnectionRecord.deleted_at.is_(None),
+                    MCPConnectionRecord.credential_generation == credential.generation,
+                    MCPConnectionRecord.refresh_claim_generation == connection.refresh_claim_generation,
+                    MCPConnectionRecord.refresh_claim_owner.is_(None),
+                )
+                .values(
+                    refresh_claim_generation=connection.refresh_claim_generation + 1,
+                    refresh_claim_owner=self._instance_id,
+                    refresh_claim_expires_at=now + timedelta(seconds=self._lease_seconds),
+                )
+                .returning(MCPConnectionRecord.refresh_claim_generation)
+                .execution_options(synchronize_session=False)
             )
+            if generation is None:
+                return _RefreshState.refreshing
+            return _Claim(connection.id, credential.generation, generation, credential)
 
     def _owns(self, connection: MCPConnectionRecord, claim: _Claim) -> bool:
         return (

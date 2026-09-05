@@ -139,3 +139,48 @@ async def test_oauth_completion_can_refresh_before_discovery_establishes_ready(m
     requests = mcp_services[2].requests
     assert sum(request.url.path == "/token" for request in requests) == 2
     assert any(request.headers.get("authorization") == "Bearer refreshed-oauth-secret" for request in requests)
+
+
+@pytest.mark.parametrize("separate_instances", [False, True])
+async def test_sqlite_concurrent_refresh_claim_exchanges_old_token_once(
+    mcp_services, connectivity_sessions, credential_protector, monkeypatch, separate_instances
+):
+    import asyncio
+
+    from a13n_service.connectivity.mcp import refresh
+    from anyio import fail_after
+
+    ready = await _expired_connection(mcp_services, connectivity_sessions, credential_protector)
+    original = refresh.require_connection
+    both_read = asyncio.Event()
+    snapshots = []
+
+    async def read_before_either_claims(session, connection_id, **kwargs):
+        connection = await original(session, connection_id, **kwargs)
+        if len(snapshots) < 2:
+            snapshots.append((connection.refresh_claim_generation, connection.credential_generation))
+            assert connection.refresh_claim_owner is None
+            if len(snapshots) == 2:
+                both_read.set()
+            await both_read.wait()
+        return connection
+
+    monkeypatch.setattr(refresh, "require_connection", read_before_either_claims)
+    first = refresh.OAuthCredentialRefresh(
+        connectivity_sessions, mcp_services[1]._oauth, credential_protector, instance_id="first", clock=lambda: NOW
+    )
+    second = (
+        refresh.OAuthCredentialRefresh(
+            connectivity_sessions, mcp_services[1]._oauth, credential_protector, instance_id="second", clock=lambda: NOW
+        )
+        if separate_instances
+        else first
+    )
+    with fail_after(5):
+        results = await asyncio.gather(first.current(ready.id), second.current(ready.id), return_exceptions=True)
+    assert snapshots[0] == snapshots[1]
+    exchanges = [request for request in mcp_services[2].requests if request.url.path == "/token"]
+    assert len(exchanges) == 1, "the same rotating refresh token must not be exchanged twice"
+    assert all(isinstance(result, refresh.CurrentConnection) for result in results), results
+    assert results[0] == results[1]
+    assert results[0].headers == {"Authorization": "Bearer refreshed-oauth-secret"}
