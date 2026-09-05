@@ -66,6 +66,25 @@ class SealedClaim:
 type ClaimResult = ClaimedAttempt | SealedClaim | None
 
 
+@dataclass(frozen=True, slots=True)
+class ScanPosition:
+    available_at: datetime
+    priority: int
+    created_at: datetime
+    run_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RunCandidate:
+    """Detached scheduling metadata; preflight and claim still establish eligibility."""
+
+    tenant_id: str
+    run_id: str
+    runtime_lock_digest: str
+    queue_name: str
+    position: ScanPosition
+
+
 class AttemptScheduler:
     """Use PostgreSQL-owned state to select and establish one Attempt authority."""
 
@@ -85,22 +104,47 @@ class AttemptScheduler:
     async def scan(self, claim: WorkerClaim, *, queue_name: str, limit: int = 32) -> Sequence[str]:
         """Return a bounded deterministic superset of claimable Run identities."""
 
-        if limit < 1 or limit > 1024:
-            raise ValueError("scan limit must be between 1 and 1024")
         if claim.draining:
             return ()
+        candidates = await self.discover(
+            worker_build_id=claim.worker_build_id,
+            handoff_preference_window=claim.handoff_preference_window,
+            tenant_id=claim.tenant_id,
+            runtime_lock_digest=claim.runtime_lock_digest,
+            queue_names=(queue_name,),
+            limit=limit,
+        )
+        return tuple(candidate.run_id for candidate in candidates)
+
+    async def discover(
+        self,
+        *,
+        worker_build_id: str,
+        handoff_preference_window: timedelta,
+        limit: int = 32,
+        after: ScanPosition | None = None,
+        tenant_id: str | None = None,
+        runtime_lock_digest: str | None = None,
+        queue_names: tuple[str, ...] = (),
+    ) -> tuple[RunCandidate, ...]:
+        """Discover work across tenants without an unbounded tenant or Runtime-lock scan."""
+
+        if limit < 1 or limit > 1024:
+            raise ValueError("scan limit must be between 1 and 1024")
+        if handoff_preference_window <= timedelta(0):
+            raise ValueError("handoff_preference_window must be positive")
         now = assume_utc(self._clock())
         predecessor = aliased(RunAttemptRecord)
         same_build_service_drain_ready = and_(
             predecessor.yield_reason == "service_drain",
-            predecessor.worker_build_id == claim.worker_build_id,
-            predecessor.finished_at <= now - claim.handoff_preference_window,
+            predecessor.worker_build_id == worker_build_id,
+            predecessor.finished_at <= now - handoff_preference_window,
         )
         yielded_ready = and_(
             predecessor.status == RunAttemptStatus.yielded.value,
             or_(
                 predecessor.yield_reason == "runner_rotation",
-                predecessor.worker_build_id != claim.worker_build_id,
+                predecessor.worker_build_id != worker_build_id,
                 same_build_service_drain_ready,
             ),
         )
@@ -124,7 +168,15 @@ class AttemptScheduler:
             ),
         )
         statement = (
-            select(RunRecord.id)
+            select(
+                RunRecord.tenant_id,
+                RunRecord.id,
+                RunRecord.runtime_lock_digest,
+                RunRecord.queue_name,
+                RunRecord.available_at,
+                RunRecord.priority,
+                RunRecord.created_at,
+            )
             .outerjoin(EnvironmentRecord, EnvironmentRecord.id == RunRecord.environment_id)
             .outerjoin(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id)
             .outerjoin(
@@ -136,10 +188,7 @@ class AttemptScheduler:
                 ),
             )
             .where(
-                RunRecord.tenant_id == claim.tenant_id,
                 local_backend_eligible(),
-                RunRecord.queue_name == queue_name,
-                RunRecord.runtime_lock_digest == claim.runtime_lock_digest,
                 eligible,
             )
             .order_by(
@@ -150,8 +199,45 @@ class AttemptScheduler:
             )
             .limit(limit)
         )
+        if tenant_id is not None:
+            statement = statement.where(RunRecord.tenant_id == tenant_id)
+        if runtime_lock_digest is not None:
+            statement = statement.where(RunRecord.runtime_lock_digest == runtime_lock_digest)
+        if queue_names:
+            statement = statement.where(RunRecord.queue_name.in_(queue_names))
+        if after is not None:
+            same_time = RunRecord.available_at == after.available_at
+            same_priority = RunRecord.priority == after.priority
+            statement = statement.where(
+                or_(
+                    RunRecord.available_at > after.available_at,
+                    and_(same_time, RunRecord.priority < after.priority),
+                    and_(same_time, same_priority, RunRecord.created_at > after.created_at),
+                    and_(
+                        same_time,
+                        same_priority,
+                        RunRecord.created_at == after.created_at,
+                        RunRecord.id > after.run_id,
+                    ),
+                )
+            )
         async with short_session(self._sessions) as database:
-            return tuple((await database.scalars(statement)).all())
+            rows = (await database.execute(statement)).all()
+            return tuple(
+                RunCandidate(
+                    tenant_id=row.tenant_id,
+                    run_id=row.id,
+                    runtime_lock_digest=row.runtime_lock_digest,
+                    queue_name=row.queue_name,
+                    position=ScanPosition(
+                        available_at=assume_utc(row.available_at),
+                        priority=row.priority,
+                        created_at=assume_utc(row.created_at),
+                        run_id=row.id,
+                    ),
+                )
+                for row in rows
+            )
 
     async def claim(self, run_id: str, claim: WorkerClaim) -> ClaimResult:
         """Try one exact claim or takeover; a changed candidate returns an empty result."""
@@ -414,6 +500,8 @@ __all__ = [
     "AttemptSchedulingError",
     "ClaimResult",
     "ClaimedAttempt",
+    "RunCandidate",
+    "ScanPosition",
     "SealedClaim",
     "WorkerClaim",
 ]

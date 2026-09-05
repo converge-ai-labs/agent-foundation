@@ -261,6 +261,19 @@ class AttemptExecutionService:
             fence=authority.fence,
         )
 
+    async def claim_state_writer(
+        self,
+        authority: AttemptContext,
+        states: RunStateStore,
+        current: StoredRunState,
+    ) -> StoredRunState:
+        """Verify the exact lease before taking object ownership outside the session."""
+
+        if current.envelope.run_id != authority.run_id or current.envelope.thread_id != authority.thread_id:
+            raise AttemptMutationError("Run state does not belong to the claimed Attempt")
+        await self.validate(authority)
+        return await states.claim_writer(current, fence=authority.fence)
+
     async def fail(
         self,
         authority: AttemptContext,

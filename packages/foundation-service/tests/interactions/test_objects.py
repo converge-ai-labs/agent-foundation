@@ -72,13 +72,19 @@ async def test_object_version_and_fence_reject_stale_state_writers(
     assert second_checkpoint.writer_fence == 2
 
 
-async def test_state_read_rejects_metadata_fence_that_disagrees_with_envelope(
+async def test_state_read_rejects_metadata_fence_older_than_checkpoint(
     interaction_object_store: ObjectStore,
 ) -> None:
     store = RunStateStore(interaction_object_store)
     created = await store.create(TENANT_ID, initial_state())
+    created = await store.replace(
+        created,
+        progress_state(created.envelope),
+        run_attempt_id="rat_1234567890abcdef",
+        fence=1,
+    )
     metadata = dict(created.info.metadata)
-    metadata["writer-fence"] = "1"
+    metadata["writer-fence"] = "0"
     await interaction_object_store.put(
         created.info.key,
         created.body,
@@ -87,8 +93,37 @@ async def test_state_read_rejects_metadata_fence_that_disagrees_with_envelope(
         if_match=created.info.version,
     )
 
-    with pytest.raises(RunObjectIntegrityError, match="writer fence does not match"):
+    with pytest.raises(RunObjectIntegrityError, match="writer fence precedes"):
         await store.read(TENANT_ID, created.envelope.run_id)
+
+
+async def test_writer_claim_preserves_checkpoint_and_prevents_previous_owner_writes(
+    object_store: ObjectStore,
+) -> None:
+    store = RunStateStore(object_store)
+    initial = initial_state()
+    created = await store.create(TENANT_ID, initial)
+    first = await store.claim_writer(created, fence=1)
+    second = await store.claim_writer(first, fence=2)
+    with pytest.raises(StaleStateWriter):
+        await store.replace(first, progress_state(initial), run_attempt_id="rat_1234567890abcdef", fence=1)
+    assert first.info.version != created.info.version
+    assert second.info.version != first.info.version
+    assert second.body == first.body == created.body
+    assert second.envelope == initial
+    assert second.envelope.checkpoint_seq == 0
+    assert second.writer_fence == 2
+    assert (await store.read(TENANT_ID, initial.run_id)).writer_fence == 2
+    with pytest.raises(StaleStateWriter):
+        await store.claim_writer(second, fence=1)
+    checkpoint = await store.replace(
+        second,
+        progress_state(initial, fence=2, run_attempt_id="rat_abcdef1234567890"),
+        run_attempt_id="rat_abcdef1234567890",
+        fence=2,
+    )
+    assert checkpoint.envelope.checkpoint_seq == 1
+    assert checkpoint.writer_fence == 2
 
 
 async def test_payload_is_content_addressed_and_idempotent(

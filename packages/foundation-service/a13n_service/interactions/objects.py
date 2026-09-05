@@ -94,6 +94,27 @@ class RunStateStore:
             raise RunObjectIntegrityError("Run state Thread identity does not match relational authority")
         return StoredRunState(envelope, info, digest, body, writer_fence)
 
+    async def claim_writer(self, state: StoredRunState, *, fence: int) -> StoredRunState:
+        """Fence prior writers without inventing a semantic checkpoint or rewriting its provenance."""
+
+        if fence < 1:
+            raise ValueError("Attempt writer fence must be positive")
+        if fence < state.writer_fence:
+            raise StaleStateWriter("Attempt fence is older than the state writer fence")
+        try:
+            info = await self._objects.put(
+                state.info.key,
+                state.body,
+                content_type=RUN_STATE_CONTENT_TYPE,
+                metadata=_state_metadata(state.envelope, state.digest_sha256, writer_fence=fence),
+                if_match=state.info.version,
+            )
+        except ObjectConflict as error:
+            raise StaleStateWriter("Run state changed before writer claim committed") from error
+        _verify_info(info, key=state.info.key, body=state.body, content_type=RUN_STATE_CONTENT_TYPE)
+        _verify_state_metadata(info, envelope=state.envelope, digest=state.digest_sha256)
+        return StoredRunState(state.envelope, info, state.digest_sha256, state.body, fence)
+
     async def replace(
         self,
         state: StoredRunState,
@@ -289,8 +310,8 @@ def _state_metadata(envelope: RunStateEnvelope, digest: str, *, writer_fence: in
 
 def _verify_state_metadata(info: ObjectInfo, *, envelope: RunStateEnvelope, digest: str) -> int:
     writer_fence = _parse_non_negative_int(info, "writer-fence")
-    if writer_fence != envelope.last_checkpoint_fence:
-        raise RunObjectIntegrityError("Run state writer fence does not match its envelope")
+    if writer_fence < envelope.last_checkpoint_fence:
+        raise RunObjectIntegrityError("Run state writer fence precedes its checkpoint fence")
     expected = _state_metadata(envelope, digest, writer_fence=writer_fence)
     for key, value in expected.items():
         if info.metadata.get(key) != value:
