@@ -42,6 +42,16 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+@pytest.fixture(scope="package", autouse=True)
+async def foundation_async_runner(anyio_backend: str) -> AsyncIterator[None]:
+    # Selecting a session-scoped backend alone does not keep AnyIO's runner alive.
+    # Lease it through Foundation fixture teardown so late SQLite worker callbacks
+    # do not target a loop closed after an individual test. Other packages keep
+    # their own runner lifetimes; database/session fixtures remain function-scoped.
+    del anyio_backend
+    yield
+
+
 @pytest.fixture(scope="session")
 def service_sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("service-database") / "template.sqlite3"
