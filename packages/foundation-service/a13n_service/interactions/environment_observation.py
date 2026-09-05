@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -10,18 +9,15 @@ from typing import Literal, Protocol
 
 from a13n_environment_provider import (
     Environment,
-    EnvironmentAvailability,
-    EnvironmentDescriptor,
     EnvironmentError,
-    EnvironmentOperationFamily,
-    EnvironmentOperations,
     EnvironmentProviderError,
-    EnvironmentState,
 )
+from a13n_environment_provider.management import EnvironmentScope
 from a13n_harness import EnvironmentAccess, EnvironmentEntry, EnvironmentMount
+from a13n_logging import get_logger
 from pydantic import JsonValue, TypeAdapter
 
-logger = logging.getLogger("a13n_service.interactions.environment_observation")
+logger = get_logger(__name__)
 _JSON_LIST = TypeAdapter(list[JsonValue])
 
 type EnvironmentHookName = Literal[
@@ -46,89 +42,36 @@ class EnvironmentHookProjector(Protocol):
     def project_environment(self, observation: EnvironmentHookObservation) -> None: ...
 
 
-class ObservedEnvironment(Environment):
-    """Preserve one adapter exactly while observing its owned lifecycle calls."""
+class EnvironmentObserver:
+    """Project events without wrapping or controlling the adapter."""
 
     def __init__(
-        self,
-        delegate: Environment,
-        projector: EnvironmentHookProjector,
-        *,
-        access: EnvironmentAccess,
+        self, environment: Environment, projector: EnvironmentHookProjector, *, access: EnvironmentAccess
     ) -> None:
-        super().__init__(delegate.dump_state())
-        self._delegate = delegate
+        self.environment = environment
         self._projector = projector
         self._access = access
         self._correlation: tuple[str, str, str] | None = None
 
-    @property
-    def provider_key(self) -> str:
-        return self._delegate.provider_key
-
-    @property
-    def environment_id(self) -> str:
-        return self._delegate.environment_id
-
-    @property
-    def descriptor(self) -> EnvironmentDescriptor:
-        return self._delegate.descriptor
-
-    @property
-    def availability(self) -> EnvironmentAvailability:
-        return self._delegate.availability
-
-    @property
-    def operations(self) -> EnvironmentOperations:
-        return self._delegate.operations
-
-    def dump_state(self) -> EnvironmentState | None:
-        return self._delegate.dump_state()
-
-    async def _prepare(
-        self,
-        *,
-        thread_id: str,
-        run_id: str,
-        agent_instance_id: str,
-        mount_id: str,
-        host_refs: Mapping[str, str],
-    ) -> None:
-        self._correlation = (thread_id, run_id, mount_id)
-        self._emit(
-            "environment.preparation.started",
-            {
-                "access": self._access.value,
-            },
-        )
-        try:
-            if not self._delegate.is_entered:
-                await self._delegate.enter(
-                    thread_id=thread_id,
-                    run_id=run_id,
-                    agent_instance_id=agent_instance_id,
-                    mount_id=mount_id,
-                    host_refs=host_refs,
-                )
-            await self._delegate.prepare()
-        except BaseException as error:
-            self._emit(
-                "environment.preparation.failed",
-                {
-                    "failure": _safe_failure(error, phase="preparation"),
-                },
-            )
-            raise
-        self._emit_ready()
-
-    def _bind_mount(self, mount_id: str) -> None:
-        if self._delegate.is_entered:
-            self._delegate.bind_mount(mount_id)
+    def observe(self, event: str, scope: EnvironmentScope, error: BaseException | None) -> None:
+        self._correlation = (scope.thread_id, scope.run_id, scope.mount_id)
+        if event == "ready":
+            self._emit_ready()
+        elif event == "started":
+            self._emit("environment.preparation.started", {"access": self._access.value})
+        elif event == "failed":
+            assert error is not None
+            self._emit("environment.preparation.failed", {"failure": _safe_failure(error, phase="preparation")})
+        elif event == "closed":
+            fields: dict[str, JsonValue] = {"status": "failed" if error else "closed"}
+            if error is not None:
+                fields["failure"] = _safe_failure(error, phase="close")
+            self._emit("environment.adapter.closed", fields)
 
     def _emit_ready(self) -> None:
         try:
-            descriptor = self.descriptor
-            availability = self.availability
+            descriptor = self.environment.descriptor
+            availability = self.environment.availability
             operation_families = _JSON_LIST.validate_python(sorted(descriptor.operation_families), strict=True)
             effective_permissions = descriptor.permissions.operations & self._access.permission_set().operations
             permissions = _JSON_LIST.validate_python(sorted(item.value for item in effective_permissions), strict=True)
@@ -148,27 +91,6 @@ class ObservedEnvironment(Environment):
                 extra={"event": "environment_ready_observation_failed"},
             )
 
-    async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
-        await self._delegate.ensure_ready(operations)
-
-    async def _close(self) -> None:
-        self._correlation = (self._scope.thread_id, self._scope.run_id, self._scope.mount_id)
-        try:
-            await self._delegate.close()
-        except BaseException as error:
-            self._emit(
-                "environment.adapter.closed",
-                {
-                    "status": "failed",
-                    "failure": _safe_failure(error, phase="close"),
-                },
-            )
-            raise
-        self._emit("environment.adapter.closed", {"status": "closed"})
-
-    async def _destroy(self) -> None:
-        await self._delegate.destroy()
-
     def _emit(self, event_type: EnvironmentHookName, fields: dict[str, JsonValue]) -> None:
         correlation = self._correlation
         if correlation is None:
@@ -177,7 +99,7 @@ class ObservedEnvironment(Environment):
         try:
             payload: dict[str, JsonValue] = {
                 "mount_id": mount_id,
-                "provider_key": self.provider_key,
+                "provider_key": self.environment.provider_key,
                 **fields,
             }
             self._projector.project_environment(
@@ -207,11 +129,9 @@ def observe_environment_entry(
     projector: EnvironmentHookProjector,
 ) -> EnvironmentEntry:
     mount = entry if isinstance(entry, EnvironmentMount) else EnvironmentMount(entry)
-    return EnvironmentMount(
-        ObservedEnvironment(mount.environment, projector, access=mount.access),
-        access=mount.access,
-        working_directory=mount.working_directory,
-    )
+    observer = EnvironmentObserver(mount.environment, projector, access=mount.access)
+    mount.environment.observe(observer.observe)
+    return mount
 
 
 def _safe_failure(error: BaseException, *, phase: Literal["preparation", "close"]) -> dict[str, JsonValue]:
@@ -229,6 +149,5 @@ def _safe_failure(error: BaseException, *, phase: Literal["preparation", "close"
 __all__ = [
     "EnvironmentHookObservation",
     "EnvironmentHookProjector",
-    "ObservedEnvironment",
     "observe_environment_entry",
 ]

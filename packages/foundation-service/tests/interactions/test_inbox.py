@@ -6,20 +6,14 @@ import pytest
 from a13n_harness import SafeFailure
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
-from a13n_service.interactions import (
-    AttemptExecutionService,
-    AttemptPreparationAccepted,
-    HostContinuationState,
-    RunInputKind,
-    RunLineageKind,
-    RunStateEnvelope,
-)
 from a13n_service.interactions.acceptance import RunAcceptanceService
+from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
 from a13n_service.interactions.control_domain import (
     ThreadInboxStatus,
     normalize_feedback,
 )
 from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
+from a13n_service.interactions.domain import RunInputKind, RunLineageKind
 from a13n_service.interactions.inbox import (
     DatabaseThreadInboxReconciler,
     RedisThreadControlSignals,
@@ -32,6 +26,7 @@ from a13n_service.interactions.models import ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
+from a13n_service.interactions.state import HostContinuationState, RunStateEnvelope
 from a13n_service.storage import ObjectStore, short_session
 from fakeredis.aioredis import FakeRedis
 from sqlalchemy import select

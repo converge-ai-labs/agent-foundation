@@ -3,10 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from a13n_service.interactions import (
-    CompletedOutcomeCandidate,
-    DeferredContinuationState,
-    HostContinuationState,
+from a13n_service.interactions.domain import (
     PendingCallKind,
     PendingCallSummary,
     RecoveryUsage,
@@ -15,9 +12,14 @@ from a13n_service.interactions import (
     Thread,
     ThreadOriginKind,
     ThreadRole,
-    WaitingOutcomeCandidate,
 )
-from a13n_service.interactions.state import validate_state_successor
+from a13n_service.interactions.state import (
+    CompletedOutcomeCandidate,
+    DeferredContinuationState,
+    HostContinuationState,
+    WaitingOutcomeCandidate,
+    validate_state_successor,
+)
 from pydantic import ValidationError
 
 from .conftest import ATTEMPT_ID, initial_state, progress_state

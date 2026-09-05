@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, Request
 
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.public_errors import PublicError
-from a13n_service.request_runtime import get_control_runtime
+from a13n_service.request_runtime import get_process_runtime
 
 from .domain import Thread
 from .thread_creation import allocate_thread
@@ -23,9 +23,13 @@ async def create_thread(
     actor: Annotated[AuthenticatedActor, Depends(authenticate_request)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)],
 ) -> Thread:
-    control = get_control_runtime(request)
-    if control is None:
+    runtime = get_process_runtime(request)
+    if runtime is None or runtime.control is None:
         raise PublicError("control_unavailable", "Thread control is unavailable", status_code=503)
     return await allocate_thread(
-        control.environments, actor=actor, workspace_id=workspace_id, body=body, idempotency_key=idempotency_key
+        runtime.shared.storage.sessions,
+        actor=actor,
+        workspace_id=workspace_id,
+        body=body,
+        idempotency_key=idempotency_key,
     )

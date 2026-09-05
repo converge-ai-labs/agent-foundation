@@ -29,15 +29,15 @@ from a13n_service.agents.domain import AgentConfig, AgentRunOverride, ClientTool
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
-from a13n_service.interactions import (
-    AgentInput,
+from a13n_service.interactions.acceptance import RunAcceptanceReceipt
+from a13n_service.interactions.control_domain import (
     CompletePendingResolution,
     InterruptRequest,
-    RunAcceptanceReceipt,
-    RunStatus,
     SubmittedPendingResolution,
     WaitingRunFeedbackRequest,
 )
+from a13n_service.interactions.domain import RunStatus
+from a13n_service.interactions.input import AgentInput
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.lifecycle import LifecycleEvent
 from a13n_service.public_errors import PublicError

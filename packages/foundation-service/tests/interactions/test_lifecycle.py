@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import anyio
 import pytest
-from a13n_service.interactions import (
+from a13n_service.interactions.domain import (
     RecoveryBudget,
     RecoveryUsage,
     Run,

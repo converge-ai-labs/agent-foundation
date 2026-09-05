@@ -9,30 +9,28 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
-from a13n_service.interactions import (
+from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceService
+from a13n_service.interactions.domain import (
     RecoveryBudget,
     RecoveryUsage,
     Run,
     RunInputKind,
     RunLineageKind,
-    RunObjectIntegrityError,
-    RunPayloadEnvelope,
     RunPayloadObjectRef,
-    RunPayloadStore,
     RunStatus,
     Session,
     Thread,
     ThreadOriginKind,
     ThreadRole,
 )
-from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceService
 from a13n_service.interactions.initialization import (
     RunStateSeed,
     initialize_retry_state,
     initialize_start_state,
 )
 from a13n_service.interactions.models import RunRecord, ThreadRecord
-from a13n_service.interactions.objects import RunStateStore
+from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloadStore, RunStateStore
+from a13n_service.interactions.state import RunPayloadEnvelope
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import ObjectStore, short_session, transaction
 from sqlalchemy import select

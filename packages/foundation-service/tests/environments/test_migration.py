@@ -25,6 +25,9 @@ def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             }
             assert {"recipe", "template_id", "provider_id"} <= revision_columns
             assert "provider" not in revision_columns
+            conditions = {c["name"]: c["sqltext"] for c in inspect(engine).get_check_constraints("environments")}
+            condition = conditions["ck_environments_retention_condition_valid"]
+            assert "active" in condition and "idle" in condition and "waiting_approval" not in condition
         else:
             assert ENVIRONMENT_TABLES.isdisjoint(tables)
     finally:

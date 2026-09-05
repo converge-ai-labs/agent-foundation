@@ -37,26 +37,20 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
 )
-from a13n_service.interactions import (
-    AttemptMutationReceipt,
-    AttemptPreparationAccepted,
-    DeferredContinuationState,
-    EnvironmentHookObservation,
+from a13n_service.interactions.attempts import AttemptMutationReceipt, AttemptPreparationAccepted
+from a13n_service.interactions.environment_observation import EnvironmentHookObservation
+from a13n_service.interactions.harness_control import HarnessContextBinding, HarnessHookBoundary, HarnessRunIdentity
+from a13n_service.interactions.harness_runtime import (
     HarnessCollaborators,
-    HarnessContextBinding,
     HarnessDriver,
-    HarnessHookBoundary,
     HarnessInvocation,
-    HarnessRunIdentity,
-    HostContinuationState,
     ImmediateHarnessInput,
     MaterializedHarnessInput,
     MountedHarnessEnvironments,
-    RunStateEnvelope,
-    RunStateStore,
     SingleHarnessEnvironment,
-    StoredRunState,
 )
+from a13n_service.interactions.objects import RunStateStore, StoredRunState
+from a13n_service.interactions.state import DeferredContinuationState, HostContinuationState, RunStateEnvelope
 from pydantic import TypeAdapter
 from pydantic_ai import Tool
 from pydantic_ai.capabilities import Capability, NodeResult

@@ -11,7 +11,6 @@ from anyio.abc import TaskStatus
 
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment
-from a13n_service.storage import short_session
 
 from .attempts import (
     AttemptAuthorityError,
@@ -21,7 +20,6 @@ from .attempts import (
 )
 from .harness_results import HarnessOutcomeAdapter, RunTerminalCommitter, RunTerminalReceipt
 from .harness_runtime import HarnessDriver, HarnessInvocation, NoHarnessEnvironment, SingleHarnessEnvironment
-from .models import RunRecord
 from .run_control import RunAttemptControl
 
 
@@ -146,11 +144,7 @@ class RunAttemptExecutor[OutputT]:
                     if environment is None:
                         invocation = replace(invocation, environment=NoHarnessEnvironment())
                     else:
-                        async with short_session(self._environments.sessions) as session:
-                            run = await session.get(RunRecord, self._context.run_id)
-                            if run is None or run.environment_access is None:
-                                raise AttemptAuthorityError("Run Environment selection is missing")
-                            access = run.environment_access
+                        access = environment.access
                         invocation = replace(
                             invocation,
                             environment=SingleHarnessEnvironment(

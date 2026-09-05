@@ -165,6 +165,7 @@ class EnvironmentRecord(WorkspaceResource, Base):
             name="ownership_recipe",
         ),
         CheckConstraint("status IN ('unprepared','running','stopped','deleted','unavailable')", name="status_valid"),
+        CheckConstraint("retention_condition IN ('active','idle')", name="retention_condition_valid"),
         Index("ix_environments_maintenance", "next_maintenance_at", "id"),
     )
     provider_id: Mapped[str] = mapped_column(String(72), nullable=False)

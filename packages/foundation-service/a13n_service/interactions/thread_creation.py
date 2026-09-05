@@ -4,12 +4,13 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord
 from a13n_service.durable_operations.idempotency import is_evidence_unique_race
-from a13n_service.environments.domain import ExistingEnvironmentSelection, NewEnvironmentSelection
-from a13n_service.environments.persistence import evidence_record, load_replay, request_identity
-from a13n_service.environments.service import EnvironmentService
+from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
+from a13n_service.environments.domain import NewEnvironmentSelection
+from a13n_service.environments.selection import allocate_selection, resolve_selection
 from a13n_service.iam import AuthenticatedActor, authorize_agent
 from a13n_service.iam.authorization import WorkspaceAction, authorize_workspace
 from a13n_service.ids import new_object_id
@@ -24,7 +25,7 @@ from .thread_domain import CreateThreadRequest
 
 
 async def allocate_thread(
-    service: EnvironmentService,
+    sessions: async_sessionmaker[AsyncSession],
     *,
     actor: AuthenticatedActor,
     workspace_id: str,
@@ -34,7 +35,7 @@ async def allocate_thread(
     now = datetime.now(UTC)
     identity = request_identity(idempotency_key, body)
     try:
-        async with transaction(service.sessions) as session:
+        async with transaction(sessions) as session:
             workspace = await authorize_workspace(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.agent_invoke
             )
@@ -61,15 +62,17 @@ async def allocate_thread(
                 if "environment" not in body.model_fields_set and agent.default_environment_template_id:
                     selected = NewEnvironmentSelection(template_id=agent.default_environment_template_id)
             environment_id = None
-            if isinstance(selected, NewEnvironmentSelection):
-                environment_id = (
-                    await service.allocate(session, actor=actor, workspace_id=workspace_id, selection=selected, now=now)
-                ).id
-            elif isinstance(selected, ExistingEnvironmentSelection):
+            if selected is not None:
                 await authorize_workspace(
-                    session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_use
+                    session,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    action=WorkspaceAction.environment_template_use
+                    if isinstance(selected, NewEnvironmentSelection)
+                    else WorkspaceAction.environment_use,
                 )
-                environment_id = (await service.require_environment(session, actor, selected.environment_id)).id
+                resolved = await resolve_selection(session, workspace_id=workspace_id, choice=selected)
+                environment_id = allocate_selection(session, resolved, now=now).id
             if body.session_id:
                 parent = await session.scalar(
                     select(SessionRecord)
@@ -126,7 +129,7 @@ async def allocate_thread(
             return thread
     except IntegrityError as error:
         if is_evidence_unique_race(error):
-            async with transaction(service.sessions) as session:
+            async with transaction(sessions) as session:
                 await authorize_workspace(
                     session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.agent_invoke
                 )

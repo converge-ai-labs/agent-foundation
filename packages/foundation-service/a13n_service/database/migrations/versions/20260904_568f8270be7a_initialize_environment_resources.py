@@ -125,6 +125,9 @@ def upgrade() -> None:
             name=op.f("ck_environments_status_valid"),
         ),
         sa.CheckConstraint(
+            "retention_condition IN ('active','idle')", name=op.f("ck_environments_retention_condition_valid")
+        ),
+        sa.CheckConstraint(
             "generation >= 0 AND operation_generation >= 0", name=op.f("ck_environments_generation_nonnegative")
         ),
         sa.ForeignKeyConstraint(

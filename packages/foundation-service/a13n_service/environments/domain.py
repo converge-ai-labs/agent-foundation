@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 from a13n_environment_provider import EnvironmentState
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 from a13n_service.iam.domain import ObjectId
 
@@ -37,33 +37,8 @@ class RetentionWindow(DomainModel):
         return self
 
 
-class ApprovalRetentionOverride(DomainModel):
-    stop_after: Duration | None = None
-    delete_after: Duration | None = None
-
-    @model_serializer
-    def serialize_overrides(self) -> dict[str, int | None]:
-        return {name: getattr(self, name) for name in self.model_fields_set}
-
-
 class RetentionPolicy(DomainModel):
     idle: RetentionWindow
-    waiting_approval: ApprovalRetentionOverride = Field(default_factory=ApprovalRetentionOverride)
-
-    def window(self, condition: Literal["idle", "waiting_approval"]) -> RetentionWindow:
-        if condition == "idle":
-            return self.idle
-        return RetentionWindow.model_validate(
-            {
-                **self.idle.model_dump(),
-                **self.waiting_approval.model_dump(exclude_unset=True),
-            }
-        )
-
-    @model_validator(mode="after")
-    def validate_approval_deadlines(self) -> RetentionPolicy:
-        self.window("waiting_approval")
-        return self
 
 
 class EnvironmentProvider(DomainModel):
@@ -79,10 +54,13 @@ class EnvironmentProvider(DomainModel):
     updated_at: datetime
 
 
-class TemplateConfiguration(DomainModel):
-    provider_id: ObjectId
+class EnvironmentConfiguration(DomainModel):
     configuration_schema_version: str = "1"
     configuration: JsonObject
+
+
+class TemplateConfiguration(EnvironmentConfiguration):
+    provider_id: ObjectId
     access: EnvironmentAccess = EnvironmentAccess.full
     preparation: Literal["on_run", "on_use"] = "on_run"
     retention: RetentionPolicy
@@ -128,7 +106,7 @@ class Environment(DomainModel):
     access: EnvironmentAccess
     generation: int
     status: EnvironmentStatus
-    retention_condition: Literal["active", "idle", "waiting_approval"]
+    retention_condition: Literal["active", "idle"]
     condition_since: datetime
     created_at: datetime
     updated_at: datetime
@@ -177,10 +155,8 @@ class UpdateTemplateRequest(DomainModel):
     archived: bool | None = None
 
 
-class RegisterEnvironmentRequest(DomainModel):
+class RegisterEnvironmentRequest(EnvironmentConfiguration):
     provider_id: ObjectId
-    configuration_schema_version: str = "1"
-    configuration: JsonObject
     state: EnvironmentState | None = None
     access: EnvironmentAccess = EnvironmentAccess.full
 
@@ -196,7 +172,7 @@ class Collection[T](DomainModel):
 def retention_action(
     policy: RetentionPolicy,
     *,
-    condition: Literal["active", "idle", "waiting_approval"],
+    condition: Literal["active", "idle"],
     since: datetime,
     status: EnvironmentStatus,
     now: datetime,
@@ -204,7 +180,7 @@ def retention_action(
     """Choose a due action from condition time; stopping never resets this clock."""
     if condition == "active" or status in {EnvironmentStatus.unprepared, EnvironmentStatus.deleted}:
         return None
-    window = policy.window(condition)
+    window = policy.idle
     if window.delete_after is not None and now >= since + timedelta(seconds=window.delete_after):
         return "delete"
     if (

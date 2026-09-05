@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from a13n_harness import HarnessEvent, HarnessRunResult, HarnessRunResultEvent, HarnessState, SafeFailure
-from a13n_service.interactions import EnvironmentHookObservation
+from a13n_service.interactions.environment_observation import EnvironmentHookObservation
 from a13n_service.run_stream import (
     MAX_RUN_STREAM_PAYLOAD_BYTES,
     RedisRunStream,

@@ -8,46 +8,44 @@ from a13n_harness import SafeFailure
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
-from a13n_service.interactions import (
+from a13n_service.interactions.acceptance import RunAcceptanceService
+from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
     AttemptContext,
     AttemptExecutionService,
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
-    AttemptScheduler,
-    ClaimedAttempt,
-    CompletedOutcomeCandidate,
-    DeferredContinuationState,
-    HostContinuationState,
+)
+from a13n_service.interactions.domain import (
     PendingCallKind,
     PendingCallSummary,
     RecoveryBudget,
     RecoveryUsage,
     Run,
-    RunAcceptanceService,
     RunAttemptYieldReason,
     RunInputKind,
     RunLineageKind,
-    RunObjectIntegrityError,
-    RunOutcomeService,
-    RunPayloadEnvelope,
     RunPayloadObjectRef,
-    RunPayloadStore,
     RunPendingSummary,
-    RunStateEnvelope,
-    RunStateSeed,
-    RunStateStore,
     RunStatus,
     RunWaitReason,
-    SealedClaim,
     Session,
     Thread,
     ThreadOriginKind,
     ThreadRole,
-    WorkerClaim,
-    initialize_start_state,
 )
+from a13n_service.interactions.initialization import RunStateSeed, initialize_start_state
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
+from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloadStore, RunStateStore
+from a13n_service.interactions.outcomes import RunOutcomeService
+from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt, SealedClaim, WorkerClaim
+from a13n_service.interactions.state import (
+    CompletedOutcomeCandidate,
+    DeferredContinuationState,
+    HostContinuationState,
+    RunPayloadEnvelope,
+    RunStateEnvelope,
+)
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.storage import ObjectStore, short_session
 from sqlalchemy import select
@@ -539,10 +537,10 @@ async def test_yield_prefers_a_different_build_without_consuming_recovery_budget
         assert tuple(event.event_type for event in run_events) == ("run.accepted", "run.running")
 
 
-async def test_waiting_outcome_selects_the_frozen_continuation_head(
+async def _wait_for_approval(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
-) -> None:
+):
     states, run, state = await _accept_root(interaction_sessions, interaction_object_store)
     scheduler = AttemptScheduler(
         interaction_sessions,
@@ -571,6 +569,14 @@ async def test_waiting_outcome_selects_the_frozen_continuation_head(
         clock=lambda: NOW + timedelta(seconds=3),
     ).commit_state_outcome(authority, stored, expected_thread_version=1)
 
+    return run, receipt
+
+
+async def test_waiting_outcome_selects_the_frozen_continuation_head(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+) -> None:
+    run, receipt = await _wait_for_approval(interaction_sessions, interaction_object_store)
     assert receipt.run_status is RunStatus.waiting
     async with short_session(interaction_sessions) as database:
         current = await database.get(RunRecord, run.id)

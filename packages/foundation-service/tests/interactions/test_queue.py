@@ -12,13 +12,8 @@ from a13n_service.hooks.models import HookSubscriptionRecord
 from a13n_service.hooks.validation import EndpointValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.iam.models import RoleBindingRecord
-from a13n_service.interactions import (
-    AttemptExecutionService,
-    AttemptPreparationAccepted,
-    AttemptScheduler,
-    ClaimedAttempt,
-)
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceService
+from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
 from a13n_service.interactions.control_domain import (
     QueuedSubmissionFailure,
     QueuedSubmissionState,
@@ -42,6 +37,7 @@ from a13n_service.interactions.queue import (
     ThreadSubmissionAdmission,
     classify_thread_submission,
 )
+from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import ObjectStore, short_session, transaction
 from sqlalchemy import select

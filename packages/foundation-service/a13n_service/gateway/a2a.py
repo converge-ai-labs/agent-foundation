@@ -29,7 +29,9 @@ from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
-from a13n_service.interactions import InterruptRequest, RunAcceptanceReceipt, RunStatus
+from a13n_service.interactions.acceptance import RunAcceptanceReceipt
+from a13n_service.interactions.control_domain import InterruptRequest
+from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.public_errors import PublicError
 from a13n_service.secrets import SecretProtectionError, SecretProtector

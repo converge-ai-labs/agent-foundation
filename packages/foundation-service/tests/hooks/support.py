@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
-from a13n_service.interactions import (
+from a13n_service.interactions.domain import (
     RecoveryBudget,
     RecoveryUsage,
     Run,

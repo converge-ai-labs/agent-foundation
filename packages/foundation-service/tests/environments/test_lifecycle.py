@@ -74,7 +74,7 @@ async def fixture_environment(service):
             name="Sandbox",
             provider_id=provider.id,
             configuration={},
-            retention={"idle": {"stop_after": 60, "delete_after": 120}, "waiting_approval": {"stop_after": 90}},
+            retention={"idle": {"stop_after": 60, "delete_after": 120}},
         ),
     )
     return await service.create_environment(
@@ -231,6 +231,57 @@ async def test_retention_transition_uses_aggregate_entry_time():
     )
     row = SimpleNamespace(id="env-shared", retention_condition="active", condition_since=now - timedelta(hours=3))
     await refresh_retention(session, row, now)
-    assert row.retention_condition == "waiting_approval" and row.condition_since == now
+    assert row.retention_condition == "idle" and row.condition_since == now
     await refresh_retention(session, row, now + timedelta(seconds=10))
     assert row.condition_since == now
+
+
+async def test_periodic_batches_advance_past_failures_and_exclude_deleted_and_external(
+    environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from a13n_service.environments.domain import NewEnvironmentSelection, RegisterEnvironmentRequest
+    from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
+
+    first = await fixture_environment(environment_service)
+    async with short_session(environment_sessions) as session:
+        from a13n_service.environments.models import EnvironmentTemplateRevisionRecord
+
+        revision = await session.get(EnvironmentTemplateRevisionRecord, first.template_revision_id)
+        template_id = revision.template_id
+    second = await environment_service.create_environment(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=NewEnvironmentSelection(template_id=template_id),
+        idempotency_key="second",
+    )
+    third = await environment_service.create_environment(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=NewEnvironmentSelection(template_id=template_id),
+        idempotency_key="deleted",
+    )
+    external = await environment_service.create_environment(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=RegisterEnvironmentRequest(provider_id=first.provider_id, configuration={"image": "debian:bookworm"}),
+        idempotency_key="external",
+    )
+    now = datetime(2026, 9, 6, tzinfo=UTC)
+    async with transaction(environment_sessions) as session:
+        for index, environment_id in enumerate((first.id, second.id, third.id, external.id)):
+            row = await session.get(EnvironmentRecord, environment_id)
+            row.next_maintenance_at = now - timedelta(seconds=10 - index)
+        (await session.get(EnvironmentRecord, third.id)).status = "deleted"
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    maintain = AsyncMock(side_effect=RuntimeError("provider unavailable"))
+    monkeypatch.setattr(lifecycle, "maintain", maintain)
+    loop = EnvironmentMaintenanceLoop(lifecycle, concurrency=1)
+    await loop.run_once()
+    await loop.run_once()
+    await loop.run_once()
+    assert [call.args[0] for call in maintain.await_args_list] == [first.id, second.id]
+    now += timedelta(seconds=5)
+    await loop.run_once()
+    assert maintain.await_count == 3

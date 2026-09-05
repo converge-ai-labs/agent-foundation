@@ -17,7 +17,7 @@ from a13n_service.assets.errors import AssetError
 from a13n_service.assets.service import AssetService, PreparedAssetPublication
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor
-from a13n_service.interactions import AgentInput
+from a13n_service.interactions.input import AgentInput
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 

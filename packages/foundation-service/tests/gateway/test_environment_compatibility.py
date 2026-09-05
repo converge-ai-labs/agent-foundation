@@ -7,8 +7,9 @@ from a13n_service.gateway.commands import ForkRunRequest, GatewayCommandError
 from a13n_service.gateway.notifications import NotificationService, NotificationSubscription
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.gateway.queue import NativeQueuedSubmissionService
-from a13n_service.interactions import QueuedSubmissionStore, ThreadRunSubmissionRequest
+from a13n_service.interactions.control_domain import ThreadRunSubmissionRequest
 from a13n_service.interactions.models import RunRecord, ThreadRecord
+from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.thread_creation import allocate_thread
 from a13n_service.interactions.thread_domain import CreateThreadRequest
 from a13n_service.run_stream import RunReplayStore
@@ -60,7 +61,7 @@ async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_nu
 ):
     service, _, _ = await recipe(lifecycle_interaction_sessions, tmp_path, "on_use")
     thread = await allocate_thread(
-        service,
+        service.sessions,
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         body=CreateThreadRequest(agent_id=AGENT_ID, environment=None),

@@ -9,13 +9,10 @@ from typing import Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.environments.selection import queued_environment_choice
-from a13n_service.environments.usage import (
-    add_run_with_environment,
-    lock_run_environments,
-    schedule_environment_maintenance,
-)
+from a13n_service.environments.usage import lock_run_environments, schedule_environment_maintenance
 from a13n_service.hooks import InlineHookValidator
+from a13n_service.interactions.environment_acceptance import add_run_with_environment
+from a13n_service.interactions.environment_selection import queued_environment_choice
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now

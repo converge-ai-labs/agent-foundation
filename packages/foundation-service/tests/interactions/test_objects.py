@@ -3,16 +3,15 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-from a13n_service.interactions import (
+from a13n_service.interactions.domain import RunPayloadObjectRef
+from a13n_service.interactions.objects import (
     RunObjectIntegrityError,
-    RunPayloadEnvelope,
-    RunPayloadObjectRef,
     RunPayloadStore,
     RunStateStore,
     StaleStateWriter,
     validate_run_payload_reference,
 )
-from a13n_service.interactions.state import RunStateEnvelope
+from a13n_service.interactions.state import RunPayloadEnvelope, RunStateEnvelope
 from a13n_service.storage import ObjectStore
 from a13n_service.storage.codec import DurableObjectCodecError, decode_canonical_model
 from pydantic import TypeAdapter

@@ -16,8 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.ids import new_object_id
-from a13n_service.interactions import (
-    AgentInput,
+from a13n_service.interactions.acceptance import RunAcceptanceReceipt
+from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
     InterruptRequest,
     QueuedSubmission,
@@ -26,7 +26,6 @@ from a13n_service.interactions import (
     QueuedSubmissionMutationReceipt,
     QueuedSubmissionState,
     ReorderQueuedSubmissionsRequest,
-    RunAcceptanceReceipt,
     SteerReceipt,
     SteerStatus,
     ThreadQueueMutationReceipt,
@@ -35,6 +34,7 @@ from a13n_service.interactions import (
     UpdateQueuedSubmissionRequest,
     WaitingRunFeedbackRequest,
 )
+from a13n_service.interactions.input import AgentInput
 from a13n_service.process.runtime import ProcessRuntime
 from a13n_service.public_errors import PublicError
 from a13n_service.request_runtime import get_control_runtime

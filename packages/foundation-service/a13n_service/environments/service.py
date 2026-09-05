@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.durable_operations.idempotency import is_evidence_unique_race
+from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction
@@ -48,8 +49,7 @@ from .models import (
     EnvironmentTemplateRecord,
     EnvironmentTemplateRevisionRecord,
 )
-from .persistence import evidence_record, load_replay, request_identity
-from .selection import allocate_revision
+from .selection import allocate_selection, resolve_selection
 
 
 class EnvironmentService:
@@ -231,12 +231,11 @@ class EnvironmentService:
             )
         except (ValidationError, EnvironmentProviderError) as error:
             raise invalid_environment("Environment template configuration is invalid") from error
-        for condition in ("idle", "waiting_approval"):
-            window = recipe.retention.window(condition)
-            if window.stop_after is not None and not provider.supports_stop:
-                raise invalid_environment("the selected Provider does not support stop")
-            if window.delete_after is not None and not provider.supports_destroy:
-                raise invalid_environment("the selected Provider does not support delete")
+        window = recipe.retention.idle
+        if window.stop_after is not None and not provider.supports_stop:
+            raise invalid_environment("the selected Provider does not support stop")
+        if window.delete_after is not None and not provider.supports_destroy:
+            raise invalid_environment("the selected Provider does not support delete")
 
     @staticmethod
     def _revision(
@@ -298,27 +297,11 @@ class EnvironmentService:
         selection: NewEnvironmentSelection,
         now: datetime,
     ) -> EnvironmentRecord:
-        template = await self._template(session, actor, selection.template_id)
         await authorize_environment_workspace(
             session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_template_use
         )
-        if template.workspace_id != workspace_id or template.archived_at is not None:
-            raise environment_not_found()
-        revision = await session.scalar(
-            select(EnvironmentTemplateRevisionRecord).where(
-                EnvironmentTemplateRevisionRecord.template_id == template.id,
-                EnvironmentTemplateRevisionRecord.version == (selection.version or template.version),
-            )
-        )
-        if revision is None:
-            raise environment_not_found()
-        provider = await self._provider(session, actor, revision.provider_id)
-        if not provider.enabled:
-            raise EnvironmentManagementError(
-                "environment_provider_disabled", "Environment Provider is disabled.", status_code=409
-            )
-        row = allocate_revision(revision, now=now)
-        session.add(row)
+        selected = await resolve_selection(session, workspace_id=workspace_id, choice=selection)
+        row = allocate_selection(session, selected, now=now)
         await session.flush()
         return row
 

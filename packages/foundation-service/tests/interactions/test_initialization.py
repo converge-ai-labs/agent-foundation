@@ -1,16 +1,11 @@
 from a13n_environment_provider import EnvironmentState
 from a13n_harness import HarnessState
-from a13n_service.interactions import (
-    CompletedOutcomeCandidate,
-    ConsumedThreadInboxEntry,
-    DeferredContinuationState,
-    HostContinuationState,
+from a13n_service.interactions.domain import (
     PendingCallKind,
     PendingCallSummary,
     RunInputKind,
     RunLineageKind,
     RunPendingSummary,
-    WaitingOutcomeCandidate,
 )
 from a13n_service.interactions.initialization import (
     RunStateSeed,
@@ -19,6 +14,13 @@ from a13n_service.interactions.initialization import (
     initialize_retry_state,
     initialize_start_state,
     initialize_waiting_continuation_state,
+)
+from a13n_service.interactions.state import (
+    CompletedOutcomeCandidate,
+    ConsumedThreadInboxEntry,
+    DeferredContinuationState,
+    HostContinuationState,
+    WaitingOutcomeCandidate,
 )
 
 from .conftest import AGENT_ID, AGENT_REVISION_ID, ATTEMPT_ID, THREAD_ID, effective_agent_config, initial_state

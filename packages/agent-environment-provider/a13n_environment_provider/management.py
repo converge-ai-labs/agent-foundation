@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import socket
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from .models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
+    EnvironmentError,
     EnvironmentOperationFamily,
     EnvironmentState,
 )
@@ -32,10 +34,14 @@ class EnvironmentScope:
 class Environment(ABC):
     """Fresh single-use process-local adapter for one provider target."""
 
+    recover_on_unavailable: bool = False
+
     def __init__(self, state: EnvironmentState | None) -> None:
         self._known_state = state.model_copy(deep=True) if state is not None else None
         self._lifecycle = "constructed"
         self._prepared = False
+        self._preparation_revision = 0
+        self._observer: Callable[[str, EnvironmentScope, BaseException | None], None] | None = None
         self._prepare_lock = asyncio.Lock()
         self._scope = EnvironmentScope()
         self._host_refs: dict[str, str] = {}
@@ -110,6 +116,7 @@ class Environment(ABC):
         self._lifecycle = "entered"
         if self._prepared:
             self._bind_mount(mount_id)
+            self._observe("ready")
 
     async def prepare(self) -> None:
         async with self._prepare_lock:
@@ -117,6 +124,22 @@ class Environment(ABC):
                 raise RuntimeError("Environment is closed")
             if self._prepared:
                 return
+            await self._prepare_locked()
+
+    def observe(self, callback: Callable[[str, EnvironmentScope, BaseException | None], None]) -> None:
+        """Attach a passive observer; it owns no lifecycle state."""
+        self._observer = callback
+
+    def _observe(self, event: str, error: BaseException | None = None) -> None:
+        if self._observer is not None:
+            try:
+                self._observer(event, self._scope, error)
+            except Exception:
+                logging.getLogger(__name__).exception("Environment lifecycle observation failed")
+
+    async def _prepare_locked(self) -> None:
+        self._observe("started")
+        try:
             await self._prepare(
                 thread_id=self._scope.thread_id,
                 run_id=self._scope.run_id,
@@ -124,7 +147,12 @@ class Environment(ABC):
                 mount_id=self._scope.mount_id,
                 host_refs=self._host_refs,
             )
-            self._prepared = True
+        except BaseException as error:
+            self._observe("failed", error)
+            raise
+        self._prepared = True
+        self._preparation_revision += 1
+        self._observe("ready")
 
     def _bind_mount(self, mount_id: str) -> None:
         """Bind already prepared local operations; implementations perform no target I/O."""
@@ -156,7 +184,30 @@ class Environment(ABC):
         if self._lifecycle != "entered":
             raise RuntimeError("Environment operations require an entered adapter")
         await self.prepare()
-        await self._ensure_ready(operations)
+        revision = self._preparation_revision
+        try:
+            await self._ensure_ready(operations)
+        except EnvironmentError as error:
+            async with self._prepare_lock:
+                if self._lifecycle != "entered":
+                    raise RuntimeError("Environment is closed") from error
+                if revision == self._preparation_revision:
+                    if not self.recover_on_unavailable or error.code != "environment_unavailable":
+                        raise
+                    previous_identity = self.descriptor.backing_identity
+                    self._prepared = False
+                    await self._prepare_locked()
+                    changed = self.descriptor.backing_identity != previous_identity
+                    raise EnvironmentError(
+                        "Environment was rebuilt; previous temporary files and process handles may be gone. Recheck the workspace before continuing."
+                        if changed
+                        else "Environment connection was refreshed. Recheck existing process handles before continuing.",
+                        code="environment_rebuilt" if changed else "environment_connection_refreshed",
+                        details={"environment_id": self.environment_id, "generation": self.descriptor.generation},
+                    ) from error
+            await self._ensure_ready(operations)
+        if self._lifecycle != "entered":
+            raise RuntimeError("Environment is closed")
 
     async def close(self) -> None:
         async with self._prepare_lock:
@@ -165,6 +216,11 @@ class Environment(ABC):
             self._lifecycle = "closing"
             try:
                 await self._close()
+            except BaseException as error:
+                self._observe("closed", error)
+                raise
+            else:
+                self._observe("closed")
             finally:
                 self._lifecycle = "closed"
 

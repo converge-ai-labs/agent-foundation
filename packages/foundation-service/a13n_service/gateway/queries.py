@@ -23,7 +23,7 @@ from a13n_service.iam import (
     authorize_agent_scoped_collection,
     authorize_workspace,
 )
-from a13n_service.interactions import RunLineageKind, RunStatus
+from a13n_service.interactions.domain import RunLineageKind, RunStatus
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.reconciliation import load_owning_run

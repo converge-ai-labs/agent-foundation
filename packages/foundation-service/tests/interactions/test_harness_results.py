@@ -5,15 +5,10 @@ import hashlib
 import pytest
 import rfc8785
 from a13n_harness import HarnessRunResult
-from a13n_service.interactions import (
-    CompletedOutcomeCandidate,
-    HarnessOutcomeProjectionError,
-    PendingCallKind,
-    RunPayloadStore,
-    RunWaitReason,
-    StoredHarnessOutcomeAdapter,
-    WaitingOutcomeCandidate,
-)
+from a13n_service.interactions.domain import PendingCallKind, RunWaitReason
+from a13n_service.interactions.harness_results import HarnessOutcomeProjectionError, StoredHarnessOutcomeAdapter
+from a13n_service.interactions.objects import RunPayloadStore
+from a13n_service.interactions.state import CompletedOutcomeCandidate, WaitingOutcomeCandidate
 from a13n_service.storage import ObjectStore
 from pydantic import TypeAdapter
 from pydantic_ai.messages import ToolCallPart

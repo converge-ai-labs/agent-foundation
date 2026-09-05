@@ -4,31 +4,37 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from a13n_environment_provider import (
     Environment,
     EnvironmentAvailability,
     EnvironmentDescriptor,
-    EnvironmentError,
     EnvironmentOperationFamily,
     EnvironmentOperations,
     EnvironmentState,
 )
 from a13n_logging import get_logger
+from anyio import fail_after
 
-from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import short_session
 
+from .configuration import load_configuration
 from .domain import TemplateConfiguration
 from .lifecycle import EnvironmentLifecycle, EnvironmentOperationBusy
-from .models import EnvironmentProviderRecord, EnvironmentRecord, EnvironmentTemplateRevisionRecord
+from .models import EnvironmentProviderRecord, EnvironmentRecord
+
+if TYPE_CHECKING:
+    from a13n_service.interactions.attempts import AttemptContext
 
 logger = get_logger(__name__)
 
 
 class RunEnvironment(Environment):
     """Hold one logical selection while the lifecycle owner supplies current target state."""
+
+    recover_on_unavailable = True
 
     def __init__(
         self,
@@ -37,6 +43,7 @@ class RunEnvironment(Environment):
         environment_id: str,
         provider_key: str,
         descriptor: EnvironmentDescriptor,
+        access: str,
     ) -> None:
         super().__init__(None)
         self._coordinator = lifecycle
@@ -46,6 +53,7 @@ class RunEnvironment(Environment):
         self._configured_descriptor = descriptor
         self._delegate: Environment | None = None
         self._generation = 0
+        self.access = access
 
     @property
     def backing_generation(self) -> int:
@@ -80,6 +88,14 @@ class RunEnvironment(Environment):
     async def _prepare(
         self, *, thread_id: str, run_id: str, agent_instance_id: str, mount_id: str, host_refs: Mapping[str, str]
     ) -> None:
+        if self._delegate is not None:
+            self._cache_state(self._delegate.dump_state())
+            delegate, self._delegate = self._delegate, None
+            try:
+                with fail_after(10, shield=True):
+                    await delegate.close()
+            except Exception:
+                logger.exception("Discarded Environment connection cleanup failed")
         async with asyncio.timeout(self._coordinator.timeout_seconds + 10):
             while True:
                 try:
@@ -89,13 +105,22 @@ class RunEnvironment(Environment):
                     await asyncio.sleep(0.1)
         result = await self._coordinator.execute(operation)
         delegate = result.environment
-        await delegate.enter(
-            thread_id=thread_id,
-            run_id=run_id,
-            agent_instance_id=agent_instance_id,
-            mount_id=mount_id,
-            host_refs=host_refs,
-        )
+        self._cache_state(delegate.dump_state())
+        try:
+            await delegate.enter(
+                thread_id=thread_id,
+                run_id=run_id,
+                agent_instance_id=agent_instance_id,
+                mount_id=mount_id,
+                host_refs=host_refs,
+            )
+        except BaseException as error:
+            try:
+                with fail_after(10, shield=True):
+                    await delegate.close()
+            except BaseException as cleanup_error:
+                error.add_note(f"Environment cleanup also failed: {cleanup_error!r}")
+            raise
         self._delegate, self._generation = delegate, result.generation
 
     def _bind_mount(self, mount_id: str) -> None:
@@ -106,46 +131,10 @@ class RunEnvironment(Environment):
         if self._delegate is None:
             raise RuntimeError("Environment was not prepared")
         await self._coordinator.validate_use(self._attempt, self.environment_id)
-        delegate = self._delegate
-        try:
-            await delegate.ensure_ready(operations)
-        except EnvironmentError as error:
-            if error.code != "environment_unavailable":
-                raise
-            # This is a readiness check before operation dispatch. Never replay a
-            # file/shell/process operation whose outcome is unknown.
-            async with self._prepare_lock:
-                if self._delegate is delegate:
-                    previous_generation = self._generation
-                    self._prepared = False
-                    self._delegate = None
-                    try:
-                        await delegate.close()
-                    except Exception:
-                        logger.exception("Discarded Environment connection cleanup failed")
-                    await self._prepare(
-                        thread_id=self._scope.thread_id,
-                        run_id=self._scope.run_id,
-                        agent_instance_id=self._scope.agent_instance_id,
-                        mount_id=self._scope.mount_id,
-                        host_refs=self._host_refs,
-                    )
-                    self._prepared = True
-                    changed = self._generation != previous_generation
-                    raise EnvironmentError(
-                        "Environment was rebuilt; previous temporary files and process handles may be gone. Recheck the workspace before continuing."
-                        if changed
-                        else "Environment connection was refreshed. Recheck existing process handles before continuing.",
-                        code="environment_rebuilt" if changed else "environment_connection_refreshed",
-                        details={"environment_id": self.environment_id, "generation": self.descriptor.generation},
-                    ) from error
-            current = self._delegate
-            if current is None:
-                raise RuntimeError("Environment recovery did not publish a delegate") from error
-            await current.ensure_ready(operations)
+        await self._delegate.ensure_ready(operations)
 
     def dump_state(self) -> EnvironmentState | None:
-        return self._delegate.dump_state() if self._delegate else None
+        return self._delegate.dump_state() if self._delegate else super().dump_state()
 
     async def _close(self) -> None:
         if self._delegate is not None:
@@ -168,26 +157,15 @@ async def prepare_run_environment(lifecycle: EnvironmentLifecycle, attempt: Atte
         provider = await session.get(EnvironmentProviderRecord, row.provider_id)
         if provider is None or not provider.enabled:
             raise ValueError("Environment Provider is unavailable")
-        revision = (
-            await session.get(EnvironmentTemplateRevisionRecord, row.template_revision_id)
-            if row.template_revision_id
-            else None
-        )
-        recipe = TemplateConfiguration.model_validate(
-            revision.recipe
-            if revision
-            else {
-                **(row.external_configuration or {}),
-                "provider_id": provider.id,
-                "retention": {"idle": {"stop_after": None, "delete_after": None}},
-            }
-        )
+        configuration = await load_configuration(session, row)
         implementation = lifecycle.catalog.require(provider.type)
-        configuration = implementation.validate_configuration(
-            schema_version=recipe.configuration_schema_version, value=recipe.configuration
+        validated = implementation.validate_configuration(
+            schema_version=configuration.configuration_schema_version, value=configuration.configuration
         )
-        descriptor = implementation.describe_configuration(configuration)
-        environment = RunEnvironment(lifecycle, attempt, row.id, provider.type, descriptor)
-    if recipe.preparation == "on_run":
+        descriptor = implementation.describe_configuration(validated)
+        if run.environment_access is None:
+            raise ValueError("Run Environment access is missing")
+        environment = RunEnvironment(lifecycle, attempt, row.id, provider.type, descriptor, run.environment_access)
+    if not isinstance(configuration, TemplateConfiguration) or configuration.preparation == "on_run":
         await environment.prepare()
     return environment

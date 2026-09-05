@@ -18,6 +18,7 @@ from a13n_environment_provider import (
     EnvironmentState,
 )
 from a13n_environment_provider.management import ProviderRuntimeContext
+from anyio import fail_after
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -34,14 +35,14 @@ from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from .domain import EnvironmentStatus, JsonObject, TemplateConfiguration, retention_action
+from .configuration import load_configuration
+from .domain import EnvironmentConfiguration, EnvironmentStatus, JsonObject, TemplateConfiguration, retention_action
 from .errors import is_target_identity_conflict
 from .identity import target_identity as scoped_target_identity
 from .models import (
     EnvironmentCommandRecord,
     EnvironmentProviderRecord,
     EnvironmentRecord,
-    EnvironmentTemplateRevisionRecord,
 )
 from .retention import has_active_use, refresh_retention
 
@@ -61,9 +62,8 @@ class LifecycleOperation:
     provider_type: str
     provider_configuration: JsonObject
     credential: CredentialSnapshot
-    recipe: TemplateConfiguration
+    configuration: EnvironmentConfiguration | TemplateConfiguration
     state: EnvironmentState | None
-    managed: bool
     operation_id: str
     fence: int
     owner: str
@@ -152,27 +152,16 @@ class EnvironmentLifecycle:
                     row.retention_condition = "active"
                     row.condition_since = now
             row.operation_generation += 1
-            row.operation_owner = new_object_id("envowner")
+            owner = new_object_id("envowner")
+            row.operation_owner = owner
             row.operation_expires_at = now + timedelta(seconds=self.timeout_seconds + 10)
             row.next_maintenance_at = now
-            if row.template_revision_id is not None:
-                revision = await session.get(EnvironmentTemplateRevisionRecord, row.template_revision_id)
-                if revision is None:
-                    raise ValueError("Environment recipe is unavailable")
-                recipe = TemplateConfiguration.model_validate(revision.recipe)
-            else:
-                recipe = TemplateConfiguration.model_validate(
-                    {
-                        **(row.external_configuration or {}),
-                        "provider_id": provider.id,
-                        "access": row.access,
-                        "retention": {"idle": {"stop_after": None, "delete_after": None}},
-                    }
-                )
+            configuration = await load_configuration(session, row)
             if action in {"stop", "delete"} and not resuming_operation:
+                assert isinstance(configuration, TemplateConfiguration)
                 condition = await refresh_retention(session, row, now)
                 due = retention_action(
-                    recipe.retention,
+                    configuration.retention,
                     condition=condition,
                     since=assume_utc(row.condition_since),
                     status=EnvironmentStatus(row.status),
@@ -185,12 +174,11 @@ class EnvironmentLifecycle:
                 provider.type,
                 provider.configuration,
                 provider.credential_snapshot(),
-                recipe,
+                configuration,
                 EnvironmentState.model_validate(row.state) if row.state else None,
-                row.ownership == "managed",
                 row.operation_id,
                 row.operation_generation,
-                row.operation_owner,
+                owner,
                 action,
                 row.target_identity,
                 attempt.run_id if attempt else None,
@@ -240,13 +228,17 @@ class EnvironmentLifecycle:
         if provider.credential_model is not None:
             credential = provider.credential_model.model_validate_json(operation.credential.decrypt(self.protector))
         configuration = provider.validate_configuration(
-            schema_version=operation.recipe.configuration_schema_version, value=operation.recipe.configuration
+            schema_version=operation.configuration.configuration_schema_version,
+            value=operation.configuration.configuration,
         )
         runtime = await provider.create_runtime(
             configuration=provider.provider_configuration_model.model_validate(operation.provider_configuration),
             credential=credential,
             context=ProviderRuntimeContext(
-                operation.environment_id, operation.operation_id, self.storage_root, operation.managed
+                operation.environment_id,
+                operation.operation_id,
+                self.storage_root,
+                isinstance(operation.configuration, TemplateConfiguration),
             ),
         )
         return provider.create_environment(
@@ -288,15 +280,16 @@ class EnvironmentLifecycle:
                 )
             # A known target must survive readiness failure or cancellation. Unknown
             # operations retain their identity for reconciliation, never a new create.
-            task = asyncio.create_task(self.publish(operation, environment, error=error))
             try:
-                await asyncio.shield(task)
+                with fail_after(10, shield=True):
+                    await self.publish(operation, environment, error=error)
             except BaseException as publication_error:
                 error.add_note(f"Lifecycle failure publication also failed: {publication_error!r}")
             finally:
                 if environment is not None:
                     try:
-                        await environment.close()
+                        with fail_after(10, shield=True):
+                            await environment.close()
                     except BaseException as cleanup_error:
                         error.add_note(f"Environment cleanup also failed: {cleanup_error!r}")
             raise error
@@ -327,7 +320,8 @@ class EnvironmentLifecycle:
         target_conflict = isinstance(error, EnvironmentError) and error.code == "environment_target_conflict"
         if not target_conflict and (state is not None or succeeded) and operation.action in {"prepare", "reconcile"}:
             configuration = provider.validate_configuration(
-                schema_version=operation.recipe.configuration_schema_version, value=operation.recipe.configuration
+                schema_version=operation.configuration.configuration_schema_version,
+                value=operation.configuration.configuration,
             )
             identity = scoped_target_identity(
                 operation.provider_type,
@@ -411,11 +405,10 @@ class EnvironmentLifecycle:
             )
             if row is None or row.ownership != "managed":
                 return
-            revision = await session.get(EnvironmentTemplateRevisionRecord, row.template_revision_id)
-            if revision is None:
-                return
-            recipe = revision.to_resource()
+            configuration = await load_configuration(session, row)
+            assert isinstance(configuration, TemplateConfiguration)
             condition = await refresh_retention(session, row, now)
+            row.next_maintenance_at = now + timedelta(seconds=10)
             if row.operation_id is not None:
                 if row.operation_expires_at is not None and assume_utc(row.operation_expires_at) > now:
                     return
@@ -431,7 +424,7 @@ class EnvironmentLifecycle:
                     action = "reconcile"
             else:
                 action = retention_action(
-                    recipe.retention,
+                    configuration.retention,
                     condition=condition,
                     since=assume_utc(row.condition_since),
                     status=EnvironmentStatus(row.status),
@@ -445,7 +438,6 @@ class EnvironmentLifecycle:
                     and self.catalog.require(provider.type).requires_keepalive
                 ):
                     action = "keepalive"
-            row.next_maintenance_at = now + timedelta(seconds=10)
         if action is not None:
             operation = await self.acquire(environment_id, action)
             result = await self.execute(operation)

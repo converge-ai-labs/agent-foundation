@@ -15,7 +15,7 @@ from a13n_service.agents.domain import (
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
-from a13n_service.interactions import HostContinuationState, RunStateEnvelope
+from a13n_service.interactions.state import HostContinuationState, RunStateEnvelope
 from a13n_service.models.domain import ModelExecutionSnapshot
 from a13n_service.storage import transaction
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig

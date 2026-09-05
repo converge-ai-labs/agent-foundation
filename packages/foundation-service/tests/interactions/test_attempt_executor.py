@@ -19,8 +19,8 @@ from a13n_harness import (
 )
 from a13n_harness.errors import RunError
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
-from a13n_service.interactions import (
-    AdaptedThreadInboxEntry,
+from a13n_service.interactions.attempt_executor import ControlWatcher, LeaseMonitor, RunAttemptExecutor
+from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
     AttemptContext,
     AttemptExecutionService,
@@ -28,27 +28,23 @@ from a13n_service.interactions import (
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
     AttemptPreparationResult,
-    CompletedOutcomeCandidate,
-    ConsumedThreadInboxEntry,
-    ControlWatcher,
-    EnvironmentHookObservation,
-    HarnessCollaborators,
-    HarnessContextBinding,
-    HarnessDriver,
-    HarnessHookBoundary,
-    HarnessInvocation,
+)
+from a13n_service.interactions.environment_observation import EnvironmentHookObservation
+from a13n_service.interactions.harness_control import HarnessContextBinding, HarnessHookBoundary, HarnessRunIdentity
+from a13n_service.interactions.harness_results import (
     HarnessOutcomeProjection,
-    HarnessRunIdentity,
-    ImmediateHarnessInput,
-    LeaseMonitor,
-    RunAttemptControl,
-    RunAttemptExecutor,
-    RunStateEnvelope,
-    RunStateStore,
     RunTerminalDisposition,
     RunTerminalReceipt,
-    StoredRunState,
 )
+from a13n_service.interactions.harness_runtime import (
+    HarnessCollaborators,
+    HarnessDriver,
+    HarnessInvocation,
+    ImmediateHarnessInput,
+)
+from a13n_service.interactions.objects import RunStateStore, StoredRunState
+from a13n_service.interactions.run_control import AdaptedThreadInboxEntry, RunAttemptControl
+from a13n_service.interactions.state import CompletedOutcomeCandidate, ConsumedThreadInboxEntry, RunStateEnvelope
 from a13n_service.storage import ObjectStore
 from anyio import Event, create_task_group, sleep_forever
 from pydantic_ai.messages import ModelMessage

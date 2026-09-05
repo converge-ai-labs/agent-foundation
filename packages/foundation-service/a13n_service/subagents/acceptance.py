@@ -9,10 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.environments.domain import ExistingEnvironmentSelection
-from a13n_service.environments.selection import child_environment_choice
-from a13n_service.environments.usage import (
-    add_run_with_environment,
-)
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
@@ -21,6 +17,8 @@ from a13n_service.interactions.acceptance import (
 from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority, read_attempt_authority
 from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import Run, StrictModel, Thread
+from a13n_service.interactions.environment_acceptance import add_run_with_environment
+from a13n_service.interactions.environment_selection import child_environment_choice
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import (
     RUN_STATE_CONTENT_TYPE,

@@ -1,8 +1,9 @@
-"""Environment persistence values shared by transactional service operations."""
+"""HTTP mutation request identity and replay evidence."""
 
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime
 
 from pydantic import BaseModel
@@ -19,18 +20,22 @@ from a13n_service.durable_operations.idempotency import (
 )
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import AuthenticatedActor
-
-from .errors import EnvironmentManagementError
+from a13n_service.public_errors import PublicError
 
 
 def request_identity(idempotency_key: str, request: BaseModel) -> IdempotencyIdentity:
     try:
         key_digest = digest_visible_ascii_key(idempotency_key)
     except InvalidIdempotencyKey as error:
-        raise EnvironmentManagementError(
-            "idempotency_key_invalid", "Invalid Idempotency-Key.", status_code=400
-        ) from error
-    request_digest = hashlib.sha256(request.model_dump_json(by_alias=True, exclude_unset=True).encode()).hexdigest()
+        raise PublicError("idempotency_key_invalid", "Invalid Idempotency-Key.", status_code=400) from error
+    request_digest = hashlib.sha256(
+        json.dumps(
+            request.model_dump(mode="json", by_alias=True, exclude_unset=True),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode()
+    ).hexdigest()
     return IdempotencyIdentity(key_digest, request_digest)
 
 
@@ -57,7 +62,7 @@ async def load_replay(
             now=now,
         )
     except IdempotencyConflict as error:
-        raise EnvironmentManagementError(
+        raise PublicError(
             "idempotency_conflict",
             "The Idempotency-Key was already used with different request content.",
             status_code=409,

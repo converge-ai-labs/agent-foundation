@@ -17,6 +17,7 @@ from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.etags import resource_etag
 from a13n_service.interactions.thread_creation import allocate_thread
 from a13n_service.interactions.thread_domain import CreateThreadRequest
+from a13n_service.public_errors import PublicError
 from a13n_service.storage import short_session
 from pydantic import ValidationError
 
@@ -82,30 +83,32 @@ async def test_template_allocation_is_inert_and_revision_is_frozen(environment_s
     assert later.id != environment.id and later.template_revision_id == revision.id
 
 
-async def test_empty_thread_allocates_only_metadata_and_distinguishes_null(environment_service, tmp_path):
+async def test_empty_thread_allocates_only_metadata_and_distinguishes_null(
+    environment_service, environment_sessions, tmp_path
+):
     _, template = await create_recipe(environment_service, tmp_path / "absent", preparation="on_use")
     body = CreateThreadRequest(environment=NewEnvironmentSelection(template_id=template.id))
     thread = await allocate_thread(
-        environment_service, actor=actor(), workspace_id=WORKSPACE_ID, body=body, idempotency_key="thread"
+        environment_sessions, actor=actor(), workspace_id=WORKSPACE_ID, body=body, idempotency_key="thread"
     )
     assert thread.current_run_id is None and thread.head_run_id is None and thread.default_environment_id
     assert (
         await allocate_thread(
-            environment_service, actor=actor(), workspace_id=WORKSPACE_ID, body=body, idempotency_key="thread"
+            environment_sessions, actor=actor(), workspace_id=WORKSPACE_ID, body=body, idempotency_key="thread"
         )
         == thread
     )
     assert not (tmp_path / "absent").exists()
     await allocate_thread(
-        environment_service,
+        environment_sessions,
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         body=CreateThreadRequest(),
         idempotency_key="null-distinction",
     )
-    with pytest.raises(EnvironmentManagementError, match="different request"):
+    with pytest.raises(PublicError, match="different request"):
         await allocate_thread(
-            environment_service,
+            environment_sessions,
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             body=CreateThreadRequest(environment=None),
@@ -121,7 +124,7 @@ async def test_provider_disable_blocks_new_allocation(environment_service, tmp_p
         request=UpdateProviderRequest(enabled=False),
         if_match=resource_etag(provider.id, provider.updated_at),
     )
-    with pytest.raises(EnvironmentManagementError, match="disabled"):
+    with pytest.raises(EnvironmentManagementError, match="unavailable"):
         await environment_service.create_environment(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
@@ -148,13 +151,11 @@ async def test_local_provider_rejects_destructive_retention(environment_service,
         )
 
 
-@pytest.mark.parametrize("condition,stop", [("idle", 600), ("waiting_approval", 3600)])
-async def test_stop_never_resets_deletion_deadline(condition, stop):
-    policy = RetentionPolicy.model_validate(
-        {"idle": {"stop_after": 600, "delete_after": 604800}, "waiting_approval": {"stop_after": 3600}}
-    )
+async def test_stop_never_resets_deletion_deadline():
+    condition, stop = "idle", 600
+    policy = RetentionPolicy.model_validate({"idle": {"stop_after": 600, "delete_after": 604800}})
     restored = RetentionPolicy.model_validate_json(policy.model_dump_json())
-    assert restored.window(condition).delete_after == 604800
+    assert restored.idle.delete_after == 604800
     start = datetime(2026, 9, 1, tzinfo=UTC)
     assert (
         retention_action(
@@ -180,17 +181,15 @@ async def test_stop_never_resets_deletion_deadline(condition, stop):
     )
 
 
-async def test_explicit_null_disables_approval_action_and_invalid_deadlines_fail():
-    policy = RetentionPolicy.model_validate(
-        {"idle": {"stop_after": 60, "delete_after": 120}, "waiting_approval": {"stop_after": None}}
-    )
+async def test_explicit_null_disables_action_and_invalid_deadlines_fail():
+    policy = RetentionPolicy.model_validate({"idle": {"stop_after": None, "delete_after": 120}})
     restored = RetentionPolicy.model_validate_json(policy.model_dump_json())
-    assert restored.window("waiting_approval").stop_after is None
-    assert restored.window("waiting_approval").delete_after == 120
+    assert restored.idle.stop_after is None
+    assert restored.idle.delete_after == 120
     with pytest.raises(ValidationError):
-        RetentionPolicy.model_validate(
-            {"idle": {"stop_after": 60, "delete_after": 120}, "waiting_approval": {"stop_after": 180}}
-        )
+        RetentionPolicy.model_validate({"idle": {"stop_after": 180, "delete_after": 120}})
+    with pytest.raises(ValidationError):
+        RetentionPolicy.model_validate({"idle": {"stop_after": None, "delete_after": None}, "waiting_approval": {}})
 
 
 async def test_manual_command_is_a_durable_idempotent_receipt(environment_service, environment_sessions):
@@ -311,3 +310,25 @@ async def test_registering_same_target_under_another_provider_is_a_conflict(envi
             idempotency_key="register-second",
         )
     assert caught.value.status_code == 409
+
+
+def test_request_identity_canonicalizes_objects_but_preserves_semantics():
+    from a13n_service.durable_operations.requests import request_identity
+
+    first = CreateTemplateRequest(
+        name="Docker",
+        provider_id="envp_1234567890123456",
+        configuration={"image": "debian:bookworm", "resources": {"cpus": 1, "memory_mb": 512}},
+        retention={"idle": {"stop_after": None, "delete_after": None}},
+    )
+    reordered = first.model_copy(
+        update={"configuration": {"resources": {"memory_mb": 512, "cpus": 1}, "image": "debian:bookworm"}}
+    )
+    assert first == reordered
+    assert request_identity("key", first) == request_identity("key", reordered)
+    changed = first.model_copy(update={"configuration": {"steps": [1, 2]}})
+    reversed_steps = first.model_copy(update={"configuration": {"steps": [2, 1]}})
+    assert request_identity("key", changed) != request_identity("key", reversed_steps)
+    assert request_identity("key", CreateThreadRequest()) != request_identity(
+        "key", CreateThreadRequest(environment=None)
+    )

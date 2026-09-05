@@ -74,7 +74,7 @@ An Environment has one stable Foundation identity independent of its backing con
 | `state`                                  | Latest protected, validated shared `EnvironmentState`, if the Provider requires state                                |
 | `generation`                             | Monotonic backing-target generation; advances on known creation/replacement, not reconnect or resume                 |
 | `status`                                 | `unprepared`, `running`, `stopped`, `deleted` or `unavailable`; a bounded observation, not permanent health evidence |
-| `retention_condition`, `condition_since` | Current aggregate `active`, `waiting_approval` or `idle` condition and its entry time                                |
+| `retention_condition`, `condition_since` | Current aggregate `active` or `idle` condition and its entry time                                                    |
 | lifecycle coordination                   | Bounded current operation identity, lease/fence, requested action, outcome and retry observation                     |
 | timestamps and safe error                | Creation/update times and bounded actionable diagnostics                                                             |
 
@@ -82,9 +82,13 @@ An Environment has one stable Foundation identity independent of its backing con
 
 The Provider ID must equal the referenced template revision's Provider ID. State is protected non-secret data; only current authorized runtime and private management reads can inspect it. A stateless local backend can retain no provider state while still having one Foundation Environment record and a fixed host/root scope. Worker scheduling must honor that scope; the same path on a different host is not the same environment.
 
+Only managed Environments carry a creation recipe, preparation policy and retention policy; a missing managed revision fails explicitly. External configuration is a connection configuration and carries no synthetic template or disabled retention policy.
+
 An externally managed registration supplies a validated existing-target reference and access ceiling for the selected Provider, without a template. The Environment stores that ceiling; a managed Environment derives its ceiling from its frozen template revision. Foundation connects to it but does not create, rebuild, stop or delete it automatically. It cannot claim managed retention guarantees. Same-Workspace registration of an already registered target must reuse its Environment or fail conflict, using the canonical backend-scoped target identity. The uniqueness check spans Provider resource IDs: configuring the same backend twice does not create two lifecycle owners for one target. Target metadata is validated through the same Provider implementation; this is not another target resource or registry. Managed targets carry sufficient ownership evidence to reject adoption under an unrelated Environment. Explicit cross-Workspace registration of the same target is outside this contract and never grants shared lifecycle ownership.
 
 ## Thread Defaults and Run Selection
+
+Interactions owns input validation, source-Run inheritance, Run creation and Thread defaults. Environment selection applies one rule for current or explicit template revisions, archive state, existing references, Provider availability and access ceilings. Management, Thread/Run acceptance and read-only Gateway preflight share that rule. Acceptance reloads and authorizes the selection in the same short transaction as allocation and Run creation; preflight does not grant execution authority.
 
 A root Thread can be created without accepting a Run. Creation requires the Workspace runner authority also used for root Run start, current access to the selected Session and Agent when supplied, and the Environment/template use permission for its selected choice. Creation selects an explicit environment choice or, when absent, the selected Agent's mutable `default_environment_template_id`. It resolves a template's current revision when needed, creates a managed Environment record and records `Thread.default_environment_id`, but performs no external provisioning. An explicit no-environment choice is preserved. If no explicit choice or Agent default exists, the Thread has no Environment. Thread creation and Environment allocation are idempotent and atomic.
 
@@ -197,23 +201,22 @@ retention:
   idle:
     stop_after: 600
     delete_after: 604800
-  waiting_approval:
-    stop_after: 3600
 ```
 
-`idle.stop_after` and `idle.delete_after` are explicitly supplied, with null disabling that action. No example duration is an implicit product default. `waiting_approval` is optional; omitted fields inherit their idle value, while explicit null disables the action for approval waiting. Both use the same two-field policy, and the resolved policy is fixed by the template revision. If both actions are enabled, deletion must be later than stopping. Zero permits immediate action. Unsupported stop/delete capabilities fail configuration validation; no silent conversion of stop to delete is allowed.
+`idle.stop_after` and `idle.delete_after` are explicitly supplied, with null disabling that action. No example duration is an implicit product default. The two-field policy is fixed by the template revision. If both actions are enabled, deletion must be later than stopping. Zero permits immediate action. Unsupported stop/delete capabilities fail configuration validation; no silent conversion of stop to delete is allowed.
 
 Retention conditions are aggregate facts about the Environment, separate from whether its target is running or stopped:
 
-| Condition          | Meaning                                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `active`           | At least one running Run has acquired Environment use, including recovery/backoff of that Run                      |
-| `waiting_approval` | No active use and at least one current, eligible waiting Run awaits approval using an Environment it actually used |
-| `idle`             | Neither of the above                                                                                               |
+| Condition | Meaning                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------- |
+| `active`  | At least one running Run has acquired Environment use, including recovery/backoff of that Run |
+| `idle`    | No running Run has acquired Environment use                                                   |
 
-Waiting for other external results uses idle policy. Historical waiting Runs superseded by Thread advancement do not retain an environment. Selection alone, queued input, a never-used lazy Run and Thread existence do not acquire use or start a target. A Run waiting for approval that never used its lazy environment does not provision it for retention. An already existing target can continue its preexisting retention schedule while a lazy Run has not used it.
+Waiting for approval or any other external result is idle unless another Run still has active use. Selection alone, queued input, a never-used lazy Run and Thread existence do not acquire use or start a target. An existing target continues its retention schedule while a lazy Run has not used it. Approval details and historical waiting Runs are not retention inputs; target-dependent approvals still require revalidation after recovery.
 
-Both deadlines are measured from entry into the selected condition. Stopping does not end approval waiting, reset `condition_since`, or begin another deletion countdown. With the example above, ordinary idle stops after 10 minutes and deletes on day 7; approval waiting stops after one hour and also deletes on day 7. A paused target remains subject to the deletion deadline. If scanning first observes an already-expired delete deadline, it deletes directly rather than requiring an intermediate stop.
+Both deadlines are measured from entry into idle. Stopping does not reset `condition_since` or begin another deletion countdown. With the example above, idle stops after 10 minutes and deletes on day 7, including approval waiting. A stopped target remains subject to deletion. If scanning first observes an expired delete deadline, it deletes directly without an intermediate stop.
+
+One fixed-period maintenance loop visits bounded batches of managed Environments and continues across batches, including after an individual failure. External Environments and confirmed-deleted targets without pending lifecycle work are excluded. Environments whose deadlines have not elapsed remain eligible for later visits. The loop recovers pending lifecycle operations and rechecks usage before dispatch; it does not require per-Environment timers or event-driven deadline scheduling.
 
 A condition change starts that condition's clock; repeated observations or changes among users that leave the aggregate condition unchanged do not reset it. Active use cancels the current inactivity countdown. When use later ends, a new condition begins. A policy/condition change never wakes a stopped target. All state transitions recheck aggregate users and current deadlines under Environment coordination before dispatch. Run status transitions and Environment-use release are atomic; recovery and periodic reconciliation repair observations without double-acquiring or releasing use.
 

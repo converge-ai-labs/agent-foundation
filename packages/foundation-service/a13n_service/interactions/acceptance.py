@@ -11,11 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import canonical_digest
 from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection
-from a13n_service.environments.selection import Omitted, bind_environment_intent, queued_environment_choice
-from a13n_service.environments.usage import add_run_with_environment, schedule_environment_maintenance
+from a13n_service.environments.selection import Omitted
+from a13n_service.environments.usage import schedule_environment_maintenance
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
+from a13n_service.interactions.environment_acceptance import add_run_with_environment
+from a13n_service.interactions.environment_selection import bind_environment_intent, queued_environment_choice
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import utc_now
 

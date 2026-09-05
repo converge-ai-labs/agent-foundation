@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import pytest
 from a13n_service.gateway.queue import DeleteQueuedSubmissionRequest, NativeQueuedSubmissionService
-from a13n_service.interactions import (
+from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
     InterruptRequest,
     QueuedSubmissionState,
-    QueuedSubmissionStore,
     ReorderQueuedSubmissionsRequest,
     ThreadRunSubmissionIntent,
     ThreadRunSubmissionRequest,
@@ -14,6 +13,7 @@ from a13n_service.interactions import (
     WaitingResolutionDefaults,
 )
 from a13n_service.interactions.models import RunRecord
+from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.storage import short_session
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import select

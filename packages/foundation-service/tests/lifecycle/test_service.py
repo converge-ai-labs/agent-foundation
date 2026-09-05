@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.iam.models import RoleBindingRecord
-from a13n_service.interactions import RecoveryUsage, RunAttempt, RunAttemptStatus
+from a13n_service.interactions.domain import RecoveryUsage, RunAttempt, RunAttemptStatus
 from a13n_service.interactions.lifecycle import append_run_attempt_lifecycle, append_run_lifecycle
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.records import run_attempt_record
