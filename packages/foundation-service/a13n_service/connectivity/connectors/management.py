@@ -17,9 +17,9 @@ from a13n_service.iam.authorization import (
     AuthenticatedActor,
     AuthorizationError,
     WorkspaceAction,
-    authorize_workspace,
 )
 from a13n_service.iam.models import SecurityAuditRecord
+from a13n_service.iam.resource_scope import ResourceScope, actor_scope, authorize_resource, authorize_scope
 from a13n_service.ids import new_object_id
 
 from .contracts import ConnectorProviderRuntime
@@ -53,11 +53,11 @@ def configure_provider(
 async def authorize(
     session: AsyncSession,
     actor: AuthenticatedActor,
-    workspace_id: str,
+    workspace_id: str | None,
     action: WorkspaceAction,
 ):
     try:
-        return await authorize_workspace(session, actor=actor, workspace_id=workspace_id, action=action)
+        return await authorize_scope(session, actor=actor, workspace_id=workspace_id, action=action)
     except AuthorizationError as error:
         raise ConnectorError(
             "resource_not_found",
@@ -66,10 +66,20 @@ async def authorize(
         ) from error
 
 
+async def connector_actor_scope(session: AsyncSession, actor: AuthenticatedActor) -> ResourceScope:
+    try:
+        return await actor_scope(session, actor)
+    except AuthorizationError as error:
+        raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404) from error
+
+
 async def require_connector_provider(
-    session: AsyncSession, connector_provider_id: str, *, lock: bool = False
+    session: AsyncSession, connector_provider_id: str, *, scope: ResourceScope, lock: bool = False
 ) -> ConnectorProviderRecord:
-    query = select(ConnectorProviderRecord).where(ConnectorProviderRecord.id == connector_provider_id)
+    query = select(ConnectorProviderRecord).where(
+        ConnectorProviderRecord.id == connector_provider_id,
+        scope.accessible(ConnectorProviderRecord.organization_id, ConnectorProviderRecord.workspace_id),
+    )
     if lock:
         query = query.with_for_update()
     record = await session.scalar(query)
@@ -109,7 +119,7 @@ def audit(
     actor: AuthenticatedActor,
     *,
     organization_id: str,
-    workspace_id: str,
+    workspace_id: str | None,
     action: str,
     resource_type: str,
     resource_id: str,
@@ -142,3 +152,19 @@ def map_management_value_error(error: ConnectivityManagementValueError) -> Conne
 def require_active_provider(record: ConnectorProviderRecord) -> None:
     if record.status != "active":
         raise ConnectorError("connector_provider_disabled", "Connector Provider is disabled.", status_code=409)
+
+
+async def authorize_provider(
+    session: AsyncSession, actor: AuthenticatedActor, record: ConnectorProviderRecord, *, manage: bool = False
+) -> None:
+    try:
+        await authorize_resource(
+            session,
+            actor=actor,
+            organization_id=record.organization_id,
+            workspace_id=record.workspace_id,
+            action=WorkspaceAction.connector_provider_manage if manage else WorkspaceAction.connector_provider_read,
+            manage=manage,
+        )
+    except AuthorizationError as error:
+        raise ConnectorError("resource_not_found", "The requested resource was not found.", status_code=404) from error

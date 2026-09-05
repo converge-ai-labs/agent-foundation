@@ -221,7 +221,7 @@ class AssetService:
 
         if not publications:
             return
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         workspace = await authorize_workspace(
             database,
             actor=actor,
@@ -376,7 +376,7 @@ class AssetService:
             raise
 
     async def delete(self, *, actor: AuthenticatedActor, asset_id: str) -> None:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -445,7 +445,7 @@ class AssetService:
         asset_id: str,
         action: WorkspaceAction,
     ) -> Asset:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         async with transaction(self._sessions) as session:
             workspace = await _authorize_asset_workspace(
                 session,

@@ -22,7 +22,7 @@ def upgrade() -> None:
         "connectivity_commands",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("actor_type", sa.String(length=32), nullable=False),
         sa.Column("actor_id", sa.String(length=72), nullable=False),
         sa.Column("operation", sa.String(length=64), nullable=False),
@@ -48,14 +48,14 @@ def upgrade() -> None:
     op.create_index(
         "uq_connectivity_commands_request",
         "connectivity_commands",
-        ["workspace_id", "actor_type", "actor_id", "operation", "scope_id", "idempotency_key_digest"],
+        ["actor_type", "actor_id", "operation", "scope_id", "idempotency_key_digest"],
         unique=True,
     )
     op.create_table(
         "connector_providers",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("normalized_name", sa.String(length=128), nullable=False),
         sa.Column("type", sa.String(length=64), nullable=False),
@@ -71,18 +71,24 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
-            name=op.f("ck_connector_providers_credential_material_consistent"),
-        ),
-        sa.CheckConstraint(
             "created_by_type IN ('user', 'service_account')", name=op.f("ck_connector_providers_created_by_type_valid")
         ),
         sa.CheckConstraint("status IN ('active', 'disabled')", name=op.f("ck_connector_providers_status_valid")),
+        sa.CheckConstraint(
+            "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
+            name=op.f("ck_connector_providers_credential_material_consistent"),
+        ),
         sa.CheckConstraint(
             "credential_generation >= 1", name=op.f("ck_connector_providers_credential_generation_positive")
         ),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_connector_providers_name_bounded")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_connector_providers_version_positive")),
+        sa.ForeignKeyConstraint(
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_connector_providers_organization_id_organizations"),
+            ondelete="CASCADE",
+        ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
@@ -90,6 +96,14 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_connector_providers")),
+    )
+    op.create_index(
+        "uq_connector_providers_organization_name",
+        "connector_providers",
+        ["organization_id", "normalized_name"],
+        unique=True,
+        postgresql_where=sa.text("workspace_id IS NULL"),
+        sqlite_where=sa.text("workspace_id IS NULL"),
     )
     op.create_index(
         "ix_connector_providers_driver_status", "connector_providers", ["type", "status", "id"], unique=False
@@ -100,12 +114,7 @@ def upgrade() -> None:
         ["workspace_id", "updated_at", "id"],
         unique=False,
     )
-    op.create_index(
-        "uq_connector_providers_id_tenant",
-        "connector_providers",
-        ["id", "organization_id", "workspace_id"],
-        unique=True,
-    )
+    op.create_index("uq_connector_providers_id_tenant", "connector_providers", ["id", "organization_id"], unique=True)
     op.create_index(
         "uq_connector_providers_workspace_name", "connector_providers", ["workspace_id", "normalized_name"], unique=True
     )
@@ -162,10 +171,16 @@ def upgrade() -> None:
         sa.CheckConstraint("setup_generation >= 1", name=op.f("ck_connector_connections_setup_generation_positive")),
         sa.CheckConstraint("version >= 1", name=op.f("ck_connector_connections_version_positive")),
         sa.ForeignKeyConstraint(
-            ["connector_provider_id", "organization_id", "workspace_id"],
-            ["connector_providers.id", "connector_providers.organization_id", "connector_providers.workspace_id"],
+            ["connector_provider_id", "organization_id"],
+            ["connector_providers.id", "connector_providers.organization_id"],
             name=op.f("fk_connector_connections_connector_provider_id_connector_providers"),
             ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "organization_id"],
+            ["workspaces.id", "workspaces.organization_id"],
+            name=op.f("fk_connector_connections_workspace_id_workspaces"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_connector_connections")),
     )

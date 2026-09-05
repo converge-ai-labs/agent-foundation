@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation manages Workspace Environment Providers, versioned Environment Templates, and actual Environments. A template describes how to obtain an environment; an Environment records the logical working environment and its current backing target. Users normally start a Thread with a template selection rather than creating an Environment separately.
+Foundation manages Organization- or Workspace-owned Environment Providers and versioned Environment Templates, plus Workspace-owned actual Environments. A template describes how to obtain an environment; an Environment records the logical working environment and its current backing target. Users normally start a Thread with a template selection rather than creating an Environment separately.
 
 A Thread remembers a mutable default Environment. Each accepted Run fixes its own optional Environment reference independently of Agent configuration. Normal Runs can switch environments; recovery of an accepted Run cannot change its logical Environment selection. A stopped target resumes; a confirmed-deleted managed target is rebuilt from its frozen template revision. Rebuilding changes the backing generation, not the Foundation Environment ID, and does not restore lost files or unknown command outcomes.
 
@@ -13,7 +13,7 @@ The shared [Environment Provider contract](../agent-environment-provider/README.
 | Concern                                                                   | Owner                                               |
 | ------------------------------------------------------------------------- | --------------------------------------------------- |
 | Provider implementation, typed schemas, target operations and state codec | Shared Environment Provider package                 |
-| Configured Provider identity and encrypted credentials                    | Foundation Workspace Provider resource              |
+| Configured Provider identity and encrypted credentials                    | Foundation scoped Provider resource                 |
 | Reusable creation configuration and immutable versions                    | EnvironmentTemplate and EnvironmentTemplateRevision |
 | Current target, generation, preparation and retention coordination        | Environment                                         |
 | Default selection for later Runs                                          | Thread                                              |
@@ -22,13 +22,13 @@ The shared [Environment Provider contract](../agent-environment-provider/README.
 | How to create, resume, connect, retain, stop or delete                    | Provider implementation                             |
 | File, shell and other Agent operation routing                             | Harness through the supplied Environment object     |
 
-One Workspace owns an Environment and its Provider. Threads in that Workspace may share the same Environment record. Cross-Workspace management of the same external target is unsupported; Foundation defines no deployment-global target resource or cross-tenant target deduplication. IDs grant no authority.
+One Workspace owns an actual Environment; its Provider and frozen TemplateRevision can belong to that Workspace or its Organization. Allocation always records the consuming Workspace, independently from the recipe owner. Threads in that Workspace may share the same Environment record. Cross-Workspace management of the same external target is unsupported; Foundation defines no deployment-global target resource or cross-tenant target deduplication. IDs grant no authority.
 
 ## Configured Providers
 
 An Environment Provider resource follows the [Provider naming conventions](../data-conventions.md#public-and-internal-naming). Its `id` identifies configured access to one backend; `type` selects one trusted implementation in the shared catalog. Multiple Provider resources can use the same type with different accounts or endpoints.
 
-The conceptual resource contains `id`, `organization_id`, `workspace_id`, `type`, `name`, typed non-secret `configuration`, `enabled`, `credential_configured`, and timestamps. Organization, Workspace, type and behavior-defining configuration are immutable. Changing account namespace, host, endpoint or other target-defining configuration creates another Provider. Name, enabled status and credentials can change without retargeting existing Environments.
+The conceptual resource contains `id`, `organization_id`, `workspace_id`, `type`, `name`, typed non-secret `configuration`, `enabled`, `credential_configured`, and timestamps. Ownership, type and behavior-defining configuration are immutable. A null `workspace_id` denotes Organization ownership under [Organization-owned configuration](33-identity-and-access-management.md#organization-owned-configuration). Changing account namespace, host, endpoint or other target-defining configuration creates another Provider. Name, enabled status and credentials can change without retargeting existing Environments.
 
 Each Provider owns its encrypted credential bundle using the [resource-owned credential protection contract](27-secret-management.md#protection-boundary), as Model and Connector Providers do. Credential input is separate and write-only; ciphertext, nonce, encryption-key identity and credential generation belong to the Provider record. Reads expose safe metadata only. Replacement advances the credential generation atomically. Templates, Environments, Run state and events contain neither credential values nor Secret-resource references. Runtime uses the current authorized Provider credential; it never selects credentials based on the invoking user's personal Secret.
 
@@ -38,7 +38,7 @@ HTTP Envd is a connect-only external Provider using the existing registration an
 
 ## Templates and Revisions
 
-An `EnvironmentTemplate` is a Workspace resource with stable `id`, `name`, description, `version`, `current_revision_id`, timestamps and archive state. Creation publishes revision 1. Behavior changes publish a higher immutable revision; metadata-only changes do not. Selecting current resolves to an exact revision when an Environment record is allocated. A referenced revision remains retained.
+An `EnvironmentTemplate` is an Organization- or Workspace-owned resource with stable `id`, `name`, description, `version`, `current_revision_id`, timestamps and archive state. Creation publishes revision 1. Behavior changes publish a higher immutable revision; metadata-only changes do not. Selecting current resolves to an exact revision when an Environment record is allocated. A referenced revision remains retained.
 
 The conceptual revision is:
 
@@ -49,7 +49,7 @@ type EnvironmentAccess = Literal["read_only", "read_write", "full"]
 class EnvironmentTemplateRevision:
     id: EnvironmentTemplateRevisionId
     template_id: EnvironmentTemplateId
-    workspace_id: WorkspaceId
+    workspace_id: WorkspaceId | None
     version: int
     provider_id: EnvironmentProviderId
     configuration_schema_version: str
@@ -58,6 +58,8 @@ class EnvironmentTemplateRevision:
     preparation: Literal["on_run", "on_use"] = "on_run"
     retention: EnvironmentRetentionPolicy
 ```
+
+A revision retains its Template's ownership. Organization Templates reference only Organization Providers; Workspace Templates may reference local or parent Providers.
 
 `configuration` is the implementation's desired environment recipe: image or provider template, resource limits, initialization and supported workspace settings. It contains no current sandbox/container ID, credentials, live client or process handle. Required Provider runtime collaborators come from the selected Provider configuration and deployment. Initialization is provider-validated and runs for a new backing target, not on every reconnect. Restoring an earlier recipe creates a new revision.
 
@@ -247,6 +249,8 @@ The public resource catalog is:
 | Explicit lifecycle commands     | `POST /environments/{environment_id}/stop`, `POST /environments/{environment_id}/delete`                       |
 
 Environment creation accepts a template choice or an explicitly externally managed registration. It creates the record without mandatory immediate target preparation, matching Thread allocation. Stop/delete target commands use the [durable operation contract](06-durable-operations-and-outbox.md), reauthorize at dispatch and reject active use; manual commands explicitly override inactivity grace but do not affect unrelated target ownership. Delete here removes the backing target, not retained Environment history. There is no standalone connection test or template trial API. Saving configuration performs deterministic validation; actual preparation verifies runtime availability and reports bounded failures.
+
+Provider and Template collections also expose `POST/GET /organizations/{organization_id}/environment-providers` and `POST/GET /organizations/{organization_id}/environment-templates`. Organization collections contain only Organization-owned configuration; Workspace collections include parent configuration. Detail and revision routes retain their exact resource IDs and authorize reads through the consuming scope and mutations through the owning scope. Actual Environment routes remain Workspace-only.
 
 [Thread and Run control](18-agent-control-input-and-continuation.md) owns invocation routes. `POST /workspaces/{workspace_id}/threads` creates an empty root Thread and optional Session; the combined root Run endpoint remains a convenience invoking the same allocation rules. Thread and Run reads expose safe Environment identity and availability/generation observations, not target credentials, private state or endpoint details.
 

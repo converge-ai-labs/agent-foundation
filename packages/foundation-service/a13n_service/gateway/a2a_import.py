@@ -207,7 +207,7 @@ class A2APartImporter:
         try:
             return await self._assets.prepare_protocol_import(
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 filename=part.filename or f"part-{index}",
                 media_type=part.media_type or None,
                 body=body,

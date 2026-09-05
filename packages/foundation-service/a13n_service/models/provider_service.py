@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
+from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
@@ -44,10 +45,10 @@ from .service_common import ModelError, audit_record, authorize_models, escape_l
 
 
 class ProviderOperations(Protocol):
-    def test(self, *, provider_id: str, organization_id: str, workspace_id: str) -> Awaitable[None]: ...
+    def test(self, *, provider_id: str, organization_id: str, workspace_id: str | None) -> Awaitable[None]: ...
 
     def discover(
-        self, *, provider_id: str, organization_id: str, workspace_id: str
+        self, *, provider_id: str, organization_id: str, workspace_id: str | None
     ) -> Awaitable[ModelDescriptionCollection]: ...
 
     def describe(
@@ -55,7 +56,7 @@ class ProviderOperations(Protocol):
         *,
         provider_id: str,
         organization_id: str,
-        workspace_id: str,
+        workspace_id: str | None,
         provider_type: str,
         upstream_model: str,
         model_api: str | None,
@@ -98,7 +99,7 @@ class ModelProviderService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         request: CreateModelProviderRequest,
     ) -> ModelProvider:
         credential = request.credential.get_secret_value() if request.credential is not None else None
@@ -148,10 +149,17 @@ class ModelProviderService:
                 await session.flush()
                 return record.to_resource()
         except IntegrityError as error:
-            if not is_unique_conflict(
-                error,
-                constraint="uq_model_providers_workspace_name",
-                sqlite_columns="model_providers.workspace_id, model_providers.normalized_name",
+            if not (
+                is_unique_conflict(
+                    error,
+                    constraint="uq_model_providers_workspace_name",
+                    sqlite_columns="model_providers.workspace_id, model_providers.normalized_name",
+                )
+                or is_unique_conflict(
+                    error,
+                    constraint="uq_model_providers_organization_normalized_name",
+                    sqlite_columns="model_providers.organization_id, model_providers.normalized_name",
+                )
             ):
                 raise
             raise ModelError(
@@ -162,7 +170,7 @@ class ModelProviderService:
         except SecretProtectionError as error:
             raise ModelError("invalid_provider_credential", str(error), status_code=400) from error
 
-    async def get(self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str) -> ModelProvider:
+    async def get(self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str) -> ModelProvider:
         async with transaction(self._sessions) as session:
             workspace = await authorize_models(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_read
@@ -180,7 +188,7 @@ class ModelProviderService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         limit: int = 50,
         cursor: str | None = None,
         name: str | None = None,
@@ -198,6 +206,7 @@ class ModelProviderService:
                 raise ModelError("invalid_request", "provider_type is not trusted.", status_code=400) from error
         scope = {
             "workspace_id": workspace_id,
+            "organization_boundary": actor.boundary_organization_id,
             "principal_type": actor.principal.principal_type.value,
             "principal_id": actor.principal.principal_id,
             "name": name,
@@ -215,7 +224,7 @@ class ModelProviderService:
             )
             query = select(ModelProviderRecord).where(
                 ModelProviderRecord.organization_id == workspace.organization_id,
-                ModelProviderRecord.workspace_id == workspace.workspace_id,
+                visible_workspace(ModelProviderRecord.workspace_id, workspace.workspace_id),
             )
             if name is not None:
                 query = query.where(ModelProviderRecord.name.ilike(f"%{escape_like(name.strip())}%", escape="\\"))
@@ -250,7 +259,7 @@ class ModelProviderService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         provider_id: str,
         if_match: str,
         request: UpdateModelProviderRequest,
@@ -307,10 +316,17 @@ class ModelProviderService:
             try:
                 await session.flush()
             except IntegrityError as error:
-                if not is_unique_conflict(
-                    error,
-                    constraint="uq_model_providers_workspace_name",
-                    sqlite_columns="model_providers.workspace_id, model_providers.normalized_name",
+                if not (
+                    is_unique_conflict(
+                        error,
+                        constraint="uq_model_providers_workspace_name",
+                        sqlite_columns="model_providers.workspace_id, model_providers.normalized_name",
+                    )
+                    or is_unique_conflict(
+                        error,
+                        constraint="uq_model_providers_organization_normalized_name",
+                        sqlite_columns="model_providers.organization_id, model_providers.normalized_name",
+                    )
                 ):
                     raise
                 raise ModelError(
@@ -321,7 +337,7 @@ class ModelProviderService:
             return record.to_resource()
 
     async def discover_models(
-        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str
+        self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str
     ) -> ModelDescriptionCollection:
         provider = await self._prepare_command(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
         if not provider.enabled:
@@ -370,7 +386,7 @@ class ModelProviderService:
         return result
 
     async def describe_model(
-        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str, request: DescribeModelRequest
+        self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str, request: DescribeModelRequest
     ) -> ModelDescription:
         provider = await self.get(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
         result = describe_model(self._registry, provider.type, request.upstream_model, model_api=request.model_api)
@@ -402,7 +418,7 @@ class ModelProviderService:
         return result
 
     async def test(
-        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str
+        self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str
     ) -> ModelConnectionTestResult:
         if self._operations is None:
             raise ModelError(
@@ -432,7 +448,7 @@ class ModelProviderService:
         return result
 
     async def _prepare_command(
-        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str
+        self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str
     ) -> ModelProvider:
         async with transaction(self._sessions) as session:
             workspace = await authorize_models(
@@ -475,17 +491,17 @@ async def require_provider(
     session: AsyncSession,
     *,
     organization_id: str,
-    workspace_id: str,
+    workspace_id: str | None,
     provider_id: str,
     lock: bool = False,
 ) -> ModelProviderRecord:
     query = select(ModelProviderRecord).where(
         ModelProviderRecord.organization_id == organization_id,
-        ModelProviderRecord.workspace_id == workspace_id,
+        visible_workspace(ModelProviderRecord.workspace_id, workspace_id),
         ModelProviderRecord.id == provider_id,
     )
     if lock:
-        query = query.with_for_update()
+        query = query.where(ModelProviderRecord.workspace_id == workspace_id).with_for_update()
     record = await session.scalar(query)
     if record is None:
         raise ModelError("model_provider_not_found", "The Model Provider was not found.", status_code=404)

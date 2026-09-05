@@ -40,7 +40,7 @@ class IdempotencyIdentity:
 class EvidenceScope:
     """Durable replay scope shared by Foundation command families."""
 
-    workspace_id: str
+    workspace_id: str | None
     actor_type: str
     actor_id: str
     operation: str

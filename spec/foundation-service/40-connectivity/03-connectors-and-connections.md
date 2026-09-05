@@ -30,7 +30,7 @@ The following schemas are conceptual and are not wire or ORM models:
 class ConnectorProvider:
     id: ConnectorProviderId
     organization_id: OrganizationId
-    workspace_id: WorkspaceId
+    workspace_id: WorkspaceId | None
     name: str
     type: str
     configuration: JsonObject
@@ -44,7 +44,7 @@ class ConnectorProvider:
 
 `type` selects one deployment-registered Provider implementation and is not the Provider's identity. A Workspace can configure several Connector Providers of the same type, such as company and personal Composio accounts; they have different IDs, configuration, credentials, and lifecycle. `configuration` is validated by the selected implementation's strongly typed model rather than interpreted as an arbitrary JSON dictionary. Endpoint, deployment mode, and every other non-secret implementation-specific setting live inside that one configuration value rather than in competing top-level fields.
 
-Organization, Workspace, type, and behavior-defining configuration are immutable. Changing one creates another Connector Provider so an accepted Run cannot silently dispatch to a different backend under the same ID. Name, credential rotation, safe observations, and administrative status can change under exact management-version preconditions without changing Connector Provider identity.
+Ownership, type, and behavior-defining configuration are immutable. A null `workspace_id` denotes Organization ownership under [Organization-owned configuration](../33-identity-and-access-management.md#organization-owned-configuration). Changing one creates another Connector Provider so an accepted Run cannot silently dispatch to a different backend under the same ID. Name, credential rotation, safe observations, and administrative status can change under exact management-version preconditions without changing Connector Provider identity.
 
 `credential_generation` identifies the current Provider-owned encrypted bundle that authenticates Foundation to the external integration service. The bundle can hold a self-hosted access token or BYOK integration-service API key, protected using the [shared credential protection contract](../27-secret-management.md#protection-boundary). Provider authoring supplies write-only values; management reads return safe metadata and never material or a Secret reference. The owning record stores ciphertext, nonce, and encryption-key identifier. Replacement atomically advances the generation and resource version. The bundle never holds a third-party account OAuth token.
 
@@ -71,6 +71,8 @@ Installed implementation discovery, Connector discovery, [tool preview before ac
 The selected implementation validates and safely projects upstream catalog metadata. `setup_schema` describes only non-secret setup options, such as a supported authentication configuration selector. It never solicits third-party passwords, API keys, cookies, or OAuth tokens. Authentication-method keys retain Provider-specific semantics, and a method is advertised as usable only when the external service offers the required hosted authorization or credential form. Generic JSON Schema form rendering does not replace the authorization ceremony.
 
 Discovery uses bounded pagination, entry counts, schema size, and total bytes under the [discovery safety bounds](04-agent-facing-tools.md#discovery-and-result-bounds). Cache entries are scoped to the exact Provider and credential generation and are advisory only. Setup revalidates current Provider eligibility, selected Connector, and setup options. A discovery failure reports a bounded error without modifying saved connections or treating an incomplete result as a complete catalog.
+
+Organization ConnectorProviders are automatically usable from all descendant Workspaces. Each ConnectorConnection still belongs to its consuming Workspace and references a Provider in that Workspace or its parent Organization. External authorization correlation binds the consuming Workspace, exact Provider, and owner; using a shared Provider never merges personal or Workspace-shared accounts across Workspaces.
 
 ## ConnectorConnection
 
@@ -201,6 +203,8 @@ The Provider-type catalog is deployment-scoped and read-only. Configured Provide
 
 ```http
 GET   /api/v1/connector-provider-types
+GET   /api/v1/organizations/{organization_id}/connector-providers
+POST  /api/v1/organizations/{organization_id}/connector-providers
 GET   /api/v1/workspaces/{workspace_id}/connector-providers
 POST  /api/v1/workspaces/{workspace_id}/connector-providers
 GET   /api/v1/connector-providers/{connector_provider_id}

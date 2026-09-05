@@ -146,7 +146,7 @@ def upgrade() -> None:
         "idempotency_evidence",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("actor_type", sa.String(length=32), nullable=False),
         sa.Column("actor_id", sa.String(length=72), nullable=False),
         sa.Column("operation", sa.String(length=64), nullable=False),
@@ -163,6 +163,12 @@ def upgrade() -> None:
         sa.CheckConstraint("expires_at > created_at", name=op.f("ck_idempotency_evidence_expiry_after_creation")),
         sa.CheckConstraint("length(key_digest) = 64", name=op.f("ck_idempotency_evidence_key_digest_sha256")),
         sa.CheckConstraint("length(request_digest) = 64", name=op.f("ck_idempotency_evidence_request_digest_sha256")),
+        sa.ForeignKeyConstraint(
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_idempotency_evidence_organization_id_organizations"),
+            ondelete="CASCADE",
+        ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],

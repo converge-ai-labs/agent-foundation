@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     String,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,10 +32,19 @@ from .domain import (
 )
 
 
-class ConnectorProviderRecord(ResourceCredential, Base):
+class ConnectorProviderRecord(ResourceCredential[str | None], Base):
     credential_owner_type = "connector_provider"
     __tablename__ = "connector_providers"
     __table_args__ = (
+        ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
+        Index(
+            "uq_connector_providers_organization_name",
+            "organization_id",
+            "normalized_name",
+            unique=True,
+            postgresql_where=text("workspace_id IS NULL"),
+            sqlite_where=text("workspace_id IS NULL"),
+        ),
         CheckConstraint(
             "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
             name="credential_material_consistent",
@@ -49,7 +59,7 @@ class ConnectorProviderRecord(ResourceCredential, Base):
         CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
-        Index("uq_connector_providers_id_tenant", "id", "organization_id", "workspace_id", unique=True),
+        Index("uq_connector_providers_id_tenant", "id", "organization_id", unique=True),
         Index("uq_connector_providers_workspace_name", "workspace_id", "normalized_name", unique=True),
         Index("ix_connector_providers_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_connector_providers_driver_status", "type", "status", "id"),
@@ -57,7 +67,7 @@ class ConnectorProviderRecord(ResourceCredential, Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
     type: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -91,8 +101,11 @@ class ConnectorConnectionRecord(Base):
     __tablename__ = "connector_connections"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("connector_provider_id", "organization_id", "workspace_id"),
-            ("connector_providers.id", "connector_providers.organization_id", "connector_providers.workspace_id"),
+            ("workspace_id", "organization_id"), ("workspaces.id", "workspaces.organization_id"), ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ("connector_provider_id", "organization_id"),
+            ("connector_providers.id", "connector_providers.organization_id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint(

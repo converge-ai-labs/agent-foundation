@@ -34,7 +34,7 @@ class NativeModelConnectionTester:
         snapshot: ModelExecutionSnapshot,
         settings: JsonObject,
         organization_id: str,
-        workspace_id: str,
+        workspace_id: str | None,
     ) -> None:
         provider = await self._provider_resolver.resolve(
             organization_id=organization_id,

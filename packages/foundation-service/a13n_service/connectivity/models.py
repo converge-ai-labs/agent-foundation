@@ -17,7 +17,6 @@ class ConnectivityCommandRecord(Base):
         CheckConstraint("actor_type IN ('user', 'service_account')", name="actor_type_valid"),
         Index(
             "uq_connectivity_commands_request",
-            "workspace_id",
             "actor_type",
             "actor_id",
             "operation",
@@ -30,7 +29,7 @@ class ConnectivityCommandRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(72), nullable=False)
     operation: Mapped[str] = mapped_column(String(64), nullable=False)

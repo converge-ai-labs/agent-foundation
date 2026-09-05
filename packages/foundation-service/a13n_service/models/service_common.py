@@ -14,9 +14,9 @@ from a13n_service.iam.authorization import (
     AuthenticatedActor,
     AuthorizationError,
     WorkspaceAction,
-    authorize_workspace,
 )
 from a13n_service.iam.models import SecurityAuditRecord
+from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.ids import new_object_id
 from a13n_service.public_errors import PublicError
 
@@ -29,11 +29,11 @@ async def authorize_models(
     session: AsyncSession,
     *,
     actor: AuthenticatedActor,
-    workspace_id: str,
+    workspace_id: str | None,
     action: WorkspaceAction,
 ):
     try:
-        return await authorize_workspace(session, actor=actor, workspace_id=workspace_id, action=action)
+        return await authorize_scope(session, actor=actor, workspace_id=workspace_id, action=action)
     except AuthorizationError as error:
         raise ModelError(
             "resource_not_found" if error.concealed else "permission_denied",
@@ -57,7 +57,7 @@ def audit_record(
     *,
     actor: AuthenticatedActor,
     organization_id: str | None,
-    workspace_id: str,
+    workspace_id: str | None,
     resource_type: str,
     resource_id: str | None,
     action: str,

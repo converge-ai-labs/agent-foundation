@@ -22,6 +22,7 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_digest
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
+from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -85,7 +86,7 @@ class ConnectorSetupCoordinator:
         return_path: str,
         now: datetime,
     ) -> ConnectorSetupAttemptRecord:
-        correlation = self.correlation(connector, _owner_ref(connection))
+        correlation = self.correlation(connector, _owner_ref(connection), workspace_id=connection.workspace_id)
         return ConnectorSetupAttemptRecord(
             id=attempt_id,
             organization_id=connection.organization_id,
@@ -298,7 +299,13 @@ class ConnectorSetupCoordinator:
             ):
                 return
             connection = await require_connection(session, attempt.connector_connection_id, lock=True)
-            require_active_provider(await require_connector_provider(session, connection.connector_provider_id))
+            require_active_provider(
+                await require_connector_provider(
+                    session,
+                    connection.connector_provider_id,
+                    scope=ResourceScope(connection.organization_id, connection.workspace_id),
+                )
+            )
             verify_inspection(attempt, connection, inspection)
             apply_inspection(connection, inspection, now=now)
             attempt.status = "completed"
@@ -325,7 +332,11 @@ class ConnectorSetupCoordinator:
             if attempt is None:
                 raise ConnectorError("setup_unavailable", "ConnectorProvider setup is unavailable.", status_code=404)
             connection = await require_connection(session, attempt.connector_connection_id)
-            connector = await require_connector_provider(session, connection.connector_provider_id)
+            connector = await require_connector_provider(
+                session,
+                connection.connector_provider_id,
+                scope=ResourceScope(connection.organization_id, connection.workspace_id),
+            )
         try:
             raw = connector.credential_snapshot().decrypt(self._protector)
         except SecretProtectionError as error:
@@ -368,7 +379,7 @@ class ConnectorSetupCoordinator:
             attempt.last_error_code = code
             attempt.updated_at = self._clock()
 
-    def correlation(self, connector: ConnectorProviderRecord, owner: PrincipalRef | None) -> str:
+    def correlation(self, connector: ConnectorProviderRecord, owner: PrincipalRef | None, *, workspace_id: str) -> str:
         if self._correlation_secret is None:
             raise ConnectorError(
                 "setup_unavailable",
@@ -376,12 +387,12 @@ class ConnectorSetupCoordinator:
                 status_code=503,
             )
         owner_kind = owner.principal_type.value if owner is not None else "workspace"
-        owner_id = owner.principal_id if owner is not None else connector.workspace_id
+        owner_id = owner.principal_id if owner is not None else workspace_id
         payload = "\0".join(
             (
                 "a13n.connector-user.v1",
                 connector.organization_id,
-                connector.workspace_id,
+                workspace_id,
                 owner_kind,
                 owner_id,
                 connector.id,

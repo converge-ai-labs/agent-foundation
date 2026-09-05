@@ -257,7 +257,7 @@ class NativeInteractionQueries:
             session = await database.scalar(
                 select(SessionRecord).where(
                     SessionRecord.id == session_id,
-                    SessionRecord.workspace_id == actor.boundary_workspace_id,
+                    SessionRecord.workspace_id == actor.workspace_id,
                 )
             )
             if session is None:
@@ -301,7 +301,7 @@ class NativeInteractionQueries:
             await _authorize_agent(
                 database,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
                 action=WorkspaceAction.run_read,
             )
@@ -319,7 +319,7 @@ class NativeInteractionQueries:
         selected_scope = workspace_id or thread_id
         if selected_scope is None:
             raise ValueError("one Run collection scope is required")
-        actual_workspace = actor.boundary_workspace_id
+        actual_workspace = actor.workspace_id
         scope = _scope(actor, "runs", selected_scope)
         boundary = _cursor_boundary(cursor, scope=scope, kind="runs")
         async with short_session(self._sessions) as database:
@@ -388,7 +388,7 @@ class NativeInteractionQueries:
             await _authorize_agent(
                 database,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
                 action=WorkspaceAction.run_read,
             )
@@ -437,7 +437,7 @@ class NativeInteractionQueries:
                     )
                     .where(
                         RunAttemptRecord.id == run_attempt_id,
-                        SessionRecord.workspace_id == actor.boundary_workspace_id,
+                        SessionRecord.workspace_id == actor.workspace_id,
                     )
                 )
             ).one_or_none()
@@ -447,7 +447,7 @@ class NativeInteractionQueries:
             await _authorize_agent(
                 database,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
                 action=WorkspaceAction.run_read,
             )
@@ -459,7 +459,7 @@ class NativeInteractionQueries:
             await _authorize_agent(
                 database,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
                 action=WorkspaceAction.run_read,
             )
@@ -494,7 +494,7 @@ class NativeInteractionQueries:
             await _authorize_agent(
                 database,
                 actor=actor,
-                workspace_id=actor.boundary_workspace_id,
+                workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
                 action=WorkspaceAction.run_read,
             )
@@ -531,7 +531,7 @@ class NativeInteractionQueries:
                 await _authorize_agent(
                     database,
                     actor=actor,
-                    workspace_id=actor.boundary_workspace_id,
+                    workspace_id=actor.workspace_id,
                     agent_id=current.agent_id,
                     action=WorkspaceAction.run_read,
                 )
@@ -571,7 +571,7 @@ class NativeInteractionQueries:
 async def _load_run(database: AsyncSession, *, actor: AuthenticatedActor, run_id: str) -> RunRecord:
     run = await load_owning_run(
         database,
-        workspace_id=actor.boundary_workspace_id,
+        workspace_id=actor.workspace_id,
         resource_type=LifecycleEntityType.run,
         resource_id=run_id,
     )
@@ -600,7 +600,7 @@ async def _load_thread(
                     RunRecord.id == ThreadRecord.current_run_id,
                 ),
             )
-            .where(ThreadRecord.id == thread_id, SessionRecord.workspace_id == actor.boundary_workspace_id)
+            .where(ThreadRecord.id == thread_id, SessionRecord.workspace_id == actor.workspace_id)
         )
     ).one_or_none()
     if row is None:

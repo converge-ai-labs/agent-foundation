@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
+from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -25,6 +26,7 @@ from .domain import (
     new_model_id,
     normalize_key,
 )
+from .keys import require_available_key
 from .models import ModelRecord
 from .provider_service import require_provider
 from .providers import ProviderRegistry
@@ -39,7 +41,7 @@ class ModelConnectionTester(Protocol):
         snapshot: ModelExecutionSnapshot,
         settings: JsonObject,
         organization_id: str,
-        workspace_id: str,
+        workspace_id: str | None,
     ) -> Awaitable[None]: ...
 
 
@@ -63,7 +65,7 @@ class ModelService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         request: CreateModelRequest,
     ) -> Model:
         now = self._clock()
@@ -71,6 +73,9 @@ class ModelService:
             async with transaction(self._sessions) as session:
                 workspace = await authorize_models(
                     session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_manage
+                )
+                await require_available_key(
+                    session, organization_id=workspace.organization_id, workspace_id=workspace_id, key=request.key
                 )
                 provider = await require_provider(
                     session,
@@ -123,11 +128,11 @@ class ModelService:
                 raise
             raise ModelError(
                 "model_key_conflict",
-                "A Model with this key already exists in the Workspace.",
+                "A Model with this key is already visible in the Workspace.",
                 status_code=409,
             ) from error
 
-    async def get(self, *, actor: AuthenticatedActor, workspace_id: str, model_id: str) -> Model:
+    async def get(self, *, actor: AuthenticatedActor, workspace_id: str | None, model_id: str) -> Model:
         async with transaction(self._sessions) as session:
             workspace = await authorize_models(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_read
@@ -145,7 +150,7 @@ class ModelService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         limit: int = 50,
         cursor: str | None = None,
         query_text: str | None = None,
@@ -158,6 +163,7 @@ class ModelService:
             raise ModelError("invalid_request", "query search is invalid.", status_code=400)
         scope = {
             "workspace_id": workspace_id,
+            "organization_boundary": actor.boundary_organization_id,
             "principal_type": actor.principal.principal_type.value,
             "principal_id": actor.principal.principal_id,
             "query": query_text,
@@ -175,7 +181,7 @@ class ModelService:
             )
             query = select(ModelRecord).where(
                 ModelRecord.organization_id == workspace.organization_id,
-                ModelRecord.workspace_id == workspace.workspace_id,
+                visible_workspace(ModelRecord.workspace_id, workspace.workspace_id),
             )
             if query_text is not None:
                 escaped = escape_like(query_text.strip())
@@ -214,7 +220,7 @@ class ModelService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         model_id: str,
         if_match: str,
         request: UpdateModelRequest,
@@ -275,7 +281,7 @@ class ModelService:
         self,
         *,
         actor: AuthenticatedActor,
-        workspace_id: str,
+        workspace_id: str | None,
         model_id: str,
     ) -> ModelConnectionTestResult:
         if self._connection_tester is None:
@@ -323,17 +329,17 @@ async def require_model(
     session: AsyncSession,
     *,
     organization_id: str,
-    workspace_id: str,
+    workspace_id: str | None,
     model_id: str,
     lock: bool = False,
 ) -> ModelRecord:
     query = select(ModelRecord).where(
         ModelRecord.organization_id == organization_id,
-        ModelRecord.workspace_id == workspace_id,
+        visible_workspace(ModelRecord.workspace_id, workspace_id),
         ModelRecord.id == model_id,
     )
     if lock:
-        query = query.with_for_update()
+        query = query.where(ModelRecord.workspace_id == workspace_id).with_for_update()
     record = await session.scalar(query)
     if record is None:
         raise ModelError("model_not_found", "The Model was not found.", status_code=404)

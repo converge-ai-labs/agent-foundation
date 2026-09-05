@@ -179,7 +179,7 @@ class NativeRunStreamService:
             await anyio.sleep(self._poll_interval_seconds)
 
     async def _authorize(self, *, actor: AuthenticatedActor, run_id: str) -> tuple[str, bool]:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         async with short_session(self._sessions) as database:
             run = await load_owning_run(
                 database,

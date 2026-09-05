@@ -25,17 +25,18 @@ from a13n_service.iam.authorization import (
     authorize_workspace,
 )
 from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord, UserRecord
+from a13n_service.iam.resource_scope import ResourceScope
 
 from .domain import ConnectorConnection
 from .errors import ConnectorError
 from .management import authorize, map_management_value_error, require_connection
-from .models import ConnectorConnectionRecord, ConnectorProviderRecord, ConnectorSetupAttemptRecord
+from .models import ConnectorConnectionRecord, ConnectorSetupAttemptRecord
 
 
 async def authorize_owner_change(
     session: AsyncSession,
     actor: AuthenticatedActor,
-    connector: ConnectorProviderRecord,
+    scope: ResourceScope,
     owner: PrincipalRef | None,
 ) -> None:
     if (
@@ -43,12 +44,12 @@ async def authorize_owner_change(
         and owner.principal_type is PrincipalType.user
         and owner.principal_id == actor.principal.principal_id
     ):
-        await authorize(session, actor, connector.workspace_id, WorkspaceAction.connector_connection_read)
+        await authorize(session, actor, scope.workspace_id, WorkspaceAction.connector_connection_read)
         user = await session.get(UserRecord, owner.principal_id)
         if user is None or user.status != "active":
             raise ConnectorError("invalid_owner", "ConnectorConnection owner is invalid.", status_code=400)
         return
-    await authorize(session, actor, connector.workspace_id, WorkspaceAction.connector_connection_manage)
+    await authorize(session, actor, scope.workspace_id, WorkspaceAction.connector_connection_manage)
     if owner is None:
         return
     if owner.principal_type is PrincipalType.user:
@@ -58,7 +59,7 @@ async def authorize_owner_change(
                 RoleBindingRecord.principal_type == PrincipalType.user.value,
                 RoleBindingRecord.principal_id == owner.principal_id,
                 RoleBindingRecord.resource_type == "workspace",
-                RoleBindingRecord.resource_id == connector.workspace_id,
+                RoleBindingRecord.resource_id == scope.workspace_id,
             )
         )
         if user is None or user.status != "active" or workspace_binding is None:
@@ -67,8 +68,8 @@ async def authorize_owner_change(
     account = await session.scalar(
         select(ServiceAccountRecord).where(
             ServiceAccountRecord.id == owner.principal_id,
-            ServiceAccountRecord.organization_id == connector.organization_id,
-            ServiceAccountRecord.workspace_id == connector.workspace_id,
+            ServiceAccountRecord.organization_id == scope.organization_id,
+            ServiceAccountRecord.workspace_id == scope.workspace_id,
             ServiceAccountRecord.status == "active",
             ServiceAccountRecord.deleted_at.is_(None),
         )

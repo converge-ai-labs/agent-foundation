@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     String,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,10 +25,19 @@ from a13n_service.temporal import assume_utc
 from .domain import Model, ModelProvider
 
 
-class ModelProviderRecord(ResourceCredential, Base):
+class ModelProviderRecord(ResourceCredential[str | None], Base):
     credential_owner_type = "model_provider"
     __tablename__ = "model_providers"
     __table_args__ = (
+        ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
+        Index(
+            "uq_model_providers_organization_normalized_name",
+            "organization_id",
+            "normalized_name",
+            unique=True,
+            postgresql_where=text("workspace_id IS NULL"),
+            sqlite_where=text("workspace_id IS NULL"),
+        ),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
@@ -42,14 +52,14 @@ class ModelProviderRecord(ResourceCredential, Base):
             "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
             name="credential_material_consistent",
         ),
-        Index("uq_model_providers_identity_scope", "id", "workspace_id", "organization_id", unique=True),
+        Index("uq_model_providers_identity_scope", "id", "organization_id", unique=True),
         Index("uq_model_providers_workspace_name", "workspace_id", "normalized_name", unique=True),
         Index("ix_model_providers_workspace_updated", "workspace_id", "updated_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72))
-    workspace_id: Mapped[str] = mapped_column(String(72))
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     type: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
     normalized_name: Mapped[str] = mapped_column(String(128))
@@ -82,14 +92,23 @@ class ModelProviderRecord(ResourceCredential, Base):
 class ModelRecord(Base):
     __tablename__ = "models"
     __table_args__ = (
+        ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
+        Index(
+            "uq_models_organization_normalized_key",
+            "organization_id",
+            "normalized_key",
+            unique=True,
+            postgresql_where=text("workspace_id IS NULL"),
+            sqlite_where=text("workspace_id IS NULL"),
+        ),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(
-            ("provider_id", "workspace_id", "organization_id"),
-            ("model_providers.id", "model_providers.workspace_id", "model_providers.organization_id"),
+            ("provider_id", "organization_id"),
+            ("model_providers.id", "model_providers.organization_id"),
             ondelete="RESTRICT",
         ),
         CheckConstraint("length(key) BETWEEN 1 AND 128", name="key_bounded"),
@@ -97,7 +116,7 @@ class ModelRecord(Base):
         CheckConstraint("length(upstream_model) BETWEEN 1 AND 256", name="upstream_model_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
-        Index("uq_models_identity_scope", "id", "workspace_id", "organization_id", unique=True),
+        Index("uq_models_identity_scope", "id", "organization_id", unique=True),
         Index("uq_models_workspace_key", "workspace_id", "normalized_key", unique=True),
         Index("ix_models_provider", "provider_id", "id"),
         Index("ix_models_workspace_updated", "workspace_id", "updated_at", "id"),
@@ -105,7 +124,7 @@ class ModelRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72))
-    workspace_id: Mapped[str] = mapped_column(String(72))
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     key: Mapped[str] = mapped_column(String(128))
     normalized_key: Mapped[str] = mapped_column(String(128))
     provider_id: Mapped[str] = mapped_column(String(72))

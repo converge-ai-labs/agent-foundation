@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.interactions.models import SessionRecord
@@ -156,7 +157,11 @@ class ExternalToolRuntime:
             await guard()
             async with short_session(self._sessions) as session:
                 record = await require_connection(session, selection.connector_connection_id)
-                provider = await require_connector_provider(session, selection.connector_provider_id)
+                provider = await require_connector_provider(
+                    session,
+                    selection.connector_provider_id,
+                    scope=ResourceScope(record.organization_id, record.workspace_id),
+                )
                 binding = await connection_binding(session, record)
                 provider_type, configuration = provider.type, dict(provider.configuration_json)
                 context = provider.credential_snapshot()

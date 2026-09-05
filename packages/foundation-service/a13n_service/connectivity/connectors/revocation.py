@@ -12,6 +12,7 @@ from a13n_service.connectivity.connectors.contracts import ConnectorProviderErro
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.management import canonical_digest, record_command
 from a13n_service.iam import AuthenticatedActor
+from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session, transaction
@@ -204,7 +205,11 @@ class ConnectorRevocationService:
             if operation is None:
                 return
             connection = await require_connection(session, operation.connector_connection_id)
-            connector = await require_connector_provider(session, connection.connector_provider_id)
+            connector = await require_connector_provider(
+                session,
+                connection.connector_provider_id,
+                scope=ResourceScope(connection.organization_id, connection.workspace_id),
+            )
             if connection.external_ref is None:
                 raise ConnectorError("setup_incomplete", "ConnectorConnection setup is incomplete.", status_code=409)
             binding = await connection_binding(session, connection)

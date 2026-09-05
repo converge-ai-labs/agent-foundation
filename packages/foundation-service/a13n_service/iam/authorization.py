@@ -9,7 +9,7 @@ from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .domain import PrincipalRef, PrincipalType
-from .models import RoleBindingRecord, ServiceAccountRecord, UserRecord, WorkspaceRecord
+from .models import OrganizationRecord, RoleBindingRecord, ServiceAccountRecord, UserRecord, WorkspaceRecord
 
 
 class WorkspaceAction(StrEnum):
@@ -222,8 +222,23 @@ class AuthenticatedActor:
     principal: PrincipalRef
     auth_method: str
     credential_id: str
-    boundary_workspace_id: str
+    boundary_workspace_id: str | None
+    boundary_organization_id: str | None = None
     request_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.boundary_workspace_id is None) == (self.boundary_organization_id is None):
+            raise ValueError("exactly one credential boundary is required")
+        if self.boundary_organization_id is not None and (
+            self.principal.principal_type != PrincipalType.user or self.auth_method != "session"
+        ):
+            raise ValueError("Organization boundaries require a human session")
+
+    @property
+    def workspace_id(self) -> str:
+        if self.boundary_workspace_id is None:
+            raise AuthorizationError("workspace_boundary_required", concealed=True)
+        return self.boundary_workspace_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -414,7 +429,7 @@ async def _load_workspace_authorization(
     agent_id: str | None = None,
     include_agent_bindings: bool = False,
 ) -> _WorkspaceAuthorizationContext:
-    if actor.boundary_workspace_id != workspace_id:
+    if actor.boundary_workspace_id is not None and actor.boundary_workspace_id != workspace_id:
         raise AuthorizationError("credential_boundary_mismatch", concealed=True)
 
     principal_context = await _load_principal_authorization(
@@ -424,6 +439,11 @@ async def _load_workspace_authorization(
         agent_id=agent_id,
         include_agent_bindings=include_agent_bindings,
     )
+    if (
+        actor.boundary_organization_id is not None
+        and actor.boundary_organization_id != principal_context.workspace.organization_id
+    ):
+        raise AuthorizationError("credential_boundary_mismatch", concealed=True)
     return _WorkspaceAuthorizationContext(
         authorized=AuthorizedWorkspace(
             organization_id=principal_context.workspace.organization_id,
@@ -560,3 +580,24 @@ def _binding_query(
         RoleBindingRecord.principal_id == principal.principal_id,
         resource_scope,
     )
+
+
+async def authorize_organization_admin(session: AsyncSession, *, actor: AuthenticatedActor) -> str:
+    organization_id = actor.boundary_organization_id
+    if organization_id is None:
+        raise AuthorizationError("permission_denied", concealed=True)
+    await _require_active_user(session, actor.principal.principal_id)
+    organization = await session.get(OrganizationRecord, organization_id)
+    role = await session.scalar(
+        select(RoleBindingRecord.role_key).where(
+            RoleBindingRecord.organization_id == organization_id,
+            RoleBindingRecord.resource_type == "organization",
+            RoleBindingRecord.resource_id == organization_id,
+            RoleBindingRecord.workspace_id.is_(None),
+            RoleBindingRecord.principal_type == "user",
+            RoleBindingRecord.principal_id == actor.principal.principal_id,
+        )
+    )
+    if organization is None or role != "admin":
+        raise AuthorizationError("permission_denied", concealed=True)
+    return organization_id

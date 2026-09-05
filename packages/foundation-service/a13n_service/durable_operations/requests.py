@@ -76,7 +76,7 @@ def evidence_record(
     *,
     actor: AuthenticatedActor,
     organization_id: str,
-    workspace_id: str,
+    workspace_id: str | None,
     operation: str,
     scope_id: str,
     identity: IdempotencyIdentity,

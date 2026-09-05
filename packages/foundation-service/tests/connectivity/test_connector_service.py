@@ -524,3 +524,71 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     assert calls[0][0].external_ref == "external-1"
     assert calls[0][0].external_user_correlation == attempt.external_user_correlation
     assert calls[0][1]["provider_version"] == "fake-1"
+
+
+@pytest.mark.anyio
+async def test_org_provider_keeps_connections_and_external_correlation_in_workspace(
+    connector_services, connectivity_sessions
+):
+    from dataclasses import replace
+
+    from a13n_service.connectivity.connectors.domain import UpdateConnectorProviderRequest
+    from a13n_service.storage import short_session
+
+    from ..resource_scope_helpers import organization_admin, sibling_workspace
+
+    providers, connections = connector_services
+    admin = await organization_admin(connectivity_sessions, actor())
+    sibling = await sibling_workspace(connectivity_sessions, admin)
+    provider = await providers.create(
+        actor=admin, workspace_id=None, idempotency_key="org-provider", request=connector_request()
+    )
+    assert provider.workspace_id is None
+    assert (
+        await providers.create(
+            actor=admin, workspace_id=None, idempotency_key="org-provider", request=connector_request()
+        )
+        == provider
+    )
+    assert (await providers.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=50, cursor=None)).items == (provider,)
+    assert (await providers.discover_connectors(actor=actor(), connector_provider_id=provider.id)).items[
+        0
+    ].key == "github"
+    first = await create_connection(connections, connector_provider_id=provider.id, idempotency_key="first")
+    second = await connections.create(
+        actor=replace(actor(), boundary_workspace_id=sibling),
+        workspace_id=sibling,
+        idempotency_key="second",
+        request=CreateConnectorConnectionRequest(
+            connector_provider_id=provider.id,
+            name="GitHub",
+            connector_key="github",
+            owner_principal_ref=PrincipalRef(principal_type="user", principal_id=USER_ID),
+        ),
+    )
+    assert first.workspace_id == WORKSPACE_ID
+    assert second.workspace_id == sibling
+    for connection, selected_actor in [(first, actor()), (second, replace(actor(), boundary_workspace_id=sibling))]:
+        await connections.start_setup(
+            actor=selected_actor,
+            connection_id=connection.id,
+            idempotency_key="setup",
+            expected_version=connection.version,
+            setup={"scopes": ["read"]},
+            return_path="/connections",
+        )
+    async with short_session(connectivity_sessions) as session:
+        attempts = tuple(
+            await session.scalars(
+                select(ConnectorSetupAttemptRecord).where(
+                    ConnectorSetupAttemptRecord.connector_connection_id.in_([first.id, second.id])
+                )
+            )
+        )
+        assert len({item.external_user_correlation for item in attempts}) == 2
+    with pytest.raises(ConnectorError):
+        await providers.update(
+            actor=actor(),
+            connector_provider_id=provider.id,
+            request=UpdateConnectorProviderRequest(name="Hijacked", expected_version=provider.version),
+        )

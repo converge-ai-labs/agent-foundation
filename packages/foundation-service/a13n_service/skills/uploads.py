@@ -136,7 +136,7 @@ class SkillUploadService:
             )
 
     async def get(self, *, actor: AuthenticatedActor, upload_id: str) -> SkillUploadReceipt:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         async with transaction(self._sessions) as session:
             await authorize_skill_workspace(
                 session,
@@ -157,7 +157,7 @@ class SkillUploadService:
             return record.to_resource()
 
     async def delete(self, *, actor: AuthenticatedActor, upload_id: str) -> None:
-        workspace_id = actor.boundary_workspace_id
+        workspace_id = actor.workspace_id
         async with transaction(self._sessions) as session:
             await authorize_skill_workspace(
                 session,
@@ -250,7 +250,7 @@ class SkillUploadService:
 def _owned_upload_query(*, actor: AuthenticatedActor, upload_id: str):
     return select(SkillUploadRecord).where(
         SkillUploadRecord.id == upload_id,
-        SkillUploadRecord.workspace_id == actor.boundary_workspace_id,
+        SkillUploadRecord.workspace_id == actor.workspace_id,
         SkillUploadRecord.uploader_type == actor.principal.principal_type.value,
         SkillUploadRecord.uploader_id == actor.principal.principal_id,
     )

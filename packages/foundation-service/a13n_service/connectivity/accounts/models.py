@@ -23,7 +23,7 @@ from a13n_service.temporal import assume_utc
 from .domain import Account, AccountStatus
 
 
-class AccountRecord(ResourceCredential, Base):
+class AccountRecord(ResourceCredential[str], Base):
     credential_owner_type = "application_account"
     __tablename__ = "application_accounts"
     __table_args__ = (

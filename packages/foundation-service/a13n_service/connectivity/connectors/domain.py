@@ -38,7 +38,7 @@ class ConnectorConnectionStatusReason(StrEnum):
 class ConnectorProvider(StrictModel):
     id: str
     organization_id: str
-    workspace_id: str
+    workspace_id: str | None
     name: BoundedName
     type: AdapterKey
     configuration: JsonObject

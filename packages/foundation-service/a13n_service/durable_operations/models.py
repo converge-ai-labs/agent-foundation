@@ -15,6 +15,7 @@ class IdempotencyEvidenceRecord(Base):
 
     __tablename__ = "idempotency_evidence"
     __table_args__ = (
+        ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
             ("workspaces.id", "workspaces.organization_id"),
@@ -37,7 +38,7 @@ class IdempotencyEvidenceRecord(Base):
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72))
-    workspace_id: Mapped[str] = mapped_column(String(72))
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
     actor_type: Mapped[str] = mapped_column(String(32))
     actor_id: Mapped[str] = mapped_column(String(72))
     operation: Mapped[str] = mapped_column(String(64))

@@ -607,7 +607,7 @@ def _cursor_scope(
     return {
         "principal_type": actor.principal.principal_type.value,
         "principal_id": actor.principal.principal_id,
-        "boundary_workspace_id": actor.boundary_workspace_id,
+        "boundary_workspace_id": actor.workspace_id,
         "provider": provider_key,
         "organization_id": scope.organization_id,
         "workspace_id": scope.workspace_id,
