@@ -24,8 +24,18 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("same_request", [True, False])
-async def test_postgresql_expired_key_replacement_has_one_winner(postgres_interaction_sessions, same_request):
-    scope = EvidenceScope(WORKSPACE_ID, "user", USER_ID, "test.command", WORKSPACE_ID)
+@pytest.mark.parametrize("organization_scope", [True, False])
+async def test_postgresql_expired_key_replacement_has_one_winner(
+    postgres_interaction_sessions, same_request, organization_scope
+):
+    scope = EvidenceScope(
+        None if organization_scope else WORKSPACE_ID,
+        "user",
+        USER_ID,
+        "test.command",
+        WORKSPACE_ID,
+        organization_id=TENANT_ID if organization_scope else None,
+    )
     key = digest_visible_ascii_key("expiry-race")
     async with transaction(postgres_interaction_sessions) as database:
         database.add(

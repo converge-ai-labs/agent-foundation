@@ -43,6 +43,8 @@ A create or command that can be retried under the public contract records bounde
 
 Raw idempotency keys and secret request content are not stored in logs, events, traces, or diagnostics. The canonical request includes the semantic operation input and excludes transport-only values such as request ID and trace context.
 
+Workspace and Organization credential boundaries are distinct replay scopes. Organization-scoped operations have an explicit non-null boundary identity even though their resources have no Workspace; lookup, uniqueness, and concurrency serialization use the same boundary.
+
 All ordinary HTTP command families use the same evidence authority and deterministic digest of domain-normalized input. Omission and explicit null remain distinct where the owning contract gives them different meaning. Credential fingerprints include the protected input value, never its redacted display, and receipts contain no credential plaintext.
 
 The operation serializes concurrent uses of the same evidence scope. The same key and canonical request return the original result; the same key with different input returns a conflict. Replay resolves before a version or ETag comparison so a successful mutation can return its original result after advancing the resource state.
